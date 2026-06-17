@@ -1,6 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
+import { Platform } from "react-native";
 
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -59,7 +60,9 @@ export function NotificationsManager() {
   }, [isAuthenticated, isLoading, router]);
 
   // Warm taps: app already running in background/foreground.
+  // expo-notifications response APIs are native-only (not available on web).
   useEffect(() => {
+    if (Platform.OS === "web") return;
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       navigate(routeForNotificationData(response.notification.request.content.data));
     });
@@ -69,6 +72,7 @@ export function NotificationsManager() {
 
   // Cold start: app launched by tapping a notification while killed.
   useEffect(() => {
+    if (Platform.OS === "web") return;
     if (handledColdStart.current) return;
     handledColdStart.current = true;
     Notifications.getLastNotificationResponseAsync().then((response) => {
