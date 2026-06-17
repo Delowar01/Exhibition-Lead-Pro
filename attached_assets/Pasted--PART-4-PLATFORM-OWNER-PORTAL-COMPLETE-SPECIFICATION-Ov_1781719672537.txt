@@ -1,0 +1,1081 @@
+# PART 4
+
+# PLATFORM OWNER PORTAL COMPLETE SPECIFICATION
+
+## Overview
+
+The Platform Owner Portal is the master SaaS administration system.
+
+This portal is exclusively for the platform owner and internal platform management team.
+
+Purpose:
+
+Manage:
+
+* Companies
+* Subscriptions
+* Plans
+* Users
+* Revenue
+* Tenant Activity
+* System Health
+* Audit Logs
+* Platform Analytics
+
+This portal must be completely separate from Customer Admin Portal.
+
+Route:
+
+```text
+/platform
+```
+
+Only Platform Owner users can access.
+
+Non-platform users must be automatically redirected.
+
+---
+
+# Platform Owner Portal Objectives
+
+The Platform Owner must be able to:
+
+* Create Companies
+* Manage Companies
+* Suspend Companies
+* Activate Companies
+* Manage Plans
+* Manage Limits
+* Manage Tenant Access
+* Monitor Usage
+* Monitor Growth
+* View Revenue
+* View Audits
+* Manage Platform Settings
+
+---
+
+# Platform Navigation
+
+```text
+Dashboard
+
+Companies
+Subscriptions
+Users
+
+Plans
+
+Audit Logs
+
+Platform Analytics
+
+System Health
+
+Platform Settings
+```
+
+---
+
+# Platform Dashboard
+
+Purpose:
+
+Provide complete platform visibility.
+
+---
+
+# Dashboard KPI Cards
+
+## Company Metrics
+
+Total Companies
+
+Active Companies
+
+Trial Companies
+
+Suspended Companies
+
+Expired Companies
+
+Cancelled Companies
+
+---
+
+## User Metrics
+
+Total Users
+
+Primary Admins
+
+Admins
+
+Employees
+
+Active Users Today
+
+Active Users This Month
+
+---
+
+## Lead Metrics
+
+Total Contacts
+
+Unique Contacts
+
+Duplicates
+
+Leads Today
+
+Leads This Month
+
+---
+
+## Event Metrics
+
+Total Events
+
+Active Events
+
+Completed Events
+
+Upcoming Events
+
+---
+
+## Revenue Metrics
+
+Monthly Recurring Revenue
+
+Annual Recurring Revenue
+
+Trial Conversion Rate
+
+Customer Churn
+
+Average Revenue Per Customer
+
+---
+
+# Dashboard Charts
+
+## Company Growth
+
+Daily
+
+Weekly
+
+Monthly
+
+Yearly
+
+---
+
+## Subscription Distribution
+
+Starter
+
+Professional
+
+Business
+
+Enterprise
+
+---
+
+## Lead Growth
+
+Platform-wide
+
+---
+
+## Event Growth
+
+Platform-wide
+
+---
+
+## User Growth
+
+Platform-wide
+
+---
+
+# Recent Activity Feed
+
+Show:
+
+Company Created
+
+Company Suspended
+
+Plan Upgraded
+
+Trial Extended
+
+Password Reset
+
+Company Deleted
+
+User Created
+
+User Disabled
+
+---
+
+# Companies Module
+
+Purpose:
+
+Manage all customer companies.
+
+---
+
+# Company List
+
+Columns
+
+Company Name
+
+Status
+
+Plan
+
+Primary Admin
+
+Contacts
+
+Events
+
+Users
+
+Storage Usage
+
+Created Date
+
+Expiry Date
+
+Actions
+
+---
+
+# Status Types
+
+Trial
+
+Active
+
+Suspended
+
+Expired
+
+Cancelled
+
+---
+
+# Filters
+
+Status
+
+Plan
+
+Country
+
+Date Created
+
+Renewal Date
+
+---
+
+# Search
+
+Search by:
+
+Company Name
+
+Primary Admin
+
+Email
+
+Phone
+
+---
+
+# Create Company Wizard
+
+Three-Step Wizard
+
+---
+
+## Step 1
+
+Company Information
+
+Fields
+
+Company Name
+
+Company Logo
+
+Country
+
+Address
+
+Phone
+
+Website
+
+Industry
+
+---
+
+## Step 2
+
+Subscription & Limits
+
+Fields
+
+Plan
+
+Trial Days
+
+Maximum Admin Users
+
+Maximum Employee Users
+
+Maximum Contacts
+
+Maximum Events
+
+Storage Limit
+
+API Limit
+
+---
+
+## Step 3
+
+Primary Admin
+
+Fields
+
+Name
+
+Email
+
+Temporary Password
+
+Phone
+
+---
+
+# Company Creation Logic
+
+Must create:
+
+Company
+
+*
+
+Primary Admin User
+
+in one transaction.
+
+If any step fails:
+
+Rollback everything.
+
+---
+
+# Company Detail Page
+
+Tabs
+
+Overview
+
+Subscription
+
+Users
+
+Usage
+
+Events
+
+Activity
+
+Audit Logs
+
+---
+
+# Overview Tab
+
+Company Logo
+
+Company Name
+
+Industry
+
+Country
+
+Address
+
+Primary Admin
+
+Status
+
+Plan
+
+Created Date
+
+Renewal Date
+
+---
+
+# Subscription Tab
+
+Plan
+
+Trial Status
+
+Expiry
+
+Renewal
+
+Billing Cycle
+
+Features
+
+Limits
+
+Usage
+
+---
+
+# Usage Tab
+
+Show:
+
+Admins
+
+Employees
+
+Contacts
+
+Events
+
+Storage
+
+API Calls
+
+---
+
+# Usage Widgets
+
+Used
+
+Limit
+
+Remaining
+
+Percentage
+
+---
+
+# Events Tab
+
+Show all events owned by company.
+
+Metrics:
+
+Event Count
+
+Lead Count
+
+ROI
+
+---
+
+# Users Tab
+
+Show:
+
+Primary Admin
+
+Admins
+
+Employees
+
+Cross-company users
+
+---
+
+# Activity Tab
+
+Show timeline:
+
+User Created
+
+Lead Imported
+
+Contact Exported
+
+Event Created
+
+Settings Updated
+
+---
+
+# Audit Log Tab
+
+Company-specific audit records.
+
+---
+
+# Company Actions
+
+Platform Owner can:
+
+Activate Company
+
+Suspend Company
+
+Extend Trial
+
+Upgrade Plan
+
+Downgrade Plan
+
+Reset Password
+
+Grant Additional Access
+
+Delete Company
+
+Archive Company
+
+---
+
+# Suspend Company
+
+Fields
+
+Reason
+
+Internal Notes
+
+Notify Customer
+
+Yes / No
+
+---
+
+# Activate Company
+
+Restore access immediately.
+
+---
+
+# Trial Extension
+
+Fields
+
+Number of Days
+
+Reason
+
+---
+
+# Password Reset
+
+Generate temporary password.
+
+Send email notification.
+
+---
+
+# Multi-Company Access Management
+
+Purpose:
+
+Allow one user to access multiple companies.
+
+---
+
+# Access Management Screen
+
+Select User
+
+Select Companies
+
+Grant Access
+
+Remove Access
+
+---
+
+# Example
+
+User:
+
+Mohammad
+
+Home Company:
+
+Elite Marcom
+
+Additional Access:
+
+Arab Expo
+
+Future Events
+
+---
+
+# Subscription Management Module
+
+Purpose:
+
+Manage plans.
+
+---
+
+# Plans
+
+Starter
+
+Professional
+
+Business
+
+Enterprise
+
+---
+
+# Plan Configuration
+
+Fields
+
+Name
+
+Price
+
+User Limit
+
+Contact Limit
+
+Event Limit
+
+Storage Limit
+
+API Limit
+
+Features
+
+---
+
+# Feature Flags
+
+Examples
+
+Organizer Portal
+
+API Access
+
+SSO
+
+White Label
+
+Advanced Analytics
+
+Proposal Generator
+
+AI Lead Scoring
+
+WhatsApp Automation
+
+---
+
+# Revenue Analytics
+
+Purpose:
+
+Monitor business growth.
+
+---
+
+# Revenue KPIs
+
+MRR
+
+ARR
+
+Active Customers
+
+Trial Customers
+
+Conversion Rate
+
+Churn Rate
+
+Average Revenue Per Customer
+
+Lifetime Value
+
+---
+
+# Revenue Charts
+
+Monthly Revenue
+
+Plan Distribution
+
+Customer Growth
+
+Churn Trend
+
+---
+
+# Platform Users Module
+
+Purpose:
+
+Manage internal platform users.
+
+---
+
+# Platform Roles
+
+Platform Owner
+
+Platform Administrator
+
+Support Agent
+
+Finance Manager
+
+Read Only Auditor
+
+---
+
+# Support Tools
+
+Impersonate Company
+
+Reset Password
+
+View Logs
+
+View Subscription
+
+View Usage
+
+---
+
+# Impersonation
+
+Platform Owner can:
+
+View company portal as customer.
+
+Must create audit record.
+
+---
+
+# Audit Logs Module
+
+Purpose:
+
+Track everything.
+
+---
+
+# Platform Audit Events
+
+Company Created
+
+Company Updated
+
+Company Suspended
+
+Plan Changed
+
+Trial Extended
+
+Password Reset
+
+User Granted Access
+
+User Revoked Access
+
+Login
+
+Logout
+
+Failed Login
+
+---
+
+# Audit Filters
+
+Date
+
+Company
+
+User
+
+Action
+
+Status
+
+---
+
+# Platform Analytics Module
+
+Purpose:
+
+Executive SaaS analytics.
+
+---
+
+# Metrics
+
+Companies
+
+Users
+
+Events
+
+Contacts
+
+Revenue
+
+Growth
+
+---
+
+# Analytics Reports
+
+Customer Growth
+
+Revenue Growth
+
+Lead Growth
+
+Platform Usage
+
+Feature Adoption
+
+---
+
+# System Health Module
+
+Purpose:
+
+Monitor platform operations.
+
+---
+
+# Metrics
+
+API Response Time
+
+Database Usage
+
+Storage Usage
+
+Queue Health
+
+Worker Health
+
+Background Jobs
+
+OCR Processing
+
+AI Usage
+
+---
+
+# Alerts
+
+High CPU
+
+High Memory
+
+Storage Limit
+
+Failed Jobs
+
+OCR Failures
+
+API Errors
+
+---
+
+# Platform Settings
+
+Purpose:
+
+Global platform configuration.
+
+---
+
+# General Settings
+
+Platform Name
+
+Support Email
+
+Support Phone
+
+Default Language
+
+Timezone
+
+---
+
+# Default Company Settings
+
+Default Limits
+
+Default Trial Days
+
+Default Features
+
+---
+
+# AI Settings
+
+OpenAI Keys
+
+OCR Provider
+
+Speech Provider
+
+AI Rate Limits
+
+---
+
+# Branding Placeholder
+
+Reserved for future Iteration.
+
+Do NOT implement branding system yet.
+
+Only create placeholder section.
+
+Future Fields:
+
+Platform Logo
+
+Platform Name
+
+Powered By Text
+
+Custom Theme
+
+White Label Settings
+
+---
+
+# Security Settings
+
+Password Policy
+
+Session Timeout
+
+2FA
+
+IP Restrictions
+
+SSO
+
+---
+
+# Notifications
+
+Email Templates
+
+System Notifications
+
+Subscription Alerts
+
+Renewal Reminders
+
+Trial Expiry Warnings
+
+---
+
+# Platform Permissions
+
+Only Platform Owner and authorized internal staff can access.
+
+Permission Examples
+
+platform.dashboard
+
+platform.companies
+
+platform.subscriptions
+
+platform.users
+
+platform.audit
+
+platform.analytics
+
+platform.settings
+
+---
+
+# Performance Requirements
+
+Dashboard:
+
+< 1 second
+
+Company List:
+
+< 500 ms
+
+Audit Search:
+
+< 1 second
+
+Analytics:
+
+Background processing
+
+---
+
+# Security Requirements
+
+Full Audit Trail
+
+Multi-Tenant Isolation
+
+Encrypted Credentials
+
+Permission-Based Access
+
+Impersonation Logging
+
+Activity Tracking
+
+---
+
+# Success Criteria
+
+The Platform Owner Portal must function as a complete SaaS management platform capable of managing:
+
+* Thousands of Companies
+* Millions of Leads
+* Multiple Subscription Plans
+* Revenue Tracking
+* Tenant Management
+* Platform Operations
+
+while remaining secure, scalable, and enterprise-grade.
+
+END OF PART 4
