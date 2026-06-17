@@ -1,2 +1,3 @@
 - [Mobile secure session storage](mobile-secure-session-storage.md) — native must persist the JWT via SecureStore (secure-prefs), never plaintext AsyncStorage; web falls back.
 - [Orval query hook options](orval-query-hook-options.md) — passing any query option (e.g. `enabled`) to a generated useGetX hook also requires an explicit `queryKey`.
+- [Offline capture queue + sync](offline-queue-sync.md) — serialize AsyncStorage writes; auto-sync needs both a reconnect trigger AND a launch-time trigger; sync loop reads refs not state.

@@ -19,10 +19,25 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { ExtractedCardData } from "@workspace/api-client-react";
+import type { ContactInput, ExtractedCardData } from "@workspace/api-client-react";
 
 import { FONT, PrimaryButton } from "@/components/ui";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+
+function extractedToContact(data: ExtractedCardData): ContactInput {
+  return {
+    firstName: data.firstName ?? null,
+    lastName: data.lastName ?? null,
+    jobTitle: data.jobTitle ?? null,
+    contactCompany: data.company ?? null,
+    email: data.email ?? null,
+    mobile: data.mobile ?? null,
+    website: data.website ?? null,
+    linkedin: data.linkedin ?? null,
+    address: data.address ?? null,
+  };
+}
 
 function parseVCard(raw: string): ExtractedCardData {
   const out: ExtractedCardData = {};
@@ -88,6 +103,7 @@ export default function CaptureQrScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
+  const { isOnline, enqueueContact } = useOffline();
   const scannedRef = useRef(false);
   const [scanned, setScanned] = useState(false);
 
@@ -101,6 +117,18 @@ export default function CaptureQrScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
     const data = parseQr(result.data ?? "");
+    // QR data is parsed entirely on-device, so we can queue a ready contact
+    // when offline — no server OCR required.
+    if (!isOnline) {
+      const payload = extractedToContact(data);
+      const label =
+        [data.firstName, data.lastName].filter(Boolean).join(" ") ||
+        data.company ||
+        "QR contact";
+      enqueueContact(payload, { label, source: "qr" });
+      router.replace("/(tabs)/contacts");
+      return;
+    }
     router.replace({
       pathname: "/scan-review",
       params: { data: JSON.stringify(data), source: "qr" },

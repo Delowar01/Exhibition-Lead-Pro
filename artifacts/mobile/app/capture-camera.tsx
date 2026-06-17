@@ -23,6 +23,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { FONT, PrimaryButton } from "@/components/ui";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 
 type CaptureMode = "single" | "rapid" | "batch";
@@ -73,6 +74,7 @@ export default function CaptureCameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const createScan = useCreateScan();
   const createContact = useCreateContact();
+  const { isOnline, enqueueScan } = useOffline();
 
   const [capturing, setCapturing] = useState(false);
   const [rapidCount, setRapidCount] = useState(0);
@@ -109,6 +111,26 @@ export default function CaptureCameraScreen() {
 
     try {
       const imageData = await captureImage();
+
+      // Offline: the image needs server-side OCR we can't run here, so queue
+      // the raw capture — it's OCR'd and turned into a contact on sync.
+      if (!isOnline) {
+        const queueLabel = source === "badge" ? "Event badge" : "Business card";
+        if (mode === "single") {
+          enqueueScan(imageData, { label: queueLabel, source });
+          if (Platform.OS !== "web") {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          router.replace("/sync");
+          return;
+        }
+        // rapid / batch: queue and keep the camera open for the next capture.
+        enqueueScan(imageData, { label: queueLabel, source });
+        setRapidCount((c) => c + 1);
+        setLastSaved(`${queueLabel} (offline)`);
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+        return;
+      }
 
       if (mode === "single") {
         const scan = await createScan.mutateAsync({ data: { imageData } });

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Avatar, Badge, FONT, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function MoreScreen() {
@@ -22,6 +23,7 @@ export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { queuedCount, isOnline } = useOffline();
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -50,7 +52,17 @@ export default function MoreScreen() {
     icon: keyof typeof Feather.glyphMap;
     color: string;
     onPress: () => void;
+    badge?: number;
   }[] = [
+    {
+      key: "sync",
+      label: "Sync Center",
+      sub: isOnline ? "Manage offline captures" : "Offline — captures are queued",
+      icon: "refresh-cw",
+      color: queuedCount > 0 ? "#F59E0B" : "#22C55E",
+      onPress: () => router.push("/sync"),
+      badge: queuedCount,
+    },
     {
       key: "pipeline",
       label: "Pipeline",
@@ -176,6 +188,11 @@ export default function MoreScreen() {
                 <Text style={[styles.menuLabel, { color: colors.foreground }]}>{item.label}</Text>
                 <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>{item.sub}</Text>
               </View>
+              {item.badge && item.badge > 0 ? (
+                <View style={[styles.countBadge, { backgroundColor: item.color }]}>
+                  <Text style={styles.countBadgeText}>{item.badge}</Text>
+                </View>
+              ) : null}
               <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
             </Pressable>
           ))}
@@ -289,6 +306,20 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontFamily: FONT.regular,
     marginTop: 1,
+  },
+  countBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+  },
+  countBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: FONT.bold,
   },
   logoutBtn: {
     flexDirection: "row",

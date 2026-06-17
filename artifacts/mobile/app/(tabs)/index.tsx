@@ -22,6 +22,7 @@ import {
 
 import { Avatar, Badge, FONT, LoadingState, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 
 function greeting(): string {
@@ -99,6 +100,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
+  const { isOnline, queuedCount } = useOffline();
 
   const query = useGetMobileDashboard();
   const data = query.data;
@@ -239,6 +241,47 @@ export default function HomeScreen() {
           </View>
           <Avatar name={user?.name} color={colors.primary} size={48} />
         </View>
+
+        {/* Offline / pending-sync banner */}
+        {!isOnline || queuedCount > 0 ? (
+          <Pressable
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.selectionAsync();
+              router.push("/sync");
+            }}
+            style={({ pressed }) => [
+              styles.offlineBanner,
+              {
+                backgroundColor: isOnline ? colors.primary + "14" : colors.destructive + "14",
+                borderRadius: colors.radius + 2,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <Feather
+              name={isOnline ? "upload-cloud" : "wifi-off"}
+              size={18}
+              color={isOnline ? colors.primary : colors.destructive}
+            />
+            <Text
+              style={[
+                styles.offlineBannerText,
+                { color: isOnline ? colors.primary : colors.destructive },
+              ]}
+            >
+              {!isOnline
+                ? queuedCount > 0
+                  ? `Offline — ${queuedCount} capture${queuedCount === 1 ? "" : "s"} queued`
+                  : "You're offline — captures will be queued"
+                : `${queuedCount} capture${queuedCount === 1 ? "" : "s"} waiting to sync`}
+            </Text>
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={isOnline ? colors.primary : colors.destructive}
+            />
+          </Pressable>
+        ) : null}
 
         {/* Primary CTA */}
         <Pressable
@@ -432,6 +475,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     marginBottom: 18,
+  },
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 18,
+  },
+  offlineBannerText: {
+    flex: 1,
+    fontSize: 13.5,
+    fontFamily: FONT.semibold,
   },
   greeting: {
     fontSize: 14,

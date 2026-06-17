@@ -17,6 +17,7 @@ import {
   type ContactFormValues,
 } from "@/components/ContactForm";
 import { FONT } from "@/components/ui";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -31,6 +32,7 @@ export default function ScanReviewScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ data?: string; source?: string }>();
   const createContact = useCreateContact();
+  const { isOnline, enqueueContact } = useOffline();
 
   const initial = useMemo<ContactFormValues>(() => {
     let extracted: ExtractedCardData = {};
@@ -57,8 +59,18 @@ export default function ScanReviewScreen() {
   const sourceLabel = SOURCE_LABEL[params.source ?? "card"] ?? "Scan";
 
   async function handleSave(values: ContactFormValues) {
+    const payload = toContactPayload(values);
+    if (!isOnline) {
+      const label =
+        [payload.firstName, payload.lastName].filter(Boolean).join(" ") ||
+        payload.contactCompany ||
+        "New contact";
+      enqueueContact(payload, { label, source: params.source ?? "card" });
+      router.replace("/(tabs)/contacts");
+      return;
+    }
     try {
-      await createContact.mutateAsync({ data: toContactPayload(values) });
+      await createContact.mutateAsync({ data: payload });
       router.replace("/(tabs)/contacts");
     } catch {
       // mutation error surfaced via createContact.isError below

@@ -14,17 +14,33 @@ import {
   type ContactFormValues,
 } from "@/components/ContactForm";
 import { FONT } from "@/components/ui";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+
+function payloadLabel(payload: { firstName?: string | null; lastName?: string | null; contactCompany?: string | null }): string {
+  return (
+    [payload.firstName, payload.lastName].filter(Boolean).join(" ") ||
+    payload.contactCompany ||
+    "New contact"
+  );
+}
 
 export default function CaptureManualScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const createContact = useCreateContact();
+  const { isOnline, enqueueContact } = useOffline();
 
   async function handleSave(values: ContactFormValues) {
+    const payload = toContactPayload(values);
+    if (!isOnline) {
+      enqueueContact(payload, { label: payloadLabel(payload), source: "manual" });
+      router.replace("/(tabs)/contacts");
+      return;
+    }
     try {
-      await createContact.mutateAsync({ data: toContactPayload(values) });
+      await createContact.mutateAsync({ data: payload });
       router.replace("/(tabs)/contacts");
     } catch {
       // error surfaced below
