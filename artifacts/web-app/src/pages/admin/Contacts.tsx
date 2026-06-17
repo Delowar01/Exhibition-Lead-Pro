@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useListContacts, getListContactsQueryKey, ContactStatus } from "@workspace/api-client-react";
+import { useListContacts, listContacts, ContactStatus } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
-import { Search, UserPlus, FileText, Mail, Phone, Calendar as CalendarIcon, Contact, Flame, Snowflake, Thermometer } from "lucide-react";
+import { Search, UserPlus, Download, Mail, Phone, Calendar as CalendarIcon, Contact, Flame, Snowflake, Thermometer } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 
 const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; icon: React.ReactNode }> = {
@@ -19,12 +20,71 @@ const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; icon: R
 export default function AdminContacts() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
+  const [exporting, setExporting] = useState(false);
+  const { toast } = useToast();
 
   const { data, isLoading } = useListContacts({
     search: search || undefined,
     status: status !== "all" ? status : undefined,
     limit: 50,
   });
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const baseParams = {
+        search: search || undefined,
+        status: status !== "all" ? status : undefined,
+        limit: 200,
+      };
+      const rows: Awaited<ReturnType<typeof listContacts>>["contacts"] = [];
+      let page = 1;
+      let total = 0;
+      do {
+        const res = await listContacts({ ...baseParams, page });
+        rows.push(...res.contacts);
+        total = res.total;
+        if (res.contacts.length === 0) break;
+        page++;
+      } while (rows.length < total);
+
+      if (rows.length === 0) {
+        toast({ title: "Nothing to export", description: "No contacts match the current filters." });
+        return;
+      }
+      const headers = ["First Name", "Last Name", "Job Title", "Company", "Email", "Mobile", "Office Phone", "Website", "Country", "LinkedIn", "Status", "Lead Score", "Lead Temperature", "Event", "Assigned To", "Follow-up Date", "Tags", "Date Added"];
+      const esc = (v: unknown) => {
+        let s = v == null ? "" : String(v);
+        if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+      const lines = [headers.map(esc).join(",")];
+      for (const c of rows) {
+        lines.push([
+          c.firstName, c.lastName, c.jobTitle, c.contactCompany, c.email, c.mobile,
+          c.officePhone, c.website, c.country, c.linkedin, c.status, c.leadScore,
+          c.leadTemperature, c.eventName, c.assignedToName, c.followUpDate,
+          (c.tags ?? []).join("; "),
+          c.createdAt ? format(new Date(c.createdAt), "yyyy-MM-dd") : "",
+        ].map(esc).join(","));
+      }
+      const csv = "\uFEFF" + lines.join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `contacts-${format(new Date(), "yyyy-MM-dd")}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: `Exported ${rows.length} contact${rows.length === 1 ? "" : "s"}` });
+    } catch {
+      toast({ title: "Export failed", variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -44,10 +104,16 @@ export default function AdminContacts() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Contacts</h1>
-        <Link href="/admin/contacts/new" className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
-          <UserPlus className="mr-2 h-4 w-4" />
-          Add Contact
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleExport} disabled={exporting}>
+            <Download className="mr-2 h-4 w-4" />
+            {exporting ? "Exporting..." : "Export CSV"}
+          </Button>
+          <Link href="/admin/contacts/new" className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add Contact
+          </Link>
+        </div>
       </div>
 
       <Card>
