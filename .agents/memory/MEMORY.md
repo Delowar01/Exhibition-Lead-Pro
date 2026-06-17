@@ -1,2 +1,1 @@
-- [Expo push notifications](expo-push-notifications.md) — remote push needs EAS projectId + dev build + physical device (untestable in Expo Go/Replit); gate gracefully; only mark work "notified" after confirmed dispatch.
-- [Metro tmp-dir watch crash](metro-tmp-dir-crash.md) — after `expo install`, Metro can crash watching a removed `*_tmp_*` dir; clear `/tmp/metro-*` caches and restart the workflow.
+- [Expo vector-icon blank glyphs](expo-vector-icons-preload.md) — @expo/vector-icons glyphs render blank on physical Expo Go/Android; preload each family's font via useFonts.
