@@ -1,15 +1,16 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useGetContact, useUpdateContact, useDeleteContact, getGetContactQueryKey, ContactStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, Trash2, Sparkles, Flame, Snowflake, Thermometer, Globe, Linkedin, MapPin } from "lucide-react";
+import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, CalendarClock, AlertCircle, Trash2, Sparkles, Flame, Snowflake, Thermometer, Globe, Linkedin, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; bar: string; icon: React.ReactNode }> = {
   hot: { label: "Hot", badge: "bg-red-100 text-red-700 border-red-200", bar: "bg-red-500", icon: <Flame className="h-4 w-4" /> },
@@ -30,6 +31,29 @@ export default function AdminContactDetail() {
 
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
+
+  const [followUpDate, setFollowUpDate] = useState<string>("");
+  useEffect(() => {
+    setFollowUpDate(contact?.followUpDate ?? "");
+  }, [contact?.followUpDate]);
+
+  const saveFollowUp = (value: string | null) => {
+    updateContact.mutate({ id: contactId, data: { followUpDate: value } }, {
+      onSuccess: () => {
+        toast({ title: value ? "Follow-up scheduled" : "Follow-up cleared" });
+        queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+      },
+      onError: () => {
+        toast({ title: "Could not update follow-up", variant: "destructive" });
+        setFollowUpDate(contact?.followUpDate ?? "");
+      }
+    });
+  };
+
+  const handleClearFollowUp = () => {
+    setFollowUpDate("");
+    saveFollowUp(null);
+  };
 
   const handleStatusChange = (newStatus: ContactStatus) => {
     updateContact.mutate({ id: contactId, data: { status: newStatus } }, {
@@ -55,6 +79,9 @@ export default function AdminContactDetail() {
   if (!contact) return <div className="p-8 flex justify-center">Contact not found</div>;
 
   const temp = contact.leadTemperature ? TEMPERATURE_STYLES[contact.leadTemperature] : null;
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const followUpOverdue = !!contact.followUpDate && contact.followUpDate < todayStr;
+  const followUpChanged = followUpDate !== (contact.followUpDate ?? "");
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -209,6 +236,39 @@ export default function AdminContactDetail() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3 bg-secondary/20">
+              <CardTitle className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /> Follow-up Reminder</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-3">
+              {contact.followUpDate ? (
+                <div className={`flex items-center justify-between rounded-md border p-3 text-sm ${followUpOverdue ? "border-red-200 bg-red-50 text-red-700" : "border-border bg-secondary/30"}`}>
+                  <span className="flex items-center gap-2 font-medium">
+                    {followUpOverdue && <AlertCircle className="h-4 w-4" />}
+                    {format(parseISO(contact.followUpDate), "PPP")}
+                  </span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">{followUpOverdue ? "Overdue" : "Scheduled"}</span>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">No follow-up scheduled.</p>
+              )}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Set reminder date</label>
+                <Input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1" onClick={() => saveFollowUp(followUpDate || null)} disabled={updateContact.isPending || !followUpChanged}>
+                    Save
+                  </Button>
+                  {contact.followUpDate && (
+                    <Button size="sm" variant="outline" onClick={handleClearFollowUp} disabled={updateContact.isPending}>
+                      Clear
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>
