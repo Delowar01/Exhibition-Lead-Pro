@@ -49,6 +49,8 @@ export * from './listLeadsParams';
 export * from './listScansParams';
 export * from './listUsersParams';
 export * from './loginInput';
+export * from './mobileActivityItem';
+export * from './mobileDashboard';
 export * from './pipelineStage';
 export * from './pipelineView';
 export * from './plan';

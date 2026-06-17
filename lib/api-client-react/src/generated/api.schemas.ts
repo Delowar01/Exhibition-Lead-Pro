@@ -810,6 +810,26 @@ export interface AdminDashboard {
   teamCount?: number;
 }
 
+export interface MobileActivityItem {
+  id: string;
+  type: string;
+  title: string;
+  /** @nullable */
+  subtitle?: string | null;
+  at: string;
+}
+
+export interface MobileDashboard {
+  todayLeads: number;
+  hotLeads: number;
+  followUpsDue: number;
+  meetingsScheduled: number;
+  proposalsSent: number;
+  pipelineValue: number;
+  totalContacts: number;
+  recentActivity: MobileActivityItem[];
+}
+
 export interface LeadsByEventItem {
   eventId: number;
   eventName: string;

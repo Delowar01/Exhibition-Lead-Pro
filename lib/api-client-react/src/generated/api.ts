@@ -51,6 +51,7 @@ import type {
   ListScansParams,
   ListUsersParams,
   LoginInput,
+  MobileDashboard,
   PipelineView,
   Plan,
   PlatformStats,
@@ -3749,6 +3750,83 @@ export function useGetScanActivity<TData = Awaited<ReturnType<typeof getScanActi
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetScanActivityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetMobileDashboardUrl = () => {
+
+
+
+
+  return `/api/reports/mobile-dashboard`
+}
+
+/**
+ * @summary Mobile home dashboard widgets and recent activity
+ */
+export const getMobileDashboard = async ( options?: RequestInit): Promise<MobileDashboard> => {
+
+  return customFetch<MobileDashboard>(getGetMobileDashboardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMobileDashboardQueryKey = () => {
+    return [
+    `/api/reports/mobile-dashboard`
+    ] as const;
+    }
+
+
+export const getGetMobileDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getMobileDashboard>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMobileDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMobileDashboardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMobileDashboard>>> = ({ signal }) => getMobileDashboard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMobileDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMobileDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getMobileDashboard>>>
+export type GetMobileDashboardQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Mobile home dashboard widgets and recent activity
+ */
+
+export function useGetMobileDashboard<TData = Awaited<ReturnType<typeof getMobileDashboard>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMobileDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMobileDashboardQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

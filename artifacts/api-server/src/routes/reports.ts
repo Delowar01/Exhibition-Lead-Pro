@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { contactsTable, leadsTable, eventsTable, usersTable, scansTable } from "@workspace/db";
-import { eq, and, count, sql } from "drizzle-orm";
+import { eq, and, count, sql, desc, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import { requireAuth, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 
 const router = Router();
@@ -88,6 +88,110 @@ router.get("/reports/scan-activity", async (req: AuthRequest, res) => {
       days.push({ date: d.toISOString().slice(0, 10), value: Math.floor(5 + Math.random() * 40), label });
     }
     res.json(days);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /reports/mobile-dashboard
+router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
+  try {
+    const contactScope = tenantScope(req.user, contactsTable.companyId);
+    const leadScope = tenantScope(req.user, leadsTable.companyId);
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    const todayDateStr = startOfToday.toISOString().slice(0, 10);
+
+    const [
+      [{ todayLeads }],
+      [{ totalContacts }],
+      [{ hotLeads }],
+      [{ followUpsDue }],
+      [{ meetingsScheduled }],
+      [{ proposalsSent }],
+      [pipelineRow],
+    ] = await Promise.all([
+      db
+        .select({ todayLeads: count() })
+        .from(contactsTable)
+        .where(and(contactScope, gte(contactsTable.createdAt, startOfToday))),
+      db.select({ totalContacts: count() }).from(contactsTable).where(contactScope),
+      db
+        .select({ hotLeads: count() })
+        .from(contactsTable)
+        .where(and(contactScope, inArray(contactsTable.status, ["qualified", "interested"]))),
+      db
+        .select({ followUpsDue: count() })
+        .from(contactsTable)
+        .where(
+          and(
+            contactScope,
+            isNotNull(contactsTable.followUpDate),
+            lte(contactsTable.followUpDate, todayDateStr),
+            sql`${contactsTable.status} NOT IN ('won', 'lost')`,
+          ),
+        ),
+      db
+        .select({ meetingsScheduled: count() })
+        .from(leadsTable)
+        .where(and(leadScope, eq(leadsTable.stage, "meeting_scheduled"))),
+      db
+        .select({ proposalsSent: count() })
+        .from(leadsTable)
+        .where(and(leadScope, eq(leadsTable.stage, "proposal_sent"))),
+      db
+        .select({
+          pipelineValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)`,
+        })
+        .from(leadsTable)
+        .where(and(leadScope, sql`${leadsTable.stage} NOT IN ('won', 'lost')`)),
+    ]);
+
+    const recentContacts = await db
+      .select({
+        id: contactsTable.id,
+        fullName: contactsTable.fullName,
+        firstName: contactsTable.firstName,
+        lastName: contactsTable.lastName,
+        contactCompany: contactsTable.contactCompany,
+        status: contactsTable.status,
+        createdAt: contactsTable.createdAt,
+      })
+      .from(contactsTable)
+      .where(contactScope)
+      .orderBy(desc(contactsTable.createdAt))
+      .limit(8);
+
+    const recentActivity = recentContacts.map((c) => {
+      const name =
+        c.fullName ||
+        [c.firstName, c.lastName].filter(Boolean).join(" ") ||
+        "New contact";
+      const createdToday =
+        c.createdAt >= startOfToday && c.createdAt <= endOfToday;
+      return {
+        id: `contact-${c.id}`,
+        type: createdToday ? "lead_captured" : "contact",
+        title: name,
+        subtitle: c.contactCompany ?? null,
+        at: c.createdAt.toISOString(),
+      };
+    });
+
+    res.json({
+      todayLeads,
+      hotLeads,
+      followUpsDue,
+      meetingsScheduled,
+      proposalsSent,
+      pipelineValue: Number(pipelineRow.pipelineValue ?? 0),
+      totalContacts,
+      recentActivity,
+    });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

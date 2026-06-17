@@ -1132,3 +1132,24 @@ export const GetScanActivityResponseItem = zod.object({
 export const GetScanActivityResponse = zod.array(GetScanActivityResponseItem)
 
 
+/**
+ * @summary Mobile home dashboard widgets and recent activity
+ */
+export const GetMobileDashboardResponse = zod.object({
+  "todayLeads": zod.number(),
+  "hotLeads": zod.number(),
+  "followUpsDue": zod.number(),
+  "meetingsScheduled": zod.number(),
+  "proposalsSent": zod.number(),
+  "pipelineValue": zod.number(),
+  "totalContacts": zod.number(),
+  "recentActivity": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "subtitle": zod.string().nullish(),
+  "at": zod.string()
+}))
+})
+
+

@@ -1,0 +1,1035 @@
+# PART 10
+
+# TECHNICAL ARCHITECTURE, DATABASE DESIGN, API STANDARDS, DEVOPS, DEPLOYMENT, PERFORMANCE & FINAL ACCEPTANCE CRITERIA
+
+## Overview
+
+This document defines the engineering standards for the entire AI-Powered Exhibition Lead Capture Platform.
+
+The platform must be built as a modern enterprise-grade SaaS solution capable of supporting:
+
+* Mobile Applications
+* Web Admin Portal
+* Platform Owner Portal
+* Organizer Portal
+* APIs
+* AI Services
+* Workflow Engine
+* Offline Synchronization
+
+for thousands of companies and millions of leads.
+
+---
+
+# System Architecture
+
+## Architecture Style
+
+Modern Modular Monolith
+
+Microservice-ready
+
+API-first
+
+Event-driven
+
+Multi-tenant SaaS
+
+Offline-first Mobile
+
+---
+
+# Technology Stack
+
+## Frontend
+
+Web
+
+```text
+Next.js
+TypeScript
+Tailwind CSS
+ShadCN UI
+React Query
+```
+
+---
+
+Mobile
+
+```text
+React Native
+Expo
+TypeScript
+Expo Router
+```
+
+---
+
+# Backend
+
+```text
+FastAPI
+Python
+Pydantic
+JWT Authentication
+```
+
+---
+
+# Database
+
+Primary Database
+
+```text
+PostgreSQL
+```
+
+---
+
+Cache Layer
+
+```text
+Redis
+```
+
+---
+
+Search Engine
+
+```text
+OpenSearch
+```
+
+or
+
+```text
+Elasticsearch
+```
+
+---
+
+Object Storage
+
+```text
+AWS S3
+
+or
+
+Cloudflare R2
+
+or
+
+MinIO
+```
+
+---
+
+# AI Infrastructure
+
+Support:
+
+OpenAI
+
+Azure OpenAI
+
+Gemini
+
+Anthropic
+
+Ollama
+
+Enterprise LLM
+
+---
+
+# Database Design
+
+## Core Tables
+
+Users
+
+Companies
+
+Subscriptions
+
+Events
+
+Exhibitions
+
+Contacts
+
+Contact Sources
+
+Voice Notes
+
+Activities
+
+Tasks
+
+Meetings
+
+Campaigns
+
+Templates
+
+Opportunities
+
+Proposals
+
+Quotations
+
+Audit Logs
+
+Notifications
+
+Workflows
+
+Workflow Runs
+
+Files
+
+Organizer Events
+
+Sponsors
+
+Visitors
+
+Analytics
+
+---
+
+# Multi-Tenant Fields
+
+Every business table must contain:
+
+```text
+tenant_id
+
+company_id
+
+created_by
+
+created_at
+
+updated_at
+```
+
+---
+
+# Contact Entity
+
+Required Fields
+
+```text
+id
+
+first_name
+
+last_name
+
+arabic_name
+
+job_title
+
+company
+
+email
+
+mobile
+
+website
+
+linkedin_url
+
+country
+
+lead_score
+
+lead_temperature
+
+lead_status
+
+source_type
+
+event_id
+
+assigned_user_id
+
+is_duplicate
+
+duplicate_of
+
+created_at
+```
+
+---
+
+# Event Entity
+
+```text
+event_name
+
+venue
+
+country
+
+start_date
+
+end_date
+
+budget
+
+status
+```
+
+---
+
+# Opportunity Entity
+
+```text
+name
+
+value
+
+probability
+
+stage
+
+expected_close_date
+```
+
+---
+
+# File Storage
+
+Store:
+
+Business Cards
+
+Badge Images
+
+Voice Notes
+
+Proposals
+
+Brochures
+
+Quotations
+
+Contracts
+
+Attachments
+
+---
+
+# API Standards
+
+Architecture:
+
+REST API
+
+OpenAPI 3.0
+
+Swagger Documentation
+
+Versioning
+
+---
+
+# API Versioning
+
+```text
+/api/v1
+```
+
+Future:
+
+```text
+/api/v2
+```
+
+---
+
+# Response Format
+
+Success
+
+```json
+{
+  "success": true,
+  "data": {}
+}
+```
+
+---
+
+Error
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "CONTACT_LIMIT_REACHED",
+    "message": "Contact limit reached"
+  }
+}
+```
+
+---
+
+# Authentication
+
+JWT Access Token
+
+JWT Refresh Token
+
+Role Claims
+
+Tenant Claims
+
+Permission Claims
+
+---
+
+# Rate Limiting
+
+Per User
+
+Per Company
+
+Per API Key
+
+Per IP
+
+---
+
+# Webhooks
+
+Support:
+
+Lead Created
+
+Lead Updated
+
+Lead Qualified
+
+Meeting Created
+
+Proposal Sent
+
+Opportunity Won
+
+Opportunity Lost
+
+Workflow Triggered
+
+---
+
+# Search Architecture
+
+Global Search
+
+Across:
+
+Contacts
+
+Companies
+
+Events
+
+Meetings
+
+Tasks
+
+Proposals
+
+Opportunities
+
+---
+
+# Search Features
+
+Full Text Search
+
+Arabic Search
+
+Fuzzy Search
+
+Filters
+
+Saved Searches
+
+AI Search
+
+---
+
+# Offline Architecture
+
+Mobile First
+
+---
+
+# Local Database
+
+SQLite
+
+---
+
+# Offline Queue
+
+Store:
+
+Leads
+
+Tasks
+
+Notes
+
+Images
+
+Voice Notes
+
+Activities
+
+---
+
+# Sync Engine
+
+Upload Queue
+
+Download Queue
+
+Conflict Resolution
+
+Retry Logic
+
+Background Sync
+
+---
+
+# Sync States
+
+Pending
+
+Processing
+
+Completed
+
+Failed
+
+Conflict
+
+---
+
+# Performance Requirements
+
+## Mobile
+
+App Launch
+
+< 2 Seconds
+
+---
+
+Capture Screen
+
+< 500 ms
+
+---
+
+Lead Save
+
+< 300 ms
+
+---
+
+Search
+
+< 1 Second
+
+---
+
+Offline Sync
+
+Background
+
+---
+
+# Web
+
+Dashboard
+
+< 2 Seconds
+
+---
+
+Reports
+
+< 3 Seconds
+
+---
+
+Analytics
+
+< 3 Seconds
+
+---
+
+# Backend
+
+API Response
+
+< 300 ms
+
+---
+
+Heavy Analytics
+
+< 3 Seconds
+
+---
+
+Exports
+
+Background Processing
+
+---
+
+# Scalability Targets
+
+Companies
+
+100,000+
+
+---
+
+Users
+
+5,000,000+
+
+---
+
+Contacts
+
+500,000,000+
+
+---
+
+Events
+
+10,000,000+
+
+---
+
+Files
+
+Petabyte Scale
+
+---
+
+# Background Jobs
+
+Use Queue Workers
+
+Examples:
+
+OCR Processing
+
+Voice Transcription
+
+AI Qualification
+
+Lead Enrichment
+
+Proposal Generation
+
+Campaign Sending
+
+Report Generation
+
+Analytics
+
+---
+
+# Monitoring
+
+Application Monitoring
+
+Infrastructure Monitoring
+
+Business Monitoring
+
+---
+
+# Tools
+
+Sentry
+
+OpenTelemetry
+
+Prometheus
+
+Grafana
+
+---
+
+# Metrics
+
+API Latency
+
+Error Rate
+
+AI Costs
+
+Storage Usage
+
+Sync Failures
+
+Campaign Delivery
+
+Revenue Metrics
+
+---
+
+# Logging
+
+Structured Logging
+
+JSON Logs
+
+Audit Logs
+
+Security Logs
+
+AI Logs
+
+---
+
+# CI/CD
+
+Requirements
+
+---
+
+# Source Control
+
+GitHub
+
+GitLab
+
+Bitbucket
+
+---
+
+# Deployment Pipeline
+
+Build
+
+Test
+
+Lint
+
+Security Scan
+
+Deploy
+
+Smoke Test
+
+---
+
+# Environments
+
+Development
+
+Testing
+
+Staging
+
+Production
+
+---
+
+# Infrastructure
+
+Support:
+
+AWS
+
+Azure
+
+Google Cloud
+
+DigitalOcean
+
+Private Cloud
+
+On-Premise
+
+---
+
+# Containerization
+
+Docker
+
+Docker Compose
+
+Kubernetes Ready
+
+---
+
+# Backup Strategy
+
+Database Backups
+
+Daily
+
+Weekly
+
+Monthly
+
+---
+
+# File Backups
+
+Automated
+
+Versioned
+
+Encrypted
+
+---
+
+# Disaster Recovery
+
+RPO
+
+15 Minutes
+
+RTO
+
+1 Hour
+
+---
+
+# Security Testing
+
+SAST
+
+DAST
+
+Penetration Testing
+
+Dependency Scanning
+
+---
+
+# Compliance Testing
+
+GDPR
+
+Saudi PDPL
+
+Data Residency
+
+Consent Tracking
+
+Deletion Requests
+
+---
+
+# Accessibility
+
+WCAG Compliance
+
+RTL Support
+
+Keyboard Navigation
+
+Screen Reader Support
+
+---
+
+# Internationalization
+
+English
+
+Arabic
+
+Future Languages
+
+---
+
+# Quality Assurance
+
+Unit Tests
+
+Integration Tests
+
+End-to-End Tests
+
+Performance Tests
+
+Security Tests
+
+Load Tests
+
+---
+
+# Minimum Test Coverage
+
+Backend
+
+90%+
+
+---
+
+Frontend
+
+80%+
+
+---
+
+# Acceptance Criteria
+
+The project is considered complete only when all of the following are delivered:
+
+---
+
+# Mobile Application
+
+Lead Capture
+
+Offline Mode
+
+Voice Notes
+
+Tasks
+
+Follow-Ups
+
+Analytics
+
+Gamification
+
+Notifications
+
+---
+
+# Web Admin Portal
+
+Contacts
+
+Events
+
+Users
+
+Reports
+
+Analytics
+
+Campaigns
+
+CRM
+
+Proposals
+
+Settings
+
+---
+
+# Platform Owner Portal
+
+Companies
+
+Subscriptions
+
+Limits
+
+Audits
+
+Billing
+
+Usage
+
+Security
+
+---
+
+# Organizer Portal
+
+Events
+
+Exhibitors
+
+Sponsors
+
+Visitors
+
+Analytics
+
+Reports
+
+---
+
+# AI Layer
+
+OCR
+
+Voice AI
+
+Lead Qualification
+
+Lead Enrichment
+
+Proposal Generation
+
+AI Recommendations
+
+---
+
+# SaaS Layer
+
+Multi-Tenant
+
+Billing
+
+Subscriptions
+
+RBAC
+
+Audit Logs
+
+Compliance
+
+---
+
+# Performance Targets
+
+All targets achieved.
+
+---
+
+# Security Requirements
+
+All requirements achieved.
+
+---
+
+# Compliance Requirements
+
+GDPR Compliant
+
+Saudi PDPL Compliant
+
+---
+
+# Final Success Criteria
+
+The completed platform must no longer resemble a simple business card scanner.
+
+It must operate as a complete AI-Powered Exhibition Lead Capture, Qualification, Follow-Up, CRM, Proposal, Analytics, ROI Reporting, Team Performance, Organizer Intelligence, and Multi-Tenant SaaS Platform for GCC exhibitions, trade shows, conferences, and enterprise events.
+
+END OF PART 10
+
+MASTER SPECIFICATION COMPLETE

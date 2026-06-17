@@ -986,6 +986,19 @@ paths:
                 items:
                   $ref: "#/components/schemas/TrendDataPoint"
 
+  /reports/mobile-dashboard:
+    get:
+      operationId: getMobileDashboard
+      tags: [reports]
+      summary: Mobile home dashboard widgets and recent activity
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileDashboard"
+
 components:
   schemas:
     HealthStatus:
@@ -1817,6 +1830,54 @@ components:
           type: integer
         teamCount:
           type: integer
+
+    MobileActivityItem:
+      type: object
+      required: [id, type, title, at]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: ["string", "null"]
+        at:
+          type: string
+
+    MobileDashboard:
+      type: object
+      required:
+        [
+          todayLeads,
+          hotLeads,
+          followUpsDue,
+          meetingsScheduled,
+          proposalsSent,
+          pipelineValue,
+          totalContacts,
+          recentActivity,
+        ]
+      properties:
+        todayLeads:
+          type: integer
+        hotLeads:
+          type: integer
+        followUpsDue:
+          type: integer
+        meetingsScheduled:
+          type: integer
+        proposalsSent:
+          type: integer
+        pipelineValue:
+          type: number
+        totalContacts:
+          type: integer
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/MobileActivityItem"
 
     LeadsByEventItem:
       type: object
