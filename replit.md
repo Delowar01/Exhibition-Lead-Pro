@@ -65,7 +65,9 @@ Quick demo login buttons are available on the login page.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- App footer branding reads "Powered by Elite Marcom".
+- Email actions on mobile must let the OS pick the mail app (no forced Gmail).
+- No fabricated/mocked data — derive insights from real API data, and prefer honest flows (e.g. forgot-password says "contact admin" rather than faking a reset API).
 
 ## Gotchas
 
