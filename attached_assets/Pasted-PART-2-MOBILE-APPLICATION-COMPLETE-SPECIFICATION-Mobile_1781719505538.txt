@@ -1,0 +1,647 @@
+PART 2
+MOBILE APPLICATION COMPLETE SPECIFICATION
+Mobile Application Overview
+The Mobile Application is the primary field tool used during exhibitions, conferences, trade shows, roadshows, and networking events.
+Primary users:
+
+
+Employee
+
+
+Admin
+
+
+Primary Admin
+
+
+Platform Owner (optional)
+
+
+Platforms:
+
+
+Android
+
+
+iOS
+
+
+Framework:
+
+
+React Native
+
+
+Expo
+
+
+Design Style:
+
+
+Premium Enterprise SaaS
+
+
+Fast
+
+
+Native feeling
+
+
+Offline-first
+
+
+Arabic + English
+
+
+Dark Mode
+
+
+Light Mode
+
+
+The application must feel similar to:
+
+
+HubSpot Mobile
+
+
+Salesforce Mobile
+
+
+Apollo Mobile
+
+
+Zoho CRM Mobile
+
+
+and not like a basic business card scanner.
+
+Mobile Navigation Structure
+Bottom Navigation
+HomeCaptureContactsFollow-UpsMore
+Optional floating action button:
++ Capture Lead
+
+Authentication Module
+Login Screen
+Fields
+
+
+Email
+
+
+Password
+
+
+Options
+
+
+Remember Me
+
+
+Forgot Password
+
+
+Buttons
+
+
+Login
+
+
+Validation
+
+
+Email required
+
+
+Password required
+
+
+Features
+
+
+Biometric Login
+
+
+Face ID
+
+
+Fingerprint Login
+
+
+
+Forgot Password
+Fields
+
+
+Email
+
+
+Actions
+
+
+Send Reset Link
+
+
+
+Session Management
+Support:
+
+
+JWT
+
+
+Refresh Tokens
+
+
+Remember Me
+
+
+Auto Logout:
+Configurable
+
+Home Dashboard
+Purpose:
+Provide instant overview of exhibition activity.
+
+Home Header
+Show:
+Company Information
+Company Logo
+Company Name
+User Information
+User Name
+Role Badge
+Examples:
+Mohammad HossainPrimary Admin
+or
+Ahmed AliEmployee
+
+Quick Statistics
+Cards
+Leads Today
+Number of leads captured today
+
+Event Leads
+Leads captured during active exhibition
+
+Follow-Ups Due
+Pending follow-ups
+
+Duplicates
+Duplicate records
+
+Hot Leads
+AI Qualified Hot Leads
+
+Opportunities
+Qualified opportunities
+
+Won Deals
+Closed opportunities
+
+Active Event Widget
+Display:
+Event Name
+Venue
+Country
+Start Date
+End Date
+Lead Count
+Button:
+View Event
+
+Performance Widget
+Display:
+Personal ranking
+Example:
+Rank #345 Leads Captured
+
+AI Insights Widget
+Display:
+AI generated recommendations
+Examples:
+3 Hot Leads need follow-up today2 High Value Opportunities detected5 Leads missing phone numbers
+
+Home Footer
+Only on Home Screen
+Display:
+Powered by Elite Marcom
+Future configurable from Platform Owner.
+
+Capture Module
+Most important feature.
+
+Capture Home Screen
+Options:
+Scan Business Card
+Scan Event Badge
+Scan QR Code
+Scan LinkedIn QR
+Upload Screenshot
+Import VCF
+Manual Entry
+
+Rapid Capture Mode
+Purpose:
+Fast exhibition scanning.
+Workflow:
+Capture
+↓
+Auto Upload
+↓
+Background OCR
+↓
+Return Camera
+No save button.
+No review screen.
+User continues scanning.
+
+Review Mode
+Optional setting.
+Workflow:
+Capture
+↓
+OCR
+↓
+Review Screen
+↓
+Save
+
+Capture Settings
+Toggle:
+Rapid Mode
+Review Mode
+Default:
+Rapid Mode
+
+Camera Screen
+Features
+Auto Focus
+Flash
+Grid
+HDR
+Continuous Scan
+
+Auto Card Detection
+Detect:
+Business Card Edges
+Auto Crop
+Auto Perspective Correction
+Auto Enhancement
+
+Multi Card Queue
+User can scan:
+10
+20
+50
+100
+cards continuously.
+All process in background.
+
+Offline Capture
+Without internet:
+Capture image
+Store locally
+Queue OCR
+Auto sync later
+
+Lead Review Screen
+Shows:
+Original Image
+Extracted Data
+AI Confidence
+Editable Fields
+
+Lead Information Fields
+Personal
+
+
+First Name
+
+
+Last Name
+
+
+Arabic Name
+
+
+Professional
+
+
+Job Title
+
+
+Department
+
+
+Company
+
+
+Contact
+
+
+Mobile
+
+
+Email
+
+
+Website
+
+
+Additional
+
+
+Country
+
+
+City
+
+
+LinkedIn
+
+
+
+OCR Confidence
+Every field shows:
+High
+Medium
+Low
+Score %
+Example:
+Email95%
+
+Lead Details Screen
+Tabs
+
+Contact Information
+All lead data
+
+AI Insights
+Lead Score
+Lead Temperature
+Recommended Action
+Reasoning
+
+Notes
+Manual notes
+Voice notes
+
+Activities
+Calls
+Emails
+WhatsApp
+Meetings
+
+Follow-Ups
+Upcoming tasks
+Completed tasks
+
+Duplicates
+Related duplicate records
+
+Lead Actions
+Buttons
+Call
+WhatsApp
+Email
+Save Contact
+Edit
+Assign
+Delete
+
+Call Action
+Open phone dialer
+
+WhatsApp Action
+Open WhatsApp
+Pre-filled message
+
+Email Action
+Show available email applications:
+
+
+Gmail
+
+
+Outlook
+
+
+Yahoo
+
+
+Samsung Email
+
+
+Do NOT force Gmail.
+
+Save Contact
+Open native contact save screen.
+Allow editing before save.
+Works on:
+Android
+iOS
+
+AI Lead Qualification
+Generate:
+Lead Score
+0–100
+Lead Temperature
+Hot
+Warm
+Cold
+
+Qualification Factors
+Job Title
+Industry
+Company Size
+Notes
+Event
+Past Activity
+
+AI Recommendations
+Examples:
+Contact within 24 hours
+High-value prospect
+Potential government lead
+
+Voice Notes Module
+User records voice.
+
+AI Processing
+Generate:
+Meeting Summary
+Requirements
+Budget Signals
+Action Items
+Opportunity Notes
+
+Lead Enrichment
+Automatically discover:
+Website
+LinkedIn
+Industry
+Company Size
+Country
+Social Profiles
+
+Duplicate Management
+Duplicate logic applies ONLY inside same company.
+Never across companies.
+
+Duplicate Rules
+Check:
+Email
+Mobile
+Name + Company
+
+Duplicate Behavior
+Original Record
+Appears in Contacts
+Duplicate Records
+Appear in Duplicates Folder
+Not counted in KPI totals.
+
+Duplicates Screen
+Separate module.
+Show:
+Original
+Duplicate Count
+Event
+Scan Date
+
+Follow-Ups Module
+List all pending actions.
+
+Follow-Up Types
+Call
+WhatsApp
+Email
+Meeting
+Custom Task
+
+Follow-Up Status
+Pending
+Completed
+Overdue
+Cancelled
+
+Calendar View
+Daily
+Weekly
+Monthly
+
+Event Module
+Display all events user can access.
+Events are shared across company.
+If User A creates event:
+User B can see it.
+
+Event Detail
+Show:
+Leads
+Qualified Leads
+Revenue
+ROI
+Expenses
+Team Performance
+
+Team Leaderboard
+Display:
+Daily
+Event
+Monthly
+All Time
+
+Ranking Metrics
+Leads
+Qualified Leads
+Meetings
+Revenue
+
+Notifications
+Push Notifications
+Examples:
+Follow-up Due
+Hot Lead
+Duplicate Found
+Event Reminder
+Subscription Warning
+
+Settings Module
+Language
+Theme
+Notifications
+Capture Mode
+Profile
+Security
+
+Profile Screen
+Photo
+Name
+Role
+Email
+Company
+
+Security Settings
+Change Password
+Biometric Login
+Logout
+
+Company Switcher
+Visible only for users with multi-company access.
+Switch active company.
+Updates all data instantly.
+
+Offline Sync Center
+Show:
+Pending Uploads
+Failed Uploads
+Synced Records
+
+Sync Actions
+Retry
+Delete
+Force Sync
+
+Mobile Performance Requirements
+Capture-to-ready:
+< 500ms
+Contacts List:
+< 300ms
+Dashboard:
+< 1 second
+Supports:
+100,000+ contacts
+
+Mobile Security
+Encrypted local storage
+Secure tokens
+Biometric support
+Offline data protection
+
+Mobile Success Criteria
+The mobile app should feel like a premium AI-powered lead capture and sales tool rather than a simple business card scanner.
+Users must be able to:
+
+
+Capture leads rapidly
+
+
+Work offline
+
+
+Follow up effectively
+
+
+Track opportunities
+
+
+Measure event success
+
+
+all from a single mobile application.
+
+END OF PART 2
+Next: PART 3 – Customer Admin Portal Complete Specification (all pages, dashboards, user management, contacts, reports, analytics, ROI, duplicates, permissions, subscription management, and workflows).
