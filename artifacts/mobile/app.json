@@ -9,9 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.elitemarcom.cardscannerpro"
     },
     "android": {
+      "package": "com.elitemarcom.cardscannerpro",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#FF6B00"
@@ -27,7 +29,18 @@
           "origin": "https://replit.com/"
         }
       ],
-      "expo-font",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Inter_400Regular.ttf",
+            "./assets/fonts/Inter_500Medium.ttf",
+            "./assets/fonts/Inter_600SemiBold.ttf",
+            "./assets/fonts/Inter_700Bold.ttf",
+            "./assets/fonts/Feather.ttf"
+          ]
+        }
+      ],
       "expo-web-browser",
       [
         "expo-camera",

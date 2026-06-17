@@ -1,1 +1,2 @@
-- [Expo vector-icon blank glyphs](expo-vector-icons-preload.md) — @expo/vector-icons glyphs render blank on physical Expo Go/Android; preload each family's font via useFonts.
+- [Expo Android runtime fonts not applied](expo-android-fonts.md) — Android Expo Go shows system font + blank icons despite useFonts loaded:true; fix = embed fonts via expo-font config plugin + dev build.
+- [Expo vector-icon blank glyphs](expo-vector-icons-preload.md) — preload each imported icon family via useFonts; but on Android Expo Go that's NOT enough (see expo-android-fonts.md).
