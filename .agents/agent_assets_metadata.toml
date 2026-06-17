@@ -29,3 +29,15 @@ id = "UiIMshLfe11Cp31A5u-7A"
 uri = "file://.local/outputs/Exhibition-Lead-Pro.pptx"
 type = "slides"
 title = "Exhibition Lead Pro.pptx"
+
+[[outputs]]
+id = "3xDUo94bg4Bts246P7sZq"
+uri = "file://.local/outputs/Card-Scanner-Pro-Pitch-Deck.pdf"
+type = "pdf"
+title = "Card Scanner Pro Pitch Deck (PDF)"
+
+[[outputs]]
+id = "JIFVVBnAJVvLTonYFpc0c"
+uri = "file://.local/outputs/Card-Scanner-Pro-Pitch-Deck.pptx"
+type = "slides"
+title = "Card Scanner Pro Pitch Deck (PPTX)"
