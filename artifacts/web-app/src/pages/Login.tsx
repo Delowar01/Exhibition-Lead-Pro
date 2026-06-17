@@ -27,8 +27,8 @@ export default function Login() {
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "admin@company.com",
-      password: "password123",
+      email: "",
+      password: "",
     },
   });
 
@@ -57,13 +57,23 @@ export default function Login() {
   };
 
   const handleDemoLogin = (role: "platform" | "admin") => {
-    if (role === "platform") {
-      form.setValue("email", "owner@platform.com");
-      form.setValue("password", "password123");
-    } else {
-      form.setValue("email", "admin@company.com");
-      form.setValue("password", "password123");
-    }
+    const email = role === "platform" ? "admin@cardscannerpro.com" : "admin@techcorp.com";
+    const password = "Admin123!";
+    form.setValue("email", email);
+    form.setValue("password", password);
+    loginMutation.mutate({ data: { email, password } }, {
+      onSuccess: (response) => {
+        login(response.user, response.token);
+        if (response.user.role === UserRole.platform_owner) {
+          setLocation("/platform");
+        } else {
+          setLocation("/admin");
+        }
+      },
+      onError: () => {
+        toast({ variant: "destructive", title: "Demo login failed", description: "Please try again." });
+      }
+    });
   };
 
   return (
