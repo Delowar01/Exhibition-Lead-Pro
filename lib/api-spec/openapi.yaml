@@ -986,6 +986,19 @@ paths:
                 items:
                   $ref: "#/components/schemas/TrendDataPoint"
 
+  /reports/lead-intelligence:
+    get:
+      operationId: getLeadIntelligence
+      tags: [reports]
+      summary: AI lead intelligence analytics (temperature breakdown, hot leads, follow-ups)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadIntelligence"
+
   /reports/mobile-dashboard:
     get:
       operationId: getMobileDashboard
@@ -1845,6 +1858,90 @@ components:
           type: integer
         teamCount:
           type: integer
+
+    LeadIntelligence:
+      type: object
+      required:
+        [
+          temperatureBreakdown,
+          scoredCount,
+          unscoredCount,
+          averageScore,
+          hotLeads,
+          followUpsDue,
+          followUpsDueCount,
+        ]
+      properties:
+        temperatureBreakdown:
+          type: object
+          required: [hot, warm, cold]
+          properties:
+            hot:
+              type: integer
+            warm:
+              type: integer
+            cold:
+              type: integer
+        scoredCount:
+          type: integer
+        unscoredCount:
+          type: integer
+        followUpsDueCount:
+          type: integer
+        averageScore:
+          type: ["number", "null"]
+        hotLeads:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadIntelligenceItem"
+        followUpsDue:
+          type: array
+          items:
+            $ref: "#/components/schemas/FollowUpItem"
+
+    LeadIntelligenceItem:
+      type: object
+      required: [id, leadScore]
+      properties:
+        id:
+          type: integer
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        contactCompany:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        leadScore:
+          type: ["integer", "null"]
+        leadTemperature:
+          type: ["string", "null"]
+          enum: [hot, warm, cold, null]
+        aiReasoning:
+          type: ["string", "null"]
+
+    FollowUpItem:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        contactCompany:
+          type: ["string", "null"]
+        followUpDate:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+        leadScore:
+          type: ["integer", "null"]
+        leadTemperature:
+          type: ["string", "null"]
+          enum: [hot, warm, cold, null]
 
     MobileActivityItem:
       type: object

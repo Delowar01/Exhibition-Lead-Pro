@@ -3,22 +3,22 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { 
   useGetAdminDashboard, 
   useGetScanActivity, 
-  useListContacts, 
   useGetTeamPerformance, 
-  useListEvents 
+  useGetLeadIntelligence,
+  useGetLeadsByEvent
 } from "@workspace/api-client-react";
 import { 
   Contact, 
-  BarChart2, 
-  TrendingUp, 
-  Calendar, 
-  DollarSign, 
-  Target,
   ArrowRight,
-  Clock,
   Trophy,
-  Activity
+  Flame,
+  Thermometer,
+  Snowflake,
+  Sparkles,
+  CalendarClock,
+  AlertCircle
 } from "lucide-react";
+import { Link } from "wouter";
 import { 
   Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, CartesianGrid, 
   PieChart, Pie, Cell, Legend
@@ -31,33 +31,32 @@ import { Progress } from "@/components/ui/progress";
 export default function AdminDashboard() {
   const { data: stats, isLoading: statsLoading } = useGetAdminDashboard();
   const { data: scanData, isLoading: scanLoading } = useGetScanActivity();
-  const { data: contactsData, isLoading: contactsLoading } = useListContacts({ limit: 5 });
   const { data: teamData, isLoading: teamLoading } = useGetTeamPerformance();
-  const { data: eventsData, isLoading: eventsLoading } = useListEvents({ limit: 5 });
+  const { data: leadsByEvent, isLoading: eventsLoading } = useGetLeadsByEvent();
+  const { data: intel, isLoading: intelLoading } = useGetLeadIntelligence();
 
-  if (statsLoading || scanLoading || contactsLoading || teamLoading || eventsLoading) {
+  if (statsLoading || scanLoading || teamLoading || eventsLoading || intelLoading) {
     return <div className="p-8 flex items-center justify-center">Loading dashboard...</div>;
   }
 
-  // Simulated data based on stats
-  const qualifiedLeads = Math.floor((stats?.totalLeads || 0) * 0.4);
-  const opportunities = Math.floor(qualifiedLeads * 0.6);
-  const simulatedRevenue = opportunities * 4500; // Simulated avg deal size
-
-  const funnelData = [
-    { name: "Total Leads", value: stats?.totalLeads || 0 },
-    { name: "Qualified", value: qualifiedLeads },
-    { name: "Opportunities", value: opportunities },
-    { name: "Won", value: Math.floor(opportunities * ((stats?.conversionRate || 0)/100)) }
+  const breakdown = intel?.temperatureBreakdown ?? { hot: 0, warm: 0, cold: 0 };
+  const tempData = [
+    { name: "Hot", value: breakdown.hot, color: "#ef4444" },
+    { name: "Warm", value: breakdown.warm, color: "#f59e0b" },
+    { name: "Cold", value: breakdown.cold, color: "#3b82f6" },
   ];
+  const hasTempData = breakdown.hot + breakdown.warm + breakdown.cold > 0;
+  const hotLeads = intel?.hotLeads ?? [];
+  const followUpsDue = intel?.followUpsDue ?? [];
 
-  const sourceData = [
-    { name: "Business Card", value: 65 },
-    { name: "QR Code", value: 15 },
-    { name: "LinkedIn", value: 10 },
-    { name: "Manual", value: 10 },
-  ];
-  const COLORS = ["hsl(var(--primary))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))"];
+  const tempBadge = (t?: string | null) => {
+    switch (t) {
+      case "hot": return { cls: "bg-red-100 text-red-700 border-red-200", icon: <Flame className="h-3 w-3" />, label: "Hot" };
+      case "warm": return { cls: "bg-amber-100 text-amber-700 border-amber-200", icon: <Thermometer className="h-3 w-3" />, label: "Warm" };
+      case "cold": return { cls: "bg-blue-100 text-blue-700 border-blue-200", icon: <Snowflake className="h-3 w-3" />, label: "Cold" };
+      default: return null;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -71,46 +70,42 @@ export default function AdminDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Leads</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Contacts</CardTitle>
             <Contact className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalLeads.toLocaleString()}</div>
-            <p className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" /> +12% from last month
-            </p>
+            <div className="text-2xl font-bold">{stats?.totalContacts.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground mt-1">{stats?.newContactsToday ?? 0} added today</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Qualified Leads</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Hot Leads</CardTitle>
+            <Flame className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{qualifiedLeads.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">40% qualification rate</p>
+            <div className="text-2xl font-bold">{breakdown.hot.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground mt-1">AI-qualified, high intent</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Opportunities</CardTitle>
-            <BarChart2 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Lead Score</CardTitle>
+            <Sparkles className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{opportunities.toLocaleString()}</div>
-            <p className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" /> +8% from last month
-            </p>
+            <div className="text-2xl font-bold">{intel?.averageScore != null ? `${intel.averageScore}/100` : "—"}</div>
+            <p className="text-xs text-muted-foreground mt-1">{intel?.scoredCount ?? 0} scored by AI</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pipeline Value</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Follow-ups Due</CardTitle>
+            <CalendarClock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${simulatedRevenue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">Expected this quarter</p>
+            <div className="text-2xl font-bold">{(intel?.followUpsDueCount ?? 0).toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground mt-1">Due today or overdue</p>
           </CardContent>
         </Card>
         <Card className="bg-primary text-primary-foreground border-primary-border shadow-md">
@@ -169,34 +164,45 @@ export default function AdminDashboard() {
 
         <Card className="md:col-span-3 shadow-sm flex flex-col">
           <CardHeader>
-            <CardTitle>Lead Source Breakdown</CardTitle>
-            <CardDescription>Where your leads are coming from</CardDescription>
+            <div className="flex items-center gap-2">
+              <Thermometer className="h-4 w-4 text-primary" />
+              <CardTitle>Lead Temperature</CardTitle>
+            </div>
+            <CardDescription>AI-scored intent across your contacts</CardDescription>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col items-center justify-center pb-8">
-            <div className="h-[250px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={sourceData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {sourceData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip 
-                    formatter={(value) => [`${value}%`, 'Share']}
-                    contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
-                  />
-                  <Legend verticalAlign="bottom" height={36} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            {hasTempData ? (
+              <div className="h-[250px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={tempData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {tempData.map((entry) => (
+                        <Cell key={`cell-${entry.name}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip 
+                      formatter={(value, name) => [`${value} contacts`, name]}
+                      contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
+                    />
+                    <Legend verticalAlign="bottom" height={36} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-[250px] w-full flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
+                <Sparkles className="h-8 w-8 opacity-40" />
+                <p className="text-sm">No AI-scored leads yet.</p>
+                <p className="text-xs">Scan business cards to start scoring leads.</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -204,28 +210,42 @@ export default function AdminDashboard() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">Upcoming Follow-ups</CardTitle>
-            <CardDescription>Contacts requiring action soon</CardDescription>
+            <div className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-primary" />
+              <CardTitle className="text-lg">Follow-ups Due</CardTitle>
+            </div>
+            <CardDescription>Contacts due today or overdue</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {contactsData?.contacts.map(contact => (
-                <div key={contact.id} className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-                      {contact.firstName?.charAt(0)}{contact.lastName?.charAt(0)}
+              {followUpsDue.length === 0 && (
+                <div className="text-sm text-muted-foreground text-center py-6">No follow-ups due. You're all caught up.</div>
+              )}
+              {followUpsDue.map(contact => {
+                const overdue = contact.followUpDate
+                  ? new Date(contact.followUpDate) < new Date(new Date().toISOString().slice(0, 10))
+                  : false;
+                return (
+                  <div key={contact.id} className="flex items-center justify-between border-b border-border pb-4 last:border-0 last:pb-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
+                        {contact.firstName?.charAt(0)}{contact.lastName?.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{contact.firstName} {contact.lastName}</p>
+                        <p className="text-xs text-muted-foreground">{contact.contactCompany || 'No company'}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-sm">{contact.firstName} {contact.lastName}</p>
-                      <p className="text-xs text-muted-foreground">{contact.contactCompany || 'No company'}</p>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="outline" className={`text-xs font-normal ${overdue ? "border-red-200 bg-red-50 text-red-700" : ""}`}>
+                        {overdue && <AlertCircle className="h-3 w-3 mr-1" />}
+                        {contact.followUpDate ? format(new Date(contact.followUpDate), "MMM d") : "—"}
+                      </Badge>
+                      <Link href={`/admin/contacts/${contact.id}`} className="text-xs text-primary hover:underline">View →</Link>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge variant="outline" className="text-xs font-normal">Tomorrow</Badge>
-                    <a href={`/admin/contacts/${contact.id}`} className="text-xs text-primary hover:underline">View →</a>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -255,39 +275,50 @@ export default function AdminDashboard() {
 
         <Card className="shadow-sm lg:col-span-1 md:col-span-2">
           <CardHeader>
-            <CardTitle className="text-lg">Recent Activities</CardTitle>
-            <CardDescription>Latest actions in the portal</CardDescription>
+            <div className="flex items-center gap-2">
+              <Flame className="h-4 w-4 text-red-500" />
+              <CardTitle className="text-lg">Hot Leads to Action</CardTitle>
+            </div>
+            <CardDescription>Highest AI lead scores in your pipeline</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex gap-3">
-                <div className="mt-0.5"><div className="w-2 h-2 rounded-full bg-primary mt-1.5" /></div>
-                <div>
-                  <p className="text-sm"><span className="font-medium">John Doe</span> scanned a new card at <span className="font-medium">Tech Expo 2023</span></p>
-                  <p className="text-xs text-muted-foreground mt-0.5">10 minutes ago</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="mt-0.5"><div className="w-2 h-2 rounded-full bg-chart-3 mt-1.5" /></div>
-                <div>
-                  <p className="text-sm"><span className="font-medium">Sarah Smith</span> moved <span className="font-medium">Acme Corp</span> to Closed Won</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">1 hour ago</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="mt-0.5"><div className="w-2 h-2 rounded-full bg-chart-2 mt-1.5" /></div>
-                <div>
-                  <p className="text-sm">Added 45 new contacts via CSV import</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">3 hours ago</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <div className="mt-0.5"><div className="w-2 h-2 rounded-full bg-primary mt-1.5" /></div>
-                <div>
-                  <p className="text-sm"><span className="font-medium">Mike Johnson</span> created a new event <span className="font-medium">SaaS SaaStr</span></p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Yesterday</p>
-                </div>
-              </div>
+              {hotLeads.length === 0 && (
+                <div className="text-sm text-muted-foreground text-center py-6">No scored leads yet. Scan cards to generate AI scores.</div>
+              )}
+              {hotLeads.map(lead => {
+                const badge = tempBadge(lead.leadTemperature);
+                return (
+                  <Link
+                    key={lead.id}
+                    href={`/admin/contacts/${lead.id}`}
+                    className="flex gap-3 items-start group"
+                  >
+                    <div className="flex flex-col items-center justify-center w-11 h-11 rounded-lg bg-primary/10 text-primary shrink-0">
+                      <span className="text-sm font-bold leading-none">{lead.leadScore ?? "—"}</span>
+                      <span className="text-[9px] uppercase tracking-wide opacity-70">score</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate group-hover:text-primary">
+                          {lead.firstName} {lead.lastName}
+                        </p>
+                        {badge && (
+                          <Badge variant="outline" className={`text-[10px] font-normal gap-1 px-1.5 py-0 ${badge.cls}`}>
+                            {badge.icon}{badge.label}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[lead.jobTitle, lead.contactCompany].filter(Boolean).join(" · ") || "No company"}
+                      </p>
+                      {lead.aiReasoning && (
+                        <p className="text-xs text-muted-foreground/80 mt-0.5 line-clamp-2">{lead.aiReasoning}</p>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -297,8 +328,8 @@ export default function AdminDashboard() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle>Recent Events Performance</CardTitle>
-              <CardDescription>ROI metrics for latest events</CardDescription>
+              <CardTitle>Event Performance</CardTitle>
+              <CardDescription>Lead conversion by event</CardDescription>
             </div>
             <a href="/admin/events" className="text-sm text-primary hover:underline flex items-center gap-1">
               View all <ArrowRight className="h-3 w-3" />
@@ -311,27 +342,23 @@ export default function AdminDashboard() {
               <TableHeader className="bg-secondary/50">
                 <TableRow>
                   <TableHead>Event</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Scans</TableHead>
-                  <TableHead className="text-right">Qualified</TableHead>
-                  <TableHead className="text-right">Est. ROI</TableHead>
+                  <TableHead className="text-right">Leads</TableHead>
+                  <TableHead className="text-right">Won</TableHead>
+                  <TableHead className="text-right">Conversion</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {eventsData?.events.slice(0, 5).map(event => (
-                  <TableRow key={event.id}>
-                    <TableCell className="font-medium">{event.name}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {event.startDate ? format(new Date(event.startDate), 'MMM d, yyyy') : '-'}
-                    </TableCell>
-                    <TableCell className="text-right">{event.contactCount || 0}</TableCell>
-                    <TableCell className="text-right">{Math.floor((event.contactCount || 0) * 0.4)}</TableCell>
-                    <TableCell className="text-right text-green-600 font-medium">+{Math.floor(Math.random() * 200 + 50)}%</TableCell>
+                {leadsByEvent?.slice(0, 5).map(event => (
+                  <TableRow key={event.eventId}>
+                    <TableCell className="font-medium">{event.eventName}</TableCell>
+                    <TableCell className="text-right">{event.leadCount}</TableCell>
+                    <TableCell className="text-right">{event.wonCount ?? 0}</TableCell>
+                    <TableCell className="text-right font-medium">{event.conversionRate ?? 0}%</TableCell>
                   </TableRow>
                 ))}
-                {(!eventsData?.events || eventsData.events.length === 0) && (
+                {(!leadsByEvent || leadsByEvent.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">No events found.</TableCell>
+                    <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">No events found.</TableCell>
                   </TableRow>
                 )}
               </TableBody>

@@ -1150,6 +1150,42 @@ export const GetScanActivityResponse = zod.array(GetScanActivityResponseItem)
 
 
 /**
+ * @summary AI lead intelligence analytics (temperature breakdown, hot leads, follow-ups)
+ */
+export const GetLeadIntelligenceResponse = zod.object({
+  "temperatureBreakdown": zod.object({
+  "hot": zod.number(),
+  "warm": zod.number(),
+  "cold": zod.number()
+}),
+  "scoredCount": zod.number(),
+  "unscoredCount": zod.number(),
+  "followUpsDueCount": zod.number(),
+  "averageScore": zod.number().nullable(),
+  "hotLeads": zod.array(zod.object({
+  "id": zod.number(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "leadScore": zod.number().nullable(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish()
+})),
+  "followUpsDue": zod.array(zod.object({
+  "id": zod.number(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "followUpDate": zod.string().nullish(),
+  "status": zod.string().nullish(),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish()
+}))
+})
+
+
+/**
  * @summary Mobile home dashboard widgets and recent activity
  */
 export const GetMobileDashboardResponse = zod.object({

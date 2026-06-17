@@ -836,6 +836,83 @@ export interface AdminDashboard {
   teamCount?: number;
 }
 
+export type LeadIntelligenceTemperatureBreakdown = {
+  hot: number;
+  warm: number;
+  cold: number;
+};
+
+/**
+ * @nullable
+ */
+export type LeadIntelligenceItemLeadTemperature = typeof LeadIntelligenceItemLeadTemperature[keyof typeof LeadIntelligenceItemLeadTemperature] | null;
+
+
+export const LeadIntelligenceItemLeadTemperature = {
+  hot: 'hot',
+  warm: 'warm',
+  cold: 'cold',
+} as const;
+
+export interface LeadIntelligenceItem {
+  id: number;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  contactCompany?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  /** @nullable */
+  leadScore: number | null;
+  /** @nullable */
+  leadTemperature?: LeadIntelligenceItemLeadTemperature;
+  /** @nullable */
+  aiReasoning?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type FollowUpItemLeadTemperature = typeof FollowUpItemLeadTemperature[keyof typeof FollowUpItemLeadTemperature] | null;
+
+
+export const FollowUpItemLeadTemperature = {
+  hot: 'hot',
+  warm: 'warm',
+  cold: 'cold',
+} as const;
+
+export interface FollowUpItem {
+  id: number;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  contactCompany?: string | null;
+  /** @nullable */
+  followUpDate?: string | null;
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  leadScore?: number | null;
+  /** @nullable */
+  leadTemperature?: FollowUpItemLeadTemperature;
+}
+
+export interface LeadIntelligence {
+  temperatureBreakdown: LeadIntelligenceTemperatureBreakdown;
+  scoredCount: number;
+  unscoredCount: number;
+  followUpsDueCount: number;
+  /** @nullable */
+  averageScore: number | null;
+  hotLeads: LeadIntelligenceItem[];
+  followUpsDue: FollowUpItem[];
+}
+
 export interface MobileActivityItem {
   id: string;
   type: string;

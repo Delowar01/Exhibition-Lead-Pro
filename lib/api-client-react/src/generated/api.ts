@@ -41,6 +41,7 @@ import type {
   HealthStatus,
   Lead,
   LeadInput,
+  LeadIntelligence,
   LeadList,
   LeadUpdate,
   LeadsByEventItem,
@@ -3750,6 +3751,83 @@ export function useGetScanActivity<TData = Awaited<ReturnType<typeof getScanActi
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetScanActivityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetLeadIntelligenceUrl = () => {
+
+
+
+
+  return `/api/reports/lead-intelligence`
+}
+
+/**
+ * @summary AI lead intelligence analytics (temperature breakdown, hot leads, follow-ups)
+ */
+export const getLeadIntelligence = async ( options?: RequestInit): Promise<LeadIntelligence> => {
+
+  return customFetch<LeadIntelligence>(getGetLeadIntelligenceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLeadIntelligenceQueryKey = () => {
+    return [
+    `/api/reports/lead-intelligence`
+    ] as const;
+    }
+
+
+export const getGetLeadIntelligenceQueryOptions = <TData = Awaited<ReturnType<typeof getLeadIntelligence>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadIntelligence>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLeadIntelligenceQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLeadIntelligence>>> = ({ signal }) => getLeadIntelligence({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLeadIntelligence>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLeadIntelligenceQueryResult = NonNullable<Awaited<ReturnType<typeof getLeadIntelligence>>>
+export type GetLeadIntelligenceQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary AI lead intelligence analytics (temperature breakdown, hot leads, follow-ups)
+ */
+
+export function useGetLeadIntelligence<TData = Awaited<ReturnType<typeof getLeadIntelligence>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadIntelligence>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLeadIntelligenceQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -79,15 +79,112 @@ router.get("/reports/team-performance", async (req: AuthRequest, res) => {
 // GET /reports/scan-activity
 router.get("/reports/scan-activity", async (req: AuthRequest, res) => {
   try {
+    const scanScope = tenantScope(req.user, scansTable.companyId);
+    const since = new Date();
+    since.setDate(since.getDate() - 29);
+    since.setHours(0, 0, 0, 0);
+
+    const rows = await db
+      .select({
+        day: sql<string>`to_char(${scansTable.createdAt}, 'YYYY-MM-DD')`,
+        value: count(),
+      })
+      .from(scansTable)
+      .where(and(scanScope, gte(scansTable.createdAt, since)))
+      .groupBy(sql`to_char(${scansTable.createdAt}, 'YYYY-MM-DD')`);
+
+    const counts = new Map(rows.map((r) => [r.day, Number(r.value)]));
+
     const days = [];
     for (let i = 29; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
       const label = d.toLocaleDateString("default", { month: "short", day: "numeric" });
-      // Simulated trend data
-      days.push({ date: d.toISOString().slice(0, 10), value: Math.floor(5 + Math.random() * 40), label });
+      days.push({ date: key, value: counts.get(key) ?? 0, label });
     }
     res.json(days);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /reports/lead-intelligence
+router.get("/reports/lead-intelligence", async (req: AuthRequest, res) => {
+  try {
+    const contactScope = tenantScope(req.user, contactsTable.companyId);
+
+    const [
+      [{ hot }],
+      [{ warm }],
+      [{ cold }],
+      [{ scoredCount }],
+      [{ unscoredCount }],
+      [avgRow],
+    ] = await Promise.all([
+      db.select({ hot: count() }).from(contactsTable).where(and(contactScope, eq(contactsTable.leadTemperature, "hot"))),
+      db.select({ warm: count() }).from(contactsTable).where(and(contactScope, eq(contactsTable.leadTemperature, "warm"))),
+      db.select({ cold: count() }).from(contactsTable).where(and(contactScope, eq(contactsTable.leadTemperature, "cold"))),
+      db.select({ scoredCount: count() }).from(contactsTable).where(and(contactScope, isNotNull(contactsTable.leadScore))),
+      db.select({ unscoredCount: count() }).from(contactsTable).where(and(contactScope, sql`${contactsTable.leadScore} IS NULL`)),
+      db.select({ avg: sql<string | null>`AVG(${contactsTable.leadScore})` }).from(contactsTable).where(and(contactScope, isNotNull(contactsTable.leadScore))),
+    ]);
+
+    const hotLeads = await db
+      .select({
+        id: contactsTable.id,
+        firstName: contactsTable.firstName,
+        lastName: contactsTable.lastName,
+        contactCompany: contactsTable.contactCompany,
+        jobTitle: contactsTable.jobTitle,
+        leadScore: contactsTable.leadScore,
+        leadTemperature: contactsTable.leadTemperature,
+        aiReasoning: contactsTable.aiReasoning,
+      })
+      .from(contactsTable)
+      .where(and(contactScope, isNotNull(contactsTable.leadScore), sql`${contactsTable.status} NOT IN ('won', 'lost')`))
+      .orderBy(desc(contactsTable.leadScore))
+      .limit(6);
+
+    const todayDateStr = new Date().toISOString().slice(0, 10);
+    const followUpWhere = and(
+      contactScope,
+      isNotNull(contactsTable.followUpDate),
+      lte(contactsTable.followUpDate, todayDateStr),
+      sql`${contactsTable.status} NOT IN ('won', 'lost')`,
+    );
+
+    const [followUpsDue, [{ followUpsDueCount }]] = await Promise.all([
+      db
+        .select({
+          id: contactsTable.id,
+          firstName: contactsTable.firstName,
+          lastName: contactsTable.lastName,
+          contactCompany: contactsTable.contactCompany,
+          followUpDate: contactsTable.followUpDate,
+          status: contactsTable.status,
+          leadScore: contactsTable.leadScore,
+          leadTemperature: contactsTable.leadTemperature,
+        })
+        .from(contactsTable)
+        .where(followUpWhere)
+        .orderBy(contactsTable.followUpDate)
+        .limit(6),
+      db.select({ followUpsDueCount: count() }).from(contactsTable).where(followUpWhere),
+    ]);
+
+    const averageScore = avgRow.avg != null ? Math.round(Number(avgRow.avg)) : null;
+
+    res.json({
+      temperatureBreakdown: { hot, warm, cold },
+      scoredCount,
+      unscoredCount,
+      followUpsDueCount,
+      averageScore,
+      hotLeads,
+      followUpsDue,
+    });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
