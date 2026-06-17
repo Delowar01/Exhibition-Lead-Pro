@@ -1,22 +1,41 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Card Scanner Pro API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: platform
+    description: Platform owner operations
+  - name: companies
+    description: Company management
+  - name: users
+    description: User management
+  - name: contacts
+    description: Contact management
+  - name: leads
+    description: Lead management
+  - name: events
+    description: Event management
+  - name: scans
+    description: Card scanning
+  - name: subscriptions
+    description: Subscription management
+  - name: reports
+    description: Reports and analytics
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +43,949 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # AUTH
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register new company admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # PLATFORM DASHBOARD
+  /platform/stats:
+    get:
+      operationId: getPlatformStats
+      tags: [platform]
+      summary: Get platform-level KPIs
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStats"
+
+  /platform/revenue-trend:
+    get:
+      operationId: getPlatformRevenueTrend
+      tags: [platform]
+      summary: Revenue trend chart data
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendDataPoint"
+
+  /platform/scan-trend:
+    get:
+      operationId: getPlatformScanTrend
+      tags: [platform]
+      summary: Daily scan trend chart data
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendDataPoint"
+
+  /platform/activity:
+    get:
+      operationId: getPlatformActivity
+      tags: [platform]
+      summary: Recent platform activity feed
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  # COMPANIES
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [companies]
+      summary: List companies
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: plan
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyList"
+    post:
+      operationId: createCompany
+      tags: [companies]
+      summary: Create company
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  /companies/{id}:
+    get:
+      operationId: getCompany
+      tags: [companies]
+      summary: Get company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+    patch:
+      operationId: updateCompany
+      tags: [companies]
+      summary: Update company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+    delete:
+      operationId: deleteCompany
+      tags: [companies]
+      summary: Delete company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /companies/{id}/suspend:
+    post:
+      operationId: suspendCompany
+      tags: [companies]
+      summary: Suspend company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  /companies/{id}/activate:
+    post:
+      operationId: activateCompany
+      tags: [companies]
+      summary: Activate company
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  # USERS
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users (scoped to company or platform)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: companyId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Invite/create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # CONTACTS
+  /contacts:
+    get:
+      operationId: listContacts
+      tags: [contacts]
+      summary: List contacts
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: eventId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: assignedTo
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactList"
+    post:
+      operationId: createContact
+      tags: [contacts]
+      summary: Create contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+
+  /contacts/{id}:
+    get:
+      operationId: getContact
+      tags: [contacts]
+      summary: Get contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+    patch:
+      operationId: updateContact
+      tags: [contacts]
+      summary: Update contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+    delete:
+      operationId: deleteContact
+      tags: [contacts]
+      summary: Delete contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /contacts/stats:
+    get:
+      operationId: getContactStats
+      tags: [contacts]
+      summary: Contact statistics (status breakdown, today count)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactStats"
+
+  # LEADS
+  /leads:
+    get:
+      operationId: listLeads
+      tags: [leads]
+      summary: List leads
+      parameters:
+        - name: stage
+          in: query
+          schema:
+            type: string
+        - name: assignedTo
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: eventId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadList"
+    post:
+      operationId: createLead
+      tags: [leads]
+      summary: Create lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  /leads/{id}:
+    get:
+      operationId: getLead
+      tags: [leads]
+      summary: Get lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+    patch:
+      operationId: updateLead
+      tags: [leads]
+      summary: Update lead (including stage)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+    delete:
+      operationId: deleteLead
+      tags: [leads]
+      summary: Delete lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /leads/pipeline:
+    get:
+      operationId: getLeadPipeline
+      tags: [leads]
+      summary: Get leads grouped by pipeline stage
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineView"
+
+  # EVENTS
+  /events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      summary: List events
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventList"
+    post:
+      operationId: createEvent
+      tags: [events]
+      summary: Create event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+
+  /events/{id}:
+    get:
+      operationId: getEvent
+      tags: [events]
+      summary: Get event
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+    patch:
+      operationId: updateEvent
+      tags: [events]
+      summary: Update event
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+    delete:
+      operationId: deleteEvent
+      tags: [events]
+      summary: Delete event
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /events/{id}/stats:
+    get:
+      operationId: getEventStats
+      tags: [events]
+      summary: Get leads/contacts stats for an event
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventStats"
+
+  # SCANS
+  /scans:
+    get:
+      operationId: listScans
+      tags: [scans]
+      summary: List scans
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanList"
+    post:
+      operationId: createScan
+      tags: [scans]
+      summary: Create a scan (submit card image for OCR/AI extraction)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+
+  /scans/{id}:
+    get:
+      operationId: getScan
+      tags: [scans]
+      summary: Get scan result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+
+  # SUBSCRIPTIONS
+  /subscriptions/current:
+    get:
+      operationId: getCurrentSubscription
+      tags: [subscriptions]
+      summary: Get current company subscription
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+
+  /subscriptions/plans:
+    get:
+      operationId: listPlans
+      tags: [subscriptions]
+      summary: List available subscription plans
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+
+  /subscriptions/upgrade:
+    post:
+      operationId: upgradeSubscription
+      tags: [subscriptions]
+      summary: Upgrade subscription plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionUpgradeInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+
+  # REPORTS
+  /reports/admin-dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [reports]
+      summary: Company admin dashboard stats
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboard"
+
+  /reports/leads-by-event:
+    get:
+      operationId: getLeadsByEvent
+      tags: [reports]
+      summary: Leads grouped by event
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeadsByEventItem"
+
+  /reports/team-performance:
+    get:
+      operationId: getTeamPerformance
+      tags: [reports]
+      summary: Team member performance metrics
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamPerformanceItem"
+
+  /reports/scan-activity:
+    get:
+      operationId: getScanActivity
+      tags: [reports]
+      summary: Scan activity trend (last 30 days)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendDataPoint"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +993,828 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    # AUTH
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RegisterInput:
+      type: object
+      required: [email, password, name, companyName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        name:
+          type: string
+        companyName:
+          type: string
+        industry:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+
+    # USERS
+    User:
+      type: object
+      required: [id, email, name, role, createdAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [platform_owner, company_admin, team_member, viewer]
+        companyId:
+          type: ["integer", "null"]
+        companyName:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    UserList:
+      type: object
+      required: [users, total, page, limit]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    UserInput:
+      type: object
+      required: [email, name, role]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [company_admin, team_member, viewer]
+        companyId:
+          type: ["integer", "null"]
+        password:
+          type: ["string", "null"]
+
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [company_admin, team_member, viewer]
+        isActive:
+          type: boolean
+
+    # COMPANIES
+    Company:
+      type: object
+      required: [id, name, plan, status, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        industry:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        vatNumber:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        logoUrl:
+          type: ["string", "null"]
+        plan:
+          type: string
+          enum: [free, starter, professional, enterprise]
+        status:
+          type: string
+          enum: [active, suspended, cancelled]
+        userCount:
+          type: integer
+        contactCount:
+          type: integer
+        scanCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CompanyList:
+      type: object
+      required: [companies, total, page, limit]
+      properties:
+        companies:
+          type: array
+          items:
+            $ref: "#/components/schemas/Company"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    CompanyInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        industry:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        vatNumber:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        plan:
+          type: string
+          enum: [free, starter, professional, enterprise]
+          default: free
+
+    CompanyUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        industry:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        vatNumber:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        plan:
+          type: string
+          enum: [free, starter, professional, enterprise]
+
+    # CONTACTS
+    Contact:
+      type: object
+      required: [id, companyId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        fullName:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        contactCompany:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        mobile:
+          type: ["string", "null"]
+        officePhone:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [new, qualified, interested, proposal_sent, won, lost]
+        followUpDate:
+          type: ["string", "null"]
+          format: date
+        cardImageUrl:
+          type: ["string", "null"]
+        eventId:
+          type: ["integer", "null"]
+        eventName:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        assignedToName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    ContactList:
+      type: object
+      required: [contacts, total, page, limit]
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Contact"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    ContactInput:
+      type: object
+      properties:
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        contactCompany:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        mobile:
+          type: ["string", "null"]
+        officePhone:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [new, qualified, interested, proposal_sent, won, lost]
+          default: new
+        followUpDate:
+          type: ["string", "null"]
+        eventId:
+          type: ["integer", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        cardImageUrl:
+          type: ["string", "null"]
+
+    ContactUpdate:
+      type: object
+      properties:
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        contactCompany:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        mobile:
+          type: ["string", "null"]
+        officePhone:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [new, qualified, interested, proposal_sent, won, lost]
+        followUpDate:
+          type: ["string", "null"]
+        eventId:
+          type: ["integer", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+
+    ContactStats:
+      type: object
+      required: [total, newToday, byStatus, conversionRate]
+      properties:
+        total:
+          type: integer
+        newToday:
+          type: integer
+        byStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        conversionRate:
+          type: number
+
+    # LEADS
+    Lead:
+      type: object
+      required: [id, companyId, stage, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        contactId:
+          type: ["integer", "null"]
+        contactName:
+          type: ["string", "null"]
+        contactEmail:
+          type: ["string", "null"]
+        contactCompany:
+          type: ["string", "null"]
+        stage:
+          type: string
+          enum: [new, contacted, meeting_scheduled, proposal_sent, negotiation, won, lost]
+        value:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        assignedToName:
+          type: ["string", "null"]
+        eventId:
+          type: ["integer", "null"]
+        eventName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    LeadList:
+      type: object
+      required: [leads, total]
+      properties:
+        leads:
+          type: array
+          items:
+            $ref: "#/components/schemas/Lead"
+        total:
+          type: integer
+
+    LeadInput:
+      type: object
+      required: [stage]
+      properties:
+        contactId:
+          type: ["integer", "null"]
+        stage:
+          type: string
+          enum: [new, contacted, meeting_scheduled, proposal_sent, negotiation, won, lost]
+          default: new
+        value:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        eventId:
+          type: ["integer", "null"]
+
+    LeadUpdate:
+      type: object
+      properties:
+        stage:
+          type: string
+          enum: [new, contacted, meeting_scheduled, proposal_sent, negotiation, won, lost]
+        value:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        eventId:
+          type: ["integer", "null"]
+
+    PipelineView:
+      type: object
+      required: [stages]
+      properties:
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineStage"
+        totalValue:
+          type: number
+
+    PipelineStage:
+      type: object
+      required: [stage, leads, count, value]
+      properties:
+        stage:
+          type: string
+        leads:
+          type: array
+          items:
+            $ref: "#/components/schemas/Lead"
+        count:
+          type: integer
+        value:
+          type: number
+
+    # EVENTS
+    Event:
+      type: object
+      required: [id, companyId, name, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        venue:
+          type: ["string", "null"]
+        startDate:
+          type: ["string", "null"]
+          format: date
+        endDate:
+          type: ["string", "null"]
+          format: date
+        boothNumber:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        contactCount:
+          type: integer
+        leadCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    EventList:
+      type: object
+      required: [events, total, page, limit]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    EventInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        venue:
+          type: ["string", "null"]
+        startDate:
+          type: ["string", "null"]
+        endDate:
+          type: ["string", "null"]
+        boothNumber:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+
+    EventUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        venue:
+          type: ["string", "null"]
+        startDate:
+          type: ["string", "null"]
+        endDate:
+          type: ["string", "null"]
+        boothNumber:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+
+    EventStats:
+      type: object
+      required: [contactCount, leadCount, wonCount, conversionRate]
+      properties:
+        contactCount:
+          type: integer
+        leadCount:
+          type: integer
+        wonCount:
+          type: integer
+        conversionRate:
+          type: number
+        byStage:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+
+    # SCANS
+    Scan:
+      type: object
+      required: [id, companyId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        userId:
+          type: ["integer", "null"]
+        contactId:
+          type: ["integer", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        extractedData:
+          $ref: "#/components/schemas/ExtractedCardData"
+        createdAt:
+          type: string
+          format: date-time
+
+    ScanList:
+      type: object
+      required: [scans, total]
+      properties:
+        scans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Scan"
+        total:
+          type: integer
+
+    ScanInput:
+      type: object
+      required: [imageData]
+      properties:
+        imageData:
+          type: string
+          description: Base64-encoded image
+        eventId:
+          type: ["integer", "null"]
+
+    ExtractedCardData:
+      type: object
+      properties:
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        mobile:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+
+    # SUBSCRIPTIONS
+    Subscription:
+      type: object
+      required: [id, companyId, plan, status]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        plan:
+          type: string
+          enum: [free, starter, professional, enterprise]
+        status:
+          type: string
+          enum: [active, cancelled, past_due]
+        scansUsed:
+          type: integer
+        scansLimit:
+          type: ["integer", "null"]
+        usersLimit:
+          type: ["integer", "null"]
+        renewalDate:
+          type: ["string", "null"]
+          format: date
+
+    Plan:
+      type: object
+      required: [id, name, price, scansLimit, usersLimit]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        scansLimit:
+          type: ["integer", "null"]
+        usersLimit:
+          type: ["integer", "null"]
+        features:
+          type: array
+          items:
+            type: string
+
+    SubscriptionUpgradeInput:
+      type: object
+      required: [plan]
+      properties:
+        plan:
+          type: string
+          enum: [free, starter, professional, enterprise]
+
+    # REPORTS
+    AdminDashboard:
+      type: object
+      required: [totalContacts, totalLeads, totalEvents, newContactsToday, conversionRate]
+      properties:
+        totalContacts:
+          type: integer
+        totalLeads:
+          type: integer
+        totalEvents:
+          type: integer
+        newContactsToday:
+          type: integer
+        conversionRate:
+          type: number
+        scansThisMonth:
+          type: integer
+        teamCount:
+          type: integer
+
+    LeadsByEventItem:
+      type: object
+      required: [eventId, eventName, leadCount]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        leadCount:
+          type: integer
+        wonCount:
+          type: integer
+        conversionRate:
+          type: number
+
+    TeamPerformanceItem:
+      type: object
+      required: [userId, userName, scanCount, leadCount]
+      properties:
+        userId:
+          type: integer
+        userName:
+          type: string
+        scanCount:
+          type: integer
+        leadCount:
+          type: integer
+        wonCount:
+          type: integer
+
+    PlatformStats:
+      type: object
+      required: [totalCompanies, activeCompanies, totalUsers, totalScans, totalLeads, monthlyRevenue]
+      properties:
+        totalCompanies:
+          type: integer
+        activeCompanies:
+          type: integer
+        totalUsers:
+          type: integer
+        totalScans:
+          type: integer
+        totalLeads:
+          type: integer
+        monthlyRevenue:
+          type: number
+        churnRate:
+          type: number
+        subscriptionDistribution:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+
+    TrendDataPoint:
+      type: object
+      required: [date, value]
+      properties:
+        date:
+          type: string
+        value:
+          type: number
+        label:
+          type: ["string", "null"]
+
+    ActivityItem:
+      type: object
+      required: [id, type, description, createdAt]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        description:
+          type: string
+        companyName:
+          type: ["string", "null"]
+        userName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    StatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+        label:
+          type: ["string", "null"]
