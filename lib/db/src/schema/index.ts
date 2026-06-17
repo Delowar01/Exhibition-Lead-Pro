@@ -1,5 +1,6 @@
 export * from "./companies";
 export * from "./users";
+export * from "./device_tokens";
 export * from "./events";
 export * from "./contacts";
 export * from "./leads";

@@ -1374,3 +1374,30 @@ export const GetMobileDashboardResponse = zod.object({
 })
 
 
+/**
+ * @summary Register an Expo push token for the current user's device
+ */
+export const RegisterPushTokenBody = zod.object({
+  "token": zod.string().describe('Expo push token (ExponentPushToken[...])'),
+  "platform": zod.enum(['ios', 'android']).optional()
+})
+
+export const RegisterPushTokenResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Remove an Expo push token (e.g. on logout)
+ */
+export const UnregisterPushTokenBody = zod.object({
+  "token": zod.string()
+})
+
+export const UnregisterPushTokenResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+

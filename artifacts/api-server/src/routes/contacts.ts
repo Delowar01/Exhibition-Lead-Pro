@@ -6,6 +6,7 @@ import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompan
 import { auditMutations } from "../lib/audit.js";
 import { refAccessible } from "../lib/tenant.js";
 import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/ai.js";
+import { notifyUser } from "../lib/push.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -94,6 +95,17 @@ router.post("/contacts", requirePermission("contacts", "create"), async (req: Au
 
     const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore, leadTemperature, aiReasoning, followUpDate: followUpDate ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
     res.status(201).json(formatContact(contact));
+
+    // Notify the owning rep when a freshly captured lead scores "hot" (best-effort, after responding).
+    if (contact.leadTemperature === "hot") {
+      const target = contact.assignedToId ?? req.user!.id;
+      void db.update(contactsTable).set({ hotNotifiedAt: new Date() }).where(eq(contactsTable.id, contact.id)).catch(() => {});
+      void notifyUser(target, {
+        title: "\uD83D\uDD25 Hot lead captured",
+        body: `${contact.fullName ?? "New contact"}${contact.contactCompany ? ` \u00b7 ${contact.contactCompany}` : ""}${contact.leadScore != null ? ` scored ${contact.leadScore}` : ""}`,
+        data: { type: "hot_lead", contactId: contact.id },
+      });
+    }
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

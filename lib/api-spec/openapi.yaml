@@ -1094,6 +1094,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/MobileDashboard"
 
+  # PUSH NOTIFICATIONS
+  /push/register:
+    post:
+      operationId: registerPushToken
+      tags: [push]
+      summary: Register an Expo push token for the current user's device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /push/unregister:
+    post:
+      operationId: unregisterPushToken
+      tags: [push]
+      summary: Remove an Expo push token (e.g. on logout)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenUnregisterInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -1118,6 +1169,25 @@ components:
         error:
           type: string
       required: [error]
+
+    # PUSH NOTIFICATIONS
+    PushTokenInput:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Expo push token (ExponentPushToken[...])
+        platform:
+          type: string
+          enum: [ios, android]
+
+    PushTokenUnregisterInput:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
 
     # AUTH
     LoginInput:

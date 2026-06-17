@@ -47,6 +47,12 @@
         {
           "faceIDPermission": "Allow Card Scanner Pro to use Face ID to unlock the app."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#FF6B00"
+        }
       ]
     ],
     "experiments": {

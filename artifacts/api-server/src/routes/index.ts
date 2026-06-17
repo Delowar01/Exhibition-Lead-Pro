@@ -10,6 +10,7 @@ import scansRouter from "./scans.js";
 import subscriptionsRouter from "./subscriptions.js";
 import platformRouter from "./platform.js";
 import reportsRouter from "./reports.js";
+import pushRouter from "./push.js";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(scansRouter);
 router.use(subscriptionsRouter);
 router.use(platformRouter);
 router.use(reportsRouter);
+router.use(pushRouter);
 
 export default router;

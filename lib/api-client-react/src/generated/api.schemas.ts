@@ -18,6 +18,24 @@ export interface ErrorResponse {
   error: string;
 }
 
+export type PushTokenInputPlatform = typeof PushTokenInputPlatform[keyof typeof PushTokenInputPlatform];
+
+
+export const PushTokenInputPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+export interface PushTokenInput {
+  /** Expo push token (ExponentPushToken[...]) */
+  token: string;
+  platform?: PushTokenInputPlatform;
+}
+
+export interface PushTokenUnregisterInput {
+  token: string;
+}
+
 export interface LoginInput {
   email: string;
   password: string;

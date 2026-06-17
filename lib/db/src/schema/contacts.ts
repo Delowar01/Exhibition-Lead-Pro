@@ -33,6 +33,8 @@ export const contactsTable = pgTable("contacts", {
   talkingPoints: text("talking_points"), // JSON array of AI-suggested talking points
   enrichedAt: timestamp("enriched_at"), // when AI enrichment last ran
   followUpDate: date("follow_up_date"),
+  hotNotifiedAt: timestamp("hot_notified_at"), // when a hot-lead push was last sent for this contact (dedup marker)
+  followUpNotifiedOn: date("follow_up_notified_on"), // the followUpDate a due-follow-up push was last sent for (dedup marker)
   cardImageUrl: text("card_image_url"),
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),
   assignedToId: integer("assigned_to_id").references(() => usersTable.id, { onDelete: "set null" }),

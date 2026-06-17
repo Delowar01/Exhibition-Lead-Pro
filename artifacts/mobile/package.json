@@ -58,8 +58,10 @@
   "dependencies": {
     "expo-camera": "~17.0.10",
     "expo-contacts": "~15.0.11",
+    "expo-device": "~8.0.10",
     "expo-local-authentication": "~17.0.8",
     "expo-network": "~8.0.8",
+    "expo-notifications": "~0.32.17",
     "expo-secure-store": "~15.0.8"
   }
 }

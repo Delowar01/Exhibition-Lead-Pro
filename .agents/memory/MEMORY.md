@@ -1,3 +1,2 @@
-- [Mobile secure session storage](mobile-secure-session-storage.md) — native must persist the JWT via SecureStore (secure-prefs), never plaintext AsyncStorage; web falls back.
-- [Orval query hook options](orval-query-hook-options.md) — passing any query option (e.g. `enabled`) to a generated useGetX hook also requires an explicit `queryKey`.
-- [Offline capture queue + sync](offline-queue-sync.md) — serialize AsyncStorage writes; auto-sync needs both a reconnect trigger AND a launch-time trigger; sync loop reads refs not state.
+- [Expo push notifications](expo-push-notifications.md) — remote push needs EAS projectId + dev build + physical device (untestable in Expo Go/Replit); gate gracefully; only mark work "notified" after confirmed dispatch.
+- [Metro tmp-dir watch crash](metro-tmp-dir-crash.md) — after `expo install`, Metro can crash watching a removed `*_tmp_*` dir; clear `/tmp/metro-*` caches and restart the workflow.
