@@ -206,7 +206,7 @@ export default function AdminScan() {
       </div>
       
       {/* Add keyframes for scan line animation to global CSS or inline here */}
-      <style dangerouslySetInline={{__html: `
+      <style dangerouslySetInnerHTML={{__html: `
         @keyframes scan {
           0% { top: 0%; opacity: 0; }
           10% { opacity: 1; }

@@ -21,6 +21,7 @@ import AdminContacts from "@/pages/admin/Contacts";
 import AdminContactNew from "@/pages/admin/ContactNew";
 import AdminContactDetail from "@/pages/admin/ContactDetail";
 import AdminLeads from "@/pages/admin/Leads";
+import AdminLeadDetail from "@/pages/admin/LeadDetail";
 import AdminEvents from "@/pages/admin/Events";
 import AdminEventDetail from "@/pages/admin/EventDetail";
 import AdminTeam from "@/pages/admin/Team";
@@ -130,6 +131,9 @@ function Router() {
       </Route>
       <Route path="/admin/leads">
         {() => <ProtectedRoute component={AdminLeads} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/leads/:id">
+        {() => <ProtectedRoute component={AdminLeadDetail} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/events">
         {() => <ProtectedRoute component={AdminEvents} role="admin" layout={AdminLayout} />}
