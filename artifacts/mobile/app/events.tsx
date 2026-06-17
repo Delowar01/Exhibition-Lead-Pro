@@ -42,10 +42,11 @@ export default function EventsScreen() {
 
   function renderItem({ item }: { item: Event }) {
     return (
-      <View
-        style={[
+      <Pressable
+        onPress={() => router.push(`/event/${item.id}`)}
+        style={({ pressed }) => [
           styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.75 : 1 },
         ]}
       >
         <View style={styles.cardHeader}>
@@ -89,7 +90,7 @@ export default function EventsScreen() {
             </Text>
           </View>
         </View>
-      </View>
+      </Pressable>
     );
   }
 

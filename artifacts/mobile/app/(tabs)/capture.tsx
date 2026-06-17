@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FONT } from "@/components/ui";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 
 type CaptureMode = "single" | "rapid" | "batch";
@@ -27,7 +28,18 @@ export default function CaptureScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [mode, setMode] = useState<CaptureMode>("single");
+  const { captureMode, isLoaded } = useSettings();
+  const [mode, setMode] = useState<CaptureMode>(captureMode);
+
+  // Apply the persisted default capture mode once settings hydrate, while still
+  // letting the user override it locally afterwards.
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (isLoaded && !hydrated.current) {
+      hydrated.current = true;
+      setMode(captureMode);
+    }
+  }, [isLoaded, captureMode]);
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
   const activeMode = MODES.find((m) => m.key === mode)!;
