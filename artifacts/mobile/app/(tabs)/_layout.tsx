@@ -20,6 +20,18 @@ function NativeTabLayout() {
         <Icon sf={{ default: "house", selected: "house.fill" }} />
         <Label>Home</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="capture">
+        <Icon sf={{ default: "viewfinder", selected: "viewfinder" }} />
+        <Label>Capture</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="contacts">
+        <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
+        <Label>Contacts</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="more">
+        <Icon sf={{ default: "ellipsis", selected: "ellipsis" }} />
+        <Label>More</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -31,12 +43,25 @@ function ClassicTabLayout() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
+  function icon(
+    sf: string,
+    feather: keyof typeof Feather.glyphMap,
+    color: string,
+  ) {
+    return isIOS ? (
+      <SymbolView name={sf as never} tintColor={color} size={24} />
+    ) : (
+      <Feather name={feather} size={22} color={color} />
+    );
+  }
+
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
-        headerShown: true,
+        headerShown: false,
+        tabBarLabelStyle: { fontFamily: "Inter_500Medium", fontSize: 11 },
         tabBarStyle: {
           position: "absolute",
           backgroundColor: isIOS ? "transparent" : colors.background,
@@ -66,12 +91,28 @@ function ClassicTabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="house" tintColor={color} size={24} />
-            ) : (
-              <Feather name="home" size={22} color={color} />
-            ),
+          tabBarIcon: ({ color }) => icon("house", "home", color),
+        }}
+      />
+      <Tabs.Screen
+        name="capture"
+        options={{
+          title: "Capture",
+          tabBarIcon: ({ color }) => icon("viewfinder", "maximize", color),
+        }}
+      />
+      <Tabs.Screen
+        name="contacts"
+        options={{
+          title: "Contacts",
+          tabBarIcon: ({ color }) => icon("person.2", "users", color),
+        }}
+      />
+      <Tabs.Screen
+        name="more"
+        options={{
+          title: "More",
+          tabBarIcon: ({ color }) => icon("ellipsis", "menu", color),
         }}
       />
     </Tabs>

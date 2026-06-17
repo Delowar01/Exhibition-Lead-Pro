@@ -28,7 +28,13 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Card Scanner Pro to use the camera to scan business cards, badges, and QR codes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

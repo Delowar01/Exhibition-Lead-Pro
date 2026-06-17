@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
    FlatList,
@@ -38,6 +39,7 @@ function formatCurrency(value: number): string {
 export default function LeadsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const query = useGetLeadPipeline();
   const [activeStage, setActiveStage] = useState<string>("new");
 
@@ -89,6 +91,13 @@ export default function LeadsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20 }}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <Feather name="chevron-left" size={20} color={colors.foreground} />
+        </Pressable>
         <Text style={[styles.heading, { color: colors.foreground }]}>Pipeline</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground }]}>
           {formatCurrency(totalValue)} in open value
@@ -195,6 +204,15 @@ export default function LeadsScreen() {
 }
 
 const styles = StyleSheet.create({
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
   heading: {
     fontSize: 30,
     fontFamily: FONT.bold,

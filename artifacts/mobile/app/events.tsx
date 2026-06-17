@@ -1,8 +1,10 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   FlatList,
   Platform,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -32,6 +34,7 @@ function formatDateRange(start?: string | null, end?: string | null): string {
 export default function EventsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const query = useListEvents({ limit: 100 });
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -93,6 +96,13 @@ export default function EventsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20 }}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <Feather name="chevron-left" size={20} color={colors.foreground} />
+        </Pressable>
         <Text style={[styles.heading, { color: colors.foreground }]}>Events</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground }]}>
           {events.length} tracked
@@ -137,6 +147,15 @@ export default function EventsScreen() {
 }
 
 const styles = StyleSheet.create({
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
   heading: {
     fontSize: 30,
     fontFamily: FONT.bold,
