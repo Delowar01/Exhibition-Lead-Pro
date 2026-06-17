@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "DU0Setx5BZyaZkyZiGyDN"
@@ -18,3 +17,15 @@ id = "lMukwETF-xWdiYJnRNEHY"
 uri = "file://artifacts/pitch-deck/public/hero-scan.png"
 type = "image"
 title = "generated_image"
+
+[[outputs]]
+id = "w1QEStA4WS8gVqrHAMD5A"
+uri = "file://.local/outputs/Exhibition-Lead-Pro.pdf"
+type = "pdf"
+title = "Exhibition Lead Pro.pdf"
+
+[[outputs]]
+id = "UiIMshLfe11Cp31A5u-7A"
+uri = "file://.local/outputs/Exhibition-Lead-Pro.pptx"
+type = "slides"
+title = "Exhibition Lead Pro.pptx"
