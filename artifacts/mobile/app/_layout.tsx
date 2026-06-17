@@ -41,10 +41,11 @@ function RootLayoutNav() {
 
   useEffect(() => {
     if (isLoading) return;
-    const inAuthGroup = segments[0] === "login";
-    if (!isAuthenticated && !inAuthGroup) {
+    const PUBLIC_ROUTES = ["login", "forgot-password"];
+    const onPublicRoute = PUBLIC_ROUTES.includes(segments[0] ?? "");
+    if (!isAuthenticated && !onPublicRoute) {
       router.replace("/login");
-    } else if (isAuthenticated && inAuthGroup) {
+    } else if (isAuthenticated && segments[0] === "login") {
       router.replace("/");
     }
   }, [isAuthenticated, isLoading, segments, router]);
