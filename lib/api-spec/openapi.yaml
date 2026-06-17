@@ -1372,6 +1372,8 @@ components:
           type: ["string", "null"]
         lastName:
           type: ["string", "null"]
+        arabicName:
+          type: ["string", "null"]
         jobTitle:
           type: ["string", "null"]
         contactCompany:

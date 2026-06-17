@@ -7,9 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, Trash2 } from "lucide-react";
+import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, Trash2, Sparkles, Flame, Snowflake, Thermometer, Globe, Linkedin, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+
+const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; bar: string; icon: React.ReactNode }> = {
+  hot: { label: "Hot", badge: "bg-red-100 text-red-700 border-red-200", bar: "bg-red-500", icon: <Flame className="h-4 w-4" /> },
+  warm: { label: "Warm", badge: "bg-amber-100 text-amber-700 border-amber-200", bar: "bg-amber-500", icon: <Thermometer className="h-4 w-4" /> },
+  cold: { label: "Cold", badge: "bg-blue-100 text-blue-700 border-blue-200", bar: "bg-blue-500", icon: <Snowflake className="h-4 w-4" /> },
+};
 
 export default function AdminContactDetail() {
   const { id } = useParams();
@@ -48,6 +54,8 @@ export default function AdminContactDetail() {
   if (isLoading) return <div className="p-8 flex justify-center">Loading contact...</div>;
   if (!contact) return <div className="p-8 flex justify-center">Contact not found</div>;
 
+  const temp = contact.leadTemperature ? TEMPERATURE_STYLES[contact.leadTemperature] : null;
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
@@ -56,7 +64,17 @@ export default function AdminContactDetail() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{contact.firstName} {contact.lastName}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight">{contact.firstName} {contact.lastName}</h1>
+              {temp && (
+                <Badge variant="outline" className={`gap-1 ${temp.badge}`}>
+                  {temp.icon} {temp.label}
+                </Badge>
+              )}
+            </div>
+            {contact.arabicName && (
+              <div className="text-lg text-muted-foreground mt-0.5" dir="rtl">{contact.arabicName}</div>
+            )}
             <div className="flex items-center gap-2 text-muted-foreground mt-1 text-sm">
               <Briefcase className="h-4 w-4" /> {contact.jobTitle || "No title"}
               <span>&bull;</span>
@@ -90,6 +108,24 @@ export default function AdminContactDetail() {
                 <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><CalendarIcon className="h-4 w-4" /> Date Added</div>
                 <div className="font-medium">{format(new Date(contact.createdAt), 'PPP')}</div>
               </div>
+              {contact.website && (
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Globe className="h-4 w-4" /> Website</div>
+                  <div className="font-medium break-all">{contact.website}</div>
+                </div>
+              )}
+              {contact.linkedin && (
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Linkedin className="h-4 w-4" /> LinkedIn</div>
+                  <div className="font-medium break-all">{contact.linkedin}</div>
+                </div>
+              )}
+              {contact.address && (
+                <div className="space-y-1 col-span-2">
+                  <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><MapPin className="h-4 w-4" /> Address</div>
+                  <div className="font-medium">{contact.address}</div>
+                </div>
+              )}
               {contact.eventName && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium text-muted-foreground">Source Event</div>
@@ -117,6 +153,41 @@ export default function AdminContactDetail() {
         </div>
 
         <div className="space-y-6">
+          <Card>
+            <CardHeader className="pb-3 bg-secondary/20">
+              <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Lead Intelligence</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {contact.leadScore != null ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-end justify-between mb-1">
+                      <span className="text-sm font-medium text-muted-foreground">Lead Score</span>
+                      <span className="text-2xl font-bold leading-none">{contact.leadScore}<span className="text-sm font-normal text-muted-foreground">/100</span></span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+                      <div className={`h-full rounded-full ${temp?.bar ?? "bg-primary"}`} style={{ width: `${Math.min(100, Math.max(0, contact.leadScore))}%` }} />
+                    </div>
+                  </div>
+                  {temp && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-muted-foreground">Temperature</span>
+                      <Badge variant="outline" className={`gap-1 ${temp.badge}`}>{temp.icon} {temp.label}</Badge>
+                    </div>
+                  )}
+                  {contact.aiReasoning && (
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-muted-foreground">AI Reasoning</span>
+                      <p className="text-sm bg-secondary/30 p-3 rounded-md border border-border">{contact.aiReasoning}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground italic py-2">No AI score available for this contact.</div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="pb-3 bg-secondary/20">
               <CardTitle>Pipeline Status</CardTitle>

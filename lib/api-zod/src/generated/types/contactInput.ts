@@ -13,6 +13,8 @@ export interface ContactInput {
   /** @nullable */
   lastName?: string | null;
   /** @nullable */
+  arabicName?: string | null;
+  /** @nullable */
   jobTitle?: string | null;
   /** @nullable */
   contactCompany?: string | null;

@@ -7,8 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
-import { Search, UserPlus, FileText, Mail, Phone, Calendar as CalendarIcon, Contact } from "lucide-react";
+import { Search, UserPlus, FileText, Mail, Phone, Calendar as CalendarIcon, Contact, Flame, Snowflake, Thermometer } from "lucide-react";
 import { Link } from "wouter";
+
+const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; icon: React.ReactNode }> = {
+  hot: { label: "Hot", badge: "bg-red-100 text-red-700 border-red-200", icon: <Flame className="h-3 w-3" /> },
+  warm: { label: "Warm", badge: "bg-amber-100 text-amber-700 border-amber-200", icon: <Thermometer className="h-3 w-3" /> },
+  cold: { label: "Cold", badge: "bg-blue-100 text-blue-700 border-blue-200", icon: <Snowflake className="h-3 w-3" /> },
+};
 
 export default function AdminContacts() {
   const [search, setSearch] = useState("");
@@ -78,6 +84,7 @@ export default function AdminContacts() {
                 <TableRow>
                   <TableHead>Contact</TableHead>
                   <TableHead>Company & Title</TableHead>
+                  <TableHead>Lead</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Event</TableHead>
                   <TableHead>Added</TableHead>
@@ -87,11 +94,11 @@ export default function AdminContacts() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Loading contacts...</TableCell>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading contacts...</TableCell>
                   </TableRow>
                 ) : data?.contacts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12">
+                    <TableCell colSpan={7} className="text-center py-12">
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
                         <Contact className="h-12 w-12 mb-4 opacity-20" />
                         <p>No contacts found.</p>
@@ -119,6 +126,21 @@ export default function AdminContacts() {
                       <TableCell>
                         <div className="font-medium">{contact.contactCompany || "-"}</div>
                         <div className="text-xs text-muted-foreground">{contact.jobTitle || "-"}</div>
+                      </TableCell>
+                      <TableCell>
+                        {contact.leadScore != null ? (
+                          <div className="flex items-center gap-2">
+                            {contact.leadTemperature && TEMPERATURE_STYLES[contact.leadTemperature] && (
+                              <Badge variant="outline" className={`gap-1 ${TEMPERATURE_STYLES[contact.leadTemperature].badge}`}>
+                                {TEMPERATURE_STYLES[contact.leadTemperature].icon}
+                                {TEMPERATURE_STYLES[contact.leadTemperature].label}
+                              </Badge>
+                            )}
+                            <span className="text-sm font-semibold tabular-nums">{contact.leadScore}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStatusBadgeVariant(contact.status) as any} className="capitalize">

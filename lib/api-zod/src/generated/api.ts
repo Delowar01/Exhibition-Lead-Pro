@@ -522,6 +522,7 @@ export const createContactBodyStatusDefault = `new`;
 export const CreateContactBody = zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
   "jobTitle": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
   "email": zod.string().nullish(),
