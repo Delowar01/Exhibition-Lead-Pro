@@ -1,0 +1,646 @@
+PART 1
+PRODUCT VISION, BUSINESS MODEL & SAAS ARCHITECTURE
+Project Name
+AI-Powered Exhibition Lead Capture Platform
+
+Executive Summary
+Build a premium enterprise SaaS platform designed specifically for:
+
+
+Exhibition Exhibitors
+
+
+Trade Show Participants
+
+
+Event Agencies
+
+
+Marketing Agencies
+
+
+Stand Builders
+
+
+Conference Organizers
+
+
+Corporate Sales Teams
+
+
+Government Delegations
+
+
+Event Organizers
+
+
+The platform must operate as a complete lead capture and lead management ecosystem.
+The system should not feel like a business card scanner.
+The final product should compete with:
+
+
+Salesforce
+
+
+HubSpot
+
+
+Apollo
+
+
+Zoho CRM
+
+
+Eventdex
+
+
+Cvent LeadCapture
+
+
+iCapture
+
+
+Leads Retrieval Systems
+
+
+while being specifically optimized for GCC exhibitions and events.
+Examples:
+
+
+LEAP
+
+
+GITEX
+
+
+Intersec
+
+
+Big 5
+
+
+Saudi Rail
+
+
+Saudi Plastics
+
+
+Saudi Food Manufacturing
+
+
+World Defense Show
+
+
+Future Hospitality Summit
+
+
+Cityscape
+
+
+Custom Events
+
+
+
+Primary Goal
+Allow exhibitors to:
+Capture Leads
+↓
+Qualify Leads
+↓
+Follow Up
+↓
+Generate Opportunities
+↓
+Track Revenue
+↓
+Measure Event ROI
+All inside one platform.
+
+Target Markets
+Primary Markets
+
+
+Saudi Arabia
+
+
+UAE
+
+
+Qatar
+
+
+Bahrain
+
+
+Kuwait
+
+
+Oman
+
+
+Secondary Markets
+
+
+Europe
+
+
+North America
+
+
+Asia
+
+
+
+Supported Languages
+Mandatory
+English
+Arabic
+Requirements
+
+
+Full RTL support
+
+
+Arabic OCR
+
+
+Arabic names
+
+
+Arabic company names
+
+
+Arabic reports
+
+
+Arabic email templates
+
+
+Arabic WhatsApp templates
+
+
+System must allow instant language switching.
+
+Product Editions
+Starter
+For small exhibitors
+Limits:
+
+
+2 users
+
+
+1 exhibition
+
+
+2,000 contacts
+
+
+
+Professional
+For medium companies
+Limits:
+
+
+10 users
+
+
+10 exhibitions
+
+
+25,000 contacts
+
+
+
+Business
+For large exhibitors
+Limits:
+
+
+50 users
+
+
+Unlimited exhibitions
+
+
+250,000 contacts
+
+
+
+Enterprise
+For corporations and organizers
+Limits:
+Custom
+Includes:
+
+
+Organizer Portal
+
+
+White Label
+
+
+API Access
+
+
+SSO
+
+
+Advanced Analytics
+
+
+
+Platform Architecture
+The platform consists of four major systems.
+
+System 1
+Mobile Application
+Purpose:
+Field lead capture.
+Used by:
+
+
+Sales Representatives
+
+
+Exhibition Staff
+
+
+Event Teams
+
+
+Business Development Teams
+
+
+Functions:
+
+
+Scan Cards
+
+
+Scan QR
+
+
+Capture Notes
+
+
+Voice Notes
+
+
+Follow-Up
+
+
+View Leads
+
+
+Platforms:
+
+
+Android
+
+
+iOS
+
+
+Offline First.
+
+System 2
+Customer Admin Portal
+Purpose:
+Company management portal.
+Used by:
+
+
+Primary Admin
+
+
+Admin
+
+
+Managers
+
+
+Functions:
+
+
+User Management
+
+
+Contact Management
+
+
+Reports
+
+
+Analytics
+
+
+Event Management
+
+
+ROI Tracking
+
+
+URL Example
+/company
+
+System 3
+Platform Owner Portal
+Purpose:
+SaaS owner management portal.
+Used by:
+Platform Owner only.
+Functions:
+
+
+Company Management
+
+
+Subscription Management
+
+
+User Monitoring
+
+
+Usage Tracking
+
+
+Audit Logs
+
+
+Revenue Analytics
+
+
+URL Example
+/platform
+
+System 4
+Organizer Portal
+Purpose:
+Event organizer analytics.
+Used by:
+
+
+Event Owners
+
+
+Organizers
+
+
+Functions:
+
+
+Event Analytics
+
+
+Exhibitor Analytics
+
+
+Aggregated Reporting
+
+
+URL Example
+/organizer
+
+SaaS Tenant Architecture
+The platform must be fully multi-tenant.
+Data isolation is mandatory.
+No company can access another company's data.
+All records must contain:
+tenant_idcompany_idcreated_bycreated_atupdated_at
+All API endpoints must automatically filter by tenant.
+
+User Hierarchy
+Level 1
+Platform Owner
+Highest role.
+Controls entire platform.
+Can access:
+All companies.
+
+Level 2
+Primary Admin
+Main account for a company.
+Created automatically when a company is created.
+Can:
+
+
+Create Admins
+
+
+Create Employees
+
+
+Manage Subscription
+
+
+Manage Company
+
+
+
+Level 3
+Admin
+Department manager.
+Permissions configurable.
+Can manage:
+Users
+Contacts
+Events
+Reports
+based on permissions.
+
+Level 4
+Employee
+Field users.
+Typically:
+
+
+Sales Executive
+
+
+Business Development Executive
+
+
+Event Staff
+
+
+Can only access assigned modules.
+
+Company Structure
+Example
+Platform Owner
+│
+├── Elite Marcom
+│ ├── Primary Admin
+│ ├── Admin
+│ ├── Employee
+│ └── Employee
+│
+├── Arab Expo
+│ ├── Primary Admin
+│ ├── Admin
+│ └── Employee
+│
+└── Future Events
+├── Primary Admin
+├── Admin
+└── Employee
+Each company owns:
+
+
+Contacts
+
+
+Events
+
+
+Users
+
+
+Reports
+
+
+Analytics
+
+
+
+Multi-Company Access
+Special users may access multiple companies.
+Example
+Mohammad
+Home Company:
+Elite Marcom
+Additional Access:
+
+
+Arab Expo
+
+
+Future Events
+
+
+Such users can switch companies using:
+Company Switcher
+Located in:
+
+
+Mobile App
+
+
+Admin Portal
+
+
+Rules
+User can only access companies explicitly assigned.
+Platform Owner can access all companies.
+
+Visibility Rules
+Every user must have configurable visibility.
+Contact Visibility
+Options
+Own
+Selected Users
+All Users
+
+Company Visibility
+Options
+Own Company
+Selected Companies
+All Companies
+
+Permission-Based Navigation
+Critical Requirement
+If user lacks permission:
+DO NOT show menu.
+DO NOT show page.
+DO NOT show dashboard widget.
+DO NOT allow API access.
+Example:
+No Reports Permission
+Hide:
+
+
+Reports Menu
+
+
+Export Button
+
+
+Report Widgets
+
+
+
+Company Limits
+Every company must have configurable limits.
+Admin Limit
+Employee Limit
+Contact Limit
+Exhibition Limit
+Storage Limit
+API Limit
+If limit reached:
+Block action.
+Show upgrade message.
+
+Subscription Lifecycle
+States
+Trial
+Active
+Suspended
+Expired
+Cancelled
+Rules
+Trial:
+Full access.
+Active:
+Full access.
+Suspended:
+Login blocked.
+Expired:
+Login blocked.
+Cancelled:
+Read-only mode.
+
+Audit Requirements
+Track every critical action.
+Examples
+User Created
+User Deleted
+Contact Exported
+Lead Edited
+Subscription Changed
+Company Suspended
+Password Reset
+Audit logs must never be deleted.
+
+Success Criteria
+The platform must function as:
+AI Exhibition Lead Capture Platform
+
+
+
+CRM
+
+
+
+Lead Qualification Engine
+
+
+
+Follow-Up Automation System
+
+
+
+Event ROI Platform
+
+
+
+Team Performance System
+
+
+
+Multi-Tenant SaaS Platform
+built specifically for GCC exhibitions and events.
+
+End of Part 1
+Next: Part 2 – Mobile Application Complete Specification (every screen, workflow, button, field, permission, and user journey).
