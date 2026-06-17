@@ -1,0 +1,1038 @@
+# PART 3
+
+# CUSTOMER ADMIN PORTAL COMPLETE SPECIFICATION
+
+## Overview
+
+The Customer Admin Portal is the operational control center for each subscribing company.
+
+Purpose:
+
+Manage:
+
+* Users
+* Leads
+* Duplicates
+* Follow-Ups
+* Events
+* Team Performance
+* ROI
+* Reports
+* Analytics
+* Company Settings
+
+Users:
+
+* Primary Admin
+* Admin
+* Managers
+* Authorized Employees (limited)
+
+URL Example:
+
+```text
+/company
+```
+
+---
+
+# Portal Design Requirements
+
+Style:
+
+Premium SaaS
+
+Inspired by:
+
+* HubSpot
+* Salesforce
+* Monday.com
+* Apollo
+* Zoho CRM
+
+Requirements:
+
+* Responsive
+* Modern
+* Fast
+* Professional
+* Enterprise-grade
+
+Supports:
+
+* English
+* Arabic
+* RTL
+* Dark Mode
+* Light Mode
+
+---
+
+# Main Navigation
+
+```text
+Dashboard
+
+Contacts
+Duplicates
+Follow-Ups
+
+Events
+ROI Dashboard
+
+Team Performance
+Reports
+
+Users
+
+Company Settings
+
+Subscription
+
+Help Center
+```
+
+Menu visibility depends on permissions.
+
+If user lacks access:
+
+Do not show menu.
+
+---
+
+# Dashboard
+
+Purpose:
+
+Provide company-wide overview.
+
+---
+
+## Dashboard Widgets
+
+### Total Contacts
+
+Unique contacts only.
+
+Duplicates excluded.
+
+---
+
+### Duplicates
+
+Total duplicate records.
+
+---
+
+### Leads Captured Today
+
+---
+
+### Leads This Month
+
+---
+
+### Hot Leads
+
+AI qualified.
+
+---
+
+### Opportunities
+
+---
+
+### Won Deals
+
+---
+
+### Follow-Ups Due
+
+---
+
+### Active Events
+
+---
+
+### Team Members
+
+---
+
+# Dashboard Charts
+
+### Lead Capture Trend
+
+Daily
+
+Weekly
+
+Monthly
+
+---
+
+### Lead Sources
+
+Business Card
+
+Badge
+
+QR
+
+LinkedIn
+
+VCF
+
+Manual
+
+---
+
+### Lead Temperature
+
+Hot
+
+Warm
+
+Cold
+
+---
+
+### Event Performance
+
+Leads by Event
+
+---
+
+### Team Leaderboard
+
+Top performers.
+
+---
+
+# Contacts Module
+
+Main CRM section.
+
+---
+
+## Contacts List
+
+Columns
+
+* Name
+* Job Title
+* Company
+* Mobile
+* Email
+* Event
+* Lead Score
+* Status
+* Assigned User
+* Created Date
+
+Actions
+
+* View
+* Edit
+* Assign
+* Export
+* Delete
+
+---
+
+## Filters
+
+Search
+
+By:
+
+* Name
+* Email
+* Mobile
+* Company
+
+Advanced Filters
+
+* Event
+* User
+* Lead Status
+* Lead Temperature
+* Country
+* Industry
+* Date Range
+
+---
+
+# Contact Detail Page
+
+Tabs
+
+---
+
+## Contact Information
+
+Full profile.
+
+---
+
+## AI Insights
+
+Lead Score
+
+Temperature
+
+Priority
+
+Reasoning
+
+---
+
+## Activity Timeline
+
+Calls
+
+Emails
+
+WhatsApp
+
+Meetings
+
+---
+
+## Notes
+
+Manual notes.
+
+---
+
+## Voice Notes
+
+Audio recordings.
+
+---
+
+## Follow-Ups
+
+Tasks and reminders.
+
+---
+
+## Duplicates
+
+Related records.
+
+---
+
+## Attachments
+
+Business card image
+
+Badge image
+
+Documents
+
+---
+
+# Contact Actions
+
+Call
+
+Email
+
+WhatsApp
+
+Assign
+
+Export
+
+Generate Proposal
+
+Schedule Follow-Up
+
+Delete
+
+---
+
+# Duplicate Management
+
+Dedicated module.
+
+Menu:
+
+Duplicates
+
+---
+
+## Duplicate Dashboard
+
+Show:
+
+* Total Duplicates
+* Duplicate Percentage
+* Potential Merges
+
+---
+
+## Duplicate List
+
+Columns
+
+* Original Contact
+* Duplicate Count
+* Event
+* Assigned User
+* Last Activity
+
+Actions
+
+* View
+* Merge
+* Restore
+* Ignore
+
+---
+
+## Merge Screen
+
+Compare:
+
+Left vs Right
+
+Fields:
+
+* Name
+* Email
+* Mobile
+* Company
+* Notes
+* Activities
+
+Choose survivor.
+
+Maintain history.
+
+---
+
+# Follow-Up Center
+
+Purpose:
+
+Manage all follow-ups.
+
+---
+
+## Views
+
+List
+
+Calendar
+
+Kanban
+
+---
+
+## Follow-Up Types
+
+Call
+
+Email
+
+WhatsApp
+
+Meeting
+
+Task
+
+---
+
+## Status
+
+Pending
+
+Completed
+
+Cancelled
+
+Overdue
+
+---
+
+# Follow-Up Dashboard
+
+Widgets
+
+Today's Follow-Ups
+
+Overdue
+
+Completed
+
+Upcoming
+
+---
+
+# Event Management
+
+Purpose:
+
+Manage exhibitions.
+
+Events are shared across company.
+
+---
+
+## Event List
+
+Columns
+
+* Event Name
+* Venue
+* Country
+* Start Date
+* End Date
+* Team Members
+* Leads Captured
+
+---
+
+## Create Event
+
+Fields
+
+Event Name
+
+Venue
+
+Country
+
+Start Date
+
+End Date
+
+Budget
+
+Team Members
+
+Description
+
+---
+
+# Event Detail
+
+Tabs
+
+Overview
+
+Leads
+
+Team
+
+Expenses
+
+ROI
+
+Analytics
+
+---
+
+# Event Expenses
+
+Fields
+
+Booth Cost
+
+Travel Cost
+
+Accommodation
+
+Marketing Cost
+
+Staff Cost
+
+Other Cost
+
+---
+
+# Event Analytics
+
+Leads
+
+Qualified Leads
+
+Opportunities
+
+Revenue
+
+ROI
+
+Cost Per Lead
+
+Cost Per Opportunity
+
+---
+
+# ROI Dashboard
+
+Purpose:
+
+Measure event profitability.
+
+---
+
+## KPI Cards
+
+Event Cost
+
+Leads
+
+Qualified Leads
+
+Opportunities
+
+Revenue
+
+ROI %
+
+---
+
+## Calculations
+
+Cost Per Lead
+
+Cost Per Opportunity
+
+Revenue Per Lead
+
+Return On Investment
+
+---
+
+# Team Performance Module
+
+Purpose:
+
+Measure employee performance.
+
+---
+
+## Leaderboard
+
+Views
+
+Daily
+
+Weekly
+
+Monthly
+
+Event
+
+All Time
+
+---
+
+## Metrics
+
+Leads Captured
+
+Qualified Leads
+
+Meetings
+
+Revenue
+
+Conversion Rate
+
+---
+
+## Gamification
+
+Badges
+
+Achievements
+
+Rankings
+
+---
+
+# Reports Module
+
+Purpose:
+
+Generate business reports.
+
+---
+
+## Standard Reports
+
+Lead Report
+
+Event Report
+
+Team Report
+
+ROI Report
+
+Activity Report
+
+Duplicate Report
+
+Follow-Up Report
+
+---
+
+## Export Formats
+
+Excel
+
+CSV
+
+PDF
+
+---
+
+# User Management
+
+Purpose:
+
+Manage company users.
+
+---
+
+## User List
+
+Columns
+
+Name
+
+Email
+
+Role
+
+Status
+
+Last Login
+
+Assigned Companies
+
+Assigned Visibility
+
+---
+
+# User Roles
+
+Primary Admin
+
+Admin
+
+Employee
+
+---
+
+## Create User
+
+Fields
+
+Name
+
+Email
+
+Role
+
+Password
+
+Status
+
+---
+
+# Visibility Configuration
+
+## Contact Visibility
+
+Own
+
+Selected Users
+
+All Users
+
+---
+
+## Company Visibility
+
+Own Company
+
+Selected Companies
+
+All Companies
+
+---
+
+## Selected Users
+
+Multi-select.
+
+---
+
+## Selected Companies
+
+Multi-select.
+
+---
+
+# Permission Matrix
+
+Permissions grouped by module.
+
+Examples:
+
+Contacts
+
+Events
+
+Reports
+
+Users
+
+Exports
+
+Analytics
+
+Settings
+
+---
+
+# Company Settings
+
+Tabs
+
+General
+
+Branding
+
+Notifications
+
+Integrations
+
+Security
+
+---
+
+## General
+
+Company Name
+
+Logo
+
+Address
+
+Country
+
+Phone
+
+Website
+
+---
+
+## Branding
+
+Company Logo
+
+Primary Color
+
+Secondary Color
+
+Email Footer
+
+Proposal Branding
+
+---
+
+## Notifications
+
+Email Notifications
+
+WhatsApp Notifications
+
+Follow-Up Alerts
+
+---
+
+## Integrations
+
+WhatsApp API
+
+SMTP
+
+CRM Webhooks
+
+Google Maps
+
+LinkedIn
+
+Future APIs
+
+---
+
+# Subscription Module
+
+Purpose:
+
+Display plan and limits.
+
+---
+
+## Subscription Dashboard
+
+Current Plan
+
+Status
+
+Renewal Date
+
+Expiry Date
+
+---
+
+## Usage Statistics
+
+Admins
+
+Employees
+
+Contacts
+
+Events
+
+Storage
+
+API Usage
+
+---
+
+## Usage Indicators
+
+Green
+
+Below 80%
+
+Orange
+
+80-99%
+
+Red
+
+100%
+
+---
+
+# Audit Logs
+
+Company-level logs.
+
+Track:
+
+User Created
+
+User Deleted
+
+Lead Edited
+
+Export Performed
+
+Settings Changed
+
+---
+
+# Notification Center
+
+Displays:
+
+Follow-Up Alerts
+
+AI Recommendations
+
+Subscription Warnings
+
+System Announcements
+
+---
+
+# Search System
+
+Global Search.
+
+Search:
+
+Contacts
+
+Events
+
+Users
+
+Companies (if permitted)
+
+Reports
+
+---
+
+# Multi-Company Access
+
+Visible only if user has additional company access.
+
+Company Switcher:
+
+Header dropdown.
+
+Switches active company.
+
+All data reloads instantly.
+
+---
+
+# Security
+
+Role-based access.
+
+Permission-based menus.
+
+Session timeout.
+
+Audit logging.
+
+Data export controls.
+
+---
+
+# Performance Requirements
+
+Dashboard:
+
+< 1 second
+
+Contacts:
+
+< 300 ms
+
+Search:
+
+< 500 ms
+
+Exports:
+
+Background generation
+
+---
+
+# Success Criteria
+
+The Customer Admin Portal must function as:
+
+* CRM
+* Lead Management System
+* Event Management System
+* Team Management Platform
+* ROI Tracking Platform
+* Follow-Up Automation Center
+
+within a single enterprise-grade SaaS application.
+
+END OF PART 3
