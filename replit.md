@@ -35,10 +35,15 @@ An enterprise SaaS platform for business card scanning and lead management. Two 
 ## Architecture decisions
 
 - Contract-first: OpenAPI spec → Orval codegen → React Query hooks + Zod schemas
-- Dual-portal auth: `role = platform_owner` → `/platform`, `role = company_admin | team_member` → `/admin`
+- Role hierarchy (Phase 0): `platform_owner` → `primary_admin` → `admin` → `employee`. `platform_owner` → `/platform`; everyone else → `/admin`. (Was `company_admin`→`primary_admin`, `team_member`→`employee`.)
+- `company_id` IS the tenant boundary — no separate `tenant_id`. All tenant-scoped queries filter by `company_id`; cross-tenant access returns 404 (not 403) to avoid leaking record existence.
 - JWT auth (not session cookies) since the API may serve a mobile client in future
+- `requireAuth` loads the FRESH user row each request (role, permissions, status) instead of trusting the JWT payload, and enforces the subscription lifecycle (see Subscription lifecycle below)
+- Permissions: `platform_owner`/`primary_admin` bypass all permission checks; `admin`/`employee` are gated by an explicit `permissions` matrix (`module -> [actions]`) on writes only (reads stay open but tenant-scoped). Empty `{}` = deny-by-default on writes.
 - `setAuthTokenGetter` in `@workspace/api-client-react` injects the Bearer token globally — no per-call headers needed
-- Subscription plans are enforced server-side via the `subscriptions` table; plan limits stored in DB, not hardcoded
+- Subscription plans live in the `plans` table (keyed by slug: free/starter/professional/business/enterprise) with feature flags + limits; per-company limits live on `subscriptions` (seeded from plan defaults, platform-owner overridable; `null` limit = unlimited). Enforced server-side, not hardcoded.
+- Subscription lifecycle (on `companies.status`): `suspended`/`expired`/lapsed `trial` → login blocked (403); `cancelled` → read-only (writes 403, reads OK); `active`/valid `trial` → full access. Logic in `evaluateCompanyAccess`.
+- `audit_logs` is append-only (no delete route, no cascade FK). `auditMutations(module)` router middleware records one row per successful non-GET request; `writeAudit` for explicit events (login etc.).
 
 ## Product
 
@@ -66,7 +71,13 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Run `pnpm --filter @workspace/db run push` after schema changes
 - `??` and `||` mixed without parens fails esbuild — always wrap: `(a ?? b) || c`
 - API routes must include full base path (`/api/...`) — the reverse proxy does NOT strip it
+- **Router-level guard leak**: sub-routers are mounted path-less on one shared parent (`routes/index.ts`), and each route defines its own full path. A path-less `router.use(mw)` in a sub-router runs for EVERY request flowing through the parent. Terminating guards (`requireRole`, `auditMutations`) MUST be path-scoped to the module base, e.g. `router.use("/contacts", auditMutations("contacts"))` — otherwise they fire on unrelated routes (403s, duplicate audit rows). `requireAuth` is non-terminating so path-less is fine.
+- `@types/express-serve-static-core` v5 types `req.params[key]` as `string | string[]` — wrap path params: `parseInt(String(req.params.id))`
 - Do NOT use `pnpm run dev` at workspace root — workflows handle port + env injection
+- **Never scope a tenant read by `companyId` alone** — a null `companyId` produces an UNFILTERED cross-tenant query. Use `tenantScope(req.user, table.companyId)` (in `requireAuth.ts`) on every list/report/stats/pipeline query: it returns no filter for `platform_owner` and `inArray(column, accessibleCompanies)` for everyone else.
+- **Validate FK refs on writes** with `refAccessible(req.user, table, id)` (in `lib/tenant.ts`) — reject cross-tenant/nonexistent `eventId`/`assignedToId`/`contactId` with 400, or a user can point own-tenant rows at foreign records and leak metadata via enrichment.
+- **No role escalation**: a caller may never create/promote a user to a role ranked higher than their own (employee<admin<primary_admin<platform_owner). Enforced in POST + PATCH `/users`.
+- **Tenant invariant**: `requireAuth` 403s non-platform users with empty `accessibleCompanies`; `POST /users` 400s non-platform roles with null company.
 
 ## Pointers
 

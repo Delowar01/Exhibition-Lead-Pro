@@ -30,11 +30,17 @@ export const LoginResponse = zod.object({
   "id": zod.number(),
   "email": zod.string(),
   "name": zod.string(),
-  "role": zod.enum(['platform_owner', 'company_admin', 'team_member', 'viewer']),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
   "companyId": zod.number().nullish(),
   "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
   "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 })
@@ -60,11 +66,17 @@ export const GetMeResponse = zod.object({
   "id": zod.number(),
   "email": zod.string(),
   "name": zod.string(),
-  "role": zod.enum(['platform_owner', 'company_admin', 'team_member', 'viewer']),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
   "companyId": zod.number().nullish(),
   "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
   "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -157,8 +169,10 @@ export const ListCompaniesResponse = zod.object({
   "vatNumber": zod.string().nullish(),
   "website": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']),
-  "status": zod.enum(['active', 'suspended', 'cancelled']),
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
+  "suspendedReason": zod.string().nullish(),
+  "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
@@ -182,7 +196,7 @@ export const CreateCompanyBody = zod.object({
   "address": zod.string().nullish(),
   "vatNumber": zod.string().nullish(),
   "website": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']).default(createCompanyBodyPlanDefault)
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']).default(createCompanyBodyPlanDefault)
 })
 
 
@@ -202,8 +216,10 @@ export const GetCompanyResponse = zod.object({
   "vatNumber": zod.string().nullish(),
   "website": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']),
-  "status": zod.enum(['active', 'suspended', 'cancelled']),
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
+  "suspendedReason": zod.string().nullish(),
+  "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
@@ -225,7 +241,9 @@ export const UpdateCompanyBody = zod.object({
   "address": zod.string().nullish(),
   "vatNumber": zod.string().nullish(),
   "website": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']).optional()
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']).optional(),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']).optional(),
+  "suspendedReason": zod.string().nullish()
 })
 
 export const UpdateCompanyResponse = zod.object({
@@ -237,8 +255,10 @@ export const UpdateCompanyResponse = zod.object({
   "vatNumber": zod.string().nullish(),
   "website": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']),
-  "status": zod.enum(['active', 'suspended', 'cancelled']),
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
+  "suspendedReason": zod.string().nullish(),
+  "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
@@ -275,8 +295,10 @@ export const SuspendCompanyResponse = zod.object({
   "vatNumber": zod.string().nullish(),
   "website": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']),
-  "status": zod.enum(['active', 'suspended', 'cancelled']),
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
+  "suspendedReason": zod.string().nullish(),
+  "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
@@ -300,8 +322,10 @@ export const ActivateCompanyResponse = zod.object({
   "vatNumber": zod.string().nullish(),
   "website": zod.string().nullish(),
   "logoUrl": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']),
-  "status": zod.enum(['active', 'suspended', 'cancelled']),
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
+  "suspendedReason": zod.string().nullish(),
+  "trialEndsAt": zod.coerce.date().nullish(),
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
@@ -328,11 +352,17 @@ export const ListUsersResponse = zod.object({
   "id": zod.number(),
   "email": zod.string(),
   "name": zod.string(),
-  "role": zod.enum(['platform_owner', 'company_admin', 'team_member', 'viewer']),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
   "companyId": zod.number().nullish(),
   "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
   "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number(),
@@ -347,9 +377,13 @@ export const ListUsersResponse = zod.object({
 export const CreateUserBody = zod.object({
   "email": zod.string().email(),
   "name": zod.string(),
-  "role": zod.enum(['company_admin', 'team_member', 'viewer']),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['primary_admin', 'admin', 'employee']),
   "companyId": zod.number().nullish(),
-  "password": zod.string().nullish()
+  "password": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional()
 })
 
 
@@ -364,11 +398,17 @@ export const GetUserResponse = zod.object({
   "id": zod.number(),
   "email": zod.string(),
   "name": zod.string(),
-  "role": zod.enum(['platform_owner', 'company_admin', 'team_member', 'viewer']),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
   "companyId": zod.number().nullish(),
   "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
   "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -382,19 +422,29 @@ export const UpdateUserParams = zod.object({
 
 export const UpdateUserBody = zod.object({
   "name": zod.string().optional(),
-  "role": zod.enum(['company_admin', 'team_member', 'viewer']).optional(),
-  "isActive": zod.boolean().optional()
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['primary_admin', 'admin', 'employee']).optional(),
+  "isActive": zod.boolean().optional(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional()
 })
 
 export const UpdateUserResponse = zod.object({
   "id": zod.number(),
   "email": zod.string(),
   "name": zod.string(),
-  "role": zod.enum(['platform_owner', 'company_admin', 'team_member', 'viewer']),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
   "companyId": zod.number().nullish(),
   "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
   "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -966,11 +1016,18 @@ export const GetScanResponse = zod.object({
 export const GetCurrentSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']),
-  "status": zod.enum(['active', 'cancelled', 'past_due']),
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "scansUsed": zod.number().optional(),
   "scansLimit": zod.number().nullish(),
   "usersLimit": zod.number().nullish(),
+  "adminsLimit": zod.number().nullish(),
+  "employeesLimit": zod.number().nullish(),
+  "contactsLimit": zod.number().nullish(),
+  "eventsLimit": zod.number().nullish(),
+  "storageLimitMb": zod.number().nullish(),
+  "apiLimit": zod.number().nullish(),
+  "trialEndsAt": zod.coerce.date().nullish(),
   "renewalDate": zod.coerce.date().nullish()
 })
 
@@ -981,10 +1038,19 @@ export const GetCurrentSubscriptionResponse = zod.object({
 export const ListPlansResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "price": zod.number(),
-  "scansLimit": zod.number().nullable(),
-  "usersLimit": zod.number().nullable(),
-  "features": zod.array(zod.string()).optional()
+  "description": zod.string().nullish(),
+  "priceMonthly": zod.number(),
+  "currency": zod.string().optional(),
+  "adminsLimit": zod.number().nullish(),
+  "employeesLimit": zod.number().nullish(),
+  "contactsLimit": zod.number().nullish(),
+  "eventsLimit": zod.number().nullish(),
+  "storageLimitMb": zod.number().nullish(),
+  "apiLimit": zod.number().nullish(),
+  "trialDays": zod.number().optional(),
+  "features": zod.record(zod.string(), zod.boolean()),
+  "sortOrder": zod.number().optional(),
+  "isActive": zod.boolean().optional()
 })
 export const ListPlansResponse = zod.array(ListPlansResponseItem)
 
@@ -993,17 +1059,24 @@ export const ListPlansResponse = zod.array(ListPlansResponseItem)
  * @summary Upgrade subscription plan
  */
 export const UpgradeSubscriptionBody = zod.object({
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise'])
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise'])
 })
 
 export const UpgradeSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'enterprise']),
-  "status": zod.enum(['active', 'cancelled', 'past_due']),
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
   "scansUsed": zod.number().optional(),
   "scansLimit": zod.number().nullish(),
   "usersLimit": zod.number().nullish(),
+  "adminsLimit": zod.number().nullish(),
+  "employeesLimit": zod.number().nullish(),
+  "contactsLimit": zod.number().nullish(),
+  "eventsLimit": zod.number().nullish(),
+  "storageLimitMb": zod.number().nullish(),
+  "apiLimit": zod.number().nullish(),
+  "trialEndsAt": zod.coerce.date().nullish(),
   "renewalDate": zod.coerce.date().nullish()
 })
 

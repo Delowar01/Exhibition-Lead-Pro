@@ -11,10 +11,15 @@ export const companiesTable = pgTable("companies", {
   vatNumber: text("vat_number"),
   website: text("website"),
   logoUrl: text("logo_url"),
-  plan: text("plan").notNull().default("free"), // free, starter, professional, enterprise
-  status: text("status").notNull().default("active"), // active, suspended, cancelled
+  phone: text("phone"),
+  plan: text("plan").notNull().default("free"), // free, starter, professional, business, enterprise (references plans.id)
+  status: text("status").notNull().default("trial"), // trial, active, suspended, expired, cancelled
+  suspendedReason: text("suspended_reason"),
+  trialEndsAt: timestamp("trial_ends_at"),
   scansUsed: integer("scans_used").notNull().default(0),
+  createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertCompanySchema = createInsertSchema(companiesTable).omit({ id: true, createdAt: true });

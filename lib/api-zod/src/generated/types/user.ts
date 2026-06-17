@@ -5,6 +5,9 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { UserCompanyVisibility } from './userCompanyVisibility';
+import type { UserContactVisibility } from './userContactVisibility';
+import type { UserPermissions } from './userPermissions';
 import type { UserRole } from './userRole';
 
 export interface User {
@@ -17,7 +20,15 @@ export interface User {
   /** @nullable */
   companyName?: string | null;
   /** @nullable */
+  phone?: string | null;
+  /** @nullable */
   avatarUrl?: string | null;
+  permissions?: UserPermissions;
+  contactVisibility?: UserContactVisibility;
+  companyVisibility?: UserCompanyVisibility;
+  accessibleCompanies?: number[];
   isActive?: boolean;
+  /** @nullable */
+  lastLoginAt?: Date | null;
   createdAt: Date;
 }

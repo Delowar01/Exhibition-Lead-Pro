@@ -1,3 +1,2 @@
-- [Auth token wiring](auth-token-wiring.md) — use setAuthTokenGetter (not setCustomFetch) from @workspace/api-client-react to attach JWT globally
-- [esbuild nullish coalescing](esbuild-nullish-coalescing.md) — mixing ?? and || without parens causes esbuild parse error; always wrap: (a ?? b) || c
-- [Dual portal routing](dual-portal-routing.md) — platform_owner → /platform, company_admin/team_member → /admin; JWT role drives redirect
+- [Express router guard leak](express-router-guard-leak.md) — path-less `router.use(mw)` in sub-routers mounted on a shared parent fires on ALL requests; path-scope terminating guards.
+- [Tenant model](tenant-model.md) — `company_id` is the tenant boundary; cross-tenant access returns 404 not 403; permissions gate writes only.

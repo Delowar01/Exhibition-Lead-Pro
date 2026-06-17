@@ -1,11 +1,15 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { contactsTable, usersTable, eventsTable } from "@workspace/db";
-import { eq, ilike, and, count, sql } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { eq, ilike, and, count, sql, inArray } from "drizzle-orm";
+import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
+import { auditMutations } from "../lib/audit.js";
+import { refAccessible } from "../lib/tenant.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/contacts", blockReadOnlyMutations);
+router.use("/contacts", auditMutations("contacts"));
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
@@ -33,10 +37,8 @@ router.get("/contacts", async (req: AuthRequest, res) => {
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(200, parseInt(limit));
     const offset = (pageNum - 1) * limitNum;
-    const companyId = getCompanyId(req);
-
     const conditions = [];
-    if (companyId) conditions.push(eq(contactsTable.companyId, companyId));
+    if (req.user!.role !== "platform_owner") conditions.push(inArray(contactsTable.companyId, req.user!.accessibleCompanies));
     if (search) conditions.push(ilike(contactsTable.fullName, `%${search}%`));
     if (status) conditions.push(eq(contactsTable.status, status));
     if (eventId && !isNaN(parseInt(eventId))) conditions.push(eq(contactsTable.eventId, parseInt(eventId)));
@@ -60,11 +62,13 @@ router.get("/contacts", async (req: AuthRequest, res) => {
 });
 
 // POST /contacts
-router.post("/contacts", async (req: AuthRequest, res) => {
+router.post("/contacts", requirePermission("contacts", "create"), async (req: AuthRequest, res) => {
   try {
     const companyId = getCompanyId(req);
     if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
     const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, followUpDate, eventId, assignedToId, cardImageUrl } = req.body;
+    if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
+    if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
     const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", followUpDate: followUpDate ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
     res.status(201).json(formatContact(contact));
@@ -77,9 +81,7 @@ router.post("/contacts", async (req: AuthRequest, res) => {
 // GET /contacts/stats
 router.get("/contacts/stats", async (req: AuthRequest, res) => {
   try {
-    const companyId = getCompanyId(req);
-    const conditions = companyId ? [eq(contactsTable.companyId, companyId)] : [];
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = tenantScope(req.user, contactsTable.companyId);
 
     const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(whereClause);
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -104,9 +106,9 @@ router.get("/contacts/stats", async (req: AuthRequest, res) => {
 // GET /contacts/:id
 router.get("/contacts/:id", async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [c] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-    if (!c) { res.status(404).json({ error: "Contact not found" }); return; }
+    if (!c || !canAccessCompany(req.user, c.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
     const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
     const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
     res.json(formatContact(c, event?.name, assignee?.name));
@@ -117,17 +119,21 @@ router.get("/contacts/:id", async (req: AuthRequest, res) => {
 });
 
 // PATCH /contacts/:id
-router.patch("/contacts/:id", async (req: AuthRequest, res) => {
+router.patch("/contacts/:id", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
+    const [existing] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
+    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
     const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, followUpDate, eventId, assignedToId } = req.body;
+    if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
+    if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     const fullName = firstName !== undefined || lastName !== undefined ? [firstName, lastName].filter(Boolean).join(" ") || null : undefined;
     const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, eventId, assignedToId };
     if (fullName !== undefined) updateData.fullName = fullName;
     if (tags !== undefined) updateData.tags = JSON.stringify(tags);
     // Remove undefined
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
-    const [c] = await db.update(contactsTable).set(updateData as Parameters<typeof contactsTable.$inferSelect>[0]).where(eq(contactsTable.id, id)).returning();
+    const [c] = await db.update(contactsTable).set(updateData as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, id)).returning();
     if (!c) { res.status(404).json({ error: "Contact not found" }); return; }
     const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
     const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
@@ -139,9 +145,11 @@ router.patch("/contacts/:id", async (req: AuthRequest, res) => {
 });
 
 // DELETE /contacts/:id
-router.delete("/contacts/:id", async (req: AuthRequest, res) => {
+router.delete("/contacts/:id", requirePermission("contacts", "delete"), async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
+    const [existing] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
+    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
     await db.delete(contactsTable).where(eq(contactsTable.id, id));
     res.json({ success: true, message: "Contact deleted" });
   } catch (err) {

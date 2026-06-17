@@ -39,10 +39,30 @@ export type UserRole = typeof UserRole[keyof typeof UserRole];
 
 export const UserRole = {
   platform_owner: 'platform_owner',
-  company_admin: 'company_admin',
-  team_member: 'team_member',
-  viewer: 'viewer',
+  primary_admin: 'primary_admin',
+  admin: 'admin',
+  employee: 'employee',
 } as const;
+
+export type UserContactVisibility = typeof UserContactVisibility[keyof typeof UserContactVisibility];
+
+
+export const UserContactVisibility = {
+  own: 'own',
+  selected: 'selected',
+  all: 'all',
+} as const;
+
+export type UserCompanyVisibility = typeof UserCompanyVisibility[keyof typeof UserCompanyVisibility];
+
+
+export const UserCompanyVisibility = {
+  own: 'own',
+  selected: 'selected',
+  all: 'all',
+} as const;
+
+export type UserPermissions = {[key: string]: string[]};
 
 export interface User {
   id: number;
@@ -54,8 +74,16 @@ export interface User {
   /** @nullable */
   companyName?: string | null;
   /** @nullable */
+  phone?: string | null;
+  /** @nullable */
   avatarUrl?: string | null;
+  permissions?: UserPermissions;
+  contactVisibility?: UserContactVisibility;
+  companyVisibility?: UserCompanyVisibility;
+  accessibleCompanies?: number[];
   isActive?: boolean;
+  /** @nullable */
+  lastLoginAt?: string | null;
   createdAt: string;
 }
 
@@ -75,34 +103,84 @@ export type UserInputRole = typeof UserInputRole[keyof typeof UserInputRole];
 
 
 export const UserInputRole = {
-  company_admin: 'company_admin',
-  team_member: 'team_member',
-  viewer: 'viewer',
+  primary_admin: 'primary_admin',
+  admin: 'admin',
+  employee: 'employee',
+} as const;
+
+export type UserInputPermissions = {[key: string]: string[]};
+
+export type UserInputContactVisibility = typeof UserInputContactVisibility[keyof typeof UserInputContactVisibility];
+
+
+export const UserInputContactVisibility = {
+  own: 'own',
+  selected: 'selected',
+  all: 'all',
+} as const;
+
+export type UserInputCompanyVisibility = typeof UserInputCompanyVisibility[keyof typeof UserInputCompanyVisibility];
+
+
+export const UserInputCompanyVisibility = {
+  own: 'own',
+  selected: 'selected',
+  all: 'all',
 } as const;
 
 export interface UserInput {
   email: string;
   name: string;
+  /** @nullable */
+  phone?: string | null;
   role: UserInputRole;
   /** @nullable */
   companyId?: number | null;
   /** @nullable */
   password?: string | null;
+  permissions?: UserInputPermissions;
+  contactVisibility?: UserInputContactVisibility;
+  companyVisibility?: UserInputCompanyVisibility;
 }
 
 export type UserUpdateRole = typeof UserUpdateRole[keyof typeof UserUpdateRole];
 
 
 export const UserUpdateRole = {
-  company_admin: 'company_admin',
-  team_member: 'team_member',
-  viewer: 'viewer',
+  primary_admin: 'primary_admin',
+  admin: 'admin',
+  employee: 'employee',
+} as const;
+
+export type UserUpdatePermissions = {[key: string]: string[]};
+
+export type UserUpdateContactVisibility = typeof UserUpdateContactVisibility[keyof typeof UserUpdateContactVisibility];
+
+
+export const UserUpdateContactVisibility = {
+  own: 'own',
+  selected: 'selected',
+  all: 'all',
+} as const;
+
+export type UserUpdateCompanyVisibility = typeof UserUpdateCompanyVisibility[keyof typeof UserUpdateCompanyVisibility];
+
+
+export const UserUpdateCompanyVisibility = {
+  own: 'own',
+  selected: 'selected',
+  all: 'all',
 } as const;
 
 export interface UserUpdate {
   name?: string;
+  /** @nullable */
+  phone?: string | null;
   role?: UserUpdateRole;
   isActive?: boolean;
+  permissions?: UserUpdatePermissions;
+  contactVisibility?: UserUpdateContactVisibility;
+  companyVisibility?: UserUpdateCompanyVisibility;
 }
 
 export type CompanyPlan = typeof CompanyPlan[keyof typeof CompanyPlan];
@@ -112,6 +190,7 @@ export const CompanyPlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',
+  business: 'business',
   enterprise: 'enterprise',
 } as const;
 
@@ -119,8 +198,10 @@ export type CompanyStatus = typeof CompanyStatus[keyof typeof CompanyStatus];
 
 
 export const CompanyStatus = {
+  trial: 'trial',
   active: 'active',
   suspended: 'suspended',
+  expired: 'expired',
   cancelled: 'cancelled',
 } as const;
 
@@ -141,6 +222,10 @@ export interface Company {
   logoUrl?: string | null;
   plan: CompanyPlan;
   status: CompanyStatus;
+  /** @nullable */
+  suspendedReason?: string | null;
+  /** @nullable */
+  trialEndsAt?: string | null;
   userCount?: number;
   contactCount?: number;
   scanCount?: number;
@@ -161,6 +246,7 @@ export const CompanyInputPlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',
+  business: 'business',
   enterprise: 'enterprise',
 } as const;
 
@@ -186,7 +272,19 @@ export const CompanyUpdatePlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',
+  business: 'business',
   enterprise: 'enterprise',
+} as const;
+
+export type CompanyUpdateStatus = typeof CompanyUpdateStatus[keyof typeof CompanyUpdateStatus];
+
+
+export const CompanyUpdateStatus = {
+  trial: 'trial',
+  active: 'active',
+  suspended: 'suspended',
+  expired: 'expired',
+  cancelled: 'cancelled',
 } as const;
 
 export interface CompanyUpdate {
@@ -202,6 +300,9 @@ export interface CompanyUpdate {
   /** @nullable */
   website?: string | null;
   plan?: CompanyUpdatePlan;
+  status?: CompanyUpdateStatus;
+  /** @nullable */
+  suspendedReason?: string | null;
 }
 
 export type ContactStatus = typeof ContactStatus[keyof typeof ContactStatus];
@@ -614,6 +715,7 @@ export const SubscriptionPlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',
+  business: 'business',
   enterprise: 'enterprise',
 } as const;
 
@@ -621,9 +723,11 @@ export type SubscriptionStatus = typeof SubscriptionStatus[keyof typeof Subscrip
 
 
 export const SubscriptionStatus = {
+  trial: 'trial',
   active: 'active',
+  suspended: 'suspended',
+  expired: 'expired',
   cancelled: 'cancelled',
-  past_due: 'past_due',
 } as const;
 
 export interface Subscription {
@@ -637,18 +741,48 @@ export interface Subscription {
   /** @nullable */
   usersLimit?: number | null;
   /** @nullable */
+  adminsLimit?: number | null;
+  /** @nullable */
+  employeesLimit?: number | null;
+  /** @nullable */
+  contactsLimit?: number | null;
+  /** @nullable */
+  eventsLimit?: number | null;
+  /** @nullable */
+  storageLimitMb?: number | null;
+  /** @nullable */
+  apiLimit?: number | null;
+  /** @nullable */
+  trialEndsAt?: string | null;
+  /** @nullable */
   renewalDate?: string | null;
 }
+
+export type PlanFeatures = {[key: string]: boolean};
 
 export interface Plan {
   id: string;
   name: string;
-  price: number;
   /** @nullable */
-  scansLimit: number | null;
+  description?: string | null;
+  priceMonthly: number;
+  currency?: string;
   /** @nullable */
-  usersLimit: number | null;
-  features?: string[];
+  adminsLimit?: number | null;
+  /** @nullable */
+  employeesLimit?: number | null;
+  /** @nullable */
+  contactsLimit?: number | null;
+  /** @nullable */
+  eventsLimit?: number | null;
+  /** @nullable */
+  storageLimitMb?: number | null;
+  /** @nullable */
+  apiLimit?: number | null;
+  trialDays?: number;
+  features: PlanFeatures;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 export type SubscriptionUpgradeInputPlan = typeof SubscriptionUpgradeInputPlan[keyof typeof SubscriptionUpgradeInputPlan];
@@ -658,6 +792,7 @@ export const SubscriptionUpgradeInputPlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',
+  business: 'business',
   enterprise: 'enterprise',
 } as const;
 

@@ -19,5 +19,19 @@ export interface Subscription {
   /** @nullable */
   usersLimit?: number | null;
   /** @nullable */
+  adminsLimit?: number | null;
+  /** @nullable */
+  employeesLimit?: number | null;
+  /** @nullable */
+  contactsLimit?: number | null;
+  /** @nullable */
+  eventsLimit?: number | null;
+  /** @nullable */
+  storageLimitMb?: number | null;
+  /** @nullable */
+  apiLimit?: number | null;
+  /** @nullable */
+  trialEndsAt?: Date | null;
+  /** @nullable */
   renewalDate?: Date | null;
 }

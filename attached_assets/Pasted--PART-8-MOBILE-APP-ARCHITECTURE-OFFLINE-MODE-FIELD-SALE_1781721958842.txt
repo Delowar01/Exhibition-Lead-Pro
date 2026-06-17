@@ -1,0 +1,987 @@
+# PART 8
+
+# MOBILE APP ARCHITECTURE, OFFLINE MODE, FIELD SALES EXPERIENCE, TEAM PERFORMANCE & GAMIFICATION
+
+## Overview
+
+The mobile application is the primary product of the platform.
+
+Most users will spend 90% of their time inside the mobile application while attending exhibitions, conferences, trade shows, networking events, and client meetings.
+
+The application must feel:
+
+* Premium
+* Fast
+* Native
+* Offline-first
+* Enterprise-grade
+
+The app should feel closer to Salesforce Mobile, HubSpot Mobile, and LinkedIn Premium than a traditional card scanner application.
+
+---
+
+# Supported Platforms
+
+Native Mobile Apps
+
+iOS
+
+Android
+
+---
+
+# Framework Requirements
+
+React Native
+
+Expo SDK (latest stable)
+
+TypeScript
+
+Offline-first architecture
+
+---
+
+# Design Language
+
+Premium SaaS Design
+
+Inspired by:
+
+Salesforce
+
+HubSpot
+
+Monday.com
+
+Linear
+
+Stripe Dashboard
+
+Notion
+
+LinkedIn
+
+---
+
+# UI Standards
+
+Rounded Cards
+
+Soft Shadows
+
+Glass Effects
+
+Premium Animations
+
+Dark Mode
+
+Light Mode
+
+Accessibility Support
+
+---
+
+# Brand Requirements
+
+Home Screen Header
+
+Display:
+
+Company Logo
+
+Company Name
+
+User Name
+
+User Role
+
+---
+
+Example:
+
+```text id="zohobx"
+Elite Marcom
+
+Mohammad Hossain
+Primary Admin
+```
+
+---
+
+# Home Footer
+
+Display:
+
+```text id="53j6vg"
+Powered by Elite Marcom
+```
+
+Only on Home Screen.
+
+---
+
+# Mobile Navigation
+
+Bottom Navigation
+
+```text id="n43lyv"
+Home
+
+Capture
+
+Contacts
+
+Tasks
+
+More
+```
+
+---
+
+# Home Dashboard
+
+Purpose:
+
+Provide real-time event performance.
+
+---
+
+# Home Widgets
+
+Today's Leads
+
+Hot Leads
+
+Follow-Ups Due
+
+Meetings Scheduled
+
+Proposals Sent
+
+Pipeline Value
+
+---
+
+# Quick Actions
+
+Capture Lead
+
+Scan Badge
+
+Scan QR
+
+Add Manual Lead
+
+Voice Note
+
+Create Task
+
+---
+
+# Activity Feed
+
+Recent Leads
+
+Recent Tasks
+
+Recent Follow-Ups
+
+Recent Meetings
+
+Recent Opportunities
+
+---
+
+# Capture Center
+
+Purpose:
+
+Unified lead capture experience.
+
+---
+
+# Capture Options
+
+Business Card
+
+Badge Scan
+
+QR Scan
+
+LinkedIn QR
+
+Email Signature
+
+VCF Import
+
+Manual Entry
+
+---
+
+# Smart Capture Workflow
+
+User taps Capture
+
+↓
+
+AI detects source type
+
+↓
+
+Extracts data
+
+↓
+
+Displays Review Screen
+
+↓
+
+Save Lead
+
+---
+
+# Rapid Mode
+
+Purpose:
+
+High-speed exhibition scanning.
+
+---
+
+# Rapid Mode Workflow
+
+Capture
+
+↓
+
+Save
+
+↓
+
+Return to Camera
+
+↓
+
+Next Capture
+
+No manual confirmation required.
+
+---
+
+# Batch Capture Mode
+
+Purpose:
+
+Capture multiple leads rapidly.
+
+---
+
+# Workflow
+
+Scan
+
+Scan
+
+Scan
+
+Scan
+
+AI processes in background
+
+---
+
+# Multi-Card Queue
+
+Display:
+
+Queued
+
+Processing
+
+Completed
+
+Failed
+
+---
+
+# Offline Mode
+
+CRITICAL REQUIREMENT
+
+Must work without internet.
+
+---
+
+# Offline Capabilities
+
+Scan Cards
+
+Scan Badges
+
+Scan QR
+
+Record Voice Notes
+
+Create Leads
+
+Create Tasks
+
+Add Notes
+
+Capture Images
+
+---
+
+# Offline Storage
+
+Store:
+
+Images
+
+Audio
+
+Lead Data
+
+Tasks
+
+Activities
+
+Events
+
+---
+
+# Offline Sync Engine
+
+When internet returns:
+
+Automatically synchronize.
+
+---
+
+# Sync Rules
+
+Upload Pending Leads
+
+Upload Images
+
+Upload Voice Notes
+
+Resolve Conflicts
+
+Update Status
+
+---
+
+# Conflict Resolution
+
+Example:
+
+Lead edited on mobile
+
+Lead edited on web
+
+System shows:
+
+```text id="wmxcnr"
+Choose Version
+
+Keep Mobile
+
+Keep Server
+
+Merge
+```
+
+---
+
+# Sync Dashboard
+
+Display:
+
+Pending Uploads
+
+Synced Items
+
+Failed Uploads
+
+Storage Used
+
+Last Sync Time
+
+---
+
+# Duplicate Prevention
+
+Offline duplicate detection.
+
+---
+
+# Rules
+
+Mobile
+
+Email
+
+Name + Company
+
+LinkedIn
+
+---
+
+# Local Duplicate Alert
+
+```text id="4f4v9s"
+Possible Duplicate Found
+
+View Existing Lead
+
+Continue Anyway
+```
+
+---
+
+# Contact Management
+
+Purpose:
+
+Manage leads from mobile.
+
+---
+
+# Contact List
+
+Search
+
+Filters
+
+Sort
+
+Tags
+
+Quick Actions
+
+---
+
+# Filters
+
+Event
+
+Lead Score
+
+Lead Temperature
+
+Status
+
+Industry
+
+Country
+
+Assigned User
+
+---
+
+# Contact Detail
+
+Tabs:
+
+Overview
+
+Activities
+
+Meetings
+
+Notes
+
+Files
+
+Timeline
+
+AI Insights
+
+---
+
+# Quick Actions
+
+Call
+
+WhatsApp
+
+Email
+
+Save Contact
+
+Schedule Meeting
+
+Generate Proposal
+
+Assign User
+
+---
+
+# Native Device Integrations
+
+Call
+
+WhatsApp
+
+Email
+
+Contacts
+
+Camera
+
+Microphone
+
+Location
+
+Calendar
+
+Files
+
+---
+
+# Voice Notes
+
+Purpose:
+
+Capture meeting conversations.
+
+---
+
+# Workflow
+
+Open Lead
+
+↓
+
+Record Voice Note
+
+↓
+
+AI Processing
+
+↓
+
+Summary Generated
+
+---
+
+# Voice Features
+
+Pause
+
+Resume
+
+Delete
+
+Re-record
+
+Upload
+
+Playback
+
+---
+
+# Task Management
+
+Purpose:
+
+Follow-up execution.
+
+---
+
+# Task Types
+
+Call
+
+Meeting
+
+Email
+
+WhatsApp
+
+Proposal
+
+Custom
+
+---
+
+# Task Dashboard
+
+Today
+
+Overdue
+
+Upcoming
+
+Completed
+
+---
+
+# Calendar View
+
+Day
+
+Week
+
+Month
+
+---
+
+# Push Notifications
+
+Purpose:
+
+Keep teams active.
+
+---
+
+# Notification Types
+
+Follow-Up Due
+
+Hot Lead
+
+Meeting Reminder
+
+Proposal Opened
+
+Lead Assigned
+
+Workflow Alert
+
+---
+
+# Smart Notifications
+
+AI prioritizes alerts.
+
+---
+
+Example:
+
+```text id="r8r4ku"
+HOT LEAD
+
+CEO from Aramco
+
+Follow-up recommended today
+```
+
+---
+
+# Team Performance
+
+Purpose:
+
+Motivate field teams.
+
+---
+
+# Leaderboards
+
+Daily
+
+Weekly
+
+Monthly
+
+Event
+
+Annual
+
+---
+
+# Ranking Metrics
+
+Leads Captured
+
+Qualified Leads
+
+Meetings
+
+Proposals
+
+Revenue
+
+---
+
+# Team Dashboard
+
+Top Performers
+
+Fastest Follow-Up
+
+Most Opportunities
+
+Highest Revenue
+
+---
+
+# Gamification
+
+Purpose:
+
+Increase engagement.
+
+---
+
+# Achievements
+
+First Lead
+
+100 Leads
+
+500 Leads
+
+1000 Leads
+
+Hot Lead Hunter
+
+Proposal Master
+
+Meeting Champion
+
+Revenue Generator
+
+---
+
+# Badges
+
+Bronze
+
+Silver
+
+Gold
+
+Platinum
+
+Diamond
+
+---
+
+# Rewards Engine
+
+Points
+
+Levels
+
+Achievements
+
+Streaks
+
+Rankings
+
+---
+
+# Daily Challenges
+
+Examples:
+
+Capture 20 Leads
+
+Complete 10 Follow-Ups
+
+Book 3 Meetings
+
+Generate 2 Proposals
+
+---
+
+# AI Coaching
+
+Purpose:
+
+Help sales teams improve.
+
+---
+
+# Coaching Examples
+
+```text id="b26pq5"
+You capture many leads but
+follow-up rate is low.
+
+Recommended:
+Contact hot leads within 24 hours.
+```
+
+---
+
+# Mobile Analytics
+
+Track:
+
+Leads Captured
+
+Meetings
+
+Tasks
+
+Follow-Ups
+
+Proposals
+
+Revenue
+
+---
+
+# Performance Dashboard
+
+Personal
+
+Team
+
+Event
+
+Company
+
+---
+
+# Dark Mode
+
+Mandatory
+
+---
+
+# Appearance Settings
+
+Light
+
+Dark
+
+System Default
+
+---
+
+# Language Support
+
+English
+
+Arabic
+
+---
+
+# RTL Support
+
+Full Arabic RTL support.
+
+---
+
+# Accessibility
+
+Large Text
+
+Screen Reader
+
+High Contrast
+
+Keyboard Navigation
+
+---
+
+# Mobile Security
+
+Biometric Login
+
+Face ID
+
+Fingerprint
+
+PIN Code
+
+Session Timeout
+
+Remote Logout
+
+---
+
+# Device Management
+
+Track:
+
+Device Name
+
+OS Version
+
+App Version
+
+Last Login
+
+Last Sync
+
+---
+
+# Mobile Audit Logs
+
+Track:
+
+Login
+
+Lead Capture
+
+Edit
+
+Delete
+
+Sync
+
+Export
+
+---
+
+# Performance Requirements
+
+App Launch
+
+< 2 Seconds
+
+Capture Screen
+
+< 500 ms
+
+Lead Save
+
+< 300 ms
+
+Search
+
+< 1 Second
+
+Offline Sync
+
+Background
+
+---
+
+# Scalability
+
+Support:
+
+10 Leads
+
+1,000 Leads
+
+100,000 Leads
+
+1 Million Leads
+
+Without UI degradation.
+
+---
+
+# Success Criteria
+
+The mobile application must become a complete exhibition sales assistant that enables field teams to:
+
+* Capture leads
+* Qualify leads
+* Follow up
+* Generate opportunities
+* Track performance
+* Operate offline
+
+while delivering a premium enterprise mobile experience.
+
+END OF PART 8

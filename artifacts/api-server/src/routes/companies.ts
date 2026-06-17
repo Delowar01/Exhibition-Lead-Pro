@@ -2,10 +2,14 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { companiesTable, usersTable, contactsTable, scansTable, activityLogsTable } from "@workspace/db";
 import { eq, ilike, and, count, sql } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireRole, blockReadOnlyMutations, type AuthRequest } from "../middlewares/requireAuth.js";
+import { auditMutations } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/companies", requireRole("platform_owner"));
+router.use("/companies", blockReadOnlyMutations);
+router.use("/companies", auditMutations("company"));
 
 // GET /companies
 router.get("/companies", async (req: AuthRequest, res) => {
@@ -58,7 +62,7 @@ router.post("/companies", async (req: AuthRequest, res) => {
 // GET /companies/:id
 router.get("/companies/:id", async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, id)).limit(1);
     if (!company) { res.status(404).json({ error: "Company not found" }); return; }
     const [userCount] = await db.select({ count: count() }).from(usersTable).where(eq(usersTable.companyId, id));
@@ -74,7 +78,7 @@ router.get("/companies/:id", async (req: AuthRequest, res) => {
 // PATCH /companies/:id
 router.patch("/companies/:id", async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const { name, industry, country, address, vatNumber, website, plan } = req.body;
     const [company] = await db.update(companiesTable).set({ name, industry, country, address, vatNumber, website, plan }).where(eq(companiesTable.id, id)).returning();
     if (!company) { res.status(404).json({ error: "Company not found" }); return; }
@@ -89,7 +93,7 @@ router.patch("/companies/:id", async (req: AuthRequest, res) => {
 router.delete("/companies/:id", async (req: AuthRequest, res) => {
   try {
     if (req.user!.role !== "platform_owner") { res.status(403).json({ error: "Forbidden" }); return; }
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     await db.delete(companiesTable).where(eq(companiesTable.id, id));
     res.json({ success: true, message: "Company deleted" });
   } catch (err) {
@@ -102,7 +106,7 @@ router.delete("/companies/:id", async (req: AuthRequest, res) => {
 router.post("/companies/:id/suspend", async (req: AuthRequest, res) => {
   try {
     if (req.user!.role !== "platform_owner") { res.status(403).json({ error: "Forbidden" }); return; }
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [company] = await db.update(companiesTable).set({ status: "suspended" }).where(eq(companiesTable.id, id)).returning();
     await db.insert(activityLogsTable).values({ type: "company_suspended", description: `Company suspended: ${company.name}`, companyId: id, companyName: company.name, userId: req.user!.id, userName: req.user!.email });
     res.json({ ...company, userCount: 0, contactCount: 0, scanCount: 0 });
@@ -116,7 +120,7 @@ router.post("/companies/:id/suspend", async (req: AuthRequest, res) => {
 router.post("/companies/:id/activate", async (req: AuthRequest, res) => {
   try {
     if (req.user!.role !== "platform_owner") { res.status(403).json({ error: "Forbidden" }); return; }
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [company] = await db.update(companiesTable).set({ status: "active" }).where(eq(companiesTable.id, id)).returning();
     await db.insert(activityLogsTable).values({ type: "company_activated", description: `Company activated: ${company.name}`, companyId: id, companyName: company.name, userId: req.user!.id, userName: req.user!.email });
     res.json({ ...company, userCount: 0, contactCount: 0, scanCount: 0 });

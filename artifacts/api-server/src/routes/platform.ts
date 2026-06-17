@@ -2,10 +2,11 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { companiesTable, usersTable, contactsTable, scansTable, leadsTable, activityLogsTable } from "@workspace/db";
 import { eq, count, sum, sql, gte } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireRole, type AuthRequest } from "../middlewares/requireAuth.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/platform", requireRole("platform_owner"));
 
 // GET /platform/stats
 router.get("/platform/stats", async (req: AuthRequest, res) => {

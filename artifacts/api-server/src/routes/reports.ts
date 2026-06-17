@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { contactsTable, leadsTable, eventsTable, usersTable, scansTable } from "@workspace/db";
 import { eq, and, count, sql } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -10,19 +10,15 @@ router.use(requireAuth);
 // GET /reports/admin-dashboard
 router.get("/reports/admin-dashboard", async (req: AuthRequest, res) => {
   try {
-    const companyId = req.user!.companyId;
-    const conditions = companyId ? [eq(contactsTable.companyId, companyId)] : [];
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = tenantScope(req.user, contactsTable.companyId);
+    const leadWhere = tenantScope(req.user, leadsTable.companyId);
+    const eventWhere = tenantScope(req.user, eventsTable.companyId);
+    const userWhere = tenantScope(req.user, usersTable.companyId);
+    const scanWhere = tenantScope(req.user, scansTable.companyId);
 
     const [{ totalContacts }] = await db.select({ totalContacts: count() }).from(contactsTable).where(whereClause);
-    const leadConditions = companyId ? [eq(leadsTable.companyId, companyId)] : [];
-    const leadWhere = leadConditions.length > 0 ? and(...leadConditions) : undefined;
     const [{ totalLeads }] = await db.select({ totalLeads: count() }).from(leadsTable).where(leadWhere);
-    const eventConditions = companyId ? [eq(eventsTable.companyId, companyId)] : [];
-    const eventWhere = eventConditions.length > 0 ? and(...eventConditions) : undefined;
     const [{ totalEvents }] = await db.select({ totalEvents: count() }).from(eventsTable).where(eventWhere);
-    const userConditions = companyId ? [eq(usersTable.companyId, companyId)] : [];
-    const userWhere = userConditions.length > 0 ? and(...userConditions) : undefined;
     const [{ teamCount }] = await db.select({ teamCount: count() }).from(usersTable).where(userWhere);
 
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -32,8 +28,6 @@ router.get("/reports/admin-dashboard", async (req: AuthRequest, res) => {
     const conversionRate = totalLeads > 0 ? Math.round((wonLeads[0].count / totalLeads) * 100) : 0;
 
     const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0);
-    const scanConditions = companyId ? [eq(scansTable.companyId, companyId)] : [];
-    const scanWhere = scanConditions.length > 0 ? and(...scanConditions) : undefined;
     const [{ scansThisMonth }] = await db.select({ scansThisMonth: count() }).from(scansTable).where(and(scanWhere, sql`${scansTable.createdAt} >= ${startOfMonth}`));
 
     res.json({ totalContacts, totalLeads, totalEvents, newContactsToday, conversionRate, scansThisMonth, teamCount });
@@ -46,12 +40,12 @@ router.get("/reports/admin-dashboard", async (req: AuthRequest, res) => {
 // GET /reports/leads-by-event
 router.get("/reports/leads-by-event", async (req: AuthRequest, res) => {
   try {
-    const companyId = req.user!.companyId;
-    const events = await db.select().from(eventsTable).where(companyId ? eq(eventsTable.companyId, companyId) : undefined);
+    const events = await db.select().from(eventsTable).where(tenantScope(req.user, eventsTable.companyId));
 
+    const leadScope = tenantScope(req.user, leadsTable.companyId);
     const result = await Promise.all(events.map(async (e) => {
-      const [{ leadCount }] = await db.select({ leadCount: count() }).from(leadsTable).where(eq(leadsTable.eventId, e.id));
-      const [{ wonCount }] = await db.select({ wonCount: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, e.id), eq(leadsTable.stage, "won")));
+      const [{ leadCount }] = await db.select({ leadCount: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, e.id), leadScope));
+      const [{ wonCount }] = await db.select({ wonCount: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, e.id), eq(leadsTable.stage, "won"), leadScope));
       const conversionRate = leadCount > 0 ? Math.round((wonCount / leadCount) * 100) : 0;
       return { eventId: e.id, eventName: e.name, leadCount, wonCount, conversionRate };
     }));
@@ -66,8 +60,7 @@ router.get("/reports/leads-by-event", async (req: AuthRequest, res) => {
 // GET /reports/team-performance
 router.get("/reports/team-performance", async (req: AuthRequest, res) => {
   try {
-    const companyId = req.user!.companyId;
-    const users = await db.select().from(usersTable).where(companyId ? eq(usersTable.companyId, companyId) : undefined);
+    const users = await db.select().from(usersTable).where(tenantScope(req.user, usersTable.companyId));
 
     const result = await Promise.all(users.map(async (u) => {
       const [{ scanCount }] = await db.select({ scanCount: count() }).from(scansTable).where(eq(scansTable.userId, u.id));

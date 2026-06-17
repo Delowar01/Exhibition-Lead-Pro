@@ -15,7 +15,9 @@ export const leadsTable = pgTable("leads", {
   notes: text("notes"),
   assignedToId: integer("assigned_to_id").references(() => usersTable.id, { onDelete: "set null" }),
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),
+  createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertLeadSchema = createInsertSchema(leadsTable).omit({ id: true, createdAt: true });

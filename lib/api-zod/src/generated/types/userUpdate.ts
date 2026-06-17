@@ -5,10 +5,18 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { UserUpdateCompanyVisibility } from './userUpdateCompanyVisibility';
+import type { UserUpdateContactVisibility } from './userUpdateContactVisibility';
+import type { UserUpdatePermissions } from './userUpdatePermissions';
 import type { UserUpdateRole } from './userUpdateRole';
 
 export interface UserUpdate {
   name?: string;
+  /** @nullable */
+  phone?: string | null;
   role?: UserUpdateRole;
   isActive?: boolean;
+  permissions?: UserUpdatePermissions;
+  contactVisibility?: UserUpdateContactVisibility;
+  companyVisibility?: UserUpdateCompanyVisibility;
 }

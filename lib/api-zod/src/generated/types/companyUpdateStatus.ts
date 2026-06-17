@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CompanyStatus = typeof CompanyStatus[keyof typeof CompanyStatus];
+export type CompanyUpdateStatus = typeof CompanyUpdateStatus[keyof typeof CompanyUpdateStatus];
 
 
-export const CompanyStatus = {
+export const CompanyUpdateStatus = {
   trial: 'trial',
   active: 'active',
   suspended: 'suspended',

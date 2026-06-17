@@ -1,11 +1,15 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { leadsTable, contactsTable, usersTable, eventsTable } from "@workspace/db";
-import { eq, and, count } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { eq, and, count, inArray } from "drizzle-orm";
+import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
+import { auditMutations } from "../lib/audit.js";
+import { refAccessible } from "../lib/tenant.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/leads", blockReadOnlyMutations);
+router.use("/leads", auditMutations("leads"));
 
 const PIPELINE_STAGES = ["new", "contacted", "meeting_scheduled", "proposal_sent", "negotiation", "won", "lost"];
 
@@ -31,10 +35,8 @@ router.get("/leads", async (req: AuthRequest, res) => {
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(500, parseInt(limit));
     const offset = (pageNum - 1) * limitNum;
-    const companyId = req.user!.companyId;
-
     const conditions = [];
-    if (companyId) conditions.push(eq(leadsTable.companyId, companyId));
+    if (req.user!.role !== "platform_owner") conditions.push(inArray(leadsTable.companyId, req.user!.accessibleCompanies));
     if (stage) conditions.push(eq(leadsTable.stage, stage));
     if (assignedTo && !isNaN(parseInt(assignedTo))) conditions.push(eq(leadsTable.assignedToId, parseInt(assignedTo)));
     if (eventId && !isNaN(parseInt(eventId))) conditions.push(eq(leadsTable.eventId, parseInt(eventId)));
@@ -51,11 +53,14 @@ router.get("/leads", async (req: AuthRequest, res) => {
 });
 
 // POST /leads
-router.post("/leads", async (req: AuthRequest, res) => {
+router.post("/leads", requirePermission("leads", "create"), async (req: AuthRequest, res) => {
   try {
     const companyId = req.user!.companyId;
     if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
     const { contactId, stage, value, notes, assignedToId, eventId } = req.body;
+    if (!(await refAccessible(req.user, "contacts", contactId))) { res.status(400).json({ error: "Invalid contactId" }); return; }
+    if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
+    if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
     const [lead] = await db.insert(leadsTable).values({ companyId, contactId: contactId ?? null, stage: stage ?? "new", value: value?.toString() ?? null, notes, assignedToId: assignedToId ?? null, eventId: eventId ?? null }).returning();
     res.status(201).json(await enrichLead(lead));
   } catch (err) {
@@ -67,9 +72,7 @@ router.post("/leads", async (req: AuthRequest, res) => {
 // GET /leads/pipeline
 router.get("/leads/pipeline", async (req: AuthRequest, res) => {
   try {
-    const companyId = req.user!.companyId;
-    const conditions = companyId ? [eq(leadsTable.companyId, companyId)] : [];
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = tenantScope(req.user, leadsTable.companyId);
     const allLeads = await db.select().from(leadsTable).where(whereClause).orderBy(leadsTable.createdAt);
     const enriched = await Promise.all(allLeads.map(enrichLead));
 
@@ -90,9 +93,9 @@ router.get("/leads/pipeline", async (req: AuthRequest, res) => {
 // GET /leads/:id
 router.get("/leads/:id", async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [lead] = await db.select().from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
-    if (!lead) { res.status(404).json({ error: "Lead not found" }); return; }
+    if (!lead || !canAccessCompany(req.user, lead.companyId)) { res.status(404).json({ error: "Lead not found" }); return; }
     res.json(await enrichLead(lead));
   } catch (err) {
     req.log.error(err);
@@ -101,13 +104,17 @@ router.get("/leads/:id", async (req: AuthRequest, res) => {
 });
 
 // PATCH /leads/:id
-router.patch("/leads/:id", async (req: AuthRequest, res) => {
+router.patch("/leads/:id", requirePermission("leads", "edit"), async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
+    const [existing] = await db.select({ companyId: leadsTable.companyId }).from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
+    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Lead not found" }); return; }
     const { stage, value, notes, assignedToId, eventId } = req.body;
+    if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
+    if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
     const updateData: Record<string, unknown> = { stage, value: value?.toString() ?? undefined, notes, assignedToId, eventId };
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
-    const [lead] = await db.update(leadsTable).set(updateData as Parameters<typeof leadsTable.$inferSelect>[0]).where(eq(leadsTable.id, id)).returning();
+    const [lead] = await db.update(leadsTable).set(updateData as Partial<typeof leadsTable.$inferInsert>).where(eq(leadsTable.id, id)).returning();
     if (!lead) { res.status(404).json({ error: "Lead not found" }); return; }
     res.json(await enrichLead(lead));
   } catch (err) {
@@ -117,9 +124,11 @@ router.patch("/leads/:id", async (req: AuthRequest, res) => {
 });
 
 // DELETE /leads/:id
-router.delete("/leads/:id", async (req: AuthRequest, res) => {
+router.delete("/leads/:id", requirePermission("leads", "delete"), async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
+    const [existing] = await db.select({ companyId: leadsTable.companyId }).from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
+    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Lead not found" }); return; }
     await db.delete(leadsTable).where(eq(leadsTable.id, id));
     res.json({ success: true, message: "Lead deleted" });
   } catch (err) {

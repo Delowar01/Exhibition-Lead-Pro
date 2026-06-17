@@ -27,7 +27,9 @@ export const contactsTable = pgTable("contacts", {
   cardImageUrl: text("card_image_url"),
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),
   assignedToId: integer("assigned_to_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertContactSchema = createInsertSchema(contactsTable).omit({ id: true, createdAt: true });

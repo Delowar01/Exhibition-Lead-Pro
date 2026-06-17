@@ -25,6 +25,10 @@ export interface Company {
   logoUrl?: string | null;
   plan: CompanyPlan;
   status: CompanyStatus;
+  /** @nullable */
+  suspendedReason?: string | null;
+  /** @nullable */
+  trialEndsAt?: Date | null;
   userCount?: number;
   contactCount?: number;
   scanCount?: number;

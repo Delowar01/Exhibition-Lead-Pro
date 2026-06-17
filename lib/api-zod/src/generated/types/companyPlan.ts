@@ -13,5 +13,6 @@ export const CompanyPlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',
+  business: 'business',
   enterprise: 'enterprise',
 } as const;

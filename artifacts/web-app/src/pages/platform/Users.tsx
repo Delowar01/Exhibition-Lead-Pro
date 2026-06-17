@@ -31,8 +31,8 @@ export default function PlatformUsers() {
   const getRoleBadgeVariant = (roleName: string) => {
     switch (roleName) {
       case "platform_owner": return "default";
-      case "company_admin": return "secondary";
-      case "team_member": return "outline";
+      case "primary_admin": return "secondary";
+      case "admin": return "outline";
       default: return "outline";
     }
   };
@@ -40,16 +40,17 @@ export default function PlatformUsers() {
   const getRoleBadgeStyle = (roleName: string) => {
     switch (roleName) {
       case "platform_owner": return "bg-primary text-primary-foreground hover:bg-primary/90";
-      case "company_admin": return "bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300";
-      case "team_member": return "bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300";
-      case "viewer": return "bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300";
+      case "primary_admin": return "bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300";
+      case "admin": return "bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300";
+      case "employee": return "bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300";
       default: return "";
     }
   };
 
   const formatRole = (roleName: string) => {
     if (roleName === "platform_owner") return "Super Admin";
-    return roleName.replace("_", " ");
+    if (roleName === "primary_admin") return "Primary Admin";
+    return roleName.replace(/_/g, " ");
   };
 
   // Stats

@@ -5,14 +5,29 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlanFeatures } from './planFeatures';
 
 export interface Plan {
   id: string;
   name: string;
-  price: number;
   /** @nullable */
-  scansLimit: number | null;
+  description?: string | null;
+  priceMonthly: number;
+  currency?: string;
   /** @nullable */
-  usersLimit: number | null;
-  features?: string[];
+  adminsLimit?: number | null;
+  /** @nullable */
+  employeesLimit?: number | null;
+  /** @nullable */
+  contactsLimit?: number | null;
+  /** @nullable */
+  eventsLimit?: number | null;
+  /** @nullable */
+  storageLimitMb?: number | null;
+  /** @nullable */
+  apiLimit?: number | null;
+  trialDays?: number;
+  features: PlanFeatures;
+  sortOrder?: number;
+  isActive?: boolean;
 }

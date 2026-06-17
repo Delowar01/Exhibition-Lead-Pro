@@ -6,3 +6,6 @@ export * from "./leads";
 export * from "./scans";
 export * from "./subscriptions";
 export * from "./activity_logs";
+export * from "./plans";
+export * from "./user_company_access";
+export * from "./audit_logs";

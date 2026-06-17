@@ -1062,15 +1062,36 @@ components:
           type: string
         role:
           type: string
-          enum: [platform_owner, company_admin, team_member, viewer]
+          enum: [platform_owner, primary_admin, admin, employee]
         companyId:
           type: ["integer", "null"]
         companyName:
           type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
         avatarUrl:
           type: ["string", "null"]
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        contactVisibility:
+          type: string
+          enum: [own, selected, all]
+        companyVisibility:
+          type: string
+          enum: [own, selected, all]
+        accessibleCompanies:
+          type: array
+          items:
+            type: integer
         isActive:
           type: boolean
+        lastLoginAt:
+          type: ["string", "null"]
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -1099,24 +1120,52 @@ components:
           format: email
         name:
           type: string
+        phone:
+          type: ["string", "null"]
         role:
           type: string
-          enum: [company_admin, team_member, viewer]
+          enum: [primary_admin, admin, employee]
         companyId:
           type: ["integer", "null"]
         password:
           type: ["string", "null"]
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        contactVisibility:
+          type: string
+          enum: [own, selected, all]
+        companyVisibility:
+          type: string
+          enum: [own, selected, all]
 
     UserUpdate:
       type: object
       properties:
         name:
           type: string
+        phone:
+          type: ["string", "null"]
         role:
           type: string
-          enum: [company_admin, team_member, viewer]
+          enum: [primary_admin, admin, employee]
         isActive:
           type: boolean
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        contactVisibility:
+          type: string
+          enum: [own, selected, all]
+        companyVisibility:
+          type: string
+          enum: [own, selected, all]
 
     # COMPANIES
     Company:
@@ -1141,10 +1190,15 @@ components:
           type: ["string", "null"]
         plan:
           type: string
-          enum: [free, starter, professional, enterprise]
+          enum: [free, starter, professional, business, enterprise]
         status:
           type: string
-          enum: [active, suspended, cancelled]
+          enum: [trial, active, suspended, expired, cancelled]
+        suspendedReason:
+          type: ["string", "null"]
+        trialEndsAt:
+          type: ["string", "null"]
+          format: date-time
         userCount:
           type: integer
         contactCount:
@@ -1188,7 +1242,7 @@ components:
           type: ["string", "null"]
         plan:
           type: string
-          enum: [free, starter, professional, enterprise]
+          enum: [free, starter, professional, business, enterprise]
           default: free
 
     CompanyUpdate:
@@ -1208,7 +1262,12 @@ components:
           type: ["string", "null"]
         plan:
           type: string
-          enum: [free, starter, professional, enterprise]
+          enum: [free, starter, professional, business, enterprise]
+        status:
+          type: string
+          enum: [trial, active, suspended, expired, cancelled]
+        suspendedReason:
+          type: ["string", "null"]
 
     # CONTACTS
     Contact:
@@ -1665,38 +1724,71 @@ components:
           type: integer
         plan:
           type: string
-          enum: [free, starter, professional, enterprise]
+          enum: [free, starter, professional, business, enterprise]
         status:
           type: string
-          enum: [active, cancelled, past_due]
+          enum: [trial, active, suspended, expired, cancelled]
         scansUsed:
           type: integer
         scansLimit:
           type: ["integer", "null"]
         usersLimit:
           type: ["integer", "null"]
+        adminsLimit:
+          type: ["integer", "null"]
+        employeesLimit:
+          type: ["integer", "null"]
+        contactsLimit:
+          type: ["integer", "null"]
+        eventsLimit:
+          type: ["integer", "null"]
+        storageLimitMb:
+          type: ["integer", "null"]
+        apiLimit:
+          type: ["integer", "null"]
+        trialEndsAt:
+          type: ["string", "null"]
+          format: date
         renewalDate:
           type: ["string", "null"]
           format: date
 
     Plan:
       type: object
-      required: [id, name, price, scansLimit, usersLimit]
+      required: [id, name, priceMonthly, features]
       properties:
         id:
           type: string
         name:
           type: string
-        price:
+        description:
+          type: ["string", "null"]
+        priceMonthly:
           type: number
-        scansLimit:
+        currency:
+          type: string
+        adminsLimit:
           type: ["integer", "null"]
-        usersLimit:
+        employeesLimit:
           type: ["integer", "null"]
+        contactsLimit:
+          type: ["integer", "null"]
+        eventsLimit:
+          type: ["integer", "null"]
+        storageLimitMb:
+          type: ["integer", "null"]
+        apiLimit:
+          type: ["integer", "null"]
+        trialDays:
+          type: integer
         features:
-          type: array
-          items:
-            type: string
+          type: object
+          additionalProperties:
+            type: boolean
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
 
     SubscriptionUpgradeInput:
       type: object
@@ -1704,7 +1796,7 @@ components:
       properties:
         plan:
           type: string
-          enum: [free, starter, professional, enterprise]
+          enum: [free, starter, professional, business, enterprise]
 
     # REPORTS
     AdminDashboard:

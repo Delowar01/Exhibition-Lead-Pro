@@ -10,7 +10,9 @@ export type SubscriptionStatus = typeof SubscriptionStatus[keyof typeof Subscrip
 
 
 export const SubscriptionStatus = {
+  trial: 'trial',
   active: 'active',
+  suspended: 'suspended',
+  expired: 'expired',
   cancelled: 'cancelled',
-  past_due: 'past_due',
 } as const;

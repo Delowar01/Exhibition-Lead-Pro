@@ -12,7 +12,9 @@ export const eventsTable = pgTable("events", {
   endDate: date("end_date"),
   boothNumber: text("booth_number"),
   description: text("description"),
+  createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertEventSchema = createInsertSchema(eventsTable).omit({ id: true, createdAt: true });
