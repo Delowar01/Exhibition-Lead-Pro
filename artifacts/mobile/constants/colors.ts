@@ -3,6 +3,10 @@
  *
  * Derived from the sibling web artifact (artifacts/web-app/src/index.css) so
  * both artifacts share one visual identity. Brand primary is #FF6B00 orange.
+ *
+ * Both the `light` and `dark` palettes expose an identical set of keys so the
+ * `useColors()` hook can switch between them based on the user's theme
+ * preference (light / dark / system).
  */
 
 const colors = {
@@ -52,6 +56,55 @@ const colors = {
 
     // Dark surface (camera overlay, deep accents)
     dark: "#191D2E",
+    darkForeground: "#F8F9FB",
+  },
+
+  dark: {
+    // Legacy aliases
+    text: "#F8F9FB",
+    tint: "#FF6B00",
+
+    // Core surfaces
+    background: "#0F1117",
+    foreground: "#F8F9FB",
+
+    // Cards / elevated surfaces
+    card: "#171A21",
+    cardForeground: "#F8F9FB",
+
+    // Primary action color
+    primary: "#FF6B00",
+    primaryForeground: "#FFFFFF",
+
+    // Secondary / less-emphasis interactive surfaces
+    secondary: "#1E222B",
+    secondaryForeground: "#F8F9FB",
+
+    // Muted / subdued elements
+    muted: "#1E222B",
+    mutedForeground: "#9AA3B0",
+
+    // Accent highlights
+    accent: "#2A1B10",
+    accentForeground: "#FF8A33",
+
+    // Destructive actions
+    destructive: "#F87171",
+    destructiveForeground: "#FFFFFF",
+
+    // Positive / success
+    success: "#34D399",
+    successForeground: "#06281B",
+
+    // Warning
+    warning: "#FBBF24",
+
+    // Borders and input outlines
+    border: "#262B36",
+    input: "#262B36",
+
+    // Dark surface (camera overlay, deep accents)
+    dark: "#0B0D12",
     darkForeground: "#F8F9FB",
   },
 

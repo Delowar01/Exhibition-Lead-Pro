@@ -2,7 +2,8 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -19,15 +20,29 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import {
+  authenticateBiometric,
+  getBiometricLabel,
+  isBiometricSupported,
+  readBiometricVault,
+} from "@/lib/biometric";
+import {
+  deleteSecureItem,
+  getSecureItem,
+  setSecureItem,
+} from "@/lib/secure-prefs";
 
 const DEMO_ACCOUNTS = [
   { label: "TechCorp Admin", email: "admin@techcorp.com" },
   { label: "Nexus Admin", email: "admin@nexussys.io" },
 ];
 
+const REMEMBER_KEY = "csp_remember_email";
+
 export default function LoginScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { login } = useAuth();
   const loginMutation = useLogin();
 
@@ -35,8 +50,43 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("Admin123!");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [bioReady, setBioReady] = useState(false);
+  const [bioLabel, setBioLabel] = useState("Biometrics");
+  const [bioBusy, setBioBusy] = useState(false);
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
+
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      const remembered = await getSecureItem(REMEMBER_KEY);
+      if (mounted && remembered) {
+        setEmail(remembered);
+        setRememberMe(true);
+      }
+      const [supported, vault, label] = await Promise.all([
+        isBiometricSupported(),
+        readBiometricVault(),
+        getBiometricLabel(),
+      ]);
+      if (mounted) {
+        setBioReady(supported && !!vault);
+        setBioLabel(label);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function persistRemember(emailValue: string) {
+    if (rememberMe) {
+      await setSecureItem(REMEMBER_KEY, emailValue);
+    } else {
+      await deleteSecureItem(REMEMBER_KEY);
+    }
+  }
 
   async function handleLogin(emailValue: string, passwordValue: string) {
     setError(null);
@@ -47,12 +97,33 @@ export default function LoginScreen() {
       const res = await loginMutation.mutateAsync({
         data: { email: emailValue, password: passwordValue },
       });
+      await persistRemember(emailValue);
       await login(res.token, res.user);
     } catch {
       setError("Invalid email or password. Please try again.");
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
+    }
+  }
+
+  async function handleBiometricLogin() {
+    setError(null);
+    setBioBusy(true);
+    try {
+      const ok = await authenticateBiometric(`Sign in with ${bioLabel}`);
+      if (!ok) return;
+      const vault = await readBiometricVault();
+      if (!vault) {
+        setError("Biometric sign-in is no longer available. Sign in manually.");
+        setBioReady(false);
+        return;
+      }
+      await login(vault.token, vault.user);
+    } catch {
+      setError("Biometric sign-in failed. Please try again.");
+    } finally {
+      setBioBusy(false);
     }
   }
 
@@ -159,6 +230,35 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
+          <View style={styles.optionsRow}>
+            <Pressable
+              onPress={() => setRememberMe((v) => !v)}
+              hitSlop={8}
+              style={styles.rememberRow}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    borderColor: rememberMe ? colors.primary : colors.border,
+                    backgroundColor: rememberMe ? colors.primary : "transparent",
+                    borderRadius: 5,
+                  },
+                ]}
+              >
+                {rememberMe ? <Feather name="check" size={12} color="#FFFFFF" /> : null}
+              </View>
+              <Text style={[styles.rememberText, { color: colors.mutedForeground }]}>
+                Remember me
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => router.push("/forgot-password")} hitSlop={8}>
+              <Text style={[styles.forgotText, { color: colors.primary }]}>
+                Forgot password?
+              </Text>
+            </Pressable>
+          </View>
+
           {error ? (
             <View style={styles.errorRow}>
               <Feather name="alert-circle" size={14} color={colors.destructive} />
@@ -175,6 +275,30 @@ export default function LoginScreen() {
             loading={loginMutation.isPending}
             style={{ marginTop: 20 }}
           />
+
+          {bioReady ? (
+            <Pressable
+              onPress={handleBiometricLogin}
+              disabled={bioBusy}
+              style={({ pressed }) => [
+                styles.bioBtn,
+                {
+                  borderColor: colors.border,
+                  borderRadius: colors.radius,
+                  opacity: pressed || bioBusy ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Feather
+                name={bioLabel === "Face ID" ? "user" : "unlock"}
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={[styles.bioBtnText, { color: colors.foreground }]}>
+                Sign in with {bioLabel}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <Text style={styles.demoLabel}>QUICK DEMO ACCESS</Text>
@@ -272,6 +396,45 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FONT.medium,
     height: "100%",
+  },
+  optionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+  },
+  rememberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rememberText: {
+    fontSize: 13,
+    fontFamily: FONT.medium,
+  },
+  forgotText: {
+    fontSize: 13,
+    fontFamily: FONT.semibold,
+  },
+  bioBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 50,
+    borderWidth: 1,
+    marginTop: 12,
+  },
+  bioBtnText: {
+    fontSize: 14.5,
+    fontFamily: FONT.semibold,
   },
   errorRow: {
     flexDirection: "row",

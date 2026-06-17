@@ -15,10 +15,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   type MobileActivityItem,
+  type MobileDashboard,
+  useGetLeadsByEvent,
   useGetMobileDashboard,
 } from "@workspace/api-client-react";
 
-import { Avatar, FONT, LoadingState } from "@/components/ui";
+import { Avatar, Badge, FONT, LoadingState, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -52,6 +54,46 @@ const ACTIVITY_ICON: Record<string, keyof typeof Feather.glyphMap> = {
   contact: "user",
 };
 
+interface Insight {
+  text: string;
+  icon: keyof typeof Feather.glyphMap;
+  tone: "primary" | "warning" | "info";
+}
+
+function buildInsights(data?: MobileDashboard): Insight[] {
+  if (!data) return [];
+  const out: Insight[] = [];
+  if (data.followUpsDue > 0) {
+    out.push({
+      text: `${data.followUpsDue} follow-up${data.followUpsDue === 1 ? "" : "s"} due — reach out before the day ends.`,
+      icon: "clock",
+      tone: "warning",
+    });
+  }
+  if (data.hotLeads > 0) {
+    out.push({
+      text: `${data.hotLeads} hot lead${data.hotLeads === 1 ? "" : "s"} are primed to convert. Prioritize these.`,
+      icon: "trending-up",
+      tone: "primary",
+    });
+  }
+  if (data.todayLeads > 0) {
+    out.push({
+      text: `You've captured ${data.todayLeads} lead${data.todayLeads === 1 ? "" : "s"} today. Great momentum.`,
+      icon: "zap",
+      tone: "info",
+    });
+  }
+  if (out.length === 0) {
+    out.push({
+      text: "No urgent follow-ups. Capture a card to start building your pipeline.",
+      icon: "compass",
+      tone: "info",
+    });
+  }
+  return out.slice(0, 3);
+}
+
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -60,6 +102,13 @@ export default function HomeScreen() {
 
   const query = useGetMobileDashboard();
   const data = query.data;
+
+  const eventsQuery = useGetLeadsByEvent();
+  const activeEvent = [...(eventsQuery.data ?? [])].sort(
+    (a, b) => b.leadCount - a.leadCount,
+  )[0];
+
+  const insights = buildInsights(data);
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -176,14 +225,17 @@ export default function HomeScreen() {
             <Text numberOfLines={1} style={[styles.name, { color: colors.foreground }]}>
               {user?.name ?? "Welcome"}
             </Text>
-            {user?.companyName ? (
-              <View style={styles.companyRow}>
-                <View style={[styles.companyDot, { backgroundColor: colors.primary }]} />
-                <Text numberOfLines={1} style={[styles.company, { color: colors.mutedForeground }]}>
-                  {user.companyName}
-                </Text>
-              </View>
-            ) : null}
+            <View style={styles.metaRow}>
+              {user?.role ? <Badge label={prettyLabel(user.role)} color={colors.primary} /> : null}
+              {user?.companyName ? (
+                <View style={styles.companyRow}>
+                  <View style={[styles.companyDot, { backgroundColor: colors.primary }]} />
+                  <Text numberOfLines={1} style={[styles.company, { color: colors.mutedForeground }]}>
+                    {user.companyName}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
           <Avatar name={user?.name} color={colors.primary} size={48} />
         </View>
@@ -233,6 +285,85 @@ export default function HomeScreen() {
             ))}
           </View>
         )}
+
+        {/* Active event */}
+        {activeEvent ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+              ACTIVE EVENT
+            </Text>
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.selectionAsync();
+                router.push(`/event/${activeEvent.eventId}`);
+              }}
+              style={({ pressed }) => [
+                styles.eventCard,
+                { backgroundColor: colors.dark, borderRadius: colors.radius + 6, opacity: pressed ? 0.92 : 1 },
+              ]}
+            >
+              <View style={[styles.eventIcon, { backgroundColor: "rgba(255,255,255,0.14)" }]}>
+                <Feather name="calendar" size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={styles.eventName}>
+                  {activeEvent.eventName}
+                </Text>
+                <Text style={styles.eventMeta}>
+                  {activeEvent.leadCount} lead{activeEvent.leadCount === 1 ? "" : "s"}
+                  {activeEvent.wonCount != null ? ` · ${activeEvent.wonCount} won` : ""}
+                  {activeEvent.conversionRate != null
+                    ? ` · ${Math.round(activeEvent.conversionRate)}% conv.`
+                    : ""}
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          </>
+        ) : null}
+
+        {/* Smart insights */}
+        {insights.length > 0 ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+              TODAY&apos;S FOCUS
+            </Text>
+            <View
+              style={[
+                styles.insightCard,
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+              ]}
+            >
+              {insights.map((ins, idx) => {
+                const tone =
+                  ins.tone === "warning"
+                    ? "#F59E0B"
+                    : ins.tone === "primary"
+                      ? colors.primary
+                      : "#06B6D4";
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.insightRow,
+                      idx > 0 && {
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderTopColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.insightIcon, { backgroundColor: tone + "1A" }]}>
+                      <Feather name={ins.icon} size={15} color={tone} />
+                    </View>
+                    <Text style={[styles.insightText, { color: colors.foreground }]}>
+                      {ins.text}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
 
         {/* Quick actions */}
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>QUICK ACTIONS</Text>
@@ -287,7 +418,7 @@ export default function HomeScreen() {
         {/* Powered by */}
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-            Powered by Card Scanner Pro
+            Powered by Elite Marcom
           </Text>
         </View>
       </ScrollView>
@@ -311,11 +442,16 @@ const styles = StyleSheet.create({
     fontFamily: FONT.bold,
     marginTop: 1,
   },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 7,
+  },
   companyRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: 4,
   },
   companyDot: {
     width: 6,
@@ -458,6 +594,53 @@ const styles = StyleSheet.create({
   activityEmptyText: {
     fontSize: 13.5,
     fontFamily: FONT.regular,
+  },
+  eventCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+  },
+  eventIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eventName: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontFamily: FONT.bold,
+  },
+  eventMeta: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    marginTop: 3,
+  },
+  insightCard: {
+    borderWidth: 1,
+    paddingHorizontal: 14,
+  },
+  insightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 13,
+  },
+  insightIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  insightText: {
+    flex: 1,
+    fontSize: 13.5,
+    fontFamily: FONT.medium,
+    lineHeight: 19,
   },
   footer: {
     alignItems: "center",

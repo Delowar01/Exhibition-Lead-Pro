@@ -9,6 +9,7 @@
 export * from './activityItem';
 export * from './adminDashboard';
 export * from './authResponse';
+export * from './changePasswordInput';
 export * from './company';
 export * from './companyInput';
 export * from './companyInputPlan';

@@ -91,6 +91,24 @@ export const LogoutResponse = zod.object({
 
 
 /**
+ * @summary Change the current user's password
+ */
+export const changePasswordBodyNewPasswordMin = 8;
+
+
+
+export const ChangePasswordBody = zod.object({
+  "currentPassword": zod.string(),
+  "newPassword": zod.string().min(changePasswordBodyNewPasswordMin)
+})
+
+export const ChangePasswordResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
  * @summary Get platform-level KPIs
  */
 export const GetPlatformStatsResponse = zod.object({

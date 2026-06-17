@@ -161,4 +161,44 @@ router.post("/auth/logout", (_req, res) => {
   res.json({ success: true, message: "Logged out" });
 });
 
+// POST /auth/change-password
+router.post("/auth/change-password", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body ?? {};
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: "currentPassword and newPassword are required" });
+      return;
+    }
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
+      res.status(400).json({ error: "New password must be at least 8 characters" });
+      return;
+    }
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.id)).limit(1);
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    if (!comparePassword(currentPassword, user.passwordHash)) {
+      res.status(401).json({ error: "Current password is incorrect" });
+      return;
+    }
+    await db
+      .update(usersTable)
+      .set({ passwordHash: hashPassword(newPassword), updatedAt: new Date() })
+      .where(eq(usersTable.id, user.id));
+    await writeAudit(req, {
+      action: "user.change_password",
+      userId: user.id,
+      userName: user.email,
+      companyId: user.companyId,
+      entityType: "user",
+      entityId: user.id,
+    });
+    res.json({ success: true, message: "Password updated" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

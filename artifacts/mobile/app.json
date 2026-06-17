@@ -34,6 +34,19 @@
         {
           "cameraPermission": "Allow Card Scanner Pro to use the camera to scan business cards, badges, and QR codes."
         }
+      ],
+      "expo-secure-store",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Card Scanner Pro to save captured leads to your phone contacts."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Card Scanner Pro to use Face ID to unlock the app."
+        }
       ]
     ],
     "experiments": {

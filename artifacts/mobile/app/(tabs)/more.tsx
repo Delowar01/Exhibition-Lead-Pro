@@ -75,6 +75,22 @@ export default function MoreScreen() {
       color: "#06B6D4",
       onPress: () => router.push("/(tabs)/contacts"),
     },
+    {
+      key: "duplicates",
+      label: "Duplicates",
+      sub: "Find and merge duplicate contacts",
+      icon: "copy",
+      color: "#F59E0B",
+      onPress: () => router.push("/duplicates"),
+    },
+    {
+      key: "settings",
+      label: "Settings",
+      sub: "Appearance, capture, security",
+      icon: "settings",
+      color: "#67707D",
+      onPress: () => router.push("/settings"),
+    },
   ];
 
   return (
@@ -187,7 +203,7 @@ export default function MoreScreen() {
             Card Scanner Pro
           </Text>
           <Text style={[styles.footerVersion, { color: colors.mutedForeground }]}>
-            Lead capture for exhibitions
+            Powered by Elite Marcom
           </Text>
         </View>
       </ScrollView>

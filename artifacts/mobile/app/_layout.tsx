@@ -17,6 +17,7 @@ import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
 import { getCachedToken } from "@/lib/auth-storage";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -67,6 +68,9 @@ function RootLayoutNav() {
       <Stack.Screen name="capture-manual" options={{ title: "Manual entry" }} />
       <Stack.Screen name="leads" options={{ headerShown: false }} />
       <Stack.Screen name="events" options={{ headerShown: false }} />
+      <Stack.Screen name="duplicates" options={{ headerShown: false }} />
+      <Stack.Screen name="settings" options={{ headerShown: false }} />
+      <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -89,17 +93,19 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <GestureHandlerRootView>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
-            </GestureHandlerRootView>
-          </AuthProvider>
-        </QueryClientProvider>
-      </ErrorBoundary>
+      <SettingsProvider>
+        <ErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <GestureHandlerRootView>
+                <KeyboardProvider>
+                  <RootLayoutNav />
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </AuthProvider>
+          </QueryClientProvider>
+        </ErrorBoundary>
+      </SettingsProvider>
     </SafeAreaProvider>
   );
 }
