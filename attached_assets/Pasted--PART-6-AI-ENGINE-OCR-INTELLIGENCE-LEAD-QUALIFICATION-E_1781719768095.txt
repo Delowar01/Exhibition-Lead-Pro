@@ -1,0 +1,953 @@
+# PART 6
+
+# AI ENGINE, OCR INTELLIGENCE, LEAD QUALIFICATION & ENRICHMENT SYSTEM
+
+## Overview
+
+This module transforms the platform from a simple lead collection system into a true AI-powered Exhibition Lead Intelligence Platform.
+
+The AI Engine becomes the brain of the entire platform.
+
+Every captured lead should be automatically analyzed, enriched, scored, qualified, summarized, categorized, and prioritized.
+
+The AI system must support:
+
+* Arabic
+* English
+* Bilingual GCC business cards
+* Voice notes
+* Event badges
+* QR profiles
+* Manual lead entries
+
+---
+
+# AI Architecture
+
+Create a dedicated AI Service Layer.
+
+```text
+Capture Source
+      ↓
+OCR Engine
+      ↓
+Data Extraction
+      ↓
+Validation Engine
+      ↓
+Duplicate Detection
+      ↓
+Lead Enrichment
+      ↓
+AI Qualification
+      ↓
+Follow-Up Recommendation
+      ↓
+Proposal Recommendation
+      ↓
+CRM Ready Lead
+```
+
+---
+
+# AI OCR ENGINE
+
+## Purpose
+
+Extract data from:
+
+* Business Cards
+* Event Badges
+* Name Tags
+* Email Signatures
+* Screenshots
+* Brochures
+* Contact Cards
+
+---
+
+# OCR Languages
+
+Must Support:
+
+Arabic
+
+English
+
+Arabic + English Mixed
+
+French
+
+German
+
+Hindi
+
+Urdu
+
+Chinese
+
+Japanese
+
+Korean
+
+---
+
+# Arabic OCR Requirements
+
+Must correctly identify:
+
+Arabic Names
+
+Arabic Company Names
+
+Arabic Job Titles
+
+Arabic Addresses
+
+Arabic Websites
+
+Arabic Emails
+
+Arabic Phone Numbers
+
+---
+
+# GCC-Specific Name Detection
+
+Examples:
+
+عبدالله محمد السبيعي
+
+Mohammed Al Qahtani
+
+Ahmed Bin Salman
+
+Abdulrahman Al-Harbi
+
+Faisal Al-Saud
+
+---
+
+AI must correctly separate:
+
+First Name
+
+Middle Name
+
+Family Name
+
+Tribal Name
+
+Prefix
+
+Suffix
+
+---
+
+# Dual Language Detection
+
+Example:
+
+```text
+Ahmed Al Qahtani
+أحمد القحطاني
+```
+
+AI must store:
+
+English Name
+
+Arabic Name
+
+Transliteration
+
+Confidence
+
+---
+
+# OCR Confidence Engine
+
+Each field receives:
+
+```text
+0.00 - 1.00
+```
+
+Example:
+
+```text
+First Name      0.98
+Company Name    0.95
+Mobile Number   0.82
+Email           0.77
+```
+
+---
+
+# Confidence Categories
+
+High
+
+Medium
+
+Low
+
+Review Required
+
+---
+
+# AI Validation Engine
+
+Purpose:
+
+Validate extracted information.
+
+---
+
+# Email Validation
+
+Check:
+
+Format
+
+Domain
+
+MX Record
+
+Disposable Email
+
+Role-based Email
+
+Personal Email
+
+Corporate Email
+
+---
+
+Examples:
+
+```text
+john@gmail.com
+→ Personal Email
+
+john@aramco.com
+→ Corporate Email
+```
+
+---
+
+# Phone Validation
+
+Detect:
+
+Country Code
+
+Network Format
+
+Mobile
+
+Landline
+
+WhatsApp Availability
+
+Invalid Numbers
+
+---
+
+# Website Validation
+
+Check:
+
+Domain Exists
+
+HTTPS
+
+Corporate Website
+
+Active Website
+
+---
+
+# Lead Completeness Score
+
+Generate:
+
+```text
+0 - 100
+```
+
+Scoring Factors:
+
+Name
+
+Company
+
+Title
+
+Mobile
+
+Email
+
+Website
+
+Country
+
+LinkedIn
+
+---
+
+# Example
+
+```text
+Lead Completeness
+92/100
+
+Missing:
+LinkedIn URL
+```
+
+---
+
+# AI Lead Qualification Engine
+
+Purpose:
+
+Automatically prioritize leads.
+
+---
+
+# AI Lead Score
+
+Generate:
+
+```text
+0 - 100
+```
+
+---
+
+# Lead Temperature
+
+Hot
+
+Warm
+
+Cold
+
+---
+
+# AI Evaluation Criteria
+
+Job Title
+
+Company Size
+
+Industry
+
+Country
+
+Event
+
+Meeting Notes
+
+Voice Notes
+
+Lead Source
+
+Interaction Level
+
+---
+
+# Seniority Scoring
+
+CEO
+
+Managing Director
+
+Chairman
+
+Founder
+
+Owner
+
+VP
+
+Director
+
+Manager
+
+Engineer
+
+Staff
+
+Student
+
+---
+
+Example:
+
+```text
+CEO
++25 Points
+
+Director
++15 Points
+
+Engineer
++5 Points
+```
+
+---
+
+# Industry Relevance
+
+Platform Owner can configure:
+
+Target Industries
+
+Priority Industries
+
+Non-Relevant Industries
+
+---
+
+# AI Qualification Output
+
+```text
+Lead Score: 88
+
+Temperature: HOT
+
+Priority: HIGH
+
+Recommended Follow-Up:
+Within 24 Hours
+
+Reason:
+Decision maker from target industry.
+Requested proposal.
+```
+
+---
+
+# AI Reasoning Layer
+
+Every AI score must explain:
+
+Why score was generated.
+
+Why lead is hot.
+
+Why lead is cold.
+
+Why follow-up recommended.
+
+---
+
+# Voice Intelligence Engine
+
+Purpose:
+
+Convert conversations into structured opportunities.
+
+---
+
+# Voice Workflow
+
+1 Scan Lead
+
+2 Record Voice Note
+
+3 Upload Audio
+
+4 AI Processing
+
+5 Summary Generated
+
+---
+
+# Supported Audio
+
+MP3
+
+WAV
+
+AAC
+
+M4A
+
+---
+
+# Speech-to-Text
+
+Support:
+
+Arabic
+
+English
+
+Mixed Language
+
+GCC Dialects
+
+Saudi Arabic
+
+UAE Arabic
+
+Qatari Arabic
+
+Kuwaiti Arabic
+
+Bahraini Arabic
+
+Omani Arabic
+
+---
+
+# AI Voice Analysis
+
+Generate:
+
+Meeting Summary
+
+Client Requirements
+
+Pain Points
+
+Budget Signals
+
+Decision Maker Notes
+
+Competitor Mentions
+
+Next Steps
+
+Action Items
+
+Follow-Up Tasks
+
+---
+
+# Example Output
+
+```text
+Summary:
+
+Client interested in exhibition stand
+for LEAP 2027.
+
+Budget around SAR 150,000.
+
+Decision expected next month.
+
+Requested proposal and references.
+```
+
+---
+
+# AI Opportunity Detection
+
+Automatically detect:
+
+Quotation Request
+
+Tender Opportunity
+
+Meeting Request
+
+Partnership Interest
+
+Purchase Intent
+
+Urgent Requirement
+
+---
+
+# AI Lead Enrichment Engine
+
+Purpose:
+
+Automatically enrich captured leads.
+
+---
+
+# Enrichment Sources
+
+Company Website
+
+LinkedIn
+
+Google Business
+
+Public Databases
+
+Corporate Profiles
+
+---
+
+# Company Enrichment
+
+Discover:
+
+Company Website
+
+Industry
+
+Headquarters
+
+Locations
+
+Employee Count
+
+Estimated Revenue
+
+Social Media
+
+LinkedIn Company URL
+
+---
+
+# Contact Enrichment
+
+Discover:
+
+LinkedIn Profile
+
+Job Seniority
+
+Department
+
+Professional Background
+
+Skills
+
+Influence Level
+
+---
+
+# Enrichment Confidence
+
+Each enrichment receives:
+
+```text
+0 - 100
+```
+
+---
+
+# Manual Override
+
+Users can:
+
+Accept
+
+Reject
+
+Modify
+
+Lock Values
+
+---
+
+# AI Recommendations Engine
+
+Purpose:
+
+Guide sales teams.
+
+---
+
+# Recommendations
+
+Call Immediately
+
+Send Proposal
+
+Send Company Profile
+
+Schedule Meeting
+
+Connect on LinkedIn
+
+Add to Campaign
+
+Escalate to Management
+
+---
+
+# AI Follow-Up Recommendation
+
+Example:
+
+```text
+Recommended:
+
+Day 1:
+WhatsApp
+
+Day 3:
+Email
+
+Day 7:
+Call
+
+Reason:
+
+Lead score 91
+Decision maker
+Requested quotation
+```
+
+---
+
+# AI Proposal Recommendation
+
+Based on:
+
+Industry
+
+Country
+
+Event
+
+Interest
+
+Company Size
+
+Lead Score
+
+---
+
+AI recommends:
+
+Company Profile
+
+Brochure
+
+Case Study
+
+Quotation
+
+Proposal Template
+
+Meeting Deck
+
+---
+
+# AI Duplicate Intelligence
+
+Beyond simple matching.
+
+---
+
+Detect:
+
+Same Email
+
+Same Mobile
+
+Same LinkedIn
+
+Same Website
+
+Same Person Different Company
+
+Potential Duplicate
+
+Possible Duplicate
+
+Confirmed Duplicate
+
+---
+
+# AI Merge Suggestions
+
+Suggest:
+
+Merge
+
+Keep Separate
+
+Update Existing
+
+---
+
+# Merge History
+
+Track:
+
+Original Record
+
+Merged Record
+
+User
+
+Date
+
+Changes
+
+---
+
+# AI Business Card Quality Analysis
+
+Purpose:
+
+Evaluate card quality.
+
+---
+
+Detect:
+
+Blurred Images
+
+Dark Images
+
+Cut Cards
+
+Missing Information
+
+Unreadable Text
+
+Low OCR Confidence
+
+---
+
+# Quality Score
+
+```text
+0 - 100
+```
+
+---
+
+# Example
+
+```text
+Quality Score
+67
+
+Issues:
+Low Lighting
+Blurred Text
+Email Uncertain
+```
+
+---
+
+# AI Search Engine
+
+Natural language search.
+
+---
+
+Examples:
+
+```text
+Show all hot leads from LEAP
+
+Find CEOs from Saudi Arabia
+
+Show leads needing follow-up
+
+Find leads interested in AI
+```
+
+---
+
+# AI Executive Insights
+
+Generate daily summaries.
+
+---
+
+Examples:
+
+```text
+Today:
+
+128 Leads Captured
+
+24 Hot Leads
+
+8 Proposal Requests
+
+3 High-Value Opportunities
+
+Expected Pipeline:
+SAR 2.3 Million
+```
+
+---
+
+# AI Model Management
+
+Future Ready
+
+Support:
+
+OpenAI
+
+Anthropic
+
+Gemini
+
+Azure OpenAI
+
+Local LLM
+
+Ollama
+
+Enterprise Models
+
+---
+
+# AI Usage Monitoring
+
+Track:
+
+Tokens
+
+Requests
+
+Costs
+
+Latency
+
+Errors
+
+Per Company Usage
+
+---
+
+# Security
+
+Encrypted Processing
+
+Tenant Isolation
+
+PDPL Compliance
+
+GDPR Compliance
+
+Audit Trails
+
+Data Residency Support
+
+---
+
+# Success Criteria
+
+The AI layer must act as a virtual sales assistant that automatically:
+
+* Extracts data
+* Cleans data
+* Validates data
+* Enriches data
+* Qualifies leads
+* Generates insights
+* Recommends actions
+* Improves exhibition ROI
+
+without requiring manual analysis by users.
+
+END OF PART 6
