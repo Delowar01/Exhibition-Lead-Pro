@@ -1,0 +1,74 @@
+[
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e01",
+    "position": 1,
+    "filepath": "src/pages/slides/Cover.tsx",
+    "title": "Cover",
+    "description": "Title slide — Turn cards into qualified pipeline",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e02",
+    "position": 2,
+    "filepath": "src/pages/slides/Problem.tsx",
+    "title": "The cost of paper",
+    "description": "The problem — business cards never reach the CRM",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e03",
+    "position": 3,
+    "filepath": "src/pages/slides/Solution.tsx",
+    "title": "From card to contact",
+    "description": "The solution — scan, extract, score, sync pipeline",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e04",
+    "position": 4,
+    "filepath": "src/pages/slides/Intelligence.tsx",
+    "title": "The intelligence layer",
+    "description": "AI engine — OCR, lead scoring, enrichment, dedup",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e05",
+    "position": 5,
+    "filepath": "src/pages/slides/MultiTenant.tsx",
+    "title": "Multi-tenant by design",
+    "description": "Architecture — platform portal and admin portal",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e06",
+    "position": 6,
+    "filepath": "src/pages/slides/Mobile.tsx",
+    "title": "The field-sales app",
+    "description": "Mobile — the platform in a rep's pocket",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e07",
+    "position": 7,
+    "filepath": "src/pages/slides/Exhibitions.tsx",
+    "title": "Built for GCC exhibitions",
+    "description": "Use case — bilingual capture at GITEX, Arab Health, ATM",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e08",
+    "position": 8,
+    "filepath": "src/pages/slides/Pricing.tsx",
+    "title": "Plans and pricing",
+    "description": "Pricing — Starter, Professional, Business, Enterprise",
+    "speakerNotes": ""
+  },
+  {
+    "id": "b1f3c0a2-1d4e-4a11-9c01-0a1b2c3d4e09",
+    "position": 9,
+    "filepath": "src/pages/slides/Closing.tsx",
+    "title": "Closing",
+    "description": "Closing — turn booth conversations into pipeline",
+    "speakerNotes": ""
+  }
+]
