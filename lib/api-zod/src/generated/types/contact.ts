@@ -48,6 +48,15 @@ export interface Contact {
   /** @nullable */
   aiReasoning?: string | null;
   /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  seniority?: string | null;
+  /** @nullable */
+  enrichmentSummary?: string | null;
+  talkingPoints?: string[];
+  /** @nullable */
+  enrichedAt?: Date | null;
+  /** @nullable */
   followUpDate?: Date | null;
   /** @nullable */
   cardImageUrl?: string | null;

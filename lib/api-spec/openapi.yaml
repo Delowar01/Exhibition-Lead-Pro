@@ -568,6 +568,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContactStats"
 
+  /contacts/duplicates:
+    get:
+      operationId: getContactDuplicates
+      tags: [contacts]
+      summary: Detect duplicate contacts (grouped by matching email, phone, or name+company)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuplicatesResponse"
+
+  /contacts/merge:
+    post:
+      operationId: mergeContacts
+      tags: [contacts]
+      summary: Merge duplicate contacts into a primary contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+
+  /contacts/{id}/enrich:
+    post:
+      operationId: enrichContact
+      tags: [contacts]
+      summary: Run AI enrichment on a contact (industry, seniority, summary, talking points)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+
   # LEADS
   /leads:
     get:
@@ -1346,6 +1397,19 @@ components:
           enum: [hot, warm, cold, null]
         aiReasoning:
           type: ["string", "null"]
+        industry:
+          type: ["string", "null"]
+        seniority:
+          type: ["string", "null"]
+        enrichmentSummary:
+          type: ["string", "null"]
+        talkingPoints:
+          type: array
+          items:
+            type: string
+        enrichedAt:
+          type: ["string", "null"]
+          format: date-time
         followUpDate:
           type: ["string", "null"]
           format: date
@@ -1479,6 +1543,40 @@ components:
             $ref: "#/components/schemas/StatusCount"
         conversionRate:
           type: number
+
+    DuplicateGroup:
+      type: object
+      required: [matchType, matchValue, contacts]
+      properties:
+        matchType:
+          type: string
+          enum: [email, phone, name]
+        matchValue:
+          type: string
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Contact"
+
+    DuplicatesResponse:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/DuplicateGroup"
+
+    MergeRequest:
+      type: object
+      required: [primaryId, duplicateIds]
+      properties:
+        primaryId:
+          type: integer
+        duplicateIds:
+          type: array
+          items:
+            type: integer
 
     # LEADS
     Lead:

@@ -48,7 +48,8 @@ An enterprise SaaS platform for business card scanning and lead management. Two 
 ## Product
 
 - **Platform Portal** (`/platform`): view all tenant companies, manage subscriptions, see platform-wide analytics, user management
-- **Admin Portal** (`/admin`): scan business cards (OCR simulation), manage contacts, qualify leads through Kanban pipeline, track events, manage team, view reports
+- **Admin Portal** (`/admin`): scan business cards (real AI OCR), manage contacts, qualify leads through Kanban pipeline, track events, manage team, view reports, AI contact enrichment, duplicate detection + merge (`/admin/duplicates`)
+- **AI Engine** (`src/lib/ai.ts`): `extractCardData` (OCR + bilingual), `scoreLead` (score/temperature/reasoning), `enrichContact` (industry/seniority/summary/talking points). Dedup detection + merge live in `routes/contacts.ts`.
 
 ## Demo credentials
 
@@ -82,6 +83,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 - **Validate FK refs on writes** with `refAccessible(req.user, table, id)` (in `lib/tenant.ts`) — reject cross-tenant/nonexistent `eventId`/`assignedToId`/`contactId` with 400, or a user can point own-tenant rows at foreign records and leak metadata via enrichment.
 - **No role escalation**: a caller may never create/promote a user to a role ranked higher than their own (employee<admin<primary_admin<platform_owner). Enforced in POST + PATCH `/users`.
 - **Tenant invariant**: `requireAuth` 403s non-platform users with empty `accessibleCompanies`; `POST /users` 400s non-platform roles with null company.
+- **Static sub-paths before `/:id`**: routes like `GET /contacts/duplicates` and `POST /contacts/merge` MUST be registered before `GET/PATCH/DELETE /contacts/:id` (Express + wouter match in declaration order) or `:id` swallows them. Same applies to the `/admin/duplicates` web route vs `/admin/contacts/:id`.
+- **Contact merge FKs**: contacts are referenced ONLY by `scans.contactId` + `leads.contactId` (both onDelete set null). Merge must reassign both to the primary inside one transaction before deleting dups, or surviving scans/leads get orphaned (null contactId).
 
 ## Pointers
 

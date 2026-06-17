@@ -229,6 +229,83 @@ export async function scoreLead(
   };
 }
 
+export interface EnrichmentInput {
+  firstName?: string | null;
+  lastName?: string | null;
+  jobTitle?: string | null;
+  contactCompany?: string | null;
+  email?: string | null;
+  website?: string | null;
+  linkedin?: string | null;
+  country?: string | null;
+  notes?: string | null;
+}
+
+export interface EnrichmentResult {
+  industry: string | null;
+  seniority: string | null;
+  summary: string | null;
+  talkingPoints: string[];
+}
+
+const ENRICHMENT_PROMPT = `You are a B2B sales-intelligence assistant. Given the contact details captured from a business card at a trade exhibition, infer useful sales context. Reason only from the data provided plus general knowledge about the named company or industry — do NOT fabricate specific private facts (revenue, headcount, personal details).
+
+Return ONLY a JSON object with exactly these keys:
+- "industry": the most likely industry/sector of the contact's company (e.g. "Oil & Gas", "Fintech", "Construction"), or null if unclear
+- "seniority": the seniority level implied by the job title, one of "C-Level", "VP", "Director", "Manager", "Individual Contributor", or null if unclear
+- "summary": a concise 1-2 sentence professional summary of who this contact is and why they may matter as a lead
+- "talkingPoints": an array of 2-4 short, specific conversation starters or follow-up angles a salesperson could use with this contact
+
+Keep it realistic and grounded. Use null where you genuinely cannot infer.`;
+
+export async function enrichContact(input: EnrichmentInput): Promise<EnrichmentResult> {
+  const lines = [
+    `Name: ${[input.firstName, input.lastName].filter(Boolean).join(" ") || "(unknown)"}`,
+    `Job title: ${input.jobTitle ?? "(unknown)"}`,
+    `Company: ${input.contactCompany ?? "(unknown)"}`,
+    `Email: ${input.email ?? "(none)"}`,
+    `Website: ${input.website ?? "(none)"}`,
+    `LinkedIn: ${input.linkedin ?? "(none)"}`,
+    `Country: ${input.country ?? "(unknown)"}`,
+    `Notes: ${input.notes ?? "(none)"}`,
+  ].join("\n");
+
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `${ENRICHMENT_PROMPT}\n\nContact:\n${lines}` }],
+        },
+      ],
+      config: { responseMimeType: "application/json", maxOutputTokens: 8192 },
+    }),
+    SCORING_TIMEOUT_MS,
+    "contact enrichment",
+  );
+
+  const text = response.text ?? "";
+  const parsed = extractJson(text) as Record<string, unknown>;
+
+  const seniorityRaw = str(parsed.seniority);
+  const allowedSeniority = ["C-Level", "VP", "Director", "Manager", "Individual Contributor"];
+  const seniority = seniorityRaw && allowedSeniority.some(s => s.toLowerCase() === seniorityRaw.toLowerCase())
+    ? allowedSeniority.find(s => s.toLowerCase() === seniorityRaw.toLowerCase())!
+    : null;
+
+  const talkingPoints = Array.isArray(parsed.talkingPoints)
+    ? parsed.talkingPoints.map(str).filter((p): p is string => p !== null).slice(0, 4)
+    : [];
+
+  return {
+    industry: str(parsed.industry),
+    seniority,
+    summary: str(parsed.summary),
+    talkingPoints,
+  };
+}
+
 export function logAiError(context: string, err: unknown): void {
   logger.error({ err, context }, "AI request failed");
 }

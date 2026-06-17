@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { contactsTable, usersTable, eventsTable } from "@workspace/db";
+import { contactsTable, usersTable, eventsTable, scansTable, leadsTable } from "@workspace/db";
 import { eq, ilike, and, count, sql, inArray } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { refAccessible } from "../lib/tenant.js";
-import { scoreLead, logAiError } from "../lib/ai.js";
+import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/ai.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -22,6 +22,7 @@ function formatContact(c: typeof contactsTable.$inferSelect, eventName?: string 
     ...c,
     fullName: c.fullName ?? ([c.firstName, c.lastName].filter(Boolean).join(" ") || null),
     tags: parseTags(c.tags),
+    talkingPoints: parseTags(c.talkingPoints),
     eventName: eventName ?? null,
     assignedToName: assignedToName ?? null,
   };
@@ -124,6 +125,127 @@ router.get("/contacts/stats", async (req: AuthRequest, res) => {
   }
 });
 
+function normEmail(v: string | null): string | null {
+  if (!v) return null;
+  const t = v.trim().toLowerCase();
+  return t.length > 0 ? t : null;
+}
+function normPhone(v: string | null): string | null {
+  if (!v) return null;
+  const digits = v.replace(/\D/g, "");
+  return digits.length >= 7 ? digits : null;
+}
+function normName(c: typeof contactsTable.$inferSelect): string | null {
+  const name = (c.fullName ?? [c.firstName, c.lastName].filter(Boolean).join(" ")).trim().toLowerCase().replace(/\s+/g, " ");
+  const company = (c.contactCompany ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!name || !company) return null;
+  return `${name}|${company}`;
+}
+
+// GET /contacts/duplicates — group likely-duplicate contacts within the tenant
+router.get("/contacts/duplicates", async (req: AuthRequest, res) => {
+  try {
+    const whereClause = tenantScope(req.user, contactsTable.companyId);
+    const rows = await db.select().from(contactsTable).where(whereClause).limit(2000);
+
+    const byKey = (extract: (c: typeof contactsTable.$inferSelect) => string | null) => {
+      const map = new Map<string, typeof contactsTable.$inferSelect[]>();
+      for (const c of rows) {
+        const k = extract(c);
+        if (!k) continue;
+        const arr = map.get(k) ?? [];
+        arr.push(c);
+        map.set(k, arr);
+      }
+      return map;
+    };
+
+    const sources: { matchType: "email" | "phone" | "name"; map: Map<string, typeof contactsTable.$inferSelect[]> }[] = [
+      { matchType: "email", map: byKey((c) => normEmail(c.email)) },
+      { matchType: "phone", map: byKey((c) => normPhone(c.mobile) ?? normPhone(c.officePhone)) },
+      { matchType: "name", map: byKey(normName) },
+    ];
+
+    const seen = new Set<string>();
+    const groups: { matchType: string; matchValue: string; contacts: ReturnType<typeof formatContact>[] }[] = [];
+    for (const { matchType, map } of sources) {
+      for (const [key, members] of map) {
+        if (members.length < 2) continue;
+        const idKey = members.map((m) => m.id).sort((a, b) => a - b).join(",");
+        if (seen.has(idKey)) continue;
+        seen.add(idKey);
+        groups.push({ matchType, matchValue: key, contacts: members.map((m) => formatContact(m)) });
+      }
+    }
+
+    res.json({ groups });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const MERGE_BACKFILL_FIELDS = [
+  "firstName", "lastName", "fullName", "arabicName", "jobTitle", "contactCompany",
+  "email", "mobile", "officePhone", "website", "country", "address", "linkedin",
+  "notes", "leadScore", "leadTemperature", "aiReasoning", "industry", "seniority",
+  "enrichmentSummary", "talkingPoints", "followUpDate", "cardImageUrl", "eventId", "assignedToId",
+] as const;
+
+function isEmpty(v: unknown): boolean {
+  return v == null || (typeof v === "string" && v.trim() === "");
+}
+
+// POST /contacts/merge — consolidate duplicates into a primary contact
+router.post("/contacts/merge", requirePermission("contacts", "delete"), async (req: AuthRequest, res) => {
+  try {
+    const { primaryId, duplicateIds } = req.body as { primaryId?: number; duplicateIds?: number[] };
+    if (typeof primaryId !== "number" || !Array.isArray(duplicateIds) || duplicateIds.length === 0) {
+      res.status(400).json({ error: "primaryId and a non-empty duplicateIds array are required" });
+      return;
+    }
+    const dupIds = [...new Set(duplicateIds)].filter((id) => id !== primaryId);
+    if (dupIds.length === 0) { res.status(400).json({ error: "No distinct duplicate ids to merge" }); return; }
+
+    const [primary] = await db.select().from(contactsTable).where(eq(contactsTable.id, primaryId)).limit(1);
+    if (!primary || !canAccessCompany(req.user, primary.companyId)) { res.status(404).json({ error: "Primary contact not found" }); return; }
+
+    const dups = await db.select().from(contactsTable).where(inArray(contactsTable.id, dupIds));
+    if (dups.length !== dupIds.length || dups.some((d) => d.companyId !== primary.companyId)) {
+      res.status(400).json({ error: "All duplicates must exist and belong to the same company as the primary contact" });
+      return;
+    }
+
+    // Backfill empty primary fields from duplicates (in request order), and union tags.
+    const updates: Record<string, unknown> = {};
+    for (const field of MERGE_BACKFILL_FIELDS) {
+      if (!isEmpty(primary[field])) continue;
+      for (const d of dups) {
+        if (!isEmpty(d[field])) { updates[field] = d[field]; break; }
+      }
+    }
+    const tagSet = new Set<string>(parseTags(primary.tags));
+    for (const d of dups) for (const t of parseTags(d.tags)) tagSet.add(t);
+    updates.tags = JSON.stringify([...tagSet]);
+    updates.updatedAt = new Date();
+
+    const merged = await db.transaction(async (tx) => {
+      await tx.update(scansTable).set({ contactId: primaryId }).where(inArray(scansTable.contactId, dupIds));
+      await tx.update(leadsTable).set({ contactId: primaryId }).where(inArray(leadsTable.contactId, dupIds));
+      const [updated] = await tx.update(contactsTable).set(updates as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, primaryId)).returning();
+      await tx.delete(contactsTable).where(inArray(contactsTable.id, dupIds));
+      return updated;
+    });
+
+    const event = merged.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, merged.eventId)).then(r => r[0]) : null;
+    const assignee = merged.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, merged.assignedToId)).then(r => r[0]) : null;
+    res.json(formatContact(merged, event?.name, assignee?.name));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /contacts/:id
 router.get("/contacts/:id", async (req: AuthRequest, res) => {
   try {
@@ -173,6 +295,44 @@ router.delete("/contacts/:id", requirePermission("contacts", "delete"), async (r
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
     await db.delete(contactsTable).where(eq(contactsTable.id, id));
     res.json({ success: true, message: "Contact deleted" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /contacts/:id/enrich — AI enrichment (industry, seniority, summary, talking points)
+router.post("/contacts/:id/enrich", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    const [c] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
+    if (!c || !canAccessCompany(req.user, c.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
+
+    let result;
+    try {
+      result = await aiEnrichContact({
+        firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle,
+        contactCompany: c.contactCompany, email: c.email, website: c.website,
+        linkedin: c.linkedin, country: c.country, notes: c.notes,
+      });
+    } catch (aiErr) {
+      logAiError("contact-enrichment", aiErr);
+      res.status(502).json({ error: "AI enrichment is temporarily unavailable. Please try again." });
+      return;
+    }
+
+    const [updated] = await db.update(contactsTable).set({
+      industry: result.industry,
+      seniority: result.seniority,
+      enrichmentSummary: result.summary,
+      talkingPoints: JSON.stringify(result.talkingPoints),
+      enrichedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(contactsTable.id, id)).returning();
+
+    const event = updated.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, updated.eventId)).then(r => r[0]) : null;
+    const assignee = updated.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, updated.assignedToId)).then(r => r[0]) : null;
+    res.json(formatContact(updated, event?.name, assignee?.name));
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

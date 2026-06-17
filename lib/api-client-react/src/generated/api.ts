@@ -32,6 +32,7 @@ import type {
   ContactList,
   ContactStats,
   ContactUpdate,
+  DuplicatesResponse,
   ErrorResponse,
   Event,
   EventInput,
@@ -52,6 +53,7 @@ import type {
   ListScansParams,
   ListUsersParams,
   LoginInput,
+  MergeRequest,
   MobileDashboard,
   PipelineView,
   Plan,
@@ -2095,6 +2097,224 @@ export function useGetContactStats<TData = Awaited<ReturnType<typeof getContactS
 
 
 
+
+export const getGetContactDuplicatesUrl = () => {
+
+
+
+
+  return `/api/contacts/duplicates`
+}
+
+/**
+ * @summary Detect duplicate contacts (grouped by matching email, phone, or name+company)
+ */
+export const getContactDuplicates = async ( options?: RequestInit): Promise<DuplicatesResponse> => {
+
+  return customFetch<DuplicatesResponse>(getGetContactDuplicatesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetContactDuplicatesQueryKey = () => {
+    return [
+    `/api/contacts/duplicates`
+    ] as const;
+    }
+
+
+export const getGetContactDuplicatesQueryOptions = <TData = Awaited<ReturnType<typeof getContactDuplicates>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getContactDuplicates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetContactDuplicatesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getContactDuplicates>>> = ({ signal }) => getContactDuplicates({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getContactDuplicates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetContactDuplicatesQueryResult = NonNullable<Awaited<ReturnType<typeof getContactDuplicates>>>
+export type GetContactDuplicatesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Detect duplicate contacts (grouped by matching email, phone, or name+company)
+ */
+
+export function useGetContactDuplicates<TData = Awaited<ReturnType<typeof getContactDuplicates>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getContactDuplicates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetContactDuplicatesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getMergeContactsUrl = () => {
+
+
+
+
+  return `/api/contacts/merge`
+}
+
+/**
+ * @summary Merge duplicate contacts into a primary contact
+ */
+export const mergeContacts = async (mergeRequest: MergeRequest, options?: RequestInit): Promise<Contact> => {
+
+  return customFetch<Contact>(getMergeContactsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      mergeRequest,)
+  }
+);}
+
+
+
+
+export const getMergeContactsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mergeContacts>>, TError,{data: BodyType<MergeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof mergeContacts>>, TError,{data: BodyType<MergeRequest>}, TContext> => {
+
+const mutationKey = ['mergeContacts'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof mergeContacts>>, {data: BodyType<MergeRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  mergeContacts(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MergeContactsMutationResult = NonNullable<Awaited<ReturnType<typeof mergeContacts>>>
+    export type MergeContactsMutationBody = BodyType<MergeRequest>
+    export type MergeContactsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Merge duplicate contacts into a primary contact
+ */
+export const useMergeContacts = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mergeContacts>>, TError,{data: BodyType<MergeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof mergeContacts>>,
+        TError,
+        {data: BodyType<MergeRequest>},
+        TContext
+      > => {
+      return useMutation(getMergeContactsMutationOptions(options));
+    }
+
+export const getEnrichContactUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/enrich`
+}
+
+/**
+ * @summary Run AI enrichment on a contact (industry, seniority, summary, talking points)
+ */
+export const enrichContact = async (id: number, options?: RequestInit): Promise<Contact> => {
+
+  return customFetch<Contact>(getEnrichContactUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getEnrichContactMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrichContact>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof enrichContact>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['enrichContact'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enrichContact>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  enrichContact(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EnrichContactMutationResult = NonNullable<Awaited<ReturnType<typeof enrichContact>>>
+
+    export type EnrichContactMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Run AI enrichment on a contact (industry, seniority, summary, talking points)
+ */
+export const useEnrichContact = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrichContact>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof enrichContact>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getEnrichContactMutationOptions(options));
+    }
 
 export const getListLeadsUrl = (params?: ListLeadsParams,) => {
   const normalizedParams = new URLSearchParams();

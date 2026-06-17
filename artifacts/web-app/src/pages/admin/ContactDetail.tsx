@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
-import { useGetContact, useUpdateContact, useDeleteContact, getGetContactQueryKey, ContactStatus } from "@workspace/api-client-react";
+import { useGetContact, useUpdateContact, useDeleteContact, useEnrichContact, getGetContactQueryKey, ContactStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, CalendarClock, AlertCircle, Trash2, Sparkles, Flame, Snowflake, Thermometer, Globe, Linkedin, MapPin } from "lucide-react";
+import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, CalendarClock, AlertCircle, Trash2, Sparkles, Flame, Snowflake, Thermometer, Globe, Linkedin, MapPin, MessageSquare, Factory, Award } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 
@@ -31,6 +31,19 @@ export default function AdminContactDetail() {
 
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
+  const enrich = useEnrichContact();
+
+  const handleEnrich = () => {
+    enrich.mutate({ id: contactId }, {
+      onSuccess: () => {
+        toast({ title: "Contact enriched" });
+        queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+      },
+      onError: () => {
+        toast({ title: "Enrichment failed", description: "The AI service is temporarily unavailable. Please try again.", variant: "destructive" });
+      },
+    });
+  };
 
   const [followUpDate, setFollowUpDate] = useState<string>("");
   useEffect(() => {
@@ -175,6 +188,58 @@ export default function AdminContactDetail() {
               <div className="bg-secondary/30 p-4 rounded-md text-sm min-h-[100px] border border-border">
                 {contact.notes ? contact.notes : <span className="text-muted-foreground italic">No notes added.</span>}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3 bg-secondary/20">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> AI Enrichment</CardTitle>
+                <Button variant="outline" size="sm" onClick={handleEnrich} disabled={enrich.isPending}>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {enrich.isPending ? "Enriching..." : contact.enrichedAt ? "Re-run" : "Enrich with AI"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {contact.enrichedAt ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Factory className="h-4 w-4" /> Industry</div>
+                      <div className="font-medium">{contact.industry || "—"}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Award className="h-4 w-4" /> Seniority</div>
+                      <div className="font-medium">{contact.seniority || "—"}</div>
+                    </div>
+                  </div>
+                  {contact.enrichmentSummary && (
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-muted-foreground">Summary</div>
+                      <p className="text-sm bg-secondary/30 p-3 rounded-md border border-border">{contact.enrichmentSummary}</p>
+                    </div>
+                  )}
+                  {contact.talkingPoints && contact.talkingPoints.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-muted-foreground">Suggested Talking Points</div>
+                      <ul className="space-y-2">
+                        {contact.talkingPoints.map((p, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm">
+                            <MessageSquare className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                            <span>{p}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">Enriched {format(new Date(contact.enrichedAt), "PPp")}</p>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground italic py-2">
+                  No enrichment yet. Run AI enrichment to infer this contact's industry, seniority, and personalized talking points.
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

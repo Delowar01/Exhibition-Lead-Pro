@@ -369,6 +369,15 @@ export interface Contact {
   /** @nullable */
   aiReasoning?: string | null;
   /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  seniority?: string | null;
+  /** @nullable */
+  enrichmentSummary?: string | null;
+  talkingPoints?: string[];
+  /** @nullable */
+  enrichedAt?: string | null;
+  /** @nullable */
   followUpDate?: string | null;
   /** @nullable */
   cardImageUrl?: string | null;
@@ -500,6 +509,30 @@ export interface ContactStats {
   newToday: number;
   byStatus: StatusCount[];
   conversionRate: number;
+}
+
+export type DuplicateGroupMatchType = typeof DuplicateGroupMatchType[keyof typeof DuplicateGroupMatchType];
+
+
+export const DuplicateGroupMatchType = {
+  email: 'email',
+  phone: 'phone',
+  name: 'name',
+} as const;
+
+export interface DuplicateGroup {
+  matchType: DuplicateGroupMatchType;
+  matchValue: string;
+  contacts: Contact[];
+}
+
+export interface DuplicatesResponse {
+  groups: DuplicateGroup[];
+}
+
+export interface MergeRequest {
+  primaryId: number;
+  duplicateIds: number[];
 }
 
 export type LeadStage = typeof LeadStage[keyof typeof LeadStage];

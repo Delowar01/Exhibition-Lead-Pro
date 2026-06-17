@@ -27,6 +27,11 @@ export const contactsTable = pgTable("contacts", {
   leadScore: integer("lead_score"), // 0-100 AI lead qualification score
   leadTemperature: text("lead_temperature"), // hot, warm, cold
   aiReasoning: text("ai_reasoning"), // short AI explanation of the score
+  industry: text("industry"), // AI-enriched industry classification
+  seniority: text("seniority"), // AI-enriched seniority level (e.g. C-Level, Director, Manager)
+  enrichmentSummary: text("enrichment_summary"), // AI-generated professional summary
+  talkingPoints: text("talking_points"), // JSON array of AI-suggested talking points
+  enrichedAt: timestamp("enriched_at"), // when AI enrichment last ran
   followUpDate: date("follow_up_date"),
   cardImageUrl: text("card_image_url"),
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),

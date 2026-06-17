@@ -500,6 +500,11 @@ export const ListContactsResponse = zod.object({
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -571,6 +576,11 @@ export const GetContactResponse = zod.object({
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -630,6 +640,11 @@ export const UpdateContactResponse = zod.object({
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -665,6 +680,141 @@ export const GetContactStatsResponse = zod.object({
   "label": zod.string().nullish()
 })),
   "conversionRate": zod.number()
+})
+
+
+/**
+ * @summary Detect duplicate contacts (grouped by matching email, phone, or name+company)
+ */
+export const GetContactDuplicatesResponse = zod.object({
+  "groups": zod.array(zod.object({
+  "matchType": zod.enum(['email', 'phone', 'name']),
+  "matchValue": zod.string(),
+  "contacts": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
+  "followUpDate": zod.coerce.date().nullish(),
+  "cardImageUrl": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+})
+
+
+/**
+ * @summary Merge duplicate contacts into a primary contact
+ */
+export const MergeContactsBody = zod.object({
+  "primaryId": zod.number(),
+  "duplicateIds": zod.array(zod.number())
+})
+
+export const MergeContactsResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
+  "followUpDate": zod.coerce.date().nullish(),
+  "cardImageUrl": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Run AI enrichment on a contact (industry, seniority, summary, talking points)
+ */
+export const EnrichContactParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const EnrichContactResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
+  "followUpDate": zod.coerce.date().nullish(),
+  "cardImageUrl": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
 })
 
 
