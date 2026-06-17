@@ -6,6 +6,7 @@ An enterprise SaaS platform for business card scanning and lead management. Two 
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000 → proxied at /api)
 - `pnpm run typecheck` — full typecheck across all packages
+- `pnpm --filter @workspace/api-server run test` — integration tests (vitest, run against the LIVE API at localhost:80 + seeded demo tenants; api-server workflow must be running)
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
