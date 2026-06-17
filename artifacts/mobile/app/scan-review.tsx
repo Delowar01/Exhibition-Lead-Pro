@@ -50,6 +50,7 @@ export default function ScanReviewScreen() {
       website: extracted.website ?? "",
       linkedin: extracted.linkedin ?? "",
       address: extracted.address ?? "",
+      notes: extracted.arabicName ? `Arabic name: ${extracted.arabicName}` : "",
     };
   }, [params.data]);
 

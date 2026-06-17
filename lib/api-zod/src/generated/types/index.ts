@@ -21,6 +21,7 @@ export * from './companyUpdateStatus';
 export * from './contact';
 export * from './contactInput';
 export * from './contactInputStatus';
+export * from './contactLeadTemperature';
 export * from './contactList';
 export * from './contactStats';
 export * from './contactStatus';

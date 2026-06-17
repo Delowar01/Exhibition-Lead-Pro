@@ -1,2 +1,3 @@
 - [Express router guard leak](express-router-guard-leak.md) — path-less `router.use(mw)` in sub-routers mounted on a shared parent fires on ALL requests; path-scope terminating guards.
 - [Tenant model](tenant-model.md) — `company_id` is the tenant boundary; cross-tenant access returns 404 not 403; permissions gate writes only.
+- [esbuild external + transitive deps](esbuild-external-transitive-deps.md) — packages matching `build.mjs` external globs (e.g. `@google/*`) must be DIRECT api-server deps or runtime ERR_MODULE_NOT_FOUND; body limit 15mb for image uploads.

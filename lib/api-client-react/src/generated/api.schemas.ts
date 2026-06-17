@@ -317,6 +317,18 @@ export const ContactStatus = {
   lost: 'lost',
 } as const;
 
+/**
+ * @nullable
+ */
+export type ContactLeadTemperature = typeof ContactLeadTemperature[keyof typeof ContactLeadTemperature] | null;
+
+
+export const ContactLeadTemperature = {
+  hot: 'hot',
+  warm: 'warm',
+  cold: 'cold',
+} as const;
+
 export interface Contact {
   id: number;
   companyId: number;
@@ -326,6 +338,8 @@ export interface Contact {
   lastName?: string | null;
   /** @nullable */
   fullName?: string | null;
+  /** @nullable */
+  arabicName?: string | null;
   /** @nullable */
   jobTitle?: string | null;
   /** @nullable */
@@ -348,6 +362,12 @@ export interface Contact {
   notes?: string | null;
   tags?: string[];
   status: ContactStatus;
+  /** @nullable */
+  leadScore?: number | null;
+  /** @nullable */
+  leadTemperature?: ContactLeadTemperature;
+  /** @nullable */
+  aiReasoning?: string | null;
   /** @nullable */
   followUpDate?: string | null;
   /** @nullable */
@@ -667,6 +687,8 @@ export interface ExtractedCardData {
   /** @nullable */
   lastName?: string | null;
   /** @nullable */
+  arabicName?: string | null;
+  /** @nullable */
   jobTitle?: string | null;
   /** @nullable */
   company?: string | null;
@@ -693,6 +715,8 @@ export interface Scan {
   imageUrl?: string | null;
   status: ScanStatus;
   extractedData?: ExtractedCardData;
+  /** @nullable */
+  confidence?: number | null;
   createdAt: string;
 }
 

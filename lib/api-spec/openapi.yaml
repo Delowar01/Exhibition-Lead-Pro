@@ -1297,6 +1297,8 @@ components:
           type: ["string", "null"]
         fullName:
           type: ["string", "null"]
+        arabicName:
+          type: ["string", "null"]
         jobTitle:
           type: ["string", "null"]
         contactCompany:
@@ -1324,6 +1326,13 @@ components:
         status:
           type: string
           enum: [new, qualified, interested, proposal_sent, won, lost]
+        leadScore:
+          type: ["integer", "null"]
+        leadTemperature:
+          type: ["string", "null"]
+          enum: [hot, warm, cold, null]
+        aiReasoning:
+          type: ["string", "null"]
         followUpDate:
           type: ["string", "null"]
           format: date
@@ -1679,6 +1688,8 @@ components:
           enum: [pending, processing, completed, failed]
         extractedData:
           $ref: "#/components/schemas/ExtractedCardData"
+        confidence:
+          type: ["integer", "null"]
         createdAt:
           type: string
           format: date-time
@@ -1710,6 +1721,8 @@ components:
         firstName:
           type: ["string", "null"]
         lastName:
+          type: ["string", "null"]
+        arabicName:
           type: ["string", "null"]
         jobTitle:
           type: ["string", "null"]

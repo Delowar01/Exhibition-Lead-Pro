@@ -5,6 +5,7 @@ import { eq, ilike, and, count, sql, inArray } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { refAccessible } from "../lib/tenant.js";
+import { scoreLead, logAiError } from "../lib/ai.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -70,7 +71,27 @@ router.post("/contacts", requirePermission("contacts", "create"), async (req: Au
     if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
-    const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", followUpDate: followUpDate ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
+    const { arabicName } = req.body;
+
+    // AI lead qualification (resilient: contact still saves if AI is unavailable)
+    let leadScore: number | null = null;
+    let leadTemperature: string | null = null;
+    let aiReasoning: string | null = null;
+    try {
+      let eventName: string | null = null;
+      if (eventId) {
+        const [ev] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, eventId)).limit(1);
+        eventName = ev?.name ?? null;
+      }
+      const score = await scoreLead({ firstName, lastName, jobTitle, contactCompany, email, mobile, website, linkedin, country, notes }, eventName);
+      leadScore = score.score;
+      leadTemperature = score.temperature;
+      aiReasoning = score.reasoning;
+    } catch (aiErr) {
+      logAiError("lead-scoring", aiErr);
+    }
+
+    const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore, leadTemperature, aiReasoning, followUpDate: followUpDate ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
     res.status(201).json(formatContact(contact));
   } catch (err) {
     req.log.error(err);

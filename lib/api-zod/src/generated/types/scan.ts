@@ -19,5 +19,7 @@ export interface Scan {
   imageUrl?: string | null;
   status: ScanStatus;
   extractedData?: ExtractedCardData;
+  /** @nullable */
+  confidence?: number | null;
   createdAt: Date;
 }

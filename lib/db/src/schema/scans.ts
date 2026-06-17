@@ -14,6 +14,7 @@ export const scansTable = pgTable("scans", {
   status: text("status").notNull().default("pending"), // pending, processing, completed, failed
   extractedData: text("extracted_data"), // JSON
   rawOcr: text("raw_ocr"),
+  confidence: integer("confidence"), // 0-100 AI extraction confidence
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

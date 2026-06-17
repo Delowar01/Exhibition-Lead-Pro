@@ -25,6 +25,7 @@ import {
   EmptyState,
   ErrorState,
   FONT,
+  LEAD_TEMPERATURE_COLORS,
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
@@ -94,8 +95,18 @@ export default function ContactsScreen() {
               item.email ||
               "No details"}
           </Text>
-          <View style={{ marginTop: 6 }}>
+          <View style={styles.badgeRow}>
             <Badge label={prettyLabel(item.status)} color={statusColor} />
+            {item.leadTemperature ? (
+              <Badge
+                label={
+                  typeof item.leadScore === "number"
+                    ? `${prettyLabel(item.leadTemperature)} · ${item.leadScore}`
+                    : prettyLabel(item.leadTemperature)
+                }
+                color={LEAD_TEMPERATURE_COLORS[item.leadTemperature] ?? colors.mutedForeground}
+              />
+            ) : null}
           </View>
         </View>
         <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
@@ -216,5 +227,11 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontFamily: FONT.regular,
     marginTop: 2,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
   },
 });

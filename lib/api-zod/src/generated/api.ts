@@ -484,6 +484,7 @@ export const ListContactsResponse = zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
   "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
   "jobTitle": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
   "email": zod.string().nullish(),
@@ -496,6 +497,9 @@ export const ListContactsResponse = zod.object({
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
   "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -550,6 +554,7 @@ export const GetContactResponse = zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
   "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
   "jobTitle": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
   "email": zod.string().nullish(),
@@ -562,6 +567,9 @@ export const GetContactResponse = zod.object({
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
   "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -605,6 +613,7 @@ export const UpdateContactResponse = zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
   "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
   "jobTitle": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
   "email": zod.string().nullish(),
@@ -617,6 +626,9 @@ export const UpdateContactResponse = zod.object({
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
   "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -958,6 +970,7 @@ export const ListScansResponse = zod.object({
   "extractedData": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
   "jobTitle": zod.string().nullish(),
   "company": zod.string().nullish(),
   "email": zod.string().nullish(),
@@ -966,6 +979,7 @@ export const ListScansResponse = zod.object({
   "linkedin": zod.string().nullish(),
   "address": zod.string().nullish()
 }).optional(),
+  "confidence": zod.number().nullish(),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number()
@@ -998,6 +1012,7 @@ export const GetScanResponse = zod.object({
   "extractedData": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
   "jobTitle": zod.string().nullish(),
   "company": zod.string().nullish(),
   "email": zod.string().nullish(),
@@ -1006,6 +1021,7 @@ export const GetScanResponse = zod.object({
   "linkedin": zod.string().nullish(),
   "address": zod.string().nullish()
 }).optional(),
+  "confidence": zod.number().nullish(),
   "createdAt": zod.coerce.date()
 })
 

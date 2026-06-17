@@ -11,6 +11,7 @@ export const contactsTable = pgTable("contacts", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   fullName: text("full_name"),
+  arabicName: text("arabic_name"),
   jobTitle: text("job_title"),
   contactCompany: text("contact_company"),
   email: text("email"),
@@ -23,6 +24,9 @@ export const contactsTable = pgTable("contacts", {
   notes: text("notes"),
   tags: text("tags").default("[]"), // JSON array stored as text
   status: text("status").notNull().default("new"), // new, qualified, interested, proposal_sent, won, lost
+  leadScore: integer("lead_score"), // 0-100 AI lead qualification score
+  leadTemperature: text("lead_temperature"), // hot, warm, cold
+  aiReasoning: text("ai_reasoning"), // short AI explanation of the score
   followUpDate: date("follow_up_date"),
   cardImageUrl: text("card_image_url"),
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),

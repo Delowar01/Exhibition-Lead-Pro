@@ -41,6 +41,12 @@ export const LEAD_STAGE_COLORS: Record<string, string> = {
   lost: "#EF4444",
 };
 
+export const LEAD_TEMPERATURE_COLORS: Record<string, string> = {
+  hot: "#EF4444",
+  warm: "#F59E0B",
+  cold: "#3B82F6",
+};
+
 export const LEAD_STAGE_ORDER = [
   "new",
   "contacted",

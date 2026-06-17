@@ -12,6 +12,8 @@ export interface ExtractedCardData {
   /** @nullable */
   lastName?: string | null;
   /** @nullable */
+  arabicName?: string | null;
+  /** @nullable */
   jobTitle?: string | null;
   /** @nullable */
   company?: string | null;

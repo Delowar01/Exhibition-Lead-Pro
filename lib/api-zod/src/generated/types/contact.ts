@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ContactLeadTemperature } from './contactLeadTemperature';
 import type { ContactStatus } from './contactStatus';
 
 export interface Contact {
@@ -16,6 +17,8 @@ export interface Contact {
   lastName?: string | null;
   /** @nullable */
   fullName?: string | null;
+  /** @nullable */
+  arabicName?: string | null;
   /** @nullable */
   jobTitle?: string | null;
   /** @nullable */
@@ -38,6 +41,12 @@ export interface Contact {
   notes?: string | null;
   tags?: string[];
   status: ContactStatus;
+  /** @nullable */
+  leadScore?: number | null;
+  /** @nullable */
+  leadTemperature?: ContactLeadTemperature;
+  /** @nullable */
+  aiReasoning?: string | null;
   /** @nullable */
   followUpDate?: Date | null;
   /** @nullable */

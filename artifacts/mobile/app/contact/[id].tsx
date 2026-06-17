@@ -26,6 +26,7 @@ import {
   CONTACT_STATUS_COLORS,
   ErrorState,
   FONT,
+  LEAD_TEMPERATURE_COLORS,
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
@@ -122,6 +123,31 @@ export default function ContactDetailScreen() {
             <QuickAction icon="mail" label="Email" disabled={!contact.email} onPress={() => action("email", contact.email)} />
             <QuickAction icon="globe" label="Website" disabled={!contact.website} onPress={() => action("web", contact.website)} />
           </View>
+
+          {/* Lead intelligence */}
+          {contact.leadTemperature || typeof contact.leadScore === "number" ? (
+            <Section title="Lead intelligence">
+              <View style={styles.leadRow}>
+                {contact.leadTemperature ? (
+                  <Badge
+                    label={prettyLabel(contact.leadTemperature)}
+                    color={LEAD_TEMPERATURE_COLORS[contact.leadTemperature] ?? colors.mutedForeground}
+                  />
+                ) : null}
+                {typeof contact.leadScore === "number" ? (
+                  <Text style={[styles.leadScore, { color: colors.foreground }]}>
+                    {contact.leadScore}
+                    <Text style={[styles.leadScoreMax, { color: colors.mutedForeground }]}> / 100</Text>
+                  </Text>
+                ) : null}
+              </View>
+              {contact.aiReasoning ? (
+                <Text style={[styles.leadReason, { color: colors.mutedForeground }]}>
+                  {contact.aiReasoning}
+                </Text>
+              ) : null}
+            </Section>
+          ) : null}
 
           {/* Details */}
           <Section title="Details">
@@ -334,6 +360,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FONT.regular,
     lineHeight: 22,
+    padding: 12,
+  },
+  leadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  leadScore: {
+    fontSize: 22,
+    fontFamily: FONT.bold,
+  },
+  leadScoreMax: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+  },
+  leadReason: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    lineHeight: 20,
     padding: 12,
   },
   statusGrid: {

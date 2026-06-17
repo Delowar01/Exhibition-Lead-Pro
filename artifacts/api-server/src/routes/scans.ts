@@ -1,25 +1,15 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { scansTable, companiesTable } from "@workspace/db";
-import { eq, and, count, inArray } from "drizzle-orm";
+import { eq, and, count, inArray, sql } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { extractCardData, logAiError } from "../lib/ai.js";
 
 const router = Router();
 router.use(requireAuth);
 router.use("/scans", blockReadOnlyMutations);
 router.use("/scans", auditMutations("scans"));
-
-// Simulated OCR extraction (in production, this would call OpenAI/Google Vision)
-function simulateOcr(imageData: string): Record<string, string | null> {
-  // Return mock extracted data for demo
-  const demos = [
-    { firstName: "Sarah", lastName: "Chen", jobTitle: "VP of Sales", company: "TechCorp Inc", email: "s.chen@techcorp.com", mobile: "+1 415 555 0123", website: "techcorp.com", linkedin: "linkedin.com/in/sarahchen", address: "350 Market St, San Francisco, CA" },
-    { firstName: "James", lastName: "Al-Rashid", jobTitle: "CTO", company: "Nexus Systems", email: "james@nexussys.io", mobile: "+971 50 123 4567", website: "nexussys.io", linkedin: null, address: "Dubai Internet City, UAE" },
-    { firstName: "Maria", lastName: "García", jobTitle: "Business Development Manager", company: "Innovatech", email: "m.garcia@innovatech.es", mobile: "+34 612 345 678", website: null, linkedin: "linkedin.com/in/mariagarcia", address: "Calle Gran Vía 45, Madrid" },
-  ];
-  return demos[Math.floor(Math.random() * demos.length)];
-}
 
 // GET /scans
 router.get("/scans", async (req: AuthRequest, res) => {
@@ -49,16 +39,27 @@ router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequ
     if (!imageData) { res.status(400).json({ error: "imageData required" }); return; }
 
     // Increment company scans used
-    await db.update(companiesTable).set({ scansUsed: eq(companiesTable.id, companyId) as unknown as number }).where(eq(companiesTable.id, companyId));
+    await db.update(companiesTable).set({ scansUsed: sql`${companiesTable.scansUsed} + 1` }).where(eq(companiesTable.id, companyId));
 
     // Create scan record
     const [scan] = await db.insert(scansTable).values({ companyId, userId: req.user!.id, status: "processing", imageUrl: null, extractedData: null }).returning();
 
-    // Simulate OCR processing
-    const extracted = simulateOcr(imageData);
-    const [updated] = await db.update(scansTable).set({ status: "completed", extractedData: JSON.stringify(extracted) }).where(eq(scansTable.id, scan.id)).returning();
-
-    res.status(201).json({ ...updated, extractedData: extracted });
+    // Real AI OCR + extraction
+    try {
+      const result = await extractCardData(imageData);
+      const [updated] = await db.update(scansTable)
+        .set({ status: "completed", extractedData: JSON.stringify(result.fields), rawOcr: result.rawOcr, confidence: result.confidence })
+        .where(eq(scansTable.id, scan.id))
+        .returning();
+      res.status(201).json({ ...updated, extractedData: result.fields });
+    } catch (aiErr) {
+      logAiError("scan-ocr", aiErr);
+      const [failed] = await db.update(scansTable)
+        .set({ status: "failed" })
+        .where(eq(scansTable.id, scan.id))
+        .returning();
+      res.status(502).json({ ...failed, extractedData: null, error: "Could not read the card. Please retake the photo." });
+    }
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
