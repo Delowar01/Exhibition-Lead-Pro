@@ -80,6 +80,7 @@ const SettingsContext = createContext<SettingsContextValue>({
   setLanguage: () => {},
   setBiometricEnabled: () => {},
   setActiveEvent: () => {},
+  setContactFilters: () => {},
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {

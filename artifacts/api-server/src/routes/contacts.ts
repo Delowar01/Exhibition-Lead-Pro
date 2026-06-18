@@ -36,7 +36,7 @@ function getCompanyId(req: AuthRequest): number | null {
 // GET /contacts
 router.get("/contacts", async (req: AuthRequest, res) => {
   try {
-    const { search, status, eventId, assignedTo, sort, hasFollowUp, hasMeeting, dateFrom, dateTo, includeDuplicates, page = "1", limit = "20" } = req.query as Record<string, string>;
+    const { search, status, temperature, eventId, assignedTo, sort, hasFollowUp, hasMeeting, dateFrom, dateTo, includeDuplicates, page = "1", limit = "20" } = req.query as Record<string, string>;
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(200, parseInt(limit));
     const offset = (pageNum - 1) * limitNum;
@@ -44,6 +44,7 @@ router.get("/contacts", async (req: AuthRequest, res) => {
     if (req.user!.role !== "platform_owner") conditions.push(inArray(contactsTable.companyId, req.user!.accessibleCompanies));
     if (search) conditions.push(ilike(contactsTable.fullName, `%${search}%`));
     if (status) conditions.push(eq(contactsTable.status, status));
+    if (temperature) conditions.push(eq(contactsTable.leadTemperature, temperature));
     if (eventId && !isNaN(parseInt(eventId))) conditions.push(eq(contactsTable.eventId, parseInt(eventId)));
     if (assignedTo && !isNaN(parseInt(assignedTo))) conditions.push(eq(contactsTable.assignedToId, parseInt(assignedTo)));
     // Duplicate management: the main list shows originals only (duplicateOfId IS NULL).

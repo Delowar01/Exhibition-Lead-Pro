@@ -491,6 +491,7 @@ export const listContactsQueryLimitDefault = 20;
 export const ListContactsQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "status": zod.coerce.string().optional(),
+  "temperature": zod.coerce.string().optional().describe('Filter by lead temperature (hot\/warm\/cold)'),
   "eventId": zod.coerce.number().nullish(),
   "assignedTo": zod.coerce.number().nullish(),
   "page": zod.coerce.number().default(listContactsQueryPageDefault),

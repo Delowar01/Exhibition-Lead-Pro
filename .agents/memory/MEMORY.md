@@ -1,2 +1,1 @@
-- [Expo Android runtime fonts not applied](expo-android-fonts.md) — Android Expo Go shows system font + blank icons despite useFonts loaded:true; fix = embed fonts via expo-font config plugin + dev build.
-- [Expo vector-icon blank glyphs](expo-vector-icons-preload.md) — preload each imported icon family via useFonts; but on Android Expo Go that's NOT enough (see expo-android-fonts.md).
+- [Reschedule lifecycle](reschedule-lifecycle.md) — reschedule supersedes: old row → `rescheduled`, NEW active row inserted; never show `rescheduled` as upcoming.

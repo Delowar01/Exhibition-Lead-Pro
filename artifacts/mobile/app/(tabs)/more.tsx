@@ -80,6 +80,14 @@ export default function MoreScreen() {
       onPress: () => router.push("/events"),
     },
     {
+      key: "meetings",
+      label: "Meetings",
+      sub: "Scheduled meetings and calls",
+      icon: "video",
+      color: "#0EA5E9",
+      onPress: () => router.push("/meetings"),
+    },
+    {
       key: "contacts",
       label: "All Contacts",
       sub: "Browse your full contact list",

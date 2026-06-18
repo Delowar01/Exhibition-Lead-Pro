@@ -1449,6 +1449,10 @@ export type ListContactsParams = {
 search?: string;
 status?: string;
 /**
+ * Filter by lead temperature (hot/warm/cold)
+ */
+temperature?: string;
+/**
  * @nullable
  */
 eventId?: number | null;

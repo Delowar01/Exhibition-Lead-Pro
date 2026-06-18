@@ -484,6 +484,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: temperature
+          in: query
+          description: Filter by lead temperature (hot/warm/cold)
+          schema:
+            type: string
         - name: eventId
           in: query
           schema:
