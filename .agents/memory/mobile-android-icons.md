@@ -1,34 +1,41 @@
 ---
-name: Mobile Android icon "tofu" — config is correct, it's a build-context issue
-description: Why @expo/vector-icons icons appear missing on Android in the Card Scanner Pro mobile app, and why repeated code patches don't fix it.
+name: Mobile Android icon "tofu" — Feather icon font not registering
+description: Root cause + fix for @expo/vector-icons Feather icons showing as boxes on Android (iOS fine) in the Card Scanner Pro mobile app.
 ---
 
-# Android icon tofu is NOT a code/config defect
+# Android Feather icons render as tofu — real root cause
 
-Repeated tickets claim "icons missing on Android (iOS fine)". An evidence-based
-audit (re-runnable any time) shows the mobile code/config is already correct:
+Symptom: every Feather icon shows as a box/tofu on Android while iOS is fine, AND
+text (Inter) fonts render correctly. The text-vs-icons split is the key tell.
 
-- Single icon family app-wide: `Feather` from `@expo/vector-icons` (no mixed families).
-- Bundled `assets/fonts/Feather.ttf` is **byte-identical** (md5 `ca4b48e0…`) to the
-  installed `@expo/vector-icons` package font → no glyphMap/version drift.
-- Every `<Feather name="…">` literal AND every dynamic icon-map value
-  (`CONTACT_STATUS_ICONS`, `MEETING_TYPE_ICONS`, `TASK_TYPE_ICONS`, theme options)
-  is a valid key in the package's `Feather.json` glyph map → no renamed/removed icons.
-- `app.json` embeds the icon font natively via the `expo-font` config plugin AND
-  `_layout.tsx` preloads it via `useFonts({ ...Feather.font })` with splash gating.
-  This is exactly the documented-correct setup for Android release builds.
+**Root cause:** `@expo/vector-icons` builds the Feather set with
+`createIconSet(glyphMap, 'feather', font)`, so the `<Feather>` component renders with
+`fontFamily: 'feather'` (lowercase) on every platform, and `Feather.font` is
+`{ feather: <asset> }`. That `<asset>` is imported from deep inside this monorepo's
+**pnpm-symlinked** `node_modules/.pnpm/@expo+vector-icons@…/…/Fonts/Feather.ttf`.
+Metro can fail to bundle that nested asset on Android, so `Font.loadAsync` silently
+no-ops and the `feather` family is never registered → tofu. iOS tolerates it via Expo
+Go's preloaded copy; Inter loads from a different package Metro resolves cleanly, so
+text is unaffected.
 
-**Why:** The `expo-font` native embed only exists in a **prebuilt native binary**
-(dev-build / APK from `expo prebuild`). It is **never present in Expo Go**. On
-Android (esp. New Architecture / release), runtime-only vector-icon font loading is
-flaky — which is why the embed is needed — but the embed is absent in Expo Go, so
-icons tofu there while iOS Expo Go tolerates the runtime load. A stale APK built
-before the embed config, or a non-`--clean` prebuild, shows the same symptom.
+**Why the earlier "it's just Expo Go / rebuild the APK" conclusion was wrong:** Inter
+loading fine proves runtime `useFonts` works; the failure is specific to the Feather
+*asset*, not the font mechanism or the build type.
 
-**How to apply:** Do NOT keep patching icon code for this. First confirm the *test
-context*: tofu in Expo Go (or a stale APK) is expected and is fixed by building a
-fresh APK (`eas build -p android --profile preview`, or `expo prebuild --clean` +
-`gradlew assembleRelease`) and testing THAT. Android device/APK verification cannot
-run inside Replit (no SDK/emulator) — screenshots require the user's device. Only if
-a freshly clean-built APK STILL shows tofu is there a real native-registration bug to
-investigate.
+**Fix (in `app/_layout.tsx`):** register the icon font from the **local**
+byte-identical project asset under the exact lowercase family name the component uses:
+```ts
+useFonts({ /* Inter… */, feather: require("../assets/fonts/Feather.ttf") });
+```
+A local `assets/fonts/*.ttf` is a first-class project asset Metro always bundles.
+Do NOT register it as `Feather` (capital) — the component looks up `feather`.
+
+**How to apply / verify:** In Expo Go, fast-refresh/reload picks up the JS change
+immediately — no APK rebuild needed to confirm icons now render. Keep the `expo-font`
+plugin embed of `./assets/fonts/Feather.ttf` too (on Android it registers as the
+lowercase resource `feather`, matching). Android device/APK verification still can't
+run inside Replit (no SDK/emulator) — screenshots require the user's device.
+
+**General lesson:** in a pnpm + Expo + Metro monorepo, prefer loading `@expo/vector-icons`
+(and any vendored) fonts from a local copied asset over the package's `...Icon.font`
+spread, to avoid flaky Metro resolution of deeply-symlinked node_modules assets.
