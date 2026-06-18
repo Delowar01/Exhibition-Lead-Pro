@@ -1,0 +1,150 @@
+APPLICATION FIXES – CRITICAL (ANDROID BUILD)
+
+Project:
+AI Exhibition Lead Capture Platform
+
+Scope:
+MOBILE APPLICATION ONLY
+
+Priority:
+Critical
+
+Before making any changes, review the Android implementation carefully. The application behaves correctly on iOS but several features are not functioning correctly on Android.
+
+====================================================
+
+1. FIX ALL ICONS ON ANDROID
+   ====================================================
+
+Current Issue:
+
+All icons are displayed correctly on iOS.
+
+On Android:
+
+* Icons are missing
+* Some icons are replaced by empty boxes
+* Some icons do not render at all
+
+Required:
+
+Investigate the root cause.
+
+Possible causes include:
+
+* Incorrect icon library
+* Font not loaded
+* Font not bundled into Android build
+* Expo icon configuration
+* React Native Vector Icons configuration
+* Android resource packaging
+
+Requirements:
+
+* Every icon must render correctly on Android.
+* Use a single supported icon library throughout the application.
+* Verify icons on Android 12+
+* Verify icons on Android 13+
+* Verify icons on Android 14+
+
+Do not hardcode icon replacements.
+
+Fix the root cause.
+
+====================================================
+2. FIX NOTIFICATION ERROR
+=========================
+
+Current Issue:
+
+Android displays Notification Error.
+
+Investigate the root cause.
+
+Possible causes:
+
+* Notification permission
+* Android notification channel
+* Expo Notifications configuration
+* Firebase configuration
+* Missing AndroidManifest entries
+* Invalid notification initialization
+
+Requirements:
+
+* Identify the exact reason.
+* Fix the implementation.
+* If notifications are not yet implemented, remove all initialization that causes runtime errors.
+* No notification-related errors should appear anywhere in the application.
+
+====================================================
+3. PROVIDE A NATIVE ANDROID APK
+===============================
+
+Current Issue:
+
+Testing through Expo Go is no longer suitable.
+
+From this point onward, testing must be performed using a native Android build.
+
+Required:
+
+Generate a native Android APK (or AAB if requested) that can be installed directly on a physical Android device.
+
+Requirements:
+
+* Production build
+* Hermes enabled
+* Release mode
+* Optimized assets
+* Optimized fonts
+* Optimized icons
+* Optimized image loading
+* No Expo Go dependency
+* No development client required
+
+The delivered APK must support:
+
+* Camera
+* OCR
+* GPS
+* Image Upload
+* Contacts
+* Notifications
+* File Sharing
+* Background Processing
+
+====================================================
+4. BUILD VERIFICATION
+=====================
+
+Before providing the APK, verify:
+
+✓ Android build succeeds without errors.
+✓ No red screens.
+✓ No runtime exceptions.
+✓ No missing fonts.
+✓ No missing icons.
+✓ Notification error resolved.
+✓ All permissions work correctly.
+✓ Camera works.
+✓ OCR works.
+✓ GPS works.
+✓ Background scanning works.
+
+====================================================
+DELIVERABLES
+============
+
+Do not mark this task complete until you provide:
+
+1. Root cause analysis for the Android icon issue.
+2. Root cause analysis for the notification error.
+3. List of files modified.
+4. Native Android APK (or release build artifact).
+5. Build configuration used.
+6. Android version(s) tested.
+7. Screenshots from the native Android build.
+8. Confirmation that testing was performed on a physical Android device rather than Expo Go.
+
+If an APK cannot be generated directly within the current Replit environment, configure the project completely for a production Android build and provide the exact build artifacts and instructions required to generate the release APK without requiring any further code changes.

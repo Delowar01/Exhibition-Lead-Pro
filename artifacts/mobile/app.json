@@ -8,6 +8,7 @@
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "jsEngine": "hermes",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.elitemarcom.cardscannerpro"
@@ -59,6 +60,19 @@
         "expo-local-authentication",
         {
           "faceIDPermission": "Allow Card Scanner Pro to use Face ID to unlock the app."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Card Scanner Pro to attach the event location to captured leads."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Card Scanner Pro to choose a profile photo from your library.",
+          "cameraPermission": "Allow Card Scanner Pro to take a profile photo."
         }
       ],
       [

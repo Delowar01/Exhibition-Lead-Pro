@@ -1,19 +1,33 @@
 import Constants from "expo-constants";
 import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import type * as NotificationsModule from "expo-notifications";
 
 import { registerPushToken, unregisterPushToken } from "@workspace/api-client-react";
 
-// Show notifications while the app is foregrounded too.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// expo-notifications push APIs were removed from Expo Go on Android in SDK 53.
+// Merely *importing* the module in Expo Go runs its push-token side-effect
+// (`DevicePushTokenAutoRegistration.fx`), which logs a red console.error on
+// Android, plus a top-level console.warn. We therefore lazily `require` it ONLY
+// outside Expo Go, so the app is completely error-free in Expo Go while keeping
+// full notification functionality in dev/production native builds.
+export const isExpoGo = Constants.executionEnvironment === "storeClient";
+
+export const Notifications: typeof NotificationsModule | null = isExpoGo
+  ? null
+  : (require("expo-notifications") as typeof NotificationsModule);
+
+// Show notifications while the app is foregrounded too. (Native builds only.)
+if (Notifications) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 // The EAS projectId is required to mint a real Expo push token. It is present
 // once the app is configured with EAS (app.json extra.eas.projectId) or via the
@@ -30,9 +44,15 @@ function getProjectId(): string | undefined {
 /**
  * Requests notification permission and registers an Expo push token with the
  * API. Returns the token on success, or null if registration was skipped
- * (simulator, permission denied, or no EAS projectId configured).
+ * (Expo Go, simulator, permission denied, or no EAS projectId configured).
  */
 export async function registerForPushNotifications(): Promise<string | null> {
+  // Not available in Expo Go (module not loaded) — skip cleanly.
+  if (!Notifications) {
+    console.log("[push] Skipping registration: not supported in Expo Go");
+    return null;
+  }
+
   // Remote push only works on a physical device.
   if (!Device.isDevice) {
     console.log("[push] Skipping registration: not a physical device");
