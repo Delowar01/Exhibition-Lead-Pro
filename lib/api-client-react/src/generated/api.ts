@@ -47,6 +47,7 @@ import type {
   FollowUpList,
   FollowUpUpdate,
   GetEventReportParams,
+  GetTeamMemberReportParams,
   HealthStatus,
   Lead,
   LeadInput,
@@ -86,6 +87,7 @@ import type {
   TaskInput,
   TaskList,
   TaskUpdate,
+  TeamMemberReport,
   TeamPerformanceItem,
   TrendDataPoint,
   User,
@@ -4373,6 +4375,90 @@ export function useGetEventReport<TData = Awaited<ReturnType<typeof getEventRepo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetEventReportQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetTeamMemberReportUrl = (params: GetTeamMemberReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reports/team-member?${stringifiedParams}` : `/api/reports/team-member`
+}
+
+/**
+ * @summary Per-member performance report for one event
+ */
+export const getTeamMemberReport = async (params: GetTeamMemberReportParams, options?: RequestInit): Promise<TeamMemberReport> => {
+
+  return customFetch<TeamMemberReport>(getGetTeamMemberReportUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamMemberReportQueryKey = (params?: GetTeamMemberReportParams,) => {
+    return [
+    `/api/reports/team-member`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetTeamMemberReportQueryOptions = <TData = Awaited<ReturnType<typeof getTeamMemberReport>>, TError = ErrorType<unknown>>(params: GetTeamMemberReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamMemberReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamMemberReportQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamMemberReport>>> = ({ signal }) => getTeamMemberReport(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamMemberReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamMemberReportQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamMemberReport>>>
+export type GetTeamMemberReportQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Per-member performance report for one event
+ */
+
+export function useGetTeamMemberReport<TData = Awaited<ReturnType<typeof getTeamMemberReport>>, TError = ErrorType<unknown>>(
+ params: GetTeamMemberReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamMemberReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamMemberReportQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

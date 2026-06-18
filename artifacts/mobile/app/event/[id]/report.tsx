@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Platform,
@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   type EventReportDayCount,
+  type EventReportTeamItem,
   type EventReportUserCount,
   type GetEventReportParams,
   useGetTeamPerformance,
@@ -76,6 +77,7 @@ function shortDay(s: string): string {
 export default function EventReportScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const eventId = Number(id);
 
@@ -354,19 +356,22 @@ export default function EventReportScreen() {
             </Section>
           ) : null}
 
-          {/* Lead source breakdown */}
-          {report && report.leadSourceBreakdown.length > 0 ? (
-            <Section title="Lead source breakdown">
-              <View style={{ gap: 10 }}>
-                {report.leadSourceBreakdown.map((s) => (
-                  <DistRow
-                    key={s.source}
-                    label={s.source}
-                    count={s.count}
-                    max={Math.max(...report.leadSourceBreakdown.map((x) => x.count), 1)}
-                    color="#3B82F6"
-                  />
-                ))}
+          {/* Top performer */}
+          {report && report.teamPerformance.length > 0 ? (
+            <Section title="Top performer">
+              <View style={{ gap: 12 }}>
+                {rankPerformers(report.teamPerformance)
+                  .slice(0, 1)
+                  .map((m) => (
+                    <PerformerRow
+                      key={m.userId}
+                      performer={m}
+                      onPress={() => {
+                        if (Platform.OS !== "web") Haptics.selectionAsync();
+                        router.push(`/event/${eventId}/member/${m.userId}`);
+                      }}
+                    />
+                  ))}
               </View>
             </Section>
           ) : null}
@@ -389,6 +394,38 @@ function qualMax(report?: { qualificationDistribution: { hot: number; warm: numb
   if (!report) return 1;
   const q = report.qualificationDistribution;
   return Math.max(q.hot, q.warm, q.cold, 1);
+}
+
+// Rank highest total leads first, tie-break by qualified leads.
+function rankPerformers(items: EventReportTeamItem[]): EventReportTeamItem[] {
+  return [...items].sort((a, b) => b.leads - a.leads || b.qualified - a.qualified);
+}
+
+function PerformerRow({
+  performer,
+  onPress,
+}: {
+  performer: EventReportTeamItem;
+  onPress: () => void;
+}) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.performerRow, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Avatar name={performer.userName} uri={performer.avatarUrl} size={44} color={colors.primary} />
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={[styles.teamName, { color: colors.foreground }]}>
+          {performer.userName}
+        </Text>
+        <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
+          {performer.leads} lead{performer.leads === 1 ? "" : "s"} · {performer.qualified} qualified
+        </Text>
+      </View>
+      <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+    </Pressable>
+  );
 }
 
 function LeadsByDayChart({ data, color }: { data: EventReportDayCount[]; color: string }) {
@@ -656,6 +693,11 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
   },
   teamRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  performerRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,

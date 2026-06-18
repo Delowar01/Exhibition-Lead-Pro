@@ -1,0 +1,225 @@
+ADDITIONAL DASHBOARD ENHANCEMENT
+
+
+
+Project:
+
+AI Exhibition Lead Capture Platform
+
+
+
+Scope:
+
+MOBILE APPLICATION ONLY
+
+
+
+====================================================
+
+LAST EVENT CARD IMPROVEMENT
+
+===========================
+
+
+
+Current Issue:
+
+
+
+The **Last Event Report** currently displays **Lead Source Breakdown**.
+
+
+
+This is not the most valuable KPI for users managing exhibition teams.
+
+
+
+Required:
+
+
+
+Replace:
+
+
+
+**Lead Source Breakdown**
+
+
+
+With:
+
+
+
+**Top Performer**
+
+
+
+====================================================
+
+TOP PERFORMER SECTION
+
+=====================
+
+
+
+The Last Event Report should display the top-performing team member for the selected event.
+
+
+
+Display:
+
+
+
+* Profile Photo
+
+* Full Name
+
+
+
+* Total Leads Captured
+
+* Qualified Leads
+
+
+
+If profile photo is unavailable:
+
+
+
+* Display user initials avatar.
+
+
+
+====================================================
+
+RANKING CRITERIA
+
+================
+
+
+
+By default, Top Performer should be ranked using the following priority:
+
+
+
+
+
+1. Highest Total Leads Captured 
+
+
+
+If two users have identical scores, use Total Leads Captured as the final tie-breaker.
+
+Top Performer should be ranked using the following priority:
+
+1. Highest Total Leads Captured
+
+2. Highest Qualified Leads
+
+
+
+
+
+====================================================
+
+INTERACTION
+
+===========
+
+
+
+The Top Performer card should be clickable.
+
+
+
+When tapped:
+
+
+
+Open the Team Performance screen filtered for:
+
+
+
+* Current Last Event
+
+* Selected Team Member
+
+
+
+Display:
+
+
+
+* Total Leads
+
+* Qualified Leads
+
+* Meetings
+
+* Follow-Ups
+
+* Won
+
+* Lost
+
+* Pipeline Value
+
+* Conversion Rate
+
+* Activity Timeline
+
+
+
+====================================================
+
+FUTURE READY
+
+============
+
+
+
+Design the component so it can later support:
+
+
+
+* Top 3 Performers
+
+* Monthly Leaderboard
+
+* Event Leaderboard
+
+* Company Leaderboard
+
+* Gamification Badges
+
+* Achievement Levels
+
+
+
+without requiring a UI redesign.
+
+
+
+====================================================
+
+ACCEPTANCE CRITERIA
+
+===================
+
+
+
+* Remove "Lead Source Breakdown" from the Last Event Report.
+
+* Replace it with "Top Performer".
+
+* Display live data for the selected event.
+
+* Ranking updates automatically as event data changes.
+
+* Card is clickable.
+
+* Team Performance screen opens correctly.
+
+* Tested on Android and iPhone.
+
+* Screenshots provided before marking the task complete.

@@ -9,6 +9,8 @@
 export interface EventReportTeamItem {
   userId: number;
   userName: string;
+  avatarUrl?: string | null;
   leads: number;
+  qualified: number;
   won: number;
 }

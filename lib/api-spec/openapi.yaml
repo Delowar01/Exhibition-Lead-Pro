@@ -1188,6 +1188,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/EventReport"
 
+  /reports/team-member:
+    get:
+      operationId: getTeamMemberReport
+      tags: [reports]
+      summary: Per-member performance report for one event
+      parameters:
+        - name: eventId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMemberReport"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -2744,16 +2768,85 @@ components:
 
     EventReportTeamItem:
       type: object
-      required: [userId, userName, leads, won]
+      required: [userId, userName, leads, qualified, won]
       properties:
         userId:
           type: integer
         userName:
           type: string
+        avatarUrl:
+          type: string
+          nullable: true
         leads:
+          type: integer
+        qualified:
           type: integer
         won:
           type: integer
+
+    TeamMemberReport:
+      type: object
+      required:
+        [
+          eventId,
+          eventName,
+          userId,
+          userName,
+          totalLeads,
+          qualifiedLeads,
+          meetings,
+          followUps,
+          won,
+          lost,
+          pipelineValue,
+          conversionRate,
+          activity,
+        ]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        userId:
+          type: integer
+        userName:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        totalLeads:
+          type: integer
+        qualifiedLeads:
+          type: integer
+        meetings:
+          type: integer
+        followUps:
+          type: integer
+        won:
+          type: integer
+        lost:
+          type: integer
+        pipelineValue:
+          type: number
+        conversionRate:
+          type: integer
+        activity:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamMemberActivity"
+
+    TeamMemberActivity:
+      type: object
+      required: [type, contactName, label, timestamp]
+      properties:
+        type:
+          type: string
+        contactName:
+          type: string
+        label:
+          type: string
+        timestamp:
+          type: string
 
     EventReportSourceCount:
       type: object

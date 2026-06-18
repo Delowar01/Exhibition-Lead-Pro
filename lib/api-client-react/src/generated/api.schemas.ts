@@ -1115,7 +1115,9 @@ export interface EventReportUserCount {
 export interface EventReportTeamItem {
   userId: number;
   userName: string;
+  avatarUrl?: string | null;
   leads: number;
+  qualified: number;
   won: number;
 }
 
@@ -1142,6 +1144,30 @@ export interface EventReport {
   leadsByUser: EventReportUserCount[];
   teamPerformance: EventReportTeamItem[];
   leadSourceBreakdown: EventReportSourceCount[];
+}
+
+export interface TeamMemberActivity {
+  type: string;
+  contactName: string;
+  label: string;
+  timestamp: string;
+}
+
+export interface TeamMemberReport {
+  eventId: number;
+  eventName: string;
+  userId: number;
+  userName: string;
+  avatarUrl?: string | null;
+  totalLeads: number;
+  qualifiedLeads: number;
+  meetings: number;
+  followUps: number;
+  won: number;
+  lost: number;
+  pipelineValue: number;
+  conversionRate: number;
+  activity: TeamMemberActivity[];
 }
 
 export interface PlatformStats {
@@ -1579,6 +1605,11 @@ dateTo?: string;
 assignedToId?: number;
 status?: string;
 temperature?: string;
+};
+
+export type GetTeamMemberReportParams = {
+eventId: number;
+userId: number;
 };
 
 export type ListFollowUpsParams = {

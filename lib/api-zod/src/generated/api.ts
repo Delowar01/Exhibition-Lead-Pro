@@ -1508,12 +1508,45 @@ export const GetEventReportResponse = zod.object({
   "teamPerformance": zod.array(zod.object({
   "userId": zod.number(),
   "userName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
   "leads": zod.number(),
+  "qualified": zod.number(),
   "won": zod.number()
 })),
   "leadSourceBreakdown": zod.array(zod.object({
   "source": zod.string(),
   "count": zod.number()
+}))
+})
+
+
+/**
+ * @summary Per-member performance report for one event
+ */
+export const GetTeamMemberReportQueryParams = zod.object({
+  "eventId": zod.coerce.number(),
+  "userId": zod.coerce.number()
+})
+
+export const GetTeamMemberReportResponse = zod.object({
+  "eventId": zod.number(),
+  "eventName": zod.string(),
+  "userId": zod.number(),
+  "userName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "totalLeads": zod.number(),
+  "qualifiedLeads": zod.number(),
+  "meetings": zod.number(),
+  "followUps": zod.number(),
+  "won": zod.number(),
+  "lost": zod.number(),
+  "pipelineValue": zod.number(),
+  "conversionRate": zod.number(),
+  "activity": zod.array(zod.object({
+  "type": zod.string(),
+  "contactName": zod.string(),
+  "label": zod.string(),
+  "timestamp": zod.string()
 }))
 })
 
