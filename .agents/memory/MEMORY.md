@@ -1,2 +1,1 @@
-- [Reschedule lifecycle](reschedule-lifecycle.md) — reschedule supersedes: old row → `rescheduled`, NEW active row inserted; never show `rescheduled` as upcoming.
-- [Contact duplicate exclusion](contact-duplicate-exclusion.md) — every contact count/stat/group query must add isNull(duplicateOfId); leadsTable counts unchanged.
+- [Orval codegen gotchas](orval-codegen-gotchas.md) — path-param/query-name collisions break codegen; api-server dev server needs restart to pick up route changes before smoke tests.

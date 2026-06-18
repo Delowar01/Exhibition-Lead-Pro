@@ -12,4 +12,5 @@ export interface LeadsByEventItem {
   leadCount: number;
   wonCount?: number;
   conversionRate?: number;
+  createdAt?: Date;
 }

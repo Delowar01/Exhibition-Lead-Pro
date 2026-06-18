@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Modal,
@@ -50,6 +50,7 @@ const BUCKET_META: Record<
 };
 
 const BUCKET_ORDER: Bucket[] = ["overdue", "today", "week", "later"];
+const DUE_ORDER: Bucket[] = ["overdue", "today"];
 const TABS: { key: Tab; label: string }[] = [
   { key: "upcoming", label: "Upcoming" },
   { key: "completed", label: "Completed" },
@@ -100,6 +101,8 @@ export default function FollowUpsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { bucket } = useLocalSearchParams<{ bucket?: string }>();
+  const dueMode = bucket === "due";
   const [tab, setTab] = useState<Tab>("upcoming");
   const [active, setActive] = useState<FollowUp | null>(null);
 
@@ -213,6 +216,24 @@ export default function FollowUpsScreen() {
             );
           })}
         </View>
+        {dueMode && tab === "upcoming" ? (
+          <Pressable
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.selectionAsync();
+              router.setParams({ bucket: "" });
+            }}
+            style={[
+              styles.dueChip,
+              { backgroundColor: colors.primary + "1A", borderRadius: colors.radius },
+            ]}
+          >
+            <Feather name="filter" size={13} color={colors.primary} />
+            <Text style={[styles.dueChipText, { color: colors.primary }]}>
+              Due now (overdue &amp; today)
+            </Text>
+            <Feather name="x" size={14} color={colors.primary} />
+          </Pressable>
+        ) : null}
       </View>
 
       {query.isLoading ? (
@@ -248,7 +269,7 @@ export default function FollowUpsScreen() {
           }
         >
           {tab === "upcoming" ? (
-            BUCKET_ORDER.map((bucket) => {
+            (dueMode ? DUE_ORDER : BUCKET_ORDER).map((bucket) => {
               const items = grouped[bucket];
               if (items.length === 0) return null;
               const meta = BUCKET_META[bucket];
@@ -466,6 +487,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   tabText: { fontSize: 13.5, fontFamily: FONT.semibold },
+  dueChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 12,
+  },
+  dueChipText: { fontSize: 12.5, fontFamily: FONT.semibold },
   groupHeader: {
     flexDirection: "row",
     alignItems: "center",

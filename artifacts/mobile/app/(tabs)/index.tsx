@@ -23,6 +23,7 @@ import {
 import { Avatar, Badge, FONT, LoadingState, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
+import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { formatGregorian } from "@/lib/date";
 
@@ -31,6 +32,11 @@ function greeting(): string {
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
   return "Good evening";
+}
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function formatCurrency(value: number): string {
@@ -102,14 +108,21 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { isOnline, queuedCount } = useOffline();
+  const { setContactFilters } = useSettings();
 
   const query = useGetMobileDashboard();
   const data = query.data;
 
   const eventsQuery = useGetLeadsByEvent();
-  const activeEvent = [...(eventsQuery.data ?? [])].sort(
-    (a, b) => b.leadCount - a.leadCount,
+  const lastEvent = [...(eventsQuery.data ?? [])].sort((a, b) =>
+    (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
   )[0];
+
+  function openContactsWith(patch: Partial<typeof DEFAULT_CONTACT_FILTERS>) {
+    if (Platform.OS !== "web") Haptics.selectionAsync();
+    setContactFilters({ ...DEFAULT_CONTACT_FILTERS, ...patch });
+    router.push("/(tabs)/contacts");
+  }
 
   const insights = buildInsights(data);
 
@@ -121,6 +134,7 @@ export default function HomeScreen() {
     value: string;
     icon: keyof typeof Feather.glyphMap;
     color: string;
+    onPress: () => void;
   }[] = [
     {
       key: "today",
@@ -128,6 +142,7 @@ export default function HomeScreen() {
       value: String(data?.todayLeads ?? 0),
       icon: "zap",
       color: colors.primary,
+      onPress: () => openContactsWith({ dateFrom: todayStr(), dateTo: todayStr() }),
     },
     {
       key: "hot",
@@ -135,6 +150,7 @@ export default function HomeScreen() {
       value: String(data?.hotLeads ?? 0),
       icon: "trending-up",
       color: "#F59E0B",
+      onPress: () => openContactsWith({ temperature: "hot" }),
     },
     {
       key: "followups",
@@ -142,6 +158,10 @@ export default function HomeScreen() {
       value: String(data?.followUpsDue ?? 0),
       icon: "clock",
       color: "#06B6D4",
+      onPress: () => {
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+        router.push({ pathname: "/(tabs)/followups", params: { bucket: "due" } });
+      },
     },
     {
       key: "meetings",
@@ -149,13 +169,18 @@ export default function HomeScreen() {
       value: String(data?.meetingsScheduled ?? 0),
       icon: "calendar",
       color: "#8B5CF6",
+      onPress: () => {
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+        router.push("/meetings");
+      },
     },
     {
-      key: "proposals",
-      label: "Proposals Sent",
-      value: String(data?.proposalsSent ?? 0),
-      icon: "file-text",
+      key: "contacted",
+      label: "Contacted",
+      value: String(data?.contactedLeads ?? 0),
+      icon: "send",
       color: "#3B82F6",
+      onPress: () => openContactsWith({ status: "contacted" }),
     },
     {
       key: "pipeline",
@@ -163,6 +188,10 @@ export default function HomeScreen() {
       value: formatCurrency(data?.pipelineValue ?? 0),
       icon: "dollar-sign",
       color: colors.success,
+      onPress: () => {
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+        router.push("/leads");
+      },
     },
   ];
 
@@ -313,11 +342,17 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.grid}>
             {metrics.map((m) => (
-              <View
+              <Pressable
                 key={m.key}
-                style={[
+                onPress={m.onPress}
+                style={({ pressed }) => [
                   styles.metricCard,
-                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderRadius: colors.radius + 4,
+                    opacity: pressed ? 0.7 : 1,
+                  },
                 ]}
               >
                 <View style={[styles.metricIcon, { backgroundColor: m.color + "1A" }]}>
@@ -325,21 +360,21 @@ export default function HomeScreen() {
                 </View>
                 <Text style={[styles.metricValue, { color: colors.foreground }]}>{m.value}</Text>
                 <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>{m.label}</Text>
-              </View>
+              </Pressable>
             ))}
           </View>
         )}
 
-        {/* Active event */}
-        {activeEvent ? (
+        {/* Last event */}
+        {lastEvent ? (
           <>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-              ACTIVE EVENT
+              LAST EVENT
             </Text>
             <Pressable
               onPress={() => {
                 if (Platform.OS !== "web") Haptics.selectionAsync();
-                router.push(`/event/${activeEvent.eventId}`);
+                router.push(`/event/${lastEvent.eventId}/report`);
               }}
               style={({ pressed }) => [
                 styles.eventCard,
@@ -347,17 +382,17 @@ export default function HomeScreen() {
               ]}
             >
               <View style={[styles.eventIcon, { backgroundColor: "rgba(255,255,255,0.14)" }]}>
-                <Feather name="calendar" size={20} color="#FFFFFF" />
+                <Feather name="bar-chart-2" size={20} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={styles.eventName}>
-                  {activeEvent.eventName}
+                  {lastEvent.eventName}
                 </Text>
                 <Text style={styles.eventMeta}>
-                  {activeEvent.leadCount} lead{activeEvent.leadCount === 1 ? "" : "s"}
-                  {activeEvent.wonCount != null ? ` · ${activeEvent.wonCount} won` : ""}
-                  {activeEvent.conversionRate != null
-                    ? ` · ${Math.round(activeEvent.conversionRate)}% conv.`
+                  {lastEvent.leadCount} lead{lastEvent.leadCount === 1 ? "" : "s"}
+                  {lastEvent.wonCount != null ? ` · ${lastEvent.wonCount} won` : ""}
+                  {lastEvent.conversionRate != null
+                    ? ` · ${Math.round(lastEvent.conversionRate)}% conv.`
                     : ""}
                 </Text>
               </View>

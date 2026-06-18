@@ -1067,6 +1067,7 @@ export interface MobileDashboard {
   followUpsDue: number;
   meetingsScheduled: number;
   proposalsSent: number;
+  contactedLeads: number;
   pipelineValue: number;
   totalContacts: number;
   recentActivity: MobileActivityItem[];
@@ -1078,6 +1079,7 @@ export interface LeadsByEventItem {
   leadCount: number;
   wonCount?: number;
   conversionRate?: number;
+  createdAt?: string;
 }
 
 export interface TeamPerformanceItem {
@@ -1086,6 +1088,60 @@ export interface TeamPerformanceItem {
   scanCount: number;
   leadCount: number;
   wonCount?: number;
+}
+
+export type EventReportQualificationDistribution = {
+  hot: number;
+  warm: number;
+  cold: number;
+};
+
+export interface EventReportStatusCount {
+  status: string;
+  count: number;
+}
+
+export interface EventReportDayCount {
+  date: string;
+  count: number;
+}
+
+export interface EventReportUserCount {
+  userId: number;
+  userName: string;
+  count: number;
+}
+
+export interface EventReportTeamItem {
+  userId: number;
+  userName: string;
+  leads: number;
+  won: number;
+}
+
+export interface EventReportSourceCount {
+  source: string;
+  count: number;
+}
+
+export interface EventReport {
+  eventId: number;
+  eventName: string;
+  totalLeads: number;
+  hotLeads: number;
+  warmLeads: number;
+  coldLeads: number;
+  meetings: number;
+  followUps: number;
+  wonDeals: number;
+  lostDeals: number;
+  pipelineValue: number;
+  qualificationDistribution: EventReportQualificationDistribution;
+  statusDistribution: EventReportStatusCount[];
+  leadsByDay: EventReportDayCount[];
+  leadsByUser: EventReportUserCount[];
+  teamPerformance: EventReportTeamItem[];
+  leadSourceBreakdown: EventReportSourceCount[];
 }
 
 export interface PlatformStats {
@@ -1514,6 +1570,15 @@ limit?: number;
 export type ListScansParams = {
 page?: number;
 limit?: number;
+};
+
+export type GetEventReportParams = {
+eventId: number;
+dateFrom?: string;
+dateTo?: string;
+assignedToId?: number;
+status?: string;
+temperature?: string;
 };
 
 export type ListFollowUpsParams = {

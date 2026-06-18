@@ -1375,7 +1375,8 @@ export const GetLeadsByEventResponseItem = zod.object({
   "eventName": zod.string(),
   "leadCount": zod.number(),
   "wonCount": zod.number().optional(),
-  "conversionRate": zod.number().optional()
+  "conversionRate": zod.number().optional(),
+  "createdAt": zod.coerce.date().optional()
 })
 export const GetLeadsByEventResponse = zod.array(GetLeadsByEventResponseItem)
 
@@ -1449,6 +1450,7 @@ export const GetMobileDashboardResponse = zod.object({
   "followUpsDue": zod.number(),
   "meetingsScheduled": zod.number(),
   "proposalsSent": zod.number(),
+  "contactedLeads": zod.number(),
   "pipelineValue": zod.number(),
   "totalContacts": zod.number(),
   "recentActivity": zod.array(zod.object({
@@ -1457,6 +1459,61 @@ export const GetMobileDashboardResponse = zod.object({
   "title": zod.string(),
   "subtitle": zod.string().nullish(),
   "at": zod.string()
+}))
+})
+
+
+/**
+ * @summary Full per-event report with optional filters
+ */
+export const GetEventReportQueryParams = zod.object({
+  "eventId": zod.coerce.number(),
+  "dateFrom": zod.coerce.string().optional(),
+  "dateTo": zod.coerce.string().optional(),
+  "assignedToId": zod.coerce.number().optional(),
+  "status": zod.coerce.string().optional(),
+  "temperature": zod.coerce.string().optional()
+})
+
+export const GetEventReportResponse = zod.object({
+  "eventId": zod.number(),
+  "eventName": zod.string(),
+  "totalLeads": zod.number(),
+  "hotLeads": zod.number(),
+  "warmLeads": zod.number(),
+  "coldLeads": zod.number(),
+  "meetings": zod.number(),
+  "followUps": zod.number(),
+  "wonDeals": zod.number(),
+  "lostDeals": zod.number(),
+  "pipelineValue": zod.number(),
+  "qualificationDistribution": zod.object({
+  "hot": zod.number(),
+  "warm": zod.number(),
+  "cold": zod.number()
+}),
+  "statusDistribution": zod.array(zod.object({
+  "status": zod.string(),
+  "count": zod.number()
+})),
+  "leadsByDay": zod.array(zod.object({
+  "date": zod.string(),
+  "count": zod.number()
+})),
+  "leadsByUser": zod.array(zod.object({
+  "userId": zod.number(),
+  "userName": zod.string(),
+  "count": zod.number()
+})),
+  "teamPerformance": zod.array(zod.object({
+  "userId": zod.number(),
+  "userName": zod.string(),
+  "leads": zod.number(),
+  "won": zod.number()
+})),
+  "leadSourceBreakdown": zod.array(zod.object({
+  "source": zod.string(),
+  "count": zod.number()
 }))
 })
 

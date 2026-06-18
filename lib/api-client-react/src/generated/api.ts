@@ -39,12 +39,14 @@ import type {
   Event,
   EventInput,
   EventList,
+  EventReport,
   EventStats,
   EventUpdate,
   FollowUp,
   FollowUpInput,
   FollowUpList,
   FollowUpUpdate,
+  GetEventReportParams,
   HealthStatus,
   Lead,
   LeadInput,
@@ -4287,6 +4289,90 @@ export function useGetMobileDashboard<TData = Awaited<ReturnType<typeof getMobil
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMobileDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetEventReportUrl = (params: GetEventReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reports/event?${stringifiedParams}` : `/api/reports/event`
+}
+
+/**
+ * @summary Full per-event report with optional filters
+ */
+export const getEventReport = async (params: GetEventReportParams, options?: RequestInit): Promise<EventReport> => {
+
+  return customFetch<EventReport>(getGetEventReportUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEventReportQueryKey = (params?: GetEventReportParams,) => {
+    return [
+    `/api/reports/event`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEventReportQueryOptions = <TData = Awaited<ReturnType<typeof getEventReport>>, TError = ErrorType<unknown>>(params: GetEventReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEventReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEventReportQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEventReport>>> = ({ signal }) => getEventReport(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEventReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEventReportQueryResult = NonNullable<Awaited<ReturnType<typeof getEventReport>>>
+export type GetEventReportQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Full per-event report with optional filters
+ */
+
+export function useGetEventReport<TData = Awaited<ReturnType<typeof getEventReport>>, TError = ErrorType<unknown>>(
+ params: GetEventReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEventReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEventReportQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

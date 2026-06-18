@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { contactsTable, leadsTable, eventsTable, usersTable, scansTable } from "@workspace/db";
+import { contactsTable, leadsTable, eventsTable, usersTable, scansTable, meetingsTable, followUpsTable } from "@workspace/db";
 import { eq, and, count, sql, desc, inArray, gte, lte, isNotNull, isNull } from "drizzle-orm";
-import { requireAuth, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, tenantScope, canAccessCompany, type AuthRequest } from "../middlewares/requireAuth.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -47,7 +47,7 @@ router.get("/reports/leads-by-event", async (req: AuthRequest, res) => {
       const [{ leadCount }] = await db.select({ leadCount: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, e.id), leadScope));
       const [{ wonCount }] = await db.select({ wonCount: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, e.id), eq(leadsTable.stage, "won"), leadScope));
       const conversionRate = leadCount > 0 ? Math.round((wonCount / leadCount) * 100) : 0;
-      return { eventId: e.id, eventName: e.name, leadCount, wonCount, conversionRate };
+      return { eventId: e.id, eventName: e.name, leadCount, wonCount, conversionRate, createdAt: e.createdAt.toISOString() };
     }));
 
     res.json(result);
@@ -207,6 +207,7 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
     const [
       [{ todayLeads }],
       [{ totalContacts }],
+      [{ contactedLeads }],
       [{ hotLeads }],
       [{ followUpsDue }],
       [{ meetingsScheduled }],
@@ -218,6 +219,10 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
         .from(contactsTable)
         .where(and(contactScope, isNull(contactsTable.duplicateOfId), gte(contactsTable.createdAt, startOfToday))),
       db.select({ totalContacts: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId))),
+      db
+        .select({ contactedLeads: count() })
+        .from(contactsTable)
+        .where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.status, "contacted"))),
       db
         .select({ hotLeads: count() })
         .from(contactsTable)
@@ -287,9 +292,167 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
       followUpsDue,
       meetingsScheduled,
       proposalsSent,
+      contactedLeads,
       pipelineValue: Number(pipelineRow.pipelineValue ?? 0),
       totalContacts,
       recentActivity,
+    });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /reports/event?eventId= — full per-event report with optional filters
+router.get("/reports/event", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.query.eventId));
+    if (Number.isNaN(id)) {
+      res.status(400).json({ error: "eventId required" });
+      return;
+    }
+    const [evt] = await db.select().from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
+    if (!evt || !canAccessCompany(req.user, evt.companyId)) {
+      res.status(404).json({ error: "Event not found" });
+      return;
+    }
+
+    const q = req.query as Record<string, string | undefined>;
+    const assignedToId = q.assignedToId ? parseInt(q.assignedToId) : null;
+    const statusFilter = q.status || null;
+    const temperatureFilter = q.temperature || null;
+    const dateFrom = q.dateFrom || null; // YYYY-MM-DD
+    const dateTo = q.dateTo || null; // YYYY-MM-DD
+
+    const contactConds = [
+      eq(contactsTable.eventId, id),
+      isNull(contactsTable.duplicateOfId),
+      tenantScope(req.user, contactsTable.companyId),
+    ];
+    if (assignedToId != null && !Number.isNaN(assignedToId)) contactConds.push(eq(contactsTable.assignedToId, assignedToId));
+    if (statusFilter) contactConds.push(eq(contactsTable.status, statusFilter));
+    if (temperatureFilter) contactConds.push(eq(contactsTable.leadTemperature, temperatureFilter));
+    if (dateFrom) contactConds.push(gte(contactsTable.createdAt, new Date(`${dateFrom}T00:00:00.000`)));
+    if (dateTo) contactConds.push(lte(contactsTable.createdAt, new Date(`${dateTo}T23:59:59.999`)));
+
+    const contactRows = await db
+      .select({
+        id: contactsTable.id,
+        status: contactsTable.status,
+        leadTemperature: contactsTable.leadTemperature,
+        assignedToId: contactsTable.assignedToId,
+        createdAt: contactsTable.createdAt,
+        cardImageUrl: contactsTable.cardImageUrl,
+      })
+      .from(contactsTable)
+      .where(and(...contactConds));
+
+    const users = await db
+      .select({ id: usersTable.id, name: usersTable.name })
+      .from(usersTable)
+      .where(tenantScope(req.user, usersTable.companyId));
+    const userName = new Map(users.map((u) => [u.id, u.name]));
+
+    const contactIds = contactRows.map((c) => c.id);
+
+    const leadConds = [eq(leadsTable.eventId, id), tenantScope(req.user, leadsTable.companyId)];
+    if (assignedToId != null && !Number.isNaN(assignedToId)) leadConds.push(eq(leadsTable.assignedToId, assignedToId));
+    if (dateFrom) leadConds.push(gte(leadsTable.createdAt, new Date(`${dateFrom}T00:00:00.000`)));
+    if (dateTo) leadConds.push(lte(leadsTable.createdAt, new Date(`${dateTo}T23:59:59.999`)));
+    const leadRows = await db
+      .select({ stage: leadsTable.stage, value: leadsTable.value, assignedToId: leadsTable.assignedToId })
+      .from(leadsTable)
+      .where(and(...leadConds));
+
+    let meetings = 0;
+    let followUps = 0;
+    if (contactIds.length > 0) {
+      const [m] = await db
+        .select({ c: count() })
+        .from(meetingsTable)
+        .where(and(inArray(meetingsTable.contactId, contactIds), eq(meetingsTable.status, "scheduled")));
+      const [f] = await db
+        .select({ c: count() })
+        .from(followUpsTable)
+        .where(and(inArray(followUpsTable.contactId, contactIds), eq(followUpsTable.status, "pending")));
+      meetings = m.c;
+      followUps = f.c;
+    }
+
+    let hotLeads = 0;
+    let warmLeads = 0;
+    let coldLeads = 0;
+    const statusMap = new Map<string, number>();
+    const dayMap = new Map<string, number>();
+    const userLeadMap = new Map<number, number>();
+    let cardSource = 0;
+    let manualSource = 0;
+    for (const c of contactRows) {
+      if (c.leadTemperature === "hot") hotLeads++;
+      else if (c.leadTemperature === "warm") warmLeads++;
+      else if (c.leadTemperature === "cold") coldLeads++;
+      statusMap.set(c.status, (statusMap.get(c.status) ?? 0) + 1);
+      const day = c.createdAt.toISOString().slice(0, 10);
+      dayMap.set(day, (dayMap.get(day) ?? 0) + 1);
+      if (c.assignedToId != null) userLeadMap.set(c.assignedToId, (userLeadMap.get(c.assignedToId) ?? 0) + 1);
+      if (c.cardImageUrl) cardSource++;
+      else manualSource++;
+    }
+
+    let wonDeals = 0;
+    let lostDeals = 0;
+    let pipelineValue = 0;
+    const wonByUser = new Map<number, number>();
+    for (const l of leadRows) {
+      if (l.stage === "won") {
+        wonDeals++;
+        if (l.assignedToId != null) wonByUser.set(l.assignedToId, (wonByUser.get(l.assignedToId) ?? 0) + 1);
+      } else if (l.stage === "lost") {
+        lostDeals++;
+      } else {
+        pipelineValue += Number(l.value ?? 0);
+      }
+    }
+
+    const statusDistribution = [...statusMap.entries()].map(([status, c]) => ({ status, count: c }));
+    const leadsByDay = [...dayMap.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([date, c]) => ({ date, count: c }));
+    const leadsByUser = [...userLeadMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([uid, c]) => ({ userId: uid, userName: userName.get(uid) ?? "Unassigned", count: c }));
+    const teamUserIds = new Set<number>([...userLeadMap.keys(), ...wonByUser.keys()]);
+    const teamPerformance = [...teamUserIds]
+      .map((uid) => ({
+        userId: uid,
+        userName: userName.get(uid) ?? "Unknown",
+        leads: userLeadMap.get(uid) ?? 0,
+        won: wonByUser.get(uid) ?? 0,
+      }))
+      .sort((a, b) => b.leads - a.leads);
+    const leadSourceBreakdown = [
+      { source: "Business Card", count: cardSource },
+      { source: "Manual Entry", count: manualSource },
+    ].filter((s) => s.count > 0);
+
+    res.json({
+      eventId: evt.id,
+      eventName: evt.name,
+      totalLeads: contactRows.length,
+      hotLeads,
+      warmLeads,
+      coldLeads,
+      meetings,
+      followUps,
+      wonDeals,
+      lostDeals,
+      pipelineValue,
+      qualificationDistribution: { hot: hotLeads, warm: warmLeads, cold: coldLeads },
+      statusDistribution,
+      leadsByDay,
+      leadsByUser,
+      teamPerformance,
+      leadSourceBreakdown,
     });
   } catch (err) {
     req.log.error(err);

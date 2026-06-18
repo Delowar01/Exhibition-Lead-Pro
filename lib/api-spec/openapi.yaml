@@ -1149,6 +1149,45 @@ paths:
               schema:
                 $ref: "#/components/schemas/MobileDashboard"
 
+  /reports/event:
+    get:
+      operationId: getEventReport
+      tags: [reports]
+      summary: Full per-event report with optional filters
+      parameters:
+        - name: eventId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+        - name: assignedToId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: temperature
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventReport"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -2538,6 +2577,7 @@ components:
           followUpsDue,
           meetingsScheduled,
           proposalsSent,
+          contactedLeads,
           pipelineValue,
           totalContacts,
           recentActivity,
@@ -2552,6 +2592,8 @@ components:
         meetingsScheduled:
           type: integer
         proposalsSent:
+          type: integer
+        contactedLeads:
           type: integer
         pipelineValue:
           type: number
@@ -2576,6 +2618,9 @@ components:
           type: integer
         conversionRate:
           type: number
+        createdAt:
+          type: string
+          format: date-time
 
     TeamPerformanceItem:
       type: object
@@ -2590,6 +2635,133 @@ components:
         leadCount:
           type: integer
         wonCount:
+          type: integer
+
+    EventReport:
+      type: object
+      required:
+        [
+          eventId,
+          eventName,
+          totalLeads,
+          hotLeads,
+          warmLeads,
+          coldLeads,
+          meetings,
+          followUps,
+          wonDeals,
+          lostDeals,
+          pipelineValue,
+          qualificationDistribution,
+          statusDistribution,
+          leadsByDay,
+          leadsByUser,
+          teamPerformance,
+          leadSourceBreakdown,
+        ]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        totalLeads:
+          type: integer
+        hotLeads:
+          type: integer
+        warmLeads:
+          type: integer
+        coldLeads:
+          type: integer
+        meetings:
+          type: integer
+        followUps:
+          type: integer
+        wonDeals:
+          type: integer
+        lostDeals:
+          type: integer
+        pipelineValue:
+          type: number
+        qualificationDistribution:
+          type: object
+          required: [hot, warm, cold]
+          properties:
+            hot:
+              type: integer
+            warm:
+              type: integer
+            cold:
+              type: integer
+        statusDistribution:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReportStatusCount"
+        leadsByDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReportDayCount"
+        leadsByUser:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReportUserCount"
+        teamPerformance:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReportTeamItem"
+        leadSourceBreakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReportSourceCount"
+
+    EventReportStatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+
+    EventReportDayCount:
+      type: object
+      required: [date, count]
+      properties:
+        date:
+          type: string
+        count:
+          type: integer
+
+    EventReportUserCount:
+      type: object
+      required: [userId, userName, count]
+      properties:
+        userId:
+          type: integer
+        userName:
+          type: string
+        count:
+          type: integer
+
+    EventReportTeamItem:
+      type: object
+      required: [userId, userName, leads, won]
+      properties:
+        userId:
+          type: integer
+        userName:
+          type: string
+        leads:
+          type: integer
+        won:
+          type: integer
+
+    EventReportSourceCount:
+      type: object
+      required: [source, count]
+      properties:
+        source:
+          type: string
+        count:
           type: integer
 
     PlatformStats:

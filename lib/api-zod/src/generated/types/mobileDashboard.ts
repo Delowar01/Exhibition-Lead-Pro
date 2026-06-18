@@ -13,6 +13,7 @@ export interface MobileDashboard {
   followUpsDue: number;
   meetingsScheduled: number;
   proposalsSent: number;
+  contactedLeads: number;
   pipelineValue: number;
   totalContacts: number;
   recentActivity: MobileActivityItem[];
