@@ -119,19 +119,15 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  // Load the Inter text fonts together with the Feather icon font in one gating
-  // batch. `Feather.font` is `{ cspfeather: <asset> }` from our custom-named
-  // icon set (see `components/icons.ts`). Gating the render on the icon font is
-  // what makes icons appear on Android: that platform does not re-layout text
-  // when a font loads AFTER the text has mounted, so the font must be ready
-  // before any icon renders. The unique family name also avoids the "feather"
-  // collision with Expo Go's baked-in copy of @expo/vector-icons.
+  // Load only the Inter text fonts. Icons are NOT a font anymore — they render
+  // as SVG (see `components/icons.tsx`), which has no font family and no load
+  // step, so there is nothing icon-related to gate on here. This is what fixes
+  // the Android/Expo Go "tofu" (empty box) icons that the old icon font caused.
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-    ...Feather.font,
   });
 
   useEffect(() => {

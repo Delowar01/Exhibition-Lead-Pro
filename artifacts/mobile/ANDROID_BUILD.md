@@ -16,13 +16,16 @@ optimized). It is the deliverable for the "Critical Android Build" ticket.
 
 **Diagnosis (not a hardcode):**
 
-- The app uses a **single icon library** everywhere: Feather from
-  `@expo/vector-icons` (verified across every screen/component — no Ionicons,
-  MaterialIcons, FontAwesome, etc. are imported).
-- `@expo/vector-icons` defines Feather as `createIconSet(glyphMap, 'feather', font)`
-  — it registers its font under the family **`feather`** and loads it at runtime.
+- The app uses a **single icon set** everywhere: Feather (verified across every
+  screen/component — no Ionicons, MaterialIcons, FontAwesome, etc. are imported).
+- The original implementation drew Feather via `@expo/vector-icons`, which defines
+  it as `createIconSet(glyphMap, 'feather', font)` — i.e. it registers an **icon
+  font** under the family `feather` and loads that font at runtime.
 
-**Root cause (Android tofu/empty icons — two compounding factors):**
+**Root cause (Android tofu/empty icons — icon *fonts* are the problem):**
+
+The icon-font approach fails on Android for two compounding reasons that iOS and
+web do not hit:
 
 1. **Family-name collision in Expo Go.** Expo Go ships its own baked-in copy of
    `@expo/vector-icons`, which also registers the `feather` family. The app's
@@ -32,21 +35,31 @@ optimized). It is the deliverable for the "Critical Android Build" ticket.
    loads *after* the Text has mounted. iOS does. So loading the icon font in a
    non-gating effect leaves Android showing tofu permanently.
 
-**Fix (pure JS — works in Expo Go too, no native rebuild required):**
+Renaming the embedded font and gating a custom-named `createIconSet` on `useFonts`
+were both tried and both still relied on a runtime icon **font** — so Android Expo
+Go still showed tofu.
 
-- `components/icons.ts` exports a **custom-named** Feather set:
-  `createIconSet(ExpoFeather.glyphMap, "cspfeather", require("../assets/fonts/feather.ttf"))`.
-  A unique family (`cspfeather`) cannot collide with Expo Go's baked-in `feather`;
-  it reuses the library glyph map + the app's bundled (byte-identical) font file.
-- Every screen/component imports `{ Feather }` from `@/components/icons` instead of
-  `@expo/vector-icons` (identical API).
-- `app/_layout.tsx` loads `...Feather.font` (`{ cspfeather: <asset> }`) inside the
-  **gating** `useFonts` batch, so no icon renders until the font is ready —
-  fixing the Android late-load case.
+**Fix (the one that works — render icons as SVG, no font at all):**
 
-> The old `expo-font` `feather.ttf` embed in `app.json` now registers an **unused**
-> `feather` family; it is harmless and left in place. The font **file** is still
-> required because `components/icons.ts` `require`s it.
+Icons are no longer a font. `components/icons.tsx` renders Feather icons as **SVG**
+(via `react-native-feather`, which draws with `react-native-svg`). SVG paths have
+no font family and no load step, so there is **nothing to collide and nothing to
+miss** — they render identically on web, iOS, Android, Expo Go, and native
+dev/production builds. This removes the entire failure class above.
+
+- `components/icons.tsx` exports a `Feather` wrapper with the **same public API**
+  as before (`<Feather name="arrow-left" size={20} color="#333" />`): it maps the
+  kebab-case `name` to the matching `react-native-feather` PascalCase SVG component
+  and passes `size`→`width/height`, `color`→`stroke`. `Feather.glyphMap` is
+  preserved (the app types icon names as `keyof typeof Feather.glyphMap`).
+- No call sites changed — every screen/component already imports `{ Feather }` from
+  `@/components/icons`.
+- `app/_layout.tsx` no longer loads any icon font (only the Inter text fonts).
+- `react-native-svg` is an Expo SDK module already **bundled inside Expo Go**, so
+  this fix applies in Expo Go with **no custom build**.
+
+> The old icon **font** (`assets/fonts/feather.ttf`) and its `expo-font` embed in
+> `app.json` were removed — the app no longer uses an icon font.
 
 ---
 
@@ -85,14 +98,15 @@ requires an EAS `projectId` — see section 5.
 |---|---|
 | `lib/push.ts` | Lazily `require` expo-notifications only outside Expo Go; export shared `Notifications` (nullable) + `isExpoGo`; gate handler/registration on it. |
 | `components/NotificationsManager.tsx` | Use the shared `Notifications` handle (no direct import); skip listeners when it is null (web / Expo Go). |
-| `components/icons.ts` | **New.** Custom-named Feather icon set (`cspfeather`) bound to the app's own bundled font + the library glyph map — fixes the Android/Expo-Go tofu icons. |
-| every screen/component (~31 files) | Import `{ Feather }` from `@/components/icons` instead of `@expo/vector-icons`. |
-| `app/_layout.tsx` | Load `...Feather.font` in the gating `useFonts` batch (icons ready before render); removed the old non-gating `Font.loadAsync` effect. |
+| `components/icons.tsx` | **New (replaces `components/icons.ts`).** `Feather` wrapper that renders icons as **SVG** via `react-native-feather` (same `name`/`size`/`color` API; `Feather.glyphMap` preserved) — fixes the Android/Expo-Go tofu icons by removing the icon font entirely. |
+| every screen/component (~31 files) | Already import `{ Feather }` from `@/components/icons` — no changes needed for the SVG switch. |
+| `app/_layout.tsx` | Removed the icon-font load; `useFonts` now loads only the Inter text fonts. |
+| `react-native-feather` (dependency) | Added. Pure-JS Feather icon set drawn with `react-native-svg` (already an Expo SDK module bundled in Expo Go) — no native build required. |
+| `assets/fonts/feather.ttf` + `app.json` `expo-font` embed | **Removed.** The app no longer uses an icon font. |
 | `app.json` | Added `"jsEngine": "hermes"`; added `expo-location` and `expo-image-picker` config plugins (GPS + image-upload permissions for the native build, incl. Android 13+ media access). |
-| `assets/fonts/feather.ttf` | Bundled Feather font file (byte-identical to the genuine `@expo/vector-icons` font), `require`d by `components/icons.ts`. |
 | `ANDROID_BUILD.md` | This document. |
 
-No backend/web/iOS behavior changed. The icon fix is **pure JS** and applies on web, iOS, Android dev builds, and Android Expo Go without a native rebuild.
+No backend/web/iOS behavior changed. The icon fix is **pure JS (SVG)** and applies on web, iOS, Android dev builds, and Android Expo Go without a native rebuild.
 
 ---
 
@@ -163,8 +177,10 @@ eas build --platform android --profile production   # AAB
 - ✅ TypeScript typecheck passes (`pnpm --filter @workspace/mobile run typecheck`).
 - ✅ `expo config` resolves cleanly with Hermes + all 11 plugins (validates the
   new `expo-location` / `expo-image-picker` plugin references).
-- ✅ Single icon library (Feather) confirmed app-wide; embedded font verified
-  byte-identical to the genuine `@expo/vector-icons` font.
+- ✅ Single icon set (Feather) confirmed app-wide; icons now render as **SVG**
+  (`react-native-feather` over `react-native-svg`) — no icon font involved.
+- ✅ Expo **web** preview confirms the SVG icons render (login screen: mail, lock,
+  eye, arrow, zap all visible — no tofu).
 - ✅ All `expo-notifications` calls guarded — no notification errors in Expo Go.
 
 **Device testing (Android 12 / 13 / 14), red-screen/runtime checks, camera/OCR/GPS

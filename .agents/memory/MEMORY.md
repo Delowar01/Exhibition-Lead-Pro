@@ -1,2 +1,2 @@
 - [Orval codegen gotchas](orval-codegen-gotchas.md) — path-param/query-name collisions break codegen; api-server dev server needs restart to pick up route changes before smoke tests.
-- [Mobile Android icon tofu](mobile-android-icons.md) — Feather icons box-out on Android/Expo Go from a `feather` family collision + no re-layout on late font load; fix = custom-named `createIconSet` + preload it in the gating `useFonts`.
+- [Mobile Android icon tofu](mobile-android-icons.md) — Feather icons box-out on Android/Expo Go because icon FONTS are unreliable there (family collision + no re-layout on late load); real fix = render icons as SVG (react-native-feather/react-native-svg), not a font.
