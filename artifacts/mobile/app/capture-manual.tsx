@@ -15,6 +15,7 @@ import {
 } from "@/components/ContactForm";
 import { FONT } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 
 function payloadLabel(payload: { firstName?: string | null; lastName?: string | null; contactCompany?: string | null }): string {
@@ -31,11 +32,13 @@ export default function CaptureManualScreen() {
   const router = useRouter();
   const createContact = useCreateContact();
   const { isOnline, enqueueContact } = useOffline();
+  const { activeEventId } = useSettings();
+  const eventId = activeEventId ?? null;
 
   async function handleSave(values: ContactFormValues) {
-    const payload = toContactPayload(values);
+    const payload = { ...toContactPayload(values), eventId };
     if (!isOnline) {
-      enqueueContact(payload, { label: payloadLabel(payload), source: "manual" });
+      enqueueContact(payload, { label: payloadLabel(payload), source: "manual", eventId });
       router.replace("/(tabs)/contacts");
       return;
     }

@@ -23,6 +23,7 @@ import type { ContactInput, ExtractedCardData } from "@workspace/api-client-reac
 
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 
 function extractedToContact(data: ExtractedCardData): ContactInput {
@@ -104,6 +105,8 @@ export default function CaptureQrScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const { isOnline, enqueueContact } = useOffline();
+  const { activeEventId } = useSettings();
+  const eventId = activeEventId ?? null;
   const scannedRef = useRef(false);
   const [scanned, setScanned] = useState(false);
 
@@ -120,12 +123,12 @@ export default function CaptureQrScreen() {
     // QR data is parsed entirely on-device, so we can queue a ready contact
     // when offline — no server OCR required.
     if (!isOnline) {
-      const payload = extractedToContact(data);
+      const payload = { ...extractedToContact(data), eventId };
       const label =
         [data.firstName, data.lastName].filter(Boolean).join(" ") ||
         data.company ||
         "QR contact";
-      enqueueContact(payload, { label, source: "qr" });
+      enqueueContact(payload, { label, source: "qr", eventId });
       router.replace("/(tabs)/contacts");
       return;
     }

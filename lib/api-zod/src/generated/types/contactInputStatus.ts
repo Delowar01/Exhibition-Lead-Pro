@@ -11,9 +11,12 @@ export type ContactInputStatus = typeof ContactInputStatus[keyof typeof ContactI
 
 export const ContactInputStatus = {
   new: 'new',
+  contacted: 'contacted',
+  quotation_sent: 'quotation_sent',
+  negotiation: 'negotiation',
+  won: 'won',
+  lost: 'lost',
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
-  won: 'won',
-  lost: 'lost',
 } as const;

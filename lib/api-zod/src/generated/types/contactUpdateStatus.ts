@@ -11,9 +11,12 @@ export type ContactUpdateStatus = typeof ContactUpdateStatus[keyof typeof Contac
 
 export const ContactUpdateStatus = {
   new: 'new',
+  contacted: 'contacted',
+  quotation_sent: 'quotation_sent',
+  negotiation: 'negotiation',
+  won: 'won',
+  lost: 'lost',
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
-  won: 'won',
-  lost: 'lost',
 } as const;

@@ -10,6 +10,29 @@ import React, {
 export type ThemePref = "light" | "dark" | "system";
 export type CaptureModePref = "single" | "rapid" | "batch";
 export type LanguagePref = "en" | "ar";
+export type ContactSortPref = "newest" | "oldest" | "name";
+
+export interface ContactFilters {
+  sort: ContactSortPref;
+  status: string | null;
+  eventId: number | null;
+  temperature: string | null;
+  hasFollowUp: boolean;
+  hasMeeting: boolean;
+  dateFrom: string | null;
+  dateTo: string | null;
+}
+
+export const DEFAULT_CONTACT_FILTERS: ContactFilters = {
+  sort: "newest",
+  status: null,
+  eventId: null,
+  temperature: null,
+  hasFollowUp: false,
+  hasMeeting: false,
+  dateFrom: null,
+  dateTo: null,
+};
 
 export interface AppSettings {
   theme: ThemePref;
@@ -17,6 +40,9 @@ export interface AppSettings {
   notifications: boolean;
   language: LanguagePref;
   biometricEnabled: boolean;
+  activeEventId: number | null;
+  activeEventName: string | null;
+  contactFilters: ContactFilters;
 }
 
 const DEFAULTS: AppSettings = {
@@ -25,6 +51,9 @@ const DEFAULTS: AppSettings = {
   notifications: true,
   language: "en",
   biometricEnabled: false,
+  activeEventId: null,
+  activeEventName: null,
+  contactFilters: DEFAULT_CONTACT_FILTERS,
 };
 
 interface SettingsContextValue extends AppSettings {
@@ -34,6 +63,8 @@ interface SettingsContextValue extends AppSettings {
   setNotifications: (value: boolean) => void;
   setLanguage: (value: LanguagePref) => void;
   setBiometricEnabled: (value: boolean) => void;
+  setActiveEvent: (id: number | null, name: string | null) => void;
+  setContactFilters: (value: ContactFilters) => void;
 }
 
 const STORAGE_KEY = "csp_settings";
@@ -48,6 +79,7 @@ const SettingsContext = createContext<SettingsContextValue>({
   setNotifications: () => {},
   setLanguage: () => {},
   setBiometricEnabled: () => {},
+  setActiveEvent: () => {},
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
@@ -93,6 +125,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setNotifications: (notifications) => patch({ notifications }),
     setLanguage: (language) => patch({ language }),
     setBiometricEnabled: (biometricEnabled) => patch({ biometricEnabled }),
+    setActiveEvent: (activeEventId, activeEventName) =>
+      patch({ activeEventId, activeEventName }),
+    setContactFilters: (contactFilters) => patch({ contactFilters }),
   };
 
   return (

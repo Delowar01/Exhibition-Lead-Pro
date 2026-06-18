@@ -10,3 +10,7 @@ export * from "./activity_logs";
 export * from "./plans";
 export * from "./user_company_access";
 export * from "./audit_logs";
+export * from "./follow_ups";
+export * from "./meetings";
+export * from "./tasks";
+export * from "./contact_status_history";

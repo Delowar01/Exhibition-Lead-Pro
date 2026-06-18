@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { EventStatus } from './eventStatus';
 
 export interface Event {
   id: number;
@@ -13,6 +14,8 @@ export interface Event {
   /** @nullable */
   venue?: string | null;
   /** @nullable */
+  country?: string | null;
+  /** @nullable */
   startDate?: Date | null;
   /** @nullable */
   endDate?: Date | null;
@@ -20,6 +23,7 @@ export interface Event {
   boothNumber?: string | null;
   /** @nullable */
   description?: string | null;
+  status?: EventStatus;
   contactCount?: number;
   leadCount?: number;
   createdAt: Date;

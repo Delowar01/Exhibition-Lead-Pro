@@ -11,4 +11,10 @@ export interface ScanInput {
   imageData: string;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
 }

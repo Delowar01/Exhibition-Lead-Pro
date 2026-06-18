@@ -8,10 +8,12 @@ export const eventsTable = pgTable("events", {
   companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   venue: text("venue"),
+  country: text("country"),
   startDate: date("start_date"),
   endDate: date("end_date"),
   boothNumber: text("booth_number"),
   description: text("description"),
+  status: text("status").notNull().default("active"), // upcoming, active, completed
   createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

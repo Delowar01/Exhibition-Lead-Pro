@@ -36,6 +36,14 @@ export interface Contact {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
+  /** @nullable */
+  duplicateOfId?: number | null;
+  /** @nullable */
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -58,6 +66,8 @@ export interface Contact {
   enrichedAt?: Date | null;
   /** @nullable */
   followUpDate?: Date | null;
+  /** @nullable */
+  followUpTime?: string | null;
   /** @nullable */
   cardImageUrl?: string | null;
   /** @nullable */

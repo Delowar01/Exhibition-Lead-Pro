@@ -497,6 +497,37 @@ paths:
           schema:
             type: integer
             default: 1
+        - name: sort
+          in: query
+          description: Sort order (default newest first)
+          schema:
+            type: string
+            enum: [newest, oldest, name]
+            default: newest
+        - name: hasFollowUp
+          in: query
+          schema:
+            type: boolean
+        - name: hasMeeting
+          in: query
+          schema:
+            type: boolean
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: includeDuplicates
+          in: query
+          description: When true, include contacts marked as duplicates (default false)
+          schema:
+            type: boolean
+            default: false
         - name: limit
           in: query
           schema:
@@ -1145,6 +1176,260 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # FOLLOW-UPS
+  /follow-ups:
+    get:
+      operationId: listFollowUps
+      tags: [follow-ups]
+      summary: List follow-ups
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: contactId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: assignedTo
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowUpList"
+    post:
+      operationId: createFollowUp
+      tags: [follow-ups]
+      summary: Schedule a follow-up
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FollowUpInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowUp"
+
+  /follow-ups/{id}:
+    patch:
+      operationId: updateFollowUp
+      tags: [follow-ups]
+      summary: Action a follow-up (complete/reschedule/cancel)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FollowUpUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowUp"
+
+  # MEETINGS
+  /meetings:
+    get:
+      operationId: listMeetings
+      tags: [meetings]
+      summary: List meetings
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: contactId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: assignedTo
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingList"
+    post:
+      operationId: createMeeting
+      tags: [meetings]
+      summary: Schedule a meeting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetingInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+
+  /meetings/{id}:
+    patch:
+      operationId: updateMeeting
+      tags: [meetings]
+      summary: Action a meeting (complete/reschedule/cancel)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetingUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+
+  # TASKS
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List tasks
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: assignedTo
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: contactId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: scope
+          in: query
+          description: "mine (default, tasks assigned to me) or all (admins only)"
+          schema:
+            type: string
+            enum: [mine, all]
+            default: mine
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskList"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create / assign a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+
+  /tasks/{id}:
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /contacts/{id}/status-history:
+    get:
+      operationId: getContactStatusHistory
+      tags: [contacts]
+      summary: Lead status change history for a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactStatusHistoryList"
+
 components:
   schemas:
     HealthStatus:
@@ -1490,6 +1775,14 @@ components:
           type: ["string", "null"]
         address:
           type: ["string", "null"]
+        latitude:
+          type: ["number", "null"]
+        longitude:
+          type: ["number", "null"]
+        gpsAccuracy:
+          type: ["number", "null"]
+        duplicateOfId:
+          type: ["integer", "null"]
         linkedin:
           type: ["string", "null"]
         notes:
@@ -1500,7 +1793,7 @@ components:
             type: string
         status:
           type: string
-          enum: [new, qualified, interested, proposal_sent, won, lost]
+          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent]
         leadScore:
           type: ["integer", "null"]
         leadTemperature:
@@ -1524,6 +1817,8 @@ components:
         followUpDate:
           type: ["string", "null"]
           format: date
+        followUpTime:
+          type: ["string", "null"]
         cardImageUrl:
           type: ["string", "null"]
         eventId:
@@ -1578,6 +1873,12 @@ components:
           type: ["string", "null"]
         address:
           type: ["string", "null"]
+        latitude:
+          type: ["number", "null"]
+        longitude:
+          type: ["number", "null"]
+        gpsAccuracy:
+          type: ["number", "null"]
         linkedin:
           type: ["string", "null"]
         notes:
@@ -1588,9 +1889,11 @@ components:
             type: string
         status:
           type: string
-          enum: [new, qualified, interested, proposal_sent, won, lost]
+          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent]
           default: new
         followUpDate:
+          type: ["string", "null"]
+        followUpTime:
           type: ["string", "null"]
         eventId:
           type: ["integer", "null"]
@@ -1632,8 +1935,13 @@ components:
             type: string
         status:
           type: string
-          enum: [new, qualified, interested, proposal_sent, won, lost]
+          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent]
+        statusComment:
+          type: ["string", "null"]
+          description: Optional note logged with a status change
         followUpDate:
+          type: ["string", "null"]
+        followUpTime:
           type: ["string", "null"]
         eventId:
           type: ["integer", "null"]
@@ -1809,6 +2117,8 @@ components:
           type: string
         venue:
           type: ["string", "null"]
+        country:
+          type: ["string", "null"]
         startDate:
           type: ["string", "null"]
           format: date
@@ -1819,6 +2129,9 @@ components:
           type: ["string", "null"]
         description:
           type: ["string", "null"]
+        status:
+          type: string
+          enum: [upcoming, active, completed]
         contactCount:
           type: integer
         leadCount:
@@ -1850,6 +2163,8 @@ components:
           type: string
         venue:
           type: ["string", "null"]
+        country:
+          type: ["string", "null"]
         startDate:
           type: ["string", "null"]
         endDate:
@@ -1858,6 +2173,10 @@ components:
           type: ["string", "null"]
         description:
           type: ["string", "null"]
+        status:
+          type: string
+          enum: [upcoming, active, completed]
+          default: active
 
     EventUpdate:
       type: object
@@ -1866,6 +2185,8 @@ components:
           type: string
         venue:
           type: ["string", "null"]
+        country:
+          type: ["string", "null"]
         startDate:
           type: ["string", "null"]
         endDate:
@@ -1874,6 +2195,9 @@ components:
           type: ["string", "null"]
         description:
           type: ["string", "null"]
+        status:
+          type: string
+          enum: [upcoming, active, completed]
 
     EventStats:
       type: object
@@ -1938,6 +2262,12 @@ components:
           description: Base64-encoded image
         eventId:
           type: ["integer", "null"]
+        latitude:
+          type: ["number", "null"]
+        longitude:
+          type: ["number", "null"]
+        gpsAccuracy:
+          type: ["number", "null"]
 
     ExtractedCardData:
       type: object
@@ -2292,3 +2622,297 @@ components:
           type: integer
         label:
           type: ["string", "null"]
+
+    FollowUp:
+      type: object
+      required: [id, companyId, contactId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        contactId:
+          type: integer
+        contactName:
+          type: ["string", "null"]
+        scheduledDate:
+          type: ["string", "null"]
+          format: date
+        scheduledTime:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, completed, rescheduled, cancelled]
+        comment:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        assignedToName:
+          type: ["string", "null"]
+        createdById:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FollowUpList:
+      type: object
+      required: [followUps, total]
+      properties:
+        followUps:
+          type: array
+          items:
+            $ref: "#/components/schemas/FollowUp"
+        total:
+          type: integer
+
+    FollowUpInput:
+      type: object
+      required: [contactId]
+      properties:
+        contactId:
+          type: integer
+        scheduledDate:
+          type: ["string", "null"]
+        scheduledTime:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+
+    FollowUpUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, completed, rescheduled, cancelled]
+        comment:
+          type: ["string", "null"]
+        scheduledDate:
+          type: ["string", "null"]
+        scheduledTime:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+
+    Meeting:
+      type: object
+      required: [id, companyId, contactId, type, status, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        contactId:
+          type: integer
+        contactName:
+          type: ["string", "null"]
+        meetingDate:
+          type: ["string", "null"]
+          format: date
+        meetingTime:
+          type: ["string", "null"]
+        type:
+          type: string
+          enum: [online, physical, phone_call]
+        notes:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [scheduled, completed, rescheduled, cancelled]
+        comment:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        assignedToName:
+          type: ["string", "null"]
+        createdById:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MeetingList:
+      type: object
+      required: [meetings, total]
+      properties:
+        meetings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Meeting"
+        total:
+          type: integer
+
+    MeetingInput:
+      type: object
+      required: [contactId, type]
+      properties:
+        contactId:
+          type: integer
+        meetingDate:
+          type: ["string", "null"]
+        meetingTime:
+          type: ["string", "null"]
+        type:
+          type: string
+          enum: [online, physical, phone_call]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+
+    MeetingUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [scheduled, completed, rescheduled, cancelled]
+        comment:
+          type: ["string", "null"]
+        meetingDate:
+          type: ["string", "null"]
+        meetingTime:
+          type: ["string", "null"]
+        type:
+          type: string
+          enum: [online, physical, phone_call]
+        notes:
+          type: ["string", "null"]
+
+    Task:
+      type: object
+      required: [id, companyId, title, type, status, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        contactId:
+          type: ["integer", "null"]
+        contactName:
+          type: ["string", "null"]
+        title:
+          type: string
+        type:
+          type: string
+          enum: [call, follow_up, meeting, proposal, custom]
+        status:
+          type: string
+          enum: [pending, in_progress, completed, overdue]
+        dueDate:
+          type: ["string", "null"]
+          format: date
+        dueTime:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+        assignedToName:
+          type: ["string", "null"]
+        assignedById:
+          type: ["integer", "null"]
+        assignedByName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskList:
+      type: object
+      required: [tasks, total]
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        total:
+          type: integer
+
+    TaskInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        type:
+          type: string
+          enum: [call, follow_up, meeting, proposal, custom]
+          default: custom
+        contactId:
+          type: ["integer", "null"]
+        dueDate:
+          type: ["string", "null"]
+        dueTime:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        type:
+          type: string
+          enum: [call, follow_up, meeting, proposal, custom]
+        status:
+          type: string
+          enum: [pending, in_progress, completed, overdue]
+        contactId:
+          type: ["integer", "null"]
+        dueDate:
+          type: ["string", "null"]
+        dueTime:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["integer", "null"]
+
+    ContactStatusHistory:
+      type: object
+      required: [id, contactId, toStatus, createdAt]
+      properties:
+        id:
+          type: integer
+        contactId:
+          type: integer
+        fromStatus:
+          type: ["string", "null"]
+        toStatus:
+          type: string
+        comment:
+          type: ["string", "null"]
+        changedById:
+          type: ["integer", "null"]
+        changedByName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    ContactStatusHistoryList:
+      type: object
+      required: [history, total]
+      properties:
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactStatusHistory"
+        total:
+          type: integer

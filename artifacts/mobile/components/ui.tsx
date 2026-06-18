@@ -24,11 +24,73 @@ export const FONT = {
 
 export const CONTACT_STATUS_COLORS: Record<string, string> = {
   new: "#3B82F6",
+  contacted: "#8B5CF6",
+  quotation_sent: "#06B6D4",
+  negotiation: "#FB923C",
+  won: "#22C55E",
+  lost: "#EF4444",
+  // legacy statuses (kept for back-compat with existing web data)
   qualified: "#8B5CF6",
   interested: "#F59E0B",
   proposal_sent: "#06B6D4",
-  won: "#22C55E",
-  lost: "#EF4444",
+};
+
+export const CONTACT_STATUS_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
+  new: "user-plus",
+  contacted: "phone-call",
+  quotation_sent: "file-text",
+  negotiation: "trending-up",
+  won: "award",
+  lost: "x-circle",
+  qualified: "check-circle",
+  interested: "star",
+  proposal_sent: "file-text",
+};
+
+// Canonical lead pipeline order (mobile). Statuses outside this list (legacy)
+// still render via the maps above but are not shown as primary pipeline stages.
+export const CONTACT_PIPELINE_ORDER = [
+  "new",
+  "contacted",
+  "quotation_sent",
+  "negotiation",
+  "won",
+  "lost",
+];
+
+export const FOLLOWUP_STATUS_COLORS: Record<string, string> = {
+  pending: "#06B6D4",
+  completed: "#22C55E",
+  rescheduled: "#F59E0B",
+  cancelled: "#EF4444",
+};
+
+export const MEETING_STATUS_COLORS: Record<string, string> = {
+  scheduled: "#06B6D4",
+  completed: "#22C55E",
+  rescheduled: "#F59E0B",
+  cancelled: "#EF4444",
+};
+
+export const MEETING_TYPE_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
+  online: "video",
+  physical: "map-pin",
+  phone_call: "phone",
+};
+
+export const TASK_STATUS_COLORS: Record<string, string> = {
+  pending: "#67707D",
+  in_progress: "#06B6D4",
+  completed: "#22C55E",
+  overdue: "#EF4444",
+};
+
+export const TASK_TYPE_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
+  call: "phone",
+  follow_up: "clock",
+  meeting: "calendar",
+  proposal: "file-text",
+  custom: "check-square",
 };
 
 export const LEAD_STAGE_COLORS: Record<string, string> = {

@@ -1,0 +1,957 @@
+APPLICATION FIXES & ENHANCEMENTS – HIGH PRIORITY
+
+
+
+Project:
+
+AI Exhibition Lead Capture Platform
+
+
+
+Scope:
+
+MOBILE APPLICATION ONLY
+
+(No Admin Panel changes in this ticket)
+
+
+
+Before implementing any new feature, review all existing workflows and ensure no regression occurs.
+
+
+
+====================================================
+
+
+
+1. EVENT / EXHIBITION SELECTION
+
+   ====================================================
+
+
+
+Current Issue:
+
+There is no option to create or select an Event/Exhibition before scanning.
+
+
+
+Required:
+
+
+
+1. Add Event/Exhibition Management module.
+
+
+
+2. Users with permission can create events.
+
+
+
+3. Event fields:
+
+
+
+   * Event Name
+
+   * Venue
+
+   * Country
+
+   * Start Date
+
+   * End Date
+
+   * Description
+
+   * Status
+
+
+
+4. Before entering any scanning mode, user must select:
+
+
+
+   * Event/Exhibition
+
+
+
+
+
+5. Last selected event should remain selected until changed.
+
+
+
+Acceptance Criteria:
+
+
+
+* No scan can start without selecting an event.
+
+* Every lead is linked to an event.
+
+
+
+====================================================
+
+2. SCAN LOCATION TRACKING
+
+=========================
+
+
+
+Current Issue:
+
+No scan location functionality exists.
+
+
+
+Required:
+
+
+
+Add Scan Location feature.
+
+
+
+
+
+
+
+
+
+Current Issue:
+
+
+
+No location tracking functionality exists.
+
+
+
+Required:
+
+
+
+Location must be captured automatically.
+
+
+
+The application should automatically collect:
+
+
+
+Latitude
+
+Longitude
+
+GPS Accuracy
+
+Scan Timestamp
+
+
+
+Requirements:
+
+
+
+GPS retrieval must run completely in the background.
+
+GPS must never delay scanning.
+
+If GPS is unavailable:
+
+Lead must still be saved.
+
+No warning should block scanning.
+
+Store GPS data against every lead record.
+
+
+
+Contact Detail Screen should display:
+
+
+
+Latitude
+
+Longitude
+
+Scan Timestamp
+
+View on Google Maps 
+
+
+
+Acceptance Criteria:
+
+
+
+No manual location selection required.
+
+GPS captured automatically when available.
+
+Scanning speed unaffected.
+
+Lead saved even if GPS unavailable.
+
+Location visible in lead details.
+
+Google Maps link opens correctly. 
+
+====================================================
+
+3. RAPID MODE REBUILD
+
+=====================
+
+
+
+Current Issue:
+
+Rapid Mode waits for processing before next capture.
+
+
+
+This defeats the purpose of Rapid Mode.
+
+
+
+Required Workflow:
+
+
+
+Capture Card
+
+↓
+
+Image Stored Locally
+
+↓
+
+Immediately Return To Camera
+
+↓
+
+User Captures Next Card
+
+↓
+
+OCR Runs In Background
+
+↓
+
+Records Saved Automatically
+
+
+
+Requirements:
+
+
+
+* Unlimited continuous capture
+
+* No waiting
+
+* No save button
+
+* No OCR blocking UI
+
+
+
+Acceptance Criteria:
+
+
+
+* User can scan 100 cards continuously.
+
+* OCR processing must not interrupt capture flow.
+
+
+
+====================================================
+
+4. BATCH MODE REBUILD
+
+=====================
+
+
+
+Required Workflow:
+
+
+
+Batch Mode
+
+↓
+
+Scan Multiple Cards Continuously
+
+↓
+
+Store Images Only
+
+↓
+
+User Clicks DONE
+
+↓
+
+OCR Processes Queue
+
+↓
+
+Preview Cards One By One
+
+↓
+
+User Reviews
+
+↓
+
+Manual Save
+
+
+
+Acceptance Criteria:
+
+
+
+* No OCR during capture stage.
+
+* OCR starts only after DONE.
+
+* User can review each lead before saving.
+
+
+
+====================================================
+
+5. DUPLICATE MANAGEMENT
+
+=======================
+
+
+
+Current Issue:
+
+Duplicates still appear in main contact list.
+
+
+
+Required:
+
+
+
+Main Contact List:
+
+
+
+* Show ONLY original records.
+
+
+
+Duplicate Folder:
+
+
+
+* Show duplicate records only.
+
+
+
+Dashboard:
+
+
+
+* Unique Leads Count
+
+* Duplicate Leads Count
+
+
+
+Acceptance Criteria:
+
+
+
+* Duplicate contacts never appear in main list.
+
+* Duplicates accessible only via Duplicate section.
+
+
+
+====================================================
+
+6. BACK BUTTON FIX
+
+==================
+
+
+
+Current Issue:
+
+Back button is not working consistently.
+
+
+
+Required:
+
+
+
+Every screen must support:
+
+
+
+* Header Back Button
+
+* Android Hardware Back
+
+* Browser Back (Web)
+
+
+
+Acceptance Criteria:
+
+
+
+* User can navigate backwards from every screen.
+
+
+
+====================================================
+
+7. CAPTURE TYPE REPLACEMENT
+
+===========================
+
+
+
+Current Issue:
+
+Event Badge scan exists.
+
+
+
+Required:
+
+
+
+Replace:
+
+
+
+* Event Badge
+
+
+
+With:
+
+
+
+* Email Signature Capture
+
+
+
+Capture Sources:
+
+
+
+* Business Card
+
+* Email Signature
+
+* QR Code
+
+* LinkedIn QR
+
+* Manual Entry
+
+
+
+Acceptance Criteria:
+
+
+
+* OCR optimized for email signatures.
+
+
+
+====================================================
+
+8. CONTACT LIST IMPROVEMENTS
+
+============================
+
+
+
+Current Issue:
+
+Sorting and filtering missing.
+
+
+
+Required:
+
+
+
+Default Sort:
+
+
+
+* Newest First
+
+* Captured Date DESC
+
+
+
+Filters:
+
+
+
+* Event
+
+
+
+
+
+* Lead Status
+
+* Follow-Up
+
+* Meeting
+
+* Date Range
+
+
+
+
+
+
+
+Search:
+
+
+
+* Name
+
+* Company
+
+* Email
+
+* Mobile
+
+
+
+Acceptance Criteria:
+
+
+
+* Filters remain after refresh.
+
+
+
+====================================================
+
+9. CONTACT ACTIONS
+
+==================
+
+
+
+Current Issue:
+
+Missing Share action.
+
+
+
+Required Actions:
+
+
+
+* Call
+
+* WhatsApp
+
+* Email
+
+* Website
+
+* Save Contact
+
+* Share Contact
+
+
+
+Share Methods:
+
+
+
+* WhatsApp
+
+* Email
+
+* SMS
+
+* Native Device Share
+
+
+
+Acceptance Criteria:
+
+
+
+* Uses native mobile sharing.
+
+
+
+====================================================
+
+10. LEAD STATUS PIPELINE
+
+========================
+
+
+
+Replace existing status system.
+
+
+
+New statuses:
+
+
+
+1. New
+
+2. Contacted
+
+3. Quotation Sent
+
+4. Negotiation
+
+5. Won
+
+6. Lost
+
+
+
+Each status must have:
+
+
+
+* Color
+
+* Icon
+
+
+
+Status changes must be logged.
+
+
+
+Acceptance Criteria:
+
+
+
+* Status history maintained.
+
+
+
+====================================================
+
+11. CONTACT DASHBOARD
+
+=====================
+
+
+
+Add dashboard summary above contacts.
+
+
+
+Widgets:
+
+
+
+* Total Leads
+
+* New
+
+* Contacted
+
+* Hot Lead
+
+Important:
+
+
+
+All widgets should be clickable and filter apply when click.
+
+
+
+
+
+
+
+
+
+Acceptance Criteria:
+
+
+
+* Updates in real-time.
+
+
+
+====================================================
+
+12. FOLLOW-UP MANAGEMENT
+
+========================
+
+
+
+Current Issue:
+
+No follow-up scheduling.
+
+
+
+Required:
+
+
+
+Inside Contact:
+
+
+
+Add:
+
+
+
+* Follow-Up Date
+
+* Follow-Up Time
+
+* Notes
+
+
+
+When saved:
+
+
+
+* Automatically appears in Follow-Up tab.
+
+
+
+Follow-Up Screen:
+
+
+
+Actions:
+
+
+
+* Completed
+
+* Rescheduled
+
+* Cancelled
+
+
+
+Comments required.
+
+
+
+Acceptance Criteria:
+
+
+
+* Full follow-up history maintained.
+
+
+
+====================================================
+
+13. MEETING MANAGEMENT
+
+======================
+
+
+
+Current Issue:
+
+No meeting scheduling.
+
+
+
+Required:
+
+
+
+Inside Contact:
+
+
+
+Add:
+
+
+
+* Meeting Date
+
+* Meeting Time
+
+* Meeting Type
+
+* Notes
+
+
+
+Meeting Types:
+
+
+
+* Online
+
+* Physical
+
+* Phone Call
+
+
+
+Meeting Screen:
+
+
+
+Actions:
+
+
+
+* Completed
+
+* Rescheduled
+
+* Cancelled
+
+
+
+Comments required.
+
+
+
+Acceptance Criteria:
+
+
+
+* Meeting history visible.
+
+
+
+====================================================
+
+14. MY TASKS MODULE
+
+===================
+
+
+
+Create new tab:
+
+
+
+MY TASKS
+
+
+
+Purpose:
+
+Task management for assigned leads.
+
+
+
+Tasks can be assigned by:
+
+
+
+* Primary Admin
+
+* Admin
+
+* Team Lead
+
+
+
+Task Types:
+
+
+
+* Call
+
+* Follow-Up
+
+* Meeting
+
+* Proposal
+
+* Custom
+
+
+
+Task Status:
+
+
+
+* Pending
+
+* In Progress
+
+* Completed
+
+* Overdue
+
+
+
+Acceptance Criteria:
+
+
+
+* Assigned user receives task.
+
+* Tasks visible only to assigned user unless admin.
+
+
+
+====================================================
+
+TESTING REQUIREMENT
+
+===================
+
+
+
+Do NOT mark complete until:
+
+
+
+1. Real device testing completed.
+
+2. Android tested.
+
+3. iPhone tested.
+
+4. Rapid Mode tested with 50+ cards.
+
+5. Batch Mode tested with 50+ cards.
+
+6. Duplicate workflow tested.
+
+7. Follow-Up workflow tested.
+
+8. Meeting workflow tested.
+
+9. Back button tested on every screen.
+
+10. Screenshots and test evidence provided.
+
+
+
+Provide implementation summary and screenshots after completion.

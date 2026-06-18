@@ -11,6 +11,9 @@ import subscriptionsRouter from "./subscriptions.js";
 import platformRouter from "./platform.js";
 import reportsRouter from "./reports.js";
 import pushRouter from "./push.js";
+import followUpsRouter from "./follow_ups.js";
+import meetingsRouter from "./meetings.js";
+import tasksRouter from "./tasks.js";
 
 const router: IRouter = Router();
 
@@ -26,5 +29,8 @@ router.use(subscriptionsRouter);
 router.use(platformRouter);
 router.use(reportsRouter);
 router.use(pushRouter);
+router.use(followUpsRouter);
+router.use(meetingsRouter);
+router.use(tasksRouter);
 
 export default router;

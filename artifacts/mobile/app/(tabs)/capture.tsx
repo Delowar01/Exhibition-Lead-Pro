@@ -28,7 +28,7 @@ export default function CaptureScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { captureMode, isLoaded } = useSettings();
+  const { captureMode, isLoaded, activeEventId, activeEventName } = useSettings();
   const [mode, setMode] = useState<CaptureMode>(captureMode);
 
   // Apply the persisted default capture mode once settings hydrate, while still
@@ -44,6 +44,17 @@ export default function CaptureScreen() {
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
   const activeMode = MODES.find((m) => m.key === mode)!;
 
+  // #1 — every capture must be tagged to an active event. If none is selected,
+  // send the user to pick/create one first.
+  function requireEvent(run: () => void) {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!activeEventId) {
+      router.push("/event-picker");
+      return;
+    }
+    run();
+  }
+
   const methods: {
     key: string;
     label: string;
@@ -58,15 +69,21 @@ export default function CaptureScreen() {
       sub: "Scan a printed card",
       icon: "credit-card",
       color: colors.primary,
-      onPress: () => router.push({ pathname: "/capture-camera", params: { source: "card", mode } }),
+      onPress: () =>
+        requireEvent(() =>
+          router.push({ pathname: "/capture-camera", params: { source: "card", mode } }),
+        ),
     },
     {
-      key: "badge",
-      label: "Event Badge",
-      sub: "Scan an attendee badge",
-      icon: "award",
+      key: "signature",
+      label: "Email Signature",
+      sub: "Scan an email signature block",
+      icon: "mail",
       color: "#8B5CF6",
-      onPress: () => router.push({ pathname: "/capture-camera", params: { source: "badge", mode } }),
+      onPress: () =>
+        requireEvent(() =>
+          router.push({ pathname: "/capture-camera", params: { source: "signature", mode } }),
+        ),
     },
     {
       key: "qr",
@@ -74,7 +91,7 @@ export default function CaptureScreen() {
       sub: "Scan a QR or profile code",
       icon: "grid",
       color: "#06B6D4",
-      onPress: () => router.push("/capture-qr"),
+      onPress: () => requireEvent(() => router.push("/capture-qr")),
     },
     {
       key: "manual",
@@ -82,7 +99,7 @@ export default function CaptureScreen() {
       sub: "Type the details yourself",
       icon: "edit-3",
       color: "#F59E0B",
-      onPress: () => router.push("/capture-manual"),
+      onPress: () => requireEvent(() => router.push("/capture-manual")),
     },
   ];
 
@@ -100,6 +117,46 @@ export default function CaptureScreen() {
         <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
           Turn any contact into a lead
         </Text>
+
+        {/* Active event */}
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ACTIVE EVENT</Text>
+        <Pressable
+          onPress={() => {
+            if (Platform.OS !== "web") Haptics.selectionAsync();
+            router.push("/event-picker");
+          }}
+          style={({ pressed }) => [
+            styles.eventBar,
+            {
+              backgroundColor: activeEventId ? colors.accent : colors.card,
+              borderColor: activeEventId ? colors.primary : colors.border,
+              borderRadius: colors.radius + 4,
+              opacity: pressed ? 0.8 : 1,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.eventBarIcon,
+              { backgroundColor: activeEventId ? colors.primary : colors.muted },
+            ]}
+          >
+            <Feather
+              name={activeEventId ? "calendar" : "alert-circle"}
+              size={18}
+              color={activeEventId ? "#FFFFFF" : colors.mutedForeground}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text numberOfLines={1} style={[styles.eventBarTitle, { color: colors.foreground }]}>
+              {activeEventName ?? "No event selected"}
+            </Text>
+            <Text style={[styles.eventBarSub, { color: colors.mutedForeground }]}>
+              {activeEventId ? "Captures are tagged to this event" : "Tap to select before scanning"}
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+        </Pressable>
 
         {/* Mode selector */}
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CAPTURE MODE</Text>
@@ -189,6 +246,29 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginTop: 24,
     marginBottom: 12,
+  },
+  eventBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderWidth: 1.5,
+  },
+  eventBarIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eventBarTitle: {
+    fontSize: 15.5,
+    fontFamily: FONT.semibold,
+  },
+  eventBarSub: {
+    fontSize: 12.5,
+    fontFamily: FONT.regular,
+    marginTop: 2,
   },
   modeBar: {
     flexDirection: "row",

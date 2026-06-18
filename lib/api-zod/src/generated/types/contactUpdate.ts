@@ -34,8 +34,15 @@ export interface ContactUpdate {
   notes?: string | null;
   tags?: string[];
   status?: ContactUpdateStatus;
+  /**
+     * Optional note logged with a status change
+     * @nullable
+     */
+  statusComment?: string | null;
   /** @nullable */
   followUpDate?: string | null;
+  /** @nullable */
+  followUpTime?: string | null;
   /** @nullable */
   eventId?: number | null;
   /** @nullable */

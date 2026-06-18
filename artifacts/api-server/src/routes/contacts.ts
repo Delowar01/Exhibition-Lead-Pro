@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { contactsTable, usersTable, eventsTable, scansTable, leadsTable } from "@workspace/db";
-import { eq, ilike, and, count, sql, inArray } from "drizzle-orm";
+import { contactsTable, usersTable, eventsTable, scansTable, leadsTable, meetingsTable, contactStatusHistoryTable } from "@workspace/db";
+import { eq, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { refAccessible } from "../lib/tenant.js";
@@ -36,7 +36,7 @@ function getCompanyId(req: AuthRequest): number | null {
 // GET /contacts
 router.get("/contacts", async (req: AuthRequest, res) => {
   try {
-    const { search, status, eventId, assignedTo, page = "1", limit = "20" } = req.query as Record<string, string>;
+    const { search, status, eventId, assignedTo, sort, hasFollowUp, hasMeeting, dateFrom, dateTo, includeDuplicates, page = "1", limit = "20" } = req.query as Record<string, string>;
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(200, parseInt(limit));
     const offset = (pageNum - 1) * limitNum;
@@ -46,10 +46,20 @@ router.get("/contacts", async (req: AuthRequest, res) => {
     if (status) conditions.push(eq(contactsTable.status, status));
     if (eventId && !isNaN(parseInt(eventId))) conditions.push(eq(contactsTable.eventId, parseInt(eventId)));
     if (assignedTo && !isNaN(parseInt(assignedTo))) conditions.push(eq(contactsTable.assignedToId, parseInt(assignedTo)));
+    // Duplicate management: the main list shows originals only (duplicateOfId IS NULL).
+    if (includeDuplicates !== "true") conditions.push(isNull(contactsTable.duplicateOfId));
+    if (hasFollowUp === "true") conditions.push(isNotNull(contactsTable.followUpDate));
+    if (hasFollowUp === "false") conditions.push(isNull(contactsTable.followUpDate));
+    if (hasMeeting === "true") conditions.push(inArray(contactsTable.id, db.select({ id: meetingsTable.contactId }).from(meetingsTable).where(eq(meetingsTable.status, "scheduled"))));
+    if (dateFrom) conditions.push(sql`${contactsTable.createdAt} >= ${dateFrom}`);
+    if (dateTo) conditions.push(sql`${contactsTable.createdAt} <= ${dateTo + " 23:59:59"}`);
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const orderBy = sort === "oldest" ? asc(contactsTable.createdAt)
+      : sort === "name" ? asc(contactsTable.fullName)
+      : desc(contactsTable.createdAt);
     const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(whereClause);
-    const contacts = await db.select().from(contactsTable).where(whereClause).limit(limitNum).offset(offset).orderBy(contactsTable.createdAt);
+    const contacts = await db.select().from(contactsTable).where(whereClause).limit(limitNum).offset(offset).orderBy(orderBy);
 
     const enriched = await Promise.all(contacts.map(async (c) => {
       const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
@@ -69,7 +79,7 @@ router.post("/contacts", requirePermission("contacts", "create"), async (req: Au
   try {
     const companyId = getCompanyId(req);
     if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
-    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, followUpDate, eventId, assignedToId, cardImageUrl } = req.body;
+    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, cardImageUrl } = req.body;
     if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
@@ -93,7 +103,9 @@ router.post("/contacts", requirePermission("contacts", "create"), async (req: Au
       logAiError("lead-scoring", aiErr);
     }
 
-    const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore, leadTemperature, aiReasoning, followUpDate: followUpDate ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
+    const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore, leadTemperature, aiReasoning, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
+    // Record the initial lead status in the append-only history.
+    void db.insert(contactStatusHistoryTable).values({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: req.user!.id }).catch(() => {});
     res.status(201).json(formatContact(contact));
 
     // Notify the owning rep when a freshly captured lead scores "hot" (best-effort, after responding).
@@ -277,19 +289,24 @@ router.get("/contacts/:id", async (req: AuthRequest, res) => {
 router.patch("/contacts/:id", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));
-    const [existing] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
+    const [existing] = await db.select({ companyId: contactsTable.companyId, status: contactsTable.status }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, followUpDate, eventId, assignedToId } = req.body;
+    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId } = req.body;
     if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     const fullName = firstName !== undefined || lastName !== undefined ? [firstName, lastName].filter(Boolean).join(" ") || null : undefined;
-    const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, eventId, assignedToId };
+    const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId };
     if (fullName !== undefined) updateData.fullName = fullName;
     if (tags !== undefined) updateData.tags = JSON.stringify(tags);
     // Remove undefined
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    const statusChanged = status !== undefined && status !== existing.status;
     const [c] = await db.update(contactsTable).set(updateData as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, id)).returning();
     if (!c) { res.status(404).json({ error: "Contact not found" }); return; }
+    // Log lead status transitions to the append-only history.
+    if (statusChanged) {
+      void db.insert(contactStatusHistoryTable).values({ companyId: existing.companyId, contactId: id, fromStatus: existing.status, toStatus: status, comment: statusComment ?? null, changedById: req.user!.id }).catch(() => {});
+    }
     const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
     const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
     res.json(formatContact(c, event?.name, assignee?.name));
@@ -345,6 +362,24 @@ router.post("/contacts/:id/enrich", requirePermission("contacts", "edit"), async
     const event = updated.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, updated.eventId)).then(r => r[0]) : null;
     const assignee = updated.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, updated.assignedToId)).then(r => r[0]) : null;
     res.json(formatContact(updated, event?.name, assignee?.name));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /contacts/:id/status-history — lead status change history
+router.get("/contacts/:id/status-history", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    const [c] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
+    if (!c || !canAccessCompany(req.user, c.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
+    const rows = await db.select().from(contactStatusHistoryTable).where(eq(contactStatusHistoryTable.contactId, id)).orderBy(desc(contactStatusHistoryTable.createdAt));
+    const userIds = [...new Set(rows.map(r => r.changedById).filter((v): v is number => v != null))];
+    const users = userIds.length > 0 ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, userIds)) : [];
+    const nameById = new Map(users.map(u => [u.id, u.name]));
+    const history = rows.map(r => ({ ...r, changedByName: r.changedById != null ? (nameById.get(r.changedById) ?? null) : null }));
+    res.json({ history, total: history.length });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

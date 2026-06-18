@@ -31,6 +31,12 @@ export interface QueueItem {
   payload?: ContactInput;
   /** Present when kind === "scan" — a data URL base64 image awaiting OCR. */
   imageData?: string;
+  /** Event this capture belongs to (threaded through to scan + contact). */
+  eventId?: number | null;
+  /** GPS captured at scan time. */
+  latitude?: number | null;
+  longitude?: number | null;
+  gpsAccuracy?: number | null;
 }
 
 export function makeQueueId(): string {

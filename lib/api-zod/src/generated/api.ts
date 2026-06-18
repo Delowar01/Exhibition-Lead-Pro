@@ -484,6 +484,8 @@ export const DeleteUserResponse = zod.object({
  * @summary List contacts
  */
 export const listContactsQueryPageDefault = 1;
+export const listContactsQuerySortDefault = `newest`;
+export const listContactsQueryIncludeDuplicatesDefault = false;
 export const listContactsQueryLimitDefault = 20;
 
 export const ListContactsQueryParams = zod.object({
@@ -492,6 +494,12 @@ export const ListContactsQueryParams = zod.object({
   "eventId": zod.coerce.number().nullish(),
   "assignedTo": zod.coerce.number().nullish(),
   "page": zod.coerce.number().default(listContactsQueryPageDefault),
+  "sort": zod.enum(['newest', 'oldest', 'name']).default(listContactsQuerySortDefault).describe('Sort order (default newest first)'),
+  "hasFollowUp": zod.coerce.boolean().optional(),
+  "hasMeeting": zod.coerce.boolean().optional(),
+  "dateFrom": zod.date().optional(),
+  "dateTo": zod.date().optional(),
+  "includeDuplicates": zod.coerce.boolean().default(listContactsQueryIncludeDuplicatesDefault).describe('When true, include contacts marked as duplicates (default false)'),
   "limit": zod.coerce.number().default(listContactsQueryLimitDefault)
 })
 
@@ -511,10 +519,14 @@ export const ListContactsResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -524,6 +536,7 @@ export const ListContactsResponse = zod.object({
   "talkingPoints": zod.array(zod.string()).optional(),
   "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
@@ -554,11 +567,15 @@ export const CreateContactBody = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']).default(createContactBodyStatusDefault),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']).default(createContactBodyStatusDefault),
   "followUpDate": zod.string().nullish(),
+  "followUpTime": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "assignedToId": zod.number().nullish(),
   "cardImageUrl": zod.string().nullish()
@@ -587,10 +604,14 @@ export const GetContactResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -600,6 +621,7 @@ export const GetContactResponse = zod.object({
   "talkingPoints": zod.array(zod.string()).optional(),
   "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
@@ -630,8 +652,10 @@ export const UpdateContactBody = zod.object({
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']).optional(),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']).optional(),
+  "statusComment": zod.string().nullish().describe('Optional note logged with a status change'),
   "followUpDate": zod.string().nullish(),
+  "followUpTime": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "assignedToId": zod.number().nullish()
 })
@@ -651,10 +675,14 @@ export const UpdateContactResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -664,6 +692,7 @@ export const UpdateContactResponse = zod.object({
   "talkingPoints": zod.array(zod.string()).optional(),
   "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
@@ -723,10 +752,14 @@ export const GetContactDuplicatesResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -736,6 +769,7 @@ export const GetContactDuplicatesResponse = zod.object({
   "talkingPoints": zod.array(zod.string()).optional(),
   "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
@@ -770,10 +804,14 @@ export const MergeContactsResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -783,6 +821,7 @@ export const MergeContactsResponse = zod.object({
   "talkingPoints": zod.array(zod.string()).optional(),
   "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
@@ -814,10 +853,14 @@ export const EnrichContactResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'qualified', 'interested', 'proposal_sent', 'won', 'lost']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -827,6 +870,7 @@ export const EnrichContactResponse = zod.object({
   "talkingPoints": zod.array(zod.string()).optional(),
   "enrichedAt": zod.coerce.date().nullish(),
   "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
   "cardImageUrl": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
@@ -1004,10 +1048,12 @@ export const ListEventsResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "venue": zod.string().nullish(),
+  "country": zod.string().nullish(),
   "startDate": zod.coerce.date().nullish(),
   "endDate": zod.coerce.date().nullish(),
   "boothNumber": zod.string().nullish(),
   "description": zod.string().nullish(),
+  "status": zod.enum(['upcoming', 'active', 'completed']).optional(),
   "contactCount": zod.number().optional(),
   "leadCount": zod.number().optional(),
   "createdAt": zod.coerce.date()
@@ -1021,13 +1067,17 @@ export const ListEventsResponse = zod.object({
 /**
  * @summary Create event
  */
+export const createEventBodyStatusDefault = `active`;
+
 export const CreateEventBody = zod.object({
   "name": zod.string(),
   "venue": zod.string().nullish(),
+  "country": zod.string().nullish(),
   "startDate": zod.string().nullish(),
   "endDate": zod.string().nullish(),
   "boothNumber": zod.string().nullish(),
-  "description": zod.string().nullish()
+  "description": zod.string().nullish(),
+  "status": zod.enum(['upcoming', 'active', 'completed']).default(createEventBodyStatusDefault)
 })
 
 
@@ -1043,10 +1093,12 @@ export const GetEventResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "venue": zod.string().nullish(),
+  "country": zod.string().nullish(),
   "startDate": zod.coerce.date().nullish(),
   "endDate": zod.coerce.date().nullish(),
   "boothNumber": zod.string().nullish(),
   "description": zod.string().nullish(),
+  "status": zod.enum(['upcoming', 'active', 'completed']).optional(),
   "contactCount": zod.number().optional(),
   "leadCount": zod.number().optional(),
   "createdAt": zod.coerce.date()
@@ -1063,10 +1115,12 @@ export const UpdateEventParams = zod.object({
 export const UpdateEventBody = zod.object({
   "name": zod.string().optional(),
   "venue": zod.string().nullish(),
+  "country": zod.string().nullish(),
   "startDate": zod.string().nullish(),
   "endDate": zod.string().nullish(),
   "boothNumber": zod.string().nullish(),
-  "description": zod.string().nullish()
+  "description": zod.string().nullish(),
+  "status": zod.enum(['upcoming', 'active', 'completed']).optional()
 })
 
 export const UpdateEventResponse = zod.object({
@@ -1074,10 +1128,12 @@ export const UpdateEventResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "venue": zod.string().nullish(),
+  "country": zod.string().nullish(),
   "startDate": zod.coerce.date().nullish(),
   "endDate": zod.coerce.date().nullish(),
   "boothNumber": zod.string().nullish(),
   "description": zod.string().nullish(),
+  "status": zod.enum(['upcoming', 'active', 'completed']).optional(),
   "contactCount": zod.number().optional(),
   "leadCount": zod.number().optional(),
   "createdAt": zod.coerce.date()
@@ -1160,7 +1216,10 @@ export const ListScansResponse = zod.object({
  */
 export const CreateScanBody = zod.object({
   "imageData": zod.string().describe('Base64-encoded image'),
-  "eventId": zod.number().nullish()
+  "eventId": zod.number().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish()
 })
 
 
@@ -1398,6 +1457,285 @@ export const UnregisterPushTokenBody = zod.object({
 export const UnregisterPushTokenResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List follow-ups
+ */
+export const ListFollowUpsQueryParams = zod.object({
+  "status": zod.coerce.string().optional(),
+  "contactId": zod.coerce.number().nullish(),
+  "assignedTo": zod.coerce.number().nullish()
+})
+
+export const ListFollowUpsResponse = zod.object({
+  "followUps": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number(),
+  "contactName": zod.string().nullish(),
+  "scheduledDate": zod.coerce.date().nullish(),
+  "scheduledTime": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['pending', 'completed', 'rescheduled', 'cancelled']),
+  "comment": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Schedule a follow-up
+ */
+export const CreateFollowUpBody = zod.object({
+  "contactId": zod.number(),
+  "scheduledDate": zod.string().nullish(),
+  "scheduledTime": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "assignedToId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Action a follow-up (complete/reschedule/cancel)
+ */
+export const UpdateFollowUpParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateFollowUpBody = zod.object({
+  "status": zod.enum(['pending', 'completed', 'rescheduled', 'cancelled']).optional(),
+  "comment": zod.string().nullish(),
+  "scheduledDate": zod.string().nullish(),
+  "scheduledTime": zod.string().nullish(),
+  "notes": zod.string().nullish()
+})
+
+export const UpdateFollowUpResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number(),
+  "contactName": zod.string().nullish(),
+  "scheduledDate": zod.coerce.date().nullish(),
+  "scheduledTime": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['pending', 'completed', 'rescheduled', 'cancelled']),
+  "comment": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary List meetings
+ */
+export const ListMeetingsQueryParams = zod.object({
+  "status": zod.coerce.string().optional(),
+  "contactId": zod.coerce.number().nullish(),
+  "assignedTo": zod.coerce.number().nullish()
+})
+
+export const ListMeetingsResponse = zod.object({
+  "meetings": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number(),
+  "contactName": zod.string().nullish(),
+  "meetingDate": zod.coerce.date().nullish(),
+  "meetingTime": zod.string().nullish(),
+  "type": zod.enum(['online', 'physical', 'phone_call']),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['scheduled', 'completed', 'rescheduled', 'cancelled']),
+  "comment": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Schedule a meeting
+ */
+export const CreateMeetingBody = zod.object({
+  "contactId": zod.number(),
+  "meetingDate": zod.string().nullish(),
+  "meetingTime": zod.string().nullish(),
+  "type": zod.enum(['online', 'physical', 'phone_call']),
+  "notes": zod.string().nullish(),
+  "assignedToId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Action a meeting (complete/reschedule/cancel)
+ */
+export const UpdateMeetingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateMeetingBody = zod.object({
+  "status": zod.enum(['scheduled', 'completed', 'rescheduled', 'cancelled']).optional(),
+  "comment": zod.string().nullish(),
+  "meetingDate": zod.string().nullish(),
+  "meetingTime": zod.string().nullish(),
+  "type": zod.enum(['online', 'physical', 'phone_call']).optional(),
+  "notes": zod.string().nullish()
+})
+
+export const UpdateMeetingResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number(),
+  "contactName": zod.string().nullish(),
+  "meetingDate": zod.coerce.date().nullish(),
+  "meetingTime": zod.string().nullish(),
+  "type": zod.enum(['online', 'physical', 'phone_call']),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['scheduled', 'completed', 'rescheduled', 'cancelled']),
+  "comment": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary List tasks
+ */
+export const listTasksQueryScopeDefault = `mine`;
+
+export const ListTasksQueryParams = zod.object({
+  "status": zod.coerce.string().optional(),
+  "type": zod.coerce.string().optional(),
+  "assignedTo": zod.coerce.number().nullish(),
+  "contactId": zod.coerce.number().nullish(),
+  "scope": zod.enum(['mine', 'all']).default(listTasksQueryScopeDefault).describe('mine (default, tasks assigned to me) or all (admins only)')
+})
+
+export const ListTasksResponse = zod.object({
+  "tasks": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "contactName": zod.string().nullish(),
+  "title": zod.string(),
+  "type": zod.enum(['call', 'follow_up', 'meeting', 'proposal', 'custom']),
+  "status": zod.enum(['pending', 'in_progress', 'completed', 'overdue']),
+  "dueDate": zod.coerce.date().nullish(),
+  "dueTime": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "assignedById": zod.number().nullish(),
+  "assignedByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Create / assign a task
+ */
+export const createTaskBodyTypeDefault = `custom`;
+
+export const CreateTaskBody = zod.object({
+  "title": zod.string(),
+  "type": zod.enum(['call', 'follow_up', 'meeting', 'proposal', 'custom']).default(createTaskBodyTypeDefault),
+  "contactId": zod.number().nullish(),
+  "dueDate": zod.string().nullish(),
+  "dueTime": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "assignedToId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Update a task
+ */
+export const UpdateTaskParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTaskBody = zod.object({
+  "title": zod.string().optional(),
+  "type": zod.enum(['call', 'follow_up', 'meeting', 'proposal', 'custom']).optional(),
+  "status": zod.enum(['pending', 'in_progress', 'completed', 'overdue']).optional(),
+  "contactId": zod.number().nullish(),
+  "dueDate": zod.string().nullish(),
+  "dueTime": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "assignedToId": zod.number().nullish()
+})
+
+export const UpdateTaskResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "contactName": zod.string().nullish(),
+  "title": zod.string(),
+  "type": zod.enum(['call', 'follow_up', 'meeting', 'proposal', 'custom']),
+  "status": zod.enum(['pending', 'in_progress', 'completed', 'overdue']),
+  "dueDate": zod.coerce.date().nullish(),
+  "dueTime": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "assignedById": zod.number().nullish(),
+  "assignedByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Delete a task
+ */
+export const DeleteTaskParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTaskResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Lead status change history for a contact
+ */
+export const GetContactStatusHistoryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetContactStatusHistoryResponse = zod.object({
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "contactId": zod.number(),
+  "fromStatus": zod.string().nullish(),
+  "toStatus": zod.string(),
+  "comment": zod.string().nullish(),
+  "changedById": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number()
 })
 
 

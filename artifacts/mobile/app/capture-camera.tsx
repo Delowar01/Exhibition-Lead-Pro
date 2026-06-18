@@ -2,14 +2,14 @@ import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -24,18 +24,23 @@ import {
 
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import {
+  type BatchCapture,
+  clearBatchCaptures,
+  setBatchCaptures,
+} from "@/lib/batch-store";
 
 type CaptureMode = "single" | "rapid" | "batch";
-type QueueStatus = "queued" | "processing" | "completed" | "failed";
 
-interface QueueItem {
-  id: string;
-  status: QueueStatus;
-  name: string;
+interface Gps {
+  latitude: number | null;
+  longitude: number | null;
+  gpsAccuracy: number | null;
 }
 
-function extractedToContact(data: ExtractedCardData) {
+function extractedToContact(data: ExtractedCardData, gps: Gps, eventId: number | null) {
   return {
     firstName: data.firstName ?? null,
     lastName: data.lastName ?? null,
@@ -46,6 +51,10 @@ function extractedToContact(data: ExtractedCardData) {
     website: data.website ?? null,
     linkedin: data.linkedin ?? null,
     address: data.address ?? null,
+    eventId,
+    latitude: gps.latitude,
+    longitude: gps.longitude,
+    gpsAccuracy: gps.gpsAccuracy,
   };
 }
 
@@ -53,19 +62,12 @@ function contactDisplayName(data: ExtractedCardData): string {
   return [data.firstName, data.lastName].filter(Boolean).join(" ") || data.company || "New contact";
 }
 
-const STATUS_META: Record<QueueStatus, { color: string; icon: keyof typeof Feather.glyphMap; label: string }> = {
-  queued: { color: "#67707D", icon: "clock", label: "Queued" },
-  processing: { color: "#F59E0B", icon: "loader", label: "Processing" },
-  completed: { color: "#22C55E", icon: "check-circle", label: "Saved" },
-  failed: { color: "#EF4444", icon: "alert-circle", label: "Failed" },
-};
-
 export default function CaptureCameraScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ source?: string; mode?: string }>();
-  const source = params.source === "badge" ? "badge" : "card";
+  const source = params.source === "signature" ? "signature" : "card";
   const mode = (["single", "rapid", "batch"].includes(params.mode ?? "")
     ? params.mode
     : "single") as CaptureMode;
@@ -75,21 +77,47 @@ export default function CaptureCameraScreen() {
   const createScan = useCreateScan();
   const createContact = useCreateContact();
   const { isOnline, enqueueScan } = useOffline();
+  const { activeEventId } = useSettings();
+  const eventId = activeEventId ?? null;
 
   const [capturing, setCapturing] = useState(false);
   const [rapidCount, setRapidCount] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [batchCount, setBatchCount] = useState(0);
+
+  // #2 GPS — fetched once, non-blocking. Capture works even if this never resolves.
+  const gpsRef = useRef<Gps>({ latitude: null, longitude: null, gpsAccuracy: null });
+  const batchRef = useRef<BatchCapture[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        gpsRef.current = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          gpsAccuracy: pos.coords.accuracy ?? null,
+        };
+      } catch {
+        /* location is best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const topPad = insets.top;
-  const sourceLabel = source === "badge" ? "event badge" : "business card";
-
-  const setQueueStatus = useCallback((id: string, status: QueueStatus, name?: string) => {
-    setQueue((prev) =>
-      prev.map((q) => (q.id === id ? { ...q, status, name: name ?? q.name } : q)),
-    );
-  }, []);
+  const sourceLabel = source === "signature" ? "email signature" : "business card";
 
   const captureImage = useCallback(async (): Promise<string> => {
     if (cameraRef.current) {
@@ -103,6 +131,30 @@ export default function CaptureCameraScreen() {
     return "card";
   }, []);
 
+  // #3 Rapid — OCR + save happen in the background so the camera frees instantly.
+  const processRapid = useCallback(
+    async (imageData: string, gps: Gps) => {
+      try {
+        const scan = await createScan.mutateAsync({
+          data: {
+            imageData,
+            eventId,
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            gpsAccuracy: gps.gpsAccuracy,
+          },
+        });
+        const extracted = scan.extractedData ?? {};
+        await createContact.mutateAsync({ data: extractedToContact(extracted, gps, eventId) });
+        setSavedCount((c) => c + 1);
+        setLastSaved(contactDisplayName(extracted));
+      } catch {
+        setFailedCount((c) => c + 1);
+      }
+    },
+    [createScan, createContact, eventId],
+  );
+
   async function handleCapture() {
     if (capturing) return;
     setCapturing(true);
@@ -111,69 +163,86 @@ export default function CaptureCameraScreen() {
 
     try {
       const imageData = await captureImage();
+      const gps = { ...gpsRef.current };
+
+      // #4 Batch — capture image only, defer OCR/review to the review screen.
+      if (mode === "batch") {
+        const item: BatchCapture = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          imageData,
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          gpsAccuracy: gps.gpsAccuracy,
+        };
+        batchRef.current = [...batchRef.current, item];
+        setBatchCount(batchRef.current.length);
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+        return;
+      }
 
       // Offline: the image needs server-side OCR we can't run here, so queue
       // the raw capture — it's OCR'd and turned into a contact on sync.
       if (!isOnline) {
-        const queueLabel = source === "badge" ? "Event badge" : "Business card";
+        const queueLabel = source === "signature" ? "Email signature" : "Business card";
+        const meta = {
+          label: queueLabel,
+          source,
+          eventId,
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          gpsAccuracy: gps.gpsAccuracy,
+        };
         if (mode === "single") {
-          enqueueScan(imageData, { label: queueLabel, source });
+          enqueueScan(imageData, meta);
           if (Platform.OS !== "web") {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
           router.replace("/sync");
           return;
         }
-        // rapid / batch: queue and keep the camera open for the next capture.
-        enqueueScan(imageData, { label: queueLabel, source });
+        // rapid: queue and keep the camera open for the next capture.
+        enqueueScan(imageData, meta);
         setRapidCount((c) => c + 1);
+        setSavedCount((c) => c + 1);
         setLastSaved(`${queueLabel} (offline)`);
         if (Platform.OS !== "web") Haptics.selectionAsync();
         return;
       }
 
       if (mode === "single") {
-        const scan = await createScan.mutateAsync({ data: { imageData } });
+        const scan = await createScan.mutateAsync({
+          data: {
+            imageData,
+            eventId,
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            gpsAccuracy: gps.gpsAccuracy,
+          },
+        });
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
         router.replace({
           pathname: "/scan-review",
-          params: { data: JSON.stringify(scan.extractedData ?? {}), source },
+          params: {
+            data: JSON.stringify(scan.extractedData ?? {}),
+            source,
+            lat: gps.latitude != null ? String(gps.latitude) : "",
+            lng: gps.longitude != null ? String(gps.longitude) : "",
+            acc: gps.gpsAccuracy != null ? String(gps.gpsAccuracy) : "",
+          },
         });
         return;
       }
 
-      if (mode === "rapid") {
-        const scan = await createScan.mutateAsync({ data: { imageData } });
-        const extracted = scan.extractedData ?? {};
-        await createContact.mutateAsync({ data: extractedToContact(extracted) });
-        setRapidCount((c) => c + 1);
-        setLastSaved(contactDisplayName(extracted));
-        if (Platform.OS !== "web") {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        return;
+      // rapid (online): return to the camera instantly, process in background.
+      setRapidCount((c) => c + 1);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-
-      // batch
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setQueue((prev) => [{ id, status: "queued", name: "Card captured" }, ...prev]);
-      if (Platform.OS !== "web") Haptics.selectionAsync();
-      // Process in the background.
-      void (async () => {
-        setQueueStatus(id, "processing");
-        try {
-          const scan = await createScan.mutateAsync({ data: { imageData } });
-          const extracted = scan.extractedData ?? {};
-          await createContact.mutateAsync({ data: extractedToContact(extracted) });
-          setQueueStatus(id, "completed", contactDisplayName(extracted));
-        } catch {
-          setQueueStatus(id, "failed");
-        }
-      })();
+      void processRapid(imageData, gps);
     } catch {
-      setErrorMsg("Couldn't save that scan. Try again.");
+      setErrorMsg("Couldn't capture that. Try again.");
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -181,6 +250,21 @@ export default function CaptureCameraScreen() {
       setCapturing(false);
     }
   }
+
+  function finishBatch() {
+    if (batchRef.current.length === 0) {
+      router.back();
+      return;
+    }
+    setBatchCaptures(batchRef.current);
+    if (Platform.OS !== "web") Haptics.selectionAsync();
+    router.replace({ pathname: "/batch-review", params: { source } });
+  }
+
+  // Clear any stale batch buffer when entering batch mode.
+  useEffect(() => {
+    if (mode === "batch") clearBatchCaptures();
+  }, [mode]);
 
   // Permission loading
   if (!permission) {
@@ -234,8 +318,6 @@ export default function CaptureCameraScreen() {
     );
   }
 
-  const completedCount = queue.filter((q) => q.status === "completed").length;
-
   return (
     <View style={[styles.fill, { backgroundColor: colors.dark }]}>
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
@@ -254,7 +336,7 @@ export default function CaptureCameraScreen() {
           </View>
         </View>
         <Text style={styles.overlayTitle}>
-          {source === "badge" ? "Scan a badge" : "Scan a card"}
+          {source === "signature" ? "Scan a signature" : "Scan a card"}
         </Text>
         <Text style={styles.overlaySub}>Align the {sourceLabel} in the frame</Text>
       </LinearGradient>
@@ -274,39 +356,27 @@ export default function CaptureCameraScreen() {
         <View style={[styles.rapidBanner, { top: topPad + 110 }]} pointerEvents="none">
           <Feather name="check-circle" size={16} color="#FFFFFF" />
           <Text style={styles.rapidBannerText}>
-            Saved {lastSaved} · {rapidCount} this session
+            {savedCount} saved{failedCount > 0 ? ` · ${failedCount} failed` : ""}
+            {lastSaved ? ` · ${lastSaved}` : ""}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Batch counter */}
+      {mode === "batch" && batchCount > 0 ? (
+        <View style={[styles.rapidBanner, { top: topPad + 110, backgroundColor: "rgba(255,107,0,0.94)" }]} pointerEvents="none">
+          <Feather name="layers" size={16} color="#FFFFFF" />
+          <Text style={styles.rapidBannerText}>
+            {batchCount} captured · tap Done to review
           </Text>
         </View>
       ) : null}
 
       {/* Error feedback */}
       {errorMsg ? (
-        <View style={[styles.errorBanner, { top: topPad + 110 }]} pointerEvents="none">
+        <View style={[styles.errorBanner, { top: topPad + 160 }]} pointerEvents="none">
           <Feather name="alert-circle" size={16} color="#FFFFFF" />
           <Text style={styles.rapidBannerText}>{errorMsg}</Text>
-        </View>
-      ) : null}
-
-      {/* Batch queue */}
-      {mode === "batch" && queue.length > 0 ? (
-        <View style={[styles.queuePanel, { top: topPad + 110 }]}>
-          <Text style={styles.queueHeading}>
-            Queue · {completedCount}/{queue.length} saved
-          </Text>
-          <ScrollView style={{ maxHeight: 150 }} showsVerticalScrollIndicator={false}>
-            {queue.map((q) => {
-              const meta = STATUS_META[q.status];
-              return (
-                <View key={q.id} style={styles.queueRow}>
-                  <Feather name={meta.icon} size={15} color={meta.color} />
-                  <Text numberOfLines={1} style={styles.queueName}>
-                    {q.name}
-                  </Text>
-                  <Text style={[styles.queueStatus, { color: meta.color }]}>{meta.label}</Text>
-                </View>
-              );
-            })}
-          </ScrollView>
         </View>
       ) : null}
 
@@ -327,21 +397,21 @@ export default function CaptureCameraScreen() {
         </Pressable>
         <Text style={styles.shutterLabel}>
           {capturing
-            ? "Extracting details…"
+            ? "Capturing…"
             : mode === "rapid"
-              ? "Tap to capture & save"
+              ? "Tap to capture — saves in the background"
               : mode === "batch"
-                ? "Tap to add to queue"
+                ? "Tap to capture another"
                 : "Tap to capture"}
         </Text>
 
         {mode === "batch" ? (
           <Pressable
-            onPress={() => router.replace("/(tabs)/contacts")}
+            onPress={finishBatch}
             style={[styles.doneBtn, { borderColor: "rgba(255,255,255,0.4)" }]}
           >
             <Text style={styles.doneBtnText}>
-              {completedCount > 0 ? `Done · ${completedCount} saved` : "Done"}
+              {batchCount > 0 ? `Done · review ${batchCount}` : "Done"}
             </Text>
           </Pressable>
         ) : null}
@@ -434,18 +504,6 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 999,
   },
-  queuePanel: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 14,
-    padding: 14,
-  },
-  queueHeading: { color: "#FFFFFF", fontSize: 13, fontFamily: FONT.bold, marginBottom: 8 },
-  queueRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
-  queueName: { flex: 1, color: "rgba(255,255,255,0.9)", fontSize: 13, fontFamily: FONT.medium },
-  queueStatus: { fontSize: 12, fontFamily: FONT.semibold },
   bottomBar: {
     position: "absolute",
     bottom: 0,

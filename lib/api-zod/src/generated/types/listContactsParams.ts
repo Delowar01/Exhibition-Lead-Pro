@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListContactsSort } from './listContactsSort';
 
 export type ListContactsParams = {
 search?: string;
@@ -18,5 +19,17 @@ eventId?: number | null;
  */
 assignedTo?: number | null;
 page?: number;
+/**
+ * Sort order (default newest first)
+ */
+sort?: ListContactsSort;
+hasFollowUp?: boolean;
+hasMeeting?: boolean;
+dateFrom?: Date;
+dateTo?: Date;
+/**
+ * When true, include contacts marked as duplicates (default false)
+ */
+includeDuplicates?: boolean;
 limit?: number;
 };

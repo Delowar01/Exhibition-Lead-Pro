@@ -31,6 +31,12 @@ export interface ContactInput {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
+  /** @nullable */
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -38,6 +44,8 @@ export interface ContactInput {
   status?: ContactInputStatus;
   /** @nullable */
   followUpDate?: string | null;
+  /** @nullable */
+  followUpTime?: string | null;
   /** @nullable */
   eventId?: number | null;
   /** @nullable */

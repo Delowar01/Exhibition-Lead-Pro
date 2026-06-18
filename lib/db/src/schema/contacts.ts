@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, date, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -20,6 +20,10 @@ export const contactsTable = pgTable("contacts", {
   website: text("website"),
   country: text("country"),
   address: text("address"),
+  latitude: doublePrecision("latitude"), // GPS captured at scan time (nullable when unavailable)
+  longitude: doublePrecision("longitude"),
+  gpsAccuracy: doublePrecision("gps_accuracy"), // meters
+  duplicateOfId: integer("duplicate_of_id"), // when set, this contact is a duplicate of another and hidden from the main list
   linkedin: text("linkedin"),
   notes: text("notes"),
   tags: text("tags").default("[]"), // JSON array stored as text
@@ -33,6 +37,7 @@ export const contactsTable = pgTable("contacts", {
   talkingPoints: text("talking_points"), // JSON array of AI-suggested talking points
   enrichedAt: timestamp("enriched_at"), // when AI enrichment last ran
   followUpDate: date("follow_up_date"),
+  followUpTime: text("follow_up_time"), // HH:MM local time for the active follow-up
   hotNotifiedAt: timestamp("hot_notified_at"), // when a hot-lead push was last sent for this contact (dedup marker)
   followUpNotifiedOn: date("follow_up_notified_on"), // the followUpDate a due-follow-up push was last sent for (dedup marker)
   cardImageUrl: text("card_image_url"),

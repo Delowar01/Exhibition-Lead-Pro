@@ -30,6 +30,10 @@ const MANUAL_OFFLINE_KEY = "csp_offline_manual";
 interface EnqueueMeta {
   label: string;
   source: string;
+  eventId?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  gpsAccuracy?: number | null;
 }
 
 interface OfflineContextValue {
@@ -73,7 +77,10 @@ const OfflineContext = createContext<OfflineContextValue>({
   removeItem: () => {},
 });
 
-function extractedToContact(data: ExtractedCardData): ContactInput {
+function extractedToContact(
+  data: ExtractedCardData,
+  extra?: Partial<ContactInput>,
+): ContactInput {
   return {
     firstName: data.firstName ?? null,
     lastName: data.lastName ?? null,
@@ -84,6 +91,7 @@ function extractedToContact(data: ExtractedCardData): ContactInput {
     website: data.website ?? null,
     linkedin: data.linkedin ?? null,
     address: data.address ?? null,
+    ...extra,
   };
 }
 
@@ -200,8 +208,21 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
           if (item.kind === "contact" && item.payload) {
             await createContact(item.payload);
           } else if (item.kind === "scan" && item.imageData) {
-            const scan = await createScan({ imageData: item.imageData });
-            await createContact(extractedToContact(scan.extractedData ?? {}));
+            const scan = await createScan({
+              imageData: item.imageData,
+              eventId: item.eventId ?? undefined,
+              latitude: item.latitude ?? undefined,
+              longitude: item.longitude ?? undefined,
+              gpsAccuracy: item.gpsAccuracy ?? undefined,
+            });
+            await createContact(
+              extractedToContact(scan.extractedData ?? {}, {
+                eventId: item.eventId ?? null,
+                latitude: item.latitude ?? null,
+                longitude: item.longitude ?? null,
+                gpsAccuracy: item.gpsAccuracy ?? null,
+              }),
+            );
           } else {
             throw new Error("Malformed queue item");
           }
@@ -277,6 +298,10 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         label: meta.label,
         source: meta.source,
         imageData,
+        eventId: meta.eventId ?? null,
+        latitude: meta.latitude ?? null,
+        longitude: meta.longitude ?? null,
+        gpsAccuracy: meta.gpsAccuracy ?? null,
       };
       commit([item, ...queueRef.current]);
     },

@@ -5,11 +5,14 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { EventUpdateStatus } from './eventUpdateStatus';
 
 export interface EventUpdate {
   name?: string;
   /** @nullable */
   venue?: string | null;
+  /** @nullable */
+  country?: string | null;
   /** @nullable */
   startDate?: string | null;
   /** @nullable */
@@ -18,4 +21,5 @@ export interface EventUpdate {
   boothNumber?: string | null;
   /** @nullable */
   description?: string | null;
+  status?: EventUpdateStatus;
 }

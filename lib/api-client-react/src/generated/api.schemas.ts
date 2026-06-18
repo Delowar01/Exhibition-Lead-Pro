@@ -334,11 +334,14 @@ export type ContactStatus = typeof ContactStatus[keyof typeof ContactStatus];
 
 export const ContactStatus = {
   new: 'new',
+  contacted: 'contacted',
+  quotation_sent: 'quotation_sent',
+  negotiation: 'negotiation',
+  won: 'won',
+  lost: 'lost',
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
-  won: 'won',
-  lost: 'lost',
 } as const;
 
 /**
@@ -381,6 +384,14 @@ export interface Contact {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
+  /** @nullable */
+  duplicateOfId?: number | null;
+  /** @nullable */
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -403,6 +414,8 @@ export interface Contact {
   enrichedAt?: string | null;
   /** @nullable */
   followUpDate?: string | null;
+  /** @nullable */
+  followUpTime?: string | null;
   /** @nullable */
   cardImageUrl?: string | null;
   /** @nullable */
@@ -428,11 +441,14 @@ export type ContactInputStatus = typeof ContactInputStatus[keyof typeof ContactI
 
 export const ContactInputStatus = {
   new: 'new',
+  contacted: 'contacted',
+  quotation_sent: 'quotation_sent',
+  negotiation: 'negotiation',
+  won: 'won',
+  lost: 'lost',
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
-  won: 'won',
-  lost: 'lost',
 } as const;
 
 export interface ContactInput {
@@ -459,6 +475,12 @@ export interface ContactInput {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
+  /** @nullable */
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -466,6 +488,8 @@ export interface ContactInput {
   status?: ContactInputStatus;
   /** @nullable */
   followUpDate?: string | null;
+  /** @nullable */
+  followUpTime?: string | null;
   /** @nullable */
   eventId?: number | null;
   /** @nullable */
@@ -479,11 +503,14 @@ export type ContactUpdateStatus = typeof ContactUpdateStatus[keyof typeof Contac
 
 export const ContactUpdateStatus = {
   new: 'new',
+  contacted: 'contacted',
+  quotation_sent: 'quotation_sent',
+  negotiation: 'negotiation',
+  won: 'won',
+  lost: 'lost',
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
-  won: 'won',
-  lost: 'lost',
 } as const;
 
 export interface ContactUpdate {
@@ -513,8 +540,15 @@ export interface ContactUpdate {
   notes?: string | null;
   tags?: string[];
   status?: ContactUpdateStatus;
+  /**
+     * Optional note logged with a status change
+     * @nullable
+     */
+  statusComment?: string | null;
   /** @nullable */
   followUpDate?: string | null;
+  /** @nullable */
+  followUpTime?: string | null;
   /** @nullable */
   eventId?: number | null;
   /** @nullable */
@@ -668,12 +702,23 @@ export interface PipelineView {
   totalValue?: number;
 }
 
+export type EventStatus = typeof EventStatus[keyof typeof EventStatus];
+
+
+export const EventStatus = {
+  upcoming: 'upcoming',
+  active: 'active',
+  completed: 'completed',
+} as const;
+
 export interface Event {
   id: number;
   companyId: number;
   name: string;
   /** @nullable */
   venue?: string | null;
+  /** @nullable */
+  country?: string | null;
   /** @nullable */
   startDate?: string | null;
   /** @nullable */
@@ -682,6 +727,7 @@ export interface Event {
   boothNumber?: string | null;
   /** @nullable */
   description?: string | null;
+  status?: EventStatus;
   contactCount?: number;
   leadCount?: number;
   createdAt: string;
@@ -694,10 +740,21 @@ export interface EventList {
   limit: number;
 }
 
+export type EventInputStatus = typeof EventInputStatus[keyof typeof EventInputStatus];
+
+
+export const EventInputStatus = {
+  upcoming: 'upcoming',
+  active: 'active',
+  completed: 'completed',
+} as const;
+
 export interface EventInput {
   name: string;
   /** @nullable */
   venue?: string | null;
+  /** @nullable */
+  country?: string | null;
   /** @nullable */
   startDate?: string | null;
   /** @nullable */
@@ -706,13 +763,25 @@ export interface EventInput {
   boothNumber?: string | null;
   /** @nullable */
   description?: string | null;
+  status?: EventInputStatus;
 }
+
+export type EventUpdateStatus = typeof EventUpdateStatus[keyof typeof EventUpdateStatus];
+
+
+export const EventUpdateStatus = {
+  upcoming: 'upcoming',
+  active: 'active',
+  completed: 'completed',
+} as const;
 
 export interface EventUpdate {
   name?: string;
   /** @nullable */
   venue?: string | null;
   /** @nullable */
+  country?: string | null;
+  /** @nullable */
   startDate?: string | null;
   /** @nullable */
   endDate?: string | null;
@@ -720,6 +789,7 @@ export interface EventUpdate {
   boothNumber?: string | null;
   /** @nullable */
   description?: string | null;
+  status?: EventUpdateStatus;
 }
 
 export interface EventStats {
@@ -789,6 +859,12 @@ export interface ScanInput {
   imageData: string;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
 }
 
 export type SubscriptionPlan = typeof SubscriptionPlan[keyof typeof SubscriptionPlan];
@@ -1035,6 +1111,321 @@ export interface ActivityItem {
   createdAt: string;
 }
 
+export type FollowUpStatus = typeof FollowUpStatus[keyof typeof FollowUpStatus];
+
+
+export const FollowUpStatus = {
+  pending: 'pending',
+  completed: 'completed',
+  rescheduled: 'rescheduled',
+  cancelled: 'cancelled',
+} as const;
+
+export interface FollowUp {
+  id: number;
+  companyId: number;
+  contactId: number;
+  /** @nullable */
+  contactName?: string | null;
+  /** @nullable */
+  scheduledDate?: string | null;
+  /** @nullable */
+  scheduledTime?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  status: FollowUpStatus;
+  /** @nullable */
+  comment?: string | null;
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  assignedToName?: string | null;
+  /** @nullable */
+  createdById?: number | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface FollowUpList {
+  followUps: FollowUp[];
+  total: number;
+}
+
+export interface FollowUpInput {
+  contactId: number;
+  /** @nullable */
+  scheduledDate?: string | null;
+  /** @nullable */
+  scheduledTime?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  assignedToId?: number | null;
+}
+
+export type FollowUpUpdateStatus = typeof FollowUpUpdateStatus[keyof typeof FollowUpUpdateStatus];
+
+
+export const FollowUpUpdateStatus = {
+  pending: 'pending',
+  completed: 'completed',
+  rescheduled: 'rescheduled',
+  cancelled: 'cancelled',
+} as const;
+
+export interface FollowUpUpdate {
+  status?: FollowUpUpdateStatus;
+  /** @nullable */
+  comment?: string | null;
+  /** @nullable */
+  scheduledDate?: string | null;
+  /** @nullable */
+  scheduledTime?: string | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type MeetingType = typeof MeetingType[keyof typeof MeetingType];
+
+
+export const MeetingType = {
+  online: 'online',
+  physical: 'physical',
+  phone_call: 'phone_call',
+} as const;
+
+export type MeetingStatus = typeof MeetingStatus[keyof typeof MeetingStatus];
+
+
+export const MeetingStatus = {
+  scheduled: 'scheduled',
+  completed: 'completed',
+  rescheduled: 'rescheduled',
+  cancelled: 'cancelled',
+} as const;
+
+export interface Meeting {
+  id: number;
+  companyId: number;
+  contactId: number;
+  /** @nullable */
+  contactName?: string | null;
+  /** @nullable */
+  meetingDate?: string | null;
+  /** @nullable */
+  meetingTime?: string | null;
+  type: MeetingType;
+  /** @nullable */
+  notes?: string | null;
+  status: MeetingStatus;
+  /** @nullable */
+  comment?: string | null;
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  assignedToName?: string | null;
+  /** @nullable */
+  createdById?: number | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface MeetingList {
+  meetings: Meeting[];
+  total: number;
+}
+
+export type MeetingInputType = typeof MeetingInputType[keyof typeof MeetingInputType];
+
+
+export const MeetingInputType = {
+  online: 'online',
+  physical: 'physical',
+  phone_call: 'phone_call',
+} as const;
+
+export interface MeetingInput {
+  contactId: number;
+  /** @nullable */
+  meetingDate?: string | null;
+  /** @nullable */
+  meetingTime?: string | null;
+  type: MeetingInputType;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  assignedToId?: number | null;
+}
+
+export type MeetingUpdateStatus = typeof MeetingUpdateStatus[keyof typeof MeetingUpdateStatus];
+
+
+export const MeetingUpdateStatus = {
+  scheduled: 'scheduled',
+  completed: 'completed',
+  rescheduled: 'rescheduled',
+  cancelled: 'cancelled',
+} as const;
+
+export type MeetingUpdateType = typeof MeetingUpdateType[keyof typeof MeetingUpdateType];
+
+
+export const MeetingUpdateType = {
+  online: 'online',
+  physical: 'physical',
+  phone_call: 'phone_call',
+} as const;
+
+export interface MeetingUpdate {
+  status?: MeetingUpdateStatus;
+  /** @nullable */
+  comment?: string | null;
+  /** @nullable */
+  meetingDate?: string | null;
+  /** @nullable */
+  meetingTime?: string | null;
+  type?: MeetingUpdateType;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type TaskType = typeof TaskType[keyof typeof TaskType];
+
+
+export const TaskType = {
+  call: 'call',
+  follow_up: 'follow_up',
+  meeting: 'meeting',
+  proposal: 'proposal',
+  custom: 'custom',
+} as const;
+
+export type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus];
+
+
+export const TaskStatus = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  overdue: 'overdue',
+} as const;
+
+export interface Task {
+  id: number;
+  companyId: number;
+  /** @nullable */
+  contactId?: number | null;
+  /** @nullable */
+  contactName?: string | null;
+  title: string;
+  type: TaskType;
+  status: TaskStatus;
+  /** @nullable */
+  dueDate?: string | null;
+  /** @nullable */
+  dueTime?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  assignedToName?: string | null;
+  /** @nullable */
+  assignedById?: number | null;
+  /** @nullable */
+  assignedByName?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TaskList {
+  tasks: Task[];
+  total: number;
+}
+
+export type TaskInputType = typeof TaskInputType[keyof typeof TaskInputType];
+
+
+export const TaskInputType = {
+  call: 'call',
+  follow_up: 'follow_up',
+  meeting: 'meeting',
+  proposal: 'proposal',
+  custom: 'custom',
+} as const;
+
+export interface TaskInput {
+  title: string;
+  type?: TaskInputType;
+  /** @nullable */
+  contactId?: number | null;
+  /** @nullable */
+  dueDate?: string | null;
+  /** @nullable */
+  dueTime?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  assignedToId?: number | null;
+}
+
+export type TaskUpdateType = typeof TaskUpdateType[keyof typeof TaskUpdateType];
+
+
+export const TaskUpdateType = {
+  call: 'call',
+  follow_up: 'follow_up',
+  meeting: 'meeting',
+  proposal: 'proposal',
+  custom: 'custom',
+} as const;
+
+export type TaskUpdateStatus = typeof TaskUpdateStatus[keyof typeof TaskUpdateStatus];
+
+
+export const TaskUpdateStatus = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  overdue: 'overdue',
+} as const;
+
+export interface TaskUpdate {
+  title?: string;
+  type?: TaskUpdateType;
+  status?: TaskUpdateStatus;
+  /** @nullable */
+  contactId?: number | null;
+  /** @nullable */
+  dueDate?: string | null;
+  /** @nullable */
+  dueTime?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  assignedToId?: number | null;
+}
+
+export interface ContactStatusHistory {
+  id: number;
+  contactId: number;
+  /** @nullable */
+  fromStatus?: string | null;
+  toStatus: string;
+  /** @nullable */
+  comment?: string | null;
+  /** @nullable */
+  changedById?: number | null;
+  /** @nullable */
+  changedByName?: string | null;
+  createdAt: string;
+}
+
+export interface ContactStatusHistoryList {
+  history: ContactStatusHistory[];
+  total: number;
+}
+
 export type ListCompaniesParams = {
 search?: string;
 status?: string;
@@ -1066,8 +1457,29 @@ eventId?: number | null;
  */
 assignedTo?: number | null;
 page?: number;
+/**
+ * Sort order (default newest first)
+ */
+sort?: ListContactsSort;
+hasFollowUp?: boolean;
+hasMeeting?: boolean;
+dateFrom?: string;
+dateTo?: string;
+/**
+ * When true, include contacts marked as duplicates (default false)
+ */
+includeDuplicates?: boolean;
 limit?: number;
 };
+
+export type ListContactsSort = typeof ListContactsSort[keyof typeof ListContactsSort];
+
+
+export const ListContactsSort = {
+  newest: 'newest',
+  oldest: 'oldest',
+  name: 'name',
+} as const;
 
 export type ListLeadsParams = {
 stage?: string;
@@ -1093,4 +1505,53 @@ export type ListScansParams = {
 page?: number;
 limit?: number;
 };
+
+export type ListFollowUpsParams = {
+status?: string;
+/**
+ * @nullable
+ */
+contactId?: number | null;
+/**
+ * @nullable
+ */
+assignedTo?: number | null;
+};
+
+export type ListMeetingsParams = {
+status?: string;
+/**
+ * @nullable
+ */
+contactId?: number | null;
+/**
+ * @nullable
+ */
+assignedTo?: number | null;
+};
+
+export type ListTasksParams = {
+status?: string;
+type?: string;
+/**
+ * @nullable
+ */
+assignedTo?: number | null;
+/**
+ * @nullable
+ */
+contactId?: number | null;
+/**
+ * mine (default, tasks assigned to me) or all (admins only)
+ */
+scope?: ListTasksScope;
+};
+
+export type ListTasksScope = typeof ListTasksScope[keyof typeof ListTasksScope];
+
+
+export const ListTasksScope = {
+  mine: 'mine',
+  all: 'all',
+} as const;
 

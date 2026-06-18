@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Platform, Pressable } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -37,6 +38,23 @@ setAuthTokenGetter(() => getCachedToken());
 
 const queryClient = new QueryClient();
 
+// On web there is no hardware/native back gesture, so provide an explicit
+// header back affordance. On native, leaving headerLeft unset preserves the
+// platform's native back button + swipe gesture.
+function WebHeaderBack({ canGoBack }: { canGoBack?: boolean }) {
+  const router = useRouter();
+  if (!canGoBack) return null;
+  return (
+    <Pressable
+      onPress={() => router.back()}
+      hitSlop={12}
+      style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+    >
+      <Feather name="arrow-left" size={22} />
+    </Pressable>
+  );
+}
+
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useAuth();
   const segments = useSegments();
@@ -56,7 +74,14 @@ function RootLayoutNav() {
   return (
     <>
       <NotificationsManager />
-      <Stack screenOptions={{ headerBackTitle: "Back" }}>
+      <Stack
+        screenOptions={{
+          headerBackTitle: "Back",
+          ...(Platform.OS === "web"
+            ? { headerLeft: (props) => <WebHeaderBack canGoBack={props.canGoBack} /> }
+            : {}),
+        }}
+      >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen
@@ -68,12 +93,21 @@ function RootLayoutNav() {
         options={{ headerShown: false, presentation: "fullScreenModal" }}
       />
       <Stack.Screen
+        name="batch-review"
+        options={{ headerShown: false, presentation: "fullScreenModal" }}
+      />
+      <Stack.Screen
+        name="event-picker"
+        options={{ headerShown: false, presentation: "modal" }}
+      />
+      <Stack.Screen
         name="capture-qr"
         options={{ headerShown: false, presentation: "fullScreenModal" }}
       />
       <Stack.Screen name="capture-manual" options={{ title: "Manual entry" }} />
       <Stack.Screen name="leads" options={{ headerShown: false }} />
       <Stack.Screen name="events" options={{ headerShown: false }} />
+      <Stack.Screen name="meetings" options={{ headerShown: false }} />
       <Stack.Screen name="duplicates" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="sync" options={{ headerShown: false }} />

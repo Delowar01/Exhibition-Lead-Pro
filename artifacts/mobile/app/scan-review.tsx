@@ -18,21 +18,41 @@ import {
 } from "@/components/ContactForm";
 import { FONT } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 
 const SOURCE_LABEL: Record<string, string> = {
   card: "Business card",
-  badge: "Event badge",
+  signature: "Email signature",
   qr: "QR code",
 };
+
+function parseNum(v?: string): number | null {
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 export default function ScanReviewScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ data?: string; source?: string }>();
+  const params = useLocalSearchParams<{
+    data?: string;
+    source?: string;
+    lat?: string;
+    lng?: string;
+    acc?: string;
+  }>();
   const createContact = useCreateContact();
   const { isOnline, enqueueContact } = useOffline();
+  const { activeEventId } = useSettings();
+  const eventId = activeEventId ?? null;
+  const gps = {
+    latitude: parseNum(params.lat),
+    longitude: parseNum(params.lng),
+    gpsAccuracy: parseNum(params.acc),
+  };
 
   const initial = useMemo<ContactFormValues>(() => {
     let extracted: ExtractedCardData = {};
@@ -59,13 +79,26 @@ export default function ScanReviewScreen() {
   const sourceLabel = SOURCE_LABEL[params.source ?? "card"] ?? "Scan";
 
   async function handleSave(values: ContactFormValues) {
-    const payload = toContactPayload(values);
+    const payload = {
+      ...toContactPayload(values),
+      eventId,
+      latitude: gps.latitude,
+      longitude: gps.longitude,
+      gpsAccuracy: gps.gpsAccuracy,
+    };
     if (!isOnline) {
       const label =
         [payload.firstName, payload.lastName].filter(Boolean).join(" ") ||
         payload.contactCompany ||
         "New contact";
-      enqueueContact(payload, { label, source: params.source ?? "card" });
+      enqueueContact(payload, {
+        label,
+        source: params.source ?? "card",
+        eventId,
+        latitude: gps.latitude,
+        longitude: gps.longitude,
+        gpsAccuracy: gps.gpsAccuracy,
+      });
       router.replace("/(tabs)/contacts");
       return;
     }
