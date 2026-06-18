@@ -1,0 +1,493 @@
+APPLICATION DASHBOARD ENHANCEMENTS – HIGH PRIORITY
+
+
+
+Project:
+
+AI Exhibition Lead Capture Platform
+
+
+
+Scope:
+
+MOBILE APPLICATION ONLY
+
+
+
+Before implementation, review the existing dashboard workflow and ensure no regression occurs.
+
+
+
+====================================================
+
+
+
+1. DASHBOARD WIDGETS MUST BE CLICKABLE
+
+   ====================================================
+
+
+
+Current Issue:
+
+
+
+Dashboard widgets are currently display-only.
+
+
+
+Users cannot drill down into the underlying data.
+
+
+
+Required:
+
+
+
+Every dashboard widget must be clickable and navigate to the correct module with automatic filtering applied.
+
+
+
+====================================================
+
+TODAY'S LEADS
+
+=============
+
+
+
+When user clicks:
+
+
+
+Today's Leads
+
+
+
+System must:
+
+
+
+1. Open Contacts screen.
+
+2. Automatically apply filter:
+
+
+
+Captured Date = Today
+
+
+
+3. Show only today's captured leads.
+
+
+
+====================================================
+
+HOT LEADS
+
+=========
+
+
+
+When user clicks:
+
+
+
+Hot Leads
+
+
+
+System must:
+
+
+
+1. Open Contacts screen.
+
+2. Automatically apply filter:
+
+
+
+Lead Temperature = Hot
+
+
+
+3. Show only Hot Leads.
+
+
+
+====================================================
+
+CONTACTED
+
+=========
+
+
+
+Current Issue:
+
+
+
+Dashboard currently shows "Proposal Sent".
+
+
+
+Required:
+
+
+
+Remove:
+
+
+
+Proposal Sent
+
+
+
+Replace with:
+
+
+
+Contacted
+
+
+
+When user clicks:
+
+
+
+Contacted
+
+
+
+System must:
+
+
+
+1. Open Contacts screen.
+
+2. Automatically apply filter:
+
+
+
+Status = Contacted
+
+
+
+3. Show only contacted leads.
+
+
+
+====================================================
+
+FOLLOW-UP DUE
+
+=============
+
+
+
+When user clicks:
+
+
+
+Follow-Up Due
+
+
+
+System must:
+
+
+
+1. Open Follow-Up module.
+
+2. Automatically filter:
+
+
+
+Status = Due
+
+
+
+3. Show overdue and today's follow-ups.
+
+
+
+====================================================
+
+MEETINGS
+
+========
+
+
+
+When user clicks:
+
+
+
+Meetings
+
+
+
+System must:
+
+
+
+1. Open Meetings module.
+
+2. Display upcoming meetings.
+
+3. Apply active event filter if selected.
+
+
+
+====================================================
+
+PIPELINE VALUE
+
+==============
+
+
+
+When user clicks:
+
+
+
+Pipeline Value
+
+
+
+System must:
+
+
+
+1. Open Pipeline screen.
+
+2. Display all opportunities.
+
+3. Show pipeline grouped by:
+
+
+
+* New
+
+* Contacted
+
+* Quotation Sent
+
+* Negotiation
+
+* Won
+
+* Lost
+
+
+
+====================================================
+
+FILTER PERSISTENCE
+
+==================
+
+
+
+Requirements:
+
+
+
+When navigating from dashboard:
+
+
+
+* Correct filter must be applied automatically.
+
+* Filter badge must be visible.
+
+* User can clear filters manually.
+
+* Back button returns user to Dashboard.
+
+
+
+====================================================
+
+2. DASHBOARD EVENT CARD CHANGES
+
+===============================
+
+
+
+Current Issue:
+
+
+
+Dashboard currently shows:
+
+
+
+Active Event
+
+
+
+This is not suitable because users may manage multiple events.
+
+
+
+Required:
+
+
+
+Replace:
+
+
+
+Active Event
+
+
+
+With:
+
+
+
+Last Event
+
+
+
+Definition:
+
+
+
+Last Event =
+
+Most recently created event.
+
+
+
+====================================================
+
+LAST EVENT BEHAVIOUR
+
+====================
+
+
+
+
+
+
+
+
+
+
+
+When user clicks Last Event card:
+
+
+
+System must open:
+
+
+
+Event Report Screen
+
+
+
+Showing:
+
+
+
+* Total Leads
+
+* Hot Leads
+
+* Warm Leads
+
+* Cold Leads
+
+* Meetings
+
+* Follow-Ups
+
+* Won Deals
+
+* Lost Deals
+
+* Pipeline Value
+
+* Team Performance
+
+* Lead Source Breakdown
+
+
+
+====================================================
+
+EVENT REPORT REQUIREMENTS
+
+=========================
+
+
+
+The Event Report screen must support:
+
+
+
+Filters:
+
+
+
+* Date Range
+
+* Team Member
+
+* Lead Status
+
+* Temperature
+
+
+
+Charts:
+
+
+
+* Leads by Day
+
+* Leads by User
+
+* Qualification Distribution
+
+* Status Distribution
+
+
+
+====================================================
+
+ACCEPTANCE CRITERIA
+
+===================
+
+
+
+1. All dashboard widgets are clickable.
+
+2. Correct screen opens for each widget.
+
+3. Correct filters are automatically applied.
+
+4. Filters remain visible.
+
+5. User can clear filters manually.
+
+6. Back navigation works correctly.
+
+7. "Proposal Sent" removed.
+
+8. "Contacted" added.
+
+9. "Active Event" replaced with "Last Event".
+
+10. Clicking Last Event opens Event Report.
+
+11. Android tested.
+
+12. iPhone tested.
+
+13. Screenshots and testing evidence provided before completion.
