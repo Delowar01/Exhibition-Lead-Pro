@@ -1,1 +1,2 @@
 - [Orval codegen gotchas](orval-codegen-gotchas.md) — path-param/query-name collisions break codegen; api-server dev server needs restart to pick up route changes before smoke tests.
+- [Mobile Android icon tofu](mobile-android-icons.md) — config/font/names are all verified correct; tofu is a build-context issue (Expo Go / stale APK), not code. Fix = clean APK rebuild, not more patches.

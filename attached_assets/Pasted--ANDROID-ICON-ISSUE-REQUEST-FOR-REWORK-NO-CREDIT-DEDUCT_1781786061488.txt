@@ -1,0 +1,77 @@
+## ANDROID ICON ISSUE – REQUEST FOR REWORK (NO CREDIT DEDUCTION)
+
+We need to revisit the Android icon issue.
+
+This issue has been reported multiple times across previous iterations and has still not been resolved. Each time, credits were consumed even though the issue remained unresolved.
+
+Because this is a continuation of the same unresolved defect—not a new feature request—we request that this work be completed **without consuming additional credits**.
+
+### Current Issue
+
+On **iOS**, all icons display correctly.
+
+On **Android**, many icons are still missing, displaying incorrectly, or not rendering at all.
+
+This issue exists throughout the mobile application and significantly impacts the user experience.
+
+### Required Fix
+
+Perform a complete audit of the Android application and identify the root cause instead of applying temporary fixes.
+
+Verify:
+
+* Navigation icons
+* Bottom tab icons
+* Dashboard icons
+* Contact action icons
+* Widget icons
+* Status icons
+* Follow-up icons
+* Meeting icons
+* Task icons
+* Event icons
+* All other UI icons
+
+Ensure every icon renders correctly on Android devices.
+
+### Root Cause Investigation
+
+Please verify:
+
+* Icon library compatibility
+* Android-specific rendering issues
+* Expo/React Native configuration
+* Font loading
+* Vector icon loading
+* Build configuration
+* APK build configuration
+* Release vs Debug differences
+
+Do not mark this issue as fixed until the root cause has been identified and permanently resolved.
+
+### Required Testing
+
+Test on:
+
+* Android Emulator
+* Physical Android Device
+* Debug Build
+* Release Build / APK
+
+Confirm that every icon renders correctly in all environments.
+
+### Deliverables
+
+Before closing this issue, please provide:
+
+1. Root cause analysis.
+2. Files changed.
+3. Screenshots from Android.
+4. APK (if applicable) showing the issue is resolved.
+5. Confirmation that all icons have been verified throughout the application.
+
+### Credit Request
+
+As this issue has already been reported and attempted multiple times without resolution, we request that this be treated as a continuation of the existing support case and **completed without deducting additional credits**.
+
+Please resolve the issue completely before marking the task as complete.
