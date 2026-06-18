@@ -32,10 +32,6 @@ function NativeTabLayout() {
         <Icon sf={{ default: "checklist", selected: "checklist" }} />
         <Label>Follow-Ups</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="tasks">
-        <Icon sf={{ default: "checkmark.circle", selected: "checkmark.circle.fill" }} />
-        <Label>Tasks</Label>
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="more">
         <Icon sf={{ default: "ellipsis", selected: "ellipsis" }} />
         <Label>More</Label>
@@ -121,13 +117,6 @@ function ClassicTabLayout() {
         options={{
           title: "Follow-Ups",
           tabBarIcon: ({ color }) => icon("checklist", "check-square", color),
-        }}
-      />
-      <Tabs.Screen
-        name="tasks"
-        options={{
-          title: "Tasks",
-          tabBarIcon: ({ color }) => icon("checkmark.circle", "check-circle", color),
         }}
       />
       <Tabs.Screen

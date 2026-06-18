@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Modal,
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { formatGregorian } from "@/lib/date";
 
 const STATUS_FILTERS: { key: TaskStatus | "all"; label: string }[] = [
   { key: "all", label: "All" },
@@ -59,7 +61,7 @@ function parseLocal(s: string): Date {
 
 function formatDate(s?: string | null, time?: string | null): string {
   if (!s) return "No due date";
-  const base = parseLocal(s).toLocaleDateString(undefined, {
+  const base = formatGregorian(parseLocal(s), {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -74,6 +76,7 @@ function formatDate(s?: string | null, time?: string | null): string {
 export default function TasksScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { user } = useAuth();
   const canManageAll =
     user?.role === "platform_owner" ||
@@ -147,7 +150,16 @@ export default function TasksScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 14, paddingHorizontal: 20 }}>
         <View style={styles.headerRow}>
-          <Text style={[styles.heading, { color: colors.foreground }]}>My Tasks</Text>
+          <View style={styles.headerLeft}>
+            <Pressable
+              onPress={() => router.back()}
+              hitSlop={10}
+              style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="arrow-left" size={20} color={colors.foreground} />
+            </Pressable>
+            <Text style={[styles.heading, { color: colors.foreground }]}>Tasks</Text>
+          </View>
           <Pressable
             onPress={() => {
               if (Platform.OS !== "web") Haptics.selectionAsync();
@@ -220,7 +232,7 @@ export default function TasksScreen() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 110, gap: 10 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 40, gap: 10 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} tintColor={colors.primary} />
@@ -517,7 +529,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  heading: { fontSize: 30, fontFamily: FONT.bold },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heading: { fontSize: 28, fontFamily: FONT.bold },
   addBtn: {
     width: 44,
     height: 44,

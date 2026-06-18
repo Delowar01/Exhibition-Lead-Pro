@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -141,13 +142,23 @@ export function Avatar({
   name,
   size = 44,
   color,
+  uri,
 }: {
   name: string | null | undefined;
   size?: number;
   color?: string;
+  uri?: string | null;
 }) {
   const colors = useColors();
   const bg = color ?? colors.primary;
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+      />
+    );
+  }
   return (
     <View
       style={[

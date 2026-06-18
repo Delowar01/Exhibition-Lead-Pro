@@ -24,6 +24,7 @@ import { Avatar, Badge, FONT, LoadingState, prettyLabel } from "@/components/ui"
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+import { formatGregorian } from "@/lib/date";
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -47,7 +48,7 @@ function relativeTime(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return formatGregorian(new Date(iso), { month: "short", day: "numeric" });
 }
 
 const ACTIVITY_ICON: Record<string, keyof typeof Feather.glyphMap> = {
@@ -239,7 +240,7 @@ export default function HomeScreen() {
               ) : null}
             </View>
           </View>
-          <Avatar name={user?.name} color={colors.primary} size={48} />
+          <Avatar name={user?.name} color={colors.primary} size={48} uri={user?.avatarUrl} />
         </View>
 
         {/* Offline / pending-sync banner */}

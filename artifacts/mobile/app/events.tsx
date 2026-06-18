@@ -21,13 +21,14 @@ import {
   LoadingState,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { formatGregorian } from "@/lib/date";
 
 function formatDateRange(start?: string | null, end?: string | null): string {
   if (!start) return "Date TBD";
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  const s = new Date(start).toLocaleDateString(undefined, opts);
+  const s = formatGregorian(new Date(start), opts);
   if (!end || end === start) return s;
-  const e = new Date(end).toLocaleDateString(undefined, opts);
+  const e = formatGregorian(new Date(end), opts);
   return `${s} – ${e}`;
 }
 

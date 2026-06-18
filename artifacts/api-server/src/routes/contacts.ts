@@ -130,10 +130,11 @@ router.get("/contacts/stats", async (req: AuthRequest, res) => {
   try {
     const whereClause = tenantScope(req.user, contactsTable.companyId);
 
-    const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(whereClause);
+    const statsWhere = and(whereClause, isNull(contactsTable.duplicateOfId));
+    const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(statsWhere);
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const todayContacts = await db.select({ count: count() }).from(contactsTable).where(and(whereClause, sql`${contactsTable.createdAt} >= ${today}`));
-    const byStatus = await db.select({ status: contactsTable.status, count: count() }).from(contactsTable).where(whereClause).groupBy(contactsTable.status);
+    const todayContacts = await db.select({ count: count() }).from(contactsTable).where(and(statsWhere, sql`${contactsTable.createdAt} >= ${today}`));
+    const byStatus = await db.select({ status: contactsTable.status, count: count() }).from(contactsTable).where(statsWhere).groupBy(contactsTable.status);
 
     const wonCount = byStatus.find(s => s.status === "won")?.count ?? 0;
     const conversionRate = total > 0 ? Math.round((wonCount / total) * 100) : 0;

@@ -26,11 +26,12 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { formatGregorian } from "@/lib/date";
 
 function formatRange(start?: string | null, end?: string | null): string | null {
   const fmt = (s: string) => {
     const [y, m, d] = s.split("-").map(Number);
-    return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
+    return formatGregorian(new Date(y, (m ?? 1) - 1, d ?? 1), {
       month: "short",
       day: "numeric",
       year: "numeric",

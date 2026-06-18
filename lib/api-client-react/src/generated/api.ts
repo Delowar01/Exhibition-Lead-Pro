@@ -89,6 +89,7 @@ import type {
   User,
   UserInput,
   UserList,
+  UserSelfUpdate,
   UserUpdate
 } from './api.schemas';
 
@@ -1516,6 +1517,77 @@ export const useCreateUser = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateUserMutationOptions(options));
+    }
+
+export const getUpdateOwnProfileUrl = () => {
+
+
+
+
+  return `/api/users/me`
+}
+
+/**
+ * @summary Update the authenticated user's own profile (avatar, name)
+ */
+export const updateOwnProfile = async (userSelfUpdate: UserSelfUpdate, options?: RequestInit): Promise<User> => {
+
+  return customFetch<User>(getUpdateOwnProfileUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      userSelfUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateOwnProfileMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOwnProfile>>, TError,{data: BodyType<UserSelfUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOwnProfile>>, TError,{data: BodyType<UserSelfUpdate>}, TContext> => {
+
+const mutationKey = ['updateOwnProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOwnProfile>>, {data: BodyType<UserSelfUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateOwnProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOwnProfileMutationResult = NonNullable<Awaited<ReturnType<typeof updateOwnProfile>>>
+    export type UpdateOwnProfileMutationBody = BodyType<UserSelfUpdate>
+    export type UpdateOwnProfileMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update the authenticated user's own profile (avatar, name)
+ */
+export const useUpdateOwnProfile = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOwnProfile>>, TError,{data: BodyType<UserSelfUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateOwnProfile>>,
+        TError,
+        {data: BodyType<UserSelfUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateOwnProfileMutationOptions(options));
     }
 
 export const getGetUserUrl = (id: number,) => {

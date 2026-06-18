@@ -406,6 +406,33 @@ export const CreateUserBody = zod.object({
 
 
 /**
+ * @summary Update the authenticated user's own profile (avatar, name)
+ */
+export const UpdateOwnProfileBody = zod.object({
+  "name": zod.string().optional(),
+  "avatarUrl": zod.string().nullish()
+})
+
+export const UpdateOwnProfileResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
+  "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Get user
  */
 export const GetUserParams = zod.object({

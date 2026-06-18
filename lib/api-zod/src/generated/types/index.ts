@@ -130,6 +130,7 @@ export * from './userInputRole';
 export * from './userList';
 export * from './userPermissions';
 export * from './userRole';
+export * from './userSelfUpdate';
 export * from './userUpdate';
 export * from './userUpdateCompanyVisibility';
 export * from './userUpdateContactVisibility';

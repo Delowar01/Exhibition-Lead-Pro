@@ -47,13 +47,14 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { formatGregorian } from "@/lib/date";
 
 const STATUS_OPTIONS = CONTACT_PIPELINE_ORDER as ContactUpdateStatus[];
 const MEETING_TYPES: MeetingInputType[] = ["online", "physical", "phone_call"];
 
 function formatHistoryDate(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, {
+  return formatGregorian(d, {
     month: "short",
     day: "numeric",
     hour: "numeric",

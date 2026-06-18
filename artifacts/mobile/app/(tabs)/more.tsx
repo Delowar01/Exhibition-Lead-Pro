@@ -13,19 +13,72 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useUpdateOwnProfile } from "@workspace/api-client-react";
+
 import { Avatar, Badge, FONT, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+import { pickAvatar, type AvatarSource } from "@/lib/avatar";
 
 export default function MoreScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const { queuedCount, isOnline } = useOffline();
+  const updateProfile = useUpdateOwnProfile();
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
+
+  async function applyAvatar(source: AvatarSource) {
+    try {
+      const uri = await pickAvatar(source);
+      if (!uri) return;
+      if (Platform.OS !== "web")
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const updated = await updateProfile.mutateAsync({ data: { avatarUrl: uri } });
+      await updateUser(updated);
+    } catch (err) {
+      Alert.alert(
+        "Couldn't update photo",
+        err instanceof Error ? err.message : "Please try again.",
+      );
+    }
+  }
+
+  async function removeAvatar() {
+    try {
+      const updated = await updateProfile.mutateAsync({ data: { avatarUrl: null } });
+      await updateUser(updated);
+    } catch {
+      Alert.alert("Couldn't remove photo", "Please try again.");
+    }
+  }
+
+  function onAvatarPress() {
+    if (updateProfile.isPending) return;
+    if (Platform.OS !== "web") Haptics.selectionAsync();
+    if (Platform.OS === "web") {
+      void applyAvatar("library");
+      return;
+    }
+    const hasAvatar = !!user?.avatarUrl;
+    Alert.alert("Profile photo", undefined, [
+      { text: "Take Photo", onPress: () => void applyAvatar("camera") },
+      { text: "Choose from Library", onPress: () => void applyAvatar("library") },
+      ...(hasAvatar
+        ? [
+            {
+              text: "Remove Photo",
+              style: "destructive" as const,
+              onPress: () => void removeAvatar(),
+            },
+          ]
+        : []),
+      { text: "Cancel", style: "cancel" as const },
+    ]);
+  }
 
   function confirmLogout() {
     if (Platform.OS === "web") {
@@ -88,6 +141,14 @@ export default function MoreScreen() {
       onPress: () => router.push("/meetings"),
     },
     {
+      key: "tasks",
+      label: "Tasks",
+      sub: "Track your to-dos and assignments",
+      icon: "check-circle",
+      color: "#10B981",
+      onPress: () => router.push("/tasks"),
+    },
+    {
       key: "contacts",
       label: "All Contacts",
       sub: "Browse your full contact list",
@@ -132,7 +193,12 @@ export default function MoreScreen() {
             { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
           ]}
         >
-          <Avatar name={user?.name} color={colors.primary} size={56} />
+          <Pressable onPress={onAvatarPress} hitSlop={8} style={styles.avatarWrap}>
+            <Avatar name={user?.name} color={colors.primary} size={56} uri={user?.avatarUrl} />
+            <View style={[styles.avatarBadge, { backgroundColor: colors.primary, borderColor: colors.card }]}>
+              <Feather name="camera" size={12} color="#FFFFFF" />
+            </View>
+          </Pressable>
           <View style={{ flex: 1 }}>
             <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground }]}>
               {user?.name ?? "—"}
@@ -248,6 +314,20 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 16,
     borderWidth: 1,
+  },
+  avatarWrap: {
+    position: "relative",
+  },
+  avatarBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
   profileName: {
     fontSize: 18,

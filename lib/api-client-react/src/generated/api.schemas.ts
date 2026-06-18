@@ -207,6 +207,12 @@ export interface UserUpdate {
   companyVisibility?: UserUpdateCompanyVisibility;
 }
 
+export interface UserSelfUpdate {
+  name?: string;
+  /** @nullable */
+  avatarUrl?: string | null;
+}
+
 export type CompanyPlan = typeof CompanyPlan[keyof typeof CompanyPlan];
 
 

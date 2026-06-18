@@ -1,1 +1,2 @@
 - [Reschedule lifecycle](reschedule-lifecycle.md) — reschedule supersedes: old row → `rescheduled`, NEW active row inserted; never show `rescheduled` as upcoming.
+- [Contact duplicate exclusion](contact-duplicate-exclusion.md) — every contact count/stat/group query must add isNull(duplicateOfId); leadsTable counts unchanged.

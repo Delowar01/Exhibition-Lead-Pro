@@ -1,0 +1,451 @@
+APPLICATION FIXES – HIGH PRIORITY
+
+
+
+Project:
+
+AI Exhibition Lead Capture Platform
+
+
+
+Scope:
+
+MOBILE APPLICATION ONLY
+
+
+
+Before making any changes, review the current implementation and verify all existing workflows remain functional.
+
+
+
+====================================================
+
+
+
+1. DUPLICATE MANAGEMENT FIX (CRITICAL)
+
+   ====================================================
+
+
+
+Current Issue:
+
+
+
+The system correctly detects duplicate leads.
+
+
+
+However, duplicate leads are still appearing in the main Contacts list and are being included in counts and statistics.
+
+
+
+This is incorrect.
+
+
+
+Required Behaviour:
+
+
+
+Contacts Screen:
+
+
+
+Show ONLY unique/original contacts.
+
+
+
+Example:
+
+
+
+Lead A
+
+Lead B
+
+Lead C
+
+
+
+If Lead A is scanned 10 times:
+
+
+
+Contacts List:
+
+
+
+✓ Lead A
+
+✓ Lead B
+
+✓ Lead C
+
+
+
+Duplicates List:
+
+
+
+✓ Lead A (Duplicate #1)
+
+✓ Lead A (Duplicate #2)
+
+✓ Lead A (Duplicate #3)
+
+✓ Lead A (Duplicate #4)
+
+✓ Lead A (Duplicate #5)
+
+✓ Lead A (Duplicate #6)
+
+✓ Lead A (Duplicate #7)
+
+✓ Lead A (Duplicate #8)
+
+✓ Lead A (Duplicate #9)
+
+
+
+Rules:
+
+
+
+* Original record remains in Contacts.
+
+* All duplicate records move to Duplicates.
+
+* Duplicate records must never appear in Contacts.
+
+* Duplicate records must not be counted anywhere in the application except the Duplicates section.
+
+* Dashboard statistics must use unique contacts only.
+
+* Contact count must exclude duplicates.
+
+* Reports must exclude duplicates.
+
+* Analytics must exclude duplicates.
+
+* Pipeline and status counts must exclude duplicates.
+
+* Duplicate count must be shown separately.
+
+* Duplicates must be stored only in the Duplicates section.
+
+
+
+Validation Required:
+
+
+
+* Scan the same card 10 times.
+
+* Verify only 1 appears in Contacts.
+
+* Verify remaining 9 appear in Duplicates.
+
+* Verify dashboard counts remain unchanged after duplicate scans.
+
+* Verify reports and analytics do not include duplicates.
+
+
+
+====================================================
+
+
+
+2. MOVE TASKS TO WORKSPACE
+
+   ====================================================
+
+
+
+Current Issue:
+
+
+
+Tasks are displayed as a standalone tab.
+
+
+
+Required:
+
+
+
+Move Tasks into Workspace.
+
+
+
+
+
+
+
+Use the same visual style and icon design as existing Workspace items.
+
+
+
+Requirements:
+
+
+
+* Tasks must appear as a Workspace module.
+
+* Tasks should not appear as a separate bottom navigation item.
+
+* Navigation should remain clean and professional.
+
+
+
+====================================================
+
+
+
+3. CONTACT DASHBOARD WIDGET ICONS
+
+   ====================================================
+
+
+
+Current Issue:
+
+
+
+Dashboard widgets above Contacts are text-only.
+
+
+
+Required:
+
+
+
+Add professional icons to all widgets.
+
+
+
+
+
+
+
+Requirements:
+
+
+
+* Consistent icon library.
+
+* Modern premium appearance.
+
+* Mobile-friendly spacing.
+
+* Icons visible on Android and iOS.
+
+
+
+====================================================
+
+
+
+4. FORCE GREGORIAN CALENDAR
+
+   ====================================================
+
+
+
+Current Issue:
+
+
+
+Date picker and calendar display Hijri dates on some devices.
+
+
+
+Required:
+
+
+
+Entire application must use Gregorian calendar only.
+
+
+
+Apply to:
+
+
+
+* Follow-Up Dates
+
+* Meeting Dates
+
+* Event Dates
+
+* Filters
+
+* Reports
+
+* Dashboard
+
+
+
+Requirements:
+
+
+
+* Ignore device regional Hijri settings.
+
+* Force Gregorian display everywhere.
+
+* Store dates in ISO format internally.
+
+
+
+Acceptance Criteria:
+
+
+
+* Android devices configured for Hijri still display Gregorian dates.
+
+* iPhone displays Gregorian dates.
+
+* Reports display Gregorian dates.
+
+
+
+====================================================
+
+
+
+5. USER PROFILE IMAGE
+
+   ====================================================
+
+
+
+Current Issue:
+
+
+
+Users cannot upload their own profile photo.
+
+
+
+Required:
+
+
+
+Add Profile Image Management.
+
+
+
+Profile Screen:
+
+
+
+* Upload Photo
+
+* Change Photo
+
+* Remove Photo
+
+
+
+Image Sources:
+
+
+
+* Camera
+
+* Photo Gallery
+
+
+
+Requirements:
+
+
+
+* Crop before upload.
+
+* Compress image.
+
+* Store profile image securely.
+
+* Display image in:
+
+
+
+  * Profile Screen
+
+  * Home Dashboard Header
+
+  * User Menu
+
+  * Workspace Header
+
+
+
+Fallback:
+
+
+
+If no image exists:
+
+
+
+Show user initials avatar.
+
+
+
+Acceptance Criteria:
+
+
+
+* Android tested.
+
+* iPhone tested.
+
+* Image persists after logout/login.
+
+* Profile image updates immediately.
+
+
+
+====================================================
+
+
+
+# TESTING REQUIREMENTS
+
+
+
+Do NOT mark this ticket complete until:
+
+
+
+1. Duplicate workflow tested.
+
+2. Main Contacts excludes duplicates.
+
+3. Duplicates appear only in Duplicate section.
+
+4. Duplicate records are not counted anywhere except the Duplicates section.
+
+5. Dashboard statistics exclude duplicates.
+
+6. Reports and analytics exclude duplicates.
+
+7. Workspace navigation tested.
+
+8. Widget icons verified.
+
+9. Gregorian calendar verified on Android.
+
+10. Gregorian calendar verified on iPhone.
+
+11. Profile image upload tested.
+
+12. Camera upload tested.
+
+13. Gallery upload tested.
+
+
+
+Provide screenshots and implementation evidence before marking complete.

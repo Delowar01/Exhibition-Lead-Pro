@@ -410,6 +410,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/User"
 
+  /users/me:
+    patch:
+      operationId: updateOwnProfile
+      tags: [users]
+      summary: Update the authenticated user's own profile (avatar, name)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSelfUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
   /users/{id}:
     get:
       operationId: getUser
@@ -1644,6 +1663,14 @@ components:
         companyVisibility:
           type: string
           enum: [own, selected, all]
+
+    UserSelfUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
 
     # COMPANIES
     Company:

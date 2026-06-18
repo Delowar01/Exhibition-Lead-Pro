@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { contactsTable, leadsTable, eventsTable, usersTable, scansTable } from "@workspace/db";
-import { eq, and, count, sql, desc, inArray, gte, lte, isNotNull } from "drizzle-orm";
+import { eq, and, count, sql, desc, inArray, gte, lte, isNotNull, isNull } from "drizzle-orm";
 import { requireAuth, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 
 const router = Router();
@@ -16,13 +16,13 @@ router.get("/reports/admin-dashboard", async (req: AuthRequest, res) => {
     const userWhere = tenantScope(req.user, usersTable.companyId);
     const scanWhere = tenantScope(req.user, scansTable.companyId);
 
-    const [{ totalContacts }] = await db.select({ totalContacts: count() }).from(contactsTable).where(whereClause);
+    const [{ totalContacts }] = await db.select({ totalContacts: count() }).from(contactsTable).where(and(whereClause, isNull(contactsTable.duplicateOfId)));
     const [{ totalLeads }] = await db.select({ totalLeads: count() }).from(leadsTable).where(leadWhere);
     const [{ totalEvents }] = await db.select({ totalEvents: count() }).from(eventsTable).where(eventWhere);
     const [{ teamCount }] = await db.select({ teamCount: count() }).from(usersTable).where(userWhere);
 
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const [{ newContactsToday }] = await db.select({ newContactsToday: count() }).from(contactsTable).where(and(whereClause, sql`${contactsTable.createdAt} >= ${today}`));
+    const [{ newContactsToday }] = await db.select({ newContactsToday: count() }).from(contactsTable).where(and(whereClause, isNull(contactsTable.duplicateOfId), sql`${contactsTable.createdAt} >= ${today}`));
 
     const wonLeads = await db.select({ count: count() }).from(leadsTable).where(and(leadWhere, eq(leadsTable.stage, "won")));
     const conversionRate = totalLeads > 0 ? Math.round((wonLeads[0].count / totalLeads) * 100) : 0;
@@ -123,12 +123,12 @@ router.get("/reports/lead-intelligence", async (req: AuthRequest, res) => {
       [{ unscoredCount }],
       [avgRow],
     ] = await Promise.all([
-      db.select({ hot: count() }).from(contactsTable).where(and(contactScope, eq(contactsTable.leadTemperature, "hot"))),
-      db.select({ warm: count() }).from(contactsTable).where(and(contactScope, eq(contactsTable.leadTemperature, "warm"))),
-      db.select({ cold: count() }).from(contactsTable).where(and(contactScope, eq(contactsTable.leadTemperature, "cold"))),
-      db.select({ scoredCount: count() }).from(contactsTable).where(and(contactScope, isNotNull(contactsTable.leadScore))),
-      db.select({ unscoredCount: count() }).from(contactsTable).where(and(contactScope, sql`${contactsTable.leadScore} IS NULL`)),
-      db.select({ avg: sql<string | null>`AVG(${contactsTable.leadScore})` }).from(contactsTable).where(and(contactScope, isNotNull(contactsTable.leadScore))),
+      db.select({ hot: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.leadTemperature, "hot"))),
+      db.select({ warm: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.leadTemperature, "warm"))),
+      db.select({ cold: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.leadTemperature, "cold"))),
+      db.select({ scoredCount: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), isNotNull(contactsTable.leadScore))),
+      db.select({ unscoredCount: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), sql`${contactsTable.leadScore} IS NULL`)),
+      db.select({ avg: sql<string | null>`AVG(${contactsTable.leadScore})` }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), isNotNull(contactsTable.leadScore))),
     ]);
 
     const hotLeads = await db
@@ -143,13 +143,14 @@ router.get("/reports/lead-intelligence", async (req: AuthRequest, res) => {
         aiReasoning: contactsTable.aiReasoning,
       })
       .from(contactsTable)
-      .where(and(contactScope, isNotNull(contactsTable.leadScore), sql`${contactsTable.status} NOT IN ('won', 'lost')`))
+      .where(and(contactScope, isNull(contactsTable.duplicateOfId), isNotNull(contactsTable.leadScore), sql`${contactsTable.status} NOT IN ('won', 'lost')`))
       .orderBy(desc(contactsTable.leadScore))
       .limit(6);
 
     const todayDateStr = new Date().toISOString().slice(0, 10);
     const followUpWhere = and(
       contactScope,
+      isNull(contactsTable.duplicateOfId),
       isNotNull(contactsTable.followUpDate),
       lte(contactsTable.followUpDate, todayDateStr),
       sql`${contactsTable.status} NOT IN ('won', 'lost')`,
@@ -215,18 +216,19 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
       db
         .select({ todayLeads: count() })
         .from(contactsTable)
-        .where(and(contactScope, gte(contactsTable.createdAt, startOfToday))),
-      db.select({ totalContacts: count() }).from(contactsTable).where(contactScope),
+        .where(and(contactScope, isNull(contactsTable.duplicateOfId), gte(contactsTable.createdAt, startOfToday))),
+      db.select({ totalContacts: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId))),
       db
         .select({ hotLeads: count() })
         .from(contactsTable)
-        .where(and(contactScope, inArray(contactsTable.status, ["qualified", "interested"]))),
+        .where(and(contactScope, isNull(contactsTable.duplicateOfId), inArray(contactsTable.status, ["qualified", "interested"]))),
       db
         .select({ followUpsDue: count() })
         .from(contactsTable)
         .where(
           and(
             contactScope,
+            isNull(contactsTable.duplicateOfId),
             isNotNull(contactsTable.followUpDate),
             lte(contactsTable.followUpDate, todayDateStr),
             sql`${contactsTable.status} NOT IN ('won', 'lost')`,

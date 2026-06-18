@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FONT } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { formatGregorian } from "@/lib/date";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTHS = [
@@ -40,7 +41,7 @@ function dateToStr(d: Date): string {
 function formatDisplay(dateStr?: string | null, timeStr?: string | null): string {
   const d = parseLocalDate(dateStr);
   if (!d) return "";
-  const datePart = d.toLocaleDateString(undefined, {
+  const datePart = formatGregorian(d, {
     weekday: "short",
     month: "short",
     day: "numeric",

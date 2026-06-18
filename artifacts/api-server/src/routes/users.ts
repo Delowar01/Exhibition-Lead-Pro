@@ -86,6 +86,26 @@ router.post("/users", requirePermission("team", "create"), async (req: AuthReque
   }
 });
 
+// PATCH /users/me — authenticated user updates their OWN profile (avatar, name).
+// Registered before /users/:id so the static "me" path is not swallowed by :id.
+router.patch("/users/me", async (req: AuthRequest, res) => {
+  try {
+    const id = req.user!.id;
+    const { name, avatarUrl } = req.body as { name?: string; avatarUrl?: string | null };
+    const patch: { name?: string; avatarUrl?: string | null } = {};
+    if (typeof name === "string" && name.trim().length > 0) patch.name = name.trim();
+    if (avatarUrl === null || typeof avatarUrl === "string") patch.avatarUrl = avatarUrl;
+    if (Object.keys(patch).length === 0) { res.status(400).json({ error: "Nothing to update" }); return; }
+    const [user] = await db.update(usersTable).set(patch).where(eq(usersTable.id, id)).returning();
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    const company = user.companyId ? await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, user.companyId)).then(r => r[0]) : null;
+    res.json(formatUser(user, company?.name));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /users/:id
 router.get("/users/:id", async (req: AuthRequest, res) => {
   try {

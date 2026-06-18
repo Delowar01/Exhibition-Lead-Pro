@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, contactsTable, leadsTable } from "@workspace/db";
-import { eq, ilike, and, count, inArray } from "drizzle-orm";
+import { eq, ilike, and, count, inArray, isNull } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 
@@ -11,7 +11,7 @@ router.use("/events", blockReadOnlyMutations);
 router.use("/events", auditMutations("events"));
 
 async function enrichEvent(e: typeof eventsTable.$inferSelect) {
-  const [contactCount] = await db.select({ count: count() }).from(contactsTable).where(eq(contactsTable.eventId, e.id));
+  const [contactCount] = await db.select({ count: count() }).from(contactsTable).where(and(eq(contactsTable.eventId, e.id), isNull(contactsTable.duplicateOfId)));
   const [leadCount] = await db.select({ count: count() }).from(leadsTable).where(eq(leadsTable.eventId, e.id));
   return { ...e, contactCount: contactCount.count, leadCount: leadCount.count };
 }
@@ -104,7 +104,7 @@ router.get("/events/:id/stats", async (req: AuthRequest, res) => {
     const id = parseInt(String(req.params.id));
     const [evt] = await db.select({ companyId: eventsTable.companyId }).from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
     if (!evt || !canAccessCompany(req.user, evt.companyId)) { res.status(404).json({ error: "Event not found" }); return; }
-    const [contactCount] = await db.select({ count: count() }).from(contactsTable).where(eq(contactsTable.eventId, id));
+    const [contactCount] = await db.select({ count: count() }).from(contactsTable).where(and(eq(contactsTable.eventId, id), isNull(contactsTable.duplicateOfId)));
     const [leadCount] = await db.select({ count: count() }).from(leadsTable).where(eq(leadsTable.eventId, id));
     const wonLeads = await db.select({ count: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, id), eq(leadsTable.stage, "won")));
     const byStage = await db.select({ stage: leadsTable.stage, count: count() }).from(leadsTable).where(eq(leadsTable.eventId, id)).groupBy(leadsTable.stage);

@@ -108,6 +108,7 @@ function RootLayoutNav() {
       <Stack.Screen name="leads" options={{ headerShown: false }} />
       <Stack.Screen name="events" options={{ headerShown: false }} />
       <Stack.Screen name="meetings" options={{ headerShown: false }} />
+      <Stack.Screen name="tasks" options={{ headerShown: false }} />
       <Stack.Screen name="duplicates" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="sync" options={{ headerShown: false }} />

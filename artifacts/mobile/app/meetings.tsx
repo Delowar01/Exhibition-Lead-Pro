@@ -35,6 +35,7 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { formatGregorian } from "@/lib/date";
 
 type Tab = "upcoming" | "completed" | "cancelled";
 
@@ -51,7 +52,7 @@ function parseLocal(s: string): Date {
 
 function formatDate(s?: string | null, time?: string | null): string {
   if (!s) return "No date";
-  const base = parseLocal(s).toLocaleDateString(undefined, {
+  const base = formatGregorian(parseLocal(s), {
     weekday: "short",
     month: "short",
     day: "numeric",

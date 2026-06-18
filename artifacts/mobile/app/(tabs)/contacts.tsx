@@ -158,6 +158,7 @@ export default function ContactsScreen() {
     label: string;
     value: number;
     color: string;
+    icon: keyof typeof Feather.glyphMap;
     active: boolean;
   }[] = [
     {
@@ -165,6 +166,7 @@ export default function ContactsScreen() {
       label: "Total",
       value: counts.total,
       color: colors.primary,
+      icon: "users",
       active: !filters.status && !filters.temperature,
     },
     {
@@ -172,6 +174,7 @@ export default function ContactsScreen() {
       label: "New",
       value: counts.new,
       color: CONTACT_STATUS_COLORS.new,
+      icon: "user-plus",
       active: filters.status === "new",
     },
     {
@@ -179,6 +182,7 @@ export default function ContactsScreen() {
       label: "Contacted",
       value: counts.contacted,
       color: CONTACT_STATUS_COLORS.contacted,
+      icon: "message-circle",
       active: filters.status === "contacted",
     },
     {
@@ -186,6 +190,7 @@ export default function ContactsScreen() {
       label: "Hot",
       value: counts.hot,
       color: LEAD_TEMPERATURE_COLORS.hot,
+      icon: "trending-up",
       active: filters.temperature === "hot",
     },
   ];
@@ -261,6 +266,12 @@ export default function ContactsScreen() {
                 },
               ]}
             >
+              <Feather
+                name={w.icon}
+                size={16}
+                color={w.active ? "#FFFFFF" : w.color}
+                style={{ marginBottom: 4 }}
+              />
               <Text
                 style={[
                   styles.widgetValue,
