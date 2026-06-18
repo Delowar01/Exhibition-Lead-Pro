@@ -124,13 +124,7 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-    // @expo/vector-icons renders Feather icons with fontFamily "feather"
-    // (lowercase) on every platform. Its own `...Feather.font` points at an asset
-    // buried in this monorepo's pnpm-symlinked node_modules, which Metro can fail
-    // to bundle on Android (icons render as tofu/boxes while iOS tolerates it via
-    // Expo Go's preloaded copy). Loading the byte-identical local asset under the
-    // exact "feather" family guarantees the icon font is always registered.
-    feather: require("../assets/fonts/Feather.ttf"),
+    ...Feather.font,
   });
 
   useEffect(() => {

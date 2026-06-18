@@ -38,7 +38,7 @@
             "./assets/fonts/Inter_500Medium.ttf",
             "./assets/fonts/Inter_600SemiBold.ttf",
             "./assets/fonts/Inter_700Bold.ttf",
-            "./assets/fonts/Feather.ttf"
+            "./assets/fonts/feather.ttf"
           ]
         }
       ],

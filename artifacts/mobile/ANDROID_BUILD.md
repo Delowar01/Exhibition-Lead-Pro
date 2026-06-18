@@ -19,24 +19,32 @@ optimized). It is the deliverable for the "Critical Android Build" ticket.
 - The app already uses a **single icon library** everywhere: `Feather` from
   `@expo/vector-icons` (verified across every screen/component — no Ionicons,
   MaterialIcons, FontAwesome, etc. are imported).
-- The Feather font is loaded **two ways**, both correct:
+- The Feather font is loaded **two ways**:
   1. At runtime via `useFonts({ ...Feather.font })` in `app/_layout.tsx`
-     (splash is held until fonts resolve).
+     (splash is held until fonts resolve). Serves web, iOS, and Expo Go.
   2. Embedded **natively into the binary** via the `expo-font` config plugin in
-     `app.json` (`./assets/fonts/Feather.ttf`). That bundled file is
+     `app.json` (`./assets/fonts/feather.ttf`). That bundled file is
      **byte-identical (55,596 bytes)** to the genuine
      `@expo/vector-icons` Feather font, so it is the correct glyph map.
 
-**Root cause:** The icons fail **only in Expo Go**. The `expo-font` config-plugin
-embed is applied during *prebuild* and only exists in a real dev/production
-build — it is **never present in Expo Go**. On Android, Expo Go (SDK 53/54) does
-not reliably register vector-icon fonts, so glyphs fall back to tofu boxes. iOS
-Expo Go happens to tolerate the runtime load, which is why iOS looked fine.
+**Root cause (Android-only tofu/empty icons):** A **filename case mismatch** in
+the native embed. The `expo-font` config plugin copies string-path fonts into
+`app/src/main/assets/fonts/` with their **original filename preserved**, and
+React Native on Android resolves `assets/fonts/` fonts **by filename,
+case-sensitively**. The file was named `Feather.ttf`, so Android registered the
+family as `Feather` — but `@expo/vector-icons` renders Feather glyphs with
+`fontFamily: "feather"` (**lowercase**, confirmed from the library source). On
+Android `feather` ≠ `Feather`, so the glyphs fell back to tofu/empty boxes. iOS
+resolves fonts by their internal PostScript name and web uses CSS `@font-face`,
+so both rendered correctly — exactly the platform split that was observed. (The
+Inter fonts were unaffected because their embed filenames, e.g.
+`Inter_400Regular.ttf`, already match the family names the JS requests.)
 
-**Fix:** No icon code change is required — the configuration is already correct
-for a native build. **Building the APK (section 3) embeds `Feather.ttf` into the
-APK**, so every icon renders on Android 12, 13, and 14. This is the root-cause
-fix (native embed), not a per-icon replacement.
+**Fix:** The embedded font file was renamed to lowercase **`feather.ttf`** (and
+the `app.json` `expo-font` entry updated to match), so Android's case-sensitive
+lookup now resolves the `feather` family. This is a **native** change — it only
+takes effect in a freshly **rebuilt** dev/production build (section 3), NOT via a
+JS fast-refresh into an already-installed build.
 
 ---
 
@@ -75,10 +83,11 @@ requires an EAS `projectId` — see section 5.
 |---|---|
 | `lib/push.ts` | Lazily `require` expo-notifications only outside Expo Go; export shared `Notifications` (nullable) + `isExpoGo`; gate handler/registration on it. |
 | `components/NotificationsManager.tsx` | Use the shared `Notifications` handle (no direct import); skip listeners when it is null (web / Expo Go). |
-| `app.json` | Added `"jsEngine": "hermes"`; added `expo-location` and `expo-image-picker` config plugins (GPS + image-upload permissions for the native build, incl. Android 13+ media access). |
+| `app.json` | Added `"jsEngine": "hermes"`; added `expo-location` and `expo-image-picker` config plugins (GPS + image-upload permissions for the native build, incl. Android 13+ media access). Renamed the `expo-font` Feather entry to the lowercase `./assets/fonts/feather.ttf` so Android's case-sensitive `assets/fonts/` lookup resolves the `feather` family. |
+| `assets/fonts/Feather.ttf` → `assets/fonts/feather.ttf` | Renamed the embedded icon font file to lowercase (byte-identical, md5 `ca4b48e0…`) — fixes the Android-only tofu/empty Feather icons. |
 | `ANDROID_BUILD.md` | This document. |
 
-No backend/web/iOS behavior changed. No icon files were modified (the embedded font is already correct).
+No backend/web/iOS behavior changed. The Android-only icon fix (lowercase font filename) is a **native** change and requires a fresh dev/production build to take effect — a JS fast-refresh into an already-installed build will NOT apply it.
 
 ---
 
