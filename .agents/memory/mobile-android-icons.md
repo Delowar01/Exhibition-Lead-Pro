@@ -3,50 +3,71 @@ name: Mobile Android icon "tofu" — Feather icon font not registering
 description: Root cause + fix for @expo/vector-icons Feather icons showing as boxes on Android (iOS/web fine) in the Card Scanner Pro mobile app.
 ---
 
-# Android-only Feather icons render as tofu/empty — real root cause
+# Android Feather icons render as tofu/empty — real root cause & fix
 
 Symptom: every `@expo/vector-icons` Feather icon shows as a box/tofu (or empty) on
-**Android only**; iOS and the Expo **web** build render icons correctly, and Inter
-text always renders. The platform split (web+iOS fine, Android broken) is the key tell.
+**Android** (both Expo Go and the renamed-font dev build); iOS and the Expo **web**
+build render icons correctly, and Inter text always renders. The platform split
+(web+iOS fine, Android broken) is the key tell.
 
-**Root cause — native-embed filename CASE MISMATCH.** `@expo/vector-icons` renders
-Feather glyphs with `fontFamily: "feather"` (**lowercase** — from its source:
-`createIconSet(glyphMap, 'feather', font)`). The `expo-font` config plugin embeds
-string-path fonts by copying them into `app/src/main/assets/fonts/` with their
-**original filename preserved** (the `assetFontPaths` copy in `withFontsAndroid.js`
-uses an identity filename processor — only XML/object fonts get name-normalized).
-React Native on Android resolves `assets/fonts/` fonts **by filename,
-case-sensitively**. The file was `Feather.ttf` → Android registered family
-`Feather` → `feather` ≠ `Feather` → fallback → tofu. iOS resolves by internal
-PostScript name and web uses CSS `@font-face`, so neither hit the mismatch.
-Inter was fine because its embed filenames (`Inter_400Regular.ttf`) already match
-the family names the JS requests.
+## Root cause (two compounding Android-specific factors)
 
-**Fix:** rename the embedded font to lowercase **`assets/fonts/feather.ttf`** and
-update the `app.json` `expo-font` entry to match. Android's lookup then resolves
-`feather`. Keep `...Feather.font` in the `useFonts` batch — it serves web, iOS,
-and Expo Go at runtime and is harmless on Android.
+`@expo/vector-icons` defines Feather as `createIconSet(glyphMap, 'feather', font)`
+— it registers its font under the family **`feather`** and loads that font **at
+runtime**. On Android this breaks two ways that iOS/web do not:
 
-**Why two earlier theories were WRONG (do not repeat):**
-- "It's just Expo Go / rebuild the APK, no code change needed" — false; web+iOS work
-  via different mechanisms, the embed itself was registering the wrong family name.
-- "Metro fails to bundle the deeply pnpm-symlinked package asset, so load it from a
-  local `require(...)`" — that change (`feather: require("../assets/fonts/Feather.ttf")`)
-  REGRESSED everything: the whole `useFonts` batch failed at runtime so Inter ALSO
-  fell back to a system font and icons went fully empty. A single failing entry kills
-  the entire `useFonts` batch. Reverted.
+1. **Family-name collision in Expo Go.** Expo Go ships its OWN baked-in copy of
+   `@expo/vector-icons`, which also registers the family `feather`. The app's
+   runtime registration of the same name collides/skews with it, so glyphs fall
+   back to tofu. iOS matches font families case-insensitively and tolerates this;
+   Android does not.
+2. **No re-layout on late font load.** Android does NOT re-render/re-measure Text
+   when a font finishes loading AFTER the Text has already mounted. iOS does. So if
+   the icon font is loaded in a non-gating effect (app renders first, font arrives
+   later), Android keeps showing tofu forever.
 
-**How to apply / verify:** This is a **native** change — it only takes effect in a
-freshly **rebuilt** dev/production build (EAS `preview` APK), NOT via a JS
-fast-refresh into an already-installed build. That reload-vs-rebuild gap is why the
-bug kept appearing "still broken" after edits. Android device/APK rendering cannot
-be verified inside Replit (no SDK/emulator); only the user can confirm on-device.
-The Expo **web** build (served by Metro, screenshot-able in Replit) is a useful
-proxy for "do icons/fonts load at all" but does NOT reproduce Android-native
-font-resolution bugs.
+## Fix (the one that actually works — JS only, works in Expo Go too)
 
-**General lesson:** when embedding a custom/vendored icon font via the `expo-font`
-plugin for Android, the embedded **filename (lowercased) must equal the
-`fontFamily` string the component requests** (RN Android assets/fonts lookup is
-filename- and case-based). Check the icon library's `createIconSet(..., 'name', ...)`
-for the exact (usually lowercase) family name.
+Define a **custom-named** Feather icon set and load it **before render**:
+
+- `components/icons.ts`: `export const Feather = createIconSet(ExpoFeather.glyphMap,
+  "cspfeather", require("../assets/fonts/feather.ttf"))`. A unique family name
+  (`cspfeather`) cannot collide with Expo Go's baked-in `feather`. Reuses the
+  library's own glyph map + the app's bundled font file (byte-identical copy).
+- All ~31 screens/components import `{ Feather }` from `@/components/icons` instead
+  of `@expo/vector-icons`. The component API is identical.
+- `app/_layout.tsx`: put `...Feather.font` (i.e. `{ cspfeather: <asset> }`) in the
+  **gating** `useFonts({...Inter, ...Feather.font})` batch so no icon renders until
+  the font is ready (fixes the Android late-load case). `fontError` still lets the
+  app through (degraded icons) rather than hanging on splash.
+
+This is a pure-JS fix — it works on web, iOS, Android dev builds, AND Android Expo
+Go (no rebuild required, unlike a native-embed change).
+
+## Theories that were WRONG (do not repeat)
+
+- "Just rebuild the APK / it's only Expo Go, no code change needed" — false. The
+  problem reproduces in any Android runtime; the family name + late-load are the
+  cause, not the build channel.
+- "Native-embed filename case mismatch — rename `Feather.ttf`→`feather.ttf` in the
+  `expo-font` plugin." This was a real Android case-sensitivity detail but did NOT
+  fix it: icons use a runtime-registered family, and the embed registers an UNUSED
+  `feather` family. The rename is harmless but irrelevant; the file itself is still
+  needed because `components/icons.ts` `require`s it.
+- "Load Feather in a separate crash-proof `Font.loadAsync` effect (non-gating)."
+  That regressed Android specifically — non-gating load + Android's no-re-layout
+  rule = permanent tofu.
+
+## Verify
+
+The Expo **web** build (Metro, screenshot-able in Replit) confirms the wrapper /
+glyph map / font asset are wired correctly, but does NOT reproduce Android-native
+font resolution. Android device/Expo-Go rendering cannot be verified inside Replit
+(no SDK/emulator) — only the user can confirm on-device.
+
+## General lesson
+
+For a vendored icon font that misbehaves on Android (tofu in Expo Go, or icons
+that never appear), prefer a **custom-named `createIconSet` + gating `useFonts`**
+over fighting the native embed: it removes both the Expo-Go family collision and
+the Android late-load race, and needs no native rebuild.

@@ -1,2 +1,2 @@
 - [Orval codegen gotchas](orval-codegen-gotchas.md) — path-param/query-name collisions break codegen; api-server dev server needs restart to pick up route changes before smoke tests.
-- [Mobile Android icon tofu](mobile-android-icons.md) — Android embeds icon fonts by case-sensitive filename; embedded ttf name must match the lowercase fontFamily the component requests. Native fix → needs APK rebuild, not JS reload.
+- [Mobile Android icon tofu](mobile-android-icons.md) — Feather icons box-out on Android/Expo Go from a `feather` family collision + no re-layout on late font load; fix = custom-named `createIconSet` + preload it in the gating `useFonts`.

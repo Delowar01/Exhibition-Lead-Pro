@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@/components/icons";
 import {
   CameraView,
   useCameraPermissions,

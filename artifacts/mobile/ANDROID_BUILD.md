@@ -16,35 +16,37 @@ optimized). It is the deliverable for the "Critical Android Build" ticket.
 
 **Diagnosis (not a hardcode):**
 
-- The app already uses a **single icon library** everywhere: `Feather` from
+- The app uses a **single icon library** everywhere: Feather from
   `@expo/vector-icons` (verified across every screen/component — no Ionicons,
   MaterialIcons, FontAwesome, etc. are imported).
-- The Feather font is loaded **two ways**:
-  1. At runtime via `useFonts({ ...Feather.font })` in `app/_layout.tsx`
-     (splash is held until fonts resolve). Serves web, iOS, and Expo Go.
-  2. Embedded **natively into the binary** via the `expo-font` config plugin in
-     `app.json` (`./assets/fonts/feather.ttf`). That bundled file is
-     **byte-identical (55,596 bytes)** to the genuine
-     `@expo/vector-icons` Feather font, so it is the correct glyph map.
+- `@expo/vector-icons` defines Feather as `createIconSet(glyphMap, 'feather', font)`
+  — it registers its font under the family **`feather`** and loads it at runtime.
 
-**Root cause (Android-only tofu/empty icons):** A **filename case mismatch** in
-the native embed. The `expo-font` config plugin copies string-path fonts into
-`app/src/main/assets/fonts/` with their **original filename preserved**, and
-React Native on Android resolves `assets/fonts/` fonts **by filename,
-case-sensitively**. The file was named `Feather.ttf`, so Android registered the
-family as `Feather` — but `@expo/vector-icons` renders Feather glyphs with
-`fontFamily: "feather"` (**lowercase**, confirmed from the library source). On
-Android `feather` ≠ `Feather`, so the glyphs fell back to tofu/empty boxes. iOS
-resolves fonts by their internal PostScript name and web uses CSS `@font-face`,
-so both rendered correctly — exactly the platform split that was observed. (The
-Inter fonts were unaffected because their embed filenames, e.g.
-`Inter_400Regular.ttf`, already match the family names the JS requests.)
+**Root cause (Android tofu/empty icons — two compounding factors):**
 
-**Fix:** The embedded font file was renamed to lowercase **`feather.ttf`** (and
-the `app.json` `expo-font` entry updated to match), so Android's case-sensitive
-lookup now resolves the `feather` family. This is a **native** change — it only
-takes effect in a freshly **rebuilt** dev/production build (section 3), NOT via a
-JS fast-refresh into an already-installed build.
+1. **Family-name collision in Expo Go.** Expo Go ships its own baked-in copy of
+   `@expo/vector-icons`, which also registers the `feather` family. The app's
+   runtime registration of the same name collides/skews with it on Android (which
+   matches families case-sensitively); iOS tolerates it, so iOS + web render fine.
+2. **No re-layout on late font load.** Android does NOT re-render Text when a font
+   loads *after* the Text has mounted. iOS does. So loading the icon font in a
+   non-gating effect leaves Android showing tofu permanently.
+
+**Fix (pure JS — works in Expo Go too, no native rebuild required):**
+
+- `components/icons.ts` exports a **custom-named** Feather set:
+  `createIconSet(ExpoFeather.glyphMap, "cspfeather", require("../assets/fonts/feather.ttf"))`.
+  A unique family (`cspfeather`) cannot collide with Expo Go's baked-in `feather`;
+  it reuses the library glyph map + the app's bundled (byte-identical) font file.
+- Every screen/component imports `{ Feather }` from `@/components/icons` instead of
+  `@expo/vector-icons` (identical API).
+- `app/_layout.tsx` loads `...Feather.font` (`{ cspfeather: <asset> }`) inside the
+  **gating** `useFonts` batch, so no icon renders until the font is ready —
+  fixing the Android late-load case.
+
+> The old `expo-font` `feather.ttf` embed in `app.json` now registers an **unused**
+> `feather` family; it is harmless and left in place. The font **file** is still
+> required because `components/icons.ts` `require`s it.
 
 ---
 
@@ -83,11 +85,14 @@ requires an EAS `projectId` — see section 5.
 |---|---|
 | `lib/push.ts` | Lazily `require` expo-notifications only outside Expo Go; export shared `Notifications` (nullable) + `isExpoGo`; gate handler/registration on it. |
 | `components/NotificationsManager.tsx` | Use the shared `Notifications` handle (no direct import); skip listeners when it is null (web / Expo Go). |
-| `app.json` | Added `"jsEngine": "hermes"`; added `expo-location` and `expo-image-picker` config plugins (GPS + image-upload permissions for the native build, incl. Android 13+ media access). Renamed the `expo-font` Feather entry to the lowercase `./assets/fonts/feather.ttf` so Android's case-sensitive `assets/fonts/` lookup resolves the `feather` family. |
-| `assets/fonts/Feather.ttf` → `assets/fonts/feather.ttf` | Renamed the embedded icon font file to lowercase (byte-identical, md5 `ca4b48e0…`) — fixes the Android-only tofu/empty Feather icons. |
+| `components/icons.ts` | **New.** Custom-named Feather icon set (`cspfeather`) bound to the app's own bundled font + the library glyph map — fixes the Android/Expo-Go tofu icons. |
+| every screen/component (~31 files) | Import `{ Feather }` from `@/components/icons` instead of `@expo/vector-icons`. |
+| `app/_layout.tsx` | Load `...Feather.font` in the gating `useFonts` batch (icons ready before render); removed the old non-gating `Font.loadAsync` effect. |
+| `app.json` | Added `"jsEngine": "hermes"`; added `expo-location` and `expo-image-picker` config plugins (GPS + image-upload permissions for the native build, incl. Android 13+ media access). |
+| `assets/fonts/feather.ttf` | Bundled Feather font file (byte-identical to the genuine `@expo/vector-icons` font), `require`d by `components/icons.ts`. |
 | `ANDROID_BUILD.md` | This document. |
 
-No backend/web/iOS behavior changed. The Android-only icon fix (lowercase font filename) is a **native** change and requires a fresh dev/production build to take effect — a JS fast-refresh into an already-installed build will NOT apply it.
+No backend/web/iOS behavior changed. The icon fix is **pure JS** and applies on web, iOS, Android dev builds, and Android Expo Go without a native rebuild.
 
 ---
 

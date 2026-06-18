@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@/components/icons";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";

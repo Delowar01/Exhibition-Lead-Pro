@@ -5,12 +5,11 @@ import {
   Inter_700Bold,
   useFonts,
 } from "@expo-google-fonts/inter";
-import { Feather } from "@expo/vector-icons";
+import { Feather } from "@/components/icons";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import * as Font from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { Platform, Pressable } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -120,37 +119,20 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  // Load the Inter text fonts in their own batch. These resolve reliably on
-  // every platform and the splash screen waits on them.
+  // Load the Inter text fonts together with the Feather icon font in one gating
+  // batch. `Feather.font` is `{ cspfeather: <asset> }` from our custom-named
+  // icon set (see `components/icons.ts`). Gating the render on the icon font is
+  // what makes icons appear on Android: that platform does not re-layout text
+  // when a font loads AFTER the text has mounted, so the font must be ready
+  // before any icon renders. The unique family name also avoids the "feather"
+  // collision with Expo Go's baked-in copy of @expo/vector-icons.
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    ...Feather.font,
   });
-
-  // Load the Feather icon font SEPARATELY and crash-proof. @expo/vector-icons
-  // renders icons with fontFamily "feather" (lowercase). Loading it in the same
-  // useFonts batch as Inter is dangerous: a single failing entry fails the whole
-  // batch, which previously made Inter fall back too. Here a failure is caught so
-  // text stays correct and icons simply degrade. The byte-identical LOCAL asset
-  // is used (more reliably bundled by Metro than the deeply pnpm-symlinked
-  // package asset behind `...Feather.font`).
-  const [iconsReady, setIconsReady] = useState(false);
-  useEffect(() => {
-    let mounted = true;
-    Font.loadAsync({ feather: require("../assets/fonts/feather.ttf") })
-      .catch(() => {
-        // Icon font failed to register at runtime; the app still renders with
-        // text fonts intact. Native builds also embed it via the expo-font plugin.
-      })
-      .finally(() => {
-        if (mounted) setIconsReady(true);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
@@ -158,10 +140,8 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  // Gate render on the text fonts only — never block (or crash) the app on the
-  // icon font. `iconsReady` is referenced so the tree re-renders once the icon
-  // font finishes loading, swapping tofu/placeholder glyphs for real icons.
-  void iconsReady;
+  // `fontError` still lets the app through (degraded icons) rather than hanging
+  // on the splash screen if a font asset ever fails to load.
   if (!fontsLoaded && !fontError) return null;
 
   return (
