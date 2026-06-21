@@ -1,0 +1,460 @@
+# MULTI-LANGUAGE & GCC LOCALIZATION ENHANCEMENT
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Admin Panel changes in this iteration)
+
+Before implementing, review the existing localization, OCR, translation, and settings modules to ensure no regression occurs.
+
+---
+
+# 1. COMPLETE MULTI-LANGUAGE SUPPORT
+
+## Current Issue
+
+The application currently provides two language options:
+
+* English
+* Arabic
+
+However, only English is fully functional.
+
+Arabic is either incomplete or not applied consistently throughout the application.
+
+---
+
+## Required
+
+Implement full multilingual support across the entire application.
+
+### Default Language
+
+* English
+
+### Supported Languages
+
+* English
+* العربية (Saudi Arabic)
+
+The Arabic translation must use **Professional Saudi Arabic** suitable for business users in Saudi Arabia.
+
+Avoid literal machine translation or generic Modern Standard Arabic where Saudi business terminology is more appropriate.
+
+Examples include professional terminology commonly used in Saudi government and enterprise applications.
+
+---
+
+## Scope of Translation
+
+Every part of the application must support localization, including:
+
+* Login
+* Dashboard
+* Home
+* Capture
+* Contacts
+* Duplicate Management
+* Follow-Up
+* Meetings
+* Pipeline
+* Tasks
+* Workspace
+* Digital Business Card
+* Settings
+* Notifications
+* Reports
+* Event Management
+* Validation Messages
+* Error Messages
+* Success Messages
+* Confirmation Dialogs
+* Date Labels
+* Buttons
+* Menus
+* Tabs
+* Statuses
+* Filters
+* Search
+* Empty States
+
+Nothing should remain untranslated.
+
+---
+
+## RTL Support
+
+When Arabic is selected:
+
+* Entire application switches to Right-to-Left (RTL).
+* Navigation should mirror correctly.
+* Icons that require direction should also mirror where appropriate.
+* Layout should remain premium and consistent.
+
+Switching languages should update immediately without requiring the user to log out.
+
+---
+
+# 2. INTELLIGENT OCR TRANSLATION
+
+## Objective
+
+The OCR engine must intelligently preserve Arabic and English while translating other languages appropriately.
+
+---
+
+## Rule 1 – Application Language = English
+
+When the application language is English:
+
+Translate all captured fields into English.
+
+Examples:
+
+Arabic Company Name
+
+↓
+
+English Company Name
+
+French
+
+↓
+
+English
+
+German
+
+↓
+
+English
+
+Chinese
+
+↓
+
+English
+
+Japanese
+
+↓
+
+English
+
+Business cards that already contain English should remain unchanged.
+
+---
+
+## Rule 2 – Application Language = Arabic
+
+When the application language is Arabic:
+
+* Preserve all Arabic text exactly as printed.
+* Preserve all English text exactly as printed.
+* Translate any other language into English.
+
+Do NOT translate English into Arabic.
+
+Do NOT translate Arabic into English.
+
+Examples:
+
+Arabic + English Card
+
+↓
+
+Keep both languages unchanged.
+
+Japanese Card
+
+↓
+
+Translate to English.
+
+Chinese Card
+
+↓
+
+Translate to English.
+
+French Card
+
+↓
+
+Translate to English.
+
+---
+
+## OCR Confidence
+
+Every extracted field should continue displaying its confidence score.
+
+Translation should never overwrite the original OCR result internally.
+
+Store:
+
+* Original OCR Value
+* Translated Display Value (when applicable)
+
+This ensures future multilingual support without data loss.
+
+---
+
+# 3. GCC COUNTRY LOCALIZATION
+
+## Objective
+
+Expand regional support by allowing users to select their default operating country.
+
+---
+
+## Default Country
+
+Default must always be:
+
+**Kingdom of Saudi Arabia (KSA)**
+
+---
+
+## Supported Countries
+
+Add the following countries to Settings:
+
+* 🇸🇦 Kingdom of Saudi Arabia (KSA)
+* 🇦🇪 United Arab Emirates (UAE)
+* 🇶🇦 Qatar (QAT)
+* 🇴🇲 Oman (OMN)
+* 🇰🇼 Kuwait (KWT)
+* 🇧🇭 Bahrain (BHR)
+* 🇪🇬 Egypt (EGY)
+* 🇲🇦 Morocco (MAR)
+
+The selected country becomes the application's localization profile.
+
+---
+
+# 4. COUNTRY-BASED EXAMPLES & DEFAULTS
+
+When a country is selected, all examples, placeholders, and validation hints throughout the application should automatically adapt to that country.
+
+Examples include:
+
+### Saudi Arabia (Default)
+
+Phone Example:
+
++966 5X XXX XXXX
+
+City Example:
+
+Riyadh
+
+Country:
+
+Saudi Arabia
+
+Address Example:
+
+King Fahd Road, Riyadh, Saudi Arabia
+
+---
+
+### United Arab Emirates
+
+Phone Example:
+
++971 5X XXX XXXX
+
+City:
+
+Dubai
+
+Country:
+
+United Arab Emirates
+
+Address Example:
+
+Sheikh Zayed Road, Dubai, UAE
+
+---
+
+### Qatar
+
+Phone Example:
+
++974 XXXX XXXX
+
+City:
+
+Doha
+
+Country:
+
+Qatar
+
+---
+
+### Oman
+
+Phone Example:
+
++968 XXXX XXXX
+
+City:
+
+Muscat
+
+Country:
+
+Oman
+
+---
+
+### Kuwait
+
+Phone Example:
+
++965 XXXX XXXX
+
+City:
+
+Kuwait City
+
+Country:
+
+Kuwait
+
+---
+
+### Bahrain
+
+Phone Example:
+
++973 XXXX XXXX
+
+City:
+
+Manama
+
+Country:
+
+Bahrain
+
+---
+
+### Egypt
+
+Phone Example:
+
++20 1X XXX XXXX
+
+City:
+
+Cairo
+
+Country:
+
+Egypt
+
+---
+
+### Morocco
+
+Phone Example:
+
++212 6XX XXX XXX
+
+City:
+
+Casablanca
+
+Country:
+
+Morocco
+
+---
+
+## Dynamic Updates
+
+Changing the country should automatically update:
+
+* Phone number placeholders
+* Address placeholders
+* City examples
+* Country defaults
+* Validation examples
+* Digital Business Card placeholders
+* Contact creation placeholders
+* Event creation examples
+* Manual Lead Entry examples
+
+Existing saved data must never be modified.
+
+Only default values and placeholders should change.
+
+---
+
+# 5. COUNTRY-AWARE VALIDATION
+
+Phone validation should automatically follow the selected country format.
+
+Examples:
+
+KSA
+
++966
+
+UAE
+
++971
+
+Qatar
+
++974
+
+etc.
+
+Validation must accept international numbers while providing country-specific guidance.
+
+---
+
+# 6. FUTURE-READY LOCALIZATION
+
+Design the localization engine so that additional languages can be added later without requiring code restructuring.
+
+Future languages may include:
+
+* French
+* Turkish
+* Urdu
+* Hindi
+* Malayalam
+* Bengali
+
+Use a scalable localization architecture with external translation resources rather than hard-coded strings.
+
+---
+
+# Acceptance Criteria
+
+The task will be considered complete only when:
+
+* English remains the default application language.
+* Arabic is fully implemented using professional Saudi Arabic terminology.
+* The application correctly switches between English and Arabic.
+* Arabic layout is fully RTL.
+* OCR translation behaves according to the specified language rules.
+* Original OCR data is preserved while translated values are displayed when required.
+* Users can select from the eight supported GCC/MENA countries.
+* Saudi Arabia is the default country for new users.
+* Phone number, address, city, and country placeholders update automatically based on the selected country.
+* Country-specific validation works correctly.
+* Existing data remains unchanged when language or country settings are modified.
+* The feature is tested on both Android and iPhone.
+* Screenshots and implementation evidence are provided before marking the task as complete.

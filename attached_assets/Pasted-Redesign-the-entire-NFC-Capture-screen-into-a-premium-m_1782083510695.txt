@@ -1,0 +1,116 @@
+Redesign the entire NFC Capture screen into a premium, modern experience while preserving all existing NFC functionality.
+
+Objective:
+Create a polished screen that feels comparable to Apple Wallet, Samsung Wallet, or a premium banking app.
+
+Design Requirements:
+
+1. Premium Visual Design
+
+* Dark modern background with subtle gradients using the application's brand colors.
+* Soft glassmorphism cards where appropriate.
+* Elegant spacing and typography.
+* Consistent with the rest of the application.
+
+2. Hero NFC Animation
+
+* Place a large animated NFC icon in the center.
+* Add animated concentric waves radiating outward every 1–2 seconds.
+* Include a subtle glowing effect.
+* Smooth pulse animation.
+* When scanning starts, animate the waves faster.
+* When a tag is detected, transition into a success animation.
+
+3. Card Illustration
+   Show a premium NFC business card illustration above the phone.
+
+Animate the card:
+
+* Floating
+* Gentle rotation
+* Soft shadow
+* Glow effect
+
+4. Phone Illustration
+   Display a modern phone illustration beneath the card.
+
+Animate the phone with a subtle breathing motion.
+
+When scanning:
+
+* Show an animated signal travelling between the card and phone.
+
+5. Instruction Section
+   Instead of plain text, display a polished instruction card:
+
+"Hold the NFC business card against the back of your phone."
+
+Include three illustrated tips:
+• Keep the card steady.
+• Hold for 1–2 seconds.
+• Remove once detected.
+
+6. Scanning States
+
+Idle:
+
+* "Ready to Scan"
+
+Scanning:
+
+* Animated loading ring
+* "Searching for NFC tag..."
+
+Detected:
+
+* Green success animation
+* Checkmark
+* Gentle vibration (where supported)
+* "Card detected successfully"
+
+Failed:
+
+* Friendly illustration
+* Retry button
+* Helpful troubleshooting tips
+
+7. Micro Animations
+
+* Fade transitions
+* Scale transitions
+* Pulse effects
+* Glow effects
+* Ripple animations
+* Smooth state changes
+* 60fps animations
+
+8. Premium Components
+   Use:
+
+* React Native Reanimated
+* Expo Linear Gradient
+* Expo Haptics
+* React Native SVG (if needed)
+
+Avoid heavy Lottie assets unless they provide clear value.
+
+9. Performance
+
+* Keep animations smooth.
+* Avoid unnecessary re-renders.
+* Ensure the screen performs well on mid-range Android devices.
+
+10. Preserve Functionality
+    Do not change any NFC logic.
+    Do not change navigation.
+    Do not modify the scanning flow.
+    Only redesign the user interface and animations.
+
+11. Optional
+    If a tag is detected:
+
+* Brief success glow
+* Success sound (optional)
+* Automatically transition to the next step after a short delay.
+
+Deliver a premium production-ready NFC Capture screen that feels like a flagship enterprise application.
