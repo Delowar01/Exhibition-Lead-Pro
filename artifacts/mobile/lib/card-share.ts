@@ -56,7 +56,9 @@ export async function shareCardAsJpeg(
   // Dynamic imports keep these heavy native modules out of the web/Expo-Go bundle.
   const { captureRef: captureViewRef } = await import("react-native-view-shot");
   const Sharing = await import("expo-sharing");
-  const FileSystem = await import("expo-file-system");
+  // expo-file-system@19 (SDK 54) made the class-based API the default export;
+  // the functional helpers (deleteAsync, etc.) now live under the /legacy entry.
+  const FileSystem = await import("expo-file-system/legacy");
 
   const isAvailable = await Sharing.isAvailableAsync();
   if (!isAvailable) {

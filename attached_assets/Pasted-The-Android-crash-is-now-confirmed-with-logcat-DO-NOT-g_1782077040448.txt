@@ -1,0 +1,90 @@
+The Android crash is now confirmed with logcat.
+
+DO NOT guess the cause anymore.
+
+The crash is:
+
+java.lang.NoSuchMethodError:
+No static method getDirectConverter(...)
+at expo.modules.filesystem.FileSystemModule.definition()
+
+This proves expo-file-system and expo-modules-core are compiled against different versions.
+
+Your task is to completely audit and repair every Expo native package version.
+
+Requirements:
+
+1. Check package.json
+2. Check package-lock.json
+3. Check expo version
+4. Check react-native version
+5. Check every Expo package:
+   - expo
+   - expo-modules-core
+   - expo-file-system
+   - expo-router
+   - expo-updates
+   - expo-constants
+   - expo-linking
+   - expo-dev-client
+   - expo-asset
+   - expo-font
+   - expo-splash-screen
+   - expo-secure-store
+   - expo-notifications
+   - expo-application
+   - expo-system-ui
+   - expo-keep-awake
+   - every package beginning with expo-
+
+6. Verify ALL versions match the installed Expo SDK.
+
+7. Run:
+
+npx expo install --check
+
+8. Fix every incompatible package using Expo's recommended versions.
+
+9. Delete:
+node_modules
+package-lock.json
+
+10. Perform a completely clean install.
+
+11. Ensure only ONE version of expo-modules-core exists.
+
+12. Search for duplicate Expo modules.
+
+13. Verify no package pulls a conflicting expo-modules-core.
+
+14. Run:
+
+npx expo doctor
+
+15. Run:
+
+npm ls expo-modules-core
+
+16. Run:
+
+npm ls expo-file-system
+
+17. Resolve every dependency conflict until both commands show only one compatible version.
+
+18. Do NOT upgrade Expo SDK unless absolutely required.
+
+19. Keep NFC functionality fully working.
+
+20. Keep Reanimated working.
+
+21. Keep New Architecture enabled if required by Reanimated.
+
+22. Do NOT remove features.
+
+23. Explain the exact root cause.
+
+24. Show every package version before and after.
+
+25. Do not stop until the dependency tree is internally consistent and Expo Doctor reports no native module version mismatches.
+
+The crash log proves this is a native Expo dependency mismatch, not an application logic issue.

@@ -52,7 +52,6 @@
       ],
       "expo-web-browser",
       "expo-file-system",
-      "expo-sharing",
       [
         "expo-camera",
         {
