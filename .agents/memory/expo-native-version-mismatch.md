@@ -45,6 +45,14 @@ that ships NO config plugin (`app.plugin.js`) makes `expo config` (and therefore
 `expo-sharing` has no config plugin — it must not be in the `plugins` array.
 Check with: `test -f $(readlink -f node_modules/<pkg>)/app.plugin.js`.
 
+**EAS build "Install dependencies" failure in pnpm monorepo:**
+When `eas.json` lives in a subdirectory (e.g. `artifacts/mobile/`) and
+`pnpm-lock.yaml` is at the workspace root, EAS can't detect pnpm and falls back
+to npm → instant failure (no `package-lock.json`). Two fixes required together:
+1. Add `"packageManager": "pnpm@X.Y.Z"` to the **workspace root** `package.json`.
+2. Add `"buildRootDir": "../.."` to every build profile in `eas.json` — tells
+   EAS to run the install step from the directory that holds `pnpm-lock.yaml`.
+
 **Verification without an Android device (Replit has no Android SDK/emulator/adb):**
 strongest offline proof is `npx expo export --platform android` (full Metro +
 Hermes compile of the shipped bundle) + `expo install --check` clean +
