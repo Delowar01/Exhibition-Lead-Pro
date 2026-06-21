@@ -1,5 +1,5 @@
 import { Feather } from "@/components/icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -78,8 +78,10 @@ export default function CardScreen() {
   const { user } = useAuth();
   const { card, isLoading, hasCard, pendingSync, saveCard } = useCard();
   const { isOnline } = useOffline();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const isWorkspace = mode === "edit";
 
-  const [editing, setEditing] = useState(!hasCard);
+  const [editing, setEditing] = useState(() => isWorkspace && !hasCard);
   const [values, setValues] = useState<FormValues>(toForm(card));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +164,37 @@ export default function CardScreen() {
     );
   }
 
+  // Home Dashboard entry (no mode=edit): if no card exists, show empty state
+  if (!isWorkspace && !hasCard) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: topPad }}>
+        <View style={[styles.header, { paddingHorizontal: 20 }]}>
+          {headerBack}
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>My Card</Text>
+        </View>
+        <View style={styles.emptyState}>
+          <View style={[styles.emptyIcon, { backgroundColor: colors.primary + "1A" }]}>
+            <Feather name="credit-card" size={32} color={colors.primary} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+            No digital card yet
+          </Text>
+          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
+            You haven&apos;t created your Digital Business Card yet. Set it up from the Workspace.
+          </Text>
+          <PrimaryButton
+            label="Go to Workspace"
+            icon="settings"
+            onPress={() =>
+              router.push({ pathname: "/card", params: { mode: "edit" } })
+            }
+            style={{ alignSelf: "stretch", marginTop: 8 }}
+          />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -214,6 +247,8 @@ export default function CardScreen() {
             account={{ name: user?.name, avatarUrl: user?.avatarUrl }}
             shareUrl={shareUrl}
             onShare={handleShare}
+            canEdit={isWorkspace}
+            onEdit={startEdit}
           />
         )}
       </KeyboardAwareScrollView>
@@ -321,11 +356,15 @@ function CardPreview({
   account,
   shareUrl,
   onShare,
+  canEdit,
+  onEdit,
 }: {
   card: BusinessCard | null;
   account: { name?: string | null; avatarUrl?: string | null };
   shareUrl: string | null;
   onShare: () => void;
+  canEdit?: boolean;
+  onEdit?: () => void;
 }) {
   const colors = useColors();
   const name = card?.fullName ?? account.name ?? "";
@@ -430,6 +469,18 @@ function CardPreview({
         onPress={onShare}
         style={{ marginTop: 18 }}
       />
+      {canEdit && onEdit ? (
+        <Pressable
+          onPress={onEdit}
+          style={({ pressed }) => [
+            styles.editBtn,
+            { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <Feather name="edit-2" size={16} color={colors.foreground} />
+          <Text style={[styles.editText, { color: colors.foreground }]}>Edit details</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -644,5 +695,31 @@ const styles = StyleSheet.create({
   editText: {
     fontSize: 15,
     fontFamily: FONT.semibold,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 36,
+    gap: 14,
+  },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontFamily: FONT.bold,
+    textAlign: "center",
+  },
+  emptySub: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    textAlign: "center",
+    lineHeight: 20,
   },
 });

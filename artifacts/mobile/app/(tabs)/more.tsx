@@ -122,7 +122,7 @@ export default function MoreScreen() {
       sub: "Share your contact details by QR",
       icon: "credit-card",
       color: colors.primary,
-      onPress: () => router.push("/card"),
+      onPress: () => router.push({ pathname: "/card", params: { mode: "edit" } }),
     },
     {
       key: "pipeline",

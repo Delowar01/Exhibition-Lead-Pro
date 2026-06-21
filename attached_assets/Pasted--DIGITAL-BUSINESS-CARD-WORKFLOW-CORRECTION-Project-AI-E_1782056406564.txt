@@ -1,0 +1,172 @@
+# DIGITAL BUSINESS CARD WORKFLOW CORRECTION
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Admin Panel changes)
+
+---
+
+# Current Issue
+
+The current Digital Business Card workflow is incorrect.
+
+The application has removed the ability to **Create** or **Edit** the Digital Business Card from the **Workspace**, and instead places editing functionality within the Dashboard flow.
+
+This is not the intended user experience.
+
+---
+
+# Required Workflow
+
+There must be a clear separation between **management** and **usage** of the Digital Business Card.
+
+## Workspace
+
+The **Workspace** is the only place where users can manage their Digital Business Card.
+
+From **Workspace → My Digital Business Card**, users must be able to:
+
+* Create a new Digital Business Card (if one does not exist)
+* Edit an existing Digital Business Card
+* Update profile information
+* Configure public/private field visibility
+* Enable or disable publishing
+* Save changes
+
+This is the **only location** where card management is allowed.
+
+---
+
+# Home Dashboard
+
+The Home Dashboard is **not** a management screen.
+
+Replace the current Digital Business Card preview with a simple action card:
+
+### Title
+
+**My Digital Business Card**
+
+### Subtitle
+
+**View and share your digital business card**
+
+When tapped:
+
+* Open the Digital Business Card page.
+
+The Home Dashboard must **not** contain:
+
+* Create button
+* Edit button
+* Form fields
+* Visibility settings
+* Publishing settings
+
+---
+
+# Digital Business Card Screen
+
+The Digital Business Card screen opened from the Dashboard is **View & Share only**.
+
+Users should be able to:
+
+* View their Digital Business Card
+* Share their Digital Business Card
+* View the QR Code
+* Share the QR Code
+
+Users must **not** be able to:
+
+* Create a card
+* Edit a card
+* Change visibility
+* Change publishing status
+* Modify any information
+
+Remove:
+
+* Edit icon
+* Edit button
+* Floating edit action
+* Any shortcut that opens the editor
+
+---
+
+# First-Time User Experience
+
+If the user has **never created** a Digital Business Card:
+
+When they tap **My Digital Business Card** from the Home Dashboard:
+
+Display a friendly empty-state message such as:
+
+> **You haven't created your Digital Business Card yet.**
+
+Include a single button:
+
+**Go to Workspace**
+
+This button should navigate directly to:
+
+**Workspace → My Digital Business Card**
+
+where the user can create their first card.
+
+Do **not** allow card creation from the Dashboard flow.
+
+---
+
+# Navigation Flow
+
+### Create/Edit
+
+Workspace
+
+→ My Digital Business Card
+
+→ Create/Edit
+
+→ Save
+
+---
+
+### View
+
+Home Dashboard
+
+→ My Digital Business Card
+
+→ View & Share
+
+---
+
+# Single Source of Truth
+
+There must be only **one** place in the application where the Digital Business Card can be created or edited:
+
+**Workspace → My Digital Business Card**
+
+This prevents duplicate workflows and keeps the application consistent.
+
+---
+
+# Acceptance Criteria
+
+The implementation will be considered complete only when:
+
+* Users can **Create** a Digital Business Card only from **Workspace**.
+* Users can **Edit** a Digital Business Card only from **Workspace**.
+* The Home Dashboard contains only the **My Digital Business Card** action button.
+* The Dashboard Digital Business Card screen supports **View** and **Share** only.
+* No Edit icon or Edit button appears on the Dashboard Digital Business Card screen.
+* If no Digital Business Card exists, the Dashboard directs the user to the Workspace instead of allowing creation there.
+* All existing sharing functionality continues to work correctly.
+* The workflow is consistent on Android and iPhone.
+* Screenshots of the Workspace, Home Dashboard, and View-only Digital Business Card screen are provided before marking the task complete.
