@@ -1,12 +1,11 @@
 import { Feather } from "@/components/icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -24,6 +23,7 @@ import { useCard } from "@/contexts/CardContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 import { buildVCard } from "@/lib/contact-parse";
+import { shareCardAsJpeg } from "@/lib/card-share";
 
 interface FormValues {
   fullName: string;
@@ -84,11 +84,12 @@ export default function CardScreen() {
   const [editing, setEditing] = useState(() => isWorkspace && !hasCard);
   const [values, setValues] = useState<FormValues>(toForm(card));
   const [saving, setSaving] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const topPad = insets.top + (Platform.OS === "web" ? 67 : 14);
+  const cardRef = useRef<View>(null);
 
-  const shareUrl = card?.publicUrl ?? null;
+  const topPad = insets.top + (Platform.OS === "web" ? 67 : 14);
 
   function update(key: keyof FormValues, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -161,22 +162,17 @@ export default function CardScreen() {
   }
 
   async function handleShare() {
-    if (!shareUrl) {
-      Alert.alert(
-        "Link not ready",
-        "Your shareable link will be available once your card syncs online.",
-      );
-      return;
-    }
-    const name = card?.fullName ?? "my";
+    setSharing(true);
     try {
-      await Share.share(
-        Platform.OS === "ios"
-          ? { url: shareUrl, message: `${name}'s digital business card` }
-          : { message: `${name}'s digital business card\n${shareUrl}` },
-      );
-    } catch {
-      /* user dismissed the share sheet */
+      await shareCardAsJpeg(cardRef);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Could not generate image — try again.";
+      Alert.alert("Share failed", msg);
+    } finally {
+      setSharing(false);
     }
   }
 
@@ -279,8 +275,9 @@ export default function CardScreen() {
           <CardPreview
             card={card}
             account={{ name: user?.name, avatarUrl: user?.avatarUrl }}
-            shareUrl={shareUrl}
+            cardRef={cardRef}
             onShare={handleShare}
+            sharing={sharing}
             canEdit={isWorkspace}
             onEdit={startEdit}
             onDelete={handleDelete}
@@ -389,16 +386,18 @@ const ORANGE_LIGHT = "#FB923C";
 function CardPreview({
   card,
   account,
-  shareUrl,
+  cardRef,
   onShare,
+  sharing,
   canEdit,
   onEdit,
   onDelete,
 }: {
   card: BusinessCard | null;
   account: { name?: string | null; avatarUrl?: string | null };
-  shareUrl: string | null;
+  cardRef: React.RefObject<View | null>;
   onShare: () => void;
+  sharing?: boolean;
   canEdit?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -446,7 +445,7 @@ function CardPreview({
 
   return (
     <View>
-      <View style={styles.cardShell}>
+      <View ref={cardRef} style={styles.cardShell} collapsable={false}>
         <View style={styles.band} />
         <View style={styles.cardHeader}>
           <View style={styles.avatarRing}>
@@ -501,8 +500,9 @@ function CardPreview({
       </View>
 
       <PrimaryButton
-        label="Share my card"
+        label={sharing ? "Generating image…" : "Share my card"}
         icon="share-2"
+        loading={sharing}
         onPress={onShare}
         style={{ marginTop: 18 }}
       />
