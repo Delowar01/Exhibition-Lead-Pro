@@ -68,6 +68,7 @@ Quick demo login buttons are available on the login page.
 - App footer branding reads "Powered by Elite Marcom".
 - Email actions on mobile must let the OS pick the mail app (no forced Gmail).
 - No fabricated/mocked data — derive insights from real API data, and prefer honest flows (e.g. forgot-password says "contact admin" rather than faking a reset API).
+- Native mobile features (NFC, background processing, contacts, notifications, location, etc.) must be validated on an Expo Development Build or native APK/TestFlight build — NOT Expo Go. Native module code must degrade gracefully on web/Expo Go. EAS build profiles live in `artifacts/mobile/eas.json` (`development` dev-client APK, `preview` internal APK, `production`).
 
 ## Gotchas
 

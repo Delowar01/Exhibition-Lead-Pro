@@ -1,3 +1,4 @@
 - [Orval codegen gotchas](orval-codegen-gotchas.md) — path-param/query-name collisions break codegen; api-server dev server needs restart to pick up route changes before smoke tests.
+- [Native builds & native-only features](native-builds.md) — NFC/contacts/notifications etc. must be tested via dev-client/EAS build, not Expo Go; guard native imports so web/Expo Go degrade gracefully.
 - [NFC/QR shared parser](nfc-qr-shared-parser.md) — parseQr in mobile lib/contact-parse.ts is the single source of truth for all text contact payloads (QR + NFC NDEF); extend it, don't fork per-surface.
 - [Mobile Android icon tofu](mobile-android-icons.md) — Feather icons box-out on Android/Expo Go because icon FONTS are unreliable there (family collision + no re-layout on late load); real fix = render icons as SVG (react-native-feather/react-native-svg), not a font.
