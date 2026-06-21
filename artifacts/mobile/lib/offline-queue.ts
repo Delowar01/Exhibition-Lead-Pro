@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import type { ContactInput } from "@workspace/api-client-react";
+import type { BusinessCardInput, ContactInput } from "@workspace/api-client-react";
 
 export const OFFLINE_QUEUE_KEY = "csp_offline_queue";
 
-export type QueueItemKind = "scan" | "contact";
+export type QueueItemKind = "scan" | "contact" | "card";
 export type QueueItemStatus = "pending" | "syncing" | "failed";
 
 /**
@@ -29,6 +29,8 @@ export interface QueueItem {
   lastError?: string;
   /** Present when kind === "contact". */
   payload?: ContactInput;
+  /** Present when kind === "card" — the user's own digital business card edit. */
+  cardPayload?: BusinessCardInput;
   /** Present when kind === "scan" — a data URL base64 image awaiting OCR. */
   imageData?: string;
   /** Event this capture belongs to (threaded through to scan + contact). */
@@ -54,7 +56,9 @@ export async function loadQueue(): Promise<QueueItem[]> {
         !!item &&
         typeof item === "object" &&
         typeof (item as QueueItem).id === "string" &&
-        ((item as QueueItem).kind === "scan" || (item as QueueItem).kind === "contact"),
+        ((item as QueueItem).kind === "scan" ||
+          (item as QueueItem).kind === "contact" ||
+          (item as QueueItem).kind === "card"),
     );
   } catch {
     return [];

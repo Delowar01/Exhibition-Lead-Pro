@@ -1521,6 +1521,8 @@ export type BusinessCardFieldVisibility = {[key: string]: boolean};
 export interface BusinessCard {
   id: number;
   userId: number;
+  /** @nullable */
+  companyId?: number | null;
   publicToken: string;
   /** @nullable */
   fullName?: string | null;
@@ -1533,7 +1535,7 @@ export interface BusinessCard {
   /** @nullable */
   primaryPhone?: string | null;
   /** @nullable */
-  altPhone?: string | null;
+  alternatePhone?: string | null;
   /** @nullable */
   officeAddress?: string | null;
   /** @nullable */
@@ -1548,21 +1550,33 @@ export interface BusinessCard {
   twitter?: string | null;
   /** @nullable */
   youtube?: string | null;
-  fieldVisibility?: BusinessCardFieldVisibility;
+  fieldVisibility: BusinessCardFieldVisibility;
   templateId: string;
   isPublished: boolean;
-  /** @nullable */
+  /**
+     * Pulled from the owning user account at read time (not stored on the card).
+     * @nullable
+     */
   avatarUrl?: string | null;
+  /**
+     * The owner's account display name, used as an initials fallback.
+     * @nullable
+     */
+  accountName?: string | null;
+  /**
+     * Absolute public share URL for this card.
+     * @nullable
+     */
+  publicUrl?: string | null;
   createdAt: string;
-  /** @nullable */
-  updatedAt?: string | null;
+  updatedAt: string;
 }
 
 export type BusinessCardInputFieldVisibility = {[key: string]: boolean};
 
 export interface BusinessCardInput {
-  /** @nullable */
-  fullName?: string | null;
+  /** @minLength 1 */
+  fullName: string;
   /** @nullable */
   designation?: string | null;
   /** @nullable */
@@ -1572,7 +1586,7 @@ export interface BusinessCardInput {
   /** @nullable */
   primaryPhone?: string | null;
   /** @nullable */
-  altPhone?: string | null;
+  alternatePhone?: string | null;
   /** @nullable */
   officeAddress?: string | null;
   /** @nullable */
@@ -1595,9 +1609,8 @@ export interface BusinessCardInput {
 }
 
 export interface PublicBusinessCard {
-  publicToken: string;
   /** @nullable */
-  fullName?: string | null;
+  fullName: string | null;
   /** @nullable */
   designation?: string | null;
   /** @nullable */
@@ -1607,7 +1620,7 @@ export interface PublicBusinessCard {
   /** @nullable */
   primaryPhone?: string | null;
   /** @nullable */
-  altPhone?: string | null;
+  alternatePhone?: string | null;
   /** @nullable */
   officeAddress?: string | null;
   /** @nullable */
@@ -1625,6 +1638,8 @@ export interface PublicBusinessCard {
   /** @nullable */
   avatarUrl?: string | null;
   templateId: string;
+  /** @nullable */
+  publicUrl?: string | null;
 }
 
 export type ListCompaniesParams = {

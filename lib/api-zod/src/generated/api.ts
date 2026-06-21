@@ -1865,13 +1865,14 @@ export const GetContactStatusHistoryResponse = zod.object({
 export const GetOwnCardResponse = zod.object({
   "id": zod.number(),
   "userId": zod.number(),
+  "companyId": zod.number().nullish(),
   "publicToken": zod.string(),
   "fullName": zod.string().nullish(),
   "designation": zod.string().nullish(),
   "companyName": zod.string().nullish(),
   "email": zod.string().nullish(),
   "primaryPhone": zod.string().nullish(),
-  "altPhone": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
   "officeAddress": zod.string().nullish(),
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
@@ -1879,25 +1880,30 @@ export const GetOwnCardResponse = zod.object({
   "instagram": zod.string().nullish(),
   "twitter": zod.string().nullish(),
   "youtube": zod.string().nullish(),
-  "fieldVisibility": zod.record(zod.string(), zod.boolean()).optional(),
+  "fieldVisibility": zod.record(zod.string(), zod.boolean()),
   "templateId": zod.string(),
   "isPublished": zod.boolean(),
-  "avatarUrl": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish().describe('Pulled from the owning user account at read time (not stored on the card).'),
+  "accountName": zod.string().nullish().describe('The owner\'s account display name, used as an initials fallback.'),
+  "publicUrl": zod.string().nullish().describe('Absolute public share URL for this card.'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date().nullish()
+  "updatedAt": zod.coerce.date()
 })
 
 
 /**
  * @summary Create or update the authenticated user's digital business card
  */
+
+
+
 export const UpsertOwnCardBody = zod.object({
-  "fullName": zod.string().nullish(),
+  "fullName": zod.string().min(1),
   "designation": zod.string().nullish(),
   "companyName": zod.string().nullish(),
   "email": zod.string().nullish(),
   "primaryPhone": zod.string().nullish(),
-  "altPhone": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
   "officeAddress": zod.string().nullish(),
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
@@ -1913,13 +1919,14 @@ export const UpsertOwnCardBody = zod.object({
 export const UpsertOwnCardResponse = zod.object({
   "id": zod.number(),
   "userId": zod.number(),
+  "companyId": zod.number().nullish(),
   "publicToken": zod.string(),
   "fullName": zod.string().nullish(),
   "designation": zod.string().nullish(),
   "companyName": zod.string().nullish(),
   "email": zod.string().nullish(),
   "primaryPhone": zod.string().nullish(),
-  "altPhone": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
   "officeAddress": zod.string().nullish(),
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
@@ -1927,30 +1934,31 @@ export const UpsertOwnCardResponse = zod.object({
   "instagram": zod.string().nullish(),
   "twitter": zod.string().nullish(),
   "youtube": zod.string().nullish(),
-  "fieldVisibility": zod.record(zod.string(), zod.boolean()).optional(),
+  "fieldVisibility": zod.record(zod.string(), zod.boolean()),
   "templateId": zod.string(),
   "isPublished": zod.boolean(),
-  "avatarUrl": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish().describe('Pulled from the owning user account at read time (not stored on the card).'),
+  "accountName": zod.string().nullish().describe('The owner\'s account display name, used as an initials fallback.'),
+  "publicUrl": zod.string().nullish().describe('Absolute public share URL for this card.'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date().nullish()
+  "updatedAt": zod.coerce.date()
 })
 
 
 /**
- * @summary Public (unauthenticated) digital business card by token
+ * @summary Public, unauthenticated view of a published business card
  */
 export const GetPublicCardParams = zod.object({
   "token": zod.coerce.string()
 })
 
 export const GetPublicCardResponse = zod.object({
-  "publicToken": zod.string(),
-  "fullName": zod.string().nullish(),
+  "fullName": zod.string().nullable(),
   "designation": zod.string().nullish(),
   "companyName": zod.string().nullish(),
   "email": zod.string().nullish(),
   "primaryPhone": zod.string().nullish(),
-  "altPhone": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
   "officeAddress": zod.string().nullish(),
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
@@ -1959,7 +1967,8 @@ export const GetPublicCardResponse = zod.object({
   "twitter": zod.string().nullish(),
   "youtube": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
-  "templateId": zod.string()
+  "templateId": zod.string(),
+  "publicUrl": zod.string().nullish()
 })
 
 

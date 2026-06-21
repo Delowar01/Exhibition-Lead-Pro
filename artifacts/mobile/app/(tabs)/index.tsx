@@ -18,12 +18,12 @@ import {
   type MobileDashboard,
   useGetLeadsByEvent,
   useGetMobileDashboard,
-  useGetOwnCard,
-  getGetOwnCardQueryKey,
 } from "@workspace/api-client-react";
 
+import { CardQR } from "@/components/CardQR";
 import { Avatar, Badge, FONT, LoadingState, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCard } from "@/contexts/CardContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
@@ -110,15 +110,11 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { isOnline, queuedCount } = useOffline();
+  const { card, hasCard } = useCard();
   const { setContactFilters } = useSettings();
 
   const query = useGetMobileDashboard();
   const data = query.data;
-
-  const ownCard = useGetOwnCard({ query: { retry: false, queryKey: getGetOwnCardQueryKey() } });
-  const cardStatus = (ownCard.error as { status?: number } | null)?.status;
-  const hasCard = !!ownCard.data;
-  const noCard = ownCard.isError && cardStatus === 404;
 
   const eventsQuery = useGetLeadsByEvent();
   const lastEvent = [...(eventsQuery.data ?? [])].sort((a, b) =>
@@ -320,36 +316,76 @@ export default function HomeScreen() {
           </Pressable>
         ) : null}
 
-        {/* Primary CTA — digital business card */}
-        <Pressable
-          onPress={() => {
-            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/digital-card");
-          }}
-          style={({ pressed }) => [
-            styles.cta,
-            { backgroundColor: colors.primary, borderRadius: colors.radius + 8, opacity: pressed ? 0.9 : 1 },
-          ]}
-        >
-          <View style={styles.ctaIcon}>
-            <Feather name={hasCard ? "credit-card" : "plus-circle"} size={22} color="#FFFFFF" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.ctaTitle}>
-              {hasCard ? "Your digital card" : "Create your digital card"}
-            </Text>
-            <Text style={styles.ctaSub}>
-              {hasCard
-                ? ownCard.data?.isPublished
-                  ? "Live — view, edit or share your QR"
-                  : "Unpublished — tap to manage"
-                : noCard
-                  ? "Share your details with a scannable QR"
-                  : "Set up your shareable card"}
-            </Text>
-          </View>
-          <Feather name="arrow-right" size={20} color="#FFFFFF" />
-        </Pressable>
+        {/* Digital business card — Home centerpiece */}
+        {hasCard ? (
+          <Pressable
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.selectionAsync();
+              router.push("/card");
+            }}
+            style={({ pressed }) => [
+              styles.cardHero,
+              { opacity: pressed ? 0.96 : 1 },
+            ]}
+          >
+            <View style={styles.cardHeroBand} />
+            <View style={styles.cardHeroBody}>
+              <View style={styles.cardHeroLeft}>
+                <View style={styles.cardHeroRing}>
+                  <Avatar
+                    name={card?.fullName ?? user?.name}
+                    uri={card?.avatarUrl ?? user?.avatarUrl}
+                    size={52}
+                    color="#0F2244"
+                  />
+                </View>
+                <Text numberOfLines={1} style={styles.cardHeroName}>
+                  {card?.fullName ?? user?.name ?? ""}
+                </Text>
+                {card?.designation ? (
+                  <Text numberOfLines={1} style={styles.cardHeroJob}>
+                    {card.designation.toUpperCase()}
+                  </Text>
+                ) : null}
+                {card?.companyName ? (
+                  <Text numberOfLines={1} style={styles.cardHeroCompany}>
+                    {card.companyName}
+                  </Text>
+                ) : null}
+                <View style={styles.cardHeroCta}>
+                  <Feather name="share-2" size={13} color="#FB923C" />
+                  <Text style={styles.cardHeroCtaText}>Tap to share or edit</Text>
+                </View>
+              </View>
+              {card?.publicUrl ? (
+                <View style={styles.cardHeroQr}>
+                  <CardQR value={card.publicUrl} size={88} color="#0B1A33" />
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.cardHeroBand} />
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/card");
+            }}
+            style={({ pressed }) => [
+              styles.cta,
+              { backgroundColor: colors.primary, borderRadius: colors.radius + 8, opacity: pressed ? 0.9 : 1 },
+            ]}
+          >
+            <View style={styles.ctaIcon}>
+              <Feather name="credit-card" size={22} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.ctaTitle}>Create your digital card</Text>
+              <Text style={styles.ctaSub}>Share your details with a branded QR</Text>
+            </View>
+            <Feather name="arrow-right" size={20} color="#FFFFFF" />
+          </Pressable>
+        )}
 
         {/* Metrics grid */}
         {query.isLoading ? (
@@ -596,6 +632,75 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontFamily: FONT.regular,
     marginTop: 2,
+  },
+  cardHero: {
+    borderRadius: 22,
+    overflow: "hidden",
+    backgroundColor: "#0B1A33",
+    marginBottom: 22,
+    shadowColor: "#0B1A33",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 6,
+  },
+  cardHeroBand: {
+    height: 6,
+    width: "100%",
+    backgroundColor: "#F97316",
+  },
+  cardHeroBody: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  cardHeroLeft: {
+    flex: 1,
+  },
+  cardHeroRing: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    padding: 3,
+    backgroundColor: "#F97316",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  cardHeroName: {
+    fontSize: 19,
+    fontFamily: FONT.bold,
+    color: "#FFF7F0",
+  },
+  cardHeroJob: {
+    fontSize: 10.5,
+    fontFamily: FONT.medium,
+    color: "#F97316",
+    letterSpacing: 1.2,
+    marginTop: 4,
+  },
+  cardHeroCompany: {
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    color: "#7A9CC4",
+    marginTop: 3,
+  },
+  cardHeroCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 12,
+  },
+  cardHeroCtaText: {
+    fontSize: 12.5,
+    fontFamily: FONT.medium,
+    color: "#FB923C",
+  },
+  cardHeroQr: {
+    borderRadius: 12,
+    overflow: "hidden",
   },
   grid: {
     flexDirection: "row",

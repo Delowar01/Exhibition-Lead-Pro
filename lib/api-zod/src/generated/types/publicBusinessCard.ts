@@ -7,9 +7,8 @@
  */
 
 export interface PublicBusinessCard {
-  publicToken: string;
   /** @nullable */
-  fullName?: string | null;
+  fullName: string | null;
   /** @nullable */
   designation?: string | null;
   /** @nullable */
@@ -19,7 +18,7 @@ export interface PublicBusinessCard {
   /** @nullable */
   primaryPhone?: string | null;
   /** @nullable */
-  altPhone?: string | null;
+  alternatePhone?: string | null;
   /** @nullable */
   officeAddress?: string | null;
   /** @nullable */
@@ -37,4 +36,6 @@ export interface PublicBusinessCard {
   /** @nullable */
   avatarUrl?: string | null;
   templateId: string;
+  /** @nullable */
+  publicUrl?: string | null;
 }

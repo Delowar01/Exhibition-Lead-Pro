@@ -20,6 +20,7 @@ import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NotificationsManager } from "@/components/NotificationsManager";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { CardProvider } from "@/contexts/CardContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { getCachedToken } from "@/lib/auth-storage";
@@ -109,12 +110,12 @@ function RootLayoutNav() {
         options={{ headerShown: false, presentation: "fullScreenModal" }}
       />
       <Stack.Screen name="capture-manual" options={{ title: "Manual entry" }} />
+      <Stack.Screen name="card" options={{ headerShown: false }} />
       <Stack.Screen name="leads" options={{ headerShown: false }} />
       <Stack.Screen name="events" options={{ headerShown: false }} />
       <Stack.Screen name="meetings" options={{ headerShown: false }} />
       <Stack.Screen name="tasks" options={{ headerShown: false }} />
       <Stack.Screen name="duplicates" options={{ headerShown: false }} />
-      <Stack.Screen name="digital-card" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="sync" options={{ headerShown: false }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
@@ -152,11 +153,13 @@ export default function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
               <OfflineProvider>
-                <GestureHandlerRootView>
-                  <KeyboardProvider>
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
+                <CardProvider>
+                  <GestureHandlerRootView>
+                    <KeyboardProvider>
+                      <RootLayoutNav />
+                    </KeyboardProvider>
+                  </GestureHandlerRootView>
+                </CardProvider>
               </OfflineProvider>
             </AuthProvider>
           </QueryClientProvider>

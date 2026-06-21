@@ -14,6 +14,8 @@ import { Platform } from "react-native";
 import {
   createContact,
   createScan,
+  upsertOwnCard,
+  type BusinessCardInput,
   type ContactInput,
   type ExtractedCardData,
 } from "@workspace/api-client-react";
@@ -54,6 +56,7 @@ interface OfflineContextValue {
   setManualOffline: (value: boolean) => void;
   enqueueContact: (payload: ContactInput, meta: EnqueueMeta) => void;
   enqueueScan: (imageData: string, meta: EnqueueMeta) => void;
+  enqueueCard: (payload: BusinessCardInput, label: string) => void;
   syncNow: () => void;
   retryItem: (id: string) => void;
   removeItem: (id: string) => void;
@@ -72,6 +75,7 @@ const OfflineContext = createContext<OfflineContextValue>({
   setManualOffline: () => {},
   enqueueContact: () => {},
   enqueueScan: () => {},
+  enqueueCard: () => {},
   syncNow: () => {},
   retryItem: () => {},
   removeItem: () => {},
@@ -207,6 +211,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         try {
           if (item.kind === "contact" && item.payload) {
             await createContact(item.payload);
+          } else if (item.kind === "card" && item.cardPayload) {
+            await upsertOwnCard(item.cardPayload);
           } else if (item.kind === "scan" && item.imageData) {
             const scan = await createScan({
               imageData: item.imageData,
@@ -308,6 +314,26 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     [commit],
   );
 
+  const enqueueCard = useCallback(
+    (payload: BusinessCardInput, label: string) => {
+      // Collapse to a single pending card edit — only the latest matters, so an
+      // earlier unsynced edit is superseded rather than queued twice.
+      const withoutCards = queueRef.current.filter((it) => it.kind !== "card");
+      const item: QueueItem = {
+        id: makeQueueId(),
+        kind: "card",
+        status: "pending",
+        createdAt: Date.now(),
+        attempts: 0,
+        label,
+        source: "card",
+        cardPayload: payload,
+      };
+      commit([item, ...withoutCards]);
+    },
+    [commit],
+  );
+
   const retryItem = useCallback(
     (id: string) => {
       updateItem(id, { status: "pending", lastError: undefined });
@@ -341,6 +367,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     setManualOffline,
     enqueueContact,
     enqueueScan,
+    enqueueCard,
     syncNow: () => void syncNow(),
     retryItem,
     removeItem,

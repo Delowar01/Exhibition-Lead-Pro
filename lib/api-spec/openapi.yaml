@@ -29,6 +29,8 @@ tags:
     description: Subscription management
   - name: reports
     description: Reports and analytics
+  - name: cards
+    description: Digital business cards
 
 paths:
   /healthz:
@@ -1517,7 +1519,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContactStatusHistoryList"
 
-  # DIGITAL BUSINESS CARDS
   /cards/me:
     get:
       operationId: getOwnCard
@@ -1531,7 +1532,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/BusinessCard"
         "404":
-          description: No card yet
+          description: No card has been created yet
           content:
             application/json:
               schema:
@@ -1558,7 +1559,8 @@ paths:
     get:
       operationId: getPublicCard
       tags: [cards]
-      summary: Public (unauthenticated) digital business card by token
+      summary: Public, unauthenticated view of a published business card
+      security: []
       parameters:
         - name: token
           in: path
@@ -1573,7 +1575,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PublicBusinessCard"
         "404":
-          description: Not found
+          description: Card not found or not published
           content:
             application/json:
               schema:
@@ -3280,15 +3282,24 @@ components:
         total:
           type: integer
 
-    # DIGITAL BUSINESS CARDS
     BusinessCard:
       type: object
-      required: [id, userId, publicToken, templateId, isPublished, createdAt]
+      required:
+        - id
+        - userId
+        - publicToken
+        - fieldVisibility
+        - templateId
+        - isPublished
+        - createdAt
+        - updatedAt
       properties:
         id:
           type: integer
         userId:
           type: integer
+        companyId:
+          type: ["integer", "null"]
         publicToken:
           type: string
         fullName:
@@ -3301,7 +3312,7 @@ components:
           type: ["string", "null"]
         primaryPhone:
           type: ["string", "null"]
-        altPhone:
+        alternatePhone:
           type: ["string", "null"]
         officeAddress:
           type: ["string", "null"]
@@ -3327,18 +3338,28 @@ components:
           type: boolean
         avatarUrl:
           type: ["string", "null"]
+          description: Pulled from the owning user account at read time (not stored on the card).
+        accountName:
+          type: ["string", "null"]
+          description: The owner's account display name, used as an initials fallback.
+        publicUrl:
+          type: ["string", "null"]
+          description: Absolute public share URL for this card.
         createdAt:
           type: string
           format: date-time
         updatedAt:
-          type: ["string", "null"]
+          type: string
           format: date-time
 
     BusinessCardInput:
       type: object
+      required:
+        - fullName
       properties:
         fullName:
-          type: ["string", "null"]
+          type: string
+          minLength: 1
         designation:
           type: ["string", "null"]
         companyName:
@@ -3347,7 +3368,7 @@ components:
           type: ["string", "null"]
         primaryPhone:
           type: ["string", "null"]
-        altPhone:
+        alternatePhone:
           type: ["string", "null"]
         officeAddress:
           type: ["string", "null"]
@@ -3374,10 +3395,10 @@ components:
 
     PublicBusinessCard:
       type: object
-      required: [publicToken, templateId]
+      required:
+        - fullName
+        - templateId
       properties:
-        publicToken:
-          type: string
         fullName:
           type: ["string", "null"]
         designation:
@@ -3388,7 +3409,7 @@ components:
           type: ["string", "null"]
         primaryPhone:
           type: ["string", "null"]
-        altPhone:
+        alternatePhone:
           type: ["string", "null"]
         officeAddress:
           type: ["string", "null"]
@@ -3408,3 +3429,5 @@ components:
           type: ["string", "null"]
         templateId:
           type: string
+        publicUrl:
+          type: ["string", "null"]

@@ -1,123 +1,193 @@
 import { Router } from "express";
-import { randomBytes } from "crypto";
-import { db } from "@workspace/db";
-import { businessCardsTable, usersTable } from "@workspace/db";
+import { randomBytes } from "node:crypto";
+import { db, businessCardsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 
 const router = Router();
 
-// Editable card fields the client may set (avatar is intentionally excluded —
-// it is always sourced from the user's account).
-const EDITABLE_FIELDS = [
-  "fullName",
-  "designation",
-  "companyName",
-  "email",
-  "primaryPhone",
-  "altPhone",
-  "officeAddress",
-  "website",
-  "linkedin",
-  "facebook",
-  "instagram",
-  "twitter",
-  "youtube",
-] as const;
+type CardRow = typeof businessCardsTable.$inferSelect;
 
-function generateToken(): string {
-  // URL-safe, unguessable token for the public card URL.
-  return randomBytes(16).toString("base64url");
+// Absolute origin for public share links. Prefer the published domain, fall
+// back to the forwarded host of the current request (dev preview).
+function publicBaseUrl(req: AuthRequest): string {
+  const published = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+  if (published) return `https://${published}`;
+  const proto = String(req.headers["x-forwarded-proto"] ?? "https").split(",")[0];
+  const host = req.headers["host"];
+  return `${proto}://${host}`;
 }
 
-function pickEditable(body: Record<string, unknown>) {
-  const patch: Record<string, unknown> = {};
-  for (const field of EDITABLE_FIELDS) {
-    const v = body[field];
-    if (v === null || typeof v === "string") patch[field] = v;
-  }
-  if (body.fieldVisibility && typeof body.fieldVisibility === "object") {
-    patch.fieldVisibility = body.fieldVisibility;
-  }
-  if (typeof body.templateId === "string" && body.templateId.length > 0) {
-    patch.templateId = body.templateId;
-  }
-  if (typeof body.isPublished === "boolean") {
-    patch.isPublished = body.isPublished;
-  }
-  return patch;
+function newToken(): string {
+  return randomBytes(16).toString("hex");
 }
 
-function formatCard(card: typeof businessCardsTable.$inferSelect, avatarUrl: string | null) {
-  return { ...card, avatarUrl };
+function isVisible(visibility: Record<string, boolean> | null, key: string): boolean {
+  // Default visible: only an explicit `false` hides a field.
+  return (visibility ?? {})[key] !== false;
 }
 
-// ── AUTHENTICATED ─────────────────────────────────────────────────────────
-// NOTE: the PUBLIC GET /cards/public/:token route lives in cards-public.ts and is
-// mounted BEFORE the first auth-guarded router. It cannot live here: every authed
-// sub-router has a path-less requireAuth that would 401 the public request first.
-router.use(requireAuth);
-router.use("/cards", blockReadOnlyMutations);
-router.use("/cards", auditMutations("cards"));
+function formatOwnerCard(card: CardRow, base: string, avatarUrl: string | null, accountName: string | null) {
+  return {
+    ...card,
+    avatarUrl,
+    accountName,
+    publicUrl: `${base}/c/${card.publicToken}`,
+    createdAt: card.createdAt.toISOString(),
+    updatedAt: card.updatedAt.toISOString(),
+  };
+}
 
-// GET /cards/me — the signed-in user's own card
-router.get("/cards/me", async (req: AuthRequest, res) => {
+// ---------------------------------------------------------------------------
+// PUBLIC — unauthenticated. Declared first; carries NO auth guard.
+// ---------------------------------------------------------------------------
+router.get("/cards/public/:token", async (req: AuthRequest, res) => {
   try {
-    const [card] = await db.select().from(businessCardsTable).where(eq(businessCardsTable.userId, req.user!.id)).limit(1);
-    if (!card) {
-      res.status(404).json({ error: "No card yet" });
+    const token = String(req.params.token);
+    const [card] = await db.select().from(businessCardsTable).where(eq(businessCardsTable.publicToken, token)).limit(1);
+    if (!card || !card.isPublished) {
+      res.status(404).json({ error: "Card not found" });
       return;
     }
     const [owner] = await db
-      .select({ avatarUrl: usersTable.avatarUrl })
+      .select({ avatarUrl: usersTable.avatarUrl, name: usersTable.name })
       .from(usersTable)
-      .where(eq(usersTable.id, req.user!.id))
+      .where(eq(usersTable.id, card.userId))
       .limit(1);
-    res.json(formatCard(card, owner?.avatarUrl ?? null));
+
+    const vis = card.fieldVisibility;
+    const pick = (key: string, value: string | null) => (isVisible(vis, key) ? value : null);
+
+    res.json({
+      fullName: card.fullName,
+      designation: card.designation,
+      companyName: card.companyName,
+      email: pick("email", card.email),
+      primaryPhone: pick("primaryPhone", card.primaryPhone),
+      alternatePhone: pick("alternatePhone", card.alternatePhone),
+      officeAddress: pick("officeAddress", card.officeAddress),
+      website: pick("website", card.website),
+      linkedin: pick("linkedin", card.linkedin),
+      facebook: pick("facebook", card.facebook),
+      instagram: pick("instagram", card.instagram),
+      twitter: pick("twitter", card.twitter),
+      youtube: pick("youtube", card.youtube),
+      avatarUrl: owner?.avatarUrl ?? null,
+      templateId: card.templateId,
+      publicUrl: `${publicBaseUrl(req)}/c/${card.publicToken}`,
+    });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// PUT /cards/me — create or update the signed-in user's own card
-router.put("/cards/me", async (req: AuthRequest, res) => {
+// ---------------------------------------------------------------------------
+// AUTHENTICATED — path-scoped guards so they never leak onto the public route
+// above or onto unrelated modules sharing the parent router.
+// ---------------------------------------------------------------------------
+router.use("/cards/me", requireAuth);
+router.use("/cards/me", blockReadOnlyMutations);
+router.use("/cards/me", auditMutations("cards"));
+
+// GET /cards/me
+router.get("/cards/me", async (req: AuthRequest, res) => {
   try {
-    const companyId = req.user!.companyId;
-    // Tenant invariant: a card must belong to a company (platform_owner has no
-    // tenant and therefore no shareable company card).
-    if (companyId == null) {
-      res.status(400).json({ error: "A company is required to create a card" });
+    const userId = req.user!.id;
+    const [card] = await db.select().from(businessCardsTable).where(eq(businessCardsTable.userId, userId)).limit(1);
+    if (!card) {
+      res.status(404).json({ error: "No card yet" });
       return;
     }
-    const patch = pickEditable(req.body ?? {});
+    const [owner] = await db
+      .select({ avatarUrl: usersTable.avatarUrl, name: usersTable.name })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    res.json(formatOwnerCard(card, publicBaseUrl(req), owner?.avatarUrl ?? null, owner?.name ?? null));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PUT /cards/me — upsert (creates on first save, updates thereafter)
+router.put("/cards/me", async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const body = req.body ?? {};
+
+    const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
+    if (!fullName) {
+      res.status(400).json({ error: "Full name is required" });
+      return;
+    }
+
+    const str = (v: unknown): string | null => {
+      if (v == null) return null;
+      const s = String(v).trim();
+      return s.length > 0 ? s : null;
+    };
+
+    let fieldVisibility: Record<string, boolean> = {};
+    if (body.fieldVisibility && typeof body.fieldVisibility === "object" && !Array.isArray(body.fieldVisibility)) {
+      for (const [k, v] of Object.entries(body.fieldVisibility as Record<string, unknown>)) {
+        if (typeof v === "boolean") fieldVisibility[k] = v;
+      }
+    }
+
+    const values = {
+      fullName,
+      designation: str(body.designation),
+      companyName: str(body.companyName),
+      email: str(body.email),
+      primaryPhone: str(body.primaryPhone),
+      alternatePhone: str(body.alternatePhone),
+      officeAddress: str(body.officeAddress),
+      website: str(body.website),
+      linkedin: str(body.linkedin),
+      facebook: str(body.facebook),
+      instagram: str(body.instagram),
+      twitter: str(body.twitter),
+      youtube: str(body.youtube),
+      fieldVisibility,
+      templateId: str(body.templateId) ?? "classic",
+      isPublished: typeof body.isPublished === "boolean" ? body.isPublished : true,
+      updatedAt: new Date(),
+    };
+
     const [existing] = await db
       .select()
       .from(businessCardsTable)
-      .where(eq(businessCardsTable.userId, req.user!.id))
+      .where(eq(businessCardsTable.userId, userId))
       .limit(1);
 
-    let card: typeof businessCardsTable.$inferSelect;
+    let card: CardRow;
     if (existing) {
       [card] = await db
         .update(businessCardsTable)
-        .set({ ...patch, updatedAt: new Date() })
-        .where(eq(businessCardsTable.userId, req.user!.id))
+        .set(values)
+        .where(eq(businessCardsTable.userId, userId))
         .returning();
     } else {
       [card] = await db
         .insert(businessCardsTable)
-        .values({ ...patch, userId: req.user!.id, companyId, publicToken: generateToken() })
+        .values({
+          ...values,
+          userId,
+          companyId: req.user!.companyId ?? null,
+          publicToken: newToken(),
+        })
         .returning();
     }
 
     const [owner] = await db
-      .select({ avatarUrl: usersTable.avatarUrl })
+      .select({ avatarUrl: usersTable.avatarUrl, name: usersTable.name })
       .from(usersTable)
-      .where(eq(usersTable.id, req.user!.id))
+      .where(eq(usersTable.id, userId))
       .limit(1);
-    res.json(formatCard(card, owner?.avatarUrl ?? null));
+    res.json(formatOwnerCard(card, publicBaseUrl(req), owner?.avatarUrl ?? null, owner?.name ?? null));
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

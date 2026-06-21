@@ -8,8 +8,8 @@
 import type { BusinessCardInputFieldVisibility } from './businessCardInputFieldVisibility';
 
 export interface BusinessCardInput {
-  /** @nullable */
-  fullName?: string | null;
+  /** @minLength 1 */
+  fullName: string;
   /** @nullable */
   designation?: string | null;
   /** @nullable */
@@ -19,7 +19,7 @@ export interface BusinessCardInput {
   /** @nullable */
   primaryPhone?: string | null;
   /** @nullable */
-  altPhone?: string | null;
+  alternatePhone?: string | null;
   /** @nullable */
   officeAddress?: string | null;
   /** @nullable */

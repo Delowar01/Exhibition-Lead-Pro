@@ -15,13 +15,16 @@ import followUpsRouter from "./follow_ups.js";
 import meetingsRouter from "./meetings.js";
 import tasksRouter from "./tasks.js";
 import cardsRouter from "./cards.js";
-import cardsPublicRouter from "./cards-public.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
-router.use(cardsPublicRouter);
+// Mounted early: cards.ts has a PUBLIC route (/cards/public/:token) with no auth.
+// A later-mounted router with a path-less requireAuth would otherwise 401 it
+// before the request ever reaches here. Its own guards are path-scoped to
+// /cards/me, so this does not leak onto other modules.
+router.use(cardsRouter);
 router.use(companiesRouter);
 router.use(usersRouter);
 router.use(contactsRouter);
@@ -35,6 +38,5 @@ router.use(pushRouter);
 router.use(followUpsRouter);
 router.use(meetingsRouter);
 router.use(tasksRouter);
-router.use(cardsRouter);
 
 export default router;

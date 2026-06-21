@@ -5601,7 +5601,7 @@ export const getGetPublicCardUrl = (token: string,) => {
 }
 
 /**
- * @summary Public (unauthenticated) digital business card by token
+ * @summary Public, unauthenticated view of a published business card
  */
 export const getPublicCard = async (token: string, options?: RequestInit): Promise<PublicBusinessCard> => {
 
@@ -5648,7 +5648,7 @@ export type GetPublicCardQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary Public (unauthenticated) digital business card by token
+ * @summary Public, unauthenticated view of a published business card
  */
 
 export function useGetPublicCard<TData = Awaited<ReturnType<typeof getPublicCard>>, TError = ErrorType<ErrorResponse>>(

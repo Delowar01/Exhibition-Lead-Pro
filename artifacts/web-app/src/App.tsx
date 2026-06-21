@@ -96,10 +96,8 @@ function Router() {
       <Route path="/login" component={Login} />
 
       {/* Public digital business card — no auth, no layout */}
-      <Route path="/card/:token">
-        {(params) => <PublicCard token={params.token} />}
-      </Route>
-      
+      <Route path="/c/:token" component={PublicCard} />
+
       {/* Platform Routes */}
       <Route path="/platform">
         {() => <ProtectedRoute component={PlatformDashboard} role="platform" layout={PlatformLayout} />}
