@@ -17,13 +17,13 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://YOUR_REPLIT_DOMAIN_HERE"
+        "EXPO_PUBLIC_API_URL": "https://contact-aggregator--DelowarHossain1.replit.app"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://YOUR_REPLIT_DOMAIN_HERE"
+        "EXPO_PUBLIC_API_URL": "https://contact-aggregator--DelowarHossain1.replit.app"
       }
     }
   },
