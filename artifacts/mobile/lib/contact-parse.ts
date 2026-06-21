@@ -18,6 +18,74 @@ export function extractedToContact(data: ExtractedCardData): ContactInput {
   };
 }
 
+// Escape a value for a vCard 3.0 property per RFC 2426: backslash, newline,
+// comma, and semicolon are the reserved characters.
+function escapeVCard(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+export interface VCardFields {
+  fullName?: string | null;
+  companyName?: string | null;
+  designation?: string | null;
+  primaryPhone?: string | null;
+  alternatePhone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  officeAddress?: string | null;
+}
+
+// Build a standards-compliant vCard 3.0 string from a business card's fields.
+// Empty fields are omitted. The output is meant to be embedded directly in a QR
+// code so a native camera offers "Add Contact" with the fields pre-filled — it
+// intentionally carries no hosted-card/landing URL.
+export function buildVCard(fields: VCardFields): string {
+  const clean = (v?: string | null): string => (v ?? "").trim();
+  const lines: string[] = ["BEGIN:VCARD", "VERSION:3.0"];
+
+  const fullName = clean(fields.fullName);
+  if (fullName) {
+    const parts = fullName.split(/\s+/);
+    const first = parts[0] ?? "";
+    const last = parts.slice(1).join(" ");
+    // N is structured: Family;Given;Additional;Prefix;Suffix
+    lines.push(`N:${escapeVCard(last)};${escapeVCard(first)};;;`);
+    lines.push(`FN:${escapeVCard(fullName)}`);
+  }
+
+  const company = clean(fields.companyName);
+  if (company) lines.push(`ORG:${escapeVCard(company)}`);
+
+  const title = clean(fields.designation);
+  if (title) lines.push(`TITLE:${escapeVCard(title)}`);
+
+  const primary = clean(fields.primaryPhone);
+  if (primary) lines.push(`TEL;TYPE=CELL:${escapeVCard(primary)}`);
+
+  const alt = clean(fields.alternatePhone);
+  if (alt) lines.push(`TEL;TYPE=WORK,VOICE:${escapeVCard(alt)}`);
+
+  const email = clean(fields.email);
+  if (email) lines.push(`EMAIL;TYPE=INTERNET:${escapeVCard(email)}`);
+
+  const website = clean(fields.website);
+  if (website) lines.push(`URL:${escapeVCard(website)}`);
+
+  const address = clean(fields.officeAddress);
+  if (address) {
+    // ADR is structured: PoBox;Ext;Street;Locality;Region;Postal;Country.
+    // We keep the whole address in the Street component.
+    lines.push(`ADR;TYPE=WORK:;;${escapeVCard(address)};;;;`);
+  }
+
+  lines.push("END:VCARD");
+  return lines.join("\r\n");
+}
+
 export function parseVCard(raw: string): ExtractedCardData {
   const out: ExtractedCardData = {};
   for (const line of raw.split(/\r?\n/)) {

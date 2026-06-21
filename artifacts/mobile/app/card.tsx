@@ -23,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCard } from "@/contexts/CardContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+import { buildVCard } from "@/lib/contact-parse";
 
 interface FormValues {
   fullName: string;
@@ -346,6 +347,30 @@ function CardPreview({
 
   const subtitle = [card?.companyName].filter(Boolean).join(" · ");
 
+  const vcard = useMemo(
+    () =>
+      buildVCard({
+        fullName: card?.fullName ?? account.name ?? null,
+        companyName: card?.companyName,
+        designation: card?.designation,
+        primaryPhone: card?.primaryPhone,
+        alternatePhone: card?.alternatePhone,
+        email: card?.email,
+        website: card?.website,
+        officeAddress: card?.officeAddress,
+      }),
+    [card, account.name],
+  );
+
+  const hasContactData = Boolean(
+    card?.fullName ??
+      account.name ??
+      card?.email ??
+      card?.primaryPhone ??
+      card?.alternatePhone ??
+      card?.companyName,
+  );
+
   return (
     <View>
       <View style={styles.cardShell}>
@@ -383,19 +408,19 @@ function CardPreview({
         ) : null}
 
         <View style={styles.qrSection}>
-          <Text style={styles.qrHeading}>SCAN TO CONNECT</Text>
-          {shareUrl ? (
-            <CardQR value={shareUrl} size={150} color={NAVY} />
+          <Text style={styles.qrHeading}>SCAN TO SAVE CONTACT</Text>
+          {hasContactData ? (
+            <CardQR value={vcard} size={150} color={NAVY} />
           ) : (
             <View style={styles.qrPending}>
-              <Feather name="wifi-off" size={22} color="#4A6E94" />
+              <Feather name="user-plus" size={22} color="#4A6E94" />
               <Text style={styles.qrPendingText}>
-                QR available once your card syncs online
+                Add your details to generate a contact QR
               </Text>
             </View>
           )}
           <Text style={styles.qrSub}>
-            Point a camera to open this card instantly
+            Point a camera to save these details as a contact
           </Text>
         </View>
 

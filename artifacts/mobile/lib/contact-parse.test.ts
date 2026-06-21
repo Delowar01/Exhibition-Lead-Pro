@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildVCard,
   hasAnyContactField,
   mergeExtracted,
   parseContactText,
@@ -8,6 +9,67 @@ import {
   parseQr,
   parseVCard,
 } from "./contact-parse";
+
+describe("buildVCard", () => {
+  it("emits a 3.0 vCard with available fields and omits empty ones", () => {
+    const out = buildVCard({
+      fullName: "Layla Hassan",
+      companyName: "Nexus Systems",
+      designation: "Head of Sales",
+      primaryPhone: "+971 50 123 4567",
+      alternatePhone: "+971 4 555 0000",
+      email: "layla@nexussys.io",
+      website: "https://nexussys.io",
+      officeAddress: "Sheikh Zayed Rd, Dubai",
+    });
+    expect(out.startsWith("BEGIN:VCARD\r\nVERSION:3.0")).toBe(true);
+    expect(out.endsWith("END:VCARD")).toBe(true);
+    expect(out).toContain("FN:Layla Hassan");
+    expect(out).toContain("N:Hassan;Layla;;;");
+    expect(out).toContain("ORG:Nexus Systems");
+    expect(out).toContain("TITLE:Head of Sales");
+    expect(out).toContain("TEL;TYPE=CELL:+971 50 123 4567");
+    expect(out).toContain("TEL;TYPE=WORK,VOICE:+971 4 555 0000");
+    expect(out).toContain("EMAIL;TYPE=INTERNET:layla@nexussys.io");
+    expect(out).toContain("URL:https://nexussys.io");
+    expect(out).toContain("ADR;TYPE=WORK:;;Sheikh Zayed Rd\\, Dubai;;;;");
+  });
+
+  it("carries no hosted-card URL when none is provided", () => {
+    const out = buildVCard({ fullName: "Jo Lin", email: "jo@acme.com" });
+    expect(out).not.toContain("URL:");
+    expect(out).not.toContain("/card/");
+  });
+
+  it("omits properties for missing fields", () => {
+    const out = buildVCard({ fullName: "Solo Name" });
+    expect(out).toContain("FN:Solo Name");
+    expect(out).not.toContain("ORG:");
+    expect(out).not.toContain("TITLE:");
+    expect(out).not.toContain("TEL");
+    expect(out).not.toContain("EMAIL");
+    expect(out).not.toContain("ADR");
+  });
+
+  it("round-trips through parseVCard", () => {
+    const vcf = buildVCard({
+      fullName: "Layla Hassan",
+      companyName: "Nexus Systems",
+      designation: "Head of Sales",
+      primaryPhone: "+971 50 123 4567",
+      email: "layla@nexussys.io",
+      website: "https://nexussys.io",
+    });
+    const parsed = parseVCard(vcf);
+    expect(parsed.firstName).toBe("Layla");
+    expect(parsed.lastName).toBe("Hassan");
+    expect(parsed.company).toBe("Nexus Systems");
+    expect(parsed.jobTitle).toBe("Head of Sales");
+    expect(parsed.email).toBe("layla@nexussys.io");
+    expect(parsed.mobile).toBe("+971 50 123 4567");
+    expect(parsed.website).toBe("https://nexussys.io");
+  });
+});
 
 describe("parseVCard", () => {
   it("extracts the standard fields", () => {
