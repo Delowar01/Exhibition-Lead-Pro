@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   type Contact,
   type DuplicateGroup,
+  useDeleteContact,
   useGetContactDuplicates,
   useMergeContacts,
 } from "@workspace/api-client-react";
@@ -61,6 +62,140 @@ function fieldCount(c: Contact): number {
   return fields.filter(Boolean).length;
 }
 
+// ── Linked duplicate card ─────────────────────────────────────────────────────
+// Used for matchType === "linked" — contacts auto-detected at scan time.
+// Shows the original contact prominently; each duplicate has an individual
+// "Delete" button that removes only that duplicate record.
+function LinkedDuplicateCard({
+  group,
+  onDeleted,
+}: {
+  group: DuplicateGroup;
+  onDeleted: () => void;
+}) {
+  const colors = useColors();
+  const del = useDeleteContact();
+
+  const [original, ...duplicates] = group.contacts;
+
+  function handleDelete(dup: Contact) {
+    const name = contactName(dup);
+    const run = async () => {
+      try {
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+        await del.mutateAsync({ id: dup.id });
+        if (Platform.OS !== "web")
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onDeleted();
+      } catch {
+        Alert.alert("Delete failed", "Please try again.");
+      }
+    };
+
+    if (Platform.OS === "web") {
+      void run();
+      return;
+    }
+    Alert.alert(
+      "Delete duplicate",
+      `Remove "${name}" from your contacts? The original record will remain untouched.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: run },
+      ],
+    );
+  }
+
+  if (!original) return null;
+
+  return (
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+      ]}
+    >
+      <View style={styles.cardHeader}>
+        <View style={[styles.matchPill, { backgroundColor: colors.primary + "18" }]}>
+          <Feather name="link-2" size={13} color={colors.primary} />
+          <Text style={[styles.matchText, { color: colors.primary }]} numberOfLines={1}>
+            Re-scan detected · {duplicates.length} duplicate{duplicates.length > 1 ? "s" : ""}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+        The original record is kept. Delete individual duplicates below.
+      </Text>
+
+      {/* Original */}
+      <View
+        style={[
+          styles.originalRow,
+          {
+            borderColor: colors.primary + "40",
+            backgroundColor: colors.accent,
+            borderRadius: colors.radius + 2,
+          },
+        ]}
+      >
+        <Avatar name={contactName(original)} size={40} color={colors.primary} />
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground }]}>
+            {contactName(original)}
+          </Text>
+          <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground }]}>
+            {[original.contactCompany, original.email].filter(Boolean).join(" · ") || "Original record"}
+          </Text>
+        </View>
+        <View style={[styles.badge, { backgroundColor: colors.primary + "18" }]}>
+          <Text style={[styles.badgeText, { color: colors.primary }]}>ORIGINAL</Text>
+        </View>
+      </View>
+
+      {/* Duplicates */}
+      <View style={{ gap: 8, marginTop: 8 }}>
+        {duplicates.map((dup) => (
+          <View
+            key={dup.id}
+            style={[
+              styles.option,
+              { borderColor: colors.border, borderRadius: colors.radius + 2 },
+            ]}
+          >
+            <Avatar name={contactName(dup)} size={40} color={colors.mutedForeground} />
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground }]}>
+                {contactName(dup)}
+              </Text>
+              <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground }]}>
+                {[dup.contactCompany, dup.email].filter(Boolean).join(" · ") || "Re-scanned duplicate"}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => handleDelete(dup)}
+              disabled={del.isPending}
+              style={({ pressed }) => [
+                styles.deleteBtn,
+                {
+                  backgroundColor: colors.destructive + "14",
+                  borderRadius: colors.radius,
+                  opacity: pressed || del.isPending ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Feather name="trash-2" size={15} color={colors.destructive} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ── Similarity-matched duplicate card ────────────────────────────────────────
+// Used for matchType "email" | "phone" | "name" — legacy / unlinked detection.
+// Allows the user to pick a primary and merge the rest into it.
 function DuplicateCard({
   group,
   onMerged,
@@ -71,7 +206,6 @@ function DuplicateCard({
   const colors = useColors();
   const merge = useMergeContacts();
 
-  // Default the most-complete contact as the primary to keep.
   const sorted = [...group.contacts].sort((a, b) => fieldCount(b) - fieldCount(a));
   const [primaryId, setPrimaryId] = useState<number>(sorted[0]?.id);
 
@@ -187,6 +321,15 @@ export default function DuplicatesScreen() {
   const query = useGetContactDuplicates();
 
   const groups = query.data?.groups ?? [];
+  const linkedCount = groups.filter((g) => g.matchType === "linked").length;
+  const suggestedCount = groups.filter((g) => g.matchType !== "linked").length;
+
+  const summaryText =
+    linkedCount > 0 && suggestedCount > 0
+      ? `${linkedCount} re-scan${linkedCount > 1 ? "s" : ""} · ${suggestedCount} suggested group${suggestedCount > 1 ? "s" : ""}`
+      : linkedCount > 0
+        ? `${linkedCount} re-scan duplicate${linkedCount > 1 ? "s" : ""} detected`
+        : `${suggestedCount} potential duplicate group${suggestedCount > 1 ? "s" : ""} detected`;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -235,16 +378,24 @@ export default function DuplicatesScreen() {
           }
         >
           <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-            {groups.length} potential duplicate group{groups.length > 1 ? "s" : ""} detected.
+            {summaryText}.
           </Text>
           <View style={{ gap: 16 }}>
-            {groups.map((group, idx) => (
-              <DuplicateCard
-                key={`${group.matchType}-${group.matchValue}-${idx}`}
-                group={group}
-                onMerged={() => query.refetch()}
-              />
-            ))}
+            {groups.map((group, idx) =>
+              group.matchType === "linked" ? (
+                <LinkedDuplicateCard
+                  key={`linked-${group.matchValue}-${idx}`}
+                  group={group}
+                  onDeleted={() => query.refetch()}
+                />
+              ) : (
+                <DuplicateCard
+                  key={`${group.matchType}-${group.matchValue}-${idx}`}
+                  group={group}
+                  onMerged={() => query.refetch()}
+                />
+              ),
+            )}
           </View>
         </ScrollView>
       )}
@@ -285,6 +436,23 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     marginBottom: 12,
   },
+  originalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1.5,
+    padding: 10,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontFamily: FONT.semibold,
+    letterSpacing: 0.5,
+  },
   option: {
     flexDirection: "row",
     alignItems: "center",
@@ -313,5 +481,11 @@ const styles = StyleSheet.create({
     width: 11,
     height: 11,
     borderRadius: 6,
+  },
+  deleteBtn: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

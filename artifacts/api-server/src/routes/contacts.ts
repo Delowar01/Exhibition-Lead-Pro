@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { contactsTable, usersTable, eventsTable, scansTable, leadsTable, meetingsTable, contactStatusHistoryTable } from "@workspace/db";
-import { eq, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc } from "drizzle-orm";
+import { eq, ne, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { refAccessible } from "../lib/tenant.js";
@@ -107,16 +107,40 @@ router.post("/contacts", requirePermission("contacts", "create"), async (req: Au
     const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore, leadTemperature, aiReasoning, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
     // Record the initial lead status in the append-only history.
     void db.insert(contactStatusHistoryTable).values({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: req.user!.id }).catch(() => {});
-    res.status(201).json(formatContact(contact));
 
-    // Notify the owning rep when a freshly captured lead scores "hot" (best-effort, after responding).
-    if (contact.leadTemperature === "hot") {
-      const target = contact.assignedToId ?? req.user!.id;
-      void db.update(contactsTable).set({ hotNotifiedAt: new Date() }).where(eq(contactsTable.id, contact.id)).catch(() => {});
+    // Auto-link: if this new contact matches an existing original (same email /
+    // phone / name+company), mark it as a duplicate immediately so it is hidden
+    // from All Contacts, stats, and reports without waiting for a manual merge.
+    let finalContact = contact;
+    try {
+      const original = await findOriginalContact(
+        companyId,
+        { email: contact.email, mobile: contact.mobile, officePhone: contact.officePhone, fullName: contact.fullName, firstName: contact.firstName, lastName: contact.lastName, contactCompany: contact.contactCompany },
+        contact.id,
+      );
+      if (original) {
+        const [linked] = await db
+          .update(contactsTable)
+          .set({ duplicateOfId: original.id, updatedAt: new Date() })
+          .where(eq(contactsTable.id, contact.id))
+          .returning();
+        if (linked) finalContact = linked;
+      }
+    } catch {
+      // Non-fatal: duplicate detection must never block contact creation.
+    }
+
+    res.status(201).json(formatContact(finalContact));
+
+    // Notify the owning rep when a freshly captured lead scores "hot"
+    // (best-effort, after responding; skip for auto-linked duplicates).
+    if (!finalContact.duplicateOfId && finalContact.leadTemperature === "hot") {
+      const target = finalContact.assignedToId ?? req.user!.id;
+      void db.update(contactsTable).set({ hotNotifiedAt: new Date() }).where(eq(contactsTable.id, finalContact.id)).catch(() => {});
       void notifyUser(target, {
         title: "\uD83D\uDD25 Hot lead captured",
-        body: `${contact.fullName ?? "New contact"}${contact.contactCompany ? ` \u00b7 ${contact.contactCompany}` : ""}${contact.leadScore != null ? ` scored ${contact.leadScore}` : ""}`,
-        data: { type: "hot_lead", contactId: contact.id },
+        body: `${finalContact.fullName ?? "New contact"}${finalContact.contactCompany ? ` \u00b7 ${finalContact.contactCompany}` : ""}${finalContact.leadScore != null ? ` scored ${finalContact.leadScore}` : ""}`,
+        data: { type: "hot_lead", contactId: finalContact.id },
       });
     }
   } catch (err) {
@@ -168,11 +192,79 @@ function normName(c: typeof contactsTable.$inferSelect): string | null {
   return `${name}|${company}`;
 }
 
+// Finds the first ORIGINAL contact (duplicateOfId IS NULL) in the same company
+// that matches by email, phone, or name+company. Returns null if no match.
+// Used by POST /contacts to auto-link new duplicates immediately at scan time.
+async function findOriginalContact(
+  companyId: number,
+  fields: {
+    email?: string | null; mobile?: string | null; officePhone?: string | null;
+    fullName?: string | null; firstName?: string | null; lastName?: string | null;
+    contactCompany?: string | null;
+  },
+  excludeId: number,
+): Promise<typeof contactsTable.$inferSelect | null> {
+  const candidates = await db
+    .select()
+    .from(contactsTable)
+    .where(and(eq(contactsTable.companyId, companyId), isNull(contactsTable.duplicateOfId), ne(contactsTable.id, excludeId)))
+    .limit(2000);
+
+  const normE = normEmail(fields.email ?? null);
+  const normM = normPhone(fields.mobile ?? null);
+  const normO = normPhone(fields.officePhone ?? null);
+  const fn = (fields.fullName ?? [fields.firstName, fields.lastName].filter(Boolean).join(" ")) || null;
+  const nc = fn ? fn.trim().toLowerCase().replace(/\s+/g, " ") : null;
+  const comp = fields.contactCompany ? fields.contactCompany.trim().toLowerCase().replace(/\s+/g, " ") : null;
+  const normN = nc && comp ? `${nc}|${comp}` : null;
+
+  for (const c of candidates) {
+    if (normE && normE === normEmail(c.email)) return c;
+    const cMobile = normPhone(c.mobile);
+    const cOffice = normPhone(c.officePhone);
+    if (normM && (normM === cMobile || normM === cOffice)) return c;
+    if (normO && (normO === cMobile || normO === cOffice)) return c;
+    if (normN && normN === normName(c)) return c;
+  }
+  return null;
+}
+
 // GET /contacts/duplicates — group likely-duplicate contacts within the tenant
 router.get("/contacts/duplicates", async (req: AuthRequest, res) => {
   try {
     const whereClause = tenantScope(req.user, contactsTable.companyId);
-    const rows = await db.select().from(contactsTable).where(whereClause).limit(2000);
+    const allGroups: { matchType: string; matchValue: string; contacts: ReturnType<typeof formatContact>[] }[] = [];
+
+    // ── 1. Linked groups — auto-detected duplicates (duplicateOfId IS NOT NULL)
+    // These are definite duplicates stored at scan time; show original + duplicates.
+    const linked = await db.select().from(contactsTable)
+      .where(and(whereClause, isNotNull(contactsTable.duplicateOfId))).limit(2000);
+
+    if (linked.length > 0) {
+      const originalIds = [...new Set(linked.map((c) => c.duplicateOfId).filter((id): id is number => id != null))];
+      const originals = await db.select().from(contactsTable).where(inArray(contactsTable.id, originalIds));
+      const origMap = new Map(originals.map((o) => [o.id, o]));
+      const byOriginal = new Map<number, typeof contactsTable.$inferSelect[]>();
+      for (const c of linked) {
+        if (!c.duplicateOfId) continue;
+        const arr = byOriginal.get(c.duplicateOfId) ?? [];
+        arr.push(c);
+        byOriginal.set(c.duplicateOfId, arr);
+      }
+      for (const [origId, dups] of byOriginal) {
+        const orig = origMap.get(origId);
+        if (!orig) continue;
+        allGroups.push({
+          matchType: "linked",
+          matchValue: (orig.fullName ?? [orig.firstName, orig.lastName].filter(Boolean).join(" ")) || `Contact #${origId}`,
+          contacts: [orig, ...dups].map((m) => formatContact(m)),
+        });
+      }
+    }
+
+    // ── 2. Similarity groups — unlinked contacts only (legacy / still-pending)
+    const rows = await db.select().from(contactsTable)
+      .where(and(whereClause, isNull(contactsTable.duplicateOfId))).limit(2000);
 
     const byKey = (extract: (c: typeof contactsTable.$inferSelect) => string | null) => {
       const map = new Map<string, typeof contactsTable.$inferSelect[]>();
@@ -193,18 +285,17 @@ router.get("/contacts/duplicates", async (req: AuthRequest, res) => {
     ];
 
     const seen = new Set<string>();
-    const groups: { matchType: string; matchValue: string; contacts: ReturnType<typeof formatContact>[] }[] = [];
     for (const { matchType, map } of sources) {
       for (const [key, members] of map) {
         if (members.length < 2) continue;
         const idKey = members.map((m) => m.id).sort((a, b) => a - b).join(",");
         if (seen.has(idKey)) continue;
         seen.add(idKey);
-        groups.push({ matchType, matchValue: key, contacts: members.map((m) => formatContact(m)) });
+        allGroups.push({ matchType, matchValue: key, contacts: members.map((m) => formatContact(m)) });
       }
     }
 
-    res.json({ groups });
+    res.json({ groups: allGroups });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

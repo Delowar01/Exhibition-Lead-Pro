@@ -763,7 +763,7 @@ export const GetContactStatsResponse = zod.object({
  */
 export const GetContactDuplicatesResponse = zod.object({
   "groups": zod.array(zod.object({
-  "matchType": zod.enum(['email', 'phone', 'name']),
+  "matchType": zod.enum(['email', 'phone', 'name', 'linked']),
   "matchValue": zod.string(),
   "contacts": zod.array(zod.object({
   "id": zod.number(),

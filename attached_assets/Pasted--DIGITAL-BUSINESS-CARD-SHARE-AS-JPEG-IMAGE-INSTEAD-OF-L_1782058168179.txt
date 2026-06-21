@@ -1,0 +1,184 @@
+# DIGITAL BUSINESS CARD – SHARE AS JPEG IMAGE INSTEAD OF LINK
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Admin Panel changes)
+
+Before implementing, review the existing Digital Business Card sharing workflow and ensure no regression occurs.
+
+---
+
+# Current Issue
+
+The **Share** button on the Digital Business Card currently shares a **web link** to the public Digital Business Card.
+
+This is **not** the desired behavior.
+
+The Digital Business Card should be shared as a **high-quality JPEG image**, similar to sharing a poster, business card, or flyer.
+
+---
+
+# Required Behavior
+
+When the user taps **Share**:
+
+The application should:
+
+1. Generate a high-resolution image of the Digital Business Card.
+2. Save the image temporarily on the device.
+3. Open the device's native Share Sheet.
+4. Share the generated **JPEG image**, not a URL.
+
+The shared content should be an actual image attachment.
+
+Do **not** share:
+
+* Public URL
+* Landing page
+* Web link
+* HTML page
+* QR page
+
+The default behavior must always be sharing the JPEG image.
+
+---
+
+# Image Requirements
+
+Generate the card exactly as displayed in the application.
+
+Include:
+
+* Profile Photo
+* Name
+* Designation
+* Company Name
+* Contact Numbers
+* Email
+* Address
+* QR Code
+* Application Logo inside the QR Code
+* Company Branding
+
+The image should look identical to the in-app Digital Business Card.
+
+---
+
+# Image Format
+
+Generate:
+
+* JPEG (.jpg)
+
+High Quality
+
+Recommended:
+
+* 1080 × 1920 px (portrait)
+* or higher resolution while maintaining the same aspect ratio
+
+The image should remain sharp when shared through:
+
+* WhatsApp
+* Email
+* Telegram
+* Messenger
+* LinkedIn
+* SMS
+* AirDrop
+* Quick Share
+* Native Share
+
+---
+
+# QR Code
+
+The QR Code inside the image must remain fully functional.
+
+When someone scans the QR Code from the shared JPEG image:
+
+* It should open the native Contact application.
+* It should import the contact using the embedded vCard.
+* It must **not** open a website.
+
+---
+
+# Sharing Workflow
+
+User taps:
+
+**Share**
+
+↓
+
+Generate JPEG
+
+↓
+
+Save to temporary storage
+
+↓
+
+Open Native Share Sheet
+
+↓
+
+User selects:
+
+* WhatsApp
+* Email
+* SMS
+* AirDrop
+* Quick Share
+* Messenger
+* Any installed sharing application
+
+↓
+
+JPEG image is shared as an attachment.
+
+---
+
+# Temporary Files
+
+After sharing:
+
+* Remove temporary image files automatically.
+* Prevent storage accumulation.
+
+---
+
+# Future Ready
+
+Design the sharing service so it can later support:
+
+* JPEG
+* PNG
+* PDF
+* Wallet Pass
+* Apple Wallet
+* Google Wallet
+
+without changing the Digital Business Card screen.
+
+---
+
+# Acceptance Criteria
+
+The task will be considered complete only when:
+
+* The Share button no longer shares a web link.
+* The Share button generates a high-quality JPEG image of the Digital Business Card.
+* The JPEG matches the design shown inside the application.
+* The QR Code remains fully scannable from the shared image.
+* Scanning the QR Code opens the native Contact application and imports the contact using the embedded vCard.
+* The native Share Sheet opens with the JPEG attached.
+* Temporary files are cleaned up automatically after sharing.
+* The feature works correctly on both Android and iPhone.
+* Screenshots and testing evidence are provided before marking the task complete.

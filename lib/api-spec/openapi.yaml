@@ -2145,7 +2145,7 @@ components:
       properties:
         matchType:
           type: string
-          enum: [email, phone, name]
+          enum: [email, phone, name, linked]
         matchValue:
           type: string
         contacts:

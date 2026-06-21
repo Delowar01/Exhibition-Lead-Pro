@@ -582,6 +582,7 @@ export const DuplicateGroupMatchType = {
   email: 'email',
   phone: 'phone',
   name: 'name',
+  linked: 'linked',
 } as const;
 
 export interface DuplicateGroup {

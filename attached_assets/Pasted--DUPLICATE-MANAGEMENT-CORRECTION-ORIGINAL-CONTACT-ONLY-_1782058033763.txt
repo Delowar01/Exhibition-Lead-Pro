@@ -1,0 +1,200 @@
+# DUPLICATE MANAGEMENT CORRECTION – ORIGINAL CONTACT ONLY IN MAIN LIST
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY** (Backend and Mobile if required)
+
+Before making any changes, review the existing duplicate detection workflow to ensure no regression occurs.
+
+---
+
+# Current Issue
+
+The application correctly detects duplicate leads.
+
+However, duplicate records still appear in the **All Contacts** list until they are manually deleted from the **Duplicates** section.
+
+This is not the intended behavior.
+
+---
+
+# Required Duplicate Architecture
+
+The application must maintain **one Original Contact** and **one or more Duplicate Records**.
+
+Only the **Original Contact** should appear throughout the application.
+
+Duplicate records should remain stored in the database for reference and management but must never appear in normal application views.
+
+---
+
+# Original Contact
+
+The first captured lead becomes the **Original Contact**.
+
+The Original Contact must appear in:
+
+* All Contacts
+* Dashboard statistics
+* Search results
+* Reports
+* Exports
+* Follow-Ups
+* Meetings
+* Pipeline
+* Tasks
+* Analytics
+
+The Original Contact should display a duplicate count badge (e.g., ×3 Re-scans) where applicable.
+
+---
+
+# Duplicate Records
+
+All subsequent duplicate scans must:
+
+* Be marked as duplicates.
+* Be linked to the Original Contact.
+* Appear **only** in the **Duplicates** section.
+
+Duplicate records must **never** appear in:
+
+* All Contacts
+* Dashboard
+* Reports
+* Search
+* Pipeline
+* Follow-Ups
+* Meetings
+* Tasks
+* Analytics
+* Exports
+
+Deleting a duplicate record must not affect the Original Contact.
+
+---
+
+# Contact List Behavior
+
+The **All Contacts** screen must always return:
+
+```text
+WHERE is_duplicate = false
+```
+
+or the equivalent logic in the application's data layer.
+
+There should never be a moment where duplicate records are visible in the main list, even immediately after scanning.
+
+---
+
+# Dashboard
+
+Dashboard statistics must count only Original Contacts.
+
+For example:
+
+* Total Leads = Original Contacts only
+* Today's Leads = Original Contacts only
+* Hot Leads = Original Contacts only
+* Pipeline = Original Contacts only
+
+Duplicates should never increase dashboard counts.
+
+A separate Duplicate count may be displayed if required.
+
+---
+
+# Search
+
+Global search should search only Original Contacts.
+
+Duplicate records should only be searchable inside the Duplicates screen.
+
+---
+
+# Reports & Exports
+
+CSV, Excel, PDF, analytics, ROI reports, team performance, and event reports must exclude duplicate records by default.
+
+---
+
+# Duplicate Screen
+
+The Duplicates screen should contain:
+
+* Original Contact reference
+* Duplicate records
+* Capture date/time
+* Captured by user
+* Event
+* Actions:
+
+  * View
+  * Delete Duplicate
+
+Deleting a duplicate should only remove that duplicate record.
+
+The Original Contact must remain untouched.
+
+---
+
+# Scanning Workflow
+
+When a duplicate is detected:
+
+1. Detect duplicate.
+2. Link to the Original Contact.
+3. Mark `is_duplicate = true`.
+4. Increment the Original Contact's duplicate count.
+5. Save the duplicate record.
+6. Do **not** add it to the All Contacts query.
+
+This should happen immediately after saving.
+
+There should never be a state where duplicates briefly appear in All Contacts.
+
+---
+
+# Backend Verification
+
+Review every endpoint that returns contacts.
+
+Ensure duplicate filtering is applied consistently to:
+
+* Contacts
+* Dashboard
+* Reports
+* Pipeline
+* Follow-Ups
+* Meetings
+* Tasks
+* Search
+* Exports
+* Widgets
+* Home Dashboard
+
+The Duplicates screen should be the **only** endpoint that returns duplicate records.
+
+---
+
+# Acceptance Criteria
+
+The task will be considered complete only when:
+
+* The first scanned lead appears as the Original Contact.
+* All subsequent duplicate scans are stored as duplicate records.
+* Duplicate records never appear in the All Contacts list.
+* Duplicate records never affect dashboard statistics.
+* Duplicate records never appear in search results.
+* Duplicate records never appear in reports or exports.
+* Duplicate records are accessible only from the Duplicates section.
+* Deleting a duplicate removes only that duplicate record.
+* The Original Contact remains intact.
+* Duplicate count on the Original Contact updates correctly.
+* Existing duplicate detection logic continues to work.
+* Screenshots and testing evidence are provided before marking the task as complete.
