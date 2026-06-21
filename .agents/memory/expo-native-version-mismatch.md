@@ -48,10 +48,12 @@ Check with: `test -f $(readlink -f node_modules/<pkg>)/app.plugin.js`.
 **EAS build "Install dependencies" failure in pnpm monorepo:**
 When `eas.json` lives in a subdirectory (e.g. `artifacts/mobile/`) and
 `pnpm-lock.yaml` is at the workspace root, EAS can't detect pnpm and falls back
-to npm → instant failure (no `package-lock.json`). Two fixes required together:
-1. Add `"packageManager": "pnpm@X.Y.Z"` to the **workspace root** `package.json`.
-2. Add `"buildRootDir": "../.."` to every build profile in `eas.json` — tells
-   EAS to run the install step from the directory that holds `pnpm-lock.yaml`.
+to npm → instant failure (no `package-lock.json`). Fix: add
+`"packageManager": "pnpm@X.Y.Z"` to the **workspace root** `package.json`.
+EAS then walks up the directory tree from `eas.json`, finds `pnpm-lock.yaml` and
+`pnpm-workspace.yaml` at the workspace root, and uses pnpm automatically.
+NOTE: `buildRootDir` is NOT a valid eas.json field — using it causes immediate
+schema validation failure before any build step runs.
 
 **Verification without an Android device (Replit has no Android SDK/emulator/adb):**
 strongest offline proof is `npx expo export --platform android` (full Metro +

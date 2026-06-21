@@ -7,14 +7,12 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "buildRootDir": "../..",
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
       "distribution": "internal",
-      "buildRootDir": "../..",
       "android": {
         "buildType": "apk"
       },
@@ -24,7 +22,6 @@
     },
     "production": {
       "autoIncrement": true,
-      "buildRootDir": "../..",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://contact-aggregator--DelowarHossain1.replit.app"
       }
