@@ -1,0 +1,184 @@
+# BUG REPORT – DIGITAL BUSINESS CARD DELETE API FAILURE
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY (Backend + API if required)**
+
+The confirmation dialog is now correct, but the **Delete Digital Business Card functionality is still not working**.
+
+After confirming deletion, the application displays:
+
+> **"Unable to delete your Digital Business Card. Please try again."**
+
+This indicates that the frontend is catching an error from the backend instead of successfully deleting the record.
+
+---
+
+# Required Investigation
+
+Please do not simply suppress the error.
+
+Identify the root cause and fix it.
+
+Debug the complete delete workflow from the UI through the API to the database.
+
+---
+
+# Verify the Following
+
+## 1. API Endpoint
+
+Confirm that:
+
+```
+DELETE /api/cards/me
+```
+
+(or the current delete endpoint)
+
+* exists
+* is registered
+* returns the correct HTTP status
+* is reachable from the mobile application
+
+---
+
+## 2. Authentication
+
+Verify that the authenticated user's token is being sent correctly.
+
+Confirm the endpoint correctly identifies the logged-in user.
+
+Ensure no authentication or authorization failure is occurring.
+
+---
+
+## 3. Database Query
+
+Verify the delete query is searching using the correct user identifier.
+
+Examples:
+
+* user_id
+* account_id
+* profile_id
+
+Ensure it is not attempting to delete another user's record.
+
+---
+
+## 4. Public Token Cleanup
+
+If the Digital Business Card stores:
+
+* public_token
+* qr_token
+* share_token
+
+verify these are removed correctly.
+
+---
+
+## 5. Context Refresh
+
+After successful deletion:
+
+* Refresh the Digital Card context/state.
+* Remove cached card data.
+* Update the Home Dashboard.
+* Update the Workspace.
+* Update the public card state.
+
+The application should not require a restart.
+
+---
+
+## 6. Navigation
+
+After successful deletion:
+
+Navigate automatically to:
+
+```
+Workspace
+→ My Digital Business Card
+```
+
+which should display the empty state.
+
+---
+
+## 7. Logging
+
+Temporarily add logging around the delete operation.
+
+Log:
+
+* API request received
+* Authenticated user ID
+* Card found/not found
+* Database delete result
+* Number of records deleted
+* Returned HTTP status
+* Frontend error response (if any)
+
+Include these logs in your implementation summary.
+
+---
+
+# Error Handling
+
+If the card does not exist:
+
+Return:
+
+```
+404 Not Found
+```
+
+If deletion succeeds:
+
+Return:
+
+```
+200 OK
+```
+
+or
+
+```
+204 No Content
+```
+
+Do not return a generic server error.
+
+---
+
+# Testing Required
+
+Please verify all of the following:
+
+* Delete works when a card exists.
+* Delete works on Android.
+* Delete works on iPhone.
+* Home Dashboard updates immediately.
+* Workspace updates immediately.
+* Public Digital Business Card URL returns **404 Not Found** after deletion.
+* QR Code no longer resolves after deletion.
+
+---
+
+# Acceptance Criteria
+
+Do not mark this task complete until:
+
+* The Delete button successfully removes the Digital Business Card.
+* No error message appears during successful deletion.
+* The backend returns the correct HTTP status.
+* Application state refreshes automatically.
+* The public Digital Business Card becomes inaccessible after deletion.
+* Debug logs confirming the root cause and fix are included in the implementation summary.
