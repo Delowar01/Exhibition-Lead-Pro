@@ -1,0 +1,63 @@
+The Android build now fails because of a native dependency conflict.
+
+Current build error:
+
+```
+Execution failed for task ':react-native-reanimated:assertNewArchitectureEnabledTask'
+
+[Reanimated] Reanimated requires new architecture to be enabled.
+```
+
+Previously we disabled:
+
+```json
+"newArchEnabled": false
+```
+
+because the standalone APK built successfully but crashed immediately after the splash screen due to a native startup issue involving `react-native-nfc-manager`.
+
+### Important project requirement
+
+**NFC is NOT optional.**
+
+This application is a Business Card Scanner and Lead Capture application. One of its core features is reading NFC-enabled digital business cards. NFC support must remain fully functional in the final APK.
+
+Do NOT remove NFC functionality.
+
+### Required solution
+
+Please perform a complete compatibility audit of the native modules and produce a working standalone Android APK.
+
+Tasks:
+
+1. Determine why `react-native-nfc-manager` conflicts with Expo SDK 54 / React Native 0.81 / New Architecture.
+2. Upgrade or replace `react-native-nfc-manager` with a fully compatible implementation that supports:
+
+   * Expo SDK 54
+   * React Native 0.81
+   * Android New Architecture (Fabric/TurboModules)
+3. Keep all NFC features working exactly as before.
+4. Restore `"newArchEnabled": true` if required by Reanimated.
+5. Verify compatibility between:
+
+   * react-native-reanimated
+   * react-native-worklets
+   * react-native-nfc-manager (or replacement)
+   * expo-router
+   * Expo SDK 54
+6. Fix any startup crash occurring before the first React screen renders.
+7. Check `app/_layout.tsx` and all startup providers for native initialization errors.
+8. Ensure the application launches successfully in a standalone Release APK.
+9. Test the following before considering the task complete:
+
+   * App opens without crashing.
+   * Login screen loads.
+   * API calls work using `EXPO_PUBLIC_API_URL`.
+   * Camera scanning works.
+   * OCR scanning works.
+   * NFC card reading works.
+   * Push notifications still work.
+   * Biometric login still works.
+10. If any library is incompatible with Expo SDK 54, migrate it to the officially recommended Expo-compatible package instead of disabling features.
+
+The objective is **not just to make the APK build**, but to produce a stable production-ready APK where **all existing features remain functional**, especially NFC card reading.
