@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useLogin } from "@workspace/api-client-react";
+import { ApiError, useLogin } from "@workspace/api-client-react";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { FONT, PrimaryButton } from "@/components/ui";
@@ -99,8 +99,22 @@ export default function LoginScreen() {
       });
       await persistRemember(emailValue);
       await login(res.token, res.user);
-    } catch {
-      setError("Invalid email or password. Please try again.");
+    } catch (err) {
+      let message: string;
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          message = "Invalid email or password.";
+        } else if (err.status === 403) {
+          message = "Access denied. Contact your administrator.";
+        } else if (err.status >= 500) {
+          message = `Server error (${err.status}). Please try again later.`;
+        } else {
+          message = `Login failed (${err.status}). Please try again.`;
+        }
+      } else {
+        message = "Cannot connect to server. Check your internet connection.";
+      }
+      setError(message);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
