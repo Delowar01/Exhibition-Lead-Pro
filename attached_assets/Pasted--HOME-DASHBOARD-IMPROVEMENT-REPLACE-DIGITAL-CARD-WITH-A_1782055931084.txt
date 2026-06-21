@@ -1,0 +1,163 @@
+# HOME DASHBOARD IMPROVEMENT – REPLACE DIGITAL CARD WITH ACTION BUTTON
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Admin Panel changes)
+
+---
+
+# Current Issue
+
+The Home Dashboard is still displaying the full **Digital Business Card**.
+
+This is **not** the intended design.
+
+The Home Dashboard should remain a dashboard for lead management and analytics, not a place to permanently display the Digital Business Card.
+
+The Digital Business Card should only be displayed when the user explicitly chooses to view it.
+
+---
+
+# Required Change
+
+## Remove
+
+Remove the entire Digital Business Card from the Home Dashboard.
+
+This includes:
+
+* Profile photo
+* Name
+* Designation
+* Company
+* QR Code
+* "Tap to share or edit"
+* Any Digital Card preview
+
+Nothing related to the Digital Business Card should be permanently visible on the Home screen.
+
+---
+
+# Replace With
+
+Replace the current card with a compact premium action button, similar to the previous **Capture a Lead** card.
+
+The new card should have the following:
+
+### Title
+
+**My Digital Business Card**
+
+### Subtitle
+
+**View and share your digital business card**
+
+### Icon
+
+Use a premium Digital Business Card or QR Card icon.
+
+Do **not** use the scan icon.
+
+### Right Arrow
+
+Keep the arrow on the right side to indicate navigation.
+
+### Design
+
+Use the same:
+
+* Width
+* Height
+* Border radius
+* Shadow
+* Orange gradient
+* Premium styling
+
+as the previous **Capture a Lead** action card.
+
+The goal is to keep the Home Dashboard clean while still providing quick access to the Digital Business Card.
+
+---
+
+# Navigation
+
+When the user taps **My Digital Business Card**, navigate to the dedicated Digital Business Card screen.
+
+Do **not** open a popup.
+
+Do **not** display the card inline.
+
+Navigate to a separate page.
+
+---
+
+# Digital Business Card Screen
+
+The Digital Business Card page should remain exactly as designed previously.
+
+Display the card in a **vertical portrait layout**.
+
+This page should include:
+
+* Profile photo
+* Name
+* Designation
+* Company
+* Contact details
+* QR Code
+* Share functionality
+
+The Home screen should never display this full layout.
+
+---
+
+# Editing
+
+The Digital Business Card screen should remain **View & Share only**.
+
+Do **not** show an Edit button.
+
+Editing must only be available from:
+
+**Workspace → My Digital Business Card**
+
+This ensures a single location for managing card information.
+
+---
+
+# Home Dashboard Layout
+
+The Home Dashboard order should be:
+
+1. Greeting
+2. User Name
+3. User Role
+4. Company Name
+5. **My Digital Business Card** action button
+6. Dashboard widgets
+7. Last Event report
+8. Remaining dashboard content
+
+No Digital Business Card preview should appear on the dashboard.
+
+---
+
+# Acceptance Criteria
+
+The implementation will be considered complete only when:
+
+* The full Digital Business Card is completely removed from the Home Dashboard.
+* It is replaced with a compact **My Digital Business Card** action button.
+* The button maintains the premium design previously used for **Capture a Lead**.
+* Tapping the button opens the dedicated Digital Business Card page.
+* The Digital Business Card page remains in **vertical portrait orientation**.
+* The Digital Business Card page supports **View** and **Share** only.
+* Editing is available **only** through **Workspace → My Digital Business Card**.
+* The Home Dashboard remains clean, uncluttered, and optimized for lead management.
+* Screenshots of the updated Home Dashboard and Digital Business Card page are provided before marking the task complete.

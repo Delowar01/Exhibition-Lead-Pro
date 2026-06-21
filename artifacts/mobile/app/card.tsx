@@ -213,7 +213,6 @@ export default function CardScreen() {
             card={card}
             account={{ name: user?.name, avatarUrl: user?.avatarUrl }}
             shareUrl={shareUrl}
-            onEdit={startEdit}
             onShare={handleShare}
           />
         )}
@@ -321,13 +320,11 @@ function CardPreview({
   card,
   account,
   shareUrl,
-  onEdit,
   onShare,
 }: {
   card: BusinessCard | null;
   account: { name?: string | null; avatarUrl?: string | null };
   shareUrl: string | null;
-  onEdit: () => void;
   onShare: () => void;
 }) {
   const colors = useColors();
@@ -433,16 +430,6 @@ function CardPreview({
         onPress={onShare}
         style={{ marginTop: 18 }}
       />
-      <Pressable
-        onPress={onEdit}
-        style={({ pressed }) => [
-          styles.editBtn,
-          { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 },
-        ]}
-      >
-        <Feather name="edit-2" size={16} color={colors.foreground} />
-        <Text style={[styles.editText, { color: colors.foreground }]}>Edit details</Text>
-      </Pressable>
     </View>
   );
 }
