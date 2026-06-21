@@ -30,6 +30,7 @@ import AdminReports from "@/pages/admin/Reports";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
 import AdminScan from "@/pages/admin/Scan";
+import PublicCard from "@/pages/PublicCard";
 
 import { PlatformLayout } from "@/components/layouts/PlatformLayout";
 import { AdminLayout } from "@/components/layouts/AdminLayout";
@@ -93,6 +94,11 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+
+      {/* Public digital business card — no auth, no layout */}
+      <Route path="/card/:token">
+        {(params) => <PublicCard token={params.token} />}
+      </Route>
       
       {/* Platform Routes */}
       <Route path="/platform">

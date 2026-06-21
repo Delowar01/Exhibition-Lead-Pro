@@ -23,6 +23,8 @@ import type {
   ActivityItem,
   AdminDashboard,
   AuthResponse,
+  BusinessCard,
+  BusinessCardInput,
   ChangePasswordInput,
   Company,
   CompanyInput,
@@ -74,6 +76,7 @@ import type {
   PipelineView,
   Plan,
   PlatformStats,
+  PublicBusinessCard,
   PushTokenInput,
   PushTokenUnregisterInput,
   RegisterInput,
@@ -5429,6 +5432,231 @@ export function useGetContactStatusHistory<TData = Awaited<ReturnType<typeof get
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetContactStatusHistoryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetOwnCardUrl = () => {
+
+
+
+
+  return `/api/cards/me`
+}
+
+/**
+ * @summary Get the authenticated user's digital business card
+ */
+export const getOwnCard = async ( options?: RequestInit): Promise<BusinessCard> => {
+
+  return customFetch<BusinessCard>(getGetOwnCardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOwnCardQueryKey = () => {
+    return [
+    `/api/cards/me`
+    ] as const;
+    }
+
+
+export const getGetOwnCardQueryOptions = <TData = Awaited<ReturnType<typeof getOwnCard>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnCard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOwnCardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOwnCard>>> = ({ signal }) => getOwnCard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOwnCard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOwnCardQueryResult = NonNullable<Awaited<ReturnType<typeof getOwnCard>>>
+export type GetOwnCardQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the authenticated user's digital business card
+ */
+
+export function useGetOwnCard<TData = Awaited<ReturnType<typeof getOwnCard>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnCard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOwnCardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpsertOwnCardUrl = () => {
+
+
+
+
+  return `/api/cards/me`
+}
+
+/**
+ * @summary Create or update the authenticated user's digital business card
+ */
+export const upsertOwnCard = async (businessCardInput: BusinessCardInput, options?: RequestInit): Promise<BusinessCard> => {
+
+  return customFetch<BusinessCard>(getUpsertOwnCardUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      businessCardInput,)
+  }
+);}
+
+
+
+
+export const getUpsertOwnCardMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertOwnCard>>, TError,{data: BodyType<BusinessCardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertOwnCard>>, TError,{data: BodyType<BusinessCardInput>}, TContext> => {
+
+const mutationKey = ['upsertOwnCard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertOwnCard>>, {data: BodyType<BusinessCardInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertOwnCard(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertOwnCardMutationResult = NonNullable<Awaited<ReturnType<typeof upsertOwnCard>>>
+    export type UpsertOwnCardMutationBody = BodyType<BusinessCardInput>
+    export type UpsertOwnCardMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create or update the authenticated user's digital business card
+ */
+export const useUpsertOwnCard = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertOwnCard>>, TError,{data: BodyType<BusinessCardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertOwnCard>>,
+        TError,
+        {data: BodyType<BusinessCardInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertOwnCardMutationOptions(options));
+    }
+
+export const getGetPublicCardUrl = (token: string,) => {
+
+
+
+
+  return `/api/cards/public/${token}`
+}
+
+/**
+ * @summary Public (unauthenticated) digital business card by token
+ */
+export const getPublicCard = async (token: string, options?: RequestInit): Promise<PublicBusinessCard> => {
+
+  return customFetch<PublicBusinessCard>(getGetPublicCardUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicCardQueryKey = (token: string,) => {
+    return [
+    `/api/cards/public/${token}`
+    ] as const;
+    }
+
+
+export const getGetPublicCardQueryOptions = <TData = Awaited<ReturnType<typeof getPublicCard>>, TError = ErrorType<ErrorResponse>>(token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicCard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicCardQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicCard>>> = ({ signal }) => getPublicCard(token, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(token), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicCard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicCardQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicCard>>>
+export type GetPublicCardQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Public (unauthenticated) digital business card by token
+ */
+
+export function useGetPublicCard<TData = Awaited<ReturnType<typeof getPublicCard>>, TError = ErrorType<ErrorResponse>>(
+ token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicCard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicCardQueryOptions(token,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

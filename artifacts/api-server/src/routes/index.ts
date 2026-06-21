@@ -14,11 +14,14 @@ import pushRouter from "./push.js";
 import followUpsRouter from "./follow_ups.js";
 import meetingsRouter from "./meetings.js";
 import tasksRouter from "./tasks.js";
+import cardsRouter from "./cards.js";
+import cardsPublicRouter from "./cards-public.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(cardsPublicRouter);
 router.use(companiesRouter);
 router.use(usersRouter);
 router.use(contactsRouter);
@@ -32,5 +35,6 @@ router.use(pushRouter);
 router.use(followUpsRouter);
 router.use(meetingsRouter);
 router.use(tasksRouter);
+router.use(cardsRouter);
 
 export default router;

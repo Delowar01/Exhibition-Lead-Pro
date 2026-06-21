@@ -1514,6 +1514,117 @@ export interface ContactStatusHistoryList {
   total: number;
 }
 
+export type BusinessCardFieldVisibility = {[key: string]: boolean};
+
+export interface BusinessCard {
+  id: number;
+  userId: number;
+  publicToken: string;
+  /** @nullable */
+  fullName?: string | null;
+  /** @nullable */
+  designation?: string | null;
+  /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  primaryPhone?: string | null;
+  /** @nullable */
+  altPhone?: string | null;
+  /** @nullable */
+  officeAddress?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  linkedin?: string | null;
+  /** @nullable */
+  facebook?: string | null;
+  /** @nullable */
+  instagram?: string | null;
+  /** @nullable */
+  twitter?: string | null;
+  /** @nullable */
+  youtube?: string | null;
+  fieldVisibility?: BusinessCardFieldVisibility;
+  templateId: string;
+  isPublished: boolean;
+  /** @nullable */
+  avatarUrl?: string | null;
+  createdAt: string;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export type BusinessCardInputFieldVisibility = {[key: string]: boolean};
+
+export interface BusinessCardInput {
+  /** @nullable */
+  fullName?: string | null;
+  /** @nullable */
+  designation?: string | null;
+  /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  primaryPhone?: string | null;
+  /** @nullable */
+  altPhone?: string | null;
+  /** @nullable */
+  officeAddress?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  linkedin?: string | null;
+  /** @nullable */
+  facebook?: string | null;
+  /** @nullable */
+  instagram?: string | null;
+  /** @nullable */
+  twitter?: string | null;
+  /** @nullable */
+  youtube?: string | null;
+  fieldVisibility?: BusinessCardInputFieldVisibility;
+  /** @nullable */
+  templateId?: string | null;
+  /** @nullable */
+  isPublished?: boolean | null;
+}
+
+export interface PublicBusinessCard {
+  publicToken: string;
+  /** @nullable */
+  fullName?: string | null;
+  /** @nullable */
+  designation?: string | null;
+  /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  primaryPhone?: string | null;
+  /** @nullable */
+  altPhone?: string | null;
+  /** @nullable */
+  officeAddress?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  linkedin?: string | null;
+  /** @nullable */
+  facebook?: string | null;
+  /** @nullable */
+  instagram?: string | null;
+  /** @nullable */
+  twitter?: string | null;
+  /** @nullable */
+  youtube?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  templateId: string;
+}
+
 export type ListCompaniesParams = {
 search?: string;
 status?: string;

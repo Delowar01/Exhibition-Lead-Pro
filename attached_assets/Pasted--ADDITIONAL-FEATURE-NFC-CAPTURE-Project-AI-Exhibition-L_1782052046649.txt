@@ -1,0 +1,473 @@
+# ADDITIONAL FEATURE – NFC CAPTURE
+
+
+
+## Project
+
+
+
+AI Exhibition Lead Capture Platform
+
+
+
+## Scope
+
+
+
+**MOBILE APPLICATION ONLY**
+
+
+
+(No Admin Panel changes in this iteration)
+
+
+
+---
+
+
+
+# NFC CAPTURE
+
+
+
+## Objective
+
+
+
+Extend the existing **Capture Methods** by adding **NFC Capture** support.
+
+
+
+The application should be capable of reading NFC-enabled business cards, NFC name cards, NFC tags, and digital business cards by simply tapping the phone against an NFC card or tag.
+
+
+
+This feature is designed for modern networking where companies use NFC-enabled business cards instead of traditional printed cards.
+
+
+
+---
+
+
+
+# Capture Method Update
+
+
+
+Update the Capture Methods in the following order:
+
+
+
+1. Business Card
+
+2. Email Signature
+
+3. **NFC Capture (NEW)**
+
+4. QR / LinkedIn  
+
+5. Manual Entry 
+
+
+
+The **NFC Capture** option must appear in the **3rd position** of the Capture Methods screen.
+
+
+
+Use a premium NFC icon that matches the application's design language.
+
+
+
+---
+
+
+
+# NFC Capture Workflow
+
+
+
+When the user selects **NFC Capture**:
+
+
+
+1. Check whether the device supports NFC.
+
+2. Verify that NFC is enabled.
+
+3. If NFC is disabled, prompt the user to enable NFC in the device settings.
+
+4. Display a premium scanning animation with the message:
+
+
+
+> **Hold your phone near the NFC business card**
+
+
+
+5. Automatically detect the NFC tag.
+
+6. Read the NFC data.
+
+7. Parse the contact information.
+
+8. Display a preview screen with the extracted data.
+
+9. Allow the user to edit the information if required.
+
+10. Save the lead.
+
+
+
+No additional action should be required after the NFC card is tapped.
+
+
+
+---
+
+
+
+# Supported NFC Formats
+
+
+
+Support reading the following NFC content types:
+
+
+
+* vCard (VCF)
+
+* NDEF Contact Records
+
+* Text Records
+
+* URI Records
+
+* Digital Business Card URLs
+
+* Custom JSON payloads (Future Ready)
+
+
+
+---
+
+
+
+# Automatic Data Extraction
+
+
+
+Automatically extract all available contact information, including:
+
+
+
+* First Name
+
+* Last Name
+
+* Arabic Name
+
+* Job Title
+
+* Company Name
+
+* Email Address
+
+* Primary Contact Number
+
+* Alternative Contact Number
+
+* Office Telephone
+
+* Website
+
+* Office Address
+
+* Country
+
+* LinkedIn URL
+
+* Social Media Links
+
+* Notes
+
+
+
+Store both:
+
+
+
+* Original NFC payload
+
+* Parsed contact information
+
+
+
+---
+
+
+
+# AI Processing
+
+
+
+After the NFC data is captured, run the same AI workflow used by every other capture method:
+
+
+
+* AI Data Validation
+
+* Duplicate Detection
+
+* Lead Qualification
+
+* AI Lead Score
+
+* Lead Temperature
+
+* Confidence Score
+
+* Contact Completeness Score
+
+
+
+The user experience must remain identical regardless of the capture source.
+
+
+
+---
+
+
+
+# Duplicate Detection
+
+
+
+NFC Capture must participate in the existing duplicate detection system.
+
+
+
+Duplicate matching rules:
+
+
+
+* Compare records only within the same Company (Tenant).
+
+* Never compare contacts across different companies.
+
+* The original lead remains in the Contacts list.
+
+* All duplicate records are moved to the Duplicates section.
+
+
+
+---
+
+
+
+# Event Association
+
+
+
+Before NFC Capture begins:
+
+
+
+* The user must have an active Event/Exhibition selected.
+
+
+
+Automatically attach to every captured lead:
+
+
+
+* Event
+
+* User
+
+* Company
+
+* Capture Method = **NFC Capture**
+
+* Capture Timestamp
+
+* GPS Coordinates (if available)
+
+* Device Information
+
+
+
+---
+
+
+
+# Offline Support
+
+
+
+NFC Capture must work without an internet connection.
+
+
+
+If offline:
+
+
+
+* Read the NFC card successfully.
+
+* Save the data locally.
+
+* Queue the record for background synchronization.
+
+* Automatically process AI services after connectivity is restored.
+
+
+
+No captured lead should ever be lost.
+
+
+
+---
+
+
+
+# Contact Preview
+
+
+
+After NFC Capture completes, display the standard lead preview screen.
+
+
+
+Allow the user to:
+
+
+
+* Review extracted information
+
+* Edit fields
+
+* Save the lead
+
+* Cancel
+
+* Assign Lead Status
+
+* Add Notes
+
+* Schedule a Follow-Up
+
+* Schedule a Meeting
+
+
+
+The preview experience should be identical to all other capture methods.
+
+
+
+---
+
+
+
+# Analytics
+
+
+
+Add **NFC Capture** as a dedicated capture source in all analytics and reports.
+
+
+
+Track:
+
+
+
+* Total NFC Captures
+
+* Leads by Capture Method
+
+* NFC Leads by Event
+
+* NFC Leads by User
+
+* Daily NFC Captures
+
+* Monthly NFC Captures
+
+
+
+Dashboard analytics should treat NFC Capture as an independent lead source.
+
+
+
+---
+
+
+
+# Future Ready
+
+
+
+Design the NFC module so it can later support:
+
+
+
+* Writing Digital Business Cards to NFC Tags
+
+* Read & Write NFC
+
+* NFC Authentication
+
+* Secure NFC Cards
+
+* Company Smart Cards
+
+* Access Control Integration
+
+* Attendance Check-In
+
+* Booth Visitor Registration
+
+* Lead Exchange Between Two Users
+
+* One-Tap Contact Sharing
+
+
+
+without requiring changes to the existing database or UI architecture.
+
+
+
+---
+
+
+
+# Acceptance Criteria
+
+
+
+The feature will be considered complete only when:
+
+
+
+* **NFC Capture** is added as the **3rd Capture Method**.
+
+* NFC-enabled business cards are detected automatically.
+
+* Contact information is extracted accurately.
+
+* Users can review and edit information before saving.
+
+* NFC Capture follows the same AI workflow as all other capture methods.
+
+* Duplicate detection works correctly within the same company (tenant).
+
+* Every captured lead is linked to the selected Event/Exhibition.
+
+* GPS coordinates are captured automatically when available.
+
+* Offline NFC Capture works with background synchronization.
+
+* NFC Capture appears in reports and analytics as a separate lead source.
+
+* The feature is fully tested on Android and iPhone devices that support NFC.
+
+* Screenshots and testing evidence are provided before marking the task as complete.

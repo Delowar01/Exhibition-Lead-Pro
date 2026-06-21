@@ -1,0 +1,269 @@
+# NEW FEATURE – DIGITAL BUSINESS CARD
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Admin Panel changes in this iteration)
+
+---
+
+# DIGITAL BUSINESS CARD MODULE
+
+## Objective
+
+Add a new module called **"My Digital Business Card"** inside the **Workspace** section.
+
+This feature allows every user to create, edit, and share their own digital business card directly from the mobile application.
+
+The generated digital business card will also become the main feature displayed on the Home screen, replacing the existing **"Capture a Lead"** section.
+
+The UI must be premium, modern, elegant, responsive, and based on the attached HTML design. The attached design should be used as the visual reference while keeping it fully responsive for Android and iPhone.
+
+---
+
+# 1. Workspace Module
+
+Add a new Workspace item:
+
+**My Digital Business Card**
+
+**Icon:**
+Business Card / ID Card
+
+### When opened
+
+If no business card exists:
+
+Display:
+
+> **Create Your Digital Business Card**
+
+If a business card already exists:
+
+Open the View/Edit screen.
+
+---
+
+# 2. Business Card Information
+
+Create a simple form containing only the following editable fields.
+
+## Personal Information
+
+* Full Name
+* Designation
+* Company Name
+* Email Address
+* Primary Contact Number
+* Alternative Contact Number (Optional)
+* Office Address
+
+---
+
+## Profile Photo
+
+The Digital Business Card must **not** ask the user to upload a photo.
+
+Instead:
+
+* Automatically use the user's existing **Profile Avatar** from their account.
+* Whenever the user updates their profile picture, the Digital Business Card should update automatically.
+* There should be **no separate photo upload** inside the Digital Business Card module.
+
+If no profile photo exists:
+
+* Automatically generate a premium initials avatar.
+
+---
+
+## Optional Fields (Future Ready)
+
+Prepare the database for future support of:
+
+* Website
+* LinkedIn
+* Facebook
+* Instagram
+* X (Twitter)
+* YouTube
+
+These fields do not need to be visible in this iteration.
+
+---
+
+# 3. Premium QR Code
+
+Automatically generate a QR Code for every Digital Business Card.
+
+The QR Code should always open the user's public Digital Business Card.
+
+Whenever the card information changes, the QR Code should automatically point to the latest version.
+
+No manual QR upload should exist.
+
+## QR Branding
+
+The QR Code must follow premium branding standards.
+
+Requirements:
+
+* Place the **Application Logo** in the center of the QR Code.
+* The logo should be surrounded by a white circular background for better visibility.
+* Use a high error-correction level (Error Correction Level H) so the QR remains fully scannable even with the center logo.
+* Maintain sufficient quiet zone (white border) around the QR Code.
+* Logo size should be approximately **18–22%** of the QR Code size to preserve scan reliability.
+* The QR Code must be tested on both Android and iPhone using multiple QR scanner applications.
+* The QR Code should remain fully functional after embedding the logo.
+
+The QR should have a premium branded appearance similar to modern digital business card applications.
+
+---
+
+# 4. Public Digital Business Card
+
+Generate a premium public Digital Business Card based on the attached HTML design.
+
+Display:
+
+* Profile Avatar
+* Full Name
+* Designation
+* Company Name
+* Email
+* Primary Contact Number
+* Alternative Contact Number (if available)
+* Office Address
+* Premium QR Code with Application Logo
+
+Remove the **Save Contact** button shown in the sample design.
+
+The design should closely resemble the attached template while remaining fully responsive for Android, iPhone, tablets, and web browsers.
+
+---
+
+# 5. Home Screen Enhancement
+
+Replace the existing Home page section:
+
+**Capture a Lead**
+
+with
+
+**My Digital Business Card**
+
+Display:
+
+* Profile Avatar
+* Full Name
+* Designation
+* Company Name
+* Premium QR Code
+* Share Button
+* Edit Button
+
+If the user has not created a Digital Business Card:
+
+Display:
+
+> **Create your Digital Business Card**
+
+with a **Create** button.
+
+---
+
+# 6. Edit Business Card
+
+Users should be able to edit their Digital Business Card at any time.
+
+Updating the card should immediately update:
+
+* Home Screen
+* Public Business Card
+* QR Code
+* Shared Link
+
+No application restart should be required.
+
+---
+
+# 7. Share Feature
+
+Provide a native Share button.
+
+Support sharing via:
+
+* WhatsApp
+* Email
+* SMS
+* LinkedIn
+* Native Device Share
+* Copy Link
+
+The shared link should always open the latest version of the Digital Business Card.
+
+---
+
+# 8. Offline Support
+
+Users must be able to:
+
+* Create their Digital Business Card offline.
+* Edit it offline.
+
+All changes should synchronize automatically once internet connectivity is restored.
+
+---
+
+# 9. Security & Privacy
+
+Only the fields configured for the Digital Business Card should be publicly visible.
+
+Prepare the backend for future privacy controls, allowing users to choose which fields are publicly visible without requiring a database redesign.
+
+---
+
+# 10. Future Ready
+
+Design the module so it can later support:
+
+* Multiple Digital Business Card templates
+* Company-branded themes
+* Dark Mode / Light Mode
+* NFC Business Cards
+* Apple Wallet Integration
+* Google Wallet Integration
+* Download as PDF
+* Download as VCF
+* Email Signature Generator
+* Analytics (Views, QR Scans, Shares)
+* Enterprise Branding
+* Custom QR Code colors while preserving scan reliability
+
+without requiring a redesign of the UI or database.
+
+---
+
+# Acceptance Criteria
+
+The feature will be considered complete only when:
+
+* A new **My Digital Business Card** module exists inside Workspace.
+* Users can create, edit, and manage their Digital Business Card.
+* The user's existing Profile Avatar is automatically used.
+* No separate photo upload exists inside the Digital Business Card module.
+* A premium initials avatar is generated automatically if no profile image exists.
+* The Home Screen displays **My Digital Business Card** instead of **Capture a Lead**.
+* A premium QR Code is generated automatically.
+* The **Application Logo is embedded in the center of the QR Code** while remaining fully scannable.
+* The public Digital Business Card follows the attached premium design.
+* The sample **Save Contact** button is removed.
+* Native Share works correctly on Android and iPhone.
+* Offline create/edit works with automatic synchronization.
+* Updates appear immediately throughout the application.
+* The QR Code is successfully tested on Android and iPhone.
+* Screenshots and a complete implementation summary are provided before marking the task as complete.

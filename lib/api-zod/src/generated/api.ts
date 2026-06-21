@@ -1857,3 +1857,107 @@ export const GetContactStatusHistoryResponse = zod.object({
 })
 
 
+/**
+ * @summary Get the authenticated user's digital business card
+ */
+export const GetOwnCardResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "publicToken": zod.string(),
+  "fullName": zod.string().nullish(),
+  "designation": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "primaryPhone": zod.string().nullish(),
+  "altPhone": zod.string().nullish(),
+  "officeAddress": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "facebook": zod.string().nullish(),
+  "instagram": zod.string().nullish(),
+  "twitter": zod.string().nullish(),
+  "youtube": zod.string().nullish(),
+  "fieldVisibility": zod.record(zod.string(), zod.boolean()).optional(),
+  "templateId": zod.string(),
+  "isPublished": zod.boolean(),
+  "avatarUrl": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Create or update the authenticated user's digital business card
+ */
+export const UpsertOwnCardBody = zod.object({
+  "fullName": zod.string().nullish(),
+  "designation": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "primaryPhone": zod.string().nullish(),
+  "altPhone": zod.string().nullish(),
+  "officeAddress": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "facebook": zod.string().nullish(),
+  "instagram": zod.string().nullish(),
+  "twitter": zod.string().nullish(),
+  "youtube": zod.string().nullish(),
+  "fieldVisibility": zod.record(zod.string(), zod.boolean()).optional(),
+  "templateId": zod.string().nullish(),
+  "isPublished": zod.boolean().nullish()
+})
+
+export const UpsertOwnCardResponse = zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "publicToken": zod.string(),
+  "fullName": zod.string().nullish(),
+  "designation": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "primaryPhone": zod.string().nullish(),
+  "altPhone": zod.string().nullish(),
+  "officeAddress": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "facebook": zod.string().nullish(),
+  "instagram": zod.string().nullish(),
+  "twitter": zod.string().nullish(),
+  "youtube": zod.string().nullish(),
+  "fieldVisibility": zod.record(zod.string(), zod.boolean()).optional(),
+  "templateId": zod.string(),
+  "isPublished": zod.boolean(),
+  "avatarUrl": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Public (unauthenticated) digital business card by token
+ */
+export const GetPublicCardParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetPublicCardResponse = zod.object({
+  "publicToken": zod.string(),
+  "fullName": zod.string().nullish(),
+  "designation": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "primaryPhone": zod.string().nullish(),
+  "altPhone": zod.string().nullish(),
+  "officeAddress": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "facebook": zod.string().nullish(),
+  "instagram": zod.string().nullish(),
+  "twitter": zod.string().nullish(),
+  "youtube": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "templateId": zod.string()
+})
+
+

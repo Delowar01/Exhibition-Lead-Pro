@@ -1517,6 +1517,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContactStatusHistoryList"
 
+  # DIGITAL BUSINESS CARDS
+  /cards/me:
+    get:
+      operationId: getOwnCard
+      tags: [cards]
+      summary: Get the authenticated user's digital business card
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessCard"
+        "404":
+          description: No card yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: upsertOwnCard
+      tags: [cards]
+      summary: Create or update the authenticated user's digital business card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessCardInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessCard"
+
+  /cards/public/{token}:
+    get:
+      operationId: getPublicCard
+      tags: [cards]
+      summary: Public (unauthenticated) digital business card by token
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicBusinessCard"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -3213,3 +3275,132 @@ components:
             $ref: "#/components/schemas/ContactStatusHistory"
         total:
           type: integer
+
+    # DIGITAL BUSINESS CARDS
+    BusinessCard:
+      type: object
+      required: [id, userId, publicToken, templateId, isPublished, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        publicToken:
+          type: string
+        fullName:
+          type: ["string", "null"]
+        designation:
+          type: ["string", "null"]
+        companyName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        primaryPhone:
+          type: ["string", "null"]
+        altPhone:
+          type: ["string", "null"]
+        officeAddress:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        facebook:
+          type: ["string", "null"]
+        instagram:
+          type: ["string", "null"]
+        twitter:
+          type: ["string", "null"]
+        youtube:
+          type: ["string", "null"]
+        fieldVisibility:
+          type: object
+          additionalProperties:
+            type: boolean
+        templateId:
+          type: string
+        isPublished:
+          type: boolean
+        avatarUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    BusinessCardInput:
+      type: object
+      properties:
+        fullName:
+          type: ["string", "null"]
+        designation:
+          type: ["string", "null"]
+        companyName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        primaryPhone:
+          type: ["string", "null"]
+        altPhone:
+          type: ["string", "null"]
+        officeAddress:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        facebook:
+          type: ["string", "null"]
+        instagram:
+          type: ["string", "null"]
+        twitter:
+          type: ["string", "null"]
+        youtube:
+          type: ["string", "null"]
+        fieldVisibility:
+          type: object
+          additionalProperties:
+            type: boolean
+        templateId:
+          type: ["string", "null"]
+        isPublished:
+          type: ["boolean", "null"]
+
+    PublicBusinessCard:
+      type: object
+      required: [publicToken, templateId]
+      properties:
+        publicToken:
+          type: string
+        fullName:
+          type: ["string", "null"]
+        designation:
+          type: ["string", "null"]
+        companyName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        primaryPhone:
+          type: ["string", "null"]
+        altPhone:
+          type: ["string", "null"]
+        officeAddress:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        facebook:
+          type: ["string", "null"]
+        instagram:
+          type: ["string", "null"]
+        twitter:
+          type: ["string", "null"]
+        youtube:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        templateId:
+          type: string

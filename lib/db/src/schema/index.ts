@@ -14,3 +14,4 @@ export * from "./follow_ups";
 export * from "./meetings";
 export * from "./tasks";
 export * from "./contact_status_history";
+export * from "./business_cards";

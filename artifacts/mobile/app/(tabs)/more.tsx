@@ -117,11 +117,19 @@ export default function MoreScreen() {
       badge: queuedCount,
     },
     {
+      key: "digital-card",
+      label: "Digital Card",
+      sub: "Your shareable card and QR code",
+      icon: "credit-card",
+      color: colors.primary,
+      onPress: () => router.push("/digital-card"),
+    },
+    {
       key: "pipeline",
       label: "Pipeline",
       sub: "Track leads through every stage",
       icon: "bar-chart-2",
-      color: colors.primary,
+      color: "#8B5CF6",
       onPress: () => router.push("/leads"),
     },
     {

@@ -18,6 +18,8 @@ import {
   type MobileDashboard,
   useGetLeadsByEvent,
   useGetMobileDashboard,
+  useGetOwnCard,
+  getGetOwnCardQueryKey,
 } from "@workspace/api-client-react";
 
 import { Avatar, Badge, FONT, LoadingState, prettyLabel } from "@/components/ui";
@@ -112,6 +114,11 @@ export default function HomeScreen() {
 
   const query = useGetMobileDashboard();
   const data = query.data;
+
+  const ownCard = useGetOwnCard({ query: { retry: false, queryKey: getGetOwnCardQueryKey() } });
+  const cardStatus = (ownCard.error as { status?: number } | null)?.status;
+  const hasCard = !!ownCard.data;
+  const noCard = ownCard.isError && cardStatus === 404;
 
   const eventsQuery = useGetLeadsByEvent();
   const lastEvent = [...(eventsQuery.data ?? [])].sort((a, b) =>
@@ -313,11 +320,11 @@ export default function HomeScreen() {
           </Pressable>
         ) : null}
 
-        {/* Primary CTA */}
+        {/* Primary CTA — digital business card */}
         <Pressable
           onPress={() => {
             if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/capture");
+            router.push("/digital-card");
           }}
           style={({ pressed }) => [
             styles.cta,
@@ -325,11 +332,21 @@ export default function HomeScreen() {
           ]}
         >
           <View style={styles.ctaIcon}>
-            <Feather name="maximize" size={22} color="#FFFFFF" />
+            <Feather name={hasCard ? "credit-card" : "plus-circle"} size={22} color="#FFFFFF" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.ctaTitle}>Capture a lead</Text>
-            <Text style={styles.ctaSub}>Scan a card, badge, or QR code</Text>
+            <Text style={styles.ctaTitle}>
+              {hasCard ? "Your digital card" : "Create your digital card"}
+            </Text>
+            <Text style={styles.ctaSub}>
+              {hasCard
+                ? ownCard.data?.isPublished
+                  ? "Live — view, edit or share your QR"
+                  : "Unpublished — tap to manage"
+                : noCard
+                  ? "Share your details with a scannable QR"
+                  : "Set up your shareable card"}
+            </Text>
           </View>
           <Feather name="arrow-right" size={20} color="#FFFFFF" />
         </Pressable>
