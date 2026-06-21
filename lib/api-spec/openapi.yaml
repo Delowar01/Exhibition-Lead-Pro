@@ -2358,14 +2358,18 @@ components:
 
     EventStats:
       type: object
-      required: [contactCount, leadCount, wonCount, conversionRate]
+      required: [contactCount, leadCount, qualifiedCount, wonCount, revenue, conversionRate]
       properties:
         contactCount:
           type: integer
         leadCount:
           type: integer
+        qualifiedCount:
+          type: integer
         wonCount:
           type: integer
+        revenue:
+          type: number
         conversionRate:
           type: number
         byStage:

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, contactsTable, leadsTable } from "@workspace/db";
-import { eq, ilike, and, count, inArray, isNull } from "drizzle-orm";
+import { eq, ilike, and, count, inArray, isNull, sum } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 
@@ -105,13 +105,15 @@ router.get("/events/:id/stats", async (req: AuthRequest, res) => {
     const [evt] = await db.select({ companyId: eventsTable.companyId }).from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
     if (!evt || !canAccessCompany(req.user, evt.companyId)) { res.status(404).json({ error: "Event not found" }); return; }
     const [contactCount] = await db.select({ count: count() }).from(contactsTable).where(and(eq(contactsTable.eventId, id), isNull(contactsTable.duplicateOfId)));
+    const [qualifiedCountRow] = await db.select({ count: count() }).from(contactsTable).where(and(eq(contactsTable.eventId, id), isNull(contactsTable.duplicateOfId), inArray(contactsTable.status, ["qualified", "interested"])));
     const [leadCount] = await db.select({ count: count() }).from(leadsTable).where(eq(leadsTable.eventId, id));
-    const wonLeads = await db.select({ count: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, id), eq(leadsTable.stage, "won")));
+    const wonLeads = await db.select({ count: count(), total: sum(leadsTable.value) }).from(leadsTable).where(and(eq(leadsTable.eventId, id), eq(leadsTable.stage, "won")));
     const byStage = await db.select({ stage: leadsTable.stage, count: count() }).from(leadsTable).where(eq(leadsTable.eventId, id)).groupBy(leadsTable.stage);
     const wonCount = wonLeads[0]?.count ?? 0;
+    const revenue = Number(wonLeads[0]?.total ?? 0);
     const total = leadCount?.count ?? 0;
     const conversionRate = total > 0 ? Math.round((wonCount / total) * 100) : 0;
-    res.json({ contactCount: contactCount.count, leadCount: leadCount.count, wonCount, conversionRate, byStage: byStage.map(s => ({ status: s.stage, count: s.count })) });
+    res.json({ contactCount: contactCount.count, leadCount: leadCount.count, qualifiedCount: qualifiedCountRow.count, wonCount, revenue, conversionRate, byStage: byStage.map(s => ({ status: s.stage, count: s.count })) });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

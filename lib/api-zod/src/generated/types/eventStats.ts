@@ -10,7 +10,9 @@ import type { StatusCount } from './statusCount';
 export interface EventStats {
   contactCount: number;
   leadCount: number;
+  qualifiedCount: number;
   wonCount: number;
+  revenue: number;
   conversionRate: number;
   byStage?: StatusCount[];
 }

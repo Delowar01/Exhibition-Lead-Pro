@@ -43,6 +43,12 @@ function formatRange(start?: string | null, end?: string | null): string | null 
   return null;
 }
 
+function formatRevenue(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1)}K`;
+  return `$${Math.round(value).toLocaleString()}`;
+}
+
 export default function EventDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -150,11 +156,25 @@ export default function EventDetailScreen() {
               color="#FF6B00"
             />
             <StatCard
+              icon="check-circle"
+              label="Qualified"
+              value={stats?.qualifiedCount ?? 0}
+              loading={statsQuery.isLoading}
+              color="#14B8A6"
+            />
+            <StatCard
               icon="award"
               label="Won"
               value={stats?.wonCount ?? 0}
               loading={statsQuery.isLoading}
               color="#22C55E"
+            />
+            <StatCard
+              icon="dollar-sign"
+              label="Revenue"
+              value={formatRevenue(stats?.revenue ?? 0)}
+              loading={statsQuery.isLoading}
+              color="#EAB308"
             />
             <StatCard
               icon="trending-up"

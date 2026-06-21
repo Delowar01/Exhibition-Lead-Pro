@@ -1191,7 +1191,9 @@ export const GetEventStatsParams = zod.object({
 export const GetEventStatsResponse = zod.object({
   "contactCount": zod.number(),
   "leadCount": zod.number(),
+  "qualifiedCount": zod.number(),
   "wonCount": zod.number(),
+  "revenue": zod.number(),
   "conversionRate": zod.number(),
   "byStage": zod.array(zod.object({
   "status": zod.string(),
