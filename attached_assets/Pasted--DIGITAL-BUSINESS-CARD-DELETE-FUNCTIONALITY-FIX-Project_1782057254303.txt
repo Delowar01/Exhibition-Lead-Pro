@@ -1,0 +1,155 @@
+# DIGITAL BUSINESS CARD – DELETE FUNCTIONALITY FIX
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Admin Panel changes)
+
+Before implementing, review the existing Digital Business Card workflow to ensure no regression occurs.
+
+---
+
+# Current Issue
+
+The **Delete** button in the **Workspace → My Digital Business Card** screen is currently non-functional.
+
+Clicking the Delete button does nothing.
+
+This functionality must be completed.
+
+---
+
+# Required Implementation
+
+## Delete Digital Business Card
+
+The Delete button must permanently delete the user's Digital Business Card from the system.
+
+Deleting the card should remove:
+
+* Digital Business Card record
+* Public sharing token
+* Public Digital Business Card page
+* QR Code data
+* Published status
+* Public/Hidden field settings
+
+The user's account and profile must **NOT** be deleted.
+
+Only the Digital Business Card should be removed.
+
+---
+
+# Confirmation Dialog
+
+Before deleting, display a native confirmation dialog.
+
+### Title
+
+**Delete Digital Business Card**
+
+### Message
+
+**Are you sure you want to delete your Digital Business Card?**
+
+**This action cannot be undone.**
+
+### Buttons
+
+**Cancel**
+
+* Close the dialog.
+* No data is deleted.
+
+**Delete**
+
+* Permanently delete the Digital Business Card.
+* Close the dialog after successful deletion.
+
+Use the platform-native confirmation dialog:
+
+* Android Material Alert Dialog
+* iOS Native Alert
+
+---
+
+# After Successful Deletion
+
+After the Digital Business Card is deleted:
+
+1. Display a success message.
+
+Example:
+
+> **Your Digital Business Card has been deleted successfully.**
+
+2. Automatically navigate back to the Workspace.
+
+3. The Workspace should now display the empty state:
+
+**Create Your Digital Business Card**
+
+instead of the existing card.
+
+4. The Home Dashboard **My Digital Business Card** button should remain visible.
+
+If the user taps it after deletion, display:
+
+> **You haven't created your Digital Business Card yet.**
+
+Provide a single action button:
+
+**Go to Workspace**
+
+which opens:
+
+**Workspace → My Digital Business Card**
+
+---
+
+# Error Handling
+
+If deletion fails:
+
+* Display an error message.
+* Do not remove the card from the UI.
+* Allow the user to retry.
+
+Example:
+
+> **Unable to delete your Digital Business Card. Please try again.**
+
+---
+
+# Security
+
+Users must only be able to delete **their own** Digital Business Card.
+
+Deleting another user's card must never be possible.
+
+---
+
+# Acceptance Criteria
+
+The task will be considered complete only when:
+
+* The Delete button is fully functional.
+* A native confirmation dialog appears before deletion.
+* The dialog displays:
+
+  * **Delete Digital Business Card**
+  * **Are you sure you want to delete your Digital Business Card?**
+  * **This action cannot be undone.**
+* **Cancel** closes the dialog without deleting.
+* **Delete** permanently removes the Digital Business Card.
+* The public sharing page and QR Code become invalid immediately after deletion.
+* The user is returned to the Workspace with the "Create Your Digital Business Card" empty state.
+* The Home Dashboard behaves correctly after deletion.
+* Proper success and error messages are displayed.
+* The feature is tested on both Android and iPhone.
+* Screenshots and testing evidence are provided before marking the task as complete.

@@ -128,8 +128,8 @@ export default function CardScreen() {
 
   function handleDelete() {
     Alert.alert(
-      "Delete card",
-      "This will permanently delete your Digital Business Card. This cannot be undone.",
+      "Delete Digital Business Card",
+      "Are you sure you want to delete your Digital Business Card?\n\nThis action cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -138,9 +138,21 @@ export default function CardScreen() {
           onPress: async () => {
             try {
               await deleteCard();
-              router.back();
+              Alert.alert(
+                "Card Deleted",
+                "Your Digital Business Card has been deleted successfully.",
+                [
+                  {
+                    text: "OK",
+                    onPress: () => router.replace("/(tabs)/more"),
+                  },
+                ],
+              );
             } catch {
-              Alert.alert("Error", "Couldn't delete your card. Please try again.");
+              Alert.alert(
+                "Deletion Failed",
+                "Unable to delete your Digital Business Card. Please try again.",
+              );
             }
           },
         },
