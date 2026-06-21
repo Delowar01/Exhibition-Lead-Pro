@@ -76,7 +76,7 @@ export default function CardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
-  const { card, isLoading, hasCard, pendingSync, saveCard } = useCard();
+  const { card, isLoading, hasCard, pendingSync, saveCard, deleteCard } = useCard();
   const { isOnline } = useOffline();
   const { mode } = useLocalSearchParams<{ mode?: string }>();
   const isWorkspace = mode === "edit";
@@ -124,6 +124,28 @@ export default function CardScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleDelete() {
+    Alert.alert(
+      "Delete card",
+      "This will permanently delete your Digital Business Card. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteCard();
+              router.back();
+            } catch {
+              Alert.alert("Error", "Couldn't delete your card. Please try again.");
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function handleShare() {
@@ -249,6 +271,7 @@ export default function CardScreen() {
             onShare={handleShare}
             canEdit={isWorkspace}
             onEdit={startEdit}
+            onDelete={handleDelete}
           />
         )}
       </KeyboardAwareScrollView>
@@ -358,6 +381,7 @@ function CardPreview({
   onShare,
   canEdit,
   onEdit,
+  onDelete,
 }: {
   card: BusinessCard | null;
   account: { name?: string | null; avatarUrl?: string | null };
@@ -365,6 +389,7 @@ function CardPreview({
   onShare: () => void;
   canEdit?: boolean;
   onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const colors = useColors();
   const name = card?.fullName ?? account.name ?? "";
@@ -479,6 +504,18 @@ function CardPreview({
         >
           <Feather name="edit-2" size={16} color={colors.foreground} />
           <Text style={[styles.editText, { color: colors.foreground }]}>Edit details</Text>
+        </Pressable>
+      ) : null}
+      {canEdit && onDelete ? (
+        <Pressable
+          onPress={onDelete}
+          style={({ pressed }) => [
+            styles.editBtn,
+            { borderColor: colors.destructive + "40", backgroundColor: colors.destructive + "0D", opacity: pressed ? 0.7 : 1, marginTop: 10 },
+          ]}
+        >
+          <Feather name="trash-2" size={16} color={colors.destructive} />
+          <Text style={[styles.editText, { color: colors.destructive }]}>Delete card</Text>
         </Pressable>
       ) : null}
     </View>

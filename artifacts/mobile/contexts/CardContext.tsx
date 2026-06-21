@@ -9,6 +9,7 @@ import React, {
 } from "react";
 
 import {
+  deleteOwnCard,
   getOwnCard,
   upsertOwnCard,
   type BusinessCard,
@@ -30,6 +31,8 @@ interface CardContextValue {
   pendingSync: boolean;
   /** Upsert the card — online writes immediately, offline queues + caches. */
   saveCard: (input: BusinessCardInput) => Promise<void>;
+  /** Delete the card permanently (requires network). */
+  deleteCard: () => Promise<void>;
   /** Force a server refetch (e.g. pull-to-refresh). */
   refresh: () => void;
 }
@@ -40,6 +43,7 @@ const CardContext = createContext<CardContextValue>({
   hasCard: false,
   pendingSync: false,
   saveCard: async () => {},
+  deleteCard: async () => {},
   refresh: () => {},
 });
 
@@ -173,12 +177,20 @@ export function CardProvider({ children }: { children: React.ReactNode }) {
     [isOnline, enqueueCard, queryClient, setAndCache, user?.avatarUrl, user?.name],
   );
 
+  const deleteCard = useCallback(async () => {
+    await deleteOwnCard();
+    setAndCache(null);
+    setPendingSync(false);
+    void queryClient.invalidateQueries();
+  }, [setAndCache, queryClient]);
+
   const value: CardContextValue = {
     card,
     isLoading,
     hasCard: !!card?.fullName,
     pendingSync,
     saveCard,
+    deleteCard,
     refresh: () => void fetchCard(),
   };
 

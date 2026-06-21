@@ -5592,6 +5592,76 @@ export const useUpsertOwnCard = <TError = ErrorType<unknown>,
       return useMutation(getUpsertOwnCardMutationOptions(options));
     }
 
+export const getDeleteOwnCardUrl = () => {
+
+
+
+
+  return `/api/cards/me`
+}
+
+/**
+ * @summary Delete the authenticated user's digital business card
+ */
+export const deleteOwnCard = async ( options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteOwnCardUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteOwnCardMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOwnCard>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOwnCard>>, TError,void, TContext> => {
+
+const mutationKey = ['deleteOwnCard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOwnCard>>, void> = () => {
+
+
+          return  deleteOwnCard(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOwnCardMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOwnCard>>>
+
+    export type DeleteOwnCardMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete the authenticated user's digital business card
+ */
+export const useDeleteOwnCard = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOwnCard>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOwnCard>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getDeleteOwnCardMutationOptions(options));
+    }
+
 export const getGetPublicCardUrl = (token: string,) => {
 
 

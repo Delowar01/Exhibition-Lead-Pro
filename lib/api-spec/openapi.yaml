@@ -1554,6 +1554,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BusinessCard"
+    delete:
+      operationId: deleteOwnCard
+      tags: [cards]
+      summary: Delete the authenticated user's digital business card
+      responses:
+        "200":
+          description: Card deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: No card to delete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /cards/public/{token}:
     get:

@@ -194,4 +194,23 @@ router.put("/cards/me", async (req: AuthRequest, res) => {
   }
 });
 
+// DELETE /cards/me
+router.delete("/cards/me", async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const [deleted] = await db
+      .delete(businessCardsTable)
+      .where(eq(businessCardsTable.userId, userId))
+      .returning({ id: businessCardsTable.id });
+    if (!deleted) {
+      res.status(404).json({ error: "No card to delete" });
+      return;
+    }
+    res.json({ success: true, message: "Card deleted" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

@@ -1946,6 +1946,15 @@ export const UpsertOwnCardResponse = zod.object({
 
 
 /**
+ * @summary Delete the authenticated user's digital business card
+ */
+export const DeleteOwnCardResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
  * @summary Public, unauthenticated view of a published business card
  */
 export const GetPublicCardParams = zod.object({
