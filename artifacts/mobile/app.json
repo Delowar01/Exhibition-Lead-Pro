@@ -81,6 +81,13 @@
         }
       ],
       [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Allow Card Scanner Pro to read NFC business cards and tags.",
+          "includeNdefEntitlement": true
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/icon.png",

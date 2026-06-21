@@ -1,0 +1,108 @@
+# Missing Feature – NFC Capture Was Not Implemented
+
+The implementation summary states:
+
+> "NFC capture was intentionally left out — it's tracked as its own separate feature."
+
+This is not correct.
+
+NFC Capture was already part of the approved application requirements and was not intended to be postponed.
+
+## Required Implementation
+
+Please implement **NFC Capture** as part of the existing Capture module.
+
+### Capture Methods Order
+
+The Capture screen must display the following methods:
+
+1. Business Card
+2. Email Signature
+3. **NFC Capture**
+4. QR Code
+5. LinkedIn QR
+6. Manual Entry
+
+The NFC option must appear in the **3rd position**.
+
+---
+
+## NFC Capture Workflow
+
+When the user taps **NFC Capture**:
+
+1. The application starts listening for an NFC tag.
+2. The user taps an NFC-enabled business card against the phone.
+3. The application reads the NFC payload.
+4. If the payload contains a vCard or contact information, extract:
+
+   * Name
+   * Company
+   * Designation
+   * Mobile
+   * Email
+   * Website
+   * Address
+5. Open the standard Lead Preview screen.
+6. Apply duplicate detection.
+7. Save the lead into the selected Event.
+
+The workflow should match the behavior of Business Card scanning.
+
+---
+
+## Supported NFC Formats
+
+Support:
+
+* vCard (VCF)
+* NDEF Text Records
+* NDEF URI Records
+* Contact records written by standard NFC business cards
+
+Design the parser so additional NFC record types can be added later.
+
+---
+
+## Platform Support
+
+Android:
+
+* Fully support NFC reading on compatible devices.
+
+iPhone:
+
+* Support Core NFC where available.
+* If the device does not support NFC reading, display a clear message indicating that NFC is unavailable.
+
+---
+
+## Error Handling
+
+Handle gracefully:
+
+* Empty NFC tag
+* Unsupported payload
+* Corrupted data
+* Duplicate contact
+* NFC disabled
+* Device without NFC hardware
+
+No application crashes should occur.
+
+---
+
+## Acceptance Criteria
+
+This task is complete only when:
+
+* NFC Capture appears as the third Capture method.
+* NFC business cards can be read successfully.
+* Contact information is extracted correctly.
+* Duplicate detection is applied.
+* Leads are linked to the selected Event.
+* Works on supported Android devices.
+* Works on supported iPhones where Core NFC is available.
+* Screenshots and testing evidence are provided before marking the task complete.
+
+This feature was part of the original approved scope and should be implemented without being deferred to a separate feature.

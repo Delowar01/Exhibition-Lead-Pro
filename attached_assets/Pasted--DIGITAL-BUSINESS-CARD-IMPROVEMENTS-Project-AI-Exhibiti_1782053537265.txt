@@ -1,0 +1,164 @@
+# DIGITAL BUSINESS CARD IMPROVEMENTS
+
+## Project
+
+AI Exhibition Lead Capture Platform
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Admin Panel changes in this iteration)
+
+Before making any changes, review the existing Digital Business Card workflow and ensure no regression occurs.
+
+---
+
+# 1. REMOVE LINKEDIN ICON
+
+## Current Issue
+
+The Digital Business Card displays a LinkedIn icon between the contact information and the QR Code.
+
+This icon is unnecessary and creates visual clutter.
+
+## Required
+
+Remove the LinkedIn icon completely.
+
+Do not replace it with any other icon or placeholder.
+
+The QR Code section should move upward automatically, maintaining proper spacing and alignment.
+
+## Acceptance Criteria
+
+* LinkedIn icon is completely removed.
+* No empty space remains.
+* Layout remains visually balanced.
+* Responsive on Android and iPhone.
+
+---
+
+# 2. REBUILD THE QR CODE
+
+## Current Issue
+
+The QR Code currently opens a web link that displays the Digital Business Card.
+
+This is **not** the desired behavior.
+
+The QR Code must function as a **native contact QR Code**, not as a website link.
+
+---
+
+## Required
+
+Generate the QR Code using the **vCard (VCF) standard**.
+
+The QR Code should embed the contact information directly inside the QR payload.
+
+It must **NOT** contain:
+
+* Website URL
+* Landing page URL
+* Application URL
+* Hosted Digital Card link
+
+The QR payload should be a valid vCard.
+
+---
+
+## Required Contact Fields
+
+Include the following fields in the vCard whenever available:
+
+* Full Name
+* Company Name
+* Job Title
+* Mobile Number
+* Alternative Number (Optional)
+* Email Address
+* Website
+* Office Address
+
+Follow the standard VCARD 3.0 or VCARD 4.0 specification.
+
+---
+
+# Native QR Behavior
+
+When another phone scans the QR Code:
+
+### Android
+
+The system should automatically recognize it as a contact and display the native **Add Contact / Save Contact** screen.
+
+### iPhone
+
+The Camera application should recognize the QR Code as a contact and open the native **Create New Contact / Add to Existing Contact** interface.
+
+No browser should open.
+
+No website should open.
+
+No application landing page should open.
+
+No intermediate screen should appear.
+
+The experience must feel identical to scanning a QR Code generated from a native Contacts application.
+
+---
+
+# QR Code Design
+
+Keep the current premium QR design.
+
+Retain:
+
+* Rounded QR container
+* Application logo in the center
+* High error correction level so the logo does not affect scanning performance
+
+Ensure the QR remains highly reliable across Android and iPhone devices.
+
+---
+
+# Compatibility
+
+The generated vCard QR Code must be compatible with:
+
+* Android Camera
+* Google Lens
+* Samsung Camera
+* Xiaomi Camera
+* Huawei Camera
+* iPhone Camera
+* Third-party QR Scanner applications
+
+---
+
+# Testing Requirements
+
+Test with multiple devices.
+
+Verify:
+
+* Android opens the native Contact application.
+* iPhone opens the native Contact application.
+* Contact details populate correctly.
+* All fields are transferred successfully.
+* QR remains scannable after adding the application logo.
+
+---
+
+# Acceptance Criteria
+
+The task will be considered complete only when:
+
+* The LinkedIn icon is completely removed.
+* The QR Code contains a native vCard payload instead of a website URL.
+* Scanning the QR Code opens the device's native Contact application.
+* Users can immediately save the contact without visiting any webpage.
+* The QR Code works correctly on Android and iPhone.
+* The application logo remains centered within the QR Code.
+* Screenshots and testing evidence are provided before marking the task as complete.

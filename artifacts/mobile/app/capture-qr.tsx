@@ -19,85 +19,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { ContactInput, ExtractedCardData } from "@workspace/api-client-react";
-
 import { FONT, PrimaryButton } from "@/components/ui";
+import { extractedToContact, parseQr } from "@/lib/contact-parse";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
-
-function extractedToContact(data: ExtractedCardData): ContactInput {
-  return {
-    firstName: data.firstName ?? null,
-    lastName: data.lastName ?? null,
-    jobTitle: data.jobTitle ?? null,
-    contactCompany: data.company ?? null,
-    email: data.email ?? null,
-    mobile: data.mobile ?? null,
-    website: data.website ?? null,
-    linkedin: data.linkedin ?? null,
-    address: data.address ?? null,
-  };
-}
-
-function parseVCard(raw: string): ExtractedCardData {
-  const out: ExtractedCardData = {};
-  for (const line of raw.split(/\r?\n/)) {
-    const [rawKey, ...rest] = line.split(":");
-    if (!rawKey || rest.length === 0) continue;
-    const key = rawKey.split(";")[0].toUpperCase();
-    const value = rest.join(":").trim();
-    if (!value) continue;
-    switch (key) {
-      case "FN": {
-        const parts = value.split(" ");
-        out.firstName = parts[0] ?? null;
-        out.lastName = parts.slice(1).join(" ") || null;
-        break;
-      }
-      case "N": {
-        const [last, first] = value.split(";");
-        if (first) out.firstName = first;
-        if (last) out.lastName = last;
-        break;
-      }
-      case "ORG":
-        out.company = value.replace(/;/g, " ").trim();
-        break;
-      case "TITLE":
-        out.jobTitle = value;
-        break;
-      case "EMAIL":
-        out.email = value;
-        break;
-      case "TEL":
-        out.mobile = value;
-        break;
-      case "URL":
-        if (/linkedin\.com/i.test(value)) out.linkedin = value;
-        else out.website = value;
-        break;
-      case "ADR":
-        out.address = value.replace(/;/g, " ").trim();
-        break;
-    }
-  }
-  return out;
-}
-
-function parseQr(value: string): ExtractedCardData {
-  if (/BEGIN:VCARD/i.test(value)) return parseVCard(value);
-  const out: ExtractedCardData = {};
-  if (/^https?:\/\//i.test(value)) {
-    if (/linkedin\.com/i.test(value)) out.linkedin = value;
-    else out.website = value;
-  } else if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
-    out.email = value.trim();
-  } else {
-    out.company = value.slice(0, 120);
-  }
-  return out;
-}
 
 export default function CaptureQrScreen() {
   const colors = useColors();

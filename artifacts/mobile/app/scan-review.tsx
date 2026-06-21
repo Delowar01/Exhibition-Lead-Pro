@@ -25,6 +25,7 @@ const SOURCE_LABEL: Record<string, string> = {
   card: "Business card",
   signature: "Email signature",
   qr: "QR code",
+  nfc: "NFC card",
 };
 
 function parseNum(v?: string): number | null {

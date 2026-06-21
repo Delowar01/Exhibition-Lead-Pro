@@ -104,6 +104,10 @@ function RootLayoutNav() {
         name="capture-qr"
         options={{ headerShown: false, presentation: "fullScreenModal" }}
       />
+      <Stack.Screen
+        name="capture-nfc"
+        options={{ headerShown: false, presentation: "fullScreenModal" }}
+      />
       <Stack.Screen name="capture-manual" options={{ title: "Manual entry" }} />
       <Stack.Screen name="leads" options={{ headerShown: false }} />
       <Stack.Screen name="events" options={{ headerShown: false }} />
