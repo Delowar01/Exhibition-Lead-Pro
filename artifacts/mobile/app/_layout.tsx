@@ -29,11 +29,27 @@ import { getCachedToken } from "@/lib/auth-storage";
 SplashScreen.preventAutoHideAsync();
 
 // Wire the API client once, at module load, before any request fires.
-// EXPO_PUBLIC_DOMAIN is the Replit dev domain (no protocol) in dev, and the
-// deployment domain in production — both route through the shared proxy.
-const apiDomain = process.env.EXPO_PUBLIC_DOMAIN;
-if (apiDomain) {
-  setBaseUrl(`https://${apiDomain}`);
+// Resolution order:
+//   1. EXPO_PUBLIC_API_URL — explicit production URL baked in at EAS build time
+//      (e.g. "https://my-app.replit.app"). Set this in eas.json env or as a
+//      Replit Secret named EXPO_PUBLIC_API_URL before running eas build.
+//   2. EXPO_PUBLIC_DOMAIN  — Replit dev domain injected by the local workflow
+//      (no protocol; https:// is prepended automatically).
+// If neither resolves, the base URL stays null. The app still boots to the
+// login screen and shows auth/network errors rather than crashing — which
+// surfaces the config problem without a hard stop.
+const apiUrl =
+  process.env.EXPO_PUBLIC_API_URL ??
+  (process.env.EXPO_PUBLIC_DOMAIN
+    ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+    : null);
+if (apiUrl) {
+  setBaseUrl(apiUrl);
+} else {
+  console.warn(
+    "[CSP] No API URL configured. Set EXPO_PUBLIC_API_URL in your EAS build " +
+      "environment (eas.json env section) before running eas build.",
+  );
 }
 setAuthTokenGetter(() => getCachedToken());
 

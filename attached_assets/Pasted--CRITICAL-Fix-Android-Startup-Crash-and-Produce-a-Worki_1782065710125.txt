@@ -1,0 +1,217 @@
+# CRITICAL: Fix Android Startup Crash and Produce a Working APK
+
+You are working on the original Replit project.
+
+The Android APK builds successfully using Expo EAS, installs successfully on Android devices, but crashes immediately after the splash screen.
+
+Do NOT stop after finding one issue.
+
+Continue debugging until the application launches successfully and reaches the Login screen.
+
+## Your Tasks
+
+Perform a complete startup crash investigation.
+
+### 1. Startup Initialization
+
+Inspect and fix every startup file including:
+
+* app/_layout.tsx
+* Root Providers
+* AuthContext
+* OfflineContext
+* API initialization
+* SplashScreen initialization
+* Expo Router initialization
+
+Catch and fix every runtime exception.
+
+---
+
+### 2. Environment Variables
+
+The current application depends on Replit development environment variables.
+
+Remove this dependency.
+
+Replace all Replit-only environment variables with production-safe configuration.
+
+Examples include:
+
+* EXPO_PUBLIC_DOMAIN
+* REPLIT_DEV_DOMAIN
+* REPL_ID
+* REPLIT_EXPO_DEV_DOMAIN
+
+The application must run correctly both in development and in a standalone APK.
+
+If an environment variable is missing, use a safe fallback instead of crashing.
+
+---
+
+### 3. API Configuration
+
+Verify that:
+
+* Base API URL is correctly configured.
+* Missing API URL never crashes the application.
+* API initialization happens safely.
+* Network failures never terminate the application.
+
+If the backend is unavailable, display an error screen instead of closing the app.
+
+---
+
+### 4. Authentication
+
+Inspect:
+
+* SecureStore
+* AsyncStorage
+* Token loading
+* Auto login
+* Biometric authentication
+
+Ensure no authentication error can terminate the application.
+
+---
+
+### 5. Expo Modules
+
+Verify compatibility of:
+
+* expo-camera
+* expo-contacts
+* expo-notifications
+* expo-local-authentication
+* expo-secure-store
+* expo-network
+* expo-device
+* expo-image-picker
+* expo-location
+
+Only initialize modules when required.
+
+Do not initialize unnecessary native modules during startup.
+
+---
+
+### 6. New Architecture
+
+If any library is incompatible with the New Architecture, automatically disable it.
+
+Update app.json if required.
+
+---
+
+### 7. Error Handling
+
+Wrap all startup initialization inside proper try/catch blocks.
+
+Any startup failure must:
+
+* be logged
+* show a friendly error screen
+
+It must NEVER crash the application.
+
+---
+
+### 8. Console & Runtime Logs
+
+Run the application locally.
+
+Capture the actual runtime exception.
+
+Fix every exception until there are no startup crashes.
+
+---
+
+### 9. Dependencies
+
+Check:
+
+* Expo SDK compatibility
+* React Native compatibility
+* Expo Router
+* Hermes
+* Native modules
+* pnpm workspace dependencies
+
+Fix any incompatible versions.
+
+---
+
+### 10. Build Verification
+
+After fixing the issues:
+
+Run:
+
+pnpm install
+
+Run:
+
+eas build -p android --profile preview
+
+Install the generated APK.
+
+Verify:
+
+✅ App opens normally
+
+✅ Splash screen disappears correctly
+
+✅ Login screen appears
+
+✅ No startup crash
+
+---
+
+### 11. Preserve Existing Functionality
+
+Do NOT remove or break any existing features.
+
+Everything must continue working:
+
+* Login
+* Business card scanning
+* OCR
+* AI extraction
+* Duplicate detection
+* Digital Business Card
+* QR Scanner
+* Contacts
+* Leads
+* Events
+* Reports
+* Offline mode
+* Push notifications
+* Admin APIs
+
+---
+
+### 12. Performance
+
+While fixing the application:
+
+* Remove unused dependencies.
+* Remove Replit-only code.
+* Remove unused Expo modules.
+* Reduce APK size where possible.
+* Keep native performance.
+
+---
+
+### 13. Final Deliverables
+
+Do not stop until all of the following are complete:
+
+* Startup crash fixed.
+* APK installs successfully.
+* APK launches successfully.
+* Login screen opens.
+* All features continue working.
+* Android build passes successfully.
+* Commit all fixes to the repository.
+* Provide a summary of every issue found and every file modified.
