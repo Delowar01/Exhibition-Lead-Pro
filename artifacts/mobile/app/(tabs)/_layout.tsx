@@ -1,19 +1,48 @@
 import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
-import { SymbolView } from "expo-symbols";
-import { Feather } from "@/components/icons";
 import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
+import { Feather } from "@/components/icons";
 import { useColors } from "@/hooks/useColors";
 
+// ─── iOS-only modules ────────────────────────────────────────────────────────
+//
+// expo-glass-effect, expo-router/unstable-native-tabs, and expo-symbols are
+// iOS-only native modules. Importing them at the top level causes a FATAL
+// JS bundle evaluation error on Android — the native module binding is absent,
+// which kills the app before any screen renders (crash immediately after splash
+// screen). They are loaded lazily via inline require() inside platform-guarded
+// code so the Android JS bundle never evaluates their native bindings.
+//
+// Metro performs dead-code elimination on Platform.OS comparisons, so the
+// require() calls on the iOS branch are excluded from the Android bundle.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+function isLiquidGlass(): boolean {
+  if (Platform.OS !== "ios") return false;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { isLiquidGlassAvailable } = require("expo-glass-effect") as typeof import("expo-glass-effect");
+    return isLiquidGlassAvailable();
+  } catch {
+    return false;
+  }
+}
+
 // IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
-// NativeTabs intentionally does NOT use custom design tokens — liquid glass
-// is a system-level appearance provided by iOS and cannot be overridden.
-// Custom brand colors are applied only on the ClassicTabLayout path (older iOS / Android / web).
+// NativeTabs intentionally does NOT use custom design tokens — liquid glass is
+// a system-level appearance provided by iOS and cannot be overridden. Custom
+// brand colors are applied only on the ClassicTabLayout path.
+// The inline require() inside this component is only ever executed on iOS 26+
+// (when isLiquidGlass() returns true), so Android never loads the module.
 function NativeTabLayout() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { NativeTabs, Icon, Label } = require(
+    "expo-router/unstable-native-tabs",
+  ) as typeof import("expo-router/unstable-native-tabs");
+
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
@@ -52,11 +81,13 @@ function ClassicTabLayout() {
     feather: keyof typeof Feather.glyphMap,
     color: string,
   ) {
-    return isIOS ? (
-      <SymbolView name={sf as never} tintColor={color} size={24} />
-    ) : (
-      <Feather name={feather} size={22} color={color} />
-    );
+    if (isIOS) {
+      // expo-symbols is iOS-only; require it lazily so Android never loads it.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { SymbolView } = require("expo-symbols") as typeof import("expo-symbols");
+      return <SymbolView name={sf as never} tintColor={color} size={24} />;
+    }
+    return <Feather name={feather} size={22} color={color} />;
   }
 
   return (
@@ -131,7 +162,7 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
+  if (isLiquidGlass()) {
     return <NativeTabLayout />;
   }
   return <ClassicTabLayout />;
