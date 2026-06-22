@@ -10,7 +10,17 @@ import type { LeadUpdateStage } from './leadUpdateStage';
 export interface LeadUpdate {
   stage?: LeadUpdateStage;
   /** @nullable */
+  title?: string | null;
+  /** @nullable */
   value?: number | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  closingDate?: string | null;
+  /** @nullable */
+  probability?: number | null;
+  /** @nullable */
+  priority?: string | null;
   /** @nullable */
   notes?: string | null;
   /** @nullable */

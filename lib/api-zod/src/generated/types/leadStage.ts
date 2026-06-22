@@ -10,11 +10,13 @@ export type LeadStage = typeof LeadStage[keyof typeof LeadStage];
 
 
 export const LeadStage = {
-  new: 'new',
-  contacted: 'contacted',
-  meeting_scheduled: 'meeting_scheduled',
+  prospect: 'prospect',
+  qualified: 'qualified',
   proposal_sent: 'proposal_sent',
   negotiation: 'negotiation',
   won: 'won',
   lost: 'lost',
+  new: 'new',
+  contacted: 'contacted',
+  meeting_scheduled: 'meeting_scheduled',
 } as const;

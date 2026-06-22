@@ -611,14 +611,44 @@ export type LeadStage = typeof LeadStage[keyof typeof LeadStage];
 
 
 export const LeadStage = {
-  new: 'new',
-  contacted: 'contacted',
-  meeting_scheduled: 'meeting_scheduled',
+  prospect: 'prospect',
+  qualified: 'qualified',
   proposal_sent: 'proposal_sent',
   negotiation: 'negotiation',
   won: 'won',
   lost: 'lost',
+  new: 'new',
+  contacted: 'contacted',
+  meeting_scheduled: 'meeting_scheduled',
 } as const;
+
+/**
+ * @nullable
+ */
+export type LeadPriority = typeof LeadPriority[keyof typeof LeadPriority] | null;
+
+
+export const LeadPriority = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  null: 'null',
+} as const;
+
+export interface LeadHistory {
+  id: number;
+  leadId: number;
+  /** @nullable */
+  changedBy?: number | null;
+  /** @nullable */
+  changedByName?: string | null;
+  fieldName: string;
+  /** @nullable */
+  oldValue?: string | null;
+  /** @nullable */
+  newValue?: string | null;
+  changedAt: string;
+}
 
 export interface Lead {
   id: number;
@@ -633,7 +663,17 @@ export interface Lead {
   contactCompany?: string | null;
   stage: LeadStage;
   /** @nullable */
+  title?: string | null;
+  /** @nullable */
   value?: number | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  closingDate?: string | null;
+  /** @nullable */
+  probability?: number | null;
+  /** @nullable */
+  priority?: LeadPriority;
   /** @nullable */
   notes?: string | null;
   /** @nullable */
@@ -645,6 +685,7 @@ export interface Lead {
   /** @nullable */
   eventName?: string | null;
   createdAt: string;
+  history?: LeadHistory[];
 }
 
 export interface LeadList {
@@ -656,21 +697,33 @@ export type LeadInputStage = typeof LeadInputStage[keyof typeof LeadInputStage];
 
 
 export const LeadInputStage = {
-  new: 'new',
-  contacted: 'contacted',
-  meeting_scheduled: 'meeting_scheduled',
+  prospect: 'prospect',
+  qualified: 'qualified',
   proposal_sent: 'proposal_sent',
   negotiation: 'negotiation',
   won: 'won',
   lost: 'lost',
+  new: 'new',
+  contacted: 'contacted',
+  meeting_scheduled: 'meeting_scheduled',
 } as const;
 
 export interface LeadInput {
   /** @nullable */
   contactId?: number | null;
-  stage: LeadInputStage;
+  stage?: LeadInputStage;
+  /** @nullable */
+  title?: string | null;
   /** @nullable */
   value?: number | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  closingDate?: string | null;
+  /** @nullable */
+  probability?: number | null;
+  /** @nullable */
+  priority?: string | null;
   /** @nullable */
   notes?: string | null;
   /** @nullable */
@@ -683,19 +736,31 @@ export type LeadUpdateStage = typeof LeadUpdateStage[keyof typeof LeadUpdateStag
 
 
 export const LeadUpdateStage = {
-  new: 'new',
-  contacted: 'contacted',
-  meeting_scheduled: 'meeting_scheduled',
+  prospect: 'prospect',
+  qualified: 'qualified',
   proposal_sent: 'proposal_sent',
   negotiation: 'negotiation',
   won: 'won',
   lost: 'lost',
+  new: 'new',
+  contacted: 'contacted',
+  meeting_scheduled: 'meeting_scheduled',
 } as const;
 
 export interface LeadUpdate {
   stage?: LeadUpdateStage;
   /** @nullable */
+  title?: string | null;
+  /** @nullable */
   value?: number | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  closingDate?: string | null;
+  /** @nullable */
+  probability?: number | null;
+  /** @nullable */
+  priority?: string | null;
   /** @nullable */
   notes?: string | null;
   /** @nullable */
@@ -1129,6 +1194,8 @@ export interface MobileDashboard {
   proposalsSent: number;
   contactedLeads: number;
   pipelineValue: number;
+  wonValue?: number;
+  lostValue?: number;
   totalContacts: number;
   recentActivity: MobileActivityItem[];
 }
@@ -1770,6 +1837,10 @@ assignedTo?: number | null;
  * @nullable
  */
 eventId?: number | null;
+/**
+ * @nullable
+ */
+contactId?: number | null;
 page?: number;
 limit?: number;
 };

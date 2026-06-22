@@ -95,13 +95,15 @@ export const TASK_TYPE_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
 };
 
 export const LEAD_STAGE_COLORS: Record<string, string> = {
-  new: "#3B82F6",
-  contacted: "#8B5CF6",
-  meeting_scheduled: "#06B6D4",
+  prospect: "#3B82F6",
+  qualified: "#8B5CF6",
   proposal_sent: "#F59E0B",
   negotiation: "#FB923C",
   won: "#22C55E",
   lost: "#EF4444",
+  new: "#3B82F6",
+  contacted: "#8B5CF6",
+  meeting_scheduled: "#06B6D4",
 };
 
 export const LEAD_TEMPERATURE_COLORS: Record<string, string> = {
@@ -111,9 +113,8 @@ export const LEAD_TEMPERATURE_COLORS: Record<string, string> = {
 };
 
 export const LEAD_STAGE_ORDER = [
-  "new",
-  "contacted",
-  "meeting_scheduled",
+  "prospect",
+  "qualified",
   "proposal_sent",
   "negotiation",
   "won",

@@ -16,6 +16,10 @@ assignedTo?: number | null;
  * @nullable
  */
 eventId?: number | null;
+/**
+ * @nullable
+ */
+contactId?: number | null;
 page?: number;
 limit?: number;
 };

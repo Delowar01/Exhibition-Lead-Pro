@@ -210,13 +210,29 @@ export default function HomeScreen() {
     },
     {
       key: "pipeline",
-      label: t("leads.title"),
+      label: t("home.stats.openPipeline"),
       value: formatCurrency(data?.pipelineValue ?? 0),
       icon: "dollar-sign",
       color: colors.success,
       onPress: () => {
         router.push("/leads");
       },
+    },
+    {
+      key: "won",
+      label: t("home.stats.won"),
+      value: formatCurrency((data as { wonValue?: number })?.wonValue ?? 0),
+      icon: "award",
+      color: "#22C55E",
+      onPress: () => router.push("/leads"),
+    },
+    {
+      key: "lost",
+      label: t("home.stats.lost"),
+      value: formatCurrency((data as { lostValue?: number })?.lostValue ?? 0),
+      icon: "x-circle",
+      color: colors.destructive,
+      onPress: () => router.push("/leads"),
     },
   ];
 

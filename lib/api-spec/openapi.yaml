@@ -757,6 +757,10 @@ paths:
           in: query
           schema:
             type: ["integer", "null"]
+        - name: contactId
+          in: query
+          schema:
+            type: ["integer", "null"]
         - name: page
           in: query
           schema:
@@ -2273,9 +2277,20 @@ components:
           type: ["string", "null"]
         stage:
           type: string
-          enum: [new, contacted, meeting_scheduled, proposal_sent, negotiation, won, lost]
+          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled]
+        title:
+          type: ["string", "null"]
         value:
           type: ["number", "null"]
+        currency:
+          type: ["string", "null"]
+        closingDate:
+          type: ["string", "null"]
+        probability:
+          type: ["integer", "null"]
+        priority:
+          type: ["string", "null"]
+          enum: [low, medium, high, "null"]
         notes:
           type: ["string", "null"]
         assignedToId:
@@ -2289,6 +2304,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadHistory"
 
     LeadList:
       type: object
@@ -2303,16 +2322,25 @@ components:
 
     LeadInput:
       type: object
-      required: [stage]
       properties:
         contactId:
           type: ["integer", "null"]
         stage:
           type: string
-          enum: [new, contacted, meeting_scheduled, proposal_sent, negotiation, won, lost]
-          default: new
+          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled]
+          default: prospect
+        title:
+          type: ["string", "null"]
         value:
           type: ["number", "null"]
+        currency:
+          type: ["string", "null"]
+        closingDate:
+          type: ["string", "null"]
+        probability:
+          type: ["integer", "null"]
+        priority:
+          type: ["string", "null"]
         notes:
           type: ["string", "null"]
         assignedToId:
@@ -2325,15 +2353,47 @@ components:
       properties:
         stage:
           type: string
-          enum: [new, contacted, meeting_scheduled, proposal_sent, negotiation, won, lost]
+          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled]
+        title:
+          type: ["string", "null"]
         value:
           type: ["number", "null"]
+        currency:
+          type: ["string", "null"]
+        closingDate:
+          type: ["string", "null"]
+        probability:
+          type: ["integer", "null"]
+        priority:
+          type: ["string", "null"]
         notes:
           type: ["string", "null"]
         assignedToId:
           type: ["integer", "null"]
         eventId:
           type: ["integer", "null"]
+
+    LeadHistory:
+      type: object
+      required: [id, leadId, fieldName, changedAt]
+      properties:
+        id:
+          type: integer
+        leadId:
+          type: integer
+        changedBy:
+          type: ["integer", "null"]
+        changedByName:
+          type: ["string", "null"]
+        fieldName:
+          type: string
+        oldValue:
+          type: ["string", "null"]
+        newValue:
+          type: ["string", "null"]
+        changedAt:
+          type: string
+          format: date-time
 
     PipelineView:
       type: object
@@ -2831,6 +2891,10 @@ components:
         contactedLeads:
           type: integer
         pipelineValue:
+          type: number
+        wonValue:
+          type: number
+        lostValue:
           type: number
         totalContacts:
           type: integer

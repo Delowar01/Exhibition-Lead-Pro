@@ -5,6 +5,8 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { LeadHistory } from './leadHistory';
+import type { LeadPriority } from './leadPriority';
 import type { LeadStage } from './leadStage';
 
 export interface Lead {
@@ -20,7 +22,17 @@ export interface Lead {
   contactCompany?: string | null;
   stage: LeadStage;
   /** @nullable */
+  title?: string | null;
+  /** @nullable */
   value?: number | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  closingDate?: string | null;
+  /** @nullable */
+  probability?: number | null;
+  /** @nullable */
+  priority?: LeadPriority;
   /** @nullable */
   notes?: string | null;
   /** @nullable */
@@ -32,4 +44,5 @@ export interface Lead {
   /** @nullable */
   eventName?: string | null;
   createdAt: Date;
+  history?: LeadHistory[];
 }

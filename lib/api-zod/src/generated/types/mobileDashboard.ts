@@ -15,6 +15,8 @@ export interface MobileDashboard {
   proposalsSent: number;
   contactedLeads: number;
   pipelineValue: number;
+  wonValue?: number;
+  lostValue?: number;
   totalContacts: number;
   recentActivity: MobileActivityItem[];
 }

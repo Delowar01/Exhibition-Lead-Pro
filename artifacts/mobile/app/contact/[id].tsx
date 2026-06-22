@@ -36,6 +36,7 @@ import {
   useDeleteContact,
   useGetContact,
   useGetContactStatusHistory,
+  useListLeads,
   useListUsers,
   useUpdateContact,
 } from "@workspace/api-client-react";
@@ -112,6 +113,7 @@ export default function ContactDetailScreen() {
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
   const historyQuery = useGetContactStatusHistory(contactId);
+  const leadsQuery = useListLeads({ contactId, limit: 5 });
   const createFollowUp = useCreateFollowUp();
   const createMeeting = useCreateMeeting();
   const createTask = useCreateTask();
@@ -475,6 +477,41 @@ export default function ContactDetailScreen() {
               ) : null}
             </Section>
           ) : null}
+
+          {/* Sales Pipeline opportunity */}
+          {(() => {
+            const allLeads = leadsQuery.data?.leads ?? [];
+            const openLead = allLeads.find(l => l.stage !== "lost");
+            return (
+              <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+                  {t("pipeline.title", { defaultValue: "SALES PIPELINE" }).toUpperCase()}
+                </Text>
+                {openLead ? (
+                  <Pressable
+                    onPress={() => router.push(`/pipeline/${openLead.id}`)}
+                    style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary, opacity: pressed ? 0.75 : 1 }]}
+                  >
+                    <Feather name="trending-up" size={16} color={colors.primary} />
+                    <Text style={[styles.pipelineBtnText, { color: colors.primary }]}>
+                      {t("pipeline.viewPipeline")}
+                    </Text>
+                    <Feather name="chevron-right" size={16} color={colors.primary} style={{ marginLeft: "auto" }} />
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => router.push(`/pipeline/form?contactId=${contactId}`)}
+                    style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
+                  >
+                    <Feather name="plus-circle" size={16} color={colors.mutedForeground} />
+                    <Text style={[styles.pipelineBtnText, { color: colors.foreground }]}>
+                      {t("pipeline.addToPipeline")}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            );
+          })()}
 
           {/* Details */}
           <Section title={t("contacts.sectionDetails")}>
@@ -1124,6 +1161,26 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 8,
     marginLeft: 4,
+  },
+  section: {
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    gap: 10,
+  },
+  pipelineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  pipelineBtnText: {
+    fontSize: 14,
+    fontFamily: FONT.semibold,
+    flex: 1,
   },
   sectionBody: {
     borderWidth: 1,

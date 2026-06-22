@@ -43,7 +43,7 @@ export default function LeadsScreen() {
   const router = useRouter();
   const { t, isRTL, textAlign } = useLocale();
   const query = useGetLeadPipeline();
-  const [activeStage, setActiveStage] = useState<string>("new");
+  const [activeStage, setActiveStage] = useState<string>("prospect");
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -66,10 +66,14 @@ export default function LeadsScreen() {
   function renderLead({ item }: { item: Lead }) {
     const color = LEAD_STAGE_COLORS[item.stage] ?? colors.primary;
     return (
-      <View
-        style={[
+      <Pressable
+        onPress={() => {
+          if (Platform.OS !== "web") Haptics.selectionAsync();
+          router.push(`/pipeline/${item.id}`);
+        }}
+        style={({ pressed }) => [
           styles.leadCard,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
+          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row", opacity: pressed ? 0.75 : 1 },
         ]}
       >
         <Avatar name={item.contactName ?? "?"} color={color} size={40} />
@@ -86,7 +90,8 @@ export default function LeadsScreen() {
             {formatCurrency(item.value)}
           </Text>
         ) : null}
-      </View>
+        <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      </Pressable>
     );
   }
 
@@ -176,7 +181,7 @@ export default function LeadsScreen() {
             renderItem={renderLead}
             contentContainerStyle={{
               padding: 20,
-              paddingBottom: insets.bottom + 100,
+              paddingBottom: insets.bottom + 120,
               gap: 10,
               flexGrow: 1,
             }}
@@ -197,6 +202,20 @@ export default function LeadsScreen() {
               </View>
             }
           />
+
+          {/* FAB */}
+          <Pressable
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push("/pipeline/form");
+            }}
+            style={({ pressed }) => [
+              styles.fab,
+              { backgroundColor: colors.primary, bottom: insets.bottom + 24, opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <Feather name="plus" size={26} color="#FFFFFF" />
+          </Pressable>
         </>
       )}
     </View>
@@ -271,5 +290,19 @@ const styles = StyleSheet.create({
   leadValue: {
     fontSize: 15,
     fontFamily: FONT.bold,
+  },
+  fab: {
+    position: "absolute",
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

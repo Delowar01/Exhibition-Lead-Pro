@@ -932,6 +932,7 @@ export const ListLeadsQueryParams = zod.object({
   "stage": zod.coerce.string().optional(),
   "assignedTo": zod.coerce.number().nullish(),
   "eventId": zod.coerce.number().nullish(),
+  "contactId": zod.coerce.number().nullish(),
   "page": zod.coerce.number().default(listLeadsQueryPageDefault),
   "limit": zod.coerce.number().default(listLeadsQueryLimitDefault)
 })
@@ -944,14 +945,29 @@ export const ListLeadsResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['new', 'contacted', 'meeting_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "title": zod.string().nullish(),
   "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "leadId": zod.number(),
+  "changedBy": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "fieldName": zod.string(),
+  "oldValue": zod.string().nullish(),
+  "newValue": zod.string().nullish(),
+  "changedAt": zod.coerce.date()
+})).optional()
 })),
   "total": zod.number()
 })
@@ -960,12 +976,17 @@ export const ListLeadsResponse = zod.object({
 /**
  * @summary Create lead
  */
-export const createLeadBodyStageDefault = `new`;
+export const createLeadBodyStageDefault = `prospect`;
 
 export const CreateLeadBody = zod.object({
   "contactId": zod.number().nullish(),
-  "stage": zod.enum(['new', 'contacted', 'meeting_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost']).default(createLeadBodyStageDefault),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']).default(createLeadBodyStageDefault),
+  "title": zod.string().nullish(),
   "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "eventId": zod.number().nullish()
@@ -986,14 +1007,29 @@ export const GetLeadResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['new', 'contacted', 'meeting_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "title": zod.string().nullish(),
   "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "leadId": zod.number(),
+  "changedBy": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "fieldName": zod.string(),
+  "oldValue": zod.string().nullish(),
+  "newValue": zod.string().nullish(),
+  "changedAt": zod.coerce.date()
+})).optional()
 })
 
 
@@ -1005,8 +1041,13 @@ export const UpdateLeadParams = zod.object({
 })
 
 export const UpdateLeadBody = zod.object({
-  "stage": zod.enum(['new', 'contacted', 'meeting_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost']).optional(),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']).optional(),
+  "title": zod.string().nullish(),
   "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "eventId": zod.number().nullish()
@@ -1019,14 +1060,29 @@ export const UpdateLeadResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['new', 'contacted', 'meeting_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "title": zod.string().nullish(),
   "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "leadId": zod.number(),
+  "changedBy": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "fieldName": zod.string(),
+  "oldValue": zod.string().nullish(),
+  "newValue": zod.string().nullish(),
+  "changedAt": zod.coerce.date()
+})).optional()
 })
 
 
@@ -1056,14 +1112,29 @@ export const GetLeadPipelineResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['new', 'contacted', 'meeting_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "title": zod.string().nullish(),
   "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "leadId": zod.number(),
+  "changedBy": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "fieldName": zod.string(),
+  "oldValue": zod.string().nullish(),
+  "newValue": zod.string().nullish(),
+  "changedAt": zod.coerce.date()
+})).optional()
 })),
   "count": zod.number(),
   "value": zod.number()
@@ -1507,6 +1578,8 @@ export const GetMobileDashboardResponse = zod.object({
   "proposalsSent": zod.number(),
   "contactedLeads": zod.number(),
   "pipelineValue": zod.number(),
+  "wonValue": zod.number().optional(),
+  "lostValue": zod.number().optional(),
   "totalContacts": zod.number(),
   "recentActivity": zod.array(zod.object({
   "id": zod.string(),

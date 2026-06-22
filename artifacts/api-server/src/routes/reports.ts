@@ -213,6 +213,8 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
       [{ meetingsScheduled }],
       [{ proposalsSent }],
       [pipelineRow],
+      [wonRow],
+      [lostRow],
     ] = await Promise.all([
       db
         .select({ todayLeads: count() })
@@ -253,6 +255,14 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
         })
         .from(leadsTable)
         .where(and(leadScope, sql`${leadsTable.stage} NOT IN ('won', 'lost')`)),
+      db
+        .select({ wonValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)` })
+        .from(leadsTable)
+        .where(and(leadScope, eq(leadsTable.stage, "won"))),
+      db
+        .select({ lostValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)` })
+        .from(leadsTable)
+        .where(and(leadScope, eq(leadsTable.stage, "lost"))),
     ]);
 
     const recentContacts = await db
@@ -294,6 +304,8 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
       proposalsSent,
       contactedLeads,
       pipelineValue: Number(pipelineRow.pipelineValue ?? 0),
+      wonValue: Number(wonRow.wonValue ?? 0),
+      lostValue: Number(lostRow.lostValue ?? 0),
       totalContacts,
       recentActivity,
     });
