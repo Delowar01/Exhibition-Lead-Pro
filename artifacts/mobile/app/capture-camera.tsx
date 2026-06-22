@@ -233,7 +233,7 @@ export default function CaptureCameraScreen() {
         batchRef.current = [...batchRef.current, item];
         setBatchCount(batchRef.current.length);
         // Mark pending then fire-and-forget background OCR.
-        setBatchOcrResult(batchId, { status: "pending", extracted: null });
+        setBatchOcrResult(batchId, { status: "pending", extracted: null, scanId: null });
         void (async () => {
           try {
             const scan = await createScan.mutateAsync({
@@ -249,10 +249,11 @@ export default function CaptureCameraScreen() {
             setBatchOcrResult(batchId, {
               status: "done",
               extracted: scan.extractedData ?? null,
+              scanId: scan.id,
             });
             scanLog("batch: OCR done", { id: batchId });
           } catch (e) {
-            setBatchOcrResult(batchId, { status: "error", extracted: null });
+            setBatchOcrResult(batchId, { status: "error", extracted: null, scanId: null });
             scanLog("batch: OCR error", {
               id: batchId,
               message: e instanceof Error ? e.message : String(e),
@@ -318,6 +319,7 @@ export default function CaptureCameraScreen() {
             lat: gps.latitude != null ? String(gps.latitude) : "",
             lng: gps.longitude != null ? String(gps.longitude) : "",
             acc: gps.gpsAccuracy != null ? String(gps.gpsAccuracy) : "",
+            scanId: String(scan.id),
           },
         });
         return;

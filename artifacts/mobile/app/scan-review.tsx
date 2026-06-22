@@ -54,6 +54,7 @@ export default function ScanReviewScreen() {
     lat?: string;
     lng?: string;
     acc?: string;
+    scanId?: string;
   }>();
   const createContact = useCreateContact();
   const { isOnline, enqueueContact } = useOffline();
@@ -155,6 +156,7 @@ export default function ScanReviewScreen() {
       latitude: gps.latitude,
       longitude: gps.longitude,
       gpsAccuracy: gps.gpsAccuracy,
+      cardImageUrl: params.scanId ? `/api/scans/${params.scanId}/image` : null,
     };
     if (!isOnline) {
       const label =

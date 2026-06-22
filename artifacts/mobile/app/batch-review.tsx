@@ -163,12 +163,14 @@ export default function BatchReviewScreen() {
   }
 
   async function handleSave(formValues: ContactFormValues) {
+    const ocrResult = current ? getBatchOcrResult(current.id) : undefined;
     const payload = {
       ...toContactPayload(formValues),
       eventId,
       latitude: current?.latitude ?? null,
       longitude: current?.longitude ?? null,
       gpsAccuracy: current?.gpsAccuracy ?? null,
+      cardImageUrl: ocrResult?.scanId ? `/api/scans/${ocrResult.scanId}/image` : null,
     };
     try {
       await createContact.mutateAsync({ data: payload });

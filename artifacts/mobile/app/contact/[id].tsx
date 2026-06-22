@@ -5,6 +5,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
+  Image,
   Linking,
   Modal,
   Platform,
@@ -20,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   type Contact,
   type ContactUpdateStatus,
+  getBaseUrl,
   getListUsersQueryKey,
   type MeetingInputType,
   useCreateFollowUp,
@@ -94,16 +96,16 @@ export default function ContactDetailScreen() {
   const contactId = Number(id);
 
   const query = useGetContact(contactId);
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
   const historyQuery = useGetContactStatusHistory(contactId);
   const createFollowUp = useCreateFollowUp();
   const createMeeting = useCreateMeeting();
   const createTask = useCreateTask();
-
   const [assignOpen, setAssignOpen] = useState(false);
   const [schedule, setSchedule] = useState<"followup" | "meeting" | null>(null);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
   const usersQuery = useListUsers(
     { limit: 100 },
     { query: { enabled: assignOpen, queryKey: getListUsersQueryKey({ limit: 100 }) } },
@@ -427,6 +429,31 @@ export default function ContactDetailScreen() {
             </Section>
           ) : null}
 
+          {/* Captured card image */}
+          {(() => {
+            const base = getBaseUrl();
+            const uri = contact.cardImageUrl && base ? `${base}${contact.cardImageUrl}` : null;
+            if (!uri) return null;
+            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            return (
+              <Section title={t("contacts.sectionCapturedCard")}>
+                <Pressable
+                  onPress={() => setImageModalOpen(true)}
+                  style={styles.cardImageWrap}
+                >
+                  <Image
+                    source={{ uri, headers }}
+                    style={styles.cardThumbnail}
+                    resizeMode="contain"
+                  />
+                  <View style={styles.cardImageOverlay}>
+                    <Feather name="maximize-2" size={16} color="#FFFFFF" />
+                  </View>
+                </Pressable>
+              </Section>
+            );
+          })()}
+
           {/* Schedule */}
           <Section title={t("contacts.sectionSchedule")}>
             <ManageRow
@@ -635,6 +662,43 @@ export default function ContactDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Full-screen card image viewer */}
+      {(() => {
+        const base = getBaseUrl();
+        const uri = contact?.cardImageUrl && base ? `${base}${contact.cardImageUrl}` : null;
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+        return (
+          <Modal
+            visible={imageModalOpen}
+            transparent
+            animationType="fade"
+            statusBarTranslucent
+            hardwareAccelerated
+            onRequestClose={() => setImageModalOpen(false)}
+          >
+            <Pressable
+              style={styles.imageViewerBackdrop}
+              onPress={() => setImageModalOpen(false)}
+            >
+              {uri ? (
+                <Image
+                  source={{ uri, headers }}
+                  style={styles.imageViewerFull}
+                  resizeMode="contain"
+                />
+              ) : null}
+              <Pressable
+                style={[styles.imageViewerClose, { backgroundColor: colors.card }]}
+                onPress={() => setImageModalOpen(false)}
+                hitSlop={12}
+              >
+                <Feather name="x" size={20} color={colors.foreground} />
+              </Pressable>
+            </Pressable>
+          </Modal>
+        );
+      })()}
 
       {/* Schedule follow-up / meeting */}
       <ScheduleModal
@@ -1199,5 +1263,47 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontFamily: FONT.regular,
     flex: 1,
+  },
+  cardImageWrap: {
+    margin: 8,
+    borderRadius: 8,
+    overflow: "hidden",
+    position: "relative",
+  },
+  cardThumbnail: {
+    width: "100%",
+    height: 180,
+    backgroundColor: "#000000",
+  },
+  cardImageOverlay: {
+    position: "absolute",
+    bottom: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  imageViewerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.94)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  imageViewerFull: {
+    width: "100%",
+    height: "80%",
+  },
+  imageViewerClose: {
+    position: "absolute",
+    top: 56,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -5,6 +5,7 @@ import { eq, and, count, inArray, sql } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { extractCardData, logAiError } from "../lib/ai.js";
+import { uploadScanImage, streamScanImage } from "../lib/imageStorage.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -45,6 +46,15 @@ router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequ
     // Create scan record
     const [scan] = await db.insert(scansTable).values({ companyId, userId: req.user!.id, status: "processing", imageUrl: null, extractedData: null }).returning();
 
+    // Upload image to object storage (best-effort; failure does not block OCR)
+    let storedImageUrl: string | null = null;
+    try {
+      storedImageUrl = await uploadScanImage(scan.id, companyId, imageData);
+      await db.update(scansTable).set({ imageUrl: storedImageUrl }).where(eq(scansTable.id, scan.id));
+    } catch (imgErr) {
+      req.log.warn({ err: imgErr }, "scan image upload failed; continuing without stored image");
+    }
+
     // Real AI OCR + extraction
     try {
       const result = await extractCardData(imageData, lang);
@@ -52,14 +62,41 @@ router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequ
         .set({ status: "completed", extractedData: JSON.stringify(result.fields), rawOcr: result.rawOcr, confidence: result.confidence })
         .where(eq(scansTable.id, scan.id))
         .returning();
-      res.status(201).json({ ...updated, extractedData: result.fields });
+      res.status(201).json({ ...updated, extractedData: result.fields, imageUrl: storedImageUrl });
     } catch (aiErr) {
       logAiError("scan-ocr", aiErr);
       const [failed] = await db.update(scansTable)
         .set({ status: "failed" })
         .where(eq(scansTable.id, scan.id))
         .returning();
-      res.status(502).json({ ...failed, extractedData: null, error: "Could not read the card. Please retake the photo." });
+      res.status(502).json({ ...failed, extractedData: null, imageUrl: storedImageUrl, error: "Could not read the card. Please retake the photo." });
+    }
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /scans/:id/image — streams the stored card image (auth-protected)
+router.get("/scans/:id/image", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    const [scan] = await db.select().from(scansTable).where(eq(scansTable.id, id)).limit(1);
+    if (!scan || !canAccessCompany(req.user, scan.companyId)) {
+      res.status(404).json({ error: "Scan not found" });
+      return;
+    }
+    if (!scan.imageUrl) {
+      res.status(404).json({ error: "No image stored for this scan" });
+      return;
+    }
+    try {
+      const { stream, contentType } = await streamScanImage(scan.imageUrl);
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      stream.pipe(res);
+    } catch {
+      res.status(404).json({ error: "Image not found in storage" });
     }
   } catch (err) {
     req.log.error(err);

@@ -1,0 +1,182 @@
+# MOBILE APPLICATION – LAST EVENT REPORT FILTER REDESIGN
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is a UI/UX redesign of the **Last Event Report** filtering experience.
+
+No backend changes are required unless necessary to support sorting.
+
+---
+
+# CURRENT WORKFLOW
+
+Dashboard
+
+↓
+
+Last Event Card (Leap 2026)
+
+↓
+
+Tap Event
+
+↓
+
+Event Report
+
+↓
+
+Filter Bottom Sheet
+
+The current filter sheet still contains an **Event** section.
+
+This is unnecessary because the user has already opened the report for a specific event.
+
+---
+
+# REQUIRED REDESIGN
+
+Remove the **Event** filter completely from the Last Event Report.
+
+The selected event is already known.
+
+There is no reason to ask the user to select the event again.
+
+---
+
+# FILTER BUTTON
+
+Instead of displaying the Event filter chips, replace that functionality with a **small Filter icon** in the Event Report header.
+
+Use the same Filter icon design used throughout the application.
+
+Example:
+
+---
+
+Leap 2026
+
+```
+                          [Filter]
+```
+
+---
+
+The filter belongs to the Event Report, not the Dashboard.
+
+---
+
+# FILTER OPTIONS
+
+The Filter panel should only contain filters relevant to the selected event.
+
+Remove:
+
+❌ Event
+
+Keep:
+
+* Lead Status
+* Lead Temperature
+* Team Member
+* Capture Method
+* Date Range (within the selected event)
+
+---
+
+# ADD SORTING
+
+Add a new **Sort By** section inside the filter panel.
+
+Support the following sorting options:
+
+### Lead Name
+
+* A → Z
+* Z → A
+
+### Company Name
+
+* A → Z
+* Z → A
+
+### Capture Date
+
+* Newest First
+* Oldest First
+
+### Lead Score
+
+* Highest First
+* Lowest First
+
+### Pipeline Value
+
+* Highest First
+* Lowest First
+
+### Follow-Up Date
+
+* Earliest First
+* Latest First
+
+### Meeting Date
+
+* Earliest First
+* Latest First
+
+---
+
+# FILTER BEHAVIOUR
+
+When the user taps **Apply**:
+
+Immediately refresh:
+
+* Contact List
+* KPI Statistics
+* Charts
+* Team Performance
+* Pipeline Summary
+
+All displayed information should reflect the selected filters and sorting.
+
+---
+
+# USER EXPERIENCE
+
+The user has already selected an event by opening its report.
+
+Do not ask the user to select the same event again.
+
+The Event Report should always remain scoped to the currently opened event.
+
+The Filter button should only refine data **within that event**.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Event filter removed from the Event Report.
+* Filter icon added to the Event Report header.
+* Filter panel no longer contains Event selection.
+* Sorting options added.
+* Filtering and sorting update the report immediately.
+* Responsive on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# DESIGN GOAL
+
+The Last Event Report should feel context-aware.
+
+Once a user opens **Leap 2026**, the application already knows which event is being viewed.
+
+The filtering experience should focus only on refining the data inside that event, making the workflow faster, cleaner, and more intuitive.

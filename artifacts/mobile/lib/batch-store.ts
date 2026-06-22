@@ -11,6 +11,7 @@ export interface BatchCapture {
 export interface BatchOcrResult {
   status: "pending" | "done" | "error";
   extracted: ExtractedCardData | null;
+  scanId: number | null;
 }
 
 let captures: BatchCapture[] = [];
