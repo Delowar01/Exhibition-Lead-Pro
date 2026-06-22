@@ -1,0 +1,227 @@
+MOBILE APPLICATION – CONTACT DASHBOARD KPI GRID & TOUCH EXPERIENCE
+Project
+Lead Capture Pro
+Scope
+MOBILE APPLICATION ONLY
+This task is a UI/UX improvement only.
+No backend or business logic changes are required.
+
+1. CONTACT DASHBOARD KPI REDESIGN
+Current Design
+The KPI widgets at the top of the Contact screen are displayed in a horizontal scrolling layout.
+This makes it difficult for users to quickly view important information.
+
+Required
+Replace the horizontal scrolling KPI cards with a responsive 2-row KPI grid.
+The user should be able to view all primary statistics immediately without horizontal scrolling.
+
+New Layout
+Row 1
+
+
+Total
+
+
+New
+
+
+Contacted
+
+
+Hot
+
+
+Row 2
+
+
+Warm
+
+
+Cold
+
+
+Won
+
+
+Lost
+
+
+All eight KPI cards should fit naturally within the mobile screen.
+No horizontal scrolling should be required.
+
+Card Design
+Each KPI card should display:
+
+
+Icon
+
+
+KPI Name
+
+
+Count
+
+
+Keep the design clean and modern.
+Use consistent spacing and alignment.
+Maintain the Lead Capture Pro design language.
+
+Responsive Behaviour
+The grid must automatically adapt to:
+
+
+Android phones
+
+
+iPhones
+
+
+Small screens
+
+
+Large screens
+
+
+Tablets
+
+
+Cards should resize proportionally while maintaining readability.
+
+Interaction
+All KPI cards must remain clickable.
+Current navigation should remain unchanged.
+Examples:
+
+
+Total → Opens all contacts
+
+
+New → Filters New leads
+
+
+Contacted → Filters Contacted leads
+
+
+Hot → Filters Hot leads
+
+
+Warm → Filters Warm leads
+
+
+Cold → Filters Cold leads
+
+
+Won → Filters Won leads
+
+
+Lost → Filters Lost leads
+
+
+The redesign is visual only.
+Do not change the filtering logic.
+
+2. REMOVE TOUCH VIBRATION
+Current Issue
+When tapping KPI cards, the application produces a vibration (haptic feedback).
+This is unnecessary for normal navigation and makes the application feel less polished.
+
+Required
+Remove vibration and haptic feedback from:
+
+
+KPI cards
+
+
+Contact cards
+
+
+Dashboard cards
+
+
+Workspace shortcuts
+
+
+Navigation cards
+
+
+Any standard tap interaction
+
+
+Normal taps should navigate immediately without vibration.
+
+Keep Haptic Feedback Only If Required
+If haptic feedback is implemented elsewhere, reserve it only for meaningful actions such as:
+
+
+Long press (if applicable)
+
+
+Critical confirmation actions
+
+
+Success or error notifications (only if intentionally designed)
+
+
+Do not use haptic feedback for ordinary navigation.
+
+Acceptance Criteria
+KPI Dashboard
+
+
+Horizontal scrolling removed.
+
+
+Responsive 2-row KPI grid implemented.
+
+
+All eight KPI cards visible without horizontal scrolling.
+
+
+Fully responsive across supported devices.
+
+
+All KPI cards remain clickable.
+
+
+Touch Experience
+
+
+No vibration on normal taps.
+
+
+Navigation feels smooth and immediate.
+
+
+No regression to existing functionality.
+
+
+
+Testing Requirements
+Verify on:
+
+
+Android
+
+
+iPhone
+
+
+Confirm:
+
+
+Correct KPI layout.
+
+
+Correct responsive behavior.
+
+
+Correct navigation.
+
+
+No vibration during normal navigation.
+
+
+No UI regressions.
+
+
+Please provide screenshots of the updated Contact Dashboard on both Android and iPhone before marking this task complete.

@@ -104,14 +104,6 @@ export default function CaptureScreen() {
       onPress: () => requireEvent(() => router.push("/capture-qr")),
     },
     {
-      key: "linkedin",
-      label: t("capture.linkedinQr"),
-      sub: t("capture.linkedinQrDesc"),
-      icon: "linkedin",
-      color: "#0A66C2",
-      onPress: () => requireEvent(() => router.push("/capture-qr")),
-    },
-    {
       key: "manual",
       label: t("capture.manual"),
       sub: t("capture.manualDesc"),

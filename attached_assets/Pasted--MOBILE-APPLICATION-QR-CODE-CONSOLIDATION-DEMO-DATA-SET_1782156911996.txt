@@ -1,0 +1,279 @@
+# MOBILE APPLICATION – QR CODE CONSOLIDATION & DEMO DATA SETUP
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION & DEMO DATA ONLY**
+
+No Platform Portal or Company Portal changes are required in this task.
+
+---
+
+# 1. QR CODE / LINKEDIN QR CONSOLIDATION
+
+## Current Design
+
+The application currently has two separate capture methods:
+
+* QR Code
+* LinkedIn QR
+
+This creates unnecessary complexity because LinkedIn QR is simply another type of QR code.
+
+---
+
+## Required
+
+Merge both capture methods into a single option.
+
+Rename the capture method to:
+
+## **QR Code / LinkedIn**
+
+Remove the separate **LinkedIn QR** option completely.
+
+---
+
+## Intelligent QR Detection
+
+When scanning, the application should automatically identify the QR code type.
+
+Supported QR formats should include:
+
+* LinkedIn Profile QR
+* vCard QR
+* MECARD
+* Business Contact QR
+* Standard Contact QR
+* Website URL
+* Company Website
+* Plain Text QR (display for manual review)
+
+No user selection should be required.
+
+The application should determine the QR type automatically.
+
+---
+
+## LinkedIn QR Handling
+
+If the scanned QR code is a LinkedIn profile:
+
+* Detect that it is a LinkedIn QR.
+* Extract the profile URL.
+* Store the LinkedIn URL in the contact record.
+* If additional information can be retrieved, populate the corresponding fields.
+* If LinkedIn privacy restrictions prevent automatic extraction, preserve the LinkedIn URL and allow the user to complete the remaining fields manually.
+
+The application should never fail silently.
+
+---
+
+## Acceptance Criteria
+
+* Only one capture option exists:
+
+  * **QR Code / LinkedIn**
+* All supported QR formats are detected automatically.
+* Contacts are created correctly.
+* LinkedIn URLs are stored correctly.
+* No duplicate QR scanning options remain in the UI.
+
+---
+
+# 2. DEMO DATA CREATION
+
+Create realistic demo data for testing and demonstrations.
+
+---
+
+## Companies
+
+Create two demo companies.
+
+Example:
+
+Company A
+
+Company B
+
+Use the existing company structure.
+
+---
+
+## Mobile Users
+
+Create:
+
+### Company A
+
+* 3 Mobile Application Users
+
+### Company B
+
+* 3 Mobile Application Users
+
+Total:
+
+**6 Mobile Users**
+
+Each user should have:
+
+* Profile Photo / Avatar
+* Full Name
+* Email
+* Mobile Number
+* Job Title
+* Department
+* Assigned Company
+* Active Status
+
+Use realistic business information suitable for demonstrations.
+
+---
+
+## Demo Contacts
+
+For each mobile user, create:
+
+**20 realistic contacts**
+
+Total:
+
+**120 Demo Contacts**
+
+---
+
+## Contact Data
+
+Each contact should include realistic values where applicable:
+
+* First Name
+* Last Name
+* Company
+* Job Title
+* Email
+* Mobile
+* Telephone
+* Website
+* Country
+* City
+* Address
+* LinkedIn URL (where appropriate)
+* Lead Score
+* Lead Temperature
+* Pipeline Status
+* Event
+* Assigned User
+* Capture Method
+* Capture Date
+* GPS Location (sample coordinates)
+* Notes
+
+---
+
+## Data Distribution
+
+Create realistic variation.
+
+Do not make every contact identical.
+
+Include:
+
+* Hot Leads
+* Warm Leads
+* Cold Leads
+
+Pipeline:
+
+* New
+* Contacted
+* Quotation Sent
+* Negotiation
+* Won
+* Lost
+
+Capture Methods:
+
+* Business Card
+* Email Signature
+* QR Code / LinkedIn
+* NFC
+* Manual Entry
+
+Events:
+
+Distribute contacts across multiple demo events.
+
+Assignments:
+
+Assign contacts to different users.
+
+Follow-Ups:
+
+Create upcoming and completed follow-ups.
+
+Meetings:
+
+Create scheduled meetings.
+
+Tasks:
+
+Create assigned tasks.
+
+---
+
+## Purpose
+
+The demo dataset should allow complete testing of:
+
+* Dashboard
+* Contacts
+* Pipeline
+* Meetings
+* Follow-Ups
+* Tasks
+* Reports
+* Team Performance
+* AI Scoring
+* Last Event Dashboard
+* Leaderboards
+* Filters
+* Search
+* Analytics
+
+without requiring manual data entry.
+
+---
+
+# IMPORTANT
+
+This demo data is intended for development and testing only.
+
+Keep the data isolated so it can be easily:
+
+* Reset
+* Regenerated
+* Removed
+
+Do not hardcode demo data into the production database.
+
+Implement it using a dedicated seed/demo-data mechanism so the same dataset can be recreated whenever needed.
+
+---
+
+# DELIVERABLES
+
+Provide:
+
+* Summary of demo companies created.
+* Summary of demo users created.
+* Total contacts created.
+* Distribution of contacts by company.
+* Distribution by user.
+* Distribution by capture method.
+* Distribution by pipeline status.
+* Confirmation that the QR Code / LinkedIn consolidation has been completed successfully.
