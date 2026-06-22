@@ -107,4 +107,20 @@ router.patch("/follow-ups/:id", async (req: AuthRequest, res) => {
   }
 });
 
+// DELETE /follow-ups/:id — remove a scheduled follow-up
+router.delete("/follow-ups/:id", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    if (Number.isNaN(id)) { res.status(400).json({ error: "Invalid follow-up id" }); return; }
+    const [existing] = await db.select({ companyId: followUpsTable.companyId, contactId: followUpsTable.contactId }).from(followUpsTable).where(eq(followUpsTable.id, id)).limit(1);
+    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Follow-up not found" }); return; }
+    await db.delete(followUpsTable).where(eq(followUpsTable.id, id));
+    await syncContactFollowUp(existing.contactId);
+    res.json({ success: true, message: "Follow-up deleted" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

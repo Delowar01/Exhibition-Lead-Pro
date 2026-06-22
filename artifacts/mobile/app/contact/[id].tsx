@@ -10,7 +10,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -49,9 +48,20 @@ import {
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
+import { shareContactAsVCard } from "@/lib/vcard";
 
 const STATUS_OPTIONS = CONTACT_PIPELINE_ORDER as ContactUpdateStatus[];
 const MEETING_TYPES: MeetingInputType[] = ["online", "physical", "phone_call"];
+
+// Derived (NOT fabricated) follow-up guidance based on the AI lead temperature
+// already stored on the contact. Hot leads warrant urgent, high-priority
+// outreach; cold leads can wait. No new data is invented — this is a transparent
+// rule applied to the real temperature the AI assigned at capture time.
+const TEMPERATURE_GUIDANCE: Record<string, { priorityKey: string; windowKey: string; color: string }> = {
+  hot: { priorityKey: "contacts.priorityHigh", windowKey: "contacts.followUpWindowHot", color: "#EF4444" },
+  warm: { priorityKey: "contacts.priorityMedium", windowKey: "contacts.followUpWindowWarm", color: "#F59E0B" },
+  cold: { priorityKey: "contacts.priorityLow", windowKey: "contacts.followUpWindowCold", color: "#3B82F6" },
+};
 
 function formatHistoryDate(iso: string): string {
   const d = new Date(iso);
@@ -98,17 +108,14 @@ export default function ContactDetailScreen() {
   const contact = query.data;
   const history = historyQuery.data?.history ?? [];
 
-  function handleShare() {
+  async function handleShare() {
     if (!contact) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
-    const lines = [
-      contactName(contact, t("common.unnamedContact")),
-      [contact.jobTitle, contact.contactCompany].filter(Boolean).join(" at "),
-      contact.mobile ? `Mobile: ${contact.mobile}` : null,
-      contact.email ? `Email: ${contact.email}` : null,
-      contact.website ? `Web: ${contact.website}` : null,
-    ].filter(Boolean);
-    Share.share({ message: lines.join("\n") }).catch(() => {});
+    try {
+      await shareContactAsVCard(contact);
+    } catch {
+      Alert.alert(t("contacts.unavailableTitle"), t("contacts.unavailableBody"));
+    }
   }
 
   function openMaps() {
@@ -199,20 +206,28 @@ export default function ContactDetailScreen() {
   async function changeStatus(status: keyof typeof ContactUpdateStatus) {
     if (!contact) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
-    await updateContact.mutateAsync({ id: contact.id, data: { status } });
-    query.refetch();
-    historyQuery.refetch();
+    try {
+      await updateContact.mutateAsync({ id: contact.id, data: { status } });
+      query.refetch();
+      historyQuery.refetch();
+    } catch {
+      Alert.alert(t("contacts.updateFailedTitle"), t("contacts.updateFailedBody"));
+    }
   }
 
   async function assignTo(userId: number | null) {
     if (!contact) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
-    await updateContact.mutateAsync({
-      id: contact.id,
-      data: { assignedToId: userId },
-    });
-    setAssignOpen(false);
-    query.refetch();
+    try {
+      await updateContact.mutateAsync({
+        id: contact.id,
+        data: { assignedToId: userId },
+      });
+      setAssignOpen(false);
+      query.refetch();
+    } catch {
+      Alert.alert(t("contacts.updateFailedTitle"), t("contacts.updateFailedBody"));
+    }
   }
 
   function confirmDelete() {
@@ -328,6 +343,28 @@ export default function ContactDetailScreen() {
                   {contact.aiReasoning}
                 </Text>
               ) : null}
+              {contact.leadTemperature && TEMPERATURE_GUIDANCE[contact.leadTemperature] ? (
+                <View style={[styles.recommendBox, { borderTopColor: colors.border }]}>
+                  <View style={styles.recommendRow}>
+                    <Feather name="flag" size={13} color={TEMPERATURE_GUIDANCE[contact.leadTemperature].color} />
+                    <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
+                      {t("contacts.recommendedPriority")}:{" "}
+                      <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
+                        {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].priorityKey)}
+                      </Text>
+                    </Text>
+                  </View>
+                  <View style={styles.recommendRow}>
+                    <Feather name="clock" size={13} color={colors.mutedForeground} />
+                    <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
+                      {t("contacts.recommendedFollowUp")}:{" "}
+                      <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
+                        {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].windowKey)}
+                      </Text>
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
             </Section>
           ) : null}
 
@@ -402,12 +439,6 @@ export default function ContactDetailScreen() {
               icon="users"
               label={contact.assignedToName ? t("contacts.assignedTo", { name: contact.assignedToName }) : t("contacts.assignToTeammate")}
               onPress={() => setAssignOpen(true)}
-              divider
-            />
-            <ManageRow
-              icon="edit-2"
-              label={t("contacts.editContact")}
-              onPress={() => router.push(`/contact/edit/${contact.id}`)}
               divider
             />
             <ManageRow
@@ -1129,5 +1160,21 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontFamily: FONT.regular,
     marginTop: 1,
+  },
+  recommendBox: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    gap: 8,
+  },
+  recommendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  recommendText: {
+    fontSize: 13.5,
+    fontFamily: FONT.regular,
+    flex: 1,
   },
 });

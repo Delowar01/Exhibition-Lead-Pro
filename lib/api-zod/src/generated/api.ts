@@ -1683,6 +1683,19 @@ export const UpdateFollowUpResponse = zod.object({
 
 
 /**
+ * @summary Delete a scheduled follow-up
+ */
+export const DeleteFollowUpParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteFollowUpResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
  * @summary List meetings
  */
 export const ListMeetingsQueryParams = zod.object({

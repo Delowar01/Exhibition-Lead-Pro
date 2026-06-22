@@ -4843,6 +4843,76 @@ export const useUpdateFollowUp = <TError = ErrorType<unknown>,
       return useMutation(getUpdateFollowUpMutationOptions(options));
     }
 
+export const getDeleteFollowUpUrl = (id: number,) => {
+
+
+
+
+  return `/api/follow-ups/${id}`
+}
+
+/**
+ * @summary Delete a scheduled follow-up
+ */
+export const deleteFollowUp = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteFollowUpUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteFollowUpMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteFollowUp>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteFollowUp>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteFollowUp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteFollowUp>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteFollowUp(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteFollowUpMutationResult = NonNullable<Awaited<ReturnType<typeof deleteFollowUp>>>
+
+    export type DeleteFollowUpMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a scheduled follow-up
+ */
+export const useDeleteFollowUp = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteFollowUp>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteFollowUp>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteFollowUpMutationOptions(options));
+    }
+
 export const getListMeetingsUrl = (params?: ListMeetingsParams,) => {
   const normalizedParams = new URLSearchParams();
 

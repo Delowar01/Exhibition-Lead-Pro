@@ -1333,6 +1333,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FollowUp"
+    delete:
+      operationId: deleteFollowUp
+      tags: [follow-ups]
+      summary: Delete a scheduled follow-up
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
 
   # MEETINGS
   /meetings:

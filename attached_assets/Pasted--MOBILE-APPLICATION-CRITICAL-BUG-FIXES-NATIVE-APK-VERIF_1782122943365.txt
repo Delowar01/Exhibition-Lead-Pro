@@ -1,0 +1,454 @@
+# MOBILE APPLICATION – CRITICAL BUG FIXES & NATIVE APK VERIFICATION
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+(No Platform Portal or Company Portal changes in this iteration.)
+
+---
+
+# IMPORTANT
+
+The issues listed below were identified while testing the **native Android APK** generated from this project.
+
+These issues are **not necessarily reproducible in Expo Go or the Web Preview**.
+
+Many of the affected features rely on native device capabilities and **must not be tested or verified using Expo Go alone**.
+
+Examples include:
+
+* NFC
+* GPS Location
+* Native Contact APIs
+* Native Share APIs
+* Camera
+* OCR
+* QR Processing
+* File Handling
+* Device Permissions
+
+**All fixes must be verified using a native Android Development Build or APK, and where applicable, a native iOS Development Build or IPA.**
+
+Do **NOT** mark any issue as complete until it has been verified on a real device using a native build.
+
+---
+
+## Objective
+
+Before continuing with any new Platform Portal or Company Portal development, resolve the following critical issues in the Mobile Application.
+
+This iteration focuses only on:
+
+* Bug Fixes
+* Stability Improvements
+* Existing Feature Completion
+* Native APK Verification
+
+Do not introduce regressions.
+
+Perform a full regression test after every fix.
+
+---
+
+# 1. LEAD CAPTURE & OCR
+
+## 1.1 Email Signature Capture
+
+### Current Issue
+
+The **Email Signature Capture** method is not extracting any information.
+
+### Required
+
+Verify the complete workflow:
+
+* Image Capture
+* OCR Processing
+* AI Extraction
+* Contact Creation
+
+Extract all supported fields correctly.
+
+### Acceptance Criteria
+
+* Email Signature Capture works correctly.
+* Contact information is extracted successfully.
+* Lead is created successfully.
+
+---
+
+## 1.2 QR Code Capture
+
+### Current Issue
+
+QR Code scanning is not extracting contact information.
+
+### Required
+
+Support:
+
+* vCard QR Codes
+* MECARD
+* Standard Contact QR
+* Business Contact QR
+
+Automatically populate the lead creation screen.
+
+### Acceptance Criteria
+
+* QR Code correctly extracts contact data.
+* Lead is created successfully.
+
+---
+
+# 2. CONTACT MANAGEMENT
+
+## 2.1 Lead Pipeline Status
+
+### Current Issue
+
+Pipeline status cannot be updated.
+
+### Required
+
+Users must be able to update:
+
+* New
+* Contacted
+* Quotation Sent
+* Negotiation
+* Won
+* Lost
+
+Every status change must:
+
+* Save immediately
+* Update the UI
+* Create a Status History entry
+
+---
+
+## 2.2 Assign Teammate
+
+### Current Issue
+
+Assign Teammate is not functioning.
+
+### Required
+
+Users must be able to assign leads to authorized teammates.
+
+### Acceptance Criteria
+
+* Assignment saves successfully.
+* Assigned teammate receives the lead.
+* Assignment history is maintained.
+
+---
+
+## 2.3 Edit Contact UI
+
+### Current Issue
+
+Edit Contact appears twice.
+
+### Required
+
+Keep only:
+
+* Top-right Edit icon
+
+Remove:
+
+* Edit option from the Manage menu
+
+There should only be one Edit action.
+
+---
+
+## 2.4 Save to Phone Contact
+
+### Current Issue
+
+Save to Phone Contact is not working.
+
+### Required
+
+Open the native Contacts application with all lead details pre-filled.
+
+Support:
+
+* Android
+* iPhone
+
+### Acceptance Criteria
+
+* Native Contacts application opens.
+* User can save the contact successfully.
+
+---
+
+## 2.5 Share Contact
+
+### Current Issue
+
+Contact is currently shared as plain text.
+
+### Required
+
+Share the contact as a native contact card.
+
+Preferred format:
+
+* vCard (.vcf)
+
+Support:
+
+* WhatsApp
+* Email
+* SMS
+* AirDrop
+* Quick Share
+* Native Share Sheet
+
+### Acceptance Criteria
+
+Receiving users should be able to import the shared contact directly into their Contacts application.
+
+---
+
+# 3. FOLLOW-UP MANAGEMENT
+
+## Delete Scheduled Follow-Up
+
+### Current Issue
+
+Scheduled Follow-Ups cannot be deleted.
+
+### Required
+
+Allow users to delete scheduled Follow-Ups.
+
+Show a confirmation dialog before deletion.
+
+### Acceptance Criteria
+
+* Follow-Up is deleted successfully.
+* Calendar updates immediately.
+* Related reminders are removed.
+
+---
+
+# 4. NFC CAPTURE
+
+### Current Issue
+
+Some NFC tags are detected while others are not.
+
+### Required
+
+Review the NFC implementation.
+
+Support all compatible NFC tag types supported by the application.
+
+Gracefully handle unsupported tags.
+
+### Acceptance Criteria
+
+* Supported NFC tags are detected consistently.
+* Unsupported tags display an informative message instead of failing silently.
+
+---
+
+# 5. USER EXPERIENCE & UI FIXES
+
+## 5.1 Scroll Behaviour
+
+### Current Issue
+
+Scrolling only works when dragging on text or list items.
+
+### Required
+
+Users must be able to scroll by dragging anywhere inside the scrollable area, including empty space.
+
+Apply consistently throughout the application.
+
+---
+
+## 5.2 Follow-Up Screen
+
+### Current Issue
+
+The three-dot action menu overlaps UI elements.
+
+### Required
+
+Correct spacing and responsive layout.
+
+No overlapping should remain.
+
+---
+
+## 5.3 Placeholder & Validation Layout
+
+### Current Issue
+
+Examples, placeholders, helper text, and validation hints overlap other UI elements.
+
+### Required
+
+Review the entire application.
+
+Correct spacing on:
+
+* Android
+* iPhone
+
+No overlapping text should remain.
+
+---
+
+# 6. LOCATION TRACKING
+
+### Current Issue
+
+GPS location is not being captured.
+
+Location is not displayed inside Contact Details.
+
+### Required
+
+Verify:
+
+* GPS Permission
+* Background GPS Capture
+* Lead Storage
+* Contact Display
+
+Display:
+
+* Latitude
+* Longitude
+* GPS Accuracy
+* Scan Timestamp
+
+Provide:
+
+* Open in Google Maps
+
+### Acceptance Criteria
+
+* GPS captured automatically when available.
+* Lead is still saved when GPS is unavailable.
+* Location appears correctly in Contact Details.
+
+---
+
+# 7. STATUS HISTORY
+
+### Current Issue
+
+Status History is missing.
+
+### Required
+
+Maintain a complete status timeline.
+
+Display:
+
+* Previous Status
+* New Status
+* Changed By
+* Date
+* Time
+* Optional Comment
+
+Show the timeline inside Contact Details.
+
+---
+
+# 8. AI LEAD QUALIFICATION
+
+### Current Issue
+
+Lead Score and Lead Temperature are missing.
+
+### Required
+
+Display:
+
+* Lead Score (0–100)
+* Lead Temperature
+
+  * Hot
+  * Warm
+  * Cold
+* AI Reasoning
+* Recommended Follow-Up Date
+* Recommended Priority
+
+Display this information inside Contact Details.
+
+---
+
+# 9. ROOT CAUSE ANALYSIS (MANDATORY)
+
+For every issue fixed, provide:
+
+1. Root Cause
+2. Files Modified
+3. Solution Implemented
+4. Testing Method
+5. Native Android APK Test Result
+6. Native iPhone Test Result (where applicable)
+7. Screenshots
+8. Any Remaining Limitations
+
+Do not simply state "Fixed."
+
+---
+
+# 10. REGRESSION TESTING
+
+Before marking this task complete, verify:
+
+* Card Scanning
+* Email Signature Capture
+* QR Code Capture
+* NFC Capture
+* OCR
+* Duplicate Detection
+* Contact Editing
+* Contact Sharing
+* Save to Phone Contact
+* Follow-Ups
+* Meetings
+* GPS Location
+* Pipeline Status
+* Lead Assignment
+* AI Lead Qualification
+* Status History
+
+Ensure no existing functionality has been broken.
+
+---
+
+# DELIVERABLES
+
+Before marking this task complete, provide:
+
+1. Implementation Summary
+2. Root Cause Analysis for every issue
+3. Files Modified
+4. Android Native APK Test Results
+5. iPhone Native Test Results (where applicable)
+6. Screenshots of every corrected feature
+7. Confirmation that no regressions were introduced
+
+Do **NOT** mark this task complete until every issue has been verified using a **native Android APK or Development Build**, and where applicable, a **native iOS Development Build or IPA** on real devices.

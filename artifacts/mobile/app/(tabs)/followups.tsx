@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Modal,
   Platform,
   Pressable,
@@ -18,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   type FollowUp,
   type FollowUpUpdateStatus,
+  useDeleteFollowUp,
   useListFollowUps,
   useUpdateFollowUp,
 } from "@workspace/api-client-react";
@@ -111,6 +113,29 @@ export default function FollowUpsScreen() {
 
   const query = useListFollowUps();
   const updateFollowUp = useUpdateFollowUp();
+  const deleteFollowUp = useDeleteFollowUp();
+
+  function handleDelete(f: FollowUp) {
+    const run = async () => {
+      try {
+        await deleteFollowUp.mutateAsync({ id: f.id });
+        if (Platform.OS !== "web")
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setActive(null);
+        query.refetch();
+      } catch {
+        Alert.alert(t("followups.deleteFailedTitle"), t("followups.deleteFailedBody"));
+      }
+    };
+    if (Platform.OS === "web") {
+      void run();
+      return;
+    }
+    Alert.alert(t("followups.deleteTitle"), t("followups.deleteConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("common.delete"), style: "destructive", onPress: run },
+    ]);
+  }
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
   const today = localDateStr(new Date());
@@ -308,6 +333,8 @@ export default function FollowUpsScreen() {
         followUp={active}
         onClose={() => setActive(null)}
         pending={updateFollowUp.isPending}
+        deleting={deleteFollowUp.isPending}
+        onDelete={() => active && handleDelete(active)}
         onSubmit={async (status, comment, date, time) => {
           if (Platform.OS !== "web")
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -333,7 +360,9 @@ function ActionSheet({
   followUp,
   onClose,
   onSubmit,
+  onDelete,
   pending,
+  deleting,
 }: {
   followUp: FollowUp | null;
   onClose: () => void;
@@ -343,7 +372,9 @@ function ActionSheet({
     date: string | null,
     time: string | null,
   ) => void;
+  onDelete: () => void;
   pending: boolean;
+  deleting: boolean;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -422,6 +453,19 @@ function ActionSheet({
                   <Text style={[styles.actionLabel, { color: colors.foreground, textAlign }]}>{a.label}</Text>
                 </Pressable>
               ))}
+              <Pressable
+                disabled={deleting || pending}
+                onPress={onDelete}
+                style={({ pressed }) => [
+                  styles.actionRow,
+                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
+                ]}
+              >
+                <Feather name="trash-2" size={20} color="#EF4444" />
+                <Text style={[styles.actionLabel, { color: "#EF4444", textAlign }]}>
+                  {deleting ? t("common.saving") : t("followups.deleteFollowUp")}
+                </Text>
+              </Pressable>
               <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
                 {t("followups.commentOptional")}
               </Text>

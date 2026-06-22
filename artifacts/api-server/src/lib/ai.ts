@@ -142,9 +142,9 @@ function translationRules(appLanguage: AppLanguage): string {
 }
 
 function buildExtractionPrompt(appLanguage: AppLanguage): string {
-  return `You are an OCR and data-extraction engine for business cards and event badges at trade exhibitions (including GCC events, so cards frequently contain Arabic alongside English).
+  return `You are an OCR and data-extraction engine for contact sources captured at trade exhibitions — business cards, event badges, AND email signatures or screenshots of contact blocks (including GCC events, so they frequently contain Arabic alongside English).
 
-Read the image and extract the contact's details.
+Read the image and extract the contact's details. The image may be a business card, an event badge, or a photo/screenshot of an email signature — extract the person's contact details regardless of layout or which of these formats it is.
 
 ${translationRules(appLanguage)}
 
@@ -160,7 +160,7 @@ Return ONLY a JSON object with exactly these keys:
 - "linkedin": LinkedIn URL or handle, or null
 - "address": physical address (display value), or null
 - "original": an object holding the SAME keys (firstName, lastName, arabicName, jobTitle, company, email, mobile, website, linkedin, address) with the text EXACTLY as printed on the card — NO translation, NO transliteration, verbatim original script. Use null for any field not present.
-- "confidence": integer 0-100 — your confidence that the extraction is accurate and the image was a readable card
+- "confidence": integer 0-100 — your confidence that the extraction is accurate and the image was a readable contact source (business card, badge, or email signature)
 - "rawText": all raw text you read from the card, as a single string
 
 Use null (not empty string) for any field not present. Do not invent data. The "original" object must always reflect exactly what is printed, regardless of the display translation rules.`;
