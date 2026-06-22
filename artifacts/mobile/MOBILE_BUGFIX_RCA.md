@@ -75,12 +75,42 @@ DB to reproduce the production condition, then exercised against the running API
 ### Per-method status after the fix
 | Method | Path | Status |
 |---|---|---|
-| Business Card OCR | `POST /scans` (Gemini) → `scan-review` → `POST /contacts` | Unblocked. OCR reachable; integration provisioned in prod (server boots, which requires the Gemini env vars). On-device OCR quality = NATIVE-VERIFICATION-PENDING. |
-| Email Signature OCR | same `/scans` path (prompt already generalized, §1.1) | Unblocked, same as above. |
-| QR | `parseQr` (on-device) → `scan-review` → `POST /contacts` | Unblocked. Parser unit-tested (17/17). |
-| LinkedIn QR | `parseQr` (URL → `linkedin` field) → review → create | Unblocked. **Inherent limit:** a LinkedIn QR encodes only the profile URL, so name/email cannot be auto-filled — by design the rest is entered/confirmed in review. |
-| NFC | `lib/nfc.ts` (NDEF) → `scan-review` → `POST /contacts` | Unblocked. **Inherent limit:** only NDEF-formatted tags carry contact data; non-NDEF/locked tags cannot be read — handled with a clear "unsupported tag" message. NATIVE-VERIFICATION-PENDING. |
-| Manual | `POST /contacts` | Works; now protected from the publish regression described above. |
+| Business Card OCR | `POST /scans` (Gemini) → `scan-review` → `POST /contacts` | **PROVEN live** — see §0.1. |
+| Email Signature OCR | same `/scans` path (prompt generalized, §1.1) | **PROVEN live** for Gmail, Outlook, Apple Mail — see §0.1. |
+| QR | `parseQr` (on-device) → `scan-review` → `POST /contacts` | **PROVEN** — parser unit-tested (23/23), incl. vCard 3.0/2.1, QP, MECARD, standard contact QR; created-lead path proven live (§0.1). |
+| LinkedIn QR | `parseQr` (URL → `linkedin` field) → review → create | **PROVEN with documented limit** — a LinkedIn QR encodes ONLY the profile URL, so name/email cannot be auto-filled; unit-tested that the URL is captured and the rest is confirmed in review (by design, not a bug). |
+| NFC | `lib/nfc.ts` (NDEF) → `scan-review` → `POST /contacts` | Parser PROVEN (shares `parseQr`/NDEF text payloads, unit-tested). **Inherent limit:** only NDEF-formatted tags carry contact data; non-NDEF/locked/empty tags surface a typed, explicit error (never a silent failure) — see §0.2. On-device tag read = NATIVE-VERIFICATION-PENDING (no NFC hardware in this sandbox). |
+| Manual | `POST /contacts` | **PROVEN live** (§0.1); now also protected from the publish regression above. |
+
+### 0.1 Live per-method evidence (development API, through the proxy at `localhost:80`)
+Captured by logging in as a **real** tenant admin (`admin@techcorp.com`, role normalized to
+`primary_admin`) and exercising the real endpoints. Test input images were generated as
+fixtures (a business card and Gmail/Outlook/Apple-Mail signature screenshots); the OCR,
+extraction, scoring and lead creation below are the **real** server outputs, and all test
+contacts/scans were deleted afterward.
+
+**OCR → extraction (`POST /api/scans`, Gemini):**
+
+| Input fixture | HTTP | Scan status | Confidence | Extracted (name / company / email / phone) |
+|---|---|---|---|---|
+| Business card | 201 | completed | 98 | Layla Hassan / Nexus Systems / layla@nexussys.io / +971501234567 |
+| Gmail signature | 201 | completed | 95 | Omar Farouk / Globex Trading / omar.farouk@globex.ae / +971 55 222 3344 |
+| Outlook signature | 201 | completed | 95 | Sara Khan / Innovatech S.L. / sara.khan@innovatech.es / +34 600 111 222 |
+| Apple Mail signature | 201 | completed | 98 | James Carter / TechCorp Inc. / james.carter@techcorp.com / +1 415 555 0199 |
+
+(Address fields also extracted where present; the OCR returns both a normalized and an
+`original` copy of every field.)
+
+**Extraction → scored lead (`POST /api/contacts`):** every extracted record created a real
+lead with an AI score, temperature and reasoning, placed in the pipeline at status `new`:
+
+| From | HTTP | leadScore | temperature |
+|---|---|---|---|
+| Business card | 201 | 90 | hot |
+| Gmail signature | 201 | 94 | hot |
+| Outlook signature | 201 | 70 | hot |
+| Apple Mail signature | 201 | 85 | hot |
+| QR/NFC parsed payload | 201 | 90 | hot |
 
 **Lead auto-creation:** in this data model the contact **is** the lead — `POST /contacts`
 scores it (`leadScore`/`leadTemperature`/`aiReasoning`) and places it in the pipeline at
@@ -88,6 +118,23 @@ status `new`. So every method that reaches the create call produces a scored lea
 `scan-review` confirmation step is retained deliberately (one tap) to prevent OCR/parse
 misreads from creating junk leads; the original "no lead created" defect was the 403, now
 resolved.
+
+### 0.2 Parser hardening for QR/NFC (vCard 2.1 / QUOTED-PRINTABLE)
+While verifying the QR/NFC path, a genuine gap was found and fixed in
+`lib/contact-parse.ts` that matches the "QR/NFC detected but no contact data extracted"
+symptom for non-trivial cards:
+- **vCard 2.1 `QUOTED-PRINTABLE` values were never decoded.** vCard 2.1 is the most common
+  format emitted by QR generators, Outlook, and NFC tag writers. Encoded values (`=XX`
+  byte escapes) — and in particular multi-byte UTF-8 like **Arabic names** — came through
+  garbled or empty. Added `decodeQuotedPrintable()` (UTF-8 safe via percent-decoding).
+- **Folded / soft-wrapped lines were not unfolded.** Added `unfoldVCardLines()` handling
+  both RFC 2426/6350 folding (continuation line starts with a space/tab) and vCard 2.1 QP
+  soft breaks (value line ends with `=`). Without this, long values (e.g. addresses) split
+  across lines were truncated.
+- Covered by new unit tests: vCard 2.1 + QP, Arabic-name QP, QP soft break, RFC line
+  folding, and the LinkedIn-QR URL-only limitation (23/23 parser tests pass).
+
+NFC NDEF text/URI payloads route through this same parser, so the fix benefits NFC equally.
 
 ---
 
@@ -213,9 +260,13 @@ need an on-device repro (ideally a screen recording) before any fix:
 - `pnpm --filter @workspace/api-spec run codegen` — success (libs typecheck passed).
 - `pnpm --filter @workspace/mobile run typecheck` — pass.
 - `pnpm --filter @workspace/api-server run typecheck` — pass.
-- `pnpm --filter @workspace/mobile exec vitest run` — 17/17 parser tests pass.
+- `pnpm --filter @workspace/mobile exec vitest run lib/contact-parse.test.ts` — **23/23**
+  parser tests pass (added vCard 2.1/QP, Arabic QP, QP soft break, RFC line folding,
+  LinkedIn-QR URL-only limit, full vCard-2.1-QR end-to-end).
+- **Live OCR + lead pipeline** exercised end-to-end against the running dev API — see §0.1
+  (business card + Gmail/Outlook/Apple-Mail signatures → 201/completed → scored leads).
 - `DELETE /api/follow-ups/:id` — returns 401 unauthenticated (route registered + guarded).
-- `npx expo export` — iOS bundle builds cleanly (exit 0).
+- `npx expo export --platform android` — Android Hermes bundle builds cleanly (exit 0).
 
 ## F. Limitations
 

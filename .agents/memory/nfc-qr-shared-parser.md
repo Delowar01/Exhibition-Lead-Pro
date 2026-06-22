@@ -28,7 +28,17 @@ must key off the normalized name, not the raw line prefix.
 space-split mishandles titles/multi-word names ("Dr. John Smith"). Let `N` set the
 name and only fall back to `FN` when `N` is absent.
 
-## Known gaps (not yet handled)
+## vCard 2.1 / QUOTED-PRINTABLE + folding ARE handled (don't re-add)
 
-RFC 2426 line-folding (continuation lines) and QUOTED-PRINTABLE value decoding are
-not implemented; only the primary `TEL` is kept (single `mobile` field by schema).
+`unfoldVCardLines()` joins RFC 2426/6350 folded lines (continuation starts with
+space/tab) AND vCard 2.1 QP soft breaks (line ends with `=`). The QP soft-break
+join is **gated to QP-encoded properties only** (`lineIsQuotedPrintable`) — a normal
+3.0/4.0 value ending in `=` (URL token, base64) must NOT absorb the next line.
+`decodeQuotedPrintable()` escapes literal `%` *before* mapping `=XX`→`%XX` then
+`decodeURIComponent` (UTF-8 safe, incl. Arabic); without the pre-escape a value like
+`100%` throws and silently returns undecoded.
+
+**Why:** vCard 2.1 is the most common QR/Outlook/NFC-writer format; QP-encoded
+non-ASCII (Arabic) names came through garbled/empty — the "QR/NFC detected but no
+data extracted" symptom. **How to apply:** keep both fixes; only the primary `TEL`
+is kept (single `mobile` field by schema).

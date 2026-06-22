@@ -132,6 +132,91 @@ describe("parseVCard", () => {
     expect(out.firstName).toBe("Omar");
     expect(out.lastName).toBe("Farouk");
   });
+
+  it("decodes a vCard 2.1 QUOTED-PRINTABLE value (Outlook / QR generators)", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:2.1",
+      "N;CHARSET=utf-8;ENCODING=QUOTED-PRINTABLE:Smith;John",
+      "ORG;CHARSET=utf-8;ENCODING=QUOTED-PRINTABLE:Acme=20Corp",
+      "TITLE:Sales Director",
+      "TEL;CELL:+1 555 0100",
+      "EMAIL;INTERNET:john@acme.com",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.firstName).toBe("John");
+    expect(out.lastName).toBe("Smith");
+    expect(out.company).toBe("Acme Corp");
+    expect(out.jobTitle).toBe("Sales Director");
+    expect(out.mobile).toBe("+1 555 0100");
+    expect(out.email).toBe("john@acme.com");
+  });
+
+  it("decodes QUOTED-PRINTABLE multi-byte UTF-8 (Arabic) names", () => {
+    // FN = "محمد علي" (Mohammed Ali) QP-encoded as UTF-8 bytes
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:2.1",
+      "FN;CHARSET=utf-8;ENCODING=QUOTED-PRINTABLE:=D9=85=D8=AD=D9=85=D8=AF=20=D8=B9=D9=84=D9=8A",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.firstName).toBe("محمد");
+    expect(out.lastName).toBe("علي");
+  });
+
+  it("joins a QUOTED-PRINTABLE soft line break (= at end of line)", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:2.1",
+      "ADR;ENCODING=QUOTED-PRINTABLE:;;Sheikh=20Zayed=20Road,=20Trade=20Centre,=",
+      "=20Dubai,=20UAE;;;;",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.address).toContain("Sheikh Zayed Road");
+    expect(out.address).toContain("Dubai");
+  });
+
+  it("decodes a QUOTED-PRINTABLE value containing a literal %", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:2.1",
+      "FN:Discount Bot",
+      "TITLE;ENCODING=QUOTED-PRINTABLE:100%=20Sales=20Lead",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.jobTitle).toBe("100% Sales Lead");
+  });
+
+  it("does NOT join a non-QP value that happens to end with '=' (no data loss)", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "URL:https://example.com/u?token=AbC=",
+      "EMAIL:keep@example.com",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.email).toBe("keep@example.com");
+    expect(out.website).toBe("https://example.com/u?token=AbC=");
+  });
+
+  it("unfolds RFC folded continuation lines (leading space)", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "FN:Layla Hassan",
+      "ADR:;;Sheikh Zayed Rd",
+      "  Trade Centre;Dubai;;;UAE",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.address).toContain("Sheikh Zayed Rd");
+    expect(out.address).toContain("Dubai");
+  });
 });
 
 describe("parseMecard", () => {
@@ -205,6 +290,34 @@ describe("parseQr", () => {
   it("parses structured text but treats opaque single tokens as company", () => {
     expect(parseQr("Name: Ada Lovelace\nCompany: Analytical").firstName).toBe("Ada");
     expect(parseQr("BOOTH-42").company).toBe("BOOTH-42");
+  });
+
+  it("LinkedIn QR carries only a profile URL — no name/email is extractable", () => {
+    // A LinkedIn personal QR encodes only the profile URL; by design the rest of
+    // the contact must be confirmed/entered on the review screen.
+    const out = parseQr("https://www.linkedin.com/in/layla-hassan");
+    expect(out.linkedin).toBe("https://www.linkedin.com/in/layla-hassan");
+    expect(out.firstName).toBeUndefined();
+    expect(out.email).toBeUndefined();
+    expect(hasAnyContactField(out)).toBe(true);
+  });
+
+  it("parses a full vCard 2.1 QR payload (QP) end-to-end via parseQr", () => {
+    const qr = [
+      "BEGIN:VCARD",
+      "VERSION:2.1",
+      "N;ENCODING=QUOTED-PRINTABLE:Hassan;Layla",
+      "ORG;ENCODING=QUOTED-PRINTABLE:Nexus=20Systems",
+      "TEL;CELL:+971501234567",
+      "EMAIL:layla@nexussys.io",
+      "END:VCARD",
+    ].join("\r\n");
+    const out = parseQr(qr);
+    expect(out.firstName).toBe("Layla");
+    expect(out.lastName).toBe("Hassan");
+    expect(out.company).toBe("Nexus Systems");
+    expect(out.mobile).toBe("+971501234567");
+    expect(out.email).toBe("layla@nexussys.io");
   });
 });
 

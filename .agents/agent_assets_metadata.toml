@@ -18,6 +18,30 @@ uri = "file://artifacts/pitch-deck/public/hero-scan.png"
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "PywVdgvQ-Cnyz89QqT-LB"
+uri = "file://attached_assets/ocr_test/business_card.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "a3c9Ttk4GtvHEPgHqeB83"
+uri = "file://attached_assets/ocr_test/sig_gmail.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ko8EnbZGhRv8koMVmBdQ5"
+uri = "file://attached_assets/ocr_test/sig_outlook.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "tIIfX2UwOTU8ZAhyrcA03"
+uri = "file://attached_assets/ocr_test/sig_applemail.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "w1QEStA4WS8gVqrHAMD5A"
 uri = "file://.local/outputs/Exhibition-Lead-Pro.pdf"
@@ -53,3 +77,27 @@ id = "m0kXTBHQhi9m3JFerVUll"
 uri = "file://OCR_QR_NFC_VERIFICATION.md"
 type = "text"
 title = "OCR / QR / NFC Pipeline Verification Report"
+
+[[outputs]]
+id = "s-127s1wBP46sJFUe-WJV"
+uri = "file://attached_assets/ocr_test/business_card.png"
+type = "image"
+title = "OCR input — Business card (→ Layla Hassan, 98% confidence, lead score 90)"
+
+[[outputs]]
+id = "b9XEBd7o6uNsVciZ-O2gz"
+uri = "file://attached_assets/ocr_test/sig_gmail.png"
+type = "image"
+title = "OCR input — Gmail signature (→ Omar Farouk, 95% confidence, lead score 94)"
+
+[[outputs]]
+id = "2YMiXlG-_1n2K0j4J27p9"
+uri = "file://attached_assets/ocr_test/sig_outlook.png"
+type = "image"
+title = "OCR input — Outlook signature (→ Sara Khan, 95% confidence, lead score 70)"
+
+[[outputs]]
+id = "AZVUt2B7fRZKngqOgKisL"
+uri = "file://attached_assets/ocr_test/sig_applemail.png"
+type = "image"
+title = "OCR input — Apple Mail signature (→ James Carter, 98% confidence, lead score 85)"

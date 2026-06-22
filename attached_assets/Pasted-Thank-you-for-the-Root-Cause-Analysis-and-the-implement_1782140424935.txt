@@ -1,0 +1,120 @@
+Thank you for the Root Cause Analysis and the implementation.
+
+I appreciate the detailed explanation regarding the legacy `company_admin` role and the authorization issue.
+
+However, I cannot mark this module as complete yet.
+
+The explanation identifies a possible root cause, but it does not demonstrate that the **Complete Lead Capture Engine** is now functioning correctly in a native build.
+
+During my testing, the failures were not all identical.
+
+For example:
+
+* Manual Entry worked.
+* Business Card Capture did not work correctly.
+* Email Signature Capture created no lead.
+* QR Codes were detected but no contact data was extracted.
+* NFC detected some cards but not others.
+
+These different behaviors suggest there may be multiple issues, not only an authorization problem.
+
+---
+
+# Before this module can be accepted, please provide proof that every capture method now works correctly.
+
+## 1. Business Card Capture
+
+Demonstrate using a real business card.
+
+Verify:
+
+* OCR completes successfully.
+* Contact information is extracted.
+* Lead is created successfully.
+
+---
+
+## 2. Email Signature Capture
+
+Demonstrate using:
+
+* Gmail
+* Outlook
+* Apple Mail
+
+Show that:
+
+* OCR extracts the signature correctly.
+* Contact information is created.
+* Lead is saved.
+
+---
+
+## 3. QR Code Capture
+
+Demonstrate using:
+
+* vCard QR
+* MECARD
+* Standard Contact QR
+
+Show that:
+
+* QR is decoded.
+* Contact information is extracted.
+* Lead is created automatically.
+
+---
+
+## 4. LinkedIn QR Capture
+
+Demonstrate the complete workflow.
+
+If LinkedIn QR codes are limited to a profile URL due to LinkedIn's design, clearly explain:
+
+* What information can be extracted.
+* What cannot be extracted.
+* How the application should handle this scenario.
+
+Do not simply state that it works.
+
+---
+
+## 5. NFC Capture
+
+Provide a list of supported NFC tag types.
+
+Test each supported type.
+
+If certain NFC tags are intentionally unsupported, clearly document them.
+
+The application must never fail silently.
+
+---
+
+# Native Verification
+
+Please generate a **new native Android APK** from the latest source code.
+
+Verify every capture method using that APK.
+
+Provide:
+
+* Screenshots or screen recordings
+* Native APK test results
+* Sample inputs
+* Sample outputs
+
+---
+
+# Acceptance Criteria
+
+This module will only be accepted after evidence is provided showing that:
+
+* Business Card Capture works.
+* Email Signature Capture works.
+* QR Code Capture works.
+* LinkedIn QR Capture behaves correctly and documented limitations are handled properly.
+* NFC Capture works consistently for all supported NFC tag types.
+
+Only after successful native verification will this module be considered complete.

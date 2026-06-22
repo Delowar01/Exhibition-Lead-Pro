@@ -86,13 +86,62 @@ export function buildVCard(fields: VCardFields): string {
   return lines.join("\r\n");
 }
 
+// Decode a QUOTED-PRINTABLE value (vCard 2.1 / Outlook / many QR & NFC writers)
+// into a UTF-8 string. `=XX` byte escapes are mapped to percent-escapes and run
+// through decodeURIComponent so multi-byte UTF-8 (e.g. Arabic names) decodes
+// correctly. Falls back to the raw value if decoding fails.
+function decodeQuotedPrintable(input: string): string {
+  if (!/=[0-9A-Fa-f]{2}/.test(input)) return input;
+  try {
+    // Escape any literal "%" FIRST (otherwise decodeURIComponent throws on a
+    // value like "100%"), then map the QP "=XX" byte escapes to percent escapes
+    // so multi-byte UTF-8 (e.g. Arabic) decodes correctly. Malformed "=X"
+    // sequences are left untouched by the regex and pass through harmlessly.
+    const escaped = input.replace(/%/g, "%25").replace(/=([0-9A-Fa-f]{2})/g, "%$1");
+    return decodeURIComponent(escaped);
+  } catch {
+    return input;
+  }
+}
+
+// True when a (logical) vCard line's parameters declare QUOTED-PRINTABLE encoding.
+function lineIsQuotedPrintable(line: string): boolean {
+  const colon = line.indexOf(":");
+  const head = colon === -1 ? line : line.slice(0, colon);
+  return /ENCODING=QUOTED-PRINTABLE/i.test(head);
+}
+
+// Join physical lines into logical vCard lines, handling BOTH wrapping schemes:
+//   • RFC 2426/6350 folding — a continuation line begins with a space or tab.
+//   • vCard 2.1 QUOTED-PRINTABLE soft breaks — a value line ends with "=".
+// Without this, long or non-ASCII (QP) values split across lines were truncated,
+// so the contact lost its name/address — exactly the "no data extracted" symptom.
+function unfoldVCardLines(raw: string): string[] {
+  const physical = raw.split(/\r?\n/);
+  const logical: string[] = [];
+  for (const line of physical) {
+    const prev = logical.length ? logical[logical.length - 1] : null;
+    if (prev !== null && /^[ \t]/.test(line)) {
+      logical[logical.length - 1] = prev + line.slice(1);
+    } else if (prev !== null && /=$/.test(prev) && lineIsQuotedPrintable(prev)) {
+      // Only treat a trailing "=" as a QP soft break for QP-encoded properties.
+      // A normal 3.0/4.0 value that happens to end with "=" (e.g. a URL or
+      // base64-ish token) must NOT absorb the following property line.
+      logical[logical.length - 1] = prev.slice(0, -1) + line;
+    } else {
+      logical.push(line);
+    }
+  }
+  return logical;
+}
+
 export function parseVCard(raw: string): ExtractedCardData {
   const out: ExtractedCardData = {};
   // The structured N property (Family;Given) is authoritative for names; FN is a
   // free-form display string we only fall back to when N is absent (its naive
   // space-split mishandles titled or multi-word names like "Dr. John Smith").
   let nameFromN = false;
-  for (const line of raw.split(/\r?\n/)) {
+  for (const line of unfoldVCardLines(raw)) {
     const [rawKey, ...rest] = line.split(":");
     if (!rawKey || rest.length === 0) continue;
     // Strip any group prefix (Apple/iOS exports group properties as
@@ -100,8 +149,13 @@ export function parseVCard(raw: string): ExtractedCardData {
     // parameters, leaving the bare property name. Without this, grouped
     // properties were silently dropped and QR/vCard contacts lost their
     // website, email, and address fields.
-    const key = rawKey.split(";")[0].split(".").pop()!.toUpperCase();
-    const value = rest.join(":").trim();
+    const segments = rawKey.split(";");
+    const key = segments[0].split(".").pop()!.toUpperCase();
+    const params = segments.slice(1).join(";").toUpperCase();
+    let value = rest.join(":").trim();
+    if (/ENCODING=QUOTED-PRINTABLE/.test(params)) {
+      value = decodeQuotedPrintable(value).trim();
+    }
     if (!value) continue;
     switch (key) {
       case "FN": {
