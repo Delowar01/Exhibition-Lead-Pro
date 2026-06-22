@@ -1,0 +1,253 @@
+# MOBILE APPLICATION – DUPLICATE MANAGEMENT ENHANCEMENT
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task improves the Duplicate Management module.
+
+No changes are required to the duplicate detection logic.
+
+Only enhance the user interface and duplicate management workflow.
+
+---
+
+# 1. DUPLICATE LIST ENHANCEMENT
+
+## Current Design
+
+The Duplicate screen currently allows only one action:
+
+* Delete
+
+This is not sufficient for managing duplicate records.
+
+---
+
+## Required
+
+Enhance the Duplicate screen by adding:
+
+* Preview
+* Multi-Selection
+* Delete Selected
+
+Keep the existing Delete functionality.
+
+---
+
+# 2. PREVIEW CONTACT
+
+## Required
+
+Every duplicate contact should have a **Preview** option.
+
+When the user taps **Preview**, open the complete Contact Preview screen.
+
+Display all available information including:
+
+* Profile Image / Avatar
+* Name
+* Company
+* Designation
+* Email
+* Mobile
+* Telephone
+* Website
+* Address
+* Event
+* Capture Method
+* Capture Date
+* Lead Score
+* Lead Temperature
+* Status
+* Notes
+
+The Preview screen should be read-only except for the actions below.
+
+---
+
+# 3. MAKE ORIGINAL
+
+Inside the Preview screen, add a new action:
+
+## Make Original
+
+When selected:
+
+* Promote the selected duplicate to become the **Original Contact**.
+* The current Original Contact should automatically become a duplicate.
+* Preserve all relationships, history, notes, meetings, follow-ups, and tasks.
+* Do not create a new contact.
+* Simply change which record is designated as the original.
+
+---
+
+## Confirmation Dialog
+
+Before changing the original contact, display:
+
+**Title**
+
+Make Original Contact
+
+**Message**
+
+Are you sure you want to make this contact the Original Contact?
+
+The current Original Contact will be moved to the Duplicate list.
+
+Buttons:
+
+* Cancel
+* Make Original
+
+---
+
+## Acceptance Criteria
+
+* Original contact changes successfully.
+* Duplicate relationships remain intact.
+* No data is lost.
+* All linked records remain associated correctly.
+
+---
+
+# 4. MULTI-SELECTION MODE
+
+## Enter Selection Mode
+
+The Duplicate list should support multi-selection.
+
+Workflow:
+
+* Press and hold (Long Press) on a contact avatar.
+* The pressed contact becomes selected.
+* The application enters **Selection Mode**.
+
+---
+
+## While Selection Mode is Active
+
+Once Selection Mode starts:
+
+* Selected contacts display a checkmark.
+* Tapping anywhere on another contact row selects or deselects that contact.
+* Users do not need to long-press additional contacts.
+
+Selection Mode should behave similarly to:
+
+* Gmail
+* Google Photos
+* WhatsApp
+* Android Files
+
+---
+
+## Selection Header
+
+When Selection Mode is active, replace the normal header with a Selection Toolbar.
+
+Display:
+
+* Number of selected contacts
+* Select All
+* Cancel Selection
+* Delete Selected
+
+Example:
+
+**3 Selected**
+
+[Select All]  [Delete Selected]  [Cancel]
+
+---
+
+# 5. DELETE SELECTED
+
+Add a new action:
+
+## Delete Selected
+
+This action should only appear while Selection Mode is active.
+
+The existing single Delete action should remain unchanged.
+
+---
+
+## Confirmation Dialog
+
+Before deleting:
+
+**Title**
+
+Delete Selected Contacts
+
+**Message**
+
+Are you sure you want to permanently delete the selected duplicate contacts?
+
+This action cannot be undone.
+
+Buttons:
+
+* Cancel
+* Delete
+
+---
+
+## Acceptance Criteria
+
+* Multiple contacts can be selected.
+* Delete Selected removes only the selected duplicate records.
+* Original contacts are never deleted accidentally.
+* Selection Mode exits automatically after deletion.
+
+---
+
+# 6. EXISTING DELETE
+
+Keep the existing Delete action exactly as it is.
+
+Users should still be able to delete a single duplicate contact without entering Selection Mode.
+
+---
+
+# 7. USER EXPERIENCE
+
+Selection Mode should:
+
+* Feel smooth and responsive.
+* Use subtle selection highlighting.
+* Display a checkmark on selected avatars.
+* Exit when:
+
+  * User taps Cancel.
+  * All selected contacts are deleted.
+  * User presses the Back button.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Preview option added.
+* Make Original action added to Preview.
+* Long-press enters Selection Mode.
+* Multiple duplicate contacts can be selected.
+* Delete Selected works correctly.
+* Single Delete continues to work.
+* Original contact protection is maintained.
+* Fully responsive on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# IMPORTANT
+
+This enhancement should follow standard native mobile UX patterns.
+
+The Duplicate Management screen should feel similar to Gmail or Google Photos when selecting multiple items, providing users with a familiar, fast, and professional experience.

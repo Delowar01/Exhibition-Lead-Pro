@@ -460,40 +460,9 @@ export default function HomeScreen() {
         {/* Last event */}
         {selectedEvent ? (
           <>
-            <View style={[styles.eventSectionHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  { color: colors.mutedForeground, marginTop: 0, marginBottom: 0, flex: 1, textAlign },
-                ]}
-              >
-                {t("home.lastEvent")}
-              </Text>
-              <Pressable
-                onPress={() => setFilterOpen(true)}
-                style={[
-                  styles.filterBtn,
-                  {
-                    backgroundColor: activeDashFilters > 0 ? colors.primary : colors.card,
-                    borderColor: activeDashFilters > 0 ? colors.primary : colors.border,
-                    borderRadius: colors.radius,
-                  },
-                ]}
-              >
-                <Feather
-                  name="sliders"
-                  size={18}
-                  color={activeDashFilters > 0 ? "#FFFFFF" : colors.foreground}
-                />
-                {activeDashFilters > 0 ? (
-                  <View style={[styles.filterCount, { backgroundColor: "#FFFFFF" }]}>
-                    <Text style={[styles.filterCountText, { color: colors.primary }]}>
-                      {activeDashFilters}
-                    </Text>
-                  </View>
-                ) : null}
-              </Pressable>
-            </View>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+              {t("home.lastEvent")}
+            </Text>
             <Pressable
               onPress={() => {
                 if (!selectedEventId) return;
@@ -510,9 +479,12 @@ export default function HomeScreen() {
                 },
               ]}
             >
+              {/* Left: event icon */}
               <View style={[styles.eventIcon, { backgroundColor: "rgba(255,255,255,0.14)" }]}>
                 <Feather name="bar-chart-2" size={20} color="#FFFFFF" />
               </View>
+
+              {/* Center: name + stats */}
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={[styles.eventName, { textAlign }]}>
                   {selectedEvent.eventName}
@@ -547,11 +519,41 @@ export default function HomeScreen() {
                         .join(" · ")}
                 </Text>
               </View>
-              <Feather
-                name={isRTL ? "chevron-left" : "chevron-right"}
-                size={20}
-                color="rgba(255,255,255,0.7)"
-              />
+
+              {/* Right column: filter btn (top) + nav arrow (bottom) */}
+              <View style={styles.eventCardRight}>
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setFilterOpen(true);
+                  }}
+                  hitSlop={8}
+                  style={[
+                    styles.eventFilterBtn,
+                    {
+                      backgroundColor:
+                        activeDashFilters > 0 ? colors.primary : "rgba(255,255,255,0.14)",
+                      borderColor:
+                        activeDashFilters > 0 ? colors.primary : "rgba(255,255,255,0.35)",
+                      borderRadius: colors.radius,
+                    },
+                  ]}
+                >
+                  <Feather name="sliders" size={16} color="#FFFFFF" />
+                  {activeDashFilters > 0 ? (
+                    <View style={[styles.filterCount, { backgroundColor: "#FFFFFF" }]}>
+                      <Text style={[styles.filterCountText, { color: colors.primary }]}>
+                        {activeDashFilters}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+                <Feather
+                  name={isRTL ? "chevron-left" : "chevron-right"}
+                  size={20}
+                  color="rgba(255,255,255,0.7)"
+                />
+              </View>
             </Pressable>
           </>
         ) : null}
@@ -1107,11 +1109,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: FONT.medium,
   },
-  eventSectionHeader: {
-    flexDirection: "row",
+  eventCardRight: {
     alignItems: "center",
-    marginTop: 26,
-    marginBottom: 12,
+    gap: 8,
+    alignSelf: "stretch",
+    justifyContent: "space-between",
+    paddingVertical: 2,
+  },
+  eventFilterBtn: {
+    width: 32,
+    height: 32,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterBtn: {
     width: 36,

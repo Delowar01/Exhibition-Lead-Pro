@@ -1,0 +1,153 @@
+MOBILE APPLICATION – LAST EVENT CARD UI REFINEMENT
+Project
+Lead Capture Pro
+Scope
+MOBILE APPLICATION ONLY
+This task is a UI/UX refinement only.
+No backend logic changes are required.
+
+LAST EVENT CARD – FILTER BUTTON POSITION
+Current Design
+The Filter button is displayed outside the Last Event card.
+This makes it appear disconnected from the event and wastes valuable screen space.
+The filter should feel like an action that belongs to the Last Event card itself.
+
+Required
+Move the Filter button inside the Last Event card.
+The filter should be positioned in the top-right corner of the card, aligned with the event information.
+Do not place the filter outside the card.
+
+Card Layout
+The Last Event card should contain:
+Left Side
+
+
+Event Icon
+
+
+Center
+
+
+Event Name (Example: Leap 2026)
+
+
+Event Summary
+
+
+Total Leads
+
+
+Won
+
+
+Conversion Rate
+
+
+
+
+Top Right
+
+
+Filter Button (same design used in the Contacts screen)
+
+
+Right Side
+
+
+Navigation Arrow (>) to open the full Event Report
+
+
+The filter icon and navigation arrow must not overlap.
+Both actions should remain clearly visible and easy to tap.
+
+Filter Button Design
+Reuse the existing Contacts filter button.
+Maintain exactly the same:
+
+
+Icon
+
+
+Size
+
+
+Border Radius
+
+
+Shadow
+
+
+Colors
+
+
+Touch Feedback
+
+
+Only change its position.
+
+Interaction
+Filter Button
+Tapping the filter icon opens the Last Event filter panel.
+Navigation Arrow
+Tapping anywhere else on the card (or the arrow) opens the Last Event Report.
+The two actions must remain independent.
+
+Responsive Design
+Ensure proper spacing on:
+
+
+Android
+
+
+iPhone
+
+
+Small Screens
+
+
+Large Screens
+
+
+The filter button should never overlap:
+
+
+Event Name
+
+
+Event Statistics
+
+
+Navigation Arrow
+
+
+
+Acceptance Criteria
+
+
+Filter button moved inside the Last Event card.
+
+
+Positioned in the top-right corner.
+
+
+Matches the Contacts filter design.
+
+
+Navigation arrow remains on the right side.
+
+
+Filter and navigation actions work independently.
+
+
+No overlapping UI.
+
+
+Fully responsive on Android and iPhone.
+
+
+No regressions introduced.
+
+
+
+Design Goal
+The Last Event card should look like a single, self-contained component where all related actions belong to the card itself. The filter should feel integrated into the card rather than floating separately, creating a cleaner, more premium, and intuitive user experience consistent with the rest of Lead Capture Pro.
