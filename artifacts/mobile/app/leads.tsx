@@ -30,6 +30,7 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 function formatCurrency(value: number): string {
   if (value >= 1000) return `$${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
@@ -40,6 +41,7 @@ export default function LeadsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const query = useGetLeadPipeline();
   const [activeStage, setActiveStage] = useState<string>("new");
 
@@ -67,16 +69,16 @@ export default function LeadsScreen() {
       <View
         style={[
           styles.leadCard,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
         ]}
       >
         <Avatar name={item.contactName ?? "?"} color={color} size={40} />
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.leadName, { color: colors.foreground }]}>
-            {item.contactName ?? "Unnamed lead"}
+          <Text numberOfLines={1} style={[styles.leadName, { color: colors.foreground, textAlign }]}>
+            {item.contactName ?? t("common.unnamedLead")}
           </Text>
-          <Text numberOfLines={1} style={[styles.leadSub, { color: colors.mutedForeground }]}>
-            {item.contactCompany ?? item.contactEmail ?? "No company"}
+          <Text numberOfLines={1} style={[styles.leadSub, { color: colors.mutedForeground, textAlign }]}>
+            {item.contactCompany ?? item.contactEmail ?? t("common.noCompany")}
           </Text>
         </View>
         {item.value != null && item.value > 0 ? (
@@ -98,9 +100,9 @@ export default function LeadsScreen() {
         >
           <Feather name="chevron-left" size={20} color={colors.foreground} />
         </Pressable>
-        <Text style={[styles.heading, { color: colors.foreground }]}>Pipeline</Text>
-        <Text style={[styles.headingSub, { color: colors.mutedForeground }]}>
-          {formatCurrency(totalValue)} in open value
+        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("leads.title")}</Text>
+        <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
+          {formatCurrency(totalValue)} {t("leads.openValueSuffix")}
         </Text>
       </View>
 
@@ -134,6 +136,7 @@ export default function LeadsScreen() {
                         backgroundColor: active ? color : colors.card,
                         borderColor: active ? color : colors.border,
                         borderRadius: colors.radius + 2,
+                        flexDirection: isRTL ? "row-reverse" : "row",
                       },
                     ]}
                   >
@@ -143,7 +146,7 @@ export default function LeadsScreen() {
                         { color: active ? "#FFFFFF" : colors.foreground },
                       ]}
                     >
-                      {prettyLabel(s.stage)}
+                      {t(`leads.stages.${s.stage}`, { defaultValue: prettyLabel(s.stage) })}
                     </Text>
                     <View
                       style={[
@@ -191,8 +194,8 @@ export default function LeadsScreen() {
               <View style={{ paddingTop: 40 }}>
                 <EmptyState
                   icon="inbox"
-                  title="No leads here"
-                  subtitle={`Nothing in ${prettyLabel(activeStage)} yet.`}
+                  title={t("leads.empty")}
+                  subtitle={t("leads.emptyDesc")}
                 />
               </View>
             }

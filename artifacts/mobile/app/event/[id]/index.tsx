@@ -26,6 +26,7 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
 function formatRange(start?: string | null, end?: string | null): string | null {
@@ -51,6 +52,7 @@ function formatRevenue(value: number): string {
 
 export default function EventDetailScreen() {
   const colors = useColors();
+  const { t } = useLocale();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const eventId = Number(id);
@@ -80,7 +82,7 @@ export default function EventDetailScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: event?.name ?? "Event",
+          title: event?.name ?? t("eventReport.eventFallback"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
@@ -128,7 +130,7 @@ export default function EventDetailScreen() {
             {event.boothNumber ? (
               <View style={styles.headerMeta}>
                 <Feather name="grid" size={14} color="rgba(255,255,255,0.7)" />
-                <Text style={styles.headerMetaText}>Booth {event.boothNumber}</Text>
+                <Text style={styles.headerMetaText}>{t("events.boothShort")} {event.boothNumber}</Text>
               </View>
             ) : null}
           </View>
@@ -143,42 +145,42 @@ export default function EventDetailScreen() {
           <View style={styles.statsGrid}>
             <StatCard
               icon="users"
-              label="Contacts"
+              label={t("eventReport.contacts")}
               value={stats?.contactCount ?? event.contactCount ?? 0}
               loading={statsQuery.isLoading}
               color="#3B82F6"
             />
             <StatCard
               icon="target"
-              label="Leads"
+              label={t("eventReport.leads")}
               value={stats?.leadCount ?? event.leadCount ?? 0}
               loading={statsQuery.isLoading}
               color="#FF6B00"
             />
             <StatCard
               icon="check-circle"
-              label="Qualified"
+              label={t("eventReport.qualified")}
               value={stats?.qualifiedCount ?? 0}
               loading={statsQuery.isLoading}
               color="#14B8A6"
             />
             <StatCard
               icon="award"
-              label="Won"
+              label={t("leads.stages.won")}
               value={stats?.wonCount ?? 0}
               loading={statsQuery.isLoading}
               color="#22C55E"
             />
             <StatCard
               icon="dollar-sign"
-              label="Revenue"
+              label={t("eventReport.revenue")}
               value={formatRevenue(stats?.revenue ?? 0)}
               loading={statsQuery.isLoading}
               color="#EAB308"
             />
             <StatCard
               icon="trending-up"
-              label="Conversion"
+              label={t("eventReport.conversion")}
               value={`${Math.round(stats?.conversionRate ?? 0)}%`}
               loading={statsQuery.isLoading}
               color="#8B5CF6"
@@ -187,7 +189,7 @@ export default function EventDetailScreen() {
 
           {/* Pipeline breakdown */}
           {stats?.byStage && stats.byStage.length > 0 ? (
-            <Section title="Pipeline breakdown">
+            <Section title={t("eventReport.pipelineBreakdown")}>
               <View style={{ gap: 10 }}>
                 {stats.byStage.map((s) => {
                   const color = CONTACT_STATUS_COLORS[s.status] ?? colors.primary;
@@ -196,7 +198,7 @@ export default function EventDetailScreen() {
                     <View key={s.status}>
                       <View style={styles.stageRow}>
                         <Text style={[styles.stageLabel, { color: colors.foreground }]}>
-                          {s.label ?? prettyLabel(s.status)}
+                          {s.label ?? t("leads.stages." + s.status, { defaultValue: prettyLabel(s.status) })}
                         </Text>
                         <Text style={[styles.stageCount, { color: colors.mutedForeground }]}>
                           {s.count}
@@ -218,14 +220,14 @@ export default function EventDetailScreen() {
           ) : null}
 
           {/* Team leaderboard */}
-          <Section title="Team leaderboard">
+          <Section title={t("eventReport.teamLeaderboard")}>
             {teamQuery.isLoading ? (
               <View style={{ height: 80 }}>
                 <LoadingState />
               </View>
             ) : leaderboard.length === 0 ? (
               <Text style={[styles.emptyLine, { color: colors.mutedForeground }]}>
-                No scan activity yet.
+                {t("eventReport.noScanActivity")}
               </Text>
             ) : (
               <View style={{ gap: 12 }}>
@@ -261,7 +263,7 @@ export default function EventDetailScreen() {
                         {member.scanCount}
                       </Text>
                       <Text style={[styles.leaderStatLabel, { color: colors.mutedForeground }]}>
-                        scans
+                        {t("eventReport.scans")}
                       </Text>
                     </View>
                   </View>

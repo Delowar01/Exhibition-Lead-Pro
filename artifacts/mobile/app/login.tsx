@@ -20,6 +20,7 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import {
   authenticateBiometric,
   getBiometricLabel,
@@ -45,6 +46,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
   const loginMutation = useLogin();
+  const { t, isRTL, textAlign } = useLocale();
 
   const [email, setEmail] = useState("admin@techcorp.com");
   const [password, setPassword] = useState("Admin123!");
@@ -52,7 +54,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [bioReady, setBioReady] = useState(false);
-  const [bioLabel, setBioLabel] = useState("Biometrics");
+  const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
   const [bioBusy, setBioBusy] = useState(false);
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
@@ -103,16 +105,16 @@ export default function LoginScreen() {
       let message: string;
       if (err instanceof ApiError) {
         if (err.status === 401) {
-          message = "Invalid email or password.";
+          message = t("auth.invalidCredentials");
         } else if (err.status === 403) {
-          message = "Access denied. Contact your administrator.";
+          message = t("auth.contactAdmin");
         } else if (err.status >= 500) {
-          message = `Server error (${err.status}). Please try again later.`;
+          message = t("errors.generic");
         } else {
-          message = `Login failed (${err.status}). Please try again.`;
+          message = t("auth.signInFailed");
         }
       } else {
-        message = "Cannot connect to server. Check your internet connection.";
+        message = t("errors.network");
       }
       setError(message);
       if (Platform.OS !== "web") {
@@ -125,17 +127,19 @@ export default function LoginScreen() {
     setError(null);
     setBioBusy(true);
     try {
-      const ok = await authenticateBiometric(`Sign in with ${bioLabel}`);
+      const ok = await authenticateBiometric(
+        t("auth.signInWith", { method: bioLabel }),
+      );
       if (!ok) return;
       const vault = await readBiometricVault();
       if (!vault) {
-        setError("Biometric sign-in is no longer available. Sign in manually.");
+        setError(t("auth.signInFailed"));
         setBioReady(false);
         return;
       }
       await login(vault.token, vault.user);
     } catch {
-      setError("Biometric sign-in failed. Please try again.");
+      setError(t("auth.signInFailed"));
     } finally {
       setBioBusy(false);
     }
@@ -159,7 +163,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         bottomOffset={20}
       >
-        <View style={styles.brandRow}>
+        <View style={[styles.brandRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <View style={[styles.logoBadge, { borderRadius: colors.radius + 4 }]}>
             <Image
               source={require("@/assets/images/icon.png")}
@@ -168,15 +172,15 @@ export default function LoginScreen() {
             />
           </View>
           <View>
-            <Text style={styles.brandTitle}>Card Scanner Pro</Text>
-            <Text style={styles.brandSub}>Field Sales</Text>
+            <Text style={[styles.brandTitle, { textAlign }]}>Card Scanner Pro</Text>
+            <Text style={[styles.brandSub, { textAlign }]}>{t("login.tagline")}</Text>
           </View>
         </View>
 
         <View style={styles.heroBlock}>
-          <Text style={styles.heroTitle}>Scan. Capture.{"\n"}Close deals.</Text>
-          <Text style={styles.heroText}>
-            Turn business cards into qualified leads on the floor.
+          <Text style={[styles.heroTitle, { textAlign }]}>{t("login.heroTitle")}</Text>
+          <Text style={[styles.heroText, { textAlign }]}>
+            {t("login.heroText")}
           </Text>
         </View>
 
@@ -186,40 +190,48 @@ export default function LoginScreen() {
             { backgroundColor: colors.card, borderRadius: colors.radius + 8 },
           ]}
         >
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            EMAIL
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+            {t("auth.email")}
           </Text>
           <View
             style={[
               styles.inputRow,
-              { borderColor: colors.border, borderRadius: colors.radius },
+              {
+                borderColor: colors.border,
+                borderRadius: colors.radius,
+                flexDirection: isRTL ? "row-reverse" : "row",
+              },
             ]}
           >
             <Feather name="mail" size={18} color={colors.mutedForeground} />
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="you@company.com"
+              placeholder={t("auth.emailPlaceholder")}
               placeholderTextColor={colors.mutedForeground}
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
-              style={[styles.input, { color: colors.foreground }]}
+              style={[styles.input, { color: colors.foreground, textAlign }]}
             />
           </View>
 
           <Text
             style={[
               styles.fieldLabel,
-              { color: colors.mutedForeground, marginTop: 16 },
+              { color: colors.mutedForeground, marginTop: 16, textAlign },
             ]}
           >
-            PASSWORD
+            {t("auth.password")}
           </Text>
           <View
             style={[
               styles.inputRow,
-              { borderColor: colors.border, borderRadius: colors.radius },
+              {
+                borderColor: colors.border,
+                borderRadius: colors.radius,
+                flexDirection: isRTL ? "row-reverse" : "row",
+              },
             ]}
           >
             <Feather name="lock" size={18} color={colors.mutedForeground} />
@@ -244,11 +256,11 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.optionsRow}>
+          <View style={[styles.optionsRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Pressable
               onPress={() => setRememberMe((v) => !v)}
               hitSlop={8}
-              style={styles.rememberRow}
+              style={[styles.rememberRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}
             >
               <View
                 style={[
@@ -262,28 +274,28 @@ export default function LoginScreen() {
               >
                 {rememberMe ? <Feather name="check" size={12} color="#FFFFFF" /> : null}
               </View>
-              <Text style={[styles.rememberText, { color: colors.mutedForeground }]}>
-                Remember me
+              <Text style={[styles.rememberText, { color: colors.mutedForeground, textAlign }]}>
+                {t("auth.rememberMe")}
               </Text>
             </Pressable>
             <Pressable onPress={() => router.push("/forgot-password")} hitSlop={8}>
-              <Text style={[styles.forgotText, { color: colors.primary }]}>
-                Forgot password?
+              <Text style={[styles.forgotText, { color: colors.primary, textAlign }]}>
+                {t("auth.forgotPassword")}
               </Text>
             </Pressable>
           </View>
 
           {error ? (
-            <View style={styles.errorRow}>
+            <View style={[styles.errorRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
               <Feather name="alert-circle" size={14} color={colors.destructive} />
-              <Text style={[styles.errorText, { color: colors.destructive }]}>
+              <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
                 {error}
               </Text>
             </View>
           ) : null}
 
           <PrimaryButton
-            label="Sign in"
+            label={t("auth.signIn")}
             icon="arrow-right"
             onPress={() => handleLogin(email, password)}
             loading={loginMutation.isPending}
@@ -300,6 +312,7 @@ export default function LoginScreen() {
                   borderColor: colors.border,
                   borderRadius: colors.radius,
                   opacity: pressed || bioBusy ? 0.7 : 1,
+                  flexDirection: isRTL ? "row-reverse" : "row",
                 },
               ]}
             >
@@ -309,14 +322,14 @@ export default function LoginScreen() {
                 color={colors.primary}
               />
               <Text style={[styles.bioBtnText, { color: colors.foreground }]}>
-                Sign in with {bioLabel}
+                {t("auth.signInWith", { method: bioLabel })}
               </Text>
             </Pressable>
           ) : null}
         </View>
 
-        <Text style={styles.demoLabel}>QUICK DEMO ACCESS</Text>
-        <View style={styles.demoRow}>
+        <Text style={styles.demoLabel}>{t("login.demoAccess")}</Text>
+        <View style={[styles.demoRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           {DEMO_ACCOUNTS.map((acc) => (
             <Pressable
               key={acc.email}
@@ -328,7 +341,11 @@ export default function LoginScreen() {
               disabled={loginMutation.isPending}
               style={({ pressed }) => [
                 styles.demoChip,
-                { borderRadius: colors.radius, opacity: pressed ? 0.7 : 1 },
+                {
+                  borderRadius: colors.radius,
+                  opacity: pressed ? 0.7 : 1,
+                  flexDirection: isRTL ? "row-reverse" : "row",
+                },
               ]}
             >
               <Feather name="zap" size={14} color="#FFFFFF" />

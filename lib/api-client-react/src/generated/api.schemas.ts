@@ -819,6 +819,35 @@ export const ScanStatus = {
   failed: 'failed',
 } as const;
 
+/**
+ * The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.
+ */
+export interface ExtractedCardOriginal {
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  arabicName?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  /** @nullable */
+  company?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  mobile?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  linkedin?: string | null;
+  /** @nullable */
+  address?: string | null;
+}
+
+/**
+ * Display/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.
+ */
 export interface ExtractedCardData {
   /** @nullable */
   firstName?: string | null;
@@ -840,6 +869,7 @@ export interface ExtractedCardData {
   linkedin?: string | null;
   /** @nullable */
   address?: string | null;
+  original?: ExtractedCardOriginal;
 }
 
 export interface Scan {
@@ -863,9 +893,22 @@ export interface ScanList {
   total: number;
 }
 
+/**
+ * Active app language. Drives OCR translation: "en" translates all extracted fields to English; "ar" preserves Arabic + English as printed and translates any other language to English.
+ */
+export type ScanInputAppLanguage = typeof ScanInputAppLanguage[keyof typeof ScanInputAppLanguage];
+
+
+export const ScanInputAppLanguage = {
+  en: 'en',
+  ar: 'ar',
+} as const;
+
 export interface ScanInput {
   /** Base64-encoded image */
   imageData: string;
+  /** Active app language. Drives OCR translation: "en" translates all extracted fields to English; "ar" preserves Arabic + English as printed and translates any other language to English. */
+  appLanguage?: ScanInputAppLanguage;
   /** @nullable */
   eventId?: number | null;
   /** @nullable */

@@ -20,6 +20,7 @@ import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NotificationsManager } from "@/components/NotificationsManager";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { useLocale } from "@/hooks/useLocale";
 import { CardProvider } from "@/contexts/CardContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
@@ -76,6 +77,7 @@ function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const { t } = useLocale();
 
   useEffect(() => {
     if (isLoading) return;
@@ -93,7 +95,7 @@ function RootLayoutNav() {
       <NotificationsManager />
       <Stack
         screenOptions={{
-          headerBackTitle: "Back",
+          headerBackTitle: t("common.back"),
           ...(Platform.OS === "web"
             ? { headerLeft: (props) => <WebHeaderBack canGoBack={props.canGoBack} /> }
             : {}),
@@ -103,7 +105,7 @@ function RootLayoutNav() {
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen
         name="scan-review"
-        options={{ presentation: "modal", title: "Review details" }}
+        options={{ presentation: "modal", title: t("screens.reviewDetails") }}
       />
       <Stack.Screen
         name="capture-camera"
@@ -125,7 +127,7 @@ function RootLayoutNav() {
         name="capture-nfc"
         options={{ headerShown: false, presentation: "fullScreenModal" }}
       />
-      <Stack.Screen name="capture-manual" options={{ title: "Manual entry" }} />
+      <Stack.Screen name="capture-manual" options={{ title: t("screens.manualEntry") }} />
       <Stack.Screen name="card" options={{ headerShown: false }} />
       <Stack.Screen name="leads" options={{ headerShown: false }} />
       <Stack.Screen name="events" options={{ headerShown: false }} />

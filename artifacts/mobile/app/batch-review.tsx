@@ -21,6 +21,7 @@ import {
 import { FONT, LoadingState, PrimaryButton } from "@/components/ui";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import {
   type BatchCapture,
   clearBatchCaptures,
@@ -50,7 +51,8 @@ export default function BatchReviewScreen() {
   useLocalSearchParams<{ source?: string }>();
   const createScan = useCreateScan();
   const createContact = useCreateContact();
-  const { activeEventId } = useSettings();
+  const { activeEventId, language } = useSettings();
+  const { t } = useLocale();
   const eventId = activeEventId ?? null;
 
   // Snapshot the buffer once; the store is cleared as we go.
@@ -75,6 +77,7 @@ export default function BatchReviewScreen() {
         const scan = await createScan.mutateAsync({
           data: {
             imageData: item.imageData,
+            appLanguage: language,
             eventId,
             latitude: item.latitude,
             longitude: item.longitude,
@@ -91,7 +94,7 @@ export default function BatchReviewScreen() {
         setOcrLoading(false);
       }
     },
-    [createScan, eventId],
+    [createScan, eventId, language],
   );
 
   useEffect(() => {
@@ -143,12 +146,12 @@ export default function BatchReviewScreen() {
   if (total === 0) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: topPad + 40, paddingHorizontal: 24 }}>
-        <Text style={[styles.title, { color: colors.foreground }]}>Nothing to review</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>{t("batch.nothingTitle")}</Text>
         <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-          No batch captures were found.
+          {t("batch.nothingDesc")}
         </Text>
         <View style={{ height: 20 }} />
-        <PrimaryButton label="Back to contacts" icon="arrow-left" onPress={finish} />
+        <PrimaryButton label={t("batch.backToContacts")} icon="arrow-left" onPress={finish} />
       </View>
     );
   }
@@ -165,7 +168,7 @@ export default function BatchReviewScreen() {
             <Feather name="x" size={20} color={colors.foreground} />
           </Pressable>
           <Text style={[styles.progress, { color: colors.mutedForeground }]}>
-            {index + 1} of {total} · {savedCount} saved
+            {t("batch.progress", { index: index + 1, total, saved: savedCount })}
           </Text>
         </View>
         {/* Progress bar */}
@@ -183,7 +186,7 @@ export default function BatchReviewScreen() {
         <View style={{ flex: 1 }}>
           <LoadingState />
           <Text style={[styles.loadingCaption, { color: colors.mutedForeground }]}>
-            Extracting card details…
+            {t("batch.extracting")}
           </Text>
         </View>
       ) : values ? (
@@ -200,7 +203,7 @@ export default function BatchReviewScreen() {
             <View style={[styles.errorBox, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius }]}>
               <Feather name="alert-circle" size={15} color={colors.destructive} />
               <Text style={[styles.errorText, { color: colors.destructive }]}>
-                Couldn't read this card automatically. Enter the details manually or skip.
+                {t("batch.readError")}
               </Text>
             </View>
           ) : null}
@@ -209,7 +212,7 @@ export default function BatchReviewScreen() {
             <View style={[styles.errorBox, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius }]}>
               <Feather name="alert-circle" size={15} color={colors.destructive} />
               <Text style={[styles.errorText, { color: colors.destructive }]}>
-                Couldn't save this contact. Check the details and try again.
+                {t("batch.saveError")}
               </Text>
             </View>
           ) : null}
@@ -217,14 +220,14 @@ export default function BatchReviewScreen() {
           <ContactForm
             key={formKey.current}
             initial={values}
-            submitLabel={index + 1 >= total ? "Save & finish" : "Save & next"}
+            submitLabel={index + 1 >= total ? t("batch.saveFinish") : t("batch.saveNext")}
             submitting={createContact.isPending}
             onSubmit={handleSave}
           />
 
           <Pressable onPress={skip} style={styles.skipBtn} disabled={createContact.isPending}>
             <Text style={[styles.skipText, { color: colors.mutedForeground }]}>
-              Skip this card
+              {t("batch.skipCard")}
             </Text>
           </Pressable>
         </KeyboardAwareScrollView>

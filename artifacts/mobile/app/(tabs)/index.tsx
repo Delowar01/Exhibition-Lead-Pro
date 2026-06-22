@@ -25,13 +25,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale, type Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
-function greeting(): string {
+function greetingKey(): string {
   const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+  if (h < 12) return "home.greetingMorning";
+  if (h < 18) return "home.greetingAfternoon";
+  return "home.greetingEvening";
 }
 
 function todayStr(): string {
@@ -45,15 +46,15 @@ function formatCurrency(value: number): string {
   return `$${Math.round(value)}`;
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: Locale["t"]): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t("common.justNow");
+  if (mins < 60) return t("common.minutesAgo", { count: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t("common.hoursAgo", { count: hrs });
   const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return t("common.daysAgo", { count: days });
   return formatGregorian(new Date(iso), { month: "short", day: "numeric" });
 }
 
@@ -68,33 +69,33 @@ interface Insight {
   tone: "primary" | "warning" | "info";
 }
 
-function buildInsights(data?: MobileDashboard): Insight[] {
+function buildInsights(t: Locale["t"], data?: MobileDashboard): Insight[] {
   if (!data) return [];
   const out: Insight[] = [];
   if (data.followUpsDue > 0) {
     out.push({
-      text: `${data.followUpsDue} follow-up${data.followUpsDue === 1 ? "" : "s"} due — reach out before the day ends.`,
+      text: t("home.insightFollowUpsDue", { count: data.followUpsDue }),
       icon: "clock",
       tone: "warning",
     });
   }
   if (data.hotLeads > 0) {
     out.push({
-      text: `${data.hotLeads} hot lead${data.hotLeads === 1 ? "" : "s"} are primed to convert. Prioritize these.`,
+      text: t("home.insightHotLeads", { count: data.hotLeads }),
       icon: "trending-up",
       tone: "primary",
     });
   }
   if (data.todayLeads > 0) {
     out.push({
-      text: `You've captured ${data.todayLeads} lead${data.todayLeads === 1 ? "" : "s"} today. Great momentum.`,
+      text: t("home.insightTodayLeads", { count: data.todayLeads }),
       icon: "zap",
       tone: "info",
     });
   }
   if (out.length === 0) {
     out.push({
-      text: "No urgent follow-ups. Capture a card to start building your pipeline.",
+      text: t("home.insightNone"),
       icon: "compass",
       tone: "info",
     });
@@ -109,6 +110,7 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { isOnline, queuedCount } = useOffline();
   const { setContactFilters } = useSettings();
+  const { t, isRTL, textAlign } = useLocale();
 
   const query = useGetMobileDashboard();
   const data = query.data;
@@ -124,7 +126,7 @@ export default function HomeScreen() {
     router.push("/(tabs)/contacts");
   }
 
-  const insights = buildInsights(data);
+  const insights = buildInsights(t, data);
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -138,7 +140,7 @@ export default function HomeScreen() {
   }[] = [
     {
       key: "today",
-      label: "Today's Leads",
+      label: t("home.stats.leads"),
       value: String(data?.todayLeads ?? 0),
       icon: "zap",
       color: colors.primary,
@@ -146,7 +148,7 @@ export default function HomeScreen() {
     },
     {
       key: "hot",
-      label: "Hot Leads",
+      label: t("home.stats.hotLeads"),
       value: String(data?.hotLeads ?? 0),
       icon: "trending-up",
       color: "#F59E0B",
@@ -154,7 +156,7 @@ export default function HomeScreen() {
     },
     {
       key: "followups",
-      label: "Follow-Ups Due",
+      label: t("home.stats.followups"),
       value: String(data?.followUpsDue ?? 0),
       icon: "clock",
       color: "#06B6D4",
@@ -165,7 +167,7 @@ export default function HomeScreen() {
     },
     {
       key: "meetings",
-      label: "Meetings",
+      label: t("home.stats.meetings"),
       value: String(data?.meetingsScheduled ?? 0),
       icon: "calendar",
       color: "#8B5CF6",
@@ -176,7 +178,7 @@ export default function HomeScreen() {
     },
     {
       key: "contacted",
-      label: "Contacted",
+      label: t("leads.stages.contacted"),
       value: String(data?.contactedLeads ?? 0),
       icon: "send",
       color: "#3B82F6",
@@ -184,7 +186,7 @@ export default function HomeScreen() {
     },
     {
       key: "pipeline",
-      label: "Pipeline Value",
+      label: t("leads.title"),
       value: formatCurrency(data?.pipelineValue ?? 0),
       icon: "dollar-sign",
       color: colors.success,
@@ -201,31 +203,31 @@ export default function HomeScreen() {
     icon: keyof typeof Feather.glyphMap;
     onPress: () => void;
   }[] = [
-    { key: "capture", label: "Capture", icon: "maximize", onPress: () => router.push("/capture") },
-    { key: "qr", label: "Scan QR", icon: "grid", onPress: () => router.push("/capture-qr") },
-    { key: "manual", label: "Manual", icon: "edit-3", onPress: () => router.push("/capture-manual") },
-    { key: "pipeline", label: "Pipeline", icon: "bar-chart-2", onPress: () => router.push("/leads") },
+    { key: "capture", label: t("nav.capture"), icon: "maximize", onPress: () => router.push("/capture") },
+    { key: "qr", label: t("capture.qrCode"), icon: "grid", onPress: () => router.push("/capture-qr") },
+    { key: "manual", label: t("capture.manual"), icon: "edit-3", onPress: () => router.push("/capture-manual") },
+    { key: "pipeline", label: t("nav.leads"), icon: "bar-chart-2", onPress: () => router.push("/leads") },
   ];
 
   function renderActivity(item: MobileActivityItem) {
     const icon = ACTIVITY_ICON[item.type] ?? "activity";
     return (
-      <View key={item.id} style={styles.activityRow}>
+      <View key={item.id} style={[styles.activityRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
         <View style={[styles.activityIcon, { backgroundColor: colors.accent }]}>
           <Feather name={icon} size={16} color={colors.primary} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.activityTitle, { color: colors.foreground }]}>
+          <Text numberOfLines={1} style={[styles.activityTitle, { color: colors.foreground, textAlign }]}>
             {item.title}
           </Text>
           {item.subtitle ? (
-            <Text numberOfLines={1} style={[styles.activitySub, { color: colors.mutedForeground }]}>
+            <Text numberOfLines={1} style={[styles.activitySub, { color: colors.mutedForeground, textAlign }]}>
               {item.subtitle}
             </Text>
           ) : null}
         </View>
         <Text style={[styles.activityTime, { color: colors.mutedForeground }]}>
-          {relativeTime(item.at)}
+          {relativeTime(item.at, t)}
         </Text>
       </View>
     );
@@ -249,20 +251,20 @@ export default function HomeScreen() {
         }
       >
         {/* Branded header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.greeting, { color: colors.mutedForeground }]}>
-              {greeting()}
+            <Text style={[styles.greeting, { color: colors.mutedForeground, textAlign }]}>
+              {t(greetingKey())}
             </Text>
-            <Text numberOfLines={1} style={[styles.name, { color: colors.foreground }]}>
-              {user?.name ?? "Welcome"}
+            <Text numberOfLines={1} style={[styles.name, { color: colors.foreground, textAlign }]}>
+              {user?.name ?? t("auth.welcome")}
             </Text>
-            <View style={styles.metaRow}>
+            <View style={[styles.metaRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
               {user?.role ? <Badge label={prettyLabel(user.role)} color={colors.primary} /> : null}
               {user?.companyName ? (
-                <View style={styles.companyRow}>
+                <View style={[styles.companyRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
                   <View style={[styles.companyDot, { backgroundColor: colors.primary }]} />
-                  <Text numberOfLines={1} style={[styles.company, { color: colors.mutedForeground }]}>
+                  <Text numberOfLines={1} style={[styles.company, { color: colors.mutedForeground, textAlign }]}>
                     {user.companyName}
                   </Text>
                 </View>
@@ -285,6 +287,7 @@ export default function HomeScreen() {
                 backgroundColor: isOnline ? colors.primary + "14" : colors.destructive + "14",
                 borderRadius: colors.radius + 2,
                 opacity: pressed ? 0.8 : 1,
+                flexDirection: isRTL ? "row-reverse" : "row",
               },
             ]}
           >
@@ -296,17 +299,17 @@ export default function HomeScreen() {
             <Text
               style={[
                 styles.offlineBannerText,
-                { color: isOnline ? colors.primary : colors.destructive },
+                { color: isOnline ? colors.primary : colors.destructive, textAlign },
               ]}
             >
               {!isOnline
                 ? queuedCount > 0
-                  ? `Offline — ${queuedCount} capture${queuedCount === 1 ? "" : "s"} queued`
-                  : "You're offline — captures will be queued"
-                : `${queuedCount} capture${queuedCount === 1 ? "" : "s"} waiting to sync`}
+                  ? `${t("sync.offline")} — ${t("sync.queuedItems", { count: queuedCount })}`
+                  : t("sync.offline")
+                : t("sync.queuedItems", { count: queuedCount })}
             </Text>
             <Feather
-              name="chevron-right"
+              name={isRTL ? "chevron-left" : "chevron-right"}
               size={18}
               color={isOnline ? colors.primary : colors.destructive}
             />
@@ -321,17 +324,22 @@ export default function HomeScreen() {
           }}
           style={({ pressed }) => [
             styles.cta,
-            { backgroundColor: colors.primary, borderRadius: colors.radius + 8, opacity: pressed ? 0.9 : 1 },
+            {
+              backgroundColor: colors.primary,
+              borderRadius: colors.radius + 8,
+              opacity: pressed ? 0.9 : 1,
+              flexDirection: isRTL ? "row-reverse" : "row",
+            },
           ]}
         >
           <View style={styles.ctaIcon}>
             <Feather name="credit-card" size={22} color="#FFFFFF" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.ctaTitle}>My Digital Business Card</Text>
-            <Text style={styles.ctaSub}>View and share your digital business card</Text>
+            <Text style={[styles.ctaTitle, { textAlign }]}>{t("card.title")}</Text>
+            <Text style={[styles.ctaSub, { textAlign }]}>{t("card.subtitle")}</Text>
           </View>
-          <Feather name="arrow-right" size={20} color="#FFFFFF" />
+          <Feather name={isRTL ? "arrow-left" : "arrow-right"} size={20} color="#FFFFFF" />
         </Pressable>
 
         {/* Metrics grid */}
@@ -340,7 +348,7 @@ export default function HomeScreen() {
             <LoadingState />
           </View>
         ) : (
-          <View style={styles.grid}>
+          <View style={[styles.grid, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             {metrics.map((m) => (
               <Pressable
                 key={m.key}
@@ -358,8 +366,8 @@ export default function HomeScreen() {
                 <View style={[styles.metricIcon, { backgroundColor: m.color + "1A" }]}>
                   <Feather name={m.icon} size={16} color={m.color} />
                 </View>
-                <Text style={[styles.metricValue, { color: colors.foreground }]}>{m.value}</Text>
-                <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>{m.label}</Text>
+                <Text style={[styles.metricValue, { color: colors.foreground, textAlign }]}>{m.value}</Text>
+                <Text style={[styles.metricLabel, { color: colors.mutedForeground, textAlign }]}>{m.label}</Text>
               </Pressable>
             ))}
           </View>
@@ -368,8 +376,8 @@ export default function HomeScreen() {
         {/* Last event */}
         {lastEvent ? (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-              LAST EVENT
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+              {t("home.activeEvent")}
             </Text>
             <Pressable
               onPress={() => {
@@ -378,25 +386,36 @@ export default function HomeScreen() {
               }}
               style={({ pressed }) => [
                 styles.eventCard,
-                { backgroundColor: colors.dark, borderRadius: colors.radius + 6, opacity: pressed ? 0.92 : 1 },
+                {
+                  backgroundColor: colors.dark,
+                  borderRadius: colors.radius + 6,
+                  opacity: pressed ? 0.92 : 1,
+                  flexDirection: isRTL ? "row-reverse" : "row",
+                },
               ]}
             >
               <View style={[styles.eventIcon, { backgroundColor: "rgba(255,255,255,0.14)" }]}>
                 <Feather name="bar-chart-2" size={20} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={styles.eventName}>
+                <Text numberOfLines={1} style={[styles.eventName, { textAlign }]}>
                   {lastEvent.eventName}
                 </Text>
-                <Text style={styles.eventMeta}>
-                  {lastEvent.leadCount} lead{lastEvent.leadCount === 1 ? "" : "s"}
-                  {lastEvent.wonCount != null ? ` · ${lastEvent.wonCount} won` : ""}
-                  {lastEvent.conversionRate != null
-                    ? ` · ${Math.round(lastEvent.conversionRate)}% conv.`
-                    : ""}
+                <Text style={[styles.eventMeta, { textAlign }]}>
+                  {[
+                    t("home.eventLeads", { count: lastEvent.leadCount }),
+                    lastEvent.wonCount != null
+                      ? t("home.eventWon", { count: lastEvent.wonCount })
+                      : null,
+                    lastEvent.conversionRate != null
+                      ? t("home.eventConv", { count: Math.round(lastEvent.conversionRate) })
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </Text>
               </View>
-              <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
+              <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={20} color="rgba(255,255,255,0.7)" />
             </Pressable>
           </>
         ) : null}
@@ -404,8 +423,8 @@ export default function HomeScreen() {
         {/* Smart insights */}
         {insights.length > 0 ? (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-              TODAY&apos;S FOCUS
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+              {t("home.todayOverview")}
             </Text>
             <View
               style={[
@@ -425,6 +444,7 @@ export default function HomeScreen() {
                     key={idx}
                     style={[
                       styles.insightRow,
+                      { flexDirection: isRTL ? "row-reverse" : "row" },
                       idx > 0 && {
                         borderTopWidth: StyleSheet.hairlineWidth,
                         borderTopColor: colors.border,
@@ -434,7 +454,7 @@ export default function HomeScreen() {
                     <View style={[styles.insightIcon, { backgroundColor: tone + "1A" }]}>
                       <Feather name={ins.icon} size={15} color={tone} />
                     </View>
-                    <Text style={[styles.insightText, { color: colors.foreground }]}>
+                    <Text style={[styles.insightText, { color: colors.foreground, textAlign }]}>
                       {ins.text}
                     </Text>
                   </View>
@@ -445,8 +465,8 @@ export default function HomeScreen() {
         ) : null}
 
         {/* Quick actions */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>QUICK ACTIONS</Text>
-        <View style={styles.actionsRow}>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>{t("home.quickActions")}</Text>
+        <View style={[styles.actionsRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           {quickActions.map((a) => (
             <Pressable
               key={a.key}
@@ -462,18 +482,18 @@ export default function HomeScreen() {
               <View style={[styles.actionIcon, { backgroundColor: colors.accent }]}>
                 <Feather name={a.icon} size={18} color={colors.primary} />
               </View>
-              <Text style={[styles.actionLabel, { color: colors.foreground }]}>{a.label}</Text>
+              <Text style={[styles.actionLabel, { color: colors.foreground, textAlign }]}>{a.label}</Text>
             </Pressable>
           ))}
         </View>
 
         {/* Recent activity */}
-        <View style={styles.activityHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginBottom: 0 }]}>
-            RECENT ACTIVITY
+        <View style={[styles.activityHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+          <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginBottom: 0, textAlign }]}>
+            {t("home.recentContacts")}
           </Text>
           <Pressable onPress={() => router.push("/(tabs)/contacts")} hitSlop={8}>
-            <Text style={[styles.seeAll, { color: colors.primary }]}>See all</Text>
+            <Text style={[styles.seeAll, { color: colors.primary, textAlign }]}>{t("common.viewAll")}</Text>
           </Pressable>
         </View>
         <View
@@ -485,8 +505,8 @@ export default function HomeScreen() {
           {(data?.recentActivity?.length ?? 0) === 0 ? (
             <View style={styles.activityEmpty}>
               <Feather name="inbox" size={22} color={colors.mutedForeground} />
-              <Text style={[styles.activityEmptyText, { color: colors.mutedForeground }]}>
-                No activity yet. Capture your first lead.
+              <Text style={[styles.activityEmptyText, { color: colors.mutedForeground, textAlign: "center" }]}>
+                {t("empty.generic")}
               </Text>
             </View>
           ) : (
@@ -497,7 +517,7 @@ export default function HomeScreen() {
         {/* Powered by */}
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-            Powered by Elite Marcom
+            {t("settings.poweredBy")}
           </Text>
         </View>
       </ScrollView>

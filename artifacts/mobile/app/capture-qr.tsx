@@ -24,11 +24,13 @@ import { extractedToContact, parseQr } from "@/lib/contact-parse";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 export default function CaptureQrScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t } = useLocale();
   const [permission, requestPermission] = useCameraPermissions();
   const { isOnline, enqueueContact } = useOffline();
   const { activeEventId } = useSettings();
@@ -53,7 +55,7 @@ export default function CaptureQrScreen() {
       const label =
         [data.firstName, data.lastName].filter(Boolean).join(" ") ||
         data.company ||
-        "QR contact";
+        t("qr.contactFallback");
       enqueueContact(payload, { label, source: "qr", eventId });
       router.replace("/(tabs)/contacts");
       return;
@@ -82,13 +84,13 @@ export default function CaptureQrScreen() {
         <View style={[styles.permIcon, { backgroundColor: colors.primary + "22" }]}>
           <Feather name="grid" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.permTitle}>Camera access needed</Text>
+        <Text style={styles.permTitle}>{t("qr.cameraNeeded")}</Text>
         <Text style={styles.permText}>
-          Enable camera access to scan QR codes and LinkedIn profile codes.
+          {t("qr.cameraNeededDesc")}
         </Text>
         <View style={{ height: 24 }} />
         <PrimaryButton
-          label={blocked ? "Open Settings" : "Enable Camera"}
+          label={blocked ? t("capture.openSettings") : t("capture.enableCamera")}
           icon="camera"
           onPress={() => {
             if (blocked && Platform.OS !== "web") {
@@ -125,8 +127,8 @@ export default function CaptureQrScreen() {
             <Feather name="x" size={22} color="#FFFFFF" />
           </Pressable>
         </View>
-        <Text style={styles.overlayTitle}>Scan a QR code</Text>
-        <Text style={styles.overlaySub}>Point at a QR or LinkedIn profile code</Text>
+        <Text style={styles.overlayTitle}>{t("qr.scanTitle")}</Text>
+        <Text style={styles.overlaySub}>{t("qr.scanHint")}</Text>
       </LinearGradient>
 
       <View style={styles.frameWrap} pointerEvents="none">
@@ -137,7 +139,7 @@ export default function CaptureQrScreen() {
           <View style={[styles.corner, styles.br, { borderColor: colors.primary }]} />
         </View>
         <Text style={styles.frameHint}>
-          {scanned ? "Code detected — opening…" : "Center the code in the frame"}
+          {scanned ? t("capture.codeDetected") : t("capture.centerCode")}
         </Text>
       </View>
     </View>

@@ -5,6 +5,7 @@ import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
 import { Feather } from "@/components/icons";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 // ─── iOS-only modules ────────────────────────────────────────────────────────
 //
@@ -38,6 +39,7 @@ function isLiquidGlass(): boolean {
 // The inline require() inside this component is only ever executed on iOS 26+
 // (when isLiquidGlass() returns true), so Android never loads the module.
 function NativeTabLayout() {
+  const { t } = useLocale();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NativeTabs, Icon, Label } = require(
     "expo-router/unstable-native-tabs",
@@ -47,23 +49,23 @@ function NativeTabLayout() {
     <NativeTabs>
       <NativeTabs.Trigger name="index">
         <Icon sf={{ default: "house", selected: "house.fill" }} />
-        <Label>Home</Label>
+        <Label>{t("nav.home")}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="capture">
         <Icon sf={{ default: "viewfinder", selected: "viewfinder" }} />
-        <Label>Capture</Label>
+        <Label>{t("nav.capture")}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="contacts">
         <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
-        <Label>Contacts</Label>
+        <Label>{t("nav.contacts")}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="followups">
         <Icon sf={{ default: "checklist", selected: "checklist" }} />
-        <Label>Follow-Ups</Label>
+        <Label>{t("nav.followups")}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="more">
         <Icon sf={{ default: "ellipsis", selected: "ellipsis" }} />
-        <Label>More</Label>
+        <Label>{t("nav.more")}</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -71,6 +73,7 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colors = useColors();
+  const { t } = useLocale();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
@@ -125,35 +128,35 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: t("nav.home"),
           tabBarIcon: ({ color }) => icon("house", "home", color),
         }}
       />
       <Tabs.Screen
         name="capture"
         options={{
-          title: "Capture",
+          title: t("nav.capture"),
           tabBarIcon: ({ color }) => icon("viewfinder", "maximize", color),
         }}
       />
       <Tabs.Screen
         name="contacts"
         options={{
-          title: "Contacts",
+          title: t("nav.contacts"),
           tabBarIcon: ({ color }) => icon("person.2", "users", color),
         }}
       />
       <Tabs.Screen
         name="followups"
         options={{
-          title: "Follow-Ups",
+          title: t("nav.followups"),
           tabBarIcon: ({ color }) => icon("checklist", "check-square", color),
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
-          title: "More",
+          title: t("nav.more"),
           tabBarIcon: ({ color }) => icon("ellipsis", "menu", color),
         }}
       />

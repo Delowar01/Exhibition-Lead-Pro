@@ -20,6 +20,8 @@ import {
   type ExtractedCardData,
 } from "@workspace/api-client-react";
 
+import i18n from "@/lib/i18n";
+
 import {
   loadQueue,
   makeQueueId,
@@ -32,6 +34,7 @@ const MANUAL_OFFLINE_KEY = "csp_offline_manual";
 interface EnqueueMeta {
   label: string;
   source: string;
+  appLanguage?: "en" | "ar";
   eventId?: number | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -216,6 +219,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
           } else if (item.kind === "scan" && item.imageData) {
             const scan = await createScan({
               imageData: item.imageData,
+              appLanguage:
+                item.appLanguage ?? (i18n.language === "ar" ? "ar" : "en"),
               eventId: item.eventId ?? undefined,
               latitude: item.latitude ?? undefined,
               longitude: item.longitude ?? undefined,
@@ -304,6 +309,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         label: meta.label,
         source: meta.source,
         imageData,
+        appLanguage: meta.appLanguage,
         eventId: meta.eventId ?? null,
         latitude: meta.latitude ?? null,
         longitude: meta.longitude ?? null,

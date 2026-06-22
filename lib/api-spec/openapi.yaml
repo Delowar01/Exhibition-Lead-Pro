@@ -2440,6 +2440,14 @@ components:
         imageData:
           type: string
           description: Base64-encoded image
+        appLanguage:
+          type: string
+          enum: [en, ar]
+          default: en
+          description: >-
+            Active app language. Drives OCR translation: "en" translates all
+            extracted fields to English; "ar" preserves Arabic + English as
+            printed and translates any other language to English.
         eventId:
           type: ["integer", "null"]
         latitude:
@@ -2451,6 +2459,38 @@ components:
 
     ExtractedCardData:
       type: object
+      description: >-
+        Display/translated values per the active app language. The verbatim
+        as-printed values are preserved under `original` and never overwritten.
+      properties:
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        arabicName:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        mobile:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        original:
+          $ref: "#/components/schemas/ExtractedCardOriginal"
+
+    ExtractedCardOriginal:
+      type: object
+      description: >-
+        The raw OCR values exactly as printed on the card — never translated or
+        transliterated, never overwritten by the display values.
       properties:
         firstName:
           type: ["string", "null"]

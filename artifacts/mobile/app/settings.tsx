@@ -26,6 +26,8 @@ import {
   useSettings,
 } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
+import { COUNTRY_ORDER, getCountry } from "@/lib/countries";
 import {
   clearBiometricVault,
   getBiometricLabel,
@@ -33,21 +35,9 @@ import {
   saveBiometricVault,
 } from "@/lib/biometric";
 
-const THEME_OPTIONS: { value: ThemePref; label: string; icon: keyof typeof Feather.glyphMap }[] = [
-  { value: "light", label: "Light", icon: "sun" },
-  { value: "dark", label: "Dark", icon: "moon" },
-  { value: "system", label: "System", icon: "smartphone" },
-];
-
-const CAPTURE_OPTIONS: { value: CaptureModePref; label: string; sub: string }[] = [
-  { value: "single", label: "Single", sub: "One card at a time" },
-  { value: "rapid", label: "Rapid", sub: "Capture back-to-back" },
-  { value: "batch", label: "Batch", sub: "Queue, then process" },
-];
-
-const LANGUAGE_OPTIONS: { value: LanguagePref; label: string }[] = [
-  { value: "en", label: "English" },
-  { value: "ar", label: "العربية" },
+const LANGUAGE_OPTIONS: { value: LanguagePref; labelKey: string }[] = [
+  { value: "en", labelKey: "settings.english" },
+  { value: "ar", labelKey: "settings.arabic" },
 ];
 
 export default function SettingsScreen() {
@@ -57,9 +47,22 @@ export default function SettingsScreen() {
   const { user, token, logout } = useAuth();
   const settings = useSettings();
   const changePassword = useChangePassword();
+  const { t, language, isRTL, textAlign, row } = useLocale();
+
+  const THEME_OPTIONS: { value: ThemePref; label: string; icon: keyof typeof Feather.glyphMap }[] = [
+    { value: "light", label: t("settings.themeLight"), icon: "sun" },
+    { value: "dark", label: t("settings.themeDark"), icon: "moon" },
+    { value: "system", label: t("settings.themeSystem"), icon: "smartphone" },
+  ];
+
+  const CAPTURE_OPTIONS: { value: CaptureModePref; label: string; sub: string }[] = [
+    { value: "single", label: t("capture.modeSingle"), sub: t("capture.businessCardDesc") },
+    { value: "rapid", label: t("capture.modeRapid"), sub: t("capture.subtitle") },
+    { value: "batch", label: t("capture.modeBatch"), sub: t("capture.manualDesc") },
+  ];
 
   const [bioSupported, setBioSupported] = useState(false);
-  const [bioLabel, setBioLabel] = useState("Biometrics");
+  const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
   const [bioBusy, setBioBusy] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -91,7 +94,7 @@ export default function SettingsScreen() {
     haptic();
     if (value) {
       if (!token || !user) {
-        Alert.alert("Not available", "Sign in again to enable biometric sign-in.");
+        Alert.alert(t("errors.notFound"), t("auth.signInFailed"));
         return;
       }
       setBioBusy(true);
@@ -99,7 +102,7 @@ export default function SettingsScreen() {
         await saveBiometricVault(token, user);
         settings.setBiometricEnabled(true);
       } catch {
-        Alert.alert("Couldn't enable", `We weren't able to set up ${bioLabel}.`);
+        Alert.alert(t("errors.generic"), `${bioLabel}`);
       } finally {
         setBioBusy(false);
       }
@@ -118,15 +121,15 @@ export default function SettingsScreen() {
     setPwError(null);
     setPwSuccess(false);
     if (!currentPassword || !newPassword) {
-      setPwError("Enter your current and new password.");
+      setPwError(t("validation.required"));
       return;
     }
     if (newPassword.length < 8) {
-      setPwError("New password must be at least 8 characters.");
+      setPwError(t("validation.tooShort"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPwError("New passwords don't match.");
+      setPwError(t("validation.required"));
       return;
     }
     try {
@@ -138,7 +141,7 @@ export default function SettingsScreen() {
       if (Platform.OS !== "web")
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      setPwError("Couldn't update your password. Check your current password.");
+      setPwError(t("errors.saveFailed"));
     }
   }
 
@@ -147,10 +150,10 @@ export default function SettingsScreen() {
       void logout();
       return;
     }
-    Alert.alert("Sign out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t("settings.logout"), t("auth.logoutConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Sign out",
+        text: t("settings.logout"),
         style: "destructive",
         onPress: () => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -164,7 +167,7 @@ export default function SettingsScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: "Settings",
+          title: t("settings.title"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
@@ -187,25 +190,116 @@ export default function SettingsScreen() {
         <View
           style={[
             styles.profileCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
           ]}
         >
           <Avatar name={user?.name} color={colors.primary} size={52} />
           <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground }]}>
+            <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground, textAlign }]}>
               {user?.name ?? "—"}
             </Text>
-            <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground }]}>
+            <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground, textAlign }]}>
               {user?.email ?? ""}
             </Text>
           </View>
           {user?.role ? <Badge label={prettyLabel(user.role)} color={colors.primary} /> : null}
         </View>
 
+        {/* Language */}
+        <Section title={t("settings.language")}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+            {t("settings.languageDesc")}
+          </Text>
+          <View style={[styles.segment, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            {LANGUAGE_OPTIONS.map((opt) => {
+              const active = settings.language === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => {
+                    haptic();
+                    settings.setLanguage(opt.value);
+                  }}
+                  style={[
+                    styles.segmentItem,
+                    {
+                      backgroundColor: active ? colors.primary : colors.muted,
+                      borderRadius: colors.radius,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      { color: active ? "#FFFFFF" : colors.foreground },
+                    ]}
+                  >
+                    {t(opt.labelKey)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Section>
+
+        {/* Country / Region */}
+        <Section title={t("settings.country")}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+            {t("settings.countryDesc")}
+          </Text>
+          <View style={{ gap: 8 }}>
+            {COUNTRY_ORDER.map((code) => {
+              const profile = getCountry(code);
+              const active = settings.country === code;
+              const name = language === "ar" ? profile.nameAr : profile.nameEn;
+              return (
+                <Pressable
+                  key={code}
+                  onPress={() => {
+                    haptic();
+                    settings.setCountry(code);
+                  }}
+                  style={[
+                    styles.countryRow,
+                    {
+                      borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active ? colors.accent : "transparent",
+                      borderRadius: colors.radius + 2,
+                      flexDirection: isRTL ? "row-reverse" : "row",
+                    },
+                  ]}
+                >
+                  <Text style={styles.flag}>{profile.flag}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.countryName, { color: colors.foreground, textAlign }]}>
+                      {name}
+                    </Text>
+                    <Text style={[styles.countryDial, { color: colors.mutedForeground, textAlign }]}>
+                      {profile.dialCode}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.radio,
+                      { borderColor: active ? colors.primary : colors.border },
+                    ]}
+                  >
+                    {active ? (
+                      <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Section>
+
         {/* Appearance */}
-        <Section title="Appearance">
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Theme</Text>
-          <View style={styles.segment}>
+        <Section title={t("settings.appearance")}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+            {t("settings.theme")}
+          </Text>
+          <View style={[styles.segment, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             {THEME_OPTIONS.map((opt) => {
               const active = settings.theme === opt.value;
               return (
@@ -240,44 +334,10 @@ export default function SettingsScreen() {
               );
             })}
           </View>
-
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginTop: 18 }]}>
-            Language
-          </Text>
-          <View style={styles.segment}>
-            {LANGUAGE_OPTIONS.map((opt) => {
-              const active = settings.language === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  onPress={() => {
-                    haptic();
-                    settings.setLanguage(opt.value);
-                  }}
-                  style={[
-                    styles.segmentItem,
-                    {
-                      backgroundColor: active ? colors.primary : colors.muted,
-                      borderRadius: colors.radius,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      { color: active ? "#FFFFFF" : colors.foreground },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
         </Section>
 
         {/* Capture */}
-        <Section title="Default capture mode">
+        <Section title={t("settings.captureMode")}>
           <View style={{ gap: 10 }}>
             {CAPTURE_OPTIONS.map((opt) => {
               const active = settings.captureMode === opt.value;
@@ -294,14 +354,15 @@ export default function SettingsScreen() {
                       borderColor: active ? colors.primary : colors.border,
                       backgroundColor: active ? colors.accent : "transparent",
                       borderRadius: colors.radius + 2,
+                      flexDirection: isRTL ? "row-reverse" : "row",
                     },
                   ]}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.captureLabel, { color: colors.foreground }]}>
+                    <Text style={[styles.captureLabel, { color: colors.foreground, textAlign }]}>
                       {opt.label}
                     </Text>
-                    <Text style={[styles.captureSub, { color: colors.mutedForeground }]}>
+                    <Text style={[styles.captureSub, { color: colors.mutedForeground, textAlign }]}>
                       {opt.sub}
                     </Text>
                   </View>
@@ -322,14 +383,14 @@ export default function SettingsScreen() {
         </Section>
 
         {/* Notifications */}
-        <Section title="Notifications">
-          <View style={styles.switchRow}>
+        <Section title={t("settings.notifications")}>
+          <View style={[styles.switchRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.switchLabel, { color: colors.foreground }]}>
-                Follow-up reminders
+              <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
+                {t("followups.title")}
               </Text>
-              <Text style={[styles.switchSub, { color: colors.mutedForeground }]}>
-                Get notified when a lead is due for follow-up.
+              <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
+                {t("settings.notificationsDesc")}
               </Text>
             </View>
             <Switch
@@ -345,15 +406,15 @@ export default function SettingsScreen() {
         </Section>
 
         {/* Security */}
-        <Section title="Security">
+        <Section title={t("settings.account")}>
           {bioSupported ? (
-            <View style={[styles.switchRow, { marginBottom: 8 }]}>
+            <View style={[styles.switchRow, { marginBottom: 8, flexDirection: isRTL ? "row-reverse" : "row" }]}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.switchLabel, { color: colors.foreground }]}>
-                  {bioLabel} sign-in
+                <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
+                  {t("settings.biometric")}
                 </Text>
-                <Text style={[styles.switchSub, { color: colors.mutedForeground }]}>
-                  Unlock the app with {bioLabel} instead of your password.
+                <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
+                  {t("settings.biometricDesc")}
                 </Text>
               </View>
               <Switch
@@ -369,54 +430,54 @@ export default function SettingsScreen() {
           <Text
             style={[
               styles.fieldLabel,
-              { color: colors.mutedForeground, marginTop: bioSupported ? 8 : 0 },
+              { color: colors.mutedForeground, marginTop: bioSupported ? 8 : 0, textAlign },
             ]}
           >
-            Change password
+            {t("auth.password")}
           </Text>
 
           {pwError ? (
             <View
               style={[
                 styles.banner,
-                { backgroundColor: colors.destructive + "14", borderRadius: colors.radius },
+                { backgroundColor: colors.destructive + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" },
               ]}
             >
               <Feather name="alert-circle" size={14} color={colors.destructive} />
-              <Text style={[styles.bannerText, { color: colors.destructive }]}>{pwError}</Text>
+              <Text style={[styles.bannerText, { color: colors.destructive, textAlign }]}>{pwError}</Text>
             </View>
           ) : null}
           {pwSuccess ? (
             <View
               style={[
                 styles.banner,
-                { backgroundColor: colors.success + "14", borderRadius: colors.radius },
+                { backgroundColor: colors.success + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" },
               ]}
             >
               <Feather name="check-circle" size={14} color={colors.success} />
-              <Text style={[styles.bannerText, { color: colors.success }]}>
-                Password updated successfully.
+              <Text style={[styles.bannerText, { color: colors.success, textAlign }]}>
+                {t("success.saved")}
               </Text>
             </View>
           ) : null}
 
           <PwInput
-            placeholder="Current password"
+            placeholder={t("auth.password")}
             value={currentPassword}
             onChangeText={setCurrentPassword}
           />
           <PwInput
-            placeholder="New password (min 8 characters)"
+            placeholder={t("auth.passwordPlaceholder")}
             value={newPassword}
             onChangeText={setNewPassword}
           />
           <PwInput
-            placeholder="Confirm new password"
+            placeholder={t("auth.passwordPlaceholder")}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
           />
           <PrimaryButton
-            label="Update password"
+            label={t("common.save")}
             icon="lock"
             loading={changePassword.isPending}
             onPress={handleChangePassword}
@@ -434,15 +495,16 @@ export default function SettingsScreen() {
               borderColor: colors.border,
               borderRadius: colors.radius + 4,
               opacity: pressed ? 0.7 : 1,
+              flexDirection: isRTL ? "row-reverse" : "row",
             },
           ]}
         >
           <Feather name="log-out" size={18} color={colors.destructive} />
-          <Text style={[styles.logoutText, { color: colors.destructive }]}>Sign out</Text>
+          <Text style={[styles.logoutText, { color: colors.destructive }]}>{t("settings.logout")}</Text>
         </Pressable>
 
         <Text style={[styles.brand, { color: colors.mutedForeground }]}>
-          Powered by Elite Marcom
+          {t("settings.poweredBy")}
         </Text>
       </ScrollView>
     </View>
@@ -459,12 +521,13 @@ function PwInput({
   onChangeText: (v: string) => void;
 }) {
   const colors = useColors();
+  const { isRTL, writingDirection } = useLocale();
   const [show, setShow] = useState(false);
   return (
     <View
       style={[
         styles.inputWrap,
-        { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: colors.radius + 2 },
+        { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: colors.radius + 2, flexDirection: isRTL ? "row-reverse" : "row" },
       ]}
     >
       <Feather name="lock" size={16} color={colors.mutedForeground} />
@@ -476,7 +539,7 @@ function PwInput({
         secureTextEntry={!show}
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.input, { color: colors.foreground }]}
+        style={[styles.input, { color: colors.foreground, textAlign: isRTL ? "right" : "left", writingDirection }]}
       />
       <Pressable onPress={() => setShow((s) => !s)} hitSlop={8}>
         <Feather name={show ? "eye-off" : "eye"} size={16} color={colors.mutedForeground} />
@@ -487,9 +550,10 @@ function PwInput({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const colors = useColors();
+  const { textAlign } = useLocale();
   return (
     <View style={{ marginTop: 24 }}>
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+      <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
         {title.toUpperCase()}
       </Text>
       <View
@@ -526,7 +590,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semibold,
     letterSpacing: 0.6,
     marginBottom: 8,
-    marginLeft: 4,
+    marginHorizontal: 4,
   },
   sectionBody: {
     borderWidth: 1,
@@ -552,6 +616,26 @@ const styles = StyleSheet.create({
   segmentText: {
     fontSize: 13.5,
     fontFamily: FONT.semibold,
+  },
+  countryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1.5,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  flag: {
+    fontSize: 24,
+  },
+  countryName: {
+    fontSize: 15,
+    fontFamily: FONT.semibold,
+  },
+  countryDial: {
+    fontSize: 12.5,
+    fontFamily: FONT.regular,
+    marginTop: 1,
   },
   captureRow: {
     flexDirection: "row",

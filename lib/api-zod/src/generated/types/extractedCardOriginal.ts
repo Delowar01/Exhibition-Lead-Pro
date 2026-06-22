@@ -5,12 +5,11 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { ExtractedCardOriginal } from './extractedCardOriginal';
 
 /**
- * Display/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.
+ * The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.
  */
-export interface ExtractedCardData {
+export interface ExtractedCardOriginal {
   /** @nullable */
   firstName?: string | null;
   /** @nullable */
@@ -31,5 +30,4 @@ export interface ExtractedCardData {
   linkedin?: string | null;
   /** @nullable */
   address?: string | null;
-  original?: ExtractedCardOriginal;
 }

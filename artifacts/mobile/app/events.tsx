@@ -21,10 +21,15 @@ import {
   LoadingState,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
-function formatDateRange(start?: string | null, end?: string | null): string {
-  if (!start) return "Date TBD";
+function formatDateRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  tbd: string,
+): string {
+  if (!start) return tbd;
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
   const s = formatGregorian(new Date(start), opts);
   if (!end || end === start) return s;
@@ -34,6 +39,7 @@ function formatDateRange(start?: string | null, end?: string | null): string {
 
 export default function EventsScreen() {
   const colors = useColors();
+  const { t } = useLocale();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const query = useListEvents({ limit: 100 });
@@ -56,7 +62,7 @@ export default function EventsScreen() {
           >
             <Feather name="calendar" size={16} color={colors.primary} />
             <Text style={[styles.dateText, { color: colors.primary }]}>
-              {formatDateRange(item.startDate, item.endDate)}
+              {formatDateRange(item.startDate, item.endDate, t("common.dateTbd"))}
             </Text>
           </View>
         </View>
@@ -68,7 +74,7 @@ export default function EventsScreen() {
             <Feather name="map-pin" size={14} color={colors.mutedForeground} />
             <Text numberOfLines={1} style={[styles.metaText, { color: colors.mutedForeground }]}>
               {item.venue}
-              {item.boothNumber ? ` · Booth ${item.boothNumber}` : ""}
+              {item.boothNumber ? ` · ${t("events.boothShort")} ${item.boothNumber}` : ""}
             </Text>
           </View>
         ) : null}
@@ -78,7 +84,7 @@ export default function EventsScreen() {
               {item.contactCount ?? 0}
             </Text>
             <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
-              Contacts
+              {t("eventReport.contacts")}
             </Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
@@ -87,7 +93,7 @@ export default function EventsScreen() {
               {item.leadCount ?? 0}
             </Text>
             <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
-              Leads
+              {t("eventReport.leads")}
             </Text>
           </View>
         </View>
@@ -105,9 +111,9 @@ export default function EventsScreen() {
         >
           <Feather name="chevron-left" size={20} color={colors.foreground} />
         </Pressable>
-        <Text style={[styles.heading, { color: colors.foreground }]}>Events</Text>
+        <Text style={[styles.heading, { color: colors.foreground }]}>{t("events.title")}</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground }]}>
-          {events.length} tracked
+          {t("events.tracked", { count: events.length })}
         </Text>
       </View>
 
@@ -137,8 +143,8 @@ export default function EventsScreen() {
             <View style={{ paddingTop: 60 }}>
               <EmptyState
                 icon="calendar"
-                title="No events yet"
-                subtitle="Events you attend will appear here."
+                title={t("events.empty")}
+                subtitle={t("events.emptyDesc")}
               />
             </View>
           }

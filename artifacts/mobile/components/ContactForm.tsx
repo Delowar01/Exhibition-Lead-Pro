@@ -4,6 +4,7 @@ import { StyleSheet, Text, TextInput, View } from "react-native";
 
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 export interface ContactFormValues {
   firstName: string;
@@ -61,9 +62,12 @@ export function toContactPayload(values: ContactFormValues) {
 
 interface FieldConfig {
   key: keyof ContactFormValues;
-  label: string;
+  labelKey: string;
   icon: keyof typeof Feather.glyphMap;
-  placeholder: string;
+  /** Static placeholder key under contacts.placeholders, when not country-aware. */
+  placeholderKey?: string;
+  /** Country-aware placeholder source from useLocale. */
+  placeholderKind?: "phone" | "city" | "address" | "country";
   keyboardType?: "default" | "email-address" | "phone-pad" | "url";
   autoCapitalize?: "none" | "words" | "sentences";
   multiline?: boolean;
@@ -71,18 +75,18 @@ interface FieldConfig {
 }
 
 const FIELDS: FieldConfig[] = [
-  { key: "firstName", label: "First name", icon: "user", placeholder: "Jane", autoCapitalize: "words", half: true },
-  { key: "lastName", label: "Last name", icon: "user", placeholder: "Doe", autoCapitalize: "words", half: true },
-  { key: "jobTitle", label: "Job title", icon: "briefcase", placeholder: "Sales Director", autoCapitalize: "words" },
-  { key: "contactCompany", label: "Company", icon: "home", placeholder: "Acme Inc.", autoCapitalize: "words" },
-  { key: "email", label: "Email", icon: "mail", placeholder: "jane@acme.com", keyboardType: "email-address", autoCapitalize: "none" },
-  { key: "mobile", label: "Mobile", icon: "smartphone", placeholder: "+971 50 000 0000", keyboardType: "phone-pad", half: true },
-  { key: "officePhone", label: "Office", icon: "phone", placeholder: "+971 4 000 0000", keyboardType: "phone-pad", half: true },
-  { key: "website", label: "Website", icon: "globe", placeholder: "acme.com", keyboardType: "url", autoCapitalize: "none" },
-  { key: "linkedin", label: "LinkedIn", icon: "linkedin", placeholder: "linkedin.com/in/jane", keyboardType: "url", autoCapitalize: "none" },
-  { key: "country", label: "Country", icon: "map-pin", placeholder: "UAE", autoCapitalize: "words", half: true },
-  { key: "address", label: "Address", icon: "map", placeholder: "Dubai World Trade Centre", autoCapitalize: "words", half: true },
-  { key: "notes", label: "Notes", icon: "file-text", placeholder: "Met at GITEX — interested in enterprise plan", autoCapitalize: "sentences", multiline: true },
+  { key: "firstName", labelKey: "firstName", icon: "user", placeholderKey: "firstName", autoCapitalize: "words", half: true },
+  { key: "lastName", labelKey: "lastName", icon: "user", placeholderKey: "lastName", autoCapitalize: "words", half: true },
+  { key: "jobTitle", labelKey: "jobTitle", icon: "briefcase", placeholderKey: "jobTitle", autoCapitalize: "words" },
+  { key: "contactCompany", labelKey: "company", icon: "home", placeholderKey: "company", autoCapitalize: "words" },
+  { key: "email", labelKey: "email", icon: "mail", placeholderKey: "email", keyboardType: "email-address", autoCapitalize: "none" },
+  { key: "mobile", labelKey: "mobile", icon: "smartphone", placeholderKind: "phone", keyboardType: "phone-pad", half: true },
+  { key: "officePhone", labelKey: "phone", icon: "phone", placeholderKind: "phone", keyboardType: "phone-pad", half: true },
+  { key: "website", labelKey: "website", icon: "globe", placeholderKey: "website", keyboardType: "url", autoCapitalize: "none" },
+  { key: "linkedin", labelKey: "linkedin", icon: "linkedin", placeholderKey: "linkedin", keyboardType: "url", autoCapitalize: "none" },
+  { key: "country", labelKey: "country", icon: "map-pin", placeholderKind: "country", autoCapitalize: "words", half: true },
+  { key: "address", labelKey: "address", icon: "map", placeholderKind: "address", autoCapitalize: "words", half: true },
+  { key: "notes", labelKey: "notes", icon: "file-text", placeholderKey: "notes", autoCapitalize: "sentences", multiline: true },
 ];
 
 export function ContactForm({
@@ -97,16 +101,42 @@ export function ContactForm({
   onSubmit: (values: ContactFormValues) => void;
 }) {
   const colors = useColors();
+  const {
+    t,
+    isRTL,
+    textAlign,
+    phonePlaceholder,
+    addressPlaceholder,
+    cityPlaceholder,
+    countryName,
+  } = useLocale();
   const [values, setValues] = useState<ContactFormValues>(initial);
 
   function update(key: keyof ContactFormValues, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
+  function placeholderFor(f: FieldConfig): string {
+    switch (f.placeholderKind) {
+      case "phone":
+        return phonePlaceholder;
+      case "address":
+        return addressPlaceholder;
+      case "city":
+        return cityPlaceholder;
+      case "country":
+        return countryName;
+      default:
+        return f.placeholderKey ? t(`contacts.placeholders.${f.placeholderKey}`) : "";
+    }
+  }
+
   function renderField(f: FieldConfig) {
     return (
       <View key={f.key} style={[styles.fieldWrap, f.half && styles.half]}>
-        <Text style={[styles.label, { color: colors.mutedForeground }]}>{f.label}</Text>
+        <Text style={[styles.label, { color: colors.mutedForeground, textAlign }]}>
+          {t(`contacts.fields.${f.labelKey}`)}
+        </Text>
         <View
           style={[
             styles.inputWrap,
@@ -114,6 +144,7 @@ export function ContactForm({
               backgroundColor: colors.card,
               borderColor: colors.border,
               borderRadius: colors.radius + 2,
+              flexDirection: isRTL ? "row-reverse" : "row",
             },
             f.multiline && styles.inputWrapMultiline,
           ]}
@@ -126,8 +157,8 @@ export function ContactForm({
           />
           <TextInput
             value={values[f.key]}
-            onChangeText={(t) => update(f.key, t)}
-            placeholder={f.placeholder}
+            onChangeText={(v) => update(f.key, v)}
+            placeholder={placeholderFor(f)}
             placeholderTextColor={colors.mutedForeground}
             keyboardType={f.keyboardType ?? "default"}
             autoCapitalize={f.autoCapitalize ?? "sentences"}
@@ -135,7 +166,7 @@ export function ContactForm({
             multiline={f.multiline}
             style={[
               styles.input,
-              { color: colors.foreground },
+              { color: colors.foreground, textAlign },
               f.multiline && { height: 84, textAlignVertical: "top" },
             ]}
           />

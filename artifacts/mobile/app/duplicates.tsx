@@ -32,11 +32,12 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
-function contactName(c: Contact): string {
+function contactName(c: Contact, fallback: string): string {
   if (c.fullName) return c.fullName;
   const parts = [c.firstName, c.lastName].filter(Boolean);
-  return parts.length ? parts.join(" ") : "Unnamed contact";
+  return parts.length ? parts.join(" ") : fallback;
 }
 
 function matchLabel(group: DuplicateGroup): string {
@@ -74,12 +75,12 @@ function LinkedDuplicateCard({
   onDeleted: () => void;
 }) {
   const colors = useColors();
+  const { t, isRTL, textAlign } = useLocale();
   const del = useDeleteContact();
 
   const [original, ...duplicates] = group.contacts;
 
   function handleDelete(dup: Contact) {
-    const name = contactName(dup);
     const run = async () => {
       try {
         if (Platform.OS !== "web") Haptics.selectionAsync();
@@ -88,7 +89,7 @@ function LinkedDuplicateCard({
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onDeleted();
       } catch {
-        Alert.alert("Delete failed", "Please try again.");
+        Alert.alert(t("errors.generic"));
       }
     };
 
@@ -97,11 +98,11 @@ function LinkedDuplicateCard({
       return;
     }
     Alert.alert(
-      "Delete duplicate",
-      `Remove "${name}" from your contacts? The original record will remain untouched.`,
+      t("common.delete"),
+      t("contacts.deleteConfirm"),
       [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: run },
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("common.delete"), style: "destructive", onPress: run },
       ],
     );
   }
@@ -115,17 +116,17 @@ function LinkedDuplicateCard({
         { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
       ]}
     >
-      <View style={styles.cardHeader}>
-        <View style={[styles.matchPill, { backgroundColor: colors.primary + "18" }]}>
+      <View style={[styles.cardHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+        <View style={[styles.matchPill, { backgroundColor: colors.primary + "18", flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Feather name="link-2" size={13} color={colors.primary} />
           <Text style={[styles.matchText, { color: colors.primary }]} numberOfLines={1}>
-            Re-scan detected · {duplicates.length} duplicate{duplicates.length > 1 ? "s" : ""}
+            {t("duplicates.rescanDetected", { count: duplicates.length })}
           </Text>
         </View>
       </View>
 
-      <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-        The original record is kept. Delete individual duplicates below.
+      <Text style={[styles.hint, { color: colors.mutedForeground, textAlign }]}>
+        {t("duplicates.originalKeptHint")}
       </Text>
 
       {/* Original */}
@@ -136,20 +137,21 @@ function LinkedDuplicateCard({
             borderColor: colors.primary + "40",
             backgroundColor: colors.accent,
             borderRadius: colors.radius + 2,
+            flexDirection: isRTL ? "row-reverse" : "row",
           },
         ]}
       >
-        <Avatar name={contactName(original)} size={40} color={colors.primary} />
+        <Avatar name={contactName(original, t("common.unnamedContact"))} size={40} color={colors.primary} />
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground }]}>
-            {contactName(original)}
+          <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground, textAlign }]}>
+            {contactName(original, t("common.unnamedContact"))}
           </Text>
-          <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground }]}>
-            {[original.contactCompany, original.email].filter(Boolean).join(" · ") || "Original record"}
+          <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground, textAlign }]}>
+            {[original.contactCompany, original.email].filter(Boolean).join(" · ") || t("duplicates.originalRecord")}
           </Text>
         </View>
         <View style={[styles.badge, { backgroundColor: colors.primary + "18" }]}>
-          <Text style={[styles.badgeText, { color: colors.primary }]}>ORIGINAL</Text>
+          <Text style={[styles.badgeText, { color: colors.primary }]}>{t("duplicates.originalBadge")}</Text>
         </View>
       </View>
 
@@ -160,16 +162,16 @@ function LinkedDuplicateCard({
             key={dup.id}
             style={[
               styles.option,
-              { borderColor: colors.border, borderRadius: colors.radius + 2 },
+              { borderColor: colors.border, borderRadius: colors.radius + 2, flexDirection: isRTL ? "row-reverse" : "row" },
             ]}
           >
-            <Avatar name={contactName(dup)} size={40} color={colors.mutedForeground} />
+            <Avatar name={contactName(dup, t("common.unnamedContact"))} size={40} color={colors.mutedForeground} />
             <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground }]}>
-                {contactName(dup)}
+              <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground, textAlign }]}>
+                {contactName(dup, t("common.unnamedContact"))}
               </Text>
-              <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground }]}>
-                {[dup.contactCompany, dup.email].filter(Boolean).join(" · ") || "Re-scanned duplicate"}
+              <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground, textAlign }]}>
+                {[dup.contactCompany, dup.email].filter(Boolean).join(" · ") || t("duplicates.rescannedDuplicate")}
               </Text>
             </View>
             <Pressable
@@ -204,6 +206,7 @@ function DuplicateCard({
   onMerged: () => void;
 }) {
   const colors = useColors();
+  const { t, isRTL, textAlign } = useLocale();
   const merge = useMergeContacts();
 
   const sorted = [...group.contacts].sort((a, b) => fieldCount(b) - fieldCount(a));
@@ -223,7 +226,7 @@ function DuplicateCard({
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onMerged();
       } catch {
-        Alert.alert("Merge failed", "Please try again.");
+        Alert.alert(t("errors.generic"));
       }
     };
 
@@ -232,13 +235,11 @@ function DuplicateCard({
       return;
     }
     Alert.alert(
-      "Merge contacts",
-      `Keep the selected contact and merge ${duplicateIds.length} duplicate${
-        duplicateIds.length > 1 ? "s" : ""
-      } into it? This can't be undone.`,
+      t("duplicates.merge"),
+      t("duplicates.mergeConfirm"),
       [
-        { text: "Cancel", style: "cancel" },
-        { text: "Merge", style: "destructive", onPress: run },
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("duplicates.merge"), style: "destructive", onPress: run },
       ],
     );
   }
@@ -250,8 +251,8 @@ function DuplicateCard({
         { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
       ]}
     >
-      <View style={styles.cardHeader}>
-        <View style={[styles.matchPill, { backgroundColor: colors.accent }]}>
+      <View style={[styles.cardHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+        <View style={[styles.matchPill, { backgroundColor: colors.accent, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Feather name="copy" size={13} color={colors.primary} />
           <Text style={[styles.matchText, { color: colors.primary }]} numberOfLines={1}>
             {matchLabel(group)}
@@ -259,8 +260,8 @@ function DuplicateCard({
         </View>
       </View>
 
-      <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-        Pick the contact to keep — the rest merge into it.
+      <Text style={[styles.hint, { color: colors.mutedForeground, textAlign }]}>
+        {t("duplicates.pickKeepHint")}
       </Text>
 
       <View style={{ gap: 8, marginTop: 4 }}>
@@ -276,16 +277,17 @@ function DuplicateCard({
                   borderColor: selected ? colors.primary : colors.border,
                   backgroundColor: selected ? colors.accent : "transparent",
                   borderRadius: colors.radius + 2,
+                  flexDirection: isRTL ? "row-reverse" : "row",
                 },
               ]}
             >
-              <Avatar name={contactName(c)} size={40} color={colors.primary} />
+              <Avatar name={contactName(c, t("common.unnamedContact"))} size={40} color={colors.primary} />
               <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground }]}>
-                  {contactName(c)}
+                <Text numberOfLines={1} style={[styles.optName, { color: colors.foreground, textAlign }]}>
+                  {contactName(c, t("common.unnamedContact"))}
                 </Text>
-                <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground }]}>
-                  {[c.contactCompany, c.email].filter(Boolean).join(" · ") || `${fieldCount(c)} fields`}
+                <Text numberOfLines={1} style={[styles.optSub, { color: colors.mutedForeground, textAlign }]}>
+                  {[c.contactCompany, c.email].filter(Boolean).join(" · ") || t("duplicates.fieldsCount", { count: fieldCount(c) })}
                 </Text>
               </View>
               <View
@@ -304,7 +306,7 @@ function DuplicateCard({
       </View>
 
       <PrimaryButton
-        label={`Merge ${group.contacts.length} into 1`}
+        label={t("duplicates.merge")}
         icon="git-merge"
         loading={merge.isPending}
         onPress={handleMerge}
@@ -318,6 +320,7 @@ export default function DuplicatesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const query = useGetContactDuplicates();
 
   const groups = query.data?.groups ?? [];
@@ -326,16 +329,16 @@ export default function DuplicatesScreen() {
 
   const summaryText =
     linkedCount > 0 && suggestedCount > 0
-      ? `${linkedCount} re-scan${linkedCount > 1 ? "s" : ""} · ${suggestedCount} suggested group${suggestedCount > 1 ? "s" : ""}`
+      ? `${t("duplicates.rescanCount", { count: linkedCount })} · ${t("duplicates.suggestedGroup", { count: suggestedCount })}`
       : linkedCount > 0
-        ? `${linkedCount} re-scan duplicate${linkedCount > 1 ? "s" : ""} detected`
-        : `${suggestedCount} potential duplicate group${suggestedCount > 1 ? "s" : ""} detected`;
+        ? t("duplicates.rescanDuplicateDetected", { count: linkedCount })
+        : t("duplicates.potentialGroupDetected", { count: suggestedCount });
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: "Duplicates",
+          title: t("duplicates.title"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
@@ -358,8 +361,8 @@ export default function DuplicatesScreen() {
         <View style={{ flex: 1 }}>
           <EmptyState
             icon="check-circle"
-            title="No duplicates found"
-            subtitle="Your contact list is clean. We'll flag potential duplicates here as they appear."
+            title={t("duplicates.empty")}
+            subtitle={t("duplicates.emptyDesc")}
           />
         </View>
       ) : (
@@ -377,7 +380,7 @@ export default function DuplicatesScreen() {
             />
           }
         >
-          <Text style={[styles.intro, { color: colors.mutedForeground }]}>
+          <Text style={[styles.intro, { color: colors.mutedForeground, textAlign }]}>
             {summaryText}.
           </Text>
           <View style={{ gap: 16 }}>

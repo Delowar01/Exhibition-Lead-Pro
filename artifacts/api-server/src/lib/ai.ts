@@ -21,7 +21,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-export interface ExtractedCardData {
+export interface ExtractedCardOriginal {
   firstName: string | null;
   lastName: string | null;
   arabicName: string | null;
@@ -33,6 +33,23 @@ export interface ExtractedCardData {
   linkedin: string | null;
   address: string | null;
 }
+
+export interface ExtractedCardData {
+  firstName: string | null;
+  lastName: string | null;
+  arabicName: string | null;
+  jobTitle: string | null;
+  company: string | null;
+  email: string | null;
+  mobile: string | null;
+  website: string | null;
+  linkedin: string | null;
+  address: string | null;
+  /** Raw OCR values exactly as printed — never translated/overwritten. */
+  original: ExtractedCardOriginal;
+}
+
+export type AppLanguage = "en" | "ar";
 
 export interface CardExtractionResult {
   fields: ExtractedCardData;
@@ -59,7 +76,7 @@ export interface LeadScoreInput {
   notes?: string | null;
 }
 
-const EMPTY_FIELDS: ExtractedCardData = {
+const EMPTY_ORIGINAL: ExtractedCardOriginal = {
   firstName: null,
   lastName: null,
   arabicName: null,
@@ -70,6 +87,11 @@ const EMPTY_FIELDS: ExtractedCardData = {
   website: null,
   linkedin: null,
   address: null,
+};
+
+const EMPTY_FIELDS: ExtractedCardData = {
+  ...EMPTY_ORIGINAL,
+  original: { ...EMPTY_ORIGINAL },
 };
 
 function parseImage(imageData: string): { data: string; mimeType: string } {
@@ -106,25 +128,64 @@ function clampScore(value: unknown): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-const EXTRACTION_PROMPT = `You are an OCR and data-extraction engine for business cards and event badges at trade exhibitions (including GCC events, so cards may contain Arabic).
+function translationRules(appLanguage: AppLanguage): string {
+  if (appLanguage === "ar") {
+    return `The app's active language is ARABIC. Apply these rules to the DISPLAY values:
+- Keep any value written in Arabic EXACTLY as printed — do NOT translate or transliterate Arabic into English.
+- Keep any value written in English / Latin script EXACTLY as printed — do NOT translate English into Arabic.
+- Translate values written in ANY OTHER language (e.g. French, Spanish, Chinese, Russian) into English.`;
+  }
+  return `The app's active language is ENGLISH. Apply these rules to the DISPLAY values:
+- Translate EVERY non-English value into English. Transliterate personal names into Latin script; translate job titles, company names, and addresses into their natural English form.
+- Keep values that are already English EXACTLY as printed.
+- Leave emails, websites, LinkedIn URLs, and phone numbers as-is (never translate these).`;
+}
 
-Read the image and extract the contact's details. Return ONLY a JSON object with exactly these keys:
-- "firstName": given name in Latin script, or null
-- "lastName": family name in Latin script, or null
+function buildExtractionPrompt(appLanguage: AppLanguage): string {
+  return `You are an OCR and data-extraction engine for business cards and event badges at trade exhibitions (including GCC events, so cards frequently contain Arabic alongside English).
+
+Read the image and extract the contact's details.
+
+${translationRules(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "firstName": given name (display value, per the rules above), or null
+- "lastName": family name (display value, per the rules above), or null
 - "arabicName": the full name in Arabic script if present on the card, otherwise null
-- "jobTitle": role/title, or null
-- "company": organization name, or null
+- "jobTitle": role/title (display value), or null
+- "company": organization name (display value), or null
 - "email": email address, or null
 - "mobile": primary phone/mobile in international format if possible, or null
 - "website": website domain/URL, or null
 - "linkedin": LinkedIn URL or handle, or null
-- "address": physical address, or null
+- "address": physical address (display value), or null
+- "original": an object holding the SAME keys (firstName, lastName, arabicName, jobTitle, company, email, mobile, website, linkedin, address) with the text EXACTLY as printed on the card — NO translation, NO transliteration, verbatim original script. Use null for any field not present.
 - "confidence": integer 0-100 — your confidence that the extraction is accurate and the image was a readable card
 - "rawText": all raw text you read from the card, as a single string
 
-Use null (not empty string) for any field not present. Do not invent data.`;
+Use null (not empty string) for any field not present. Do not invent data. The "original" object must always reflect exactly what is printed, regardless of the display translation rules.`;
+}
 
-export async function extractCardData(imageData: string): Promise<CardExtractionResult> {
+function readOriginal(value: unknown): ExtractedCardOriginal {
+  const o = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  return {
+    firstName: str(o.firstName),
+    lastName: str(o.lastName),
+    arabicName: str(o.arabicName),
+    jobTitle: str(o.jobTitle),
+    company: str(o.company),
+    email: str(o.email),
+    mobile: str(o.mobile),
+    website: str(o.website),
+    linkedin: str(o.linkedin),
+    address: str(o.address),
+  };
+}
+
+export async function extractCardData(
+  imageData: string,
+  appLanguage: AppLanguage = "en",
+): Promise<CardExtractionResult> {
   const { data, mimeType } = parseImage(imageData);
   if (!data || data.length < 100 || !/^image\//.test(mimeType)) {
     throw new Error("imageData is not a valid image payload");
@@ -137,7 +198,7 @@ export async function extractCardData(imageData: string): Promise<CardExtraction
         {
           role: "user",
           parts: [
-            { text: EXTRACTION_PROMPT },
+            { text: buildExtractionPrompt(appLanguage) },
             { inlineData: { mimeType, data } },
           ],
         },
@@ -151,20 +212,40 @@ export async function extractCardData(imageData: string): Promise<CardExtraction
   const text = response.text ?? "";
   const parsed = extractJson(text) as Record<string, unknown>;
 
+  const display = {
+    firstName: str(parsed.firstName),
+    lastName: str(parsed.lastName),
+    arabicName: str(parsed.arabicName),
+    jobTitle: str(parsed.jobTitle),
+    company: str(parsed.company),
+    email: str(parsed.email),
+    mobile: str(parsed.mobile),
+    website: str(parsed.website),
+    linkedin: str(parsed.linkedin),
+    address: str(parsed.address),
+  };
+  // Original = text exactly as printed on the card. For translatable text fields
+  // (name, job title, company, address) we must NOT fall back to `display` when the
+  // model omits the original — `display` may be a translation, and copying it would
+  // silently store translated text as if it were the verbatim capture. Leave those
+  // null instead. Contact identifiers (email/mobile/website/linkedin) and the
+  // Arabic-script name are never translated, so falling back to display is lossless.
+  const originalRaw = readOriginal(parsed.original);
+  const original: ExtractedCardOriginal = {
+    firstName: originalRaw.firstName,
+    lastName: originalRaw.lastName,
+    arabicName: originalRaw.arabicName ?? display.arabicName,
+    jobTitle: originalRaw.jobTitle,
+    company: originalRaw.company,
+    email: originalRaw.email ?? display.email,
+    mobile: originalRaw.mobile ?? display.mobile,
+    website: originalRaw.website ?? display.website,
+    linkedin: originalRaw.linkedin ?? display.linkedin,
+    address: originalRaw.address,
+  };
+
   return {
-    fields: {
-      ...EMPTY_FIELDS,
-      firstName: str(parsed.firstName),
-      lastName: str(parsed.lastName),
-      arabicName: str(parsed.arabicName),
-      jobTitle: str(parsed.jobTitle),
-      company: str(parsed.company),
-      email: str(parsed.email),
-      mobile: str(parsed.mobile),
-      website: str(parsed.website),
-      linkedin: str(parsed.linkedin),
-      address: str(parsed.address),
-    },
+    fields: { ...display, original },
     confidence: clampScore(parsed.confidence),
     rawOcr: str(parsed.rawText) ?? "",
   };

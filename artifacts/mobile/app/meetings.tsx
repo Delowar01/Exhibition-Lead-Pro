@@ -35,23 +35,36 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
+import type { Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
 type Tab = "upcoming" | "completed" | "cancelled";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "upcoming", label: "Upcoming" },
-  { key: "completed", label: "Completed" },
-  { key: "cancelled", label: "Cancelled" },
+const TABS: { key: Tab }[] = [
+  { key: "upcoming" },
+  { key: "completed" },
+  { key: "cancelled" },
 ];
+
+function tabLabel(t: Locale["t"], key: Tab): string {
+  switch (key) {
+    case "upcoming":
+      return t("meetings.upcoming");
+    case "completed":
+      return t("followups.completed");
+    default:
+      return prettyLabel(key);
+  }
+}
 
 function parseLocal(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-function formatDate(s?: string | null, time?: string | null): string {
-  if (!s) return "No date";
+function formatDate(t: Locale["t"], s?: string | null, time?: string | null): string {
+  if (!s) return t("common.noDate");
   const base = formatGregorian(parseLocal(s), {
     weekday: "short",
     month: "short",
@@ -59,7 +72,7 @@ function formatDate(s?: string | null, time?: string | null): string {
   });
   if (!time) return base;
   const [h, m] = time.split(":").map((p) => parseInt(p, 10));
-  const period = h >= 12 ? "PM" : "AM";
+  const period = h >= 12 ? t("common.pm") : t("common.am");
   const hr12 = h % 12 === 0 ? 12 : h % 12;
   return `${base} · ${hr12}:${String(m).padStart(2, "0")} ${period}`;
 }
@@ -68,6 +81,7 @@ export default function MeetingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const [tab, setTab] = useState<Tab>("upcoming");
   const [active, setActive] = useState<Meeting | null>(null);
 
@@ -99,23 +113,23 @@ export default function MeetingsScreen() {
         onPress={() => router.push(`/contact/${m.contactId}`)}
         style={({ pressed }) => [
           styles.item,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.85 : 1 },
+          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.85 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
         ]}
       >
         <View style={[styles.typeIcon, { backgroundColor: colors.primary + "1A" }]}>
           <Feather name={MEETING_TYPE_ICONS[m.type] ?? "calendar"} size={18} color={colors.primary} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.itemName, { color: colors.foreground }]}>
-            {m.contactName ?? "Contact"}
+          <Text numberOfLines={1} style={[styles.itemName, { color: colors.foreground, textAlign }]}>
+            {m.contactName ?? t("common.contact")}
           </Text>
-          <View style={styles.itemMeta}>
+          <View style={[styles.itemMeta, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="calendar" size={12} color={colors.mutedForeground} />
             <Text style={[styles.itemDate, { color: colors.mutedForeground }]}>
-              {formatDate(m.meetingDate, m.meetingTime)}
+              {formatDate(t, m.meetingDate, m.meetingTime)}
             </Text>
-            <Badge label={prettyLabel(m.type)} color={colors.primary} />
-            <Badge label={prettyLabel(m.status)} color={statusColor} />
+            <Badge label={t("tasks.types." + m.type, { defaultValue: prettyLabel(m.type) })} color={colors.primary} />
+            <Badge label={t("statuses." + m.status, { defaultValue: prettyLabel(m.status) })} color={statusColor} />
           </View>
         </View>
         {tab === "upcoming" ? (
@@ -141,30 +155,30 @@ export default function MeetingsScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={{ paddingTop: topPad + 14, paddingHorizontal: 20 }}>
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Pressable
             onPress={() => router.back()}
             hitSlop={10}
             style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
           >
-            <Feather name="arrow-left" size={20} color={colors.foreground} />
+            <Feather name="arrow-left" size={20} color={colors.foreground} style={isRTL ? { transform: [{ scaleX: -1 }] } : undefined} />
           </Pressable>
-          <Text style={[styles.heading, { color: colors.foreground }]}>Meetings</Text>
+          <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("meetings.title")}</Text>
         </View>
-        <View style={[styles.tabBar, { backgroundColor: colors.muted, borderRadius: colors.radius }]}>
-          {TABS.map((t) => {
-            const isActive = tab === t.key;
+        <View style={[styles.tabBar, { backgroundColor: colors.muted, borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
+          {TABS.map((tabItem) => {
+            const isActive = tab === tabItem.key;
             return (
               <Pressable
-                key={t.key}
+                key={tabItem.key}
                 onPress={() => {
                   if (Platform.OS !== "web") Haptics.selectionAsync();
-                  setTab(t.key);
+                  setTab(tabItem.key);
                 }}
                 style={[styles.tab, isActive && { backgroundColor: colors.card, borderRadius: colors.radius - 2 }]}
               >
                 <Text style={[styles.tabText, { color: isActive ? colors.foreground : colors.mutedForeground }]}>
-                  {t.label}
+                  {tabLabel(t, tabItem.key)}
                 </Text>
               </Pressable>
             );
@@ -180,12 +194,8 @@ export default function MeetingsScreen() {
         <View style={{ flex: 1 }}>
           <EmptyState
             icon="calendar"
-            title={tab === "upcoming" ? "No meetings scheduled" : "Nothing here"}
-            subtitle={
-              tab === "upcoming"
-                ? "Schedule a meeting from a contact and it will show up here."
-                : `No ${tab} meetings yet.`
-            }
+            title={tab === "upcoming" ? t("meetings.empty") : t("empty.generic")}
+            subtitle={t("meetings.emptyDesc")}
           />
         </View>
       ) : (
@@ -236,6 +246,7 @@ function ActionSheet({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t, isRTL, textAlign } = useLocale();
   const [comment, setComment] = useState("");
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
@@ -249,9 +260,9 @@ function ActionSheet({
   }
 
   const actions: { status: MeetingUpdateStatus; label: string; icon: keyof typeof Feather.glyphMap; color: string }[] = [
-    { status: "completed", label: "Mark completed", icon: "check-circle", color: "#22C55E" },
-    { status: "rescheduled", label: "Reschedule", icon: "calendar", color: "#F59E0B" },
-    { status: "cancelled", label: "Cancel meeting", icon: "x-circle", color: "#EF4444" },
+    { status: "completed", label: t("followups.markDone"), icon: "check-circle", color: "#22C55E" },
+    { status: "rescheduled", label: t("meetings.reschedule"), icon: "calendar", color: "#F59E0B" },
+    { status: "cancelled", label: t("common.cancel"), icon: "x-circle", color: "#EF4444" },
   ];
 
   return (
@@ -278,8 +289,8 @@ function ActionSheet({
           <View style={styles.handleWrap}>
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
           </View>
-          <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-            {meeting?.contactName ?? "Meeting"}
+          <Text style={[styles.sheetTitle, { color: colors.foreground, textAlign }]}>
+            {meeting?.contactName ?? t("meetings.fallbackTitle")}
           </Text>
 
           {mode === "menu" ? (
@@ -300,42 +311,42 @@ function ActionSheet({
                   }}
                   style={({ pressed }) => [
                     styles.actionRow,
-                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1 },
+                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
                   ]}
                 >
                   <Feather name={a.icon} size={20} color={a.color} />
-                  <Text style={[styles.actionLabel, { color: colors.foreground }]}>{a.label}</Text>
+                  <Text style={[styles.actionLabel, { color: colors.foreground, textAlign }]}>{a.label}</Text>
                 </Pressable>
               ))}
-              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>COMMENT (OPTIONAL)</Text>
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>{t("meetings.commentOptional")}</Text>
               <TextInput
                 value={comment}
                 onChangeText={setComment}
-                placeholder="Add a note about this update"
+                placeholder={t("meetings.notePlaceholder")}
                 placeholderTextColor={colors.mutedForeground}
                 multiline
-                style={[styles.commentInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+                style={[styles.commentInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, textAlign }]}
               />
             </View>
           ) : (
             <View style={{ marginTop: 12 }}>
               <DateTimeField
-                label="New date & time"
+                label={t("meetings.newDateTime")}
                 date={date}
                 time={time}
                 minToday
-                onChange={(d, t) => {
+                onChange={(d, tm) => {
                   setDate(d);
-                  setTime(t);
+                  setTime(tm);
                 }}
               />
               <TextInput
                 value={comment}
                 onChangeText={setComment}
-                placeholder="Reason for rescheduling (optional)"
+                placeholder={t("meetings.reschedulePlaceholder")}
                 placeholderTextColor={colors.mutedForeground}
                 multiline
-                style={[styles.commentInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
+                style={[styles.commentInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius, textAlign }]}
               />
               <Pressable
                 disabled={pending || !date}
@@ -345,7 +356,7 @@ function ActionSheet({
                 }}
                 style={[styles.applyBtn, { backgroundColor: date ? colors.primary : colors.muted }]}
               >
-                <Text style={styles.applyText}>{pending ? "Saving…" : "Confirm reschedule"}</Text>
+                <Text style={styles.applyText}>{pending ? t("common.saving") : t("common.confirm")}</Text>
               </Pressable>
             </View>
           )}

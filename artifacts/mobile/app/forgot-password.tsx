@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -24,6 +25,7 @@ export default function ForgotPasswordScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
 
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -34,7 +36,7 @@ export default function ForgotPasswordScreen() {
   function handleSubmit() {
     setError(null);
     if (!isValidEmail(email)) {
-      setError("Enter a valid email address.");
+      setError(t("validation.invalidEmail"));
       return;
     }
     setSubmitted(true);
@@ -58,16 +60,19 @@ export default function ForgotPasswordScreen() {
         keyboardShouldPersistTaps="handled"
         bottomOffset={20}
       >
-        <Pressable onPress={() => router.back()} hitSlop={10} style={styles.backRow}>
-          <Feather name="arrow-left" size={20} color="#FFFFFF" />
-          <Text style={styles.backText}>Back to sign in</Text>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={[styles.backRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}
+        >
+          <Feather name={isRTL ? "arrow-right" : "arrow-left"} size={20} color="#FFFFFF" />
+          <Text style={[styles.backText, { textAlign }]}>{t("common.back")}</Text>
         </Pressable>
 
         <View style={styles.heroBlock}>
-          <Text style={styles.heroTitle}>Reset password</Text>
-          <Text style={styles.heroText}>
-            Tell us the email on your account and we&apos;ll route your request to
-            the right place.
+          <Text style={[styles.heroTitle, { textAlign }]}>{t("auth.forgotTitle")}</Text>
+          <Text style={[styles.heroText, { textAlign }]}>
+            {t("auth.forgotBody")}
           </Text>
         </View>
 
@@ -83,68 +88,67 @@ export default function ForgotPasswordScreen() {
                 <Feather name="check-circle" size={28} color={colors.success} />
               </View>
               <Text style={[styles.successTitle, { color: colors.foreground }]}>
-                Request received
+                {t("auth.forgotTitle")}
               </Text>
               <Text style={[styles.successText, { color: colors.mutedForeground }]}>
-                Password resets for Card Scanner Pro are handled by your company
-                administrator. We&apos;ve noted your request for{" "}
-                <Text style={{ fontFamily: FONT.semibold, color: colors.foreground }}>
-                  {email.trim()}
-                </Text>
-                . Please reach out to your admin to complete the reset.
+                {t("auth.forgotBody")}
               </Text>
               <PrimaryButton
-                label="Back to sign in"
-                icon="arrow-left"
+                label={t("common.back")}
+                icon={isRTL ? "arrow-right" : "arrow-left"}
                 onPress={() => router.back()}
                 style={{ marginTop: 22, alignSelf: "stretch" }}
               />
             </View>
           ) : (
             <>
-              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-                EMAIL
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+                {t("auth.email")}
               </Text>
               <View
                 style={[
                   styles.inputRow,
-                  { borderColor: colors.border, borderRadius: colors.radius },
+                  {
+                    borderColor: colors.border,
+                    borderRadius: colors.radius,
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                  },
                 ]}
               >
                 <Feather name="mail" size={18} color={colors.mutedForeground} />
                 <TextInput
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="you@company.com"
+                  placeholder={t("auth.emailPlaceholder")}
                   placeholderTextColor={colors.mutedForeground}
                   autoCapitalize="none"
                   keyboardType="email-address"
                   autoComplete="email"
                   autoFocus
-                  style={[styles.input, { color: colors.foreground }]}
+                  style={[styles.input, { color: colors.foreground, textAlign }]}
                 />
               </View>
 
               {error ? (
-                <View style={styles.errorRow}>
+                <View style={[styles.errorRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
                   <Feather name="alert-circle" size={14} color={colors.destructive} />
-                  <Text style={[styles.errorText, { color: colors.destructive }]}>
+                  <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
                     {error}
                   </Text>
                 </View>
               ) : null}
 
               <PrimaryButton
-                label="Submit request"
+                label={t("common.confirm")}
                 icon="send"
                 onPress={handleSubmit}
                 style={{ marginTop: 20 }}
               />
 
-              <View style={styles.hintRow}>
+              <View style={[styles.hintRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
                 <Feather name="info" size={13} color={colors.mutedForeground} />
-                <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
-                  Resets are managed by your company administrator.
+                <Text style={[styles.hintText, { color: colors.mutedForeground, textAlign }]}>
+                  {t("auth.contactAdmin")}
                 </Text>
               </View>
             </>

@@ -5,10 +5,13 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ScanInputAppLanguage } from './scanInputAppLanguage';
 
 export interface ScanInput {
   /** Base64-encoded image */
   imageData: string;
+  /** Active app language. Drives OCR translation: "en" translates all extracted fields to English; "ar" preserves Arabic + English as printed and translates any other language to English. */
+  appLanguage?: ScanInputAppLanguage;
   /** @nullable */
   eventId?: number | null;
   /** @nullable */

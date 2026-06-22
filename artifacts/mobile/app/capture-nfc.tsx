@@ -52,6 +52,7 @@ import { Feather } from "@/components/icons";
 import { FONT } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useLocale } from "@/hooks/useLocale";
 import { extractedToContact } from "@/lib/contact-parse";
 import {
   NfcError,
@@ -446,24 +447,25 @@ const PhoneBody = memo(function PhoneBody({
 
 // ─── Instruction card ─────────────────────────────────────────────────────────
 const TIPS = [
-  { icon: "maximize" as const, text: "Keep card\nsteady" },
-  { icon: "clock"   as const, text: "Hold 1–2\nseconds" },
-  { icon: "check"   as const, text: "Remove once\ndetected" },
+  { icon: "maximize" as const, textKey: "nfc.tipSteady" },
+  { icon: "clock"   as const, textKey: "nfc.tipHold" },
+  { icon: "check"   as const, textKey: "nfc.tipRemove" },
 ];
 
 const InstructionCard = memo(function InstructionCard() {
+  const { t } = useLocale();
   return (
     <View style={styles.instructionCard}>
       <Text style={styles.instructionTitle}>
-        Hold the NFC card against the back of your phone
+        {t("nfc.instructionTitle")}
       </Text>
       <View style={styles.tipsRow}>
-        {TIPS.map(({ icon, text }) => (
+        {TIPS.map(({ icon, textKey }) => (
           <View key={icon} style={styles.tip}>
             <View style={styles.tipIcon}>
               <Feather name={icon} size={14} color={BRAND} />
             </View>
-            <Text style={styles.tipText}>{text}</Text>
+            <Text style={styles.tipText}>{t(textKey)}</Text>
           </View>
         ))}
       </View>
@@ -475,6 +477,7 @@ const InstructionCard = memo(function InstructionCard() {
 export default function CaptureNfcScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t } = useLocale();
   const { isOnline, enqueueContact } = useOffline();
   const { activeEventId } = useSettings();
   const eventId = activeEventId ?? null;
@@ -527,7 +530,7 @@ export default function CaptureNfcScreen() {
         const label =
           [data.firstName, data.lastName].filter(Boolean).join(" ") ||
           data.company ||
-          "NFC contact";
+          t("nfc.contactFallback");
         enqueueContact(
           { ...extractedToContact(data), eventId },
           { label, source: "nfc", eventId },
@@ -550,7 +553,7 @@ export default function CaptureNfcScreen() {
       setErrorMsg(
         err instanceof NfcError
           ? err.message
-          : "Something went wrong while reading the tag.",
+          : t("nfc.errorGeneric"),
       );
       setPhase("error");
     } finally {
@@ -615,7 +618,7 @@ export default function CaptureNfcScreen() {
       <View style={[styles.actions, { paddingBottom: insets.bottom + 28 }]}>
         {phase === "ready" && (
           <PremiumButton
-            label="Start NFC Scan"
+            label={t("nfc.start")}
             icon="wifi"
             onPress={startScan}
             color={BRAND}
@@ -623,46 +626,46 @@ export default function CaptureNfcScreen() {
         )}
         {phase === "scanning" && (
           <Pressable onPress={handleCancel} style={styles.ghostBtn}>
-            <Text style={styles.ghostBtnText}>Cancel</Text>
+            <Text style={styles.ghostBtnText}>{t("common.cancel")}</Text>
           </Pressable>
         )}
         {phase === "success" && (
           <View style={styles.successLabel}>
             <Feather name="check-circle" size={18} color={SUCCESS} />
             <Text style={[styles.ghostBtnText, { color: SUCCESS, marginLeft: 6 }]}>
-              Card detected successfully
+              {t("nfc.detectedSuccess")}
             </Text>
           </View>
         )}
         {phase === "error" && (
           <>
             <PremiumButton
-              label="Try Again"
+              label={t("nfc.tryAgain")}
               icon="refresh-cw"
               onPress={startScan}
               color={BRAND}
             />
             <Pressable onPress={() => router.back()} style={styles.ghostBtn}>
-              <Text style={styles.ghostBtnText}>Back to Capture</Text>
+              <Text style={styles.ghostBtnText}>{t("nfc.backToCapture")}</Text>
             </Pressable>
           </>
         )}
         {phase === "disabled" && (
           <>
             <PremiumButton
-              label="Open Settings"
+              label={t("nfc.openSettings")}
               icon="settings"
               onPress={() => { if (Platform.OS !== "web") Linking.openSettings(); }}
               color={BRAND}
             />
             <Pressable onPress={handleRetry} style={styles.ghostBtn}>
-              <Text style={styles.ghostBtnText}>Try Again</Text>
+              <Text style={styles.ghostBtnText}>{t("nfc.tryAgain")}</Text>
             </Pressable>
           </>
         )}
         {phase === "unsupported" && (
           <PremiumButton
-            label="Go Back"
+            label={t("nfc.goBack")}
             icon="arrow-left"
             onPress={() => router.back()}
             color="#4B5563"
@@ -674,22 +677,25 @@ export default function CaptureNfcScreen() {
 }
 
 // ─── Status block ─────────────────────────────────────────────────────────────
-const STATUS: Record<Phase, { title: string; sub: string }> = {
-  checking:    { title: "Checking NFC…",            sub: "Making sure this device can read NFC tags." },
-  ready:       { title: "Ready to Scan",             sub: "Tap the button below, then hold your phone to the card." },
-  scanning:    { title: "Searching for NFC tag…",   sub: Platform.OS === "ios" ? "Follow the NFC prompt and hold your phone to the card." : "Hold the back of your phone flat against the NFC card." },
-  success:     { title: "Card detected!",            sub: "Reading contact data…" },
-  error:       { title: "Couldn't read the tag",     sub: "" },
-  disabled:    { title: "NFC is turned off",         sub: "Turn on NFC in your device settings, then come back." },
-  unsupported: { title: "NFC unavailable",           sub: "This device can't read NFC tags. Try Business Card, QR, or Manual Entry instead." },
-};
+function buildStatus(t: ReturnType<typeof useLocale>["t"]): Record<Phase, { title: string; sub: string }> {
+  return {
+    checking:    { title: t("nfc.checkingTitle"),      sub: t("nfc.checkingSub") },
+    ready:       { title: t("nfc.readyTitle"),         sub: t("nfc.readySub") },
+    scanning:    { title: t("nfc.searchingTitle"),   sub: Platform.OS === "ios" ? t("nfc.searchingSubPrompt") : t("nfc.searchingSubHold") },
+    success:     { title: t("nfc.successTitle"),       sub: t("nfc.successSub") },
+    error:       { title: t("nfc.errorTitle"),         sub: "" },
+    disabled:    { title: t("nfc.disabledTitle"),      sub: t("nfc.disabledSub") },
+    unsupported: { title: t("nfc.unsupportedTitle"),   sub: t("nfc.unsupportedSub") },
+  };
+}
 
 function StatusBlock({ phase, errorMsg }: { phase: Phase; errorMsg: string }) {
+  const { t } = useLocale();
   const titleColor =
     phase === "success" ? SUCCESS
     : phase === "error"  ? "#F87171"
     : "#F8F9FB";
-  const { title, sub } = STATUS[phase];
+  const { title, sub } = buildStatus(t)[phase];
   return (
     <View style={styles.statusBlock}>
       <Text style={[styles.statusTitle, { color: titleColor }]}>{title}</Text>

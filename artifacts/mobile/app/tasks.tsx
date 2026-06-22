@@ -42,15 +42,32 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
+import type { Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
-const STATUS_FILTERS: { key: TaskStatus | "all"; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "pending", label: "Pending" },
-  { key: "in_progress", label: "In progress" },
-  { key: "completed", label: "Completed" },
-  { key: "overdue", label: "Overdue" },
+const STATUS_FILTERS: { key: TaskStatus | "all" }[] = [
+  { key: "all" },
+  { key: "pending" },
+  { key: "in_progress" },
+  { key: "completed" },
+  { key: "overdue" },
 ];
+
+function statusFilterLabel(t: Locale["t"], key: TaskStatus | "all"): string {
+  switch (key) {
+    case "all":
+      return t("common.all");
+    case "pending":
+      return t("tasks.pending");
+    case "completed":
+      return t("followups.completed");
+    case "overdue":
+      return t("followups.overdue");
+    default:
+      return prettyLabel(key);
+  }
+}
 
 const TASK_TYPES: TaskInputType[] = ["call", "follow_up", "meeting", "proposal", "custom"];
 
@@ -59,8 +76,8 @@ function parseLocal(s: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-function formatDate(s?: string | null, time?: string | null): string {
-  if (!s) return "No due date";
+function formatDate(t: Locale["t"], s?: string | null, time?: string | null): string {
+  if (!s) return t("common.noDueDate");
   const base = formatGregorian(parseLocal(s), {
     weekday: "short",
     month: "short",
@@ -68,7 +85,7 @@ function formatDate(s?: string | null, time?: string | null): string {
   });
   if (!time) return base;
   const [h, m] = time.split(":").map((p) => parseInt(p, 10));
-  const period = h >= 12 ? "PM" : "AM";
+  const period = h >= 12 ? t("common.pm") : t("common.am");
   const hr12 = h % 12 === 0 ? 12 : h % 12;
   return `${base} · ${hr12}:${String(m).padStart(2, "0")} ${period}`;
 }
@@ -78,6 +95,7 @@ export default function TasksScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
+  const { t, isRTL, textAlign } = useLocale();
   const canManageAll =
     user?.role === "platform_owner" ||
     user?.role === "primary_admin" ||
@@ -104,40 +122,40 @@ export default function TasksScreen() {
     [tasks],
   );
 
-  function renderItem(t: Task) {
-    const statusColor = TASK_STATUS_COLORS[t.status] ?? colors.mutedForeground;
+  function renderItem(task: Task) {
+    const statusColor = TASK_STATUS_COLORS[task.status] ?? colors.mutedForeground;
     return (
       <Pressable
-        key={t.id}
+        key={task.id}
         onPress={() => {
           if (Platform.OS !== "web") Haptics.selectionAsync();
-          setActive(t);
+          setActive(task);
         }}
         style={({ pressed }) => [
           styles.item,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.85 : 1 },
+          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.85 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
         ]}
       >
         <View style={[styles.typeIcon, { backgroundColor: statusColor + "1A" }]}>
-          <Feather name={TASK_TYPE_ICONS[t.type] ?? "check-square"} size={18} color={statusColor} />
+          <Feather name={TASK_TYPE_ICONS[task.type] ?? "check-square"} size={18} color={statusColor} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.itemName, { color: colors.foreground }]}>
-            {t.title}
+          <Text numberOfLines={1} style={[styles.itemName, { color: colors.foreground, textAlign }]}>
+            {task.title}
           </Text>
-          {t.contactName ? (
-            <Text numberOfLines={1} style={[styles.itemSub, { color: colors.mutedForeground }]}>
-              {t.contactName}
+          {task.contactName ? (
+            <Text numberOfLines={1} style={[styles.itemSub, { color: colors.mutedForeground, textAlign }]}>
+              {task.contactName}
             </Text>
           ) : null}
-          <View style={styles.itemMeta}>
+          <View style={[styles.itemMeta, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="clock" size={12} color={colors.mutedForeground} />
             <Text style={[styles.itemDate, { color: colors.mutedForeground }]}>
-              {formatDate(t.dueDate, t.dueTime)}
+              {formatDate(t, task.dueDate, task.dueTime)}
             </Text>
-            <Badge label={prettyLabel(t.status)} color={statusColor} />
-            {scope === "all" && t.assignedToName ? (
-              <Badge label={t.assignedToName} color={colors.mutedForeground} />
+            <Badge label={t("statuses." + task.status, { defaultValue: prettyLabel(task.status) })} color={statusColor} />
+            {scope === "all" && task.assignedToName ? (
+              <Badge label={task.assignedToName} color={colors.mutedForeground} />
             ) : null}
           </View>
         </View>
@@ -149,16 +167,16 @@ export default function TasksScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 14, paddingHorizontal: 20 }}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
+        <View style={[styles.headerRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+          <View style={[styles.headerLeft, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Pressable
               onPress={() => router.back()}
               hitSlop={10}
               style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
-              <Feather name="arrow-left" size={20} color={colors.foreground} />
+              <Feather name="arrow-left" size={20} color={colors.foreground} style={isRTL ? { transform: [{ scaleX: -1 }] } : undefined} />
             </Pressable>
-            <Text style={[styles.heading, { color: colors.foreground }]}>Tasks</Text>
+            <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("tasks.title")}</Text>
           </View>
           <Pressable
             onPress={() => {
@@ -185,7 +203,7 @@ export default function TasksScreen() {
                   style={[styles.scopeTab, isActive && { backgroundColor: colors.card, borderRadius: colors.radius - 2 }]}
                 >
                   <Text style={[styles.scopeText, { color: isActive ? colors.foreground : colors.mutedForeground }]}>
-                    {s === "mine" ? "Assigned to me" : "All tasks"}
+                    {s === "mine" ? t("tasks.mine") : t("tasks.allTasks")}
                   </Text>
                 </Pressable>
               );
@@ -206,11 +224,11 @@ export default function TasksScreen() {
                 onPress={() => setStatus(f.key)}
                 style={[
                   styles.chip,
-                  { backgroundColor: isActive ? colors.primary : colors.card, borderColor: isActive ? colors.primary : colors.border },
+                  { backgroundColor: isActive ? colors.primary : colors.card, borderColor: isActive ? colors.primary : colors.border, flexDirection: isRTL ? "row-reverse" : "row" },
                 ]}
               >
                 <Text style={[styles.chipText, { color: isActive ? "#FFFFFF" : colors.foreground }]}>
-                  {f.label}
+                  {statusFilterLabel(t, f.key)}
                 </Text>
               </Pressable>
             );
@@ -226,8 +244,8 @@ export default function TasksScreen() {
         <View style={{ flex: 1 }}>
           <EmptyState
             icon="check-square"
-            title="No tasks"
-            subtitle="Create a task to keep track of your to-dos."
+            title={t("tasks.empty")}
+            subtitle={t("tasks.emptyDesc")}
           />
         </View>
       ) : (
@@ -289,11 +307,12 @@ function TaskActionSheet({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t, isRTL, textAlign } = useLocale();
 
-  const statuses: { status: TaskStatus; label: string; icon: keyof typeof Feather.glyphMap }[] = [
-    { status: "pending", label: "Pending", icon: "circle" },
-    { status: "in_progress", label: "In progress", icon: "loader" },
-    { status: "completed", label: "Completed", icon: "check-circle" },
+  const statuses: { status: TaskStatus; icon: keyof typeof Feather.glyphMap }[] = [
+    { status: "pending", icon: "circle" },
+    { status: "in_progress", icon: "loader" },
+    { status: "completed", icon: "check-circle" },
   ];
 
   return (
@@ -306,7 +325,7 @@ function TaskActionSheet({
           <View style={styles.handleWrap}>
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
           </View>
-          <Text style={[styles.sheetTitle, { color: colors.foreground }]}>{task?.title}</Text>
+          <Text style={[styles.sheetTitle, { color: colors.foreground, textAlign }]}>{task?.title}</Text>
           <View style={{ gap: 10, marginTop: 12 }}>
             {statuses.map((s) => {
               const isCurrent = task?.status === s.status;
@@ -318,11 +337,11 @@ function TaskActionSheet({
                   onPress={() => onStatus(s.status)}
                   style={({ pressed }) => [
                     styles.actionRow,
-                    { backgroundColor: colors.card, borderColor: isCurrent ? color : colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1 },
+                    { backgroundColor: colors.card, borderColor: isCurrent ? color : colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
                   ]}
                 >
                   <Feather name={s.icon} size={20} color={color} />
-                  <Text style={[styles.actionLabel, { color: colors.foreground }]}>{s.label}</Text>
+                  <Text style={[styles.actionLabel, { color: colors.foreground, textAlign }]}>{statusFilterLabel(t, s.status)}</Text>
                   {isCurrent ? <Feather name="check" size={18} color={color} /> : null}
                 </Pressable>
               );
@@ -332,11 +351,11 @@ function TaskActionSheet({
               onPress={onDelete}
               style={({ pressed }) => [
                 styles.actionRow,
-                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1 },
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
               ]}
             >
               <Feather name="trash-2" size={20} color={colors.destructive} />
-              <Text style={[styles.actionLabel, { color: colors.destructive }]}>Delete task</Text>
+              <Text style={[styles.actionLabel, { color: colors.destructive, textAlign }]}>{t("common.delete")}</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -358,6 +377,7 @@ function CreateTaskSheet({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t, textAlign } = useLocale();
   const createTask = useCreateTask();
   const usersQuery = useListUsers(
     { limit: 100 },
@@ -424,35 +444,35 @@ function CreateTaskSheet({
           <View style={styles.handleWrap}>
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
           </View>
-          <Text style={[styles.sheetTitle, { color: colors.foreground }]}>New Task</Text>
+          <Text style={[styles.sheetTitle, { color: colors.foreground, textAlign }]}>{t("tasks.addTask")}</Text>
 
           <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 12 }}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>TITLE</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{t("tasks.fieldTitle")}</Text>
             <TextInput
               value={title}
               onChangeText={setTitle}
-              placeholder="What needs to be done?"
+              placeholder={t("tasks.titlePlaceholder")}
               placeholderTextColor={colors.mutedForeground}
               style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
             />
 
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>TYPE</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{t("tasks.fieldType")}</Text>
             <View style={styles.chipWrap}>
-              {TASK_TYPES.map((t) => {
-                const isActive = type === t;
+              {TASK_TYPES.map((taskType) => {
+                const isActive = type === taskType;
                 return (
                   <Pressable
-                    key={t}
-                    onPress={() => setType(t)}
+                    key={taskType}
+                    onPress={() => setType(taskType)}
                     style={[styles.chip, { backgroundColor: isActive ? colors.primary : colors.card, borderColor: isActive ? colors.primary : colors.border }]}
                   >
                     <Feather
-                      name={TASK_TYPE_ICONS[t] ?? "check-square"}
+                      name={TASK_TYPE_ICONS[taskType] ?? "check-square"}
                       size={13}
                       color={isActive ? "#FFFFFF" : colors.foreground}
                     />
                     <Text style={[styles.chipText, { color: isActive ? "#FFFFFF" : colors.foreground, marginLeft: 5 }]}>
-                      {prettyLabel(t)}
+                      {t("tasks.types." + taskType, { defaultValue: prettyLabel(taskType) })}
                     </Text>
                   </Pressable>
                 );
@@ -461,7 +481,7 @@ function CreateTaskSheet({
 
             <View style={{ marginTop: 16 }}>
               <DateTimeField
-                label="Due date & time"
+                label={t("tasks.dueDateTime")}
                 date={dueDate}
                 time={dueTime}
                 optional
@@ -475,13 +495,13 @@ function CreateTaskSheet({
 
             {canAssign ? (
               <>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ASSIGN TO</Text>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{t("tasks.fieldAssignTo")}</Text>
                 <View style={styles.chipWrap}>
                   <Pressable
                     onPress={() => setAssignedToId(null)}
                     style={[styles.chip, { backgroundColor: !assignedToId ? colors.primary : colors.card, borderColor: !assignedToId ? colors.primary : colors.border }]}
                   >
-                    <Text style={[styles.chipText, { color: !assignedToId ? "#FFFFFF" : colors.foreground }]}>Me</Text>
+                    <Text style={[styles.chipText, { color: !assignedToId ? "#FFFFFF" : colors.foreground }]}>{t("tasks.assignMe")}</Text>
                   </Pressable>
                   {users.map((u) => {
                     const isActive = assignedToId === u.id;
@@ -499,11 +519,11 @@ function CreateTaskSheet({
               </>
             ) : null}
 
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>NOTES (OPTIONAL)</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{t("tasks.fieldNotesOptional")}</Text>
             <TextInput
               value={notes}
               onChangeText={setNotes}
-              placeholder="Extra details"
+              placeholder={t("tasks.detailsPlaceholder")}
               placeholderTextColor={colors.mutedForeground}
               multiline
               style={[styles.commentInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, borderRadius: colors.radius }]}
@@ -515,7 +535,7 @@ function CreateTaskSheet({
             onPress={submit}
             style={[styles.applyBtn, { backgroundColor: title.trim() ? colors.primary : colors.muted }]}
           >
-            <Text style={styles.applyText}>{createTask.isPending ? "Creating…" : "Create task"}</Text>
+            <Text style={styles.applyText}>{createTask.isPending ? t("common.saving") : t("tasks.addTask")}</Text>
           </Pressable>
         </Pressable>
       </Pressable>

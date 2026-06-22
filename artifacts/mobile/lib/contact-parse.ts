@@ -274,15 +274,18 @@ export function mergeExtracted(
 ): ExtractedCardData {
   const out: ExtractedCardData = { ...base };
   (Object.keys(add) as (keyof ExtractedCardData)[]).forEach((k) => {
+    if (k === "original") return; // verbatim OCR object, not a mergeable text field
     const v = add[k];
     const current = out[k];
-    if ((current == null || current === "") && v != null && String(v).trim() !== "") {
-      out[k] = v;
+    if ((current == null || current === "") && typeof v === "string" && v.trim() !== "") {
+      (out as Record<string, unknown>)[k] = v;
     }
   });
   return out;
 }
 
 export function hasAnyContactField(data: ExtractedCardData): boolean {
-  return Object.values(data).some((v) => v != null && String(v).trim() !== "");
+  return Object.entries(data).some(
+    ([k, v]) => k !== "original" && v != null && String(v).trim() !== "",
+  );
 }

@@ -16,29 +16,38 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState, FONT } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
+import type { Locale } from "@/hooks/useLocale";
 import type { QueueItem } from "@/lib/offline-queue";
 
-const SOURCE_LABEL: Record<string, string> = {
-  card: "Business card",
-  badge: "Event badge",
-  qr: "QR / LinkedIn",
-  manual: "Manual entry",
-};
+function sourceLabel(t: Locale["t"], source: string): string {
+  switch (source) {
+    case "card":
+      return t("capture.businessCard");
+    case "qr":
+      return t("capture.qrCode");
+    case "manual":
+      return t("capture.manual");
+    default:
+      return source;
+  }
+}
 
-function timeAgo(ts: number): string {
+function timeAgo(t: Locale["t"], ts: number): string {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t("sync.justNow");
+  if (mins < 60) return t("common.minutesAgo", { count: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+  if (hrs < 24) return t("common.hoursAgo", { count: hrs });
+  return t("common.daysAgo", { count: Math.floor(hrs / 24) });
 }
 
 export default function SyncScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const {
     isConnected,
     isOnline,
@@ -69,23 +78,23 @@ export default function SyncScreen() {
     const isFailed = item.status === "failed";
     const isSyncingItem = item.status === "syncing";
     const statusColor = isFailed ? colors.destructive : isSyncingItem ? colors.primary : "#F59E0B";
-    const statusLabel = isFailed ? "Failed" : isSyncingItem ? "Syncing…" : "Pending";
+    const statusLabel = isFailed ? t("sync.failed") : isSyncingItem ? t("sync.syncing") : t("sync.pending");
     const icon: keyof typeof Feather.glyphMap = item.kind === "scan" ? "camera" : "user";
     return (
       <View
         key={item.id}
-        style={[styles.row, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
+        style={[styles.row, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, flexDirection: isRTL ? "row-reverse" : "row" }]}
       >
         <View style={[styles.rowIcon, { backgroundColor: statusColor + "1A" }]}>
           <Feather name={icon} size={17} color={statusColor} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.rowTitle, { color: colors.foreground }]}>
+          <Text numberOfLines={1} style={[styles.rowTitle, { color: colors.foreground, textAlign }]}>
             {item.label}
           </Text>
-          <Text numberOfLines={1} style={[styles.rowSub, { color: colors.mutedForeground }]}>
-            {SOURCE_LABEL[item.source] ?? item.source} · {timeAgo(item.createdAt)}
-            {item.kind === "scan" ? " · needs OCR" : ""}
+          <Text numberOfLines={1} style={[styles.rowSub, { color: colors.mutedForeground, textAlign }]}>
+            {sourceLabel(t, item.source)} · {timeAgo(t, item.createdAt)}
+            {item.kind === "scan" ? t("sync.needsOcr") : ""}
           </Text>
           {isFailed && item.lastError ? (
             <Text numberOfLines={1} style={[styles.rowError, { color: colors.destructive }]}>
@@ -137,11 +146,11 @@ export default function SyncScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-            <Feather name="arrow-left" size={22} color={colors.foreground} />
+            <Feather name="arrow-left" size={22} color={colors.foreground} style={isRTL ? { transform: [{ scaleX: -1 }] } : undefined} />
           </Pressable>
-          <Text style={[styles.heading, { color: colors.foreground }]}>Sync Center</Text>
+          <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("sync.title")}</Text>
         </View>
 
         {/* Connection status */}
@@ -151,6 +160,7 @@ export default function SyncScreen() {
             {
               backgroundColor: isOnline ? colors.primary + "12" : colors.destructive + "12",
               borderRadius: colors.radius + 4,
+              flexDirection: isRTL ? "row-reverse" : "row",
             },
           ]}
         >
@@ -161,15 +171,15 @@ export default function SyncScreen() {
             ]}
           />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.statusTitle, { color: colors.foreground }]}>
-              {isOnline ? "Online" : manualOffline ? "Working offline" : "No connection"}
+            <Text style={[styles.statusTitle, { color: colors.foreground, textAlign }]}>
+              {isOnline ? t("sync.online") : t("sync.offline")}
             </Text>
-            <Text style={[styles.statusSub, { color: colors.mutedForeground }]}>
+            <Text style={[styles.statusSub, { color: colors.mutedForeground, textAlign }]}>
               {isOnline
-                ? "Captures save straight to the cloud."
+                ? t("sync.onlineDesc")
                 : manualOffline
-                  ? "Captures are queued on this device."
-                  : "Captures are queued and sync automatically when you reconnect."}
+                  ? t("sync.offlineDesc")
+                  : t("sync.offlineAutoDesc")}
             </Text>
           </View>
         </View>
@@ -178,16 +188,16 @@ export default function SyncScreen() {
         <View
           style={[
             styles.toggleCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
           ]}
         >
           <View style={[styles.toggleIcon, { backgroundColor: "#67707D1A" }]}>
             <Feather name="wifi-off" size={18} color="#67707D" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.toggleTitle, { color: colors.foreground }]}>Work offline</Text>
-            <Text style={[styles.toggleSub, { color: colors.mutedForeground }]}>
-              Queue everything locally{!isConnected ? " (no connection detected)" : ""}
+            <Text style={[styles.toggleTitle, { color: colors.foreground, textAlign }]}>{t("sync.workOffline")}</Text>
+            <Text style={[styles.toggleSub, { color: colors.mutedForeground, textAlign }]}>
+              {t("sync.workOfflineDesc")}{!isConnected ? t("sync.noConnectionSuffix") : ""}
             </Text>
           </View>
           <Switch
@@ -202,7 +212,7 @@ export default function SyncScreen() {
         </View>
 
         {/* Summary + sync */}
-        <View style={styles.summaryRow}>
+        <View style={[styles.summaryRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <View
             style={[
               styles.summaryCard,
@@ -210,7 +220,7 @@ export default function SyncScreen() {
             ]}
           >
             <Text style={[styles.summaryNum, { color: colors.foreground }]}>{pendingCount}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Pending</Text>
+            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t("sync.pending")}</Text>
           </View>
           <View
             style={[
@@ -226,7 +236,7 @@ export default function SyncScreen() {
             >
               {failedCount}
             </Text>
-            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Failed</Text>
+            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t("sync.failed")}</Text>
           </View>
         </View>
 
@@ -244,12 +254,12 @@ export default function SyncScreen() {
         >
           <Feather name={isSyncing ? "loader" : "refresh-cw"} size={18} color={colors.primaryForeground} />
           <Text style={[styles.syncBtnText, { color: colors.primaryForeground }]}>
-            {isSyncing ? "Syncing…" : "Sync now"}
+            {isSyncing ? t("sync.syncing") : t("sync.syncNow")}
           </Text>
         </Pressable>
         {lastSyncAt ? (
           <Text style={[styles.lastSync, { color: colors.mutedForeground }]}>
-            Last synced {timeAgo(lastSyncAt)}
+            {t("sync.lastSyncedPrefix")}{timeAgo(t, lastSyncAt)}
           </Text>
         ) : null}
 
@@ -258,8 +268,8 @@ export default function SyncScreen() {
           <View style={{ marginTop: 40 }}>
             <EmptyState
               icon="check-circle"
-              title="All caught up"
-              subtitle="Captures you make offline will appear here, ready to sync."
+              title={t("sync.allSynced")}
+              subtitle={t("sync.emptyDesc")}
             />
           </View>
         ) : (
@@ -267,7 +277,7 @@ export default function SyncScreen() {
             {failed.length > 0 ? (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-                  NEEDS ATTENTION
+                  {t("sync.needsAttention")}
                 </Text>
                 <View
                   style={[
@@ -282,7 +292,7 @@ export default function SyncScreen() {
             {pending.length > 0 ? (
               <>
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-                  QUEUED
+                  {t("sync.queued")}
                 </Text>
                 <View
                   style={[

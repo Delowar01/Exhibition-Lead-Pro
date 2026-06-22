@@ -7,6 +7,9 @@ import React, {
   useState,
 } from "react";
 
+import i18n from "@/lib/i18n";
+import { DEFAULT_COUNTRY, type CountryCode } from "@/lib/countries";
+
 export type ThemePref = "light" | "dark" | "system";
 export type CaptureModePref = "single" | "rapid" | "batch";
 export type LanguagePref = "en" | "ar";
@@ -39,6 +42,7 @@ export interface AppSettings {
   captureMode: CaptureModePref;
   notifications: boolean;
   language: LanguagePref;
+  country: CountryCode;
   biometricEnabled: boolean;
   activeEventId: number | null;
   activeEventName: string | null;
@@ -50,6 +54,7 @@ const DEFAULTS: AppSettings = {
   captureMode: "single",
   notifications: true,
   language: "en",
+  country: DEFAULT_COUNTRY,
   biometricEnabled: false,
   activeEventId: null,
   activeEventName: null,
@@ -62,6 +67,7 @@ interface SettingsContextValue extends AppSettings {
   setCaptureMode: (value: CaptureModePref) => void;
   setNotifications: (value: boolean) => void;
   setLanguage: (value: LanguagePref) => void;
+  setCountry: (value: CountryCode) => void;
   setBiometricEnabled: (value: boolean) => void;
   setActiveEvent: (id: number | null, name: string | null) => void;
   setContactFilters: (value: ContactFilters) => void;
@@ -78,6 +84,7 @@ const SettingsContext = createContext<SettingsContextValue>({
   setCaptureMode: () => {},
   setNotifications: () => {},
   setLanguage: () => {},
+  setCountry: () => {},
   setBiometricEnabled: () => {},
   setActiveEvent: () => {},
   setContactFilters: () => {},
@@ -110,6 +117,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Keep i18next in sync with the persisted language preference. Runs on initial
+  // load and on every change, so switching language updates all screens live
+  // (no logout / reload needed — react-i18next re-renders consumers).
+  useEffect(() => {
+    if (i18n.language !== settings.language) {
+      void i18n.changeLanguage(settings.language);
+    }
+  }, [settings.language]);
+
   const patch = useCallback((next: Partial<AppSettings>) => {
     setSettings((prev) => {
       const merged = { ...prev, ...next };
@@ -125,6 +141,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setCaptureMode: (captureMode) => patch({ captureMode }),
     setNotifications: (notifications) => patch({ notifications }),
     setLanguage: (language) => patch({ language }),
+    setCountry: (country) => patch({ country }),
     setBiometricEnabled: (biometricEnabled) => patch({ biometricEnabled }),
     setActiveEvent: (activeEventId, activeEventName) =>
       patch({ activeEventId, activeEventName }),

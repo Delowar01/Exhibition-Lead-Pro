@@ -26,6 +26,7 @@ import { FONT, PrimaryButton } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import {
   type BatchCapture,
   clearBatchCaptures,
@@ -58,8 +59,8 @@ function extractedToContact(data: ExtractedCardData, gps: Gps, eventId: number |
   };
 }
 
-function contactDisplayName(data: ExtractedCardData): string {
-  return [data.firstName, data.lastName].filter(Boolean).join(" ") || data.company || "New contact";
+function contactDisplayName(data: ExtractedCardData, fallback: string): string {
+  return [data.firstName, data.lastName].filter(Boolean).join(" ") || data.company || fallback;
 }
 
 export default function CaptureCameraScreen() {
@@ -72,12 +73,13 @@ export default function CaptureCameraScreen() {
     ? params.mode
     : "single") as CaptureMode;
 
+  const { t } = useLocale();
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const createScan = useCreateScan();
   const createContact = useCreateContact();
   const { isOnline, enqueueScan } = useOffline();
-  const { activeEventId } = useSettings();
+  const { activeEventId, language } = useSettings();
   const eventId = activeEventId ?? null;
 
   const [capturing, setCapturing] = useState(false);
@@ -117,7 +119,7 @@ export default function CaptureCameraScreen() {
   }, []);
 
   const topPad = insets.top;
-  const sourceLabel = source === "signature" ? "email signature" : "business card";
+  const sourceLabel = source === "signature" ? t("capture.sourceLabelSignature") : t("capture.sourceLabelCard");
 
   const captureImage = useCallback(async (): Promise<string> => {
     if (cameraRef.current) {
@@ -138,6 +140,7 @@ export default function CaptureCameraScreen() {
         const scan = await createScan.mutateAsync({
           data: {
             imageData,
+            appLanguage: language,
             eventId,
             latitude: gps.latitude,
             longitude: gps.longitude,
@@ -147,12 +150,12 @@ export default function CaptureCameraScreen() {
         const extracted = scan.extractedData ?? {};
         await createContact.mutateAsync({ data: extractedToContact(extracted, gps, eventId) });
         setSavedCount((c) => c + 1);
-        setLastSaved(contactDisplayName(extracted));
+        setLastSaved(contactDisplayName(extracted, t("capture.newContactFallback")));
       } catch {
         setFailedCount((c) => c + 1);
       }
     },
-    [createScan, createContact, eventId],
+    [createScan, createContact, eventId, language, t],
   );
 
   async function handleCapture() {
@@ -183,10 +186,11 @@ export default function CaptureCameraScreen() {
       // Offline: the image needs server-side OCR we can't run here, so queue
       // the raw capture — it's OCR'd and turned into a contact on sync.
       if (!isOnline) {
-        const queueLabel = source === "signature" ? "Email signature" : "Business card";
+        const queueLabel = source === "signature" ? t("scanReview.sourceSignature") : t("scanReview.sourceCard");
         const meta = {
           label: queueLabel,
           source,
+          appLanguage: language === "ar" ? ("ar" as const) : ("en" as const),
           eventId,
           latitude: gps.latitude,
           longitude: gps.longitude,
@@ -204,7 +208,7 @@ export default function CaptureCameraScreen() {
         enqueueScan(imageData, meta);
         setRapidCount((c) => c + 1);
         setSavedCount((c) => c + 1);
-        setLastSaved(`${queueLabel} (offline)`);
+        setLastSaved(t("capture.offlineSuffix", { label: queueLabel }));
         if (Platform.OS !== "web") Haptics.selectionAsync();
         return;
       }
@@ -213,6 +217,7 @@ export default function CaptureCameraScreen() {
         const scan = await createScan.mutateAsync({
           data: {
             imageData,
+            appLanguage: language,
             eventId,
             latitude: gps.latitude,
             longitude: gps.longitude,
@@ -227,6 +232,7 @@ export default function CaptureCameraScreen() {
           params: {
             data: JSON.stringify(scan.extractedData ?? {}),
             source,
+            conf: scan.confidence != null ? String(scan.confidence) : "",
             lat: gps.latitude != null ? String(gps.latitude) : "",
             lng: gps.longitude != null ? String(gps.longitude) : "",
             acc: gps.gpsAccuracy != null ? String(gps.gpsAccuracy) : "",
@@ -242,7 +248,7 @@ export default function CaptureCameraScreen() {
       }
       void processRapid(imageData, gps);
     } catch {
-      setErrorMsg("Couldn't capture that. Try again.");
+      setErrorMsg(t("capture.captureFailed"));
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -286,13 +292,13 @@ export default function CaptureCameraScreen() {
         <View style={[styles.permIcon, { backgroundColor: colors.primary + "22" }]}>
           <Feather name="camera" size={32} color={colors.primary} />
         </View>
-        <Text style={styles.permTitle}>Camera access needed</Text>
+        <Text style={styles.permTitle}>{t("capture.cameraNeeded")}</Text>
         <Text style={styles.permText}>
-          Enable camera access to capture a {sourceLabel} and extract contact details automatically.
+          {t("capture.cameraNeededDesc", { label: sourceLabel })}
         </Text>
         <View style={{ height: 24 }} />
         <PrimaryButton
-          label={blocked ? "Open Settings" : "Enable Camera"}
+          label={blocked ? t("capture.openSettings") : t("capture.enableCamera")}
           icon="camera"
           onPress={() => {
             if (blocked && Platform.OS !== "web") {
@@ -310,7 +316,7 @@ export default function CaptureCameraScreen() {
         {Platform.OS === "web" ? (
           <Pressable onPress={handleCapture} style={styles.webSkip}>
             <Text style={[styles.webSkipText, { color: "rgba(255,255,255,0.6)" }]}>
-              Simulate a scan (web preview)
+              {t("capture.simulateScan")}
             </Text>
           </Pressable>
         ) : null}
@@ -336,9 +342,9 @@ export default function CaptureCameraScreen() {
           </View>
         </View>
         <Text style={styles.overlayTitle}>
-          {source === "signature" ? "Scan a signature" : "Scan a card"}
+          {source === "signature" ? t("capture.scanSignature") : t("capture.scanCardTitle")}
         </Text>
-        <Text style={styles.overlaySub}>Align the {sourceLabel} in the frame</Text>
+        <Text style={styles.overlaySub}>{t("capture.alignFrame", { label: sourceLabel })}</Text>
       </LinearGradient>
 
       {/* Frame guide */}
@@ -356,7 +362,8 @@ export default function CaptureCameraScreen() {
         <View style={[styles.rapidBanner, { top: topPad + 110 }]} pointerEvents="none">
           <Feather name="check-circle" size={16} color="#FFFFFF" />
           <Text style={styles.rapidBannerText}>
-            {savedCount} saved{failedCount > 0 ? ` · ${failedCount} failed` : ""}
+            {t("capture.savedCount", { count: savedCount })}
+            {failedCount > 0 ? t("capture.failedSuffix", { count: failedCount }) : ""}
             {lastSaved ? ` · ${lastSaved}` : ""}
           </Text>
         </View>
@@ -367,7 +374,7 @@ export default function CaptureCameraScreen() {
         <View style={[styles.rapidBanner, { top: topPad + 110, backgroundColor: "rgba(255,107,0,0.94)" }]} pointerEvents="none">
           <Feather name="layers" size={16} color="#FFFFFF" />
           <Text style={styles.rapidBannerText}>
-            {batchCount} captured · tap Done to review
+            {t("capture.batchBanner", { count: batchCount })}
           </Text>
         </View>
       ) : null}
@@ -397,12 +404,12 @@ export default function CaptureCameraScreen() {
         </Pressable>
         <Text style={styles.shutterLabel}>
           {capturing
-            ? "Capturing…"
+            ? t("capture.capturing")
             : mode === "rapid"
-              ? "Tap to capture — saves in the background"
+              ? t("capture.rapidHint")
               : mode === "batch"
-                ? "Tap to capture another"
-                : "Tap to capture"}
+                ? t("capture.tapCaptureAnother")
+                : t("capture.tapCapture")}
         </Text>
 
         {mode === "batch" ? (
@@ -411,7 +418,7 @@ export default function CaptureCameraScreen() {
             style={[styles.doneBtn, { borderColor: "rgba(255,255,255,0.4)" }]}
           >
             <Text style={styles.doneBtnText}>
-              {batchCount > 0 ? `Done · review ${batchCount}` : "Done"}
+              {batchCount > 0 ? t("capture.doneReview", { count: batchCount }) : t("capture.done")}
             </Text>
           </Pressable>
         ) : null}

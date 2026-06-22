@@ -14,13 +14,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FONT } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
+import type { Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
@@ -38,7 +36,11 @@ function dateToStr(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function formatDisplay(dateStr?: string | null, timeStr?: string | null): string {
+function formatDisplay(
+  t: Locale["t"],
+  dateStr?: string | null,
+  timeStr?: string | null,
+): string {
   const d = parseLocalDate(dateStr);
   if (!d) return "";
   const datePart = formatGregorian(d, {
@@ -49,7 +51,7 @@ function formatDisplay(dateStr?: string | null, timeStr?: string | null): string
   });
   if (!timeStr) return datePart;
   const [h, m] = timeStr.split(":").map((p) => parseInt(p, 10));
-  const period = h >= 12 ? "PM" : "AM";
+  const period = h >= 12 ? t("common.pm") : t("common.am");
   const hr12 = h % 12 === 0 ? 12 : h % 12;
   return `${datePart} · ${hr12}:${pad2(m)} ${period}`;
 }
@@ -78,7 +80,13 @@ export function DateTimeField({
 }: DateTimeFieldProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
+
+  const MONTHS = useMemo(
+    () => Array.from({ length: 12 }, (_, i) => t(`dateField.m${i + 1}`)),
+    [t],
+  );
 
   const selected = parseLocalDate(date);
   const [cursor, setCursor] = useState<Date>(() => {
@@ -128,7 +136,7 @@ export function DateTimeField({
     onChange(ds, nextTime);
   }
 
-  const display = formatDisplay(date, withTime ? time : null);
+  const display = formatDisplay(t, date, withTime ? time : null);
 
   return (
     <View style={{ marginBottom: 14 }}>
@@ -157,7 +165,7 @@ export function DateTimeField({
             { color: display ? colors.foreground : colors.mutedForeground },
           ]}
         >
-          {display || (optional ? "Optional — tap to set" : "Tap to choose")}
+          {display || (optional ? t("dateField.optionalSet") : t("dateField.tapChoose"))}
         </Text>
         {date && optional ? (
           <Pressable
@@ -282,7 +290,7 @@ export function DateTimeField({
             {withTime ? (
               <View style={styles.timeSection}>
                 <Text style={[styles.timeLabel, { color: colors.mutedForeground }]}>
-                  TIME
+                  {t("dateField.time")}
                 </Text>
                 <View style={styles.timeRow}>
                   <TimeScroller
@@ -318,7 +326,7 @@ export function DateTimeField({
                               { color: active ? "#FFFFFF" : colors.foreground },
                             ]}
                           >
-                            {p}
+                            {p === "AM" ? t("common.am") : t("common.pm")}
                           </Text>
                         </Pressable>
                       );
@@ -332,7 +340,7 @@ export function DateTimeField({
               onPress={() => setOpen(false)}
               style={[styles.doneBtn, { backgroundColor: colors.primary }]}
             >
-              <Text style={styles.doneText}>Done</Text>
+              <Text style={styles.doneText}>{t("dateField.done")}</Text>
             </Pressable>
           </Pressable>
         </Pressable>

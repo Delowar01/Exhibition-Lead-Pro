@@ -33,6 +33,8 @@ export interface QueueItem {
   cardPayload?: BusinessCardInput;
   /** Present when kind === "scan" — a data URL base64 image awaiting OCR. */
   imageData?: string;
+  /** App language active at capture time — drives OCR translation on sync. */
+  appLanguage?: "en" | "ar";
   /** Event this capture belongs to (threaded through to scan + contact). */
   eventId?: number | null;
   /** GPS captured at scan time. */

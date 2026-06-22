@@ -15,19 +15,21 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FONT } from "@/components/ui";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 type CaptureMode = "single" | "rapid" | "batch";
 
-const MODES: { key: CaptureMode; label: string; icon: keyof typeof Feather.glyphMap; desc: string }[] = [
-  { key: "single", label: "Single", icon: "square", desc: "Capture one card and review the details before saving." },
-  { key: "rapid", label: "Rapid", icon: "zap", desc: "Capture back-to-back — each scan saves instantly and returns to the camera." },
-  { key: "batch", label: "Batch", icon: "layers", desc: "Queue several cards, then process them all together." },
+const MODES: { key: CaptureMode; labelKey: string; icon: keyof typeof Feather.glyphMap; descKey: string }[] = [
+  { key: "single", labelKey: "capture.modeSingle", icon: "square", descKey: "capture.modeSingleDesc" },
+  { key: "rapid", labelKey: "capture.modeRapid", icon: "zap", descKey: "capture.modeRapidDesc" },
+  { key: "batch", labelKey: "capture.modeBatch", icon: "layers", descKey: "capture.modeBatchDesc" },
 ];
 
 export default function CaptureScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const { captureMode, isLoaded, activeEventId, activeEventName } = useSettings();
   const [mode, setMode] = useState<CaptureMode>(captureMode);
 
@@ -65,8 +67,8 @@ export default function CaptureScreen() {
   }[] = [
     {
       key: "card",
-      label: "Business Card",
-      sub: "Scan a printed card",
+      label: t("capture.businessCard"),
+      sub: t("capture.businessCardDesc"),
       icon: "credit-card",
       color: colors.primary,
       onPress: () =>
@@ -76,8 +78,8 @@ export default function CaptureScreen() {
     },
     {
       key: "signature",
-      label: "Email Signature",
-      sub: "Scan an email signature block",
+      label: t("capture.emailSignature"),
+      sub: t("capture.emailSignatureDesc"),
       icon: "mail",
       color: "#8B5CF6",
       onPress: () =>
@@ -87,32 +89,32 @@ export default function CaptureScreen() {
     },
     {
       key: "nfc",
-      label: "NFC Capture",
-      sub: "Tap an NFC-enabled card",
+      label: t("capture.nfc"),
+      sub: t("capture.nfcDesc"),
       icon: "wifi",
       color: "#10B981",
       onPress: () => requireEvent(() => router.push("/capture-nfc")),
     },
     {
       key: "qr",
-      label: "QR Code",
-      sub: "Scan a QR code",
+      label: t("capture.qrCode"),
+      sub: t("capture.qrCodeDesc"),
       icon: "grid",
       color: "#06B6D4",
       onPress: () => requireEvent(() => router.push("/capture-qr")),
     },
     {
       key: "linkedin",
-      label: "LinkedIn QR",
-      sub: "Scan a LinkedIn profile code",
+      label: t("capture.linkedinQr"),
+      sub: t("capture.linkedinQrDesc"),
       icon: "linkedin",
       color: "#0A66C2",
       onPress: () => requireEvent(() => router.push("/capture-qr")),
     },
     {
       key: "manual",
-      label: "Manual Entry",
-      sub: "Type the details yourself",
+      label: t("capture.manual"),
+      sub: t("capture.manualDesc"),
       icon: "edit-3",
       color: "#F59E0B",
       onPress: () => requireEvent(() => router.push("/capture-manual")),
@@ -129,13 +131,17 @@ export default function CaptureScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.heading, { color: colors.foreground }]}>Capture Center</Text>
-        <Text style={[styles.subheading, { color: colors.mutedForeground }]}>
-          Turn any contact into a lead
+        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
+          {t("capture.title")}
+        </Text>
+        <Text style={[styles.subheading, { color: colors.mutedForeground, textAlign }]}>
+          {t("capture.subtitle")}
         </Text>
 
         {/* Active event */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ACTIVE EVENT</Text>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+          {t("home.activeEvent").toUpperCase()}
+        </Text>
         <Pressable
           onPress={() => {
             if (Platform.OS !== "web") Haptics.selectionAsync();
@@ -148,6 +154,7 @@ export default function CaptureScreen() {
               borderColor: activeEventId ? colors.primary : colors.border,
               borderRadius: colors.radius + 4,
               opacity: pressed ? 0.8 : 1,
+              flexDirection: isRTL ? "row-reverse" : "row",
             },
           ]}
         >
@@ -164,19 +171,21 @@ export default function CaptureScreen() {
             />
           </View>
           <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={[styles.eventBarTitle, { color: colors.foreground }]}>
-              {activeEventName ?? "No event selected"}
+            <Text numberOfLines={1} style={[styles.eventBarTitle, { color: colors.foreground, textAlign }]}>
+              {activeEventName ?? t("home.noActiveEvent")}
             </Text>
-            <Text style={[styles.eventBarSub, { color: colors.mutedForeground }]}>
-              {activeEventId ? "Captures are tagged to this event" : "Tap to select before scanning"}
+            <Text style={[styles.eventBarSub, { color: colors.mutedForeground, textAlign }]}>
+              {activeEventId ? t("capture.eventTagged") : t("capture.eventSelectHint")}
             </Text>
           </View>
           <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
         </Pressable>
 
         {/* Mode selector */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CAPTURE MODE</Text>
-        <View style={[styles.modeBar, { backgroundColor: colors.muted, borderRadius: colors.radius + 4 }]}>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+          {t("capture.captureMode").toUpperCase()}
+        </Text>
+        <View style={[styles.modeBar, { backgroundColor: colors.muted, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           {MODES.map((m) => {
             const active = m.key === mode;
             return (
@@ -202,21 +211,21 @@ export default function CaptureScreen() {
                     { color: active ? colors.foreground : colors.mutedForeground },
                   ]}
                 >
-                  {m.label}
+                  {t(m.labelKey)}
                 </Text>
               </Pressable>
             );
           })}
         </View>
-        <View style={[styles.modeHint, { backgroundColor: colors.accent, borderRadius: colors.radius }]}>
+        <View style={[styles.modeHint, { backgroundColor: colors.accent, borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Feather name={activeMode.icon} size={15} color={colors.primary} />
-          <Text style={[styles.modeHintText, { color: colors.accentForeground }]}>
-            {activeMode.desc}
+          <Text style={[styles.modeHintText, { color: colors.accentForeground, textAlign }]}>
+            {t(activeMode.descKey)}
           </Text>
         </View>
 
         {/* Methods */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CAPTURE METHOD</Text>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>{t("capture.captureMethod")}</Text>
         <View style={{ gap: 12 }}>
           {methods.map((m) => (
             <Pressable
@@ -227,15 +236,15 @@ export default function CaptureScreen() {
               }}
               style={({ pressed }) => [
                 styles.methodCard,
-                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.75 : 1 },
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.75 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
               ]}
             >
               <View style={[styles.methodIcon, { backgroundColor: m.color + "1A" }]}>
                 <Feather name={m.icon} size={22} color={m.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.methodLabel, { color: colors.foreground }]}>{m.label}</Text>
-                <Text style={[styles.methodSub, { color: colors.mutedForeground }]}>{m.sub}</Text>
+                <Text style={[styles.methodLabel, { color: colors.foreground, textAlign }]}>{m.label}</Text>
+                <Text style={[styles.methodSub, { color: colors.mutedForeground, textAlign }]}>{m.sub}</Text>
               </View>
               <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
             </Pressable>

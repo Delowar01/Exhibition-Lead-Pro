@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCard } from "@/contexts/CardContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import { buildVCard } from "@/lib/contact-parse";
 import { shareCardAsJpeg } from "@/lib/card-share";
 
@@ -35,23 +36,28 @@ interface FormValues {
   officeAddress: string;
 }
 
-const FIELDS: {
+interface CardFieldConfig {
   key: keyof FormValues;
-  label: string;
+  labelKey: string;
   icon: keyof typeof Feather.glyphMap;
-  placeholder: string;
+  /** Static placeholder key under card.placeholders, when not country-aware. */
+  placeholderKey?: string;
+  /** Country-aware placeholder source from useLocale. */
+  placeholderKind?: "phone" | "address";
   keyboardType?: "default" | "email-address" | "phone-pad";
   autoCapitalize?: "none" | "words" | "sentences";
   multiline?: boolean;
   required?: boolean;
-}[] = [
-  { key: "fullName", label: "Full name", icon: "user", placeholder: "Jane Doe", autoCapitalize: "words", required: true },
-  { key: "designation", label: "Designation", icon: "briefcase", placeholder: "Sales Director", autoCapitalize: "words" },
-  { key: "companyName", label: "Company", icon: "home", placeholder: "Acme Inc.", autoCapitalize: "words" },
-  { key: "email", label: "Email", icon: "mail", placeholder: "jane@acme.com", keyboardType: "email-address", autoCapitalize: "none" },
-  { key: "primaryPhone", label: "Primary phone", icon: "phone", placeholder: "+1 555 123 4567", keyboardType: "phone-pad" },
-  { key: "alternatePhone", label: "Alternative phone", icon: "phone-call", placeholder: "Optional", keyboardType: "phone-pad" },
-  { key: "officeAddress", label: "Office address", icon: "map-pin", placeholder: "123 Main St, City", multiline: true },
+}
+
+const FIELDS: CardFieldConfig[] = [
+  { key: "fullName", labelKey: "fullName", icon: "user", placeholderKey: "fullName", autoCapitalize: "words", required: true },
+  { key: "designation", labelKey: "designation", icon: "briefcase", placeholderKey: "designation", autoCapitalize: "words" },
+  { key: "companyName", labelKey: "company", icon: "home", placeholderKey: "company", autoCapitalize: "words" },
+  { key: "email", labelKey: "email", icon: "mail", placeholderKey: "email", keyboardType: "email-address", autoCapitalize: "none" },
+  { key: "primaryPhone", labelKey: "primaryPhone", icon: "phone", placeholderKind: "phone", keyboardType: "phone-pad" },
+  { key: "alternatePhone", labelKey: "alternatePhone", icon: "phone-call", placeholderKey: "alternatePhone", keyboardType: "phone-pad" },
+  { key: "officeAddress", labelKey: "officeAddress", icon: "map-pin", placeholderKind: "address", multiline: true },
 ];
 
 function toForm(card: BusinessCard | null): FormValues {
@@ -75,6 +81,7 @@ export default function CardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, textAlign, isRTL, mirror } = useLocale();
   const { user } = useAuth();
   const { card, isLoading, hasCard, pendingSync, saveCard, deleteCard } = useCard();
   const { isOnline } = useOffline();
@@ -103,7 +110,7 @@ export default function CardScreen() {
 
   async function handleSave() {
     if (!values.fullName.trim()) {
-      setError("Your full name is required.");
+      setError(t("card.fullNameRequired"));
       return;
     }
     setError(null);
@@ -121,7 +128,7 @@ export default function CardScreen() {
       await saveCard(input);
       setEditing(false);
     } catch {
-      setError("Couldn't save your card. Please try again.");
+      setError(t("card.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -129,30 +136,30 @@ export default function CardScreen() {
 
   function handleDelete() {
     Alert.alert(
-      "Delete Digital Business Card",
-      "Are you sure you want to delete your Digital Business Card?\n\nThis action cannot be undone.",
+      t("card.deleteTitle"),
+      t("card.deleteConfirm"),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: t("common.delete"),
           style: "destructive",
           onPress: async () => {
             try {
               await deleteCard();
               Alert.alert(
-                "Card Deleted",
-                "Your Digital Business Card has been deleted successfully.",
+                t("card.deletedTitle"),
+                t("card.deletedBody"),
                 [
                   {
-                    text: "OK",
+                    text: t("common.ok"),
                     onPress: () => router.replace("/(tabs)/more"),
                   },
                 ],
               );
             } catch {
               Alert.alert(
-                "Deletion Failed",
-                "Unable to delete your Digital Business Card. Please try again.",
+                t("card.deleteFailedTitle"),
+                t("card.deleteFailedBody"),
               );
             }
           },
@@ -167,10 +174,8 @@ export default function CardScreen() {
       await shareCardAsJpeg(cardRef);
     } catch (err) {
       const msg =
-        err instanceof Error
-          ? err.message
-          : "Could not generate image — try again.";
-      Alert.alert("Share failed", msg);
+        err instanceof Error ? err.message : t("card.shareFailedBody");
+      Alert.alert(t("card.shareFailed"), msg);
     } finally {
       setSharing(false);
     }
@@ -178,16 +183,16 @@ export default function CardScreen() {
 
   const headerBack = (
     <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-      <Feather name="arrow-left" size={22} color={colors.foreground} />
+      <Feather name="arrow-left" size={22} color={colors.foreground} style={mirror} />
     </Pressable>
   );
 
   if (isLoading && !card) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: topPad }}>
-        <View style={[styles.header, { paddingHorizontal: 20 }]}>
+        <View style={[styles.header, { paddingHorizontal: 20, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           {headerBack}
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>My Card</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground, textAlign }]}>{t("card.myCard")}</Text>
         </View>
         <LoadingState />
       </View>
@@ -198,22 +203,22 @@ export default function CardScreen() {
   if (!isWorkspace && !hasCard) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: topPad }}>
-        <View style={[styles.header, { paddingHorizontal: 20 }]}>
+        <View style={[styles.header, { paddingHorizontal: 20, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           {headerBack}
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>My Card</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground, textAlign }]}>{t("card.myCard")}</Text>
         </View>
         <View style={styles.emptyState}>
           <View style={[styles.emptyIcon, { backgroundColor: colors.primary + "1A" }]}>
             <Feather name="credit-card" size={32} color={colors.primary} />
           </View>
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-            No digital card yet
+            {t("card.emptyTitle")}
           </Text>
           <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-            You haven&apos;t created your Digital Business Card yet. Set it up from the Workspace.
+            {t("card.emptyDesc")}
           </Text>
           <PrimaryButton
-            label="Go to Workspace"
+            label={t("card.goToWorkspace")}
             icon="settings"
             onPress={() =>
               router.push({ pathname: "/card", params: { mode: "edit" } })
@@ -239,25 +244,25 @@ export default function CardScreen() {
         bottomOffset={20}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
           {headerBack}
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            {editing ? (hasCard ? "Edit Card" : "Create Card") : "My Card"}
+          <Text style={[styles.headerTitle, { color: colors.foreground, textAlign }]}>
+            {editing ? (hasCard ? t("card.editCard") : t("card.createCard")) : t("card.myCard")}
           </Text>
         </View>
 
         {!isOnline ? (
-          <View style={[styles.notice, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius }]}>
+          <View style={[styles.notice, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="wifi-off" size={15} color={colors.destructive} />
-            <Text style={[styles.noticeText, { color: colors.destructive }]}>
-              You're offline — changes save locally and sync automatically.
+            <Text style={[styles.noticeText, { color: colors.destructive, textAlign }]}>
+              {t("card.offlineNotice")}
             </Text>
           </View>
         ) : pendingSync ? (
-          <View style={[styles.notice, { backgroundColor: "#F59E0B14", borderRadius: colors.radius }]}>
+          <View style={[styles.notice, { backgroundColor: "#F59E0B14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="upload-cloud" size={15} color="#B45309" />
-            <Text style={[styles.noticeText, { color: "#B45309" }]}>
-              Saved locally — syncing your card now.
+            <Text style={[styles.noticeText, { color: "#B45309", textAlign }]}>
+              {t("card.syncingNotice")}
             </Text>
           </View>
         ) : null}
@@ -304,25 +309,32 @@ function CardForm({
   onCancel?: () => void;
 }) {
   const colors = useColors();
+  const { t, isRTL, textAlign, phonePlaceholder, addressPlaceholder } = useLocale();
+
+  function placeholderFor(f: CardFieldConfig): string {
+    if (f.placeholderKind === "phone") return phonePlaceholder;
+    if (f.placeholderKind === "address") return addressPlaceholder;
+    return f.placeholderKey ? t(`card.placeholders.${f.placeholderKey}`) : "";
+  }
+
   return (
     <View>
-      <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-        This is the card people see when they scan your QR. Only your full name is
-        required. Your profile photo comes from your account.
+      <Text style={[styles.intro, { color: colors.mutedForeground, textAlign }]}>
+        {t("card.formIntro")}
       </Text>
 
       {error ? (
-        <View style={[styles.notice, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius }]}>
+        <View style={[styles.notice, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Feather name="alert-circle" size={15} color={colors.destructive} />
-          <Text style={[styles.noticeText, { color: colors.destructive }]}>{error}</Text>
+          <Text style={[styles.noticeText, { color: colors.destructive, textAlign }]}>{error}</Text>
         </View>
       ) : null}
 
       <View style={styles.grid}>
         {FIELDS.map((f) => (
           <View key={f.key} style={styles.fieldWrap}>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>
-              {f.label}
+            <Text style={[styles.label, { color: colors.mutedForeground, textAlign }]}>
+              {t(`card.fields.${f.labelKey}`)}
               {f.required ? <Text style={{ color: colors.primary }}> *</Text> : null}
             </Text>
             <View
@@ -332,6 +344,7 @@ function CardForm({
                   backgroundColor: colors.card,
                   borderColor: colors.border,
                   borderRadius: colors.radius + 2,
+                  flexDirection: isRTL ? "row-reverse" : "row",
                 },
                 f.multiline && styles.inputWrapMultiline,
               ]}
@@ -344,8 +357,8 @@ function CardForm({
               />
               <TextInput
                 value={values[f.key]}
-                onChangeText={(t) => onChange(f.key, t)}
-                placeholder={f.placeholder}
+                onChangeText={(v) => onChange(f.key, v)}
+                placeholder={placeholderFor(f)}
                 placeholderTextColor={colors.mutedForeground}
                 keyboardType={f.keyboardType ?? "default"}
                 autoCapitalize={f.autoCapitalize ?? "sentences"}
@@ -353,7 +366,7 @@ function CardForm({
                 multiline={f.multiline}
                 style={[
                   styles.input,
-                  { color: colors.foreground },
+                  { color: colors.foreground, textAlign },
                   f.multiline && { height: 80, textAlignVertical: "top" },
                 ]}
               />
@@ -363,7 +376,7 @@ function CardForm({
       </View>
 
       <PrimaryButton
-        label="Save card"
+        label={t("card.saveCard")}
         icon="check"
         loading={saving}
         onPress={onSave}
@@ -371,7 +384,7 @@ function CardForm({
       />
       {onCancel ? (
         <Pressable onPress={onCancel} style={styles.cancelBtn} disabled={saving}>
-          <Text style={[styles.cancelText, { color: colors.mutedForeground }]}>Cancel</Text>
+          <Text style={[styles.cancelText, { color: colors.mutedForeground }]}>{t("common.cancel")}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -403,16 +416,17 @@ function CardPreview({
   onDelete?: () => void;
 }) {
   const colors = useColors();
+  const { t, isRTL, textAlign } = useLocale();
   const name = card?.fullName ?? account.name ?? "";
   const avatarUrl = card?.avatarUrl ?? account.avatarUrl ?? null;
 
   const rows = useMemo(
     () =>
       [
-        { icon: "mail" as const, label: "Email", value: card?.email },
-        { icon: "phone" as const, label: "Phone", value: card?.primaryPhone },
-        { icon: "phone-call" as const, label: "Alt. phone", value: card?.alternatePhone },
-        { icon: "map-pin" as const, label: "Office", value: card?.officeAddress },
+        { icon: "mail" as const, labelKey: "email", value: card?.email },
+        { icon: "phone" as const, labelKey: "phone", value: card?.primaryPhone },
+        { icon: "phone-call" as const, labelKey: "altPhone", value: card?.alternatePhone },
+        { icon: "map-pin" as const, labelKey: "office", value: card?.officeAddress },
       ].filter((r) => r.value),
     [card],
   );
@@ -463,13 +477,13 @@ function CardPreview({
             <View style={styles.cardDivider} />
             <View style={styles.contactSection}>
               {rows.map((r) => (
-                <View key={r.label} style={styles.contactRow}>
+                <View key={r.labelKey} style={[styles.contactRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
                   <View style={styles.cIcon}>
                     <Feather name={r.icon} size={16} color={ORANGE_LIGHT} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.cLabel}>{r.label.toUpperCase()}</Text>
-                    <Text style={styles.cValue} numberOfLines={2}>
+                    <Text style={[styles.cLabel, { textAlign }]}>{t(`card.previewLabels.${r.labelKey}`).toUpperCase()}</Text>
+                    <Text style={[styles.cValue, { textAlign }]} numberOfLines={2}>
                       {r.value}
                     </Text>
                   </View>
@@ -480,19 +494,19 @@ function CardPreview({
         ) : null}
 
         <View style={styles.qrSection}>
-          <Text style={styles.qrHeading}>SCAN TO SAVE CONTACT</Text>
+          <Text style={styles.qrHeading}>{t("card.qrScanToSave")}</Text>
           {hasContactData ? (
             <CardQR value={vcard} size={150} color={NAVY} />
           ) : (
             <View style={styles.qrPending}>
               <Feather name="user-plus" size={22} color="#4A6E94" />
               <Text style={styles.qrPendingText}>
-                Add your details to generate a contact QR
+                {t("card.qrPending")}
               </Text>
             </View>
           )}
           <Text style={styles.qrSub}>
-            Point a camera to save these details as a contact
+            {t("card.qrSub")}
           </Text>
         </View>
 
@@ -500,7 +514,7 @@ function CardPreview({
       </View>
 
       <PrimaryButton
-        label={sharing ? "Generating image…" : "Share my card"}
+        label={sharing ? t("card.generatingImage") : t("card.share")}
         icon="share-2"
         loading={sharing}
         onPress={onShare}
@@ -511,11 +525,11 @@ function CardPreview({
           onPress={onEdit}
           style={({ pressed }) => [
             styles.editBtn,
-            { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 },
+            { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.7 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
           ]}
         >
           <Feather name="edit-2" size={16} color={colors.foreground} />
-          <Text style={[styles.editText, { color: colors.foreground }]}>Edit details</Text>
+          <Text style={[styles.editText, { color: colors.foreground }]}>{t("card.editDetails")}</Text>
         </Pressable>
       ) : null}
       {canEdit && onDelete ? (
@@ -523,11 +537,11 @@ function CardPreview({
           onPress={onDelete}
           style={({ pressed }) => [
             styles.editBtn,
-            { borderColor: colors.destructive + "40", backgroundColor: colors.destructive + "0D", opacity: pressed ? 0.7 : 1, marginTop: 10 },
+            { borderColor: colors.destructive + "40", backgroundColor: colors.destructive + "0D", opacity: pressed ? 0.7 : 1, marginTop: 10, flexDirection: isRTL ? "row-reverse" : "row" },
           ]}
         >
           <Feather name="trash-2" size={16} color={colors.destructive} />
-          <Text style={[styles.editText, { color: colors.destructive }]}>Delete card</Text>
+          <Text style={[styles.editText, { color: colors.destructive }]}>{t("card.deleteCard")}</Text>
         </Pressable>
       ) : null}
     </View>

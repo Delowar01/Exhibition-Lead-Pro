@@ -17,12 +17,16 @@ import { FONT } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
-function payloadLabel(payload: { firstName?: string | null; lastName?: string | null; contactCompany?: string | null }): string {
+function payloadLabel(
+  payload: { firstName?: string | null; lastName?: string | null; contactCompany?: string | null },
+  fallback: string,
+): string {
   return (
     [payload.firstName, payload.lastName].filter(Boolean).join(" ") ||
     payload.contactCompany ||
-    "New contact"
+    fallback
   );
 }
 
@@ -30,6 +34,7 @@ export default function CaptureManualScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, textAlign, isRTL } = useLocale();
   const createContact = useCreateContact();
   const { isOnline, enqueueContact } = useOffline();
   const { activeEventId } = useSettings();
@@ -38,7 +43,7 @@ export default function CaptureManualScreen() {
   async function handleSave(values: ContactFormValues) {
     const payload = { ...toContactPayload(values), eventId };
     if (!isOnline) {
-      enqueueContact(payload, { label: payloadLabel(payload), source: "manual", eventId });
+      enqueueContact(payload, { label: payloadLabel(payload, t("contacts.newContact")), source: "manual", eventId });
       router.replace("/(tabs)/contacts");
       return;
     }
@@ -61,22 +66,31 @@ export default function CaptureManualScreen() {
       bottomOffset={20}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-        Add a contact by hand — only a name or company is required to start.
+      <Text style={[styles.intro, { color: colors.mutedForeground, textAlign }]}>
+        {t("capture.manualIntro")}
       </Text>
 
       {createContact.isError ? (
-        <View style={[styles.errorBox, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius }]}>
+        <View
+          style={[
+            styles.errorBox,
+            {
+              backgroundColor: colors.destructive + "14",
+              borderRadius: colors.radius,
+              flexDirection: isRTL ? "row-reverse" : "row",
+            },
+          ]}
+        >
           <Feather name="alert-circle" size={15} color={colors.destructive} />
-          <Text style={[styles.errorText, { color: colors.destructive }]}>
-            Couldn't save this contact. Check the details and try again.
+          <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
+            {t("contacts.saveError")}
           </Text>
         </View>
       ) : null}
 
       <ContactForm
         initial={EMPTY_CONTACT}
-        submitLabel="Save contact"
+        submitLabel={t("contacts.saveContact")}
         submitting={createContact.isPending}
         onSubmit={handleSave}
       />

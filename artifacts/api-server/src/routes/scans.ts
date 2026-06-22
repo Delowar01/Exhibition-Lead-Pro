@@ -35,8 +35,9 @@ router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequ
   try {
     const companyId = req.user!.companyId;
     if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
-    const { imageData, eventId } = req.body;
+    const { imageData, eventId, appLanguage } = req.body;
     if (!imageData) { res.status(400).json({ error: "imageData required" }); return; }
+    const lang = appLanguage === "ar" ? "ar" : "en";
 
     // Increment company scans used
     await db.update(companiesTable).set({ scansUsed: sql`${companiesTable.scansUsed} + 1` }).where(eq(companiesTable.id, companyId));
@@ -46,7 +47,7 @@ router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequ
 
     // Real AI OCR + extraction
     try {
-      const result = await extractCardData(imageData);
+      const result = await extractCardData(imageData, lang);
       const [updated] = await db.update(scansTable)
         .set({ status: "completed", extractedData: JSON.stringify(result.fields), rawOcr: result.rawOcr, confidence: result.confidence })
         .where(eq(scansTable.id, scan.id))

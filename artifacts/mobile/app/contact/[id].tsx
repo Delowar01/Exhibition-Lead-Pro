@@ -47,6 +47,7 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
 const STATUS_OPTIONS = CONTACT_PIPELINE_ORDER as ContactUpdateStatus[];
@@ -62,10 +63,10 @@ function formatHistoryDate(iso: string): string {
   });
 }
 
-function contactName(c: Contact): string {
+function contactName(c: Contact, fallback: string): string {
   if (c.fullName) return c.fullName;
   const parts = [c.firstName, c.lastName].filter(Boolean);
-  return parts.length ? parts.join(" ") : "Unnamed contact";
+  return parts.length ? parts.join(" ") : fallback;
 }
 
 function digitsOnly(value: string): string {
@@ -76,6 +77,7 @@ export default function ContactDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t } = useLocale();
   const { id } = useLocalSearchParams<{ id: string }>();
   const contactId = Number(id);
 
@@ -100,7 +102,7 @@ export default function ContactDetailScreen() {
     if (!contact) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
     const lines = [
-      contactName(contact),
+      contactName(contact, t("common.unnamedContact")),
       [contact.jobTitle, contact.contactCompany].filter(Boolean).join(" at "),
       contact.mobile ? `Mobile: ${contact.mobile}` : null,
       contact.email ? `Email: ${contact.email}` : null,
@@ -119,7 +121,7 @@ export default function ContactDetailScreen() {
   function openUrl(url: string) {
     if (Platform.OS !== "web") Haptics.selectionAsync();
     Linking.openURL(url).catch(() => {
-      Alert.alert("Unavailable", "No app is available to handle this action.");
+      Alert.alert(t("contacts.unavailableTitle"), t("contacts.unavailableBody"));
     });
   }
 
@@ -130,10 +132,8 @@ export default function ContactDetailScreen() {
   function handleWhatsApp() {
     const number = contact?.mobile;
     if (!number) return;
-    const name = contact ? contactName(contact) : "there";
-    const msg = encodeURIComponent(
-      `Hi ${name}, great connecting with you. Following up on our conversation.`,
-    );
+    const name = contact ? contactName(contact, t("common.unnamedContact")) : t("contacts.whatsappThere");
+    const msg = encodeURIComponent(t("contacts.whatsappGreeting", { name }));
     openUrl(`https://wa.me/${digitsOnly(number)}?text=${msg}`);
   }
 
@@ -151,8 +151,8 @@ export default function ContactDetailScreen() {
     if (!contact) return;
     if (Platform.OS === "web") {
       Alert.alert(
-        "Not available",
-        "Saving to the device address book is only available on the mobile app.",
+        t("contacts.notAvailableTitle"),
+        t("contacts.notAvailableBody"),
       );
       return;
     }
@@ -160,8 +160,8 @@ export default function ContactDetailScreen() {
       const { status } = await Contacts.requestPermissionsAsync();
       if (status !== "granted") {
         Alert.alert(
-          "Permission needed",
-          "Allow contacts access to save this lead to your phone.",
+          t("contacts.permissionTitle"),
+          t("contacts.permissionBody"),
         );
         return;
       }
@@ -179,7 +179,7 @@ export default function ContactDetailScreen() {
 
       const newContact: Contacts.Contact = {
         contactType: Contacts.ContactTypes.Person,
-        name: contactName(contact),
+        name: contactName(contact, t("common.unnamedContact")),
         firstName: contact.firstName ?? undefined,
         lastName: contact.lastName ?? undefined,
         company: contact.contactCompany ?? undefined,
@@ -192,7 +192,7 @@ export default function ContactDetailScreen() {
       await Contacts.presentFormAsync(null, newContact);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert("Couldn't save", "We weren't able to open the contact form.");
+      Alert.alert(t("contacts.couldntSaveTitle"), t("contacts.couldntSaveBody"));
     }
   }
 
@@ -224,7 +224,7 @@ export default function ContactDetailScreen() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.back();
       } catch {
-        Alert.alert("Couldn't delete", "Please try again.");
+        Alert.alert(t("contacts.couldntDeleteTitle"), t("contacts.couldntDeleteBody"));
       }
     };
     if (Platform.OS === "web") {
@@ -232,11 +232,11 @@ export default function ContactDetailScreen() {
       return;
     }
     Alert.alert(
-      "Delete contact",
-      `Remove ${contactName(contact)}? This can't be undone.`,
+      t("contacts.deleteTitle"),
+      t("contacts.deleteConfirm"),
       [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: run },
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("common.delete"), style: "destructive", onPress: run },
       ],
     );
   }
@@ -245,7 +245,7 @@ export default function ContactDetailScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: contact ? contactName(contact) : "Contact",
+          title: contact ? contactName(contact, t("common.unnamedContact")) : t("common.contact"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
@@ -272,12 +272,12 @@ export default function ContactDetailScreen() {
           {/* Hero */}
           <View style={styles.hero}>
             <Avatar
-              name={contactName(contact)}
+              name={contactName(contact, t("common.unnamedContact"))}
               size={76}
               color={CONTACT_STATUS_COLORS[contact.status] ?? colors.primary}
             />
             <Text style={[styles.heroName, { color: colors.foreground }]}>
-              {contactName(contact)}
+              {contactName(contact, t("common.unnamedContact"))}
             </Text>
             {contact.jobTitle || contact.contactCompany ? (
               <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
@@ -286,7 +286,7 @@ export default function ContactDetailScreen() {
             ) : null}
             <View style={styles.heroBadges}>
               <Badge
-                label={prettyLabel(contact.status)}
+                label={t(`leads.stages.${contact.status}`, { defaultValue: prettyLabel(contact.status) })}
                 color={CONTACT_STATUS_COLORS[contact.status] ?? colors.mutedForeground}
               />
               {contact.assignedToName ? (
@@ -300,19 +300,19 @@ export default function ContactDetailScreen() {
 
           {/* Primary lead actions */}
           <View style={styles.actionsRow}>
-            <QuickAction icon="phone" label="Call" disabled={!contact.mobile} onPress={handleCall} />
-            <QuickAction icon="message-circle" label="WhatsApp" disabled={!contact.mobile} onPress={handleWhatsApp} />
-            <QuickAction icon="mail" label="Email" disabled={!contact.email} onPress={handleEmail} />
-            <QuickAction icon="globe" label="Website" disabled={!contact.website} onPress={handleWebsite} />
+            <QuickAction icon="phone" label={t("contacts.callMobile")} disabled={!contact.mobile} onPress={handleCall} />
+            <QuickAction icon="message-circle" label={t("contacts.whatsapp")} disabled={!contact.mobile} onPress={handleWhatsApp} />
+            <QuickAction icon="mail" label={t("contacts.sendEmail")} disabled={!contact.email} onPress={handleEmail} />
+            <QuickAction icon="globe" label={t("contacts.openWebsite")} disabled={!contact.website} onPress={handleWebsite} />
           </View>
 
           {/* Lead intelligence */}
           {contact.leadTemperature || typeof contact.leadScore === "number" ? (
-            <Section title="Lead intelligence">
+            <Section title={t("contacts.sectionLeadIntel")}>
               <View style={styles.leadRow}>
                 {contact.leadTemperature ? (
                   <Badge
-                    label={prettyLabel(contact.leadTemperature)}
+                    label={t(`leads.${contact.leadTemperature}`, { defaultValue: prettyLabel(contact.leadTemperature) })}
                     color={LEAD_TEMPERATURE_COLORS[contact.leadTemperature] ?? colors.mutedForeground}
                   />
                 ) : null}
@@ -332,26 +332,26 @@ export default function ContactDetailScreen() {
           ) : null}
 
           {/* Details */}
-          <Section title="Details">
-            <DetailRow icon="mail" label="Email" value={contact.email} />
-            <DetailRow icon="phone" label="Mobile" value={contact.mobile} />
-            <DetailRow icon="phone-call" label="Office" value={contact.officePhone} />
-            <DetailRow icon="globe" label="Website" value={contact.website} />
+          <Section title={t("contacts.sectionDetails")}>
+            <DetailRow icon="mail" label={t("contacts.fields.email")} value={contact.email} />
+            <DetailRow icon="phone" label={t("contacts.fields.mobile")} value={contact.mobile} />
+            <DetailRow icon="phone-call" label={t("contacts.office")} value={contact.officePhone} />
+            <DetailRow icon="globe" label={t("contacts.fields.website")} value={contact.website} />
             <DetailRow icon="linkedin" label="LinkedIn" value={contact.linkedin} />
-            <DetailRow icon="map-pin" label="Address" value={contact.address} />
-            <DetailRow icon="flag" label="Country" value={contact.country} />
+            <DetailRow icon="map-pin" label={t("contacts.fields.address")} value={contact.address} />
+            <DetailRow icon="flag" label={t("contacts.fields.country")} value={contact.country} />
             {contact.eventName ? (
-              <DetailRow icon="calendar" label="Event" value={contact.eventName} />
+              <DetailRow icon="calendar" label={t("contacts.fields.event")} value={contact.eventName} />
             ) : null}
             {contact.latitude && contact.longitude ? (
               <Pressable onPress={openMaps} style={styles.detailRow}>
                 <Feather name="map-pin" size={17} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>
-                    Capture location
+                    {t("contacts.captureLocation")}
                   </Text>
                   <Text style={[styles.detailValue, { color: colors.primary }]}>
-                    View on Google Maps
+                    {t("contacts.viewOnMaps")}
                     {typeof contact.gpsAccuracy === "number"
                       ? ` · ±${Math.round(contact.gpsAccuracy)}m`
                       : ""}
@@ -363,7 +363,7 @@ export default function ContactDetailScreen() {
           </Section>
 
           {contact.notes ? (
-            <Section title="Notes">
+            <Section title={t("contacts.notes")}>
               <Text style={[styles.notes, { color: colors.foreground }]}>
                 {contact.notes}
               </Text>
@@ -371,48 +371,48 @@ export default function ContactDetailScreen() {
           ) : null}
 
           {/* Schedule */}
-          <Section title="Schedule">
+          <Section title={t("contacts.sectionSchedule")}>
             <ManageRow
               icon="clock"
-              label="Schedule follow-up"
+              label={t("contacts.scheduleFollowUp")}
               onPress={() => setSchedule("followup")}
             />
             <ManageRow
               icon="calendar"
-              label="Schedule meeting"
+              label={t("contacts.scheduleMeeting")}
               onPress={() => setSchedule("meeting")}
               divider
             />
           </Section>
 
           {/* Manage */}
-          <Section title="Manage">
+          <Section title={t("contacts.sectionManage")}>
             <ManageRow
               icon="share-2"
-              label="Share contact"
+              label={t("contacts.shareContact")}
               onPress={handleShare}
             />
             <ManageRow
               icon="user-plus"
-              label="Save to phone contacts"
+              label={t("contacts.saveToPhone")}
               onPress={handleSaveToContacts}
               divider
             />
             <ManageRow
               icon="users"
-              label={contact.assignedToName ? `Assigned to ${contact.assignedToName}` : "Assign to teammate"}
+              label={contact.assignedToName ? t("contacts.assignedTo", { name: contact.assignedToName }) : t("contacts.assignToTeammate")}
               onPress={() => setAssignOpen(true)}
               divider
             />
             <ManageRow
               icon="edit-2"
-              label="Edit contact"
+              label={t("contacts.editContact")}
               onPress={() => router.push(`/contact/edit/${contact.id}`)}
               divider
             />
             <ManageRow
               icon="trash-2"
-              label="Delete contact"
+              label={t("contacts.deleteTitle")}
               destructive
               onPress={confirmDelete}
               divider
@@ -420,7 +420,7 @@ export default function ContactDetailScreen() {
           </Section>
 
           {/* Status pipeline */}
-          <Section title="Lead pipeline">
+          <Section title={t("contacts.sectionLeadPipeline")}>
             <View style={styles.statusGrid}>
               {STATUS_OPTIONS.map((status) => {
                 const active = contact.status === status;
@@ -450,7 +450,7 @@ export default function ContactDetailScreen() {
                         { color: active ? "#FFFFFF" : colors.foreground },
                       ]}
                     >
-                      {prettyLabel(status)}
+                      {t(`leads.stages.${status}`, { defaultValue: prettyLabel(status) })}
                     </Text>
                   </Pressable>
                 );
@@ -460,7 +460,7 @@ export default function ContactDetailScreen() {
 
           {/* Status history */}
           {history.length > 0 ? (
-            <Section title="Status history">
+            <Section title={t("contacts.sectionStatusHistory")}>
               <View style={{ padding: 8, gap: 14 }}>
                 {history.map((h, idx) => {
                   const color = CONTACT_STATUS_COLORS[h.toStatus] ?? colors.primary;
@@ -474,8 +474,8 @@ export default function ContactDetailScreen() {
                       </View>
                       <View style={{ flex: 1, paddingBottom: 2 }}>
                         <Text style={[styles.historyStatus, { color: colors.foreground }]}>
-                          {h.fromStatus ? `${prettyLabel(h.fromStatus)} → ` : ""}
-                          {prettyLabel(h.toStatus)}
+                          {h.fromStatus ? `${t(`leads.stages.${h.fromStatus}`, { defaultValue: prettyLabel(h.fromStatus) })} → ` : ""}
+                          {t(`leads.stages.${h.toStatus}`, { defaultValue: prettyLabel(h.toStatus) })}
                         </Text>
                         <Text style={[styles.historyMeta, { color: colors.mutedForeground }]}>
                           {formatHistoryDate(h.createdAt)}
@@ -522,7 +522,7 @@ export default function ContactDetailScreen() {
               <View style={[styles.handleBar, { backgroundColor: colors.border }]} />
             </View>
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              Assign contact
+              {t("contacts.assignContact")}
             </Text>
 
             {usersQuery.isLoading ? (
@@ -542,7 +542,7 @@ export default function ContactDetailScreen() {
                     <Feather name="user-x" size={18} color={colors.mutedForeground} />
                   </View>
                   <Text style={[styles.assignName, { color: colors.foreground }]}>
-                    Unassigned
+                    {t("contacts.unassigned")}
                   </Text>
                   {!contact?.assignedToId ? (
                     <Feather name="check" size={18} color={colors.primary} />
@@ -585,7 +585,7 @@ export default function ContactDetailScreen() {
       {/* Schedule follow-up / meeting */}
       <ScheduleModal
         kind={schedule}
-        contactName={contact ? contactName(contact) : ""}
+        contactName={contact ? contactName(contact, t("common.unnamedContact")) : ""}
         pending={createFollowUp.isPending || createMeeting.isPending}
         onClose={() => setSchedule(null)}
         onSubmit={async ({ date, time, notes, type }) => {
@@ -640,6 +640,7 @@ function ScheduleModal({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLocale();
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
@@ -670,7 +671,7 @@ function ScheduleModal({
             <View style={[styles.handleBar, { backgroundColor: colors.border }]} />
           </View>
           <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-            {isMeeting ? "Schedule meeting" : "Schedule follow-up"}
+            {isMeeting ? t("contacts.scheduleMeeting") : t("contacts.scheduleFollowUp")}
           </Text>
           <Text style={[styles.scheduleSub, { color: colors.mutedForeground }]}>
             {contactName}
@@ -679,26 +680,26 @@ function ScheduleModal({
           <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
             {isMeeting ? (
               <>
-                <Text style={[styles.scheduleLabel, { color: colors.mutedForeground }]}>TYPE</Text>
+                <Text style={[styles.scheduleLabel, { color: colors.mutedForeground }]}>{t("contacts.typeLabel")}</Text>
                 <View style={styles.scheduleChips}>
-                  {MEETING_TYPES.map((t) => {
-                    const active = type === t;
+                  {MEETING_TYPES.map((mt) => {
+                    const active = type === mt;
                     return (
                       <Pressable
-                        key={t}
-                        onPress={() => setType(t)}
+                        key={mt}
+                        onPress={() => setType(mt)}
                         style={[
                           styles.scheduleChip,
                           { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border },
                         ]}
                       >
                         <Feather
-                          name={MEETING_TYPE_ICONS[t] ?? "calendar"}
+                          name={MEETING_TYPE_ICONS[mt] ?? "calendar"}
                           size={14}
                           color={active ? "#FFFFFF" : colors.foreground}
                         />
                         <Text style={[styles.scheduleChipText, { color: active ? "#FFFFFF" : colors.foreground }]}>
-                          {prettyLabel(t)}
+                          {t(`tasks.types.${mt}`, { defaultValue: prettyLabel(mt) })}
                         </Text>
                       </Pressable>
                     );
@@ -709,7 +710,7 @@ function ScheduleModal({
 
             <View style={{ marginTop: 16 }}>
               <DateTimeField
-                label="Date & time"
+                label={t("contacts.dateTime")}
                 date={date}
                 time={time}
                 minToday
@@ -721,12 +722,12 @@ function ScheduleModal({
             </View>
 
             <Text style={[styles.scheduleLabel, { color: colors.mutedForeground }]}>
-              NOTES (OPTIONAL)
+              {t("contacts.notesOptional")}
             </Text>
             <TextInput
               value={notes}
               onChangeText={setNotes}
-              placeholder={isMeeting ? "Agenda or details" : "What to follow up on"}
+              placeholder={isMeeting ? t("contacts.agendaPlaceholder") : t("contacts.followUpPlaceholder")}
               placeholderTextColor={colors.mutedForeground}
               multiline
               style={[
@@ -742,7 +743,7 @@ function ScheduleModal({
             style={[styles.scheduleBtn, { backgroundColor: date ? colors.primary : colors.muted }]}
           >
             <Text style={styles.scheduleBtnText}>
-              {pending ? "Saving…" : isMeeting ? "Schedule meeting" : "Schedule follow-up"}
+              {pending ? t("common.saving") : isMeeting ? t("contacts.scheduleMeeting") : t("contacts.scheduleFollowUp")}
             </Text>
           </Pressable>
         </Pressable>

@@ -11,6 +11,7 @@ import {
 
 import { Avatar, ErrorState, FONT, LoadingState } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
 function formatMoney(value: number): string {
@@ -38,6 +39,7 @@ const ACTIVITY_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
 
 export default function TeamMemberReportScreen() {
   const colors = useColors();
+  const { t } = useLocale();
   const insets = useSafeAreaInsets();
   const { id, userId } = useLocalSearchParams<{ id: string; userId: string }>();
   const eventId = Number(id);
@@ -49,13 +51,13 @@ export default function TeamMemberReportScreen() {
   const metrics: { label: string; value: string; icon: keyof typeof Feather.glyphMap; color: string }[] =
     report
       ? [
-          { label: "Total Leads", value: String(report.totalLeads), icon: "users", color: colors.primary },
-          { label: "Qualified", value: String(report.qualifiedLeads), icon: "check-circle", color: "#22C55E" },
-          { label: "Meetings", value: String(report.meetings), icon: "calendar", color: "#06B6D4" },
-          { label: "Follow-Ups", value: String(report.followUps), icon: "clock", color: "#8B5CF6" },
-          { label: "Won", value: String(report.won), icon: "award", color: "#22C55E" },
-          { label: "Lost", value: String(report.lost), icon: "x-circle", color: "#EF4444" },
-          { label: "Conversion Rate", value: `${Math.round(report.conversionRate)}%`, icon: "trending-up", color: "#F59E0B" },
+          { label: t("eventReport.totalLeads"), value: String(report.totalLeads), icon: "users", color: colors.primary },
+          { label: t("eventReport.qualified"), value: String(report.qualifiedLeads), icon: "check-circle", color: "#22C55E" },
+          { label: t("eventReport.meetings"), value: String(report.meetings), icon: "calendar", color: "#06B6D4" },
+          { label: t("eventReport.followUps"), value: String(report.followUps), icon: "clock", color: "#8B5CF6" },
+          { label: t("eventReport.won"), value: String(report.won), icon: "award", color: "#22C55E" },
+          { label: t("eventReport.lost"), value: String(report.lost), icon: "x-circle", color: "#EF4444" },
+          { label: t("eventReport.conversionRate"), value: `${Math.round(report.conversionRate)}%`, icon: "trending-up", color: "#F59E0B" },
         ]
       : [];
 
@@ -63,7 +65,7 @@ export default function TeamMemberReportScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: report?.userName ?? "Team Member",
+          title: report?.userName ?? t("eventReport.teamMemberFallback"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
@@ -130,13 +132,13 @@ export default function TeamMemberReportScreen() {
             </View>
             <View>
               <Text style={styles.pipelineValue}>{formatMoney(report?.pipelineValue ?? 0)}</Text>
-              <Text style={styles.pipelineLabel}>Pipeline value</Text>
+              <Text style={styles.pipelineLabel}>{t("eventReport.pipelineValue")}</Text>
             </View>
           </View>
 
           {/* Activity timeline */}
           <View style={{ marginTop: 24 }}>
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ACTIVITY TIMELINE</Text>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>{t("eventReport.activityTimeline")}</Text>
             <View
               style={[
                 styles.sectionBody,
@@ -151,7 +153,7 @@ export default function TeamMemberReportScreen() {
                 </View>
               ) : (
                 <Text style={[styles.emptyLine, { color: colors.mutedForeground }]}>
-                  No activity recorded yet.
+                  {t("eventReport.noActivity")}
                 </Text>
               )}
             </View>

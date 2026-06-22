@@ -34,6 +34,8 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
+import type { Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
 type Tab = "upcoming" | "completed" | "cancelled";
@@ -41,20 +43,20 @@ type Bucket = "overdue" | "today" | "week" | "later";
 
 const BUCKET_META: Record<
   Bucket,
-  { title: string; icon: keyof typeof Feather.glyphMap; color: string }
+  { title: string; titleKey?: string; icon: keyof typeof Feather.glyphMap; color: string }
 > = {
-  overdue: { title: "Overdue", icon: "alert-circle", color: "#EF4444" },
-  today: { title: "Today", icon: "zap", color: "#FF6B00" },
-  week: { title: "This Week", icon: "calendar", color: "#06B6D4" },
-  later: { title: "Later", icon: "clock", color: "#8B5CF6" },
+  overdue: { title: "Overdue", titleKey: "followups.overdue", icon: "alert-circle", color: "#EF4444" },
+  today: { title: "Today", titleKey: "common.today", icon: "zap", color: "#FF6B00" },
+  week: { title: "This Week", titleKey: "followups.bucketThisWeek", icon: "calendar", color: "#06B6D4" },
+  later: { title: "Later", titleKey: "followups.bucketLater", icon: "clock", color: "#8B5CF6" },
 };
 
 const BUCKET_ORDER: Bucket[] = ["overdue", "today", "week", "later"];
 const DUE_ORDER: Bucket[] = ["overdue", "today"];
-const TABS: { key: Tab; label: string }[] = [
-  { key: "upcoming", label: "Upcoming" },
-  { key: "completed", label: "Completed" },
-  { key: "cancelled", label: "Cancelled" },
+const TABS: { key: Tab; label: string; labelKey?: string }[] = [
+  { key: "upcoming", label: "Upcoming", labelKey: "followups.upcoming" },
+  { key: "completed", label: "Completed", labelKey: "followups.completed" },
+  { key: "cancelled", label: "Cancelled", labelKey: "followups.statusCancelled" },
 ];
 
 function localDateStr(d: Date): string {
@@ -75,8 +77,8 @@ function parseLocal(s: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-function formatDate(s?: string | null, time?: string | null): string {
-  if (!s) return "No date";
+function formatDate(t: Locale["t"], s?: string | null, time?: string | null): string {
+  if (!s) return t("common.noDate");
   const base = formatGregorian(parseLocal(s), {
     weekday: "short",
     month: "short",
@@ -84,7 +86,7 @@ function formatDate(s?: string | null, time?: string | null): string {
   });
   if (!time) return base;
   const [h, m] = time.split(":").map((p) => parseInt(p, 10));
-  const period = h >= 12 ? "PM" : "AM";
+  const period = h >= 12 ? t("common.pm") : t("common.am");
   const hr12 = h % 12 === 0 ? 12 : h % 12;
   return `${base} · ${hr12}:${String(m).padStart(2, "0")} ${period}`;
 }
@@ -101,6 +103,7 @@ export default function FollowUpsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const { bucket } = useLocalSearchParams<{ bucket?: string }>();
   const dueMode = bucket === "due";
   const [tab, setTab] = useState<Tab>("upcoming");
@@ -145,25 +148,26 @@ export default function FollowUpsScreen() {
             borderColor: colors.border,
             borderRadius: colors.radius + 4,
             opacity: pressed ? 0.85 : 1,
+            flexDirection: isRTL ? "row-reverse" : "row",
           },
         ]}
       >
         <Avatar name={f.contactName ?? "?"} size={42} color={colors.primary} />
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.itemName, { color: colors.foreground }]}>
-            {f.contactName ?? "Contact"}
+          <Text numberOfLines={1} style={[styles.itemName, { color: colors.foreground, textAlign }]}>
+            {f.contactName ?? t("common.contact")}
           </Text>
           {f.notes ? (
-            <Text numberOfLines={1} style={[styles.itemSub, { color: colors.mutedForeground }]}>
+            <Text numberOfLines={1} style={[styles.itemSub, { color: colors.mutedForeground, textAlign }]}>
               {f.notes}
             </Text>
           ) : null}
-          <View style={styles.itemMeta}>
+          <View style={[styles.itemMeta, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="calendar" size={12} color={colors.mutedForeground} />
-            <Text style={[styles.itemDate, { color: colors.mutedForeground }]}>
-              {formatDate(f.scheduledDate, f.scheduledTime)}
+            <Text style={[styles.itemDate, { color: colors.mutedForeground, textAlign }]}>
+              {formatDate(t, f.scheduledDate, f.scheduledTime)}
             </Text>
-            <Badge label={prettyLabel(f.status)} color={statusColor} />
+            <Badge label={t("statuses." + f.status, { defaultValue: prettyLabel(f.status) })} color={statusColor} />
           </View>
         </View>
         {tab === "upcoming" ? (
@@ -188,16 +192,18 @@ export default function FollowUpsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 14, paddingHorizontal: 20 }}>
-        <Text style={[styles.heading, { color: colors.foreground }]}>Follow-Ups</Text>
-        <View style={[styles.tabBar, { backgroundColor: colors.muted, borderRadius: colors.radius }]}>
-          {TABS.map((t) => {
-            const isActive = tab === t.key;
+        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
+          {t("followups.title")}
+        </Text>
+        <View style={[styles.tabBar, { backgroundColor: colors.muted, borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
+          {TABS.map((tabItem) => {
+            const isActive = tab === tabItem.key;
             return (
               <Pressable
-                key={t.key}
+                key={tabItem.key}
                 onPress={() => {
                   if (Platform.OS !== "web") Haptics.selectionAsync();
-                  setTab(t.key);
+                  setTab(tabItem.key);
                 }}
                 style={[
                   styles.tab,
@@ -210,7 +216,7 @@ export default function FollowUpsScreen() {
                     { color: isActive ? colors.foreground : colors.mutedForeground },
                   ]}
                 >
-                  {t.label}
+                  {tabItem.labelKey ? t(tabItem.labelKey) : tabItem.label}
                 </Text>
               </Pressable>
             );
@@ -224,12 +230,12 @@ export default function FollowUpsScreen() {
             }}
             style={[
               styles.dueChip,
-              { backgroundColor: colors.primary + "1A", borderRadius: colors.radius },
+              { backgroundColor: colors.primary + "1A", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" },
             ]}
           >
             <Feather name="filter" size={13} color={colors.primary} />
             <Text style={[styles.dueChipText, { color: colors.primary }]}>
-              Due now (overdue &amp; today)
+              {t("followups.dueNow")}
             </Text>
             <Feather name="x" size={14} color={colors.primary} />
           </Pressable>
@@ -244,11 +250,13 @@ export default function FollowUpsScreen() {
         <View style={{ flex: 1 }}>
           <EmptyState
             icon="check-circle"
-            title={tab === "upcoming" ? "All caught up" : "Nothing here"}
+            title={tab === "upcoming" ? t("followups.empty") : t("empty.generic")}
             subtitle={
               tab === "upcoming"
-                ? "Schedule a follow-up from a contact and it will show up here."
-                : `No ${tab} follow-ups yet.`
+                ? t("followups.emptyDesc")
+                : tab === "completed"
+                  ? t("followups.emptyCompleted")
+                  : t("followups.emptyCancelled")
             }
           />
         </View>
@@ -275,10 +283,10 @@ export default function FollowUpsScreen() {
               const meta = BUCKET_META[bucket];
               return (
                 <View key={bucket} style={{ marginBottom: 22 }}>
-                  <View style={styles.groupHeader}>
+                  <View style={[styles.groupHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
                     <Feather name={meta.icon} size={15} color={meta.color} />
-                    <Text style={[styles.groupTitle, { color: colors.foreground }]}>
-                      {meta.title}
+                    <Text style={[styles.groupTitle, { color: colors.foreground, textAlign }]}>
+                      {meta.titleKey ? t(meta.titleKey) : meta.title}
                     </Text>
                     <View style={[styles.countPill, { backgroundColor: meta.color + "1A" }]}>
                       <Text style={[styles.countText, { color: meta.color }]}>
@@ -339,6 +347,7 @@ function ActionSheet({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t, isRTL, textAlign } = useLocale();
   const [comment, setComment] = useState("");
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
@@ -352,9 +361,9 @@ function ActionSheet({
   }
 
   const actions: { status: FollowUpUpdateStatus; label: string; icon: keyof typeof Feather.glyphMap; color: string }[] = [
-    { status: "completed", label: "Mark completed", icon: "check-circle", color: "#22C55E" },
-    { status: "rescheduled", label: "Reschedule", icon: "calendar", color: "#F59E0B" },
-    { status: "cancelled", label: "Cancel follow-up", icon: "x-circle", color: "#EF4444" },
+    { status: "completed", label: t("followups.markDone"), icon: "check-circle", color: "#22C55E" },
+    { status: "rescheduled", label: t("followups.reschedule"), icon: "calendar", color: "#F59E0B" },
+    { status: "cancelled", label: t("common.cancel"), icon: "x-circle", color: "#EF4444" },
   ];
 
   return (
@@ -384,8 +393,8 @@ function ActionSheet({
           <View style={styles.handleWrap}>
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
           </View>
-          <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-            {followUp?.contactName ?? "Follow-up"}
+          <Text style={[styles.sheetTitle, { color: colors.foreground, textAlign }]}>
+            {followUp?.contactName ?? t("followups.fallbackTitle")}
           </Text>
 
           {mode === "menu" ? (
@@ -406,20 +415,20 @@ function ActionSheet({
                   }}
                   style={({ pressed }) => [
                     styles.actionRow,
-                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1 },
+                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, opacity: pressed ? 0.7 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
                   ]}
                 >
                   <Feather name={a.icon} size={20} color={a.color} />
-                  <Text style={[styles.actionLabel, { color: colors.foreground }]}>{a.label}</Text>
+                  <Text style={[styles.actionLabel, { color: colors.foreground, textAlign }]}>{a.label}</Text>
                 </Pressable>
               ))}
-              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-                COMMENT (OPTIONAL)
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+                {t("followups.commentOptional")}
               </Text>
               <TextInput
                 value={comment}
                 onChangeText={setComment}
-                placeholder="Add a note about this update"
+                placeholder={t("followups.notePlaceholder")}
                 placeholderTextColor={colors.mutedForeground}
                 multiline
                 style={[
@@ -431,19 +440,19 @@ function ActionSheet({
           ) : (
             <View style={{ marginTop: 12 }}>
               <DateTimeField
-                label="New date & time"
+                label={t("followups.newDateTime")}
                 date={date}
                 time={time}
                 minToday
-                onChange={(d, t) => {
+                onChange={(d, tm) => {
                   setDate(d);
-                  setTime(t);
+                  setTime(tm);
                 }}
               />
               <TextInput
                 value={comment}
                 onChangeText={setComment}
-                placeholder="Reason for rescheduling (optional)"
+                placeholder={t("followups.reschedulePlaceholder")}
                 placeholderTextColor={colors.mutedForeground}
                 multiline
                 style={[
@@ -463,7 +472,7 @@ function ActionSheet({
                 ]}
               >
                 <Text style={styles.applyText}>
-                  {pending ? "Saving…" : "Confirm reschedule"}
+                  {pending ? t("common.saving") : t("followups.confirmReschedule")}
                 </Text>
               </Pressable>
             </View>

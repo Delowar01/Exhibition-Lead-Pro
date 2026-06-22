@@ -32,14 +32,15 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
 type DatePreset = "all" | "7d" | "30d";
 
-const DATE_PRESETS: { key: DatePreset; label: string }[] = [
-  { key: "all", label: "All time" },
-  { key: "7d", label: "Last 7 days" },
-  { key: "30d", label: "Last 30 days" },
+const DATE_PRESETS: { key: DatePreset; labelKey: string }[] = [
+  { key: "all", labelKey: "eventReport.allTime" },
+  { key: "7d", labelKey: "eventReport.last7" },
+  { key: "30d", labelKey: "eventReport.last30" },
 ];
 
 const STATUS_FILTERS = ["new", "contacted", "quotation_sent", "negotiation", "won", "lost"];
@@ -76,6 +77,7 @@ function shortDay(s: string): string {
 
 export default function EventReportScreen() {
   const colors = useColors();
+  const { t } = useLocale();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -122,14 +124,14 @@ export default function EventReportScreen() {
   const metrics: { label: string; value: string; icon: keyof typeof Feather.glyphMap; color: string }[] =
     report
       ? [
-          { label: "Total Leads", value: String(report.totalLeads), icon: "users", color: colors.primary },
-          { label: "Hot", value: String(report.hotLeads), icon: "trending-up", color: LEAD_TEMPERATURE_COLORS.hot },
-          { label: "Warm", value: String(report.warmLeads), icon: "thermometer", color: LEAD_TEMPERATURE_COLORS.warm },
-          { label: "Cold", value: String(report.coldLeads), icon: "wind", color: LEAD_TEMPERATURE_COLORS.cold },
-          { label: "Meetings", value: String(report.meetings), icon: "calendar", color: "#06B6D4" },
-          { label: "Follow-Ups", value: String(report.followUps), icon: "clock", color: "#8B5CF6" },
-          { label: "Won", value: String(report.wonDeals), icon: "award", color: "#22C55E" },
-          { label: "Lost", value: String(report.lostDeals), icon: "x-circle", color: "#EF4444" },
+          { label: t("eventReport.totalLeads"), value: String(report.totalLeads), icon: "users", color: colors.primary },
+          { label: t("leads.hot"), value: String(report.hotLeads), icon: "trending-up", color: LEAD_TEMPERATURE_COLORS.hot },
+          { label: t("leads.warm"), value: String(report.warmLeads), icon: "thermometer", color: LEAD_TEMPERATURE_COLORS.warm },
+          { label: t("leads.cold"), value: String(report.coldLeads), icon: "wind", color: LEAD_TEMPERATURE_COLORS.cold },
+          { label: t("eventReport.meetings"), value: String(report.meetings), icon: "calendar", color: "#06B6D4" },
+          { label: t("eventReport.followUps"), value: String(report.followUps), icon: "clock", color: "#8B5CF6" },
+          { label: t("eventReport.won"), value: String(report.wonDeals), icon: "award", color: "#22C55E" },
+          { label: t("eventReport.lost"), value: String(report.lostDeals), icon: "x-circle", color: "#EF4444" },
         ]
       : [];
 
@@ -137,7 +139,7 @@ export default function EventReportScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: report?.eventName ?? "Event Report",
+          title: report?.eventName ?? t("eventReport.reportFallback"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
@@ -162,19 +164,19 @@ export default function EventReportScreen() {
         >
           {/* Filters */}
           <View style={styles.filtersHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>FILTERS</Text>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>{t("eventReport.filtersHeader")}</Text>
             {hasFilters ? (
               <Pressable onPress={resetFilters} hitSlop={8}>
-                <Text style={[styles.reset, { color: colors.primary }]}>Reset</Text>
+                <Text style={[styles.reset, { color: colors.primary }]}>{t("eventReport.reset")}</Text>
               </Pressable>
             ) : null}
           </View>
 
-          <FilterRow label="Date range">
+          <FilterRow label={t("eventReport.dateRange")}>
             {DATE_PRESETS.map((p) => (
               <Chip
                 key={p.key}
-                label={p.label}
+                label={t(p.labelKey)}
                 active={datePreset === p.key}
                 onPress={() => tap(() => setDatePreset(p.key))}
               />
@@ -182,9 +184,9 @@ export default function EventReportScreen() {
           </FilterRow>
 
           {teamMembers.length > 0 ? (
-            <FilterRow label="Team member">
+            <FilterRow label={t("eventReport.teamMember")}>
               <Chip
-                label="Everyone"
+                label={t("eventReport.everyone")}
                 active={assignedToId == null}
                 onPress={() => tap(() => setAssignedToId(null))}
               />
@@ -199,12 +201,12 @@ export default function EventReportScreen() {
             </FilterRow>
           ) : null}
 
-          <FilterRow label="Lead status">
-            <Chip label="Any" active={status == null} onPress={() => tap(() => setStatus(null))} />
+          <FilterRow label={t("eventReport.leadStatus")}>
+            <Chip label={t("eventReport.any")} active={status == null} onPress={() => tap(() => setStatus(null))} />
             {STATUS_FILTERS.map((s) => (
               <Chip
                 key={s}
-                label={prettyLabel(s)}
+                label={t("leads.stages." + s, { defaultValue: prettyLabel(s) })}
                 active={status === s}
                 color={CONTACT_STATUS_COLORS[s]}
                 onPress={() => tap(() => setStatus(status === s ? null : s))}
@@ -212,19 +214,19 @@ export default function EventReportScreen() {
             ))}
           </FilterRow>
 
-          <FilterRow label="Temperature">
+          <FilterRow label={t("eventReport.temperature")}>
             <Chip
               label="Any"
               active={temperature == null}
               onPress={() => tap(() => setTemperature(null))}
             />
-            {TEMPERATURE_FILTERS.map((t) => (
+            {TEMPERATURE_FILTERS.map((temp) => (
               <Chip
-                key={t}
-                label={prettyLabel(t)}
-                active={temperature === t}
-                color={LEAD_TEMPERATURE_COLORS[t]}
-                onPress={() => tap(() => setTemperature(temperature === t ? null : t))}
+                key={temp}
+                label={t(`leads.${temp}`)}
+                active={temperature === temp}
+                color={LEAD_TEMPERATURE_COLORS[temp]}
+                onPress={() => tap(() => setTemperature(temperature === temp ? null : temp))}
               />
             ))}
           </FilterRow>
@@ -262,27 +264,27 @@ export default function EventReportScreen() {
               <Text style={styles.pipelineValue}>
                 {formatMoney(report?.pipelineValue ?? 0)}
               </Text>
-              <Text style={styles.pipelineLabel}>Pipeline value</Text>
+              <Text style={styles.pipelineLabel}>{t("eventReport.pipelineValue")}</Text>
             </View>
           </View>
 
           {/* Qualification distribution */}
-          <Section title="Qualification distribution">
+          <Section title={t("eventReport.qualificationDistribution")}>
             <View style={{ gap: 10 }}>
               <DistRow
-                label="Hot"
+                label={t("leads.hot")}
                 count={report?.qualificationDistribution.hot ?? 0}
                 max={qualMax(report)}
                 color={LEAD_TEMPERATURE_COLORS.hot}
               />
               <DistRow
-                label="Warm"
+                label={t("leads.warm")}
                 count={report?.qualificationDistribution.warm ?? 0}
                 max={qualMax(report)}
                 color={LEAD_TEMPERATURE_COLORS.warm}
               />
               <DistRow
-                label="Cold"
+                label={t("leads.cold")}
                 count={report?.qualificationDistribution.cold ?? 0}
                 max={qualMax(report)}
                 color={LEAD_TEMPERATURE_COLORS.cold}
@@ -292,12 +294,12 @@ export default function EventReportScreen() {
 
           {/* Status distribution */}
           {report && report.statusDistribution.length > 0 ? (
-            <Section title="Status distribution">
+            <Section title={t("eventReport.statusDistribution")}>
               <View style={{ gap: 10 }}>
                 {report.statusDistribution.map((s) => (
                   <DistRow
                     key={s.status}
-                    label={prettyLabel(s.status)}
+                    label={t("leads.stages." + s.status, { defaultValue: prettyLabel(s.status) })}
                     count={s.count}
                     max={Math.max(...report.statusDistribution.map((x) => x.count), 1)}
                     color={CONTACT_STATUS_COLORS[s.status] ?? colors.primary}
@@ -309,14 +311,14 @@ export default function EventReportScreen() {
 
           {/* Leads by day */}
           {report && report.leadsByDay.length > 0 ? (
-            <Section title="Leads by day">
+            <Section title={t("eventReport.leadsByDay")}>
               <LeadsByDayChart data={report.leadsByDay} color={colors.primary} />
             </Section>
           ) : null}
 
           {/* Leads by user */}
           {report && report.leadsByUser.length > 0 ? (
-            <Section title="Leads by user">
+            <Section title={t("eventReport.leadsByUser")}>
               <View style={{ gap: 10 }}>
                 {[...report.leadsByUser]
                   .sort((a, b) => b.count - a.count)
@@ -335,7 +337,7 @@ export default function EventReportScreen() {
 
           {/* Team performance */}
           {report && report.teamPerformance.length > 0 ? (
-            <Section title="Team performance">
+            <Section title={t("eventReport.teamPerformance")}>
               <View style={{ gap: 12 }}>
                 {[...report.teamPerformance]
                   .sort((a, b) => b.leads - a.leads)
@@ -347,7 +349,7 @@ export default function EventReportScreen() {
                           {m.userName}
                         </Text>
                         <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-                          {m.leads} lead{m.leads === 1 ? "" : "s"} · {m.won} won
+                          {`${t("eventReport.perfLeads", { count: m.leads })} · ${t("eventReport.wonCount", { count: m.won })}`}
                         </Text>
                       </View>
                     </View>
@@ -358,7 +360,7 @@ export default function EventReportScreen() {
 
           {/* Top performer */}
           {report && report.teamPerformance.length > 0 ? (
-            <Section title="Top performer">
+            <Section title={t("eventReport.topPerformer")}>
               <View style={{ gap: 12 }}>
                 {rankPerformers(report.teamPerformance)
                   .slice(0, 1)
@@ -381,7 +383,7 @@ export default function EventReportScreen() {
           report.statusDistribution.length === 0 &&
           report.leadsByDay.length === 0 ? (
             <Text style={[styles.emptyLine, { color: colors.mutedForeground }]}>
-              No leads match these filters.
+              {t("eventReport.noLeadsMatch")}
             </Text>
           ) : null}
         </ScrollView>
@@ -409,6 +411,7 @@ function PerformerRow({
   onPress: () => void;
 }) {
   const colors = useColors();
+  const { t } = useLocale();
   return (
     <Pressable
       onPress={onPress}
@@ -420,7 +423,7 @@ function PerformerRow({
           {performer.userName}
         </Text>
         <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-          {performer.leads} lead{performer.leads === 1 ? "" : "s"} · {performer.qualified} qualified
+          {`${t("eventReport.perfLeads", { count: performer.leads })} · ${t("eventReport.qualifiedCount", { count: performer.qualified })}`}
         </Text>
       </View>
       <Feather name="chevron-right" size={20} color={colors.mutedForeground} />

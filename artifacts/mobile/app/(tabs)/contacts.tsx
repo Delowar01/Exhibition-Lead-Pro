@@ -45,17 +45,18 @@ import {
   useSettings,
 } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
-function contactName(c: Contact): string {
+function contactName(c: Contact, fallback: string): string {
   if (c.fullName) return c.fullName;
   const parts = [c.firstName, c.lastName].filter(Boolean);
-  return parts.length ? parts.join(" ") : "Unnamed contact";
+  return parts.length ? parts.join(" ") : fallback;
 }
 
-const SORT_OPTIONS: { key: ContactSortPref; label: string }[] = [
-  { key: "newest", label: "Newest first" },
-  { key: "oldest", label: "Oldest first" },
-  { key: "name", label: "Name (A–Z)" },
+const SORT_OPTIONS: { key: ContactSortPref; labelKey: string }[] = [
+  { key: "newest", labelKey: "contacts.sortNewest" },
+  { key: "oldest", labelKey: "contacts.sortOldest" },
+  { key: "name", labelKey: "contacts.sortName" },
 ];
 
 const TEMPERATURES = ["hot", "warm", "cold"];
@@ -76,6 +77,7 @@ export default function ContactsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const { contactFilters, setContactFilters, isLoaded } = useSettings();
 
   const [search, setSearch] = useState("");
@@ -163,7 +165,7 @@ export default function ContactsScreen() {
   }[] = [
     {
       key: "total",
-      label: "Total",
+      label: t("common.total"),
       value: counts.total,
       color: colors.primary,
       icon: "users",
@@ -171,7 +173,7 @@ export default function ContactsScreen() {
     },
     {
       key: "new",
-      label: "New",
+      label: t("leads.stages.new"),
       value: counts.new,
       color: CONTACT_STATUS_COLORS.new,
       icon: "user-plus",
@@ -179,7 +181,7 @@ export default function ContactsScreen() {
     },
     {
       key: "contacted",
-      label: "Contacted",
+      label: t("leads.stages.contacted"),
       value: counts.contacted,
       color: CONTACT_STATUS_COLORS.contacted,
       icon: "message-circle",
@@ -187,7 +189,7 @@ export default function ContactsScreen() {
     },
     {
       key: "hot",
-      label: "Hot",
+      label: t("leads.hot"),
       value: counts.hot,
       color: LEAD_TEMPERATURE_COLORS.hot,
       icon: "trending-up",
@@ -207,27 +209,31 @@ export default function ContactsScreen() {
             borderColor: colors.border,
             borderRadius: colors.radius + 4,
             opacity: pressed ? 0.7 : 1,
+            flexDirection: isRTL ? "row-reverse" : "row",
           },
         ]}
       >
-        <Avatar name={contactName(item)} color={statusColor} />
+        <Avatar name={contactName(item, t("common.unnamedContact"))} color={statusColor} />
         <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.name, { color: colors.foreground }]}>
-            {contactName(item)}
+          <Text numberOfLines={1} style={[styles.name, { color: colors.foreground, textAlign }]}>
+            {contactName(item, t("common.unnamedContact"))}
           </Text>
-          <Text numberOfLines={1} style={[styles.sub, { color: colors.mutedForeground }]}>
+          <Text numberOfLines={1} style={[styles.sub, { color: colors.mutedForeground, textAlign }]}>
             {[item.jobTitle, item.contactCompany].filter(Boolean).join(" · ") ||
               item.email ||
-              "No details"}
+              t("common.noDetails")}
           </Text>
-          <View style={styles.badgeRow}>
-            <Badge label={prettyLabel(item.status)} color={statusColor} />
+          <View style={[styles.badgeRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Badge
+              label={t(`leads.stages.${item.status}`, { defaultValue: prettyLabel(item.status) })}
+              color={statusColor}
+            />
             {item.leadTemperature ? (
               <Badge
                 label={
                   typeof item.leadScore === "number"
-                    ? `${prettyLabel(item.leadTemperature)} · ${item.leadScore}`
-                    : prettyLabel(item.leadTemperature)
+                    ? `${t(`leads.${item.leadTemperature}`, { defaultValue: prettyLabel(item.leadTemperature) })} · ${item.leadScore}`
+                    : t(`leads.${item.leadTemperature}`, { defaultValue: prettyLabel(item.leadTemperature) })
                 }
                 color={LEAD_TEMPERATURE_COLORS[item.leadTemperature] ?? colors.mutedForeground}
               />
@@ -245,7 +251,9 @@ export default function ContactsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20 }}>
-        <Text style={[styles.heading, { color: colors.foreground }]}>Contacts</Text>
+        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
+          {t("contacts.title")}
+        </Text>
 
         {/* Dashboard widgets */}
         <ScrollView
@@ -293,20 +301,25 @@ export default function ContactsScreen() {
         </ScrollView>
 
         {/* Search + filter */}
-        <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={{ flexDirection: isRTL ? "row-reverse" : "row", gap: 10 }}>
           <View
             style={[
               styles.searchRow,
-              { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderRadius: colors.radius,
+                flexDirection: isRTL ? "row-reverse" : "row",
+              },
             ]}
           >
             <Feather name="search" size={18} color={colors.mutedForeground} />
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search name, company, email"
+              placeholder={t("contacts.searchPlaceholder")}
               placeholderTextColor={colors.mutedForeground}
-              style={[styles.searchInput, { color: colors.foreground }]}
+              style={[styles.searchInput, { color: colors.foreground, textAlign }]}
               autoCapitalize="none"
             />
             {search ? (
@@ -374,11 +387,15 @@ export default function ContactsScreen() {
             <View style={{ paddingTop: 60 }}>
               <EmptyState
                 icon={debounced || activeCount > 0 ? "search" : "users"}
-                title={debounced || activeCount > 0 ? "No matches" : "No contacts yet"}
+                title={
+                  debounced || activeCount > 0
+                    ? t("contacts.noResults")
+                    : t("contacts.empty")
+                }
                 subtitle={
                   debounced || activeCount > 0
-                    ? "Try adjusting your search or filters."
-                    : "Scan a business card to add your first contact."
+                    ? t("contacts.noResultsDesc")
+                    : t("contacts.emptyDesc")
                 }
               />
             </View>
@@ -412,6 +429,7 @@ function FilterSheet({
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t, isRTL, textAlign } = useLocale();
   const [draft, setDraft] = useState<ContactFilters>(filters);
   const eventsQuery = useListEvents(
     { limit: 100 },
@@ -463,12 +481,12 @@ function FilterSheet({
           <View style={styles.handleWrap}>
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
           </View>
-          <View style={styles.sheetHeader}>
-            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-              Filters & Sort
+          <View style={[styles.sheetHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Text style={[styles.sheetTitle, { color: colors.foreground, textAlign }]}>
+              {t("common.filters")}
             </Text>
             <Pressable onPress={() => setDraft(DEFAULT_CONTACT_FILTERS)} hitSlop={8}>
-              <Text style={[styles.resetText, { color: colors.primary }]}>Reset</Text>
+              <Text style={[styles.resetText, { color: colors.primary }]}>{t("common.clearAll")}</Text>
             </Pressable>
           </View>
 
@@ -477,58 +495,72 @@ function FilterSheet({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 8 }}
           >
-            <Text style={[styles.fLabel, { color: colors.mutedForeground }]}>SORT</Text>
-            <View style={styles.chipWrap}>
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>{t("contacts.sortLabel")}</Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
               {SORT_OPTIONS.map((s) =>
-                chip(draft.sort === s.key, s.label, () => setDraft({ ...draft, sort: s.key }), s.key),
+                chip(draft.sort === s.key, t(s.labelKey), () => setDraft({ ...draft, sort: s.key }), s.key),
               )}
             </View>
 
-            <Text style={[styles.fLabel, { color: colors.mutedForeground }]}>STATUS</Text>
-            <View style={styles.chipWrap}>
-              {chip(!draft.status, "Any", () => setDraft({ ...draft, status: null }), "st-any")}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>{t("contacts.statusLabel")}</Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.status, t("common.all"), () => setDraft({ ...draft, status: null }), "st-any")}
               {CONTACT_PIPELINE_ORDER.map((s) =>
-                chip(draft.status === s, prettyLabel(s), () => setDraft({ ...draft, status: s }), s),
+                chip(
+                  draft.status === s,
+                  t(`leads.stages.${s}`, { defaultValue: prettyLabel(s) }),
+                  () => setDraft({ ...draft, status: s }),
+                  s,
+                ),
               )}
             </View>
 
-            <Text style={[styles.fLabel, { color: colors.mutedForeground }]}>TEMPERATURE</Text>
-            <View style={styles.chipWrap}>
-              {chip(!draft.temperature, "Any", () => setDraft({ ...draft, temperature: null }), "tp-any")}
-              {TEMPERATURES.map((t) =>
-                chip(draft.temperature === t, prettyLabel(t), () => setDraft({ ...draft, temperature: t }), t),
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("leads.temperature").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.temperature, t("common.all"), () => setDraft({ ...draft, temperature: null }), "tp-any")}
+              {TEMPERATURES.map((temp) =>
+                chip(
+                  draft.temperature === temp,
+                  t(`leads.${temp}`, { defaultValue: prettyLabel(temp) }),
+                  () => setDraft({ ...draft, temperature: temp }),
+                  temp,
+                ),
               )}
             </View>
 
-            <Text style={[styles.fLabel, { color: colors.mutedForeground }]}>EVENT</Text>
-            <View style={styles.chipWrap}>
-              {chip(!draft.eventId, "Any", () => setDraft({ ...draft, eventId: null }), "ev-any")}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("contacts.fields.event").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.eventId, t("common.all"), () => setDraft({ ...draft, eventId: null }), "ev-any")}
               {events.map((e) =>
                 chip(draft.eventId === e.id, e.name, () => setDraft({ ...draft, eventId: e.id }), `ev-${e.id}`),
               )}
             </View>
 
-            <Text style={[styles.fLabel, { color: colors.mutedForeground }]}>ACTIVITY</Text>
-            <View style={styles.chipWrap}>
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>{t("contacts.activityLabel")}</Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
               {chip(
                 draft.hasFollowUp,
-                "Has follow-up",
+                t("contacts.addFollowUp"),
                 () => setDraft({ ...draft, hasFollowUp: !draft.hasFollowUp }),
                 "hf",
               )}
               {chip(
                 draft.hasMeeting,
-                "Has meeting",
+                t("contacts.addMeeting"),
                 () => setDraft({ ...draft, hasMeeting: !draft.hasMeeting }),
                 "hm",
               )}
             </View>
 
-            <Text style={[styles.fLabel, { color: colors.mutedForeground }]}>
-              CAPTURED DATE
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("contacts.capturedDate")}
             </Text>
             <DateTimeField
-              label="From"
+              label={t("common.from")}
               date={draft.dateFrom}
               time={null}
               withTime={false}
@@ -536,7 +568,7 @@ function FilterSheet({
               onChange={(d) => setDraft({ ...draft, dateFrom: d })}
             />
             <DateTimeField
-              label="To"
+              label={t("common.to")}
               date={draft.dateTo}
               time={null}
               withTime={false}
@@ -549,7 +581,7 @@ function FilterSheet({
             onPress={() => onApply(draft)}
             style={[styles.applyBtn, { backgroundColor: colors.primary }]}
           >
-            <Text style={styles.applyText}>Apply filters</Text>
+            <Text style={styles.applyText}>{t("common.apply")}</Text>
           </Pressable>
         </Pressable>
       </Pressable>

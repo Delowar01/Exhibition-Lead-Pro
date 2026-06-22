@@ -19,12 +19,14 @@ import { Avatar, Badge, FONT, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 import { pickAvatar, type AvatarSource } from "@/lib/avatar";
 
 export default function MoreScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
   const { user, logout, updateUser } = useAuth();
   const { queuedCount, isOnline } = useOffline();
   const updateProfile = useUpdateOwnProfile();
@@ -41,8 +43,8 @@ export default function MoreScreen() {
       await updateUser(updated);
     } catch (err) {
       Alert.alert(
-        "Couldn't update photo",
-        err instanceof Error ? err.message : "Please try again.",
+        t("errors.generic"),
+        err instanceof Error ? err.message : t("errors.saveFailed"),
       );
     }
   }
@@ -52,7 +54,7 @@ export default function MoreScreen() {
       const updated = await updateProfile.mutateAsync({ data: { avatarUrl: null } });
       await updateUser(updated);
     } catch {
-      Alert.alert("Couldn't remove photo", "Please try again.");
+      Alert.alert(t("errors.generic"), t("errors.saveFailed"));
     }
   }
 
@@ -64,19 +66,19 @@ export default function MoreScreen() {
       return;
     }
     const hasAvatar = !!user?.avatarUrl;
-    Alert.alert("Profile photo", undefined, [
-      { text: "Take Photo", onPress: () => void applyAvatar("camera") },
-      { text: "Choose from Library", onPress: () => void applyAvatar("library") },
+    Alert.alert(t("more.profilePhoto"), undefined, [
+      { text: t("more.takePhoto"), onPress: () => void applyAvatar("camera") },
+      { text: t("more.chooseFromLibrary"), onPress: () => void applyAvatar("library") },
       ...(hasAvatar
         ? [
             {
-              text: "Remove Photo",
+              text: t("more.removePhoto"),
               style: "destructive" as const,
               onPress: () => void removeAvatar(),
             },
           ]
         : []),
-      { text: "Cancel", style: "cancel" as const },
+      { text: t("common.cancel"), style: "cancel" as const },
     ]);
   }
 
@@ -85,10 +87,10 @@ export default function MoreScreen() {
       void logout();
       return;
     }
-    Alert.alert("Sign out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t("auth.logout"), t("auth.logoutConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Sign out",
+        text: t("auth.logout"),
         style: "destructive",
         onPress: () => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -109,8 +111,8 @@ export default function MoreScreen() {
   }[] = [
     {
       key: "sync",
-      label: "Sync Center",
-      sub: isOnline ? "Manage offline captures" : "Offline — captures are queued",
+      label: t("nav.sync"),
+      sub: isOnline ? t("more.syncManage") : t("more.syncQueued"),
       icon: "refresh-cw",
       color: queuedCount > 0 ? "#F59E0B" : "#22C55E",
       onPress: () => router.push("/sync"),
@@ -118,64 +120,64 @@ export default function MoreScreen() {
     },
     {
       key: "card",
-      label: "My Digital Card",
-      sub: "Share your contact details by QR",
+      label: t("nav.card"),
+      sub: t("card.subtitle"),
       icon: "credit-card",
       color: colors.primary,
       onPress: () => router.push({ pathname: "/card", params: { mode: "edit" } }),
     },
     {
       key: "pipeline",
-      label: "Pipeline",
-      sub: "Track leads through every stage",
+      label: t("nav.leads"),
+      sub: t("leads.subtitle"),
       icon: "bar-chart-2",
       color: "#8B5CF6",
       onPress: () => router.push("/leads"),
     },
     {
       key: "events",
-      label: "Events",
-      sub: "Exhibitions and trade shows",
+      label: t("nav.events"),
+      sub: t("events.subtitle"),
       icon: "calendar",
       color: "#8B5CF6",
       onPress: () => router.push("/events"),
     },
     {
       key: "meetings",
-      label: "Meetings",
-      sub: "Scheduled meetings and calls",
+      label: t("nav.meetings"),
+      sub: t("meetings.subtitle"),
       icon: "video",
       color: "#0EA5E9",
       onPress: () => router.push("/meetings"),
     },
     {
       key: "tasks",
-      label: "Tasks",
-      sub: "Track your to-dos and assignments",
+      label: t("nav.tasks"),
+      sub: t("tasks.subtitle"),
       icon: "check-circle",
       color: "#10B981",
       onPress: () => router.push("/tasks"),
     },
     {
       key: "contacts",
-      label: "All Contacts",
-      sub: "Browse your full contact list",
+      label: t("nav.contacts"),
+      sub: t("more.contactsSub"),
       icon: "users",
       color: "#06B6D4",
       onPress: () => router.push("/(tabs)/contacts"),
     },
     {
       key: "duplicates",
-      label: "Duplicates",
-      sub: "Find and merge duplicate contacts",
+      label: t("nav.duplicates"),
+      sub: t("duplicates.subtitle"),
       icon: "copy",
       color: "#F59E0B",
       onPress: () => router.push("/duplicates"),
     },
     {
       key: "settings",
-      label: "Settings",
-      sub: "Appearance, capture, security",
+      label: t("nav.settings"),
+      sub: t("settings.subtitle"),
       icon: "settings",
       color: "#67707D",
       onPress: () => router.push("/settings"),
@@ -192,13 +194,13 @@ export default function MoreScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.heading, { color: colors.foreground }]}>More</Text>
+        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("nav.more")}</Text>
 
         {/* Profile card */}
         <View
           style={[
             styles.profileCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
           ]}
         >
           <Pressable onPress={onAvatarPress} hitSlop={8} style={styles.avatarWrap}>
@@ -208,10 +210,10 @@ export default function MoreScreen() {
             </View>
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground }]}>
+            <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground, textAlign }]}>
               {user?.name ?? "—"}
             </Text>
-            <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground }]}>
+            <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground, textAlign }]}>
               {user?.email ?? ""}
             </Text>
             {user?.role ? (
@@ -227,15 +229,17 @@ export default function MoreScreen() {
           <View
             style={[
               styles.companyCard,
-              { backgroundColor: colors.accent, borderRadius: colors.radius + 4 },
+              { backgroundColor: colors.accent, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
             ]}
           >
             <View style={[styles.companyIcon, { backgroundColor: colors.primary }]}>
               <Feather name="briefcase" size={18} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.companyLabel, { color: colors.mutedForeground }]}>WORKSPACE</Text>
-              <Text numberOfLines={1} style={[styles.companyName, { color: colors.foreground }]}>
+              <Text style={[styles.companyLabel, { color: colors.mutedForeground, textAlign }]}>
+                {t("nav.workspace").toUpperCase()}
+              </Text>
+              <Text numberOfLines={1} style={[styles.companyName, { color: colors.foreground, textAlign }]}>
                 {user.companyName}
               </Text>
             </View>
@@ -243,7 +247,9 @@ export default function MoreScreen() {
         ) : null}
 
         {/* Navigation */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>WORKSPACE</Text>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+          {t("nav.workspace").toUpperCase()}
+        </Text>
         <View
           style={[
             styles.menuCard,
@@ -259,6 +265,7 @@ export default function MoreScreen() {
               }}
               style={({ pressed }) => [
                 styles.menuRow,
+                { flexDirection: isRTL ? "row-reverse" : "row" },
                 idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
                 pressed && { backgroundColor: colors.muted },
               ]}
@@ -267,8 +274,8 @@ export default function MoreScreen() {
                 <Feather name={item.icon} size={18} color={item.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.menuLabel, { color: colors.foreground }]}>{item.label}</Text>
-                <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>{item.sub}</Text>
+                <Text style={[styles.menuLabel, { color: colors.foreground, textAlign }]}>{item.label}</Text>
+                <Text style={[styles.menuSub, { color: colors.mutedForeground, textAlign }]}>{item.sub}</Text>
               </View>
               {item.badge && item.badge > 0 ? (
                 <View style={[styles.countBadge, { backgroundColor: item.color }]}>
@@ -294,7 +301,7 @@ export default function MoreScreen() {
           ]}
         >
           <Feather name="log-out" size={18} color={colors.destructive} />
-          <Text style={[styles.logoutText, { color: colors.destructive }]}>Sign out</Text>
+          <Text style={[styles.logoutText, { color: colors.destructive }]}>{t("auth.logout")}</Text>
         </Pressable>
 
         <View style={styles.footer}>
@@ -302,7 +309,7 @@ export default function MoreScreen() {
             Card Scanner Pro
           </Text>
           <Text style={[styles.footerVersion, { color: colors.mutedForeground }]}>
-            Powered by Elite Marcom
+            {t("settings.poweredBy")}
           </Text>
         </View>
       </ScrollView>

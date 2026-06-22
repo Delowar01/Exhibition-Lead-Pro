@@ -32,9 +32,11 @@ import {
 } from "@/components/ui";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 export default function EventPickerScreen() {
   const colors = useColors();
+  const { t } = useLocale();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -63,7 +65,7 @@ export default function EventPickerScreen() {
 
   async function handleCreate() {
     if (!name.trim()) {
-      setError("Event name is required.");
+      setError(t("events.nameRequired"));
       return;
     }
     setError(null);
@@ -86,7 +88,7 @@ export default function EventPickerScreen() {
       setActiveEvent(ev.id, ev.name);
       router.back();
     } catch {
-      setError("Couldn't create the event. Please try again.");
+      setError(t("events.createFailed"));
     }
   }
 
@@ -101,12 +103,12 @@ export default function EventPickerScreen() {
           <Feather name="chevron-left" size={20} color={colors.foreground} />
         </Pressable>
         <Text style={[styles.heading, { color: colors.foreground }]}>
-          {creating ? "New event" : "Choose event"}
+          {creating ? t("events.newEvent") : t("events.chooseEvent")}
         </Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground }]}>
           {creating
-            ? "Add an exhibition or trade show"
-            : "Captures are tagged to the active event"}
+            ? t("events.newEventSub")
+            : t("events.chooseEventSub")}
         </Text>
       </View>
 
@@ -126,19 +128,19 @@ export default function EventPickerScreen() {
             </View>
           ) : null}
 
-          <Field label="Event name *" value={name} onChange={setName} placeholder="GITEX Global 2026" />
-          <Field label="Venue" value={venue} onChange={setVenue} placeholder="Dubai World Trade Centre" />
-          <Field label="Country" value={country} onChange={setCountry} placeholder="United Arab Emirates" />
-          <Field label="Booth number" value={booth} onChange={setBooth} placeholder="H7-B20" />
+          <Field label={`${t("events.eventName")} *`} value={name} onChange={setName} placeholder={t("events.eventNamePlaceholder")} />
+          <Field label={t("events.venue")} value={venue} onChange={setVenue} placeholder={t("events.venuePlaceholder")} />
+          <Field label={t("contacts.fields.country")} value={country} onChange={setCountry} placeholder={t("events.countryPlaceholder")} />
+          <Field label={t("events.booth")} value={booth} onChange={setBooth} placeholder={t("events.boothPlaceholder")} />
           <DateTimeField
-            label="Start date"
+            label={t("events.startDate")}
             date={startDate}
             withTime={false}
             optional
             onChange={(d) => setStartDate(d)}
           />
           <DateTimeField
-            label="End date"
+            label={t("events.endDate")}
             date={endDate}
             withTime={false}
             optional
@@ -147,13 +149,13 @@ export default function EventPickerScreen() {
 
           <View style={{ height: 8 }} />
           <PrimaryButton
-            label="Create & select"
+            label={t("events.createSelect")}
             icon="check"
             onPress={handleCreate}
             loading={createEvent.isPending}
           />
           <Pressable onPress={() => setCreating(false)} style={styles.cancelBtn}>
-            <Text style={[styles.cancelText, { color: colors.mutedForeground }]}>Cancel</Text>
+            <Text style={[styles.cancelText, { color: colors.mutedForeground }]}>{t("common.cancel")}</Text>
           </Pressable>
         </KeyboardAwareScrollView>
       ) : query.isLoading ? (
@@ -182,15 +184,15 @@ export default function EventPickerScreen() {
             <View style={[styles.createIcon, { backgroundColor: colors.primary }]}>
               <Feather name="plus" size={20} color="#FFFFFF" />
             </View>
-            <Text style={[styles.createLabel, { color: colors.primary }]}>Create new event</Text>
+            <Text style={[styles.createLabel, { color: colors.primary }]}>{t("events.createNew")}</Text>
           </Pressable>
 
           {events.length === 0 ? (
             <View style={{ paddingTop: 40 }}>
               <EmptyState
                 icon="calendar"
-                title="No events yet"
-                subtitle="Create your first event to start capturing leads."
+                title={t("events.empty")}
+                subtitle={t("events.createFirstDesc")}
               />
             </View>
           ) : (

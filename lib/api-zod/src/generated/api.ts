@@ -1232,8 +1232,20 @@ export const ListScansResponse = zod.object({
   "mobile": zod.string().nullish(),
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "original": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
   "address": zod.string().nullish()
-}).optional(),
+}).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
+}).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
   "confidence": zod.number().nullish(),
   "createdAt": zod.coerce.date()
 })),
@@ -1244,8 +1256,11 @@ export const ListScansResponse = zod.object({
 /**
  * @summary Create a scan (submit card image for OCR/AI extraction)
  */
+export const createScanBodyAppLanguageDefault = `en`;
+
 export const CreateScanBody = zod.object({
   "imageData": zod.string().describe('Base64-encoded image'),
+  "appLanguage": zod.enum(['en', 'ar']).default(createScanBodyAppLanguageDefault).describe('Active app language. Drives OCR translation: \"en\" translates all extracted fields to English; \"ar\" preserves Arabic + English as printed and translates any other language to English.'),
   "eventId": zod.number().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
@@ -1277,8 +1292,20 @@ export const GetScanResponse = zod.object({
   "mobile": zod.string().nullish(),
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "original": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
   "address": zod.string().nullish()
-}).optional(),
+}).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
+}).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
   "confidence": zod.number().nullish(),
   "createdAt": zod.coerce.date()
 })
