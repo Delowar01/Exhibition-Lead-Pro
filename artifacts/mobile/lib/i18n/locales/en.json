@@ -753,7 +753,22 @@
     "wonCount_one": "{{count}} won",
     "wonCount_other": "{{count}} won",
     "qualifiedCount_one": "{{count}} qualified",
-    "qualifiedCount_other": "{{count}} qualified"
+    "qualifiedCount_other": "{{count}} qualified",
+    "captureMethod": "Capture method",
+    "sortBy": "Sort by",
+    "sortLeadName": "Lead Name",
+    "sortCompanyName": "Company Name",
+    "sortCaptureDate": "Capture Date",
+    "sortLeadScore": "Lead Score",
+    "sortPipelineValue": "Pipeline Value",
+    "sortFollowUpDate": "Follow-Up Date",
+    "sortMeetingDate": "Meeting Date",
+    "dirNewest": "Newest",
+    "dirOldest": "Oldest",
+    "dirHighest": "Highest",
+    "dirLowest": "Lowest",
+    "dirEarliest": "Earliest",
+    "dirLatest": "Latest"
   },
   "more": {
     "syncManage": "Manage offline captures",

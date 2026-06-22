@@ -1,8 +1,9 @@
 import { Feather } from "@/components/icons";
 import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -18,12 +19,14 @@ import {
   type EventReportTeamItem,
   type EventReportUserCount,
   type GetEventReportParams,
-  useGetTeamPerformance,
   useGetEventReport,
+  useGetTeamPerformance,
 } from "@workspace/api-client-react";
 
+import { DateTimeField } from "@/components/DateTimeField";
 import {
   Avatar,
+  CONTACT_PIPELINE_ORDER,
   CONTACT_STATUS_COLORS,
   ErrorState,
   FONT,
@@ -35,7 +38,54 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type DatePreset = "all" | "7d" | "30d";
+
+/**
+ * Mutually-exclusive sort key. The first segment is the field, the second is
+ * the direction.  "none" = default (server order / no override).
+ */
+type SortKey =
+  | "none"
+  | "name_asc"
+  | "name_desc"
+  | "company_asc"
+  | "company_desc"
+  | "date_desc"
+  | "date_asc"
+  | "score_desc"
+  | "score_asc"
+  | "pipeline_desc"
+  | "pipeline_asc"
+  | "followup_asc"
+  | "followup_desc"
+  | "meeting_asc"
+  | "meeting_desc";
+
+interface ReportFilters {
+  datePreset: DatePreset;
+  dateFrom: string | null;
+  dateTo: string | null;
+  assignedToId: number | null;
+  status: string | null;
+  temperature: string | null;
+  captureMethod: string | null;
+  sortKey: SortKey;
+}
+
+const DEFAULT_FILTERS: ReportFilters = {
+  datePreset: "all",
+  dateFrom: null,
+  dateTo: null,
+  assignedToId: null,
+  status: null,
+  temperature: null,
+  captureMethod: null,
+  sortKey: "none",
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DATE_PRESETS: { key: DatePreset; labelKey: string }[] = [
   { key: "all", labelKey: "eventReport.allTime" },
@@ -44,7 +94,14 @@ const DATE_PRESETS: { key: DatePreset; labelKey: string }[] = [
 ];
 
 const STATUS_FILTERS = ["new", "contacted", "quotation_sent", "negotiation", "won", "lost"];
-const TEMPERATURE_FILTERS = ["hot", "warm", "cold"];
+const TEMPERATURE_FILTERS = ["hot", "warm", "cold"] as const;
+
+const CAPTURE_METHODS: { key: string; labelKey: string }[] = [
+  { key: "camera", labelKey: "capture.businessCard" },
+  { key: "qr", labelKey: "capture.qrCode" },
+  { key: "nfc", labelKey: "capture.nfc" },
+  { key: "manual", labelKey: "capture.manual" },
+];
 
 function localDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -75,6 +132,61 @@ function shortDay(s: string): string {
   });
 }
 
+function qualMax(report?: { qualificationDistribution: { hot: number; warm: number; cold: number } }): number {
+  if (!report) return 1;
+  const q = report.qualificationDistribution;
+  return Math.max(q.hot, q.warm, q.cold, 1);
+}
+
+function rankPerformers(items: EventReportTeamItem[]): EventReportTeamItem[] {
+  return [...items].sort((a, b) => b.leads - a.leads || b.qualified - a.qualified);
+}
+
+/** Count active (non-default) filter + sort selections. */
+function countActive(f: ReportFilters): number {
+  return [
+    f.datePreset !== "all" || f.dateFrom != null || f.dateTo != null,
+    f.assignedToId != null,
+    f.status != null,
+    f.temperature != null,
+    f.captureMethod != null,
+    f.sortKey !== "none",
+  ].filter(Boolean).length;
+}
+
+/** Apply the selected sortKey to the sortable lists in the report. */
+function applySortKey<T extends { userName: string }>(
+  arr: T[],
+  sortKey: SortKey,
+  valueFor: (item: T) => number,
+): T[] {
+  const copy = [...arr];
+  switch (sortKey) {
+    case "name_asc":
+    case "company_asc":
+      return copy.sort((a, b) => a.userName.localeCompare(b.userName));
+    case "name_desc":
+    case "company_desc":
+      return copy.sort((a, b) => b.userName.localeCompare(a.userName));
+    case "score_desc":
+    case "pipeline_desc":
+      return copy.sort((a, b) => valueFor(b) - valueFor(a));
+    case "score_asc":
+    case "pipeline_asc":
+      return copy.sort((a, b) => valueFor(a) - valueFor(b));
+    default:
+      return copy;
+  }
+}
+
+function sortLeadsByDay(arr: EventReportDayCount[], sortKey: SortKey): EventReportDayCount[] {
+  if (sortKey === "date_desc") return [...arr].sort((a, b) => b.date.localeCompare(a.date));
+  if (sortKey === "date_asc") return [...arr].sort((a, b) => a.date.localeCompare(b.date));
+  return arr;
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function EventReportScreen() {
   const colors = useColors();
   const { t } = useLocale();
@@ -83,41 +195,42 @@ export default function EventReportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const eventId = Number(id);
 
-  const [datePreset, setDatePreset] = useState<DatePreset>("all");
-  const [assignedToId, setAssignedToId] = useState<number | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [temperature, setTemperature] = useState<string | null>(null);
+  const [filters, setFilters] = useState<ReportFilters>(DEFAULT_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const activeCount = countActive(filters);
 
   const teamQuery = useGetTeamPerformance();
   const teamMembers = teamQuery.data ?? [];
 
   const params: GetEventReportParams = useMemo(() => {
-    const dateFrom = dateFromPreset(datePreset);
+    const dateFrom = filters.dateFrom ?? dateFromPreset(filters.datePreset);
     return {
       eventId,
       ...(dateFrom ? { dateFrom } : {}),
-      ...(assignedToId != null ? { assignedToId } : {}),
-      ...(status ? { status } : {}),
-      ...(temperature ? { temperature } : {}),
+      ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
+      ...(filters.assignedToId != null ? { assignedToId: filters.assignedToId } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.temperature ? { temperature: filters.temperature } : {}),
     };
-  }, [eventId, datePreset, assignedToId, status, temperature]);
+  }, [eventId, filters]);
 
   const query = useGetEventReport(params);
   const report = query.data;
 
-  const hasFilters =
-    datePreset !== "all" || assignedToId != null || status != null || temperature != null;
-
-  function resetFilters() {
-    setDatePreset("all");
-    setAssignedToId(null);
-    setStatus(null);
-    setTemperature(null);
-  }
-
-  function tap(fn: () => void) {
-    fn();
-  }
+  // Client-side sorted lists
+  const sortedTeamPerf = useMemo(
+    () => applySortKey(report?.teamPerformance ?? [], filters.sortKey, (m) => m.leads),
+    [report?.teamPerformance, filters.sortKey],
+  );
+  const sortedLeadsByUser = useMemo(
+    () => applySortKey(report?.leadsByUser ?? [], filters.sortKey, (u) => u.count),
+    [report?.leadsByUser, filters.sortKey],
+  );
+  const sortedLeadsByDay = useMemo(
+    () => sortLeadsByDay(report?.leadsByDay ?? [], filters.sortKey),
+    [report?.leadsByDay, filters.sortKey],
+  );
 
   const metrics: { label: string; value: string; icon: keyof typeof Feather.glyphMap; color: string }[] =
     report
@@ -141,6 +254,30 @@ export default function EventReportScreen() {
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
+          headerRight: () => (
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.selectionAsync();
+                setFilterOpen(true);
+              }}
+              hitSlop={8}
+              style={[
+                styles.filterBtn,
+                {
+                  backgroundColor: activeCount > 0 ? colors.primary + "1A" : "transparent",
+                  borderColor: activeCount > 0 ? colors.primary : colors.border,
+                  borderRadius: colors.radius,
+                },
+              ]}
+            >
+              <Feather name="sliders" size={16} color={activeCount > 0 ? colors.primary : colors.foreground} />
+              {activeCount > 0 ? (
+                <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.filterBadgeText}>{activeCount}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          ),
         }}
       />
 
@@ -161,76 +298,7 @@ export default function EventReportScreen() {
             />
           }
         >
-          {/* Filters */}
-          <View style={styles.filtersHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>{t("eventReport.filtersHeader")}</Text>
-            {hasFilters ? (
-              <Pressable onPress={resetFilters} hitSlop={8}>
-                <Text style={[styles.reset, { color: colors.primary }]}>{t("eventReport.reset")}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-
-          <FilterRow label={t("eventReport.dateRange")}>
-            {DATE_PRESETS.map((p) => (
-              <Chip
-                key={p.key}
-                label={t(p.labelKey)}
-                active={datePreset === p.key}
-                onPress={() => tap(() => setDatePreset(p.key))}
-              />
-            ))}
-          </FilterRow>
-
-          {teamMembers.length > 0 ? (
-            <FilterRow label={t("eventReport.teamMember")}>
-              <Chip
-                label={t("eventReport.everyone")}
-                active={assignedToId == null}
-                onPress={() => tap(() => setAssignedToId(null))}
-              />
-              {teamMembers.map((m) => (
-                <Chip
-                  key={m.userId}
-                  label={m.userName}
-                  active={assignedToId === m.userId}
-                  onPress={() => tap(() => setAssignedToId(m.userId))}
-                />
-              ))}
-            </FilterRow>
-          ) : null}
-
-          <FilterRow label={t("eventReport.leadStatus")}>
-            <Chip label={t("eventReport.any")} active={status == null} onPress={() => tap(() => setStatus(null))} />
-            {STATUS_FILTERS.map((s) => (
-              <Chip
-                key={s}
-                label={t("leads.stages." + s, { defaultValue: prettyLabel(s) })}
-                active={status === s}
-                color={CONTACT_STATUS_COLORS[s]}
-                onPress={() => tap(() => setStatus(status === s ? null : s))}
-              />
-            ))}
-          </FilterRow>
-
-          <FilterRow label={t("eventReport.temperature")}>
-            <Chip
-              label="Any"
-              active={temperature == null}
-              onPress={() => tap(() => setTemperature(null))}
-            />
-            {TEMPERATURE_FILTERS.map((temp) => (
-              <Chip
-                key={temp}
-                label={t(`leads.${temp}`)}
-                active={temperature === temp}
-                color={LEAD_TEMPERATURE_COLORS[temp]}
-                onPress={() => tap(() => setTemperature(temperature === temp ? null : temp))}
-              />
-            ))}
-          </FilterRow>
-
-          {/* Metrics */}
+          {/* KPI metrics grid */}
           <View style={styles.statsGrid}>
             {metrics.map((m) => (
               <View
@@ -309,50 +377,46 @@ export default function EventReportScreen() {
           ) : null}
 
           {/* Leads by day */}
-          {report && report.leadsByDay.length > 0 ? (
+          {sortedLeadsByDay.length > 0 ? (
             <Section title={t("eventReport.leadsByDay")}>
-              <LeadsByDayChart data={report.leadsByDay} color={colors.primary} />
+              <LeadsByDayChart data={sortedLeadsByDay} color={colors.primary} />
             </Section>
           ) : null}
 
           {/* Leads by user */}
-          {report && report.leadsByUser.length > 0 ? (
+          {sortedLeadsByUser.length > 0 ? (
             <Section title={t("eventReport.leadsByUser")}>
               <View style={{ gap: 10 }}>
-                {[...report.leadsByUser]
-                  .sort((a, b) => b.count - a.count)
-                  .map((u: EventReportUserCount) => (
-                    <DistRow
-                      key={u.userId}
-                      label={u.userName}
-                      count={u.count}
-                      max={Math.max(...report.leadsByUser.map((x) => x.count), 1)}
-                      color={colors.primary}
-                    />
-                  ))}
+                {sortedLeadsByUser.map((u: EventReportUserCount) => (
+                  <DistRow
+                    key={u.userId}
+                    label={u.userName}
+                    count={u.count}
+                    max={Math.max(...sortedLeadsByUser.map((x) => x.count), 1)}
+                    color={colors.primary}
+                  />
+                ))}
               </View>
             </Section>
           ) : null}
 
           {/* Team performance */}
-          {report && report.teamPerformance.length > 0 ? (
+          {sortedTeamPerf.length > 0 ? (
             <Section title={t("eventReport.teamPerformance")}>
               <View style={{ gap: 12 }}>
-                {[...report.teamPerformance]
-                  .sort((a, b) => b.leads - a.leads)
-                  .map((m) => (
-                    <View key={m.userId} style={styles.teamRow}>
-                      <Avatar name={m.userName} size={36} color={colors.primary} />
-                      <View style={{ flex: 1 }}>
-                        <Text numberOfLines={1} style={[styles.teamName, { color: colors.foreground }]}>
-                          {m.userName}
-                        </Text>
-                        <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-                          {`${t("eventReport.perfLeads", { count: m.leads })} · ${t("eventReport.wonCount", { count: m.won })}`}
-                        </Text>
-                      </View>
+                {sortedTeamPerf.map((m) => (
+                  <View key={m.userId} style={styles.teamRow}>
+                    <Avatar name={m.userName} size={36} color={colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.teamName, { color: colors.foreground }]}>
+                        {m.userName}
+                      </Text>
+                      <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
+                        {`${t("eventReport.perfLeads", { count: m.leads })} · ${t("eventReport.wonCount", { count: m.won })}`}
+                      </Text>
                     </View>
-                  ))}
+                  </View>
+                ))}
               </View>
             </Section>
           ) : null}
@@ -386,20 +450,22 @@ export default function EventReportScreen() {
           ) : null}
         </ScrollView>
       )}
+
+      <EventReportFilterSheet
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        filters={filters}
+        teamMembers={teamMembers}
+        onApply={(f) => {
+          setFilters(f);
+          setFilterOpen(false);
+        }}
+      />
     </View>
   );
 }
 
-function qualMax(report?: { qualificationDistribution: { hot: number; warm: number; cold: number } }): number {
-  if (!report) return 1;
-  const q = report.qualificationDistribution;
-  return Math.max(q.hot, q.warm, q.cold, 1);
-}
-
-// Rank highest total leads first, tie-break by qualified leads.
-function rankPerformers(items: EventReportTeamItem[]): EventReportTeamItem[] {
-  return [...items].sort((a, b) => b.leads - a.leads || b.qualified - a.qualified);
-}
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function PerformerRow({
   performer,
@@ -481,59 +547,6 @@ function DistRow({
   );
 }
 
-function Chip({
-  label,
-  active,
-  color,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  color?: string;
-  onPress: () => void;
-}) {
-  const colors = useColors();
-  const accent = color ?? colors.primary;
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.chip,
-        {
-          backgroundColor: active ? accent + "1A" : colors.card,
-          borderColor: active ? accent : colors.border,
-          borderRadius: colors.radius,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          styles.chipText,
-          { color: active ? accent : colors.mutedForeground },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
-  const colors = useColors();
-  return (
-    <View style={{ marginBottom: 12 }}>
-      <Text style={[styles.filterLabel, { color: colors.mutedForeground }]}>{label}</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipRow}
-      >
-        {children}
-      </ScrollView>
-    </View>
-  );
-}
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const colors = useColors();
   return (
@@ -553,40 +566,319 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// ─── Filter Sheet ─────────────────────────────────────────────────────────────
+
+interface SortOption {
+  key: SortKey;
+  fieldLabel: string;
+  dirLabel: string;
+}
+
+const SORT_OPTIONS: SortOption[] = [
+  { key: "name_asc",      fieldLabel: "eventReport.sortLeadName",      dirLabel: "A → Z" },
+  { key: "name_desc",     fieldLabel: "eventReport.sortLeadName",      dirLabel: "Z → A" },
+  { key: "company_asc",   fieldLabel: "eventReport.sortCompanyName",   dirLabel: "A → Z" },
+  { key: "company_desc",  fieldLabel: "eventReport.sortCompanyName",   dirLabel: "Z → A" },
+  { key: "date_desc",     fieldLabel: "eventReport.sortCaptureDate",   dirLabel: "eventReport.dirNewest" },
+  { key: "date_asc",      fieldLabel: "eventReport.sortCaptureDate",   dirLabel: "eventReport.dirOldest" },
+  { key: "score_desc",    fieldLabel: "eventReport.sortLeadScore",     dirLabel: "eventReport.dirHighest" },
+  { key: "score_asc",     fieldLabel: "eventReport.sortLeadScore",     dirLabel: "eventReport.dirLowest" },
+  { key: "pipeline_desc", fieldLabel: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirHighest" },
+  { key: "pipeline_asc",  fieldLabel: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirLowest" },
+  { key: "followup_asc",  fieldLabel: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirEarliest" },
+  { key: "followup_desc", fieldLabel: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirLatest" },
+  { key: "meeting_asc",   fieldLabel: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirEarliest" },
+  { key: "meeting_desc",  fieldLabel: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirLatest" },
+];
+
+// Group sort options by field so we can render two direction chips per row
+type SortGroup = { fieldLabelKey: string; options: SortOption[] };
+
+function groupSortOptions(): SortGroup[] {
+  const groups: SortGroup[] = [];
+  const seen = new Set<string>();
+  for (const opt of SORT_OPTIONS) {
+    if (!seen.has(opt.fieldLabel)) {
+      seen.add(opt.fieldLabel);
+      groups.push({
+        fieldLabelKey: opt.fieldLabel,
+        options: SORT_OPTIONS.filter((o) => o.fieldLabel === opt.fieldLabel),
+      });
+    }
+  }
+  return groups;
+}
+
+const SORT_GROUPS = groupSortOptions();
+
+function EventReportFilterSheet({
+  open,
+  onClose,
+  filters,
+  teamMembers,
+  onApply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  filters: ReportFilters;
+  teamMembers: { userId: number; userName: string }[];
+  onApply: (f: ReportFilters) => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { t, isRTL, textAlign } = useLocale();
+  const [draft, setDraft] = useState<ReportFilters>(filters);
+
+  useEffect(() => {
+    if (open) setDraft(filters);
+  }, [open, filters]);
+
+  function chip(active: boolean, label: string, onPress: () => void, key: string) {
+    return (
+      <Pressable
+        key={key}
+        onPress={onPress}
+        style={[
+          styles.chip,
+          {
+            backgroundColor: active ? colors.primary : colors.card,
+            borderColor: active ? colors.primary : colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.chipText, { color: active ? "#FFFFFF" : colors.foreground }]}>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  function sortChip(opt: SortOption) {
+    const active = draft.sortKey === opt.key;
+    const dirLabel = opt.dirLabel.startsWith("eventReport.") ? t(opt.dirLabel as Parameters<typeof t>[0]) : opt.dirLabel;
+    return (
+      <Pressable
+        key={opt.key}
+        onPress={() => setDraft({ ...draft, sortKey: draft.sortKey === opt.key ? "none" : opt.key })}
+        style={[
+          styles.chip,
+          {
+            backgroundColor: active ? colors.primary : colors.card,
+            borderColor: active ? colors.primary : colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.chipText, { color: active ? "#FFFFFF" : colors.foreground }]}>
+          {dirLabel}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      hardwareAccelerated
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.background,
+              borderColor: colors.border,
+              paddingBottom: insets.bottom + 16,
+              overflow: "hidden",
+            },
+          ]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          {/* Handle */}
+          <View style={styles.handleWrap}>
+            <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          </View>
+
+          {/* Header */}
+          <View style={[styles.sheetHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Text style={[styles.sheetTitle, { color: colors.foreground, textAlign }]}>
+              {t("common.filters")}
+            </Text>
+            <Pressable onPress={() => setDraft(DEFAULT_FILTERS)} hitSlop={8}>
+              <Text style={[styles.resetText, { color: colors.primary }]}>
+                {t("common.clearAll")}
+              </Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={{ maxHeight: 520 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 8 }}
+          >
+            {/* Lead Status */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("eventReport.leadStatus").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.status, t("eventReport.any"), () => setDraft({ ...draft, status: null }), "st-any")}
+              {STATUS_FILTERS.map((s) =>
+                chip(
+                  draft.status === s,
+                  t(`leads.stages.${s}` as Parameters<typeof t>[0], { defaultValue: prettyLabel(s) }),
+                  () => setDraft({ ...draft, status: draft.status === s ? null : s }),
+                  s,
+                ),
+              )}
+            </View>
+
+            {/* Lead Temperature */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("eventReport.temperature").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.temperature, t("eventReport.any"), () => setDraft({ ...draft, temperature: null }), "tp-any")}
+              {TEMPERATURE_FILTERS.map((temp) =>
+                chip(
+                  draft.temperature === temp,
+                  t(`leads.${temp}` as Parameters<typeof t>[0], { defaultValue: prettyLabel(temp) }),
+                  () => setDraft({ ...draft, temperature: draft.temperature === temp ? null : temp }),
+                  temp,
+                ),
+              )}
+            </View>
+
+            {/* Team Member */}
+            {teamMembers.length > 0 ? (
+              <>
+                <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+                  {t("eventReport.teamMember").toUpperCase()}
+                </Text>
+                <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                  {chip(!draft.assignedToId, t("eventReport.everyone"), () => setDraft({ ...draft, assignedToId: null }), "tm-any")}
+                  {teamMembers.map((m) =>
+                    chip(
+                      draft.assignedToId === m.userId,
+                      m.userName,
+                      () => setDraft({ ...draft, assignedToId: draft.assignedToId === m.userId ? null : m.userId }),
+                      `tm-${m.userId}`,
+                    ),
+                  )}
+                </View>
+              </>
+            ) : null}
+
+            {/* Capture Method */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("eventReport.captureMethod").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.captureMethod, t("eventReport.any"), () => setDraft({ ...draft, captureMethod: null }), "cm-any")}
+              {CAPTURE_METHODS.map((m) =>
+                chip(
+                  draft.captureMethod === m.key,
+                  t(m.labelKey as Parameters<typeof t>[0], { defaultValue: prettyLabel(m.key) }),
+                  () => setDraft({ ...draft, captureMethod: draft.captureMethod === m.key ? null : m.key }),
+                  `cm-${m.key}`,
+                ),
+              )}
+            </View>
+
+            {/* Date Range */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("eventReport.dateRange").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {DATE_PRESETS.map((p) =>
+                chip(
+                  draft.datePreset === p.key && !draft.dateFrom && !draft.dateTo,
+                  t(p.labelKey as Parameters<typeof t>[0]),
+                  () => setDraft({ ...draft, datePreset: p.key, dateFrom: null, dateTo: null }),
+                  p.key,
+                ),
+              )}
+            </View>
+            <DateTimeField
+              label={t("common.from")}
+              date={draft.dateFrom}
+              time={null}
+              withTime={false}
+              optional
+              onChange={(d) => setDraft({ ...draft, dateFrom: d, datePreset: "all" })}
+            />
+            <DateTimeField
+              label={t("common.to")}
+              date={draft.dateTo}
+              time={null}
+              withTime={false}
+              optional
+              onChange={(d) => setDraft({ ...draft, dateTo: d, datePreset: "all" })}
+            />
+
+            {/* Sort By */}
+            <View style={[styles.sortDivider, { borderTopColor: colors.border }]} />
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("eventReport.sortBy").toUpperCase()}
+            </Text>
+            {SORT_GROUPS.map((group) => (
+              <View key={group.fieldLabelKey} style={styles.sortRow}>
+                <Text style={[styles.sortFieldLabel, { color: colors.foreground }]}>
+                  {t(group.fieldLabelKey as Parameters<typeof t>[0])}
+                </Text>
+                <View style={[styles.sortDirChips, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                  {group.options.map((opt) => sortChip(opt))}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          <Pressable
+            onPress={() => onApply(draft)}
+            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.applyText}>{t("common.apply")}</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  filtersHeader: {
+  filterBtn: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  reset: {
-    fontSize: 13,
-    fontFamily: FONT.semibold,
-  },
-  filterLabel: {
-    fontSize: 12,
-    fontFamily: FONT.medium,
-    marginBottom: 7,
-  },
-  chipRow: {
-    gap: 8,
-    paddingRight: 4,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderWidth: 1,
+    marginRight: 4,
+    position: "relative",
   },
-  chipText: {
-    fontSize: 13,
-    fontFamily: FONT.semibold,
+  filterBadge: {
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  filterBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontFamily: FONT.bold,
+    lineHeight: 14,
   },
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    marginTop: 16,
+    marginTop: 4,
   },
   statCard: {
     width: "47%",
@@ -717,5 +1009,97 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     textAlign: "center",
     marginTop: 28,
+  },
+  // Sheet
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  handleWrap: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  handle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+    marginBottom: 14,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontFamily: FONT.bold,
+  },
+  resetText: {
+    fontSize: 14,
+    fontFamily: FONT.semibold,
+  },
+  fLabel: {
+    fontSize: 11.5,
+    fontFamily: FONT.semibold,
+    letterSpacing: 0.4,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderRadius: 20,
+  },
+  chipText: {
+    fontSize: 13,
+    fontFamily: FONT.semibold,
+  },
+  sortDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginVertical: 14,
+  },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 10,
+  },
+  sortFieldLabel: {
+    fontSize: 13.5,
+    fontFamily: FONT.medium,
+    flex: 1,
+  },
+  sortDirChips: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  applyBtn: {
+    height: 50,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+  applyText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontFamily: FONT.semibold,
   },
 });

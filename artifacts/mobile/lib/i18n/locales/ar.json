@@ -753,7 +753,22 @@
     "wonCount_one": "{{count}} مكسوبة",
     "wonCount_other": "{{count}} مكسوبة",
     "qualifiedCount_one": "{{count}} مؤهّل",
-    "qualifiedCount_other": "{{count}} مؤهّل"
+    "qualifiedCount_other": "{{count}} مؤهّل",
+    "captureMethod": "طريقة الالتقاط",
+    "sortBy": "ترتيب حسب",
+    "sortLeadName": "اسم العميل",
+    "sortCompanyName": "اسم الشركة",
+    "sortCaptureDate": "تاريخ الالتقاط",
+    "sortLeadScore": "تقييم العميل",
+    "sortPipelineValue": "قيمة مسار المبيعات",
+    "sortFollowUpDate": "تاريخ المتابعة",
+    "sortMeetingDate": "تاريخ الاجتماع",
+    "dirNewest": "الأحدث",
+    "dirOldest": "الأقدم",
+    "dirHighest": "الأعلى",
+    "dirLowest": "الأدنى",
+    "dirEarliest": "الأقرب",
+    "dirLatest": "الأبعد"
   },
   "more": {
     "syncManage": "إدارة عمليات المسح دون اتصال",
