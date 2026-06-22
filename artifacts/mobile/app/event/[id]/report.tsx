@@ -25,6 +25,7 @@ import {
   useGetTeamPerformance,
   useListContacts,
   useListLeads,
+  useListMeetings,
 } from "@workspace/api-client-react";
 
 import { DateTimeField } from "@/components/DateTimeField";
@@ -49,16 +50,15 @@ type DatePreset = "all" | "7d" | "30d";
  * Mutually-exclusive sort key.
  * "none" = default server order on the contacts list (newest first).
  *
- * Fully applied (API or client-side):
+ * All keys are fully applied (API or client-side):
  *  name_*       → client-side on Contact.fullName
  *  company_*    → client-side on Contact.contactCompany
  *  date_*       → API param (ListContactsSort.newest / oldest)
  *  score_*      → client-side on Contact.leadScore
  *  pipeline_*   → client-side using lead.value joined from useListLeads({ eventId })
  *  followup_*   → client-side on Contact.followUpDate
- *
- * Meeting Date sort is not included: the meetings endpoint filters by contactId
- * only (not eventId), making event-scoped meeting enrichment require N+1 calls.
+ *  meeting_*    → client-side using meetingDate joined from useListMeetings({})
+ *                 (meetings are company-scoped; only ones with a known contactId are used)
  */
 type SortKey =
   | "none"
@@ -73,7 +73,9 @@ type SortKey =
   | "followup_asc"
   | "followup_desc"
   | "pipeline_desc"
-  | "pipeline_asc";
+  | "pipeline_asc"
+  | "meeting_asc"
+  | "meeting_desc";
 
 interface ReportFilters {
   datePreset: DatePreset;
@@ -82,14 +84,6 @@ interface ReportFilters {
   assignedToId: number | null;
   status: string | null;
   temperature: string | null;
-  /**
-   * Client-side filter applied after the API call.
-   * Proxy: Contact.cardImageUrl != null → "camera"; null → non-camera (qr/nfc/manual).
-   * QR, NFC, and Manual cannot be distinguished from Contact data alone so they
-   * all map to the "no card image" bucket.  The filter IS included in the
-   * active-filter badge count and IS applied to the contacts list.
-   */
-  captureMethod: string | null;
   sortKey: SortKey;
 }
 
@@ -100,18 +94,10 @@ const DEFAULT_FILTERS: ReportFilters = {
   assignedToId: null,
   status: null,
   temperature: null,
-  captureMethod: null,
   sortKey: "none",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const CAPTURE_METHODS: { key: string; labelKey: string }[] = [
-  { key: "camera", labelKey: "capture.businessCard" },
-  { key: "qr", labelKey: "capture.qrCode" },
-  { key: "nfc", labelKey: "capture.nfc" },
-  { key: "manual", labelKey: "capture.manual" },
-];
 
 const DATE_PRESETS: { key: DatePreset; labelKey: string }[] = [
   { key: "all", labelKey: "eventReport.allTime" },
@@ -171,13 +157,18 @@ function apiSortParam(key: SortKey): ListContactsSort | undefined {
 
 /**
  * Apply client-side sort to a contacts array.
- * `leadValueMap` is a contactId → lead.value lookup built from
- * `useListLeads({ eventId })`.  Contacts not in the map sort last.
+ *
+ * @param leadValueMap  contactId → lead.value (from useListLeads({ eventId })).
+ *                      Contacts not in the map sort last (pipeline_* modes).
+ * @param meetingDateMap contactId → earliest scheduledMeetingDate string
+ *                      (from useListMeetings({}), company-scoped).
+ *                      Contacts with no meeting sort last (meeting_* modes).
  */
 function applySortClient(
   contacts: Contact[],
   key: SortKey,
   leadValueMap: Map<number, number>,
+  meetingDateMap: Map<number, string>,
 ): Contact[] {
   if (
     key === "none" ||
@@ -224,30 +215,24 @@ function applySortClient(
       return copy.sort((a, b) =>
         (b.followUpDate ?? "").localeCompare(a.followUpDate ?? ""),
       );
+    case "meeting_asc":
+      // Contacts with a scheduled meeting date sort earliest-first;
+      // contacts with no meeting sort to the end.
+      return copy.sort((a, b) =>
+        (meetingDateMap.get(a.id) ?? "9999-99-99").localeCompare(
+          meetingDateMap.get(b.id) ?? "9999-99-99",
+        ),
+      );
+    case "meeting_desc":
+      // Latest meeting first; contacts with no meeting sort to the end.
+      return copy.sort((a, b) =>
+        (meetingDateMap.get(b.id) ?? "").localeCompare(
+          meetingDateMap.get(a.id) ?? "",
+        ),
+      );
     default:
       return copy;
   }
-}
-
-/**
- * Apply client-side capture-method filter.
- * Uses Contact.cardImageUrl as a proxy:
- *  "camera"         → keep contacts WITH a card image stored
- *  "qr"|"nfc"|"manual" → keep contacts WITHOUT a card image
- *  null             → no filter (return all)
- *
- * QR, NFC, and Manual cannot be distinguished from Contact data alone;
- * they all map to the "no card image" bucket.
- */
-function applyCaptureMethodClient(
-  contacts: Contact[],
-  captureMethod: string | null,
-): Contact[] {
-  if (!captureMethod) return contacts;
-  if (captureMethod === "camera")
-    return contacts.filter((c) => c.cardImageUrl != null);
-  // qr | nfc | manual → no stored card image
-  return contacts.filter((c) => c.cardImageUrl == null);
 }
 
 /** Count active (non-default) filter + sort values for badge display. */
@@ -257,7 +242,6 @@ function countActive(f: ReportFilters): number {
     f.assignedToId != null,
     f.status != null,
     f.temperature != null,
-    f.captureMethod != null,
     f.sortKey !== "none",
   ].filter(Boolean).length;
 }
@@ -329,15 +313,32 @@ export default function EventReportScreen() {
     return map;
   }, [leadsQuery.data]);
 
-  // Apply capture method client-side filter then sort
+  // Fetch all company meetings (tenant-scoped by requireAuth) to build a
+  // contactId → earliest meetingDate map for the meeting_* sort modes.
+  const meetingsQuery = useListMeetings({});
+  const meetingDateMap = useMemo<Map<number, string>>(() => {
+    const map = new Map<number, string>();
+    for (const m of meetingsQuery.data?.meetings ?? []) {
+      if (m.contactId != null && m.meetingDate != null) {
+        const existing = map.get(m.contactId);
+        // Keep the earliest upcoming meeting date per contact
+        if (!existing || m.meetingDate < existing) {
+          map.set(m.contactId, m.meetingDate);
+        }
+      }
+    }
+    return map;
+  }, [meetingsQuery.data]);
+
   const contacts = useMemo(
     () =>
       applySortClient(
-        applyCaptureMethodClient(contactsRaw, filters.captureMethod),
+        contactsRaw,
         filters.sortKey,
         leadValueMap,
+        meetingDateMap,
       ),
-    [contactsRaw, filters.captureMethod, filters.sortKey, leadValueMap],
+    [contactsRaw, filters.sortKey, leadValueMap, meetingDateMap],
   );
 
   // ── KPI metrics ───────────────────────────────────────────────────────────
@@ -752,6 +753,8 @@ const SORT_OPTIONS: SortOption[] = [
   { key: "pipeline_asc",  fieldLabelKey: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirLowest" },
   { key: "followup_asc",  fieldLabelKey: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirEarliest" },
   { key: "followup_desc", fieldLabelKey: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirLatest" },
+  { key: "meeting_asc",   fieldLabelKey: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirEarliest" },
+  { key: "meeting_desc",  fieldLabelKey: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirLatest" },
 ];
 
 type SortGroup = { fieldLabelKey: string; options: SortOption[] };
@@ -934,22 +937,6 @@ function EventReportFilterSheet({
                 </View>
               </>
             ) : null}
-
-            {/* Capture Method (UI only — not in API params or Contact type) */}
-            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
-              {t("eventReport.captureMethod").toUpperCase()}
-            </Text>
-            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              {chip(!draft.captureMethod, t("eventReport.any"), () => setDraft({ ...draft, captureMethod: null }), "cm-any")}
-              {CAPTURE_METHODS.map((m) =>
-                chip(
-                  draft.captureMethod === m.key,
-                  t(m.labelKey as Parameters<typeof t>[0], { defaultValue: prettyLabel(m.key) }),
-                  () => setDraft({ ...draft, captureMethod: draft.captureMethod === m.key ? null : m.key }),
-                  `cm-${m.key}`,
-                ),
-              )}
-            </View>
 
             {/* Date Range */}
             <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
