@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hashPassword, comparePassword, signToken } from "../lib/auth.js";
-import { requireAuth, evaluateCompanyAccess, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, evaluateCompanyAccess, normalizeRole, type AuthRequest } from "../middlewares/requireAuth.js";
 import { writeAudit } from "../lib/audit.js";
 
 const router = Router();
@@ -61,12 +61,12 @@ router.post("/auth/login", async (req, res) => {
     await db.update(usersTable).set({ lastLoginAt: new Date(), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     await writeAudit(req, { action: "user.login", userId: user.id, userName: user.email, companyId: user.companyId, entityType: "user", entityId: user.id });
 
-    const token = signToken({ id: user.id, email: user.email, role: user.role, companyId: user.companyId });
+    const token = signToken({ id: user.id, email: user.email, role: normalizeRole(user.role), companyId: user.companyId });
     const accessibleCompanies = await accessibleCompaniesFor(user.id, user.companyId);
     res.json({
       token,
       user: {
-        id: user.id, email: user.email, name: user.name, role: user.role, phone: user.phone,
+        id: user.id, email: user.email, name: user.name, role: normalizeRole(user.role), phone: user.phone,
         companyId: user.companyId, companyName: company?.name ?? null, avatarUrl: user.avatarUrl,
         permissions: user.permissions ?? {}, contactVisibility: user.contactVisibility,
         companyVisibility: user.companyVisibility, accessibleCompanies,
@@ -121,11 +121,11 @@ router.post("/auth/register", async (req, res) => {
     await db.insert(activityLogsTable).values({ type: "company_created", description: `New company registered: ${companyName}`, companyId: company.id, companyName, userId: user.id, userName: name });
     await writeAudit(req, { action: "company.register", userId: user.id, userName: user.email, companyId: company.id, entityType: "company", entityId: company.id, metadata: { companyName } });
 
-    const token = signToken({ id: user.id, email: user.email, role: user.role, companyId: user.companyId });
+    const token = signToken({ id: user.id, email: user.email, role: normalizeRole(user.role), companyId: user.companyId });
     res.status(201).json({
       token,
       user: {
-        id: user.id, email: user.email, name: user.name, role: user.role, phone: user.phone,
+        id: user.id, email: user.email, name: user.name, role: normalizeRole(user.role), phone: user.phone,
         companyId: user.companyId, companyName: company.name, avatarUrl: null,
         permissions: {}, contactVisibility: user.contactVisibility, companyVisibility: user.companyVisibility,
         accessibleCompanies: [company.id], isActive: user.isActive, lastLoginAt: null, createdAt: user.createdAt,
@@ -144,7 +144,7 @@ router.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
     const company = user.companyId ? await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, user.companyId)).then(r => r[0]) : null;
     res.json({
-      id: user.id, email: user.email, name: user.name, role: user.role, phone: user.phone,
+      id: user.id, email: user.email, name: user.name, role: normalizeRole(user.role), phone: user.phone,
       companyId: user.companyId, companyName: company?.name ?? null, avatarUrl: user.avatarUrl,
       permissions: user.permissions ?? {}, contactVisibility: user.contactVisibility,
       companyVisibility: user.companyVisibility, accessibleCompanies: req.user!.accessibleCompanies,

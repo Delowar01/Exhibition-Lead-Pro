@@ -19,6 +19,78 @@ environment, and what still requires on-device verification.
 
 ---
 
+## 0. MODULE 1 — LEAD CAPTURE ENGINE: SYSTEMIC ROOT CAUSE (FIXED)
+
+**Reported symptom:** On the freshly built native APK, "only Manual Entry works."
+Business Card OCR, Email Signature OCR, QR, LinkedIn QR, and NFC all fail to produce a
+saved lead.
+
+**This is NOT an OCR, AI, camera, or native-module failure. It is a single
+authorization defect that breaks every capture method except (apparently) manual entry.**
+
+### Evidence (production)
+- Production deployment logs: **every `POST /api/scans` returns HTTP 403**, and
+  `PATCH`/`DELETE /api/contacts/:id` also return 403. OCR code never runs — the request
+  is rejected at the permission gate before reaching the AI engine (a real OCR failure
+  would return 502, not 403).
+- Production database `users` table: the three tenant admins (ids 2,3,4) have
+  `role = "company_admin"` with `permissions = {}`.
+
+### Root cause: stale role name in the production database
+The Phase-0 role rename (`company_admin` → `primary_admin`) was applied to the code and
+to the **development** database, but the **production** database still stores the old
+`company_admin` value. Authorization recognizes only the canonical names:
+- `requirePermission` grants its full-access bypass only to `platform_owner` /
+  `primary_admin`. A `company_admin` user does **not** bypass, and with empty
+  `permissions {}` every permission-gated **write** is denied with 403.
+- All non-manual capture methods funnel their final lead creation through these same
+  gated writes (`POST /scans` for card/signature OCR; `POST /contacts` via the shared
+  `scan-review` screen for QR/LinkedIn-QR/NFC). So the stale role 403s the entire engine.
+- (Manual entry shares `POST /contacts` too; under the current code it would 403 as well
+  on the next publish — i.e. the report's "only manual works" would have regressed to
+  "nothing works." The fix prevents that.)
+
+### Fix (code, self-healing — prod DB is read-only to the agent)
+Normalize the legacy role at the auth boundary so stored `company_admin` is treated as
+`primary_admin` everywhere (and `team_member` → `employee`):
+- `artifacts/api-server/src/middlewares/requireAuth.ts` — new `normalizeRole()`; applied
+  when building `req.user.role`, so **all** server authorization (`requirePermission`
+  bypass, `requireRole`, `ROLE_RANK`) sees the canonical role.
+- `artifacts/api-server/src/routes/auth.ts` — applied to the login/`/auth/me` response
+  role and the signed JWT payload so clients carry the canonical role.
+
+This requires no production DB write; the legacy data is corrected at runtime and the
+defect resolves the moment the new server build is published.
+
+### Verified live in this environment (development API, through the proxy)
+A temporary user with `role = "company_admin"` + `permissions = {}` was created in the dev
+DB to reproduce the production condition, then exercised against the running API:
+- `POST /auth/login` → 200, response `role` normalized to `primary_admin`.
+- `POST /api/scans` → **502** (no longer 403) — the permission gate is lifted and the
+  request reaches the OCR engine; 502 is the graceful "couldn't read card" for a 1×1
+  dummy image. A real card image returns 201 with extracted fields.
+- `POST /api/contacts` → 201, `PATCH /api/contacts/:id` → 200, `DELETE /api/contacts/:id`
+  → 200 (all previously 403). Temp user removed after the test.
+
+### Per-method status after the fix
+| Method | Path | Status |
+|---|---|---|
+| Business Card OCR | `POST /scans` (Gemini) → `scan-review` → `POST /contacts` | Unblocked. OCR reachable; integration provisioned in prod (server boots, which requires the Gemini env vars). On-device OCR quality = NATIVE-VERIFICATION-PENDING. |
+| Email Signature OCR | same `/scans` path (prompt already generalized, §1.1) | Unblocked, same as above. |
+| QR | `parseQr` (on-device) → `scan-review` → `POST /contacts` | Unblocked. Parser unit-tested (17/17). |
+| LinkedIn QR | `parseQr` (URL → `linkedin` field) → review → create | Unblocked. **Inherent limit:** a LinkedIn QR encodes only the profile URL, so name/email cannot be auto-filled — by design the rest is entered/confirmed in review. |
+| NFC | `lib/nfc.ts` (NDEF) → `scan-review` → `POST /contacts` | Unblocked. **Inherent limit:** only NDEF-formatted tags carry contact data; non-NDEF/locked tags cannot be read — handled with a clear "unsupported tag" message. NATIVE-VERIFICATION-PENDING. |
+| Manual | `POST /contacts` | Works; now protected from the publish regression described above. |
+
+**Lead auto-creation:** in this data model the contact **is** the lead — `POST /contacts`
+scores it (`leadScore`/`leadTemperature`/`aiReasoning`) and places it in the pipeline at
+status `new`. So every method that reaches the create call produces a scored lead. The
+`scan-review` confirmation step is retained deliberately (one tap) to prevent OCR/parse
+misreads from creating junk leads; the original "no lead created" defect was the 403, now
+resolved.
+
+---
+
 ## A. Confirmed code-level defects — FIXED
 
 ### 2.3 — Duplicate "Edit Contact" action

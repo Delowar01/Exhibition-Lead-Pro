@@ -32,6 +32,20 @@ export function tenantScope(user: AuthUser | undefined, column: PgColumn): SQL |
   return inArray(column, user.accessibleCompanies);
 }
 
+// Legacy role names persisted in older databases (incl. production) that predate the
+// Phase-0 role rename. Authorization recognizes only the canonical names, so every
+// request normalizes the stored role at the auth boundary. Without this, a user still
+// stored as `company_admin` is denied the `primary_admin` permission bypass and gets
+// 403 on every permission-gated write (scans/OCR, contact edit/delete, team, etc.).
+const LEGACY_ROLE_ALIASES: Record<string, string> = {
+  company_admin: "primary_admin",
+  team_member: "employee",
+};
+
+export function normalizeRole(role: string): string {
+  return LEGACY_ROLE_ALIASES[role] ?? role;
+}
+
 export type CompanyAccess =
   | { blocked: true; reason: string }
   | { blocked: false; readOnly: boolean };
@@ -112,7 +126,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role,
+      role: normalizeRole(user.role),
       companyId: user.companyId,
       permissions: user.permissions ?? {},
       contactVisibility: user.contactVisibility,

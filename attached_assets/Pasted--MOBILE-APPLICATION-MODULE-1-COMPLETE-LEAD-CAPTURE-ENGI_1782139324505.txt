@@ -1,0 +1,321 @@
+# MOBILE APPLICATION – MODULE 1: COMPLETE LEAD CAPTURE ENGINE (HIGHEST PRIORITY)
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is **ONLY** for the **Complete Lead Capture Module**.
+
+Do **NOT** work on:
+
+* Pipeline
+* Contacts
+* Meetings
+* Follow-Ups
+* Dashboard
+* Reports
+* AI Scoring
+* Tasks
+
+until the Lead Capture Module has been fully completed and verified.
+
+---
+
+# IMPORTANT
+
+I rebuilt the latest native Android APK and tested it on a physical Android device.
+
+The results show that **only Manual Entry is working correctly.**
+
+Almost every other capture method is either partially working or completely non-functional.
+
+Please stop fixing individual bugs.
+
+Instead, review and validate the **entire Lead Capture Engine** from beginning to end.
+
+Treat this as one complete module.
+
+---
+
+# COMPLETE CAPTURE METHODS
+
+The following capture methods must all function correctly.
+
+## 1. Business Card Capture
+
+### Current Status
+
+❌ NOT WORKING CORRECTLY
+
+Business cards are not consistently extracting all contact information.
+
+Review the complete workflow.
+
+Verify:
+
+* Camera Capture
+* Image Processing
+* OCR
+* AI Extraction
+* Contact Parsing
+* Duplicate Detection
+* Contact Creation
+* Database Storage
+
+Support:
+
+* English Cards
+* Arabic Cards
+* Bilingual Cards
+
+Extract:
+
+* Name
+* Arabic Name
+* Job Title
+* Company
+* Email
+* Mobile
+* Telephone
+* Website
+* Address
+* Country
+* LinkedIn (if available)
+
+---
+
+## 2. Email Signature Capture
+
+### Current Status
+
+❌ NOT FIXED
+
+Behavior remains exactly the same.
+
+Image is captured.
+
+No contact information is extracted.
+
+No lead is created.
+
+Support:
+
+* Gmail
+* Outlook
+* Apple Mail
+* Desktop Screenshots
+* Mobile Screenshots
+* English
+* Arabic
+* Bilingual
+
+---
+
+## 3. QR Code Capture
+
+### Current Status
+
+❌ NOT FIXED
+
+QR Code is detected.
+
+However:
+
+No contact information is extracted.
+
+No lead is created.
+
+Support:
+
+* vCard
+* MECARD
+* Standard Contact QR
+* Business Contact QR
+
+Automatically create the lead after parsing.
+
+---
+
+## 4. LinkedIn QR Capture
+
+### Current Status
+
+❌ NOT WORKING
+
+LinkedIn QR Capture is not functioning correctly.
+
+The application should:
+
+* Detect the LinkedIn QR.
+* Decode the information.
+* Retrieve the available contact details.
+* Create a lead.
+
+If LinkedIn privacy restrictions prevent automatic retrieval, provide the best supported workflow and clearly document the limitation instead of failing silently.
+
+---
+
+## 5. NFC Capture
+
+### Current Status
+
+⚠️ PARTIALLY WORKING
+
+Some NFC cards are detected.
+
+Other supported NFC cards are not detected.
+
+Review the complete NFC implementation.
+
+Support all compatible NFC tag types intended by the application.
+
+Provide proper handling for unsupported NFC tags.
+
+Do not fail silently.
+
+---
+
+## 6. Manual Entry
+
+### Current Status
+
+✅ WORKING
+
+No changes required.
+
+Ensure no regression.
+
+---
+
+# COMMON REQUIREMENTS
+
+Every capture method must complete the same workflow.
+
+Capture
+
+↓
+
+Validation
+
+↓
+
+OCR / NFC / QR Parsing
+
+↓
+
+AI Extraction
+
+↓
+
+Duplicate Detection
+
+↓
+
+GPS Capture
+
+↓
+
+Contact Creation
+
+↓
+
+Database Storage
+
+↓
+
+Success Confirmation
+
+Every capture method should end with the same lead creation process.
+
+---
+
+# ROOT CAUSE ANALYSIS (MANDATORY)
+
+For EACH capture method provide:
+
+1. Root Cause
+2. Files Modified
+3. Solution Implemented
+4. Testing Method
+5. Native Android APK Test Result
+6. Native iPhone Test Result (where applicable)
+7. Screenshots or Screen Recording
+
+Do not simply state "Fixed."
+
+---
+
+# TESTING REQUIREMENTS
+
+Generate a **new native Android APK** after implementing the fixes.
+
+Verify every capture method using **real-world samples**.
+
+### Business Card
+
+* English
+* Arabic
+* Bilingual
+
+### Email Signature
+
+* Gmail
+* Outlook
+* Apple Mail
+* Desktop Screenshot
+* Mobile Screenshot
+
+### QR Code
+
+* vCard
+* MECARD
+* Standard Contact QR
+* Business Contact QR
+
+### LinkedIn QR
+
+* Real LinkedIn QR
+
+### NFC
+
+Test multiple NFC cards and tag types that are supported by the application.
+
+Do not rely on Expo Go or the Web Preview.
+
+Testing must be performed on a physical Android device.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+This module will only be accepted when:
+
+✅ Business Card Capture works correctly.
+
+✅ Email Signature Capture works correctly.
+
+✅ QR Code Capture works correctly.
+
+✅ LinkedIn QR Capture works correctly.
+
+✅ NFC Capture works correctly for all supported NFC tag types.
+
+✅ Manual Entry continues working without regression.
+
+Every capture method must successfully create a lead.
+
+No capture method should fail silently.
+
+---
+
+# IMPORTANT
+
+Do not begin work on any other Mobile Application module until the Complete Lead Capture Engine has been fully fixed, verified, and tested on a native Android build.
+
+This is the core engine of Lead Capture Pro.
+
+Every other feature in the application depends on this module functioning correctly.
