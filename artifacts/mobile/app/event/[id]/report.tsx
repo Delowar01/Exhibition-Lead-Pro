@@ -24,6 +24,7 @@ import {
   useGetEventReport,
   useGetTeamPerformance,
   useListContacts,
+  useListLeads,
 } from "@workspace/api-client-react";
 
 import { DateTimeField } from "@/components/DateTimeField";
@@ -53,11 +54,11 @@ type DatePreset = "all" | "7d" | "30d";
  *  company_*    → client-side on Contact.contactCompany
  *  date_*       → API param (ListContactsSort.newest / oldest)
  *  score_*      → client-side on Contact.leadScore
+ *  pipeline_*   → client-side using lead.value joined from useListLeads({ eventId })
  *  followup_*   → client-side on Contact.followUpDate
  *
- * Stored / UI-only (Contact type lacks the field; no-op on data):
- *  pipeline_*   → Contact has no pipelineValue; no reorder applied
- *  meeting_*    → Contact has no meetingDate; no reorder applied
+ * Meeting Date sort is not included: the meetings endpoint filters by contactId
+ * only (not eventId), making event-scoped meeting enrichment require N+1 calls.
  */
 type SortKey =
   | "none"
@@ -72,9 +73,7 @@ type SortKey =
   | "followup_asc"
   | "followup_desc"
   | "pipeline_desc"
-  | "pipeline_asc"
-  | "meeting_asc"
-  | "meeting_desc";
+  | "pipeline_asc";
 
 interface ReportFilters {
   datePreset: DatePreset;
@@ -84,10 +83,11 @@ interface ReportFilters {
   status: string | null;
   temperature: string | null;
   /**
-   * UI-only — the Contact type has no captureMethod field and the API
-   * endpoints don't support it as a filter param.  Stored in state so
-   * Clear All resets it, but NOT included in the active-filter badge count
-   * and NOT applied to any query or client-side collection.
+   * Client-side filter applied after the API call.
+   * Proxy: Contact.cardImageUrl != null → "camera"; null → non-camera (qr/nfc/manual).
+   * QR, NFC, and Manual cannot be distinguished from Contact data alone so they
+   * all map to the "no card image" bucket.  The filter IS included in the
+   * active-filter badge count and IS applied to the contacts list.
    */
   captureMethod: string | null;
   sortKey: SortKey;
@@ -169,8 +169,16 @@ function apiSortParam(key: SortKey): ListContactsSort | undefined {
   return undefined; // client-side
 }
 
-/** Apply client-side sort to a contacts array (after API sort is already applied). */
-function applySortClient(contacts: Contact[], key: SortKey): Contact[] {
+/**
+ * Apply client-side sort to a contacts array.
+ * `leadValueMap` is a contactId → lead.value lookup built from
+ * `useListLeads({ eventId })`.  Contacts not in the map sort last.
+ */
+function applySortClient(
+  contacts: Contact[],
+  key: SortKey,
+  leadValueMap: Map<number, number>,
+): Contact[] {
   if (
     key === "none" ||
     key === "date_desc" ||
@@ -197,6 +205,17 @@ function applySortClient(contacts: Contact[], key: SortKey): Contact[] {
       return copy.sort((a, b) => (b.leadScore ?? 0) - (a.leadScore ?? 0));
     case "score_asc":
       return copy.sort((a, b) => (a.leadScore ?? 0) - (b.leadScore ?? 0));
+    case "pipeline_desc":
+      return copy.sort(
+        (a, b) =>
+          (leadValueMap.get(b.id) ?? -1) - (leadValueMap.get(a.id) ?? -1),
+      );
+    case "pipeline_asc":
+      return copy.sort(
+        (a, b) =>
+          (leadValueMap.get(a.id) ?? Infinity) -
+          (leadValueMap.get(b.id) ?? Infinity),
+      );
     case "followup_asc":
       return copy.sort((a, b) =>
         (a.followUpDate ?? "9999").localeCompare(b.followUpDate ?? "9999"),
@@ -205,32 +224,40 @@ function applySortClient(contacts: Contact[], key: SortKey): Contact[] {
       return copy.sort((a, b) =>
         (b.followUpDate ?? "").localeCompare(a.followUpDate ?? ""),
       );
-    // pipeline_* and meeting_* require fields (pipelineValue, meetingDate) that
-    // are not present on the Contact type returned by listContacts.  The sort
-    // chips are rendered per the task spec; applying them is a no-op until the
-    // API exposes those fields on the contact list response.
-    case "pipeline_desc":
-    case "pipeline_asc":
-    case "meeting_asc":
-    case "meeting_desc":
-      return copy;
     default:
       return copy;
   }
 }
 
 /**
- * Count active (non-default) filter + sort values for badge display.
- * captureMethod is intentionally excluded: the Contact type has no such
- * field and neither endpoint supports it, so selecting it does not
- * change any returned data.
+ * Apply client-side capture-method filter.
+ * Uses Contact.cardImageUrl as a proxy:
+ *  "camera"         → keep contacts WITH a card image stored
+ *  "qr"|"nfc"|"manual" → keep contacts WITHOUT a card image
+ *  null             → no filter (return all)
+ *
+ * QR, NFC, and Manual cannot be distinguished from Contact data alone;
+ * they all map to the "no card image" bucket.
  */
+function applyCaptureMethodClient(
+  contacts: Contact[],
+  captureMethod: string | null,
+): Contact[] {
+  if (!captureMethod) return contacts;
+  if (captureMethod === "camera")
+    return contacts.filter((c) => c.cardImageUrl != null);
+  // qr | nfc | manual → no stored card image
+  return contacts.filter((c) => c.cardImageUrl == null);
+}
+
+/** Count active (non-default) filter + sort values for badge display. */
 function countActive(f: ReportFilters): number {
   return [
     f.datePreset !== "all" || f.dateFrom != null || f.dateTo != null,
     f.assignedToId != null,
     f.status != null,
     f.temperature != null,
+    f.captureMethod != null,
     f.sortKey !== "none",
   ].filter(Boolean).length;
 }
@@ -287,9 +314,30 @@ export default function EventReportScreen() {
 
   const contactsQuery = useListContacts(contactsParams);
   const contactsRaw = contactsQuery.data?.contacts ?? [];
+
+  // Fetch leads for the same event so we can sort by pipeline value (lead.value)
+  const leadsQuery = useListLeads({ eventId, limit: 200 });
+  const leadValueMap = useMemo<Map<number, number>>(() => {
+    const map = new Map<number, number>();
+    for (const lead of leadsQuery.data?.leads ?? []) {
+      if (lead.contactId != null && lead.value != null) {
+        // If a contact has multiple leads, keep the highest value
+        const existing = map.get(lead.contactId) ?? -Infinity;
+        if (lead.value > existing) map.set(lead.contactId, lead.value);
+      }
+    }
+    return map;
+  }, [leadsQuery.data]);
+
+  // Apply capture method client-side filter then sort
   const contacts = useMemo(
-    () => applySortClient(contactsRaw, filters.sortKey),
-    [contactsRaw, filters.sortKey],
+    () =>
+      applySortClient(
+        applyCaptureMethodClient(contactsRaw, filters.captureMethod),
+        filters.sortKey,
+        leadValueMap,
+      ),
+    [contactsRaw, filters.captureMethod, filters.sortKey, leadValueMap],
   );
 
   // ── KPI metrics ───────────────────────────────────────────────────────────
@@ -704,8 +752,6 @@ const SORT_OPTIONS: SortOption[] = [
   { key: "pipeline_asc",  fieldLabelKey: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirLowest" },
   { key: "followup_asc",  fieldLabelKey: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirEarliest" },
   { key: "followup_desc", fieldLabelKey: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirLatest" },
-  { key: "meeting_asc",   fieldLabelKey: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirEarliest" },
-  { key: "meeting_desc",  fieldLabelKey: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirLatest" },
 ];
 
 type SortGroup = { fieldLabelKey: string; options: SortOption[] };
