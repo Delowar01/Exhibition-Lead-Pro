@@ -211,9 +211,7 @@ export default function HomeScreen() {
       value: formatCurrency(data?.pipelineValue ?? 0, currencyCode),
       icon: "dollar-sign",
       color: colors.success,
-      onPress: () => {
-        router.push("/leads");
-      },
+      onPress: () => router.push({ pathname: "/leads", params: { stage: "all" } }),
     },
     {
       key: "won",
@@ -221,7 +219,7 @@ export default function HomeScreen() {
       value: formatCurrency((data as { wonValue?: number })?.wonValue ?? 0, currencyCode),
       icon: "award",
       color: "#22C55E",
-      onPress: () => router.push("/leads"),
+      onPress: () => router.push({ pathname: "/leads", params: { stage: "won" } }),
     },
     {
       key: "lost",
@@ -229,7 +227,7 @@ export default function HomeScreen() {
       value: formatCurrency((data as { lostValue?: number })?.lostValue ?? 0, currencyCode),
       icon: "x-circle",
       color: colors.destructive,
-      onPress: () => router.push("/leads"),
+      onPress: () => router.push({ pathname: "/leads", params: { stage: "lost" } }),
     },
     {
       key: "convRate",
@@ -237,7 +235,7 @@ export default function HomeScreen() {
       value: `${(data as { conversionRate?: number })?.conversionRate ?? 0}%`,
       icon: "percent",
       color: "#8B5CF6",
-      onPress: () => router.push("/leads"),
+      onPress: () => router.push({ pathname: "/leads", params: { stage: "all" } }),
     },
   ];
 

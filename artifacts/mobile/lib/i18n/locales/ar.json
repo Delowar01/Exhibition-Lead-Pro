@@ -358,6 +358,7 @@
     "cold": "ضعيف",
     "stage": "المرحلة",
     "stages": {
+      "all": "الكل",
       "prospect": "عميل محتمل",
       "qualified": "مؤهّل",
       "proposal_sent": "عرض مقدّم",
@@ -371,7 +372,9 @@
     },
     "moveTo": "نقل إلى",
     "reasoning": "تحليل الذكاء الاصطناعي",
-    "openValueSuffix": "ضمن القيمة المفتوحة"
+    "openValueSuffix": "ضمن القيمة المفتوحة",
+    "filterActive": "تصفية",
+    "clearFilter": "مسح"
   },
   "pipeline": {
     "title": "مسار المبيعات",

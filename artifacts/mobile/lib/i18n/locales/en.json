@@ -358,6 +358,7 @@
     "cold": "Cold",
     "stage": "Stage",
     "stages": {
+      "all": "All",
       "prospect": "Prospect",
       "qualified": "Qualified",
       "proposal_sent": "Proposal Sent",
@@ -371,7 +372,9 @@
     },
     "moveTo": "Move to",
     "reasoning": "AI reasoning",
-    "openValueSuffix": "in open value"
+    "openValueSuffix": "in open value",
+    "filterActive": "Filter",
+    "clearFilter": "Clear"
   },
   "pipeline": {
     "title": "Sales Pipeline",

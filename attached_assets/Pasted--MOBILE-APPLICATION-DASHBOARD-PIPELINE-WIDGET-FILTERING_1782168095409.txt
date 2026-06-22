@@ -1,0 +1,224 @@
+# MOBILE APPLICATION – DASHBOARD PIPELINE WIDGET FILTERING
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task improves the Dashboard KPI navigation behavior.
+
+No UI redesign is required.
+
+Only improve the navigation and filtering logic.
+
+---
+
+# CURRENT ISSUE
+
+The Dashboard Pipeline widgets are clickable.
+
+However, when a user taps a Pipeline KPI, the application only navigates to the Pipeline screen.
+
+No filter is applied.
+
+As a result, users still see the complete Pipeline list instead of the records represented by the selected KPI.
+
+This defeats the purpose of having interactive dashboard widgets.
+
+---
+
+# REQUIRED
+
+Every Pipeline-related Dashboard KPI must navigate to the Pipeline screen **with the correct filter automatically applied**.
+
+The Dashboard widgets should behave as intelligent shortcuts.
+
+---
+
+# REQUIRED MAPPING
+
+## Total Pipeline
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* All Opportunities
+
+---
+
+## Prospect
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* Stage = Prospect
+
+---
+
+## Qualified
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* Stage = Qualified
+
+---
+
+## Proposal Sent
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* Stage = Proposal Sent
+
+---
+
+## Negotiation
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* Stage = Negotiation
+
+---
+
+## Won
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* Stage = Won
+
+---
+
+## Lost
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* Stage = Lost
+
+---
+
+## Pipeline Value
+
+Navigate to:
+
+Pipeline
+
+Filter:
+
+* All Active Opportunities
+
+Sort:
+
+Highest Value First
+
+---
+
+# FILTER BEHAVIOR
+
+When a Dashboard widget is tapped:
+
+1. Open the Pipeline screen.
+2. Automatically apply the correct filter.
+3. Refresh the Pipeline list.
+4. Display only matching opportunities.
+5. Update the Pipeline statistics accordingly.
+
+The user should immediately see the filtered results without needing to manually select filters.
+
+---
+
+# VISUAL INDICATION
+
+When the Pipeline screen opens, clearly indicate that a filter is active.
+
+Example:
+
+**Filter: Negotiation**
+
+or
+
+**Stage: Won**
+
+Users should be able to:
+
+* Clear Filter
+* Change Filter
+
+using the existing Pipeline filter controls.
+
+---
+
+# STATE MANAGEMENT
+
+The selected Dashboard filter should remain active until:
+
+* User clears it.
+* User applies another filter.
+* User exits the Pipeline screen.
+
+Do not lose the filter during screen refreshes or pagination.
+
+---
+
+# FUTURE READY
+
+Design this navigation pattern so all Dashboard widgets can pass filter parameters in the future.
+
+Examples:
+
+* Contact Dashboard
+* Follow-Up Dashboard
+* Meeting Dashboard
+* Task Dashboard
+* Last Event Dashboard
+* Team Performance Dashboard
+
+This creates a consistent deep-link navigation experience throughout Lead Capture Pro.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Every Pipeline KPI opens the Pipeline screen.
+* The correct filter is automatically applied.
+* Only matching opportunities are displayed.
+* Active filter is clearly visible.
+* Filters persist while the user remains in the Pipeline screen.
+* Users can clear or change the filter normally.
+* Works correctly on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# IMPORTANT
+
+Dashboard KPI widgets should function as **context-aware navigation shortcuts**, not simple links.
+
+When a user taps a KPI, the application should immediately display the relevant data represented by that KPI, without requiring any additional filtering by the user.

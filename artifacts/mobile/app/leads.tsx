@@ -1,6 +1,6 @@
 import { Feather } from "@/components/icons";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
    FlatList,
@@ -35,6 +35,8 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { getCountry } from "@/lib/countries";
 import { formatCurrency } from "@/lib/currency";
 
+const ALL_STAGE = "all";
+
 export default function LeadsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -42,8 +44,17 @@ export default function LeadsScreen() {
   const { t, isRTL, textAlign } = useLocale();
   const { country } = useSettings();
   const currencyCode = getCountry(country).currencyCode;
+  const params = useLocalSearchParams<{ stage?: string }>();
+
+  // If a stage was passed from the dashboard, use it as the initial filter.
+  // "all" is a virtual stage that shows every opportunity sorted by value.
+  const initialStage = params.stage ?? ALL_STAGE;
+  const [activeStage, setActiveStage] = useState<string>(initialStage);
+  // Track whether the active filter came from the dashboard so we can show
+  // the filter banner. Cleared when the user manually selects a chip.
+  const [fromDashboard, setFromDashboard] = useState<boolean>(!!params.stage);
+
   const query = useGetLeadPipeline();
-  const [activeStage, setActiveStage] = useState<string>("prospect");
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -60,8 +71,43 @@ export default function LeadsScreen() {
     }));
   }, [query.data]);
 
+  // "All" shows every lead across every stage, sorted by value descending.
+  const allLeads = useMemo(
+    () =>
+      stages
+        .flatMap((s) => s.leads)
+        .sort((a, b) => (Number(b.value ?? 0)) - (Number(a.value ?? 0))),
+    [stages],
+  );
+
   const totalValue = query.data?.totalValue ?? 0;
-  const current = stages.find((s) => s.stage === activeStage);
+  const totalCount = stages.reduce((sum, s) => sum + s.count, 0);
+
+  const currentLeads =
+    activeStage === ALL_STAGE
+      ? allLeads
+      : (stages.find((s) => s.stage === activeStage)?.leads ?? []);
+
+  const currentCount =
+    activeStage === ALL_STAGE
+      ? totalCount
+      : (stages.find((s) => s.stage === activeStage)?.count ?? 0);
+
+  function selectStage(stage: string) {
+    setActiveStage(stage);
+    setFromDashboard(false); // user manually chose — clear dashboard origin
+  }
+
+  function clearFilter() {
+    setActiveStage(ALL_STAGE);
+    setFromDashboard(false);
+  }
+
+  // Stage chip data: "All" first, then the regular LEAD_STAGE_ORDER stages.
+  const stageChips = useMemo(() => {
+    const allChip = { stage: ALL_STAGE, count: totalCount, value: totalValue };
+    return [allChip, ...stages];
+  }, [stages, totalCount, totalValue]);
 
   function renderLead({ item }: { item: Lead }) {
     const color = LEAD_STAGE_COLORS[item.stage] ?? colors.primary;
@@ -85,15 +131,20 @@ export default function LeadsScreen() {
             {item.contactCompany ?? item.contactEmail ?? t("common.noCompany")}
           </Text>
         </View>
-        {item.value != null && item.value > 0 ? (
+        {item.value != null && Number(item.value) > 0 ? (
           <Text style={[styles.leadValue, { color: colors.success }]}>
-            {formatCurrency(item.value, item.currency ?? currencyCode)}
+            {formatCurrency(Number(item.value), item.currency ?? currencyCode)}
           </Text>
         ) : null}
         <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
       </Pressable>
     );
   }
+
+  const activeColor =
+    activeStage === ALL_STAGE ? colors.primary : (LEAD_STAGE_COLORS[activeStage] ?? colors.primary);
+
+  const activeStageName = t(`leads.stages.${activeStage}`, { defaultValue: prettyLabel(activeStage) });
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -109,6 +160,26 @@ export default function LeadsScreen() {
         <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
           {formatCurrency(totalValue, currencyCode)} {t("leads.openValueSuffix")}
         </Text>
+
+        {/* Active filter banner — shown when user arrived from a dashboard KPI */}
+        {fromDashboard && (
+          <View
+            style={[
+              styles.filterBanner,
+              { backgroundColor: activeColor + "18", borderColor: activeColor + "55", flexDirection: isRTL ? "row-reverse" : "row" },
+            ]}
+          >
+            <Feather name="filter" size={13} color={activeColor} />
+            <Text style={[styles.filterBannerText, { color: activeColor }]}>
+              {t("leads.filterActive")}: {activeStageName}
+            </Text>
+            <Pressable onPress={clearFilter} hitSlop={8} style={{ marginLeft: "auto" }}>
+              <Text style={[styles.filterClearText, { color: activeColor }]}>
+                {t("leads.clearFilter")}
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {query.isLoading ? (
@@ -121,17 +192,15 @@ export default function LeadsScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.stageBar}
+              contentContainerStyle={[styles.stageBar, { flexDirection: isRTL ? "row-reverse" : "row" }]}
             >
-              {stages.map((s) => {
+              {stageChips.map((s) => {
                 const active = s.stage === activeStage;
-                const color = LEAD_STAGE_COLORS[s.stage] ?? colors.primary;
+                const color = s.stage === ALL_STAGE ? colors.primary : (LEAD_STAGE_COLORS[s.stage] ?? colors.primary);
                 return (
                   <Pressable
                     key={s.stage}
-                    onPress={() => {
-                      setActiveStage(s.stage);
-                    }}
+                    onPress={() => selectStage(s.stage)}
                     style={[
                       styles.stageChip,
                       {
@@ -176,7 +245,7 @@ export default function LeadsScreen() {
           </View>
 
           <FlatList
-            data={current?.leads ?? []}
+            data={currentLeads}
             keyExtractor={(item) => String(item.id)}
             renderItem={renderLead}
             contentContainerStyle={{
@@ -240,6 +309,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FONT.regular,
     marginTop: 2,
+  },
+  filterBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  filterBannerText: {
+    fontSize: 13,
+    fontFamily: FONT.semibold,
+  },
+  filterClearText: {
+    fontSize: 13,
+    fontFamily: FONT.medium,
+    textDecorationLine: "underline",
   },
   stageBar: {
     paddingHorizontal: 20,
