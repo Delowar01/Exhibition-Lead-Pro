@@ -15,18 +15,20 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  type Contact,
   type EventReportDayCount,
   type EventReportTeamItem,
   type EventReportUserCount,
   type GetEventReportParams,
+  ListContactsSort,
   useGetEventReport,
   useGetTeamPerformance,
+  useListContacts,
 } from "@workspace/api-client-react";
 
 import { DateTimeField } from "@/components/DateTimeField";
 import {
   Avatar,
-  CONTACT_PIPELINE_ORDER,
   CONTACT_STATUS_COLORS,
   ErrorState,
   FONT,
@@ -43,8 +45,15 @@ import { formatGregorian } from "@/lib/date";
 type DatePreset = "all" | "7d" | "30d";
 
 /**
- * Mutually-exclusive sort key. The first segment is the field, the second is
- * the direction.  "none" = default (server order / no override).
+ * Mutually-exclusive sort key.
+ * "none" = default server order on the contacts list (newest first).
+ *
+ * Supported sorts:
+ *  name_*       → client-side sort on Contact.fullName
+ *  company_*    → client-side sort on Contact.contactCompany
+ *  date_*       → API param  (ListContactsSort.newest / oldest)
+ *  score_*      → client-side sort on Contact.leadScore
+ *  followup_*   → client-side sort on Contact.followUpDate
  */
 type SortKey =
   | "none"
@@ -56,12 +65,8 @@ type SortKey =
   | "date_asc"
   | "score_desc"
   | "score_asc"
-  | "pipeline_desc"
-  | "pipeline_asc"
   | "followup_asc"
-  | "followup_desc"
-  | "meeting_asc"
-  | "meeting_desc";
+  | "followup_desc";
 
 interface ReportFilters {
   datePreset: DatePreset;
@@ -70,7 +75,6 @@ interface ReportFilters {
   assignedToId: number | null;
   status: string | null;
   temperature: string | null;
-  captureMethod: string | null;
   sortKey: SortKey;
 }
 
@@ -81,7 +85,6 @@ const DEFAULT_FILTERS: ReportFilters = {
   assignedToId: null,
   status: null,
   temperature: null,
-  captureMethod: null,
   sortKey: "none",
 };
 
@@ -95,13 +98,6 @@ const DATE_PRESETS: { key: DatePreset; labelKey: string }[] = [
 
 const STATUS_FILTERS = ["new", "contacted", "quotation_sent", "negotiation", "won", "lost"];
 const TEMPERATURE_FILTERS = ["hot", "warm", "cold"] as const;
-
-const CAPTURE_METHODS: { key: string; labelKey: string }[] = [
-  { key: "camera", labelKey: "capture.businessCard" },
-  { key: "qr", labelKey: "capture.qrCode" },
-  { key: "nfc", labelKey: "capture.nfc" },
-  { key: "manual", labelKey: "capture.manual" },
-];
 
 function localDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -142,47 +138,64 @@ function rankPerformers(items: EventReportTeamItem[]): EventReportTeamItem[] {
   return [...items].sort((a, b) => b.leads - a.leads || b.qualified - a.qualified);
 }
 
-/** Count active (non-default) filter + sort selections. */
+/** Map our SortKey to the API sort param (or null for client-side sorts). */
+function apiSortParam(key: SortKey): ListContactsSort | undefined {
+  if (key === "date_desc" || key === "none") return ListContactsSort.newest;
+  if (key === "date_asc") return ListContactsSort.oldest;
+  if (key === "name_asc") return ListContactsSort.name;
+  return undefined; // client-side
+}
+
+/** Apply client-side sort to a contacts array (after API sort is already applied). */
+function applySortClient(contacts: Contact[], key: SortKey): Contact[] {
+  if (
+    key === "none" ||
+    key === "date_desc" ||
+    key === "date_asc" ||
+    key === "name_asc"
+  ) {
+    return contacts;
+  }
+  const copy = [...contacts];
+  switch (key) {
+    case "name_desc":
+      return copy.sort((a, b) =>
+        (b.fullName ?? "").localeCompare(a.fullName ?? ""),
+      );
+    case "company_asc":
+      return copy.sort((a, b) =>
+        (a.contactCompany ?? "").localeCompare(b.contactCompany ?? ""),
+      );
+    case "company_desc":
+      return copy.sort((a, b) =>
+        (b.contactCompany ?? "").localeCompare(a.contactCompany ?? ""),
+      );
+    case "score_desc":
+      return copy.sort((a, b) => (b.leadScore ?? 0) - (a.leadScore ?? 0));
+    case "score_asc":
+      return copy.sort((a, b) => (a.leadScore ?? 0) - (b.leadScore ?? 0));
+    case "followup_asc":
+      return copy.sort((a, b) =>
+        (a.followUpDate ?? "9999").localeCompare(b.followUpDate ?? "9999"),
+      );
+    case "followup_desc":
+      return copy.sort((a, b) =>
+        (b.followUpDate ?? "").localeCompare(a.followUpDate ?? ""),
+      );
+    default:
+      return copy;
+  }
+}
+
+/** Count active (non-default) filter + sort values for badge display. */
 function countActive(f: ReportFilters): number {
   return [
     f.datePreset !== "all" || f.dateFrom != null || f.dateTo != null,
     f.assignedToId != null,
     f.status != null,
     f.temperature != null,
-    f.captureMethod != null,
     f.sortKey !== "none",
   ].filter(Boolean).length;
-}
-
-/** Apply the selected sortKey to the sortable lists in the report. */
-function applySortKey<T extends { userName: string }>(
-  arr: T[],
-  sortKey: SortKey,
-  valueFor: (item: T) => number,
-): T[] {
-  const copy = [...arr];
-  switch (sortKey) {
-    case "name_asc":
-    case "company_asc":
-      return copy.sort((a, b) => a.userName.localeCompare(b.userName));
-    case "name_desc":
-    case "company_desc":
-      return copy.sort((a, b) => b.userName.localeCompare(a.userName));
-    case "score_desc":
-    case "pipeline_desc":
-      return copy.sort((a, b) => valueFor(b) - valueFor(a));
-    case "score_asc":
-    case "pipeline_asc":
-      return copy.sort((a, b) => valueFor(a) - valueFor(b));
-    default:
-      return copy;
-  }
-}
-
-function sortLeadsByDay(arr: EventReportDayCount[], sortKey: SortKey): EventReportDayCount[] {
-  if (sortKey === "date_desc") return [...arr].sort((a, b) => b.date.localeCompare(a.date));
-  if (sortKey === "date_asc") return [...arr].sort((a, b) => a.date.localeCompare(b.date));
-  return arr;
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -203,7 +216,8 @@ export default function EventReportScreen() {
   const teamQuery = useGetTeamPerformance();
   const teamMembers = teamQuery.data ?? [];
 
-  const params: GetEventReportParams = useMemo(() => {
+  // ── Report aggregate params ────────────────────────────────────────────────
+  const reportParams: GetEventReportParams = useMemo(() => {
     const dateFrom = filters.dateFrom ?? dateFromPreset(filters.datePreset);
     return {
       eventId,
@@ -215,23 +229,33 @@ export default function EventReportScreen() {
     };
   }, [eventId, filters]);
 
-  const query = useGetEventReport(params);
+  const query = useGetEventReport(reportParams);
   const report = query.data;
 
-  // Client-side sorted lists
-  const sortedTeamPerf = useMemo(
-    () => applySortKey(report?.teamPerformance ?? [], filters.sortKey, (m) => m.leads),
-    [report?.teamPerformance, filters.sortKey],
-  );
-  const sortedLeadsByUser = useMemo(
-    () => applySortKey(report?.leadsByUser ?? [], filters.sortKey, (u) => u.count),
-    [report?.leadsByUser, filters.sortKey],
-  );
-  const sortedLeadsByDay = useMemo(
-    () => sortLeadsByDay(report?.leadsByDay ?? [], filters.sortKey),
-    [report?.leadsByDay, filters.sortKey],
+  // ── Contacts list (with real sort + filter support) ───────────────────────
+  const contactsSort = apiSortParam(filters.sortKey);
+  const contactsParams = useMemo(() => {
+    const dateFrom = filters.dateFrom ?? dateFromPreset(filters.datePreset);
+    return {
+      eventId,
+      limit: 200,
+      ...(dateFrom ? { dateFrom } : {}),
+      ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
+      ...(filters.assignedToId != null ? { assignedTo: filters.assignedToId } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.temperature ? { temperature: filters.temperature } : {}),
+      ...(contactsSort ? { sort: contactsSort } : {}),
+    };
+  }, [eventId, filters, contactsSort]);
+
+  const contactsQuery = useListContacts(contactsParams);
+  const contactsRaw = contactsQuery.data?.contacts ?? [];
+  const contacts = useMemo(
+    () => applySortClient(contactsRaw, filters.sortKey),
+    [contactsRaw, filters.sortKey],
   );
 
+  // ── KPI metrics ───────────────────────────────────────────────────────────
   const metrics: { label: string; value: string; icon: keyof typeof Feather.glyphMap; color: string }[] =
     report
       ? [
@@ -270,7 +294,11 @@ export default function EventReportScreen() {
                 },
               ]}
             >
-              <Feather name="sliders" size={16} color={activeCount > 0 ? colors.primary : colors.foreground} />
+              <Feather
+                name="sliders"
+                size={16}
+                color={activeCount > 0 ? colors.primary : colors.foreground}
+              />
               {activeCount > 0 ? (
                 <View style={[styles.filterBadge, { backgroundColor: colors.primary }]}>
                   <Text style={styles.filterBadgeText}>{activeCount}</Text>
@@ -292,8 +320,11 @@ export default function EventReportScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
-              refreshing={query.isRefetching}
-              onRefresh={() => query.refetch()}
+              refreshing={query.isRefetching || contactsQuery.isRefetching}
+              onRefresh={() => {
+                query.refetch();
+                contactsQuery.refetch();
+              }}
               tintColor={colors.primary}
             />
           }
@@ -328,9 +359,7 @@ export default function EventReportScreen() {
               <Feather name="dollar-sign" size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.pipelineValue}>
-                {formatMoney(report?.pipelineValue ?? 0)}
-              </Text>
+              <Text style={styles.pipelineValue}>{formatMoney(report?.pipelineValue ?? 0)}</Text>
               <Text style={styles.pipelineLabel}>{t("eventReport.pipelineValue")}</Text>
             </View>
           </View>
@@ -377,46 +406,50 @@ export default function EventReportScreen() {
           ) : null}
 
           {/* Leads by day */}
-          {sortedLeadsByDay.length > 0 ? (
+          {report && report.leadsByDay.length > 0 ? (
             <Section title={t("eventReport.leadsByDay")}>
-              <LeadsByDayChart data={sortedLeadsByDay} color={colors.primary} />
+              <LeadsByDayChart data={report.leadsByDay} color={colors.primary} />
             </Section>
           ) : null}
 
           {/* Leads by user */}
-          {sortedLeadsByUser.length > 0 ? (
+          {report && report.leadsByUser.length > 0 ? (
             <Section title={t("eventReport.leadsByUser")}>
               <View style={{ gap: 10 }}>
-                {sortedLeadsByUser.map((u: EventReportUserCount) => (
-                  <DistRow
-                    key={u.userId}
-                    label={u.userName}
-                    count={u.count}
-                    max={Math.max(...sortedLeadsByUser.map((x) => x.count), 1)}
-                    color={colors.primary}
-                  />
-                ))}
+                {[...report.leadsByUser]
+                  .sort((a, b) => b.count - a.count)
+                  .map((u: EventReportUserCount) => (
+                    <DistRow
+                      key={u.userId}
+                      label={u.userName}
+                      count={u.count}
+                      max={Math.max(...report.leadsByUser.map((x) => x.count), 1)}
+                      color={colors.primary}
+                    />
+                  ))}
               </View>
             </Section>
           ) : null}
 
           {/* Team performance */}
-          {sortedTeamPerf.length > 0 ? (
+          {report && report.teamPerformance.length > 0 ? (
             <Section title={t("eventReport.teamPerformance")}>
               <View style={{ gap: 12 }}>
-                {sortedTeamPerf.map((m) => (
-                  <View key={m.userId} style={styles.teamRow}>
-                    <Avatar name={m.userName} size={36} color={colors.primary} />
-                    <View style={{ flex: 1 }}>
-                      <Text numberOfLines={1} style={[styles.teamName, { color: colors.foreground }]}>
-                        {m.userName}
-                      </Text>
-                      <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-                        {`${t("eventReport.perfLeads", { count: m.leads })} · ${t("eventReport.wonCount", { count: m.won })}`}
-                      </Text>
+                {[...report.teamPerformance]
+                  .sort((a, b) => b.leads - a.leads)
+                  .map((m) => (
+                    <View key={m.userId} style={styles.teamRow}>
+                      <Avatar name={m.userName} size={36} color={colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text numberOfLines={1} style={[styles.teamName, { color: colors.foreground }]}>
+                          {m.userName}
+                        </Text>
+                        <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
+                          {`${t("eventReport.perfLeads", { count: m.leads })} · ${t("eventReport.wonCount", { count: m.won })}`}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  ))}
               </View>
             </Section>
           ) : null}
@@ -431,19 +464,57 @@ export default function EventReportScreen() {
                     <PerformerRow
                       key={m.userId}
                       performer={m}
-                      onPress={() => {
-                        router.push(`/event/${eventId}/member/${m.userId}`);
-                      }}
+                      onPress={() => router.push(`/event/${eventId}/member/${m.userId}`)}
                     />
                   ))}
               </View>
             </Section>
           ) : null}
 
-          {report &&
-          report.totalLeads === 0 &&
-          report.statusDistribution.length === 0 &&
-          report.leadsByDay.length === 0 ? (
+          {/* Contacts list — real sortable list filtered by event */}
+          {contacts.length > 0 ? (
+            <Section title={t("eventReport.contactsList")}>
+              <View style={{ gap: 0 }}>
+                {contacts.map((c, idx) => (
+                  <Pressable
+                    key={c.id}
+                    onPress={() => router.push(`/contact/${c.id}`)}
+                    style={({ pressed }) => [
+                      styles.contactRow,
+                      idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+                      { opacity: pressed ? 0.7 : 1 },
+                    ]}
+                  >
+                    <Avatar name={c.fullName ?? undefined} size={36} color={colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.contactName, { color: colors.foreground }]}>
+                        {c.fullName ?? prettyLabel(c.status)}
+                      </Text>
+                      {c.contactCompany ? (
+                        <Text numberOfLines={1} style={[styles.contactSub, { color: colors.mutedForeground }]}>
+                          {c.contactCompany}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {c.leadTemperature ? (
+                      <View
+                        style={[
+                          styles.tempDot,
+                          { backgroundColor: LEAD_TEMPERATURE_COLORS[c.leadTemperature] ?? colors.muted },
+                        ]}
+                      />
+                    ) : null}
+                    {c.leadScore != null ? (
+                      <Text style={[styles.scoreText, { color: colors.mutedForeground }]}>
+                        {c.leadScore}
+                      </Text>
+                    ) : null}
+                    <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                  </Pressable>
+                ))}
+              </View>
+            </Section>
+          ) : report && report.totalLeads === 0 ? (
             <Text style={[styles.emptyLine, { color: colors.mutedForeground }]}>
               {t("eventReport.noLeadsMatch")}
             </Text>
@@ -568,41 +639,45 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 // ─── Filter Sheet ─────────────────────────────────────────────────────────────
 
+/**
+ * Sort options that can be applied to the contacts list.
+ *
+ * - name_*    / name_desc  → client-side on Contact.fullName
+ * - company_* → client-side on Contact.contactCompany
+ * - date_*    → API sort param (newest / oldest / name)
+ * - score_*   → client-side on Contact.leadScore
+ * - followup_*→ client-side on Contact.followUpDate
+ */
 interface SortOption {
   key: SortKey;
-  fieldLabel: string;
+  fieldLabelKey: string;
   dirLabel: string;
 }
 
 const SORT_OPTIONS: SortOption[] = [
-  { key: "name_asc",      fieldLabel: "eventReport.sortLeadName",      dirLabel: "A → Z" },
-  { key: "name_desc",     fieldLabel: "eventReport.sortLeadName",      dirLabel: "Z → A" },
-  { key: "company_asc",   fieldLabel: "eventReport.sortCompanyName",   dirLabel: "A → Z" },
-  { key: "company_desc",  fieldLabel: "eventReport.sortCompanyName",   dirLabel: "Z → A" },
-  { key: "date_desc",     fieldLabel: "eventReport.sortCaptureDate",   dirLabel: "eventReport.dirNewest" },
-  { key: "date_asc",      fieldLabel: "eventReport.sortCaptureDate",   dirLabel: "eventReport.dirOldest" },
-  { key: "score_desc",    fieldLabel: "eventReport.sortLeadScore",     dirLabel: "eventReport.dirHighest" },
-  { key: "score_asc",     fieldLabel: "eventReport.sortLeadScore",     dirLabel: "eventReport.dirLowest" },
-  { key: "pipeline_desc", fieldLabel: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirHighest" },
-  { key: "pipeline_asc",  fieldLabel: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirLowest" },
-  { key: "followup_asc",  fieldLabel: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirEarliest" },
-  { key: "followup_desc", fieldLabel: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirLatest" },
-  { key: "meeting_asc",   fieldLabel: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirEarliest" },
-  { key: "meeting_desc",  fieldLabel: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirLatest" },
+  { key: "name_asc",     fieldLabelKey: "eventReport.sortLeadName",    dirLabel: "A → Z" },
+  { key: "name_desc",    fieldLabelKey: "eventReport.sortLeadName",    dirLabel: "Z → A" },
+  { key: "company_asc",  fieldLabelKey: "eventReport.sortCompanyName", dirLabel: "A → Z" },
+  { key: "company_desc", fieldLabelKey: "eventReport.sortCompanyName", dirLabel: "Z → A" },
+  { key: "date_desc",    fieldLabelKey: "eventReport.sortCaptureDate", dirLabel: "eventReport.dirNewest" },
+  { key: "date_asc",     fieldLabelKey: "eventReport.sortCaptureDate", dirLabel: "eventReport.dirOldest" },
+  { key: "score_desc",   fieldLabelKey: "eventReport.sortLeadScore",   dirLabel: "eventReport.dirHighest" },
+  { key: "score_asc",    fieldLabelKey: "eventReport.sortLeadScore",   dirLabel: "eventReport.dirLowest" },
+  { key: "followup_asc", fieldLabelKey: "eventReport.sortFollowUpDate", dirLabel: "eventReport.dirEarliest" },
+  { key: "followup_desc",fieldLabelKey: "eventReport.sortFollowUpDate", dirLabel: "eventReport.dirLatest" },
 ];
 
-// Group sort options by field so we can render two direction chips per row
 type SortGroup = { fieldLabelKey: string; options: SortOption[] };
 
 function groupSortOptions(): SortGroup[] {
   const groups: SortGroup[] = [];
   const seen = new Set<string>();
   for (const opt of SORT_OPTIONS) {
-    if (!seen.has(opt.fieldLabel)) {
-      seen.add(opt.fieldLabel);
+    if (!seen.has(opt.fieldLabelKey)) {
+      seen.add(opt.fieldLabelKey);
       groups.push({
-        fieldLabelKey: opt.fieldLabel,
-        options: SORT_OPTIONS.filter((o) => o.fieldLabel === opt.fieldLabel),
+        fieldLabelKey: opt.fieldLabelKey,
+        options: SORT_OPTIONS.filter((o) => o.fieldLabelKey === opt.fieldLabelKey),
       });
     }
   }
@@ -655,7 +730,9 @@ function EventReportFilterSheet({
 
   function sortChip(opt: SortOption) {
     const active = draft.sortKey === opt.key;
-    const dirLabel = opt.dirLabel.startsWith("eventReport.") ? t(opt.dirLabel as Parameters<typeof t>[0]) : opt.dirLabel;
+    const dirLabel = opt.dirLabel.startsWith("eventReport.")
+      ? t(opt.dirLabel as Parameters<typeof t>[0])
+      : opt.dirLabel;
     return (
       <Pressable
         key={opt.key}
@@ -771,22 +848,6 @@ function EventReportFilterSheet({
               </>
             ) : null}
 
-            {/* Capture Method */}
-            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
-              {t("eventReport.captureMethod").toUpperCase()}
-            </Text>
-            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              {chip(!draft.captureMethod, t("eventReport.any"), () => setDraft({ ...draft, captureMethod: null }), "cm-any")}
-              {CAPTURE_METHODS.map((m) =>
-                chip(
-                  draft.captureMethod === m.key,
-                  t(m.labelKey as Parameters<typeof t>[0], { defaultValue: prettyLabel(m.key) }),
-                  () => setDraft({ ...draft, captureMethod: draft.captureMethod === m.key ? null : m.key }),
-                  `cm-${m.key}`,
-                ),
-              )}
-            </View>
-
             {/* Date Range */}
             <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
               {t("eventReport.dateRange").toUpperCase()}
@@ -858,7 +919,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderWidth: 1,
     marginRight: 4,
-    position: "relative",
   },
   filterBadge: {
     minWidth: 16,
@@ -1003,6 +1063,32 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontFamily: FONT.regular,
     marginTop: 2,
+  },
+  contactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+  },
+  contactName: {
+    fontSize: 14,
+    fontFamily: FONT.semibold,
+  },
+  contactSub: {
+    fontSize: 12.5,
+    fontFamily: FONT.regular,
+    marginTop: 1,
+  },
+  tempDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  scoreText: {
+    fontSize: 12,
+    fontFamily: FONT.semibold,
+    minWidth: 22,
+    textAlign: "right",
   },
   emptyLine: {
     fontSize: 14,

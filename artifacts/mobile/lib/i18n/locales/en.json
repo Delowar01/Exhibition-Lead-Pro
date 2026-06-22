@@ -754,6 +754,7 @@
     "wonCount_other": "{{count}} won",
     "qualifiedCount_one": "{{count}} qualified",
     "qualifiedCount_other": "{{count}} qualified",
+    "contactsList": "Contacts",
     "captureMethod": "Capture method",
     "sortBy": "Sort by",
     "sortLeadName": "Lead Name",
