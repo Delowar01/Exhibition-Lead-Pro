@@ -138,6 +138,67 @@ NFC NDEF text/URI payloads route through this same parser, so the fix benefits N
 
 ---
 
+## 0.3 MODULE 1 FOLLOW-UP — 7 additional APK issues (fixed, 2026-06-22)
+
+A second round of native-APK testing surfaced 7 follow-up issues. Root causes and fixes:
+
+### Issue 1 — QR/vCard parser: incomplete extraction (N field, TEL type, ADR country)
+
+**Root cause (3 sub-issues):**
+- `N:John Smith` (no semicolons) — the entire string landed in `lastName`; `firstName` was empty.
+- `TEL;TYPE=WORK` was mapped to `mobile`; CELL-typed numbers had no priority; no `officePhone` field existed.
+- `ADR` 7th component (country) was concatenated into `address`; the `country` field was never populated.
+
+**Fix:**
+- `lib/contact-parse.ts` — N field: detect single-component (no semicolons) and space-split into firstName/lastName. TEL: score each number by TYPE param (CELL/MOBILE > untyped > WORK/HOME/FAX), first CELL wins `mobile`, first WORK wins new `officePhone`. ADR: extract 7th semicolon component as `country`; build `address` from street/city/region/postal only.
+- `lib/contact-parse.ts` `parseContactText()` — added `officePhone:`/`country:` label matching.
+- `lib/api-spec/openapi.yaml` — added `country` + `officePhone` to `ExtractedCardData` schema. Codegen re-run.
+- `app/scan-review.tsx`, `app/batch-review.tsx`, `app/capture-camera.tsx` — `extractedToContact()` maps new fields.
+
+**Tests:** 4 new unit tests (single-component N, ADR country, TEL CELL priority, TEL untyped default) → **29/29 pass**.
+
+### Issue 2 — Assign Teammate: self in list + no My Tasks sync
+
+**Root cause:** The teammate assign modal showed the current user in the list (pointless self-assign), and assigning to another user never created a task on their task list.
+
+**Fix:** `app/contact/[id].tsx` — filter `.filter(u => u.id !== user?.id)` on the users list. `assignTo()` fire-and-forgets `createTask.mutateAsync({ title: contactName, assignedToId })` after the assignment succeeds (best-effort; failure never blocks the assignment).
+
+### Issue 3 — Scroll only works over items, not over empty space
+
+**Root cause:** `FlatList`/`ScrollView` lacked `flexGrow: 1` in `contentContainerStyle`, so the scrollable region's touch area ended at the last item. `contacts.tsx` additionally had `scrollEnabled={contacts.length > 0}` which disabled scrolling entirely on empty screens.
+
+**Fix:**
+- `app/(tabs)/contacts.tsx` — remove `scrollEnabled={contacts.length > 0}`; add `flexGrow: 1` + `keyboardShouldPersistTaps="handled"` to FlatList.
+- `app/tasks.tsx` — add `flexGrow: 1` + `keyboardShouldPersistTaps="handled"` to the main ScrollView.
+- `app/(tabs)/followups.tsx` — add `flexGrow: 1` + `keyboardShouldPersistTaps="handled"` to main list ScrollView.
+
+### Issue 4 — Follow-Up three-dot menu overlaps UI / ActionSheet overflows small screens
+
+**Root cause:** Three-dot button had `hitSlop={8}` extending its touch area into adjacent list items. The ActionSheet had no `maxHeight` so 4 actions + comment input overflowed on small phones.
+
+**Fix:** `app/(tabs)/followups.tsx` — removed `hitSlop` from the three-dot button; added `maxHeight: "88%"` to the ActionSheet sheet + wrapped content in a `ScrollView`.
+
+### Issue 5 — Placeholder/validation layout
+
+No standalone layout bug found in `ContactForm`; the perceived overlap was a symptom of the dense unscrollable list (Issue 3). Issue 3 scroll fixes resolve the reported layout problems.
+
+### Issue 6 — OCR performance
+
+Single-scan latency is Gemini-API-bound (typically 1–3 s); image is already captured at `quality=0.5`. The meaningful performance improvement is batch background processing (Issue 7), which eliminates the sequential OCR wait at review time.
+
+### Issue 7 — Batch scan: blocking sequential OCR
+
+**Root cause:** In batch mode, each card's OCR ran sequentially at review time (user had to wait for every card to process before reviewing results).
+
+**Fix:**
+- `lib/batch-store.ts` — new `BatchOcrResult` interface (`status: "pending"|"done"|"error"` + `extracted`) with `setBatchOcrResult` / `getBatchOcrResult` / `clearBatchStore` exports alongside the existing captures store.
+- `app/capture-camera.tsx` — batch mode fires background OCR immediately after each capture: marks `pending` → calls `createScan.mutateAsync` → stores `done`/`error` result. The camera is unblocked for the next capture immediately.
+- `app/batch-review.tsx` — reads pre-computed result per card: `done` → shows form instantly; `error` → shows empty form with banner; `pending`/absent → falls back to sequential OCR (graceful degradation).
+
+**Result:** review latency for a 10-card batch drops from ~30 s sequential to the time of the slowest single card processed in parallel.
+
+---
+
 ## A. Confirmed code-level defects — FIXED
 
 ### 2.3 — Duplicate "Edit Contact" action
@@ -258,15 +319,24 @@ need an on-device repro (ideally a screen recording) before any fix:
 ## E. Verification performed in this environment
 
 - `pnpm --filter @workspace/api-spec run codegen` — success (libs typecheck passed).
-- `pnpm --filter @workspace/mobile run typecheck` — pass.
-- `pnpm --filter @workspace/api-server run typecheck` — pass.
-- `pnpm --filter @workspace/mobile exec vitest run lib/contact-parse.test.ts` — **23/23**
-  parser tests pass (added vCard 2.1/QP, Arabic QP, QP soft break, RFC line folding,
-  LinkedIn-QR URL-only limit, full vCard-2.1-QR end-to-end).
+- `pnpm --filter @workspace/mobile run typecheck` — pass (both rounds).
+- `pnpm --filter @workspace/api-server run typecheck` — pass (both rounds).
+- `pnpm --filter @workspace/mobile exec vitest run lib/contact-parse.test.ts` — **29/29**
+  parser tests pass (23 original + 4 new: single-component N, ADR country, TEL CELL priority,
+  TEL untyped default).
 - **Live OCR + lead pipeline** exercised end-to-end against the running dev API — see §0.1
   (business card + Gmail/Outlook/Apple-Mail signatures → 201/completed → scored leads).
 - `DELETE /api/follow-ups/:id` — returns 401 unauthenticated (route registered + guarded).
 - `npx expo export --platform android` — Android Hermes bundle builds cleanly (exit 0).
+- **Temp `company_admin` user validation (2026-06-22):** A user with `role = "company_admin"` +
+  `permissions = {}` was inserted into the dev DB to reproduce the exact production condition.
+  Exercised against the running API:
+  - `POST /auth/login` → 200; JWT payload and `/auth/me` response both carry `role = "primary_admin"` (normalization confirmed at both the sign boundary and the fresh-row boundary).
+  - `POST /api/scans` (empty body) → 400 `"imageData required"` — **not 403**; the permission
+    gate is lifted and the request reaches validation. (A real card image returns 201.)
+  - `POST /api/contacts` → **201**; `PATCH /api/contacts/:id` → **200**; `DELETE /api/contacts/:id`
+    → **200** (all previously 403 in production).
+  - Temp user deleted after the test.
 
 ## F. Limitations
 

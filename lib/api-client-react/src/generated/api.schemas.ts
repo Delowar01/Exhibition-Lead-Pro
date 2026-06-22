@@ -869,6 +869,10 @@ export interface ExtractedCardData {
   linkedin?: string | null;
   /** @nullable */
   address?: string | null;
+  /** @nullable */
+  officePhone?: string | null;
+  /** @nullable */
+  country?: string | null;
   original?: ExtractedCardOriginal;
 }
 

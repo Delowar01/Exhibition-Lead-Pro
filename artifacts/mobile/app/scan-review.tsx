@@ -93,8 +93,10 @@ export default function ScanReviewScreen() {
       contactCompany: e.company ?? "",
       email: e.email ?? "",
       mobile: e.mobile ?? "",
+      officePhone: e.officePhone ?? "",
       website: e.website ?? "",
       linkedin: e.linkedin ?? "",
+      country: e.country ?? "",
       address: e.address ?? "",
       notes: e.arabicName
         ? `${t("scanReview.arabicName")}: ${e.arabicName}`

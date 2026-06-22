@@ -32,6 +32,7 @@ import {
   type BatchCapture,
   clearBatchCaptures,
   setBatchCaptures,
+  setBatchOcrResult,
 } from "@/lib/batch-store";
 
 // Dev-only diagnostics for the capture → OCR → save pipeline. Stripped in
@@ -58,8 +59,10 @@ function extractedToContact(data: ExtractedCardData, gps: Gps, eventId: number |
     contactCompany: data.company ?? null,
     email: data.email ?? null,
     mobile: data.mobile ?? null,
+    officePhone: data.officePhone ?? null,
     website: data.website ?? null,
     linkedin: data.linkedin ?? null,
+    country: data.country ?? null,
     address: data.address ?? null,
     eventId,
     latitude: gps.latitude,
@@ -215,10 +218,13 @@ export default function CaptureCameraScreen() {
       scanLog("image captured", { mode, source, bytes: imageData.length });
       const gps = { ...gpsRef.current };
 
-      // #4 Batch — capture image only, defer OCR/review to the review screen.
+      // #4 Batch — capture image and start background OCR immediately so results
+      // are already computed (or partially computed) by the time the user reaches
+      // the review screen. This eliminates the sequential OCR wait at review time.
       if (mode === "batch") {
+        const batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         const item: BatchCapture = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: batchId,
           imageData,
           latitude: gps.latitude,
           longitude: gps.longitude,
@@ -226,6 +232,33 @@ export default function CaptureCameraScreen() {
         };
         batchRef.current = [...batchRef.current, item];
         setBatchCount(batchRef.current.length);
+        // Mark pending then fire-and-forget background OCR.
+        setBatchOcrResult(batchId, { status: "pending", extracted: null });
+        void (async () => {
+          try {
+            const scan = await createScan.mutateAsync({
+              data: {
+                imageData,
+                appLanguage: language,
+                eventId,
+                latitude: gps.latitude,
+                longitude: gps.longitude,
+                gpsAccuracy: gps.gpsAccuracy,
+              },
+            });
+            setBatchOcrResult(batchId, {
+              status: "done",
+              extracted: scan.extractedData ?? null,
+            });
+            scanLog("batch: OCR done", { id: batchId });
+          } catch (e) {
+            setBatchOcrResult(batchId, { status: "error", extracted: null });
+            scanLog("batch: OCR error", {
+              id: batchId,
+              message: e instanceof Error ? e.message : String(e),
+            });
+          }
+        })();
         if (Platform.OS !== "web") Haptics.selectionAsync();
         return;
       }

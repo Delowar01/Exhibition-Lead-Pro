@@ -26,6 +26,7 @@ import {
   type BatchCapture,
   clearBatchCaptures,
   getBatchCaptures,
+  getBatchOcrResult,
 } from "@/lib/batch-store";
 
 function extractedToValues(extracted: ExtractedCardData): ContactFormValues {
@@ -37,8 +38,10 @@ function extractedToValues(extracted: ExtractedCardData): ContactFormValues {
     contactCompany: extracted.company ?? "",
     email: extracted.email ?? "",
     mobile: extracted.mobile ?? "",
+    officePhone: extracted.officePhone ?? "",
     website: extracted.website ?? "",
     linkedin: extracted.linkedin ?? "",
+    country: extracted.country ?? "",
     address: extracted.address ?? "",
     notes: extracted.arabicName ? `Arabic name: ${extracted.arabicName}` : "",
   };
@@ -70,6 +73,21 @@ export default function BatchReviewScreen() {
 
   const runOcr = useCallback(
     async (item: BatchCapture) => {
+      // Use pre-computed OCR result from background processing if available.
+      const precomputed = getBatchOcrResult(item.id);
+      if (precomputed?.status === "done") {
+        formKey.current += 1;
+        setValues(extractedToValues(precomputed.extracted ?? {}));
+        setOcrError(false);
+        return;
+      }
+      if (precomputed?.status === "error") {
+        formKey.current += 1;
+        setValues({ ...EMPTY_CONTACT });
+        setOcrError(true);
+        return;
+      }
+      // Still pending or not yet started — run OCR now.
       setOcrLoading(true);
       setOcrError(false);
       setValues(null);

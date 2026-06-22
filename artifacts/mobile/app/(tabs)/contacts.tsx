@@ -371,8 +371,9 @@ export default function ContactsScreen() {
             padding: 20,
             paddingBottom: insets.bottom + 100,
             gap: 10,
+            flexGrow: 1,
           }}
-          scrollEnabled={contacts.length > 0}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={query.isRefetching}

@@ -201,7 +201,6 @@ export default function FollowUpsScreen() {
               if (Platform.OS !== "web") Haptics.selectionAsync();
               setActive(f);
             }}
-            hitSlop={8}
             style={({ pressed }) => [
               styles.actionBtn,
               { backgroundColor: colors.muted, borderRadius: colors.radius, opacity: pressed ? 0.6 : 1 },
@@ -291,7 +290,9 @@ export default function FollowUpsScreen() {
             paddingHorizontal: 20,
             paddingTop: 16,
             paddingBottom: insets.bottom + 110,
+            flexGrow: 1,
           }}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -417,7 +418,7 @@ function ActionSheet({
         <Pressable
           style={[
             styles.sheet,
-            { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16 },
+            { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16, maxHeight: "88%" },
           ]}
           onPress={(e) => e.stopPropagation()}
         >
@@ -428,6 +429,7 @@ function ActionSheet({
             {followUp?.contactName ?? t("followups.fallbackTitle")}
           </Text>
 
+          <ScrollView bounces={false} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {mode === "menu" ? (
             <View style={{ gap: 10, marginTop: 12 }}>
               {actions.map((a) => (
@@ -521,6 +523,7 @@ function ActionSheet({
               </Pressable>
             </View>
           )}
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>

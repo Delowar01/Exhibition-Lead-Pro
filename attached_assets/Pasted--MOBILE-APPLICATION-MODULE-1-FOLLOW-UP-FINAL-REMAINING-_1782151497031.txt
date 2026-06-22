@@ -1,0 +1,355 @@
+# MOBILE APPLICATION – MODULE 1 FOLLOW-UP (FINAL REMAINING ITEMS)
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is a follow-up to Module 1 (Lead Capture Engine).
+
+Do **NOT** modify any functionality that is already working.
+
+Only address the remaining issues listed below.
+
+---
+
+# TEST RESULTS (LATEST NATIVE APK)
+
+## Successfully Fixed ✅
+
+The following items have been tested and are now working correctly:
+
+* Email Signature Capture
+* Lead Pipeline Status Update
+* GPS Location Capture
+* Status History
+* AI Lead Score
+* Lead Temperature
+
+Please do not modify these features unless required for the fixes below.
+
+---
+
+# 1. QR CODE CAPTURE
+
+## Current Result
+
+❌ Partially Fixed
+
+The QR Code is detected successfully.
+
+However:
+
+* Only the person's name is extracted.
+* The extracted name is mapped to the wrong field.
+* Remaining contact information is not extracted.
+
+---
+
+## Required
+
+Review the QR parser and field mapping.
+
+Support:
+
+* vCard
+* MECARD
+* Standard Contact QR
+* Business Contact QR
+
+Correctly map:
+
+* First Name
+* Last Name
+* Company
+* Designation
+* Email
+* Mobile
+* Telephone
+* Website
+* Address
+* Country
+
+The parser should correctly identify each field and populate the appropriate database fields.
+
+---
+
+## Acceptance Criteria
+
+* QR Code is decoded correctly.
+* All available contact information is extracted.
+* Every field is mapped correctly.
+* Lead is created successfully.
+
+---
+
+# 2. ASSIGN TEAMMATE
+
+## Current Result
+
+⚠️ Partially Working
+
+The lead can now be assigned.
+
+However:
+
+* The current logged-in user is incorrectly shown as an assignable teammate.
+* After assigning the lead, it does **not** appear in the assigned user's **My Tasks** section.
+
+---
+
+## Required
+
+### Assignment List
+
+Do not display the currently logged-in user in the teammate selection list.
+
+Display only eligible teammates.
+
+---
+
+### Task Creation
+
+When a lead is assigned:
+
+Automatically create an assignment task.
+
+The assigned lead must immediately appear in:
+
+**Workspace → My Tasks**
+
+for the assigned user.
+
+---
+
+### Task Information
+
+Include:
+
+* Lead Name
+* Company
+* Assigned By
+* Assigned Date
+* Due Date (if available)
+* Lead Status
+
+---
+
+## Acceptance Criteria
+
+* Logged-in user is excluded from teammate selection.
+* Assigned lead appears immediately in the assigned user's **My Tasks**.
+* Assignment notification and task remain synchronized.
+
+---
+
+# 3. SCROLL BEHAVIOUR
+
+## Current Result
+
+❌ Not Fixed
+
+Many screens only scroll when dragging over text or list items.
+
+Users cannot scroll by dragging over empty space.
+
+---
+
+## Required
+
+Review all scrollable screens.
+
+Users should be able to scroll by dragging anywhere inside the scrollable area.
+
+This should behave like a standard native mobile application.
+
+---
+
+# 4. FOLLOW-UP SCREEN
+
+## Current Result
+
+❌ Not Fixed
+
+The three-dot action menu still overlaps other UI elements.
+
+---
+
+## Required
+
+Correct spacing, alignment, and responsive layout.
+
+No overlapping should remain on Android or iPhone.
+
+---
+
+# 5. PLACEHOLDERS & VALIDATION LAYOUT
+
+## Current Result
+
+❌ Not Fixed
+
+Some placeholders, examples, helper text, and validation hints overlap UI components.
+
+---
+
+## Required
+
+Review the entire application.
+
+Correct all responsive layout issues.
+
+No text should overlap on any supported screen size.
+
+---
+
+# 6. PERFORMANCE IMPROVEMENT – LEAD PROCESSING
+
+## Current Issue
+
+The lead extraction process takes noticeably longer than expected after capturing an image.
+
+Although functionality is correct, the user experience feels slow.
+
+---
+
+## Required
+
+Review the complete processing pipeline.
+
+Optimize:
+
+* Image preprocessing
+* OCR
+* AI extraction
+* Database operations
+* Background processing
+
+Reduce the time between capture and completed lead creation as much as possible without reducing extraction accuracy.
+
+The user experience should feel fast and responsive.
+
+---
+
+# 7. BATCH SCAN MODE – WORKFLOW IMPROVEMENT
+
+## Current Workflow
+
+Batch Mode
+
+↓
+
+Capture Images
+
+↓
+
+User taps **Done**
+
+↓
+
+OCR starts
+
+↓
+
+Review Screen
+
+↓
+
+Every time the user taps **Next**, the application processes the next image.
+
+This creates unnecessary waiting during review.
+
+---
+
+## Required Workflow
+
+Batch Mode
+
+↓
+
+Capture Images Continuously
+
+↓
+
+Each captured image is immediately added to the local processing queue.
+
+↓
+
+OCR, AI Extraction, Duplicate Detection, and GPS processing begin **in the background** while the user continues scanning.
+
+↓
+
+User taps **Done**
+
+↓
+
+Processing should already be complete (or nearly complete) for all captured images.
+
+↓
+
+Review Screen opens immediately.
+
+↓
+
+User simply reviews each extracted lead.
+
+↓
+
+Edit if necessary.
+
+↓
+
+Tap **Save**.
+
+↓
+
+Next review opens instantly without additional OCR processing.
+
+---
+
+## Requirements
+
+During capture:
+
+* OCR runs in the background.
+* AI Extraction runs in the background.
+* Duplicate Detection runs in the background.
+* GPS Capture runs in the background.
+
+The user must never wait during the review stage for OCR processing.
+
+Only image capture should occur while the camera is open.
+
+Background processing should utilize idle time during scanning.
+
+---
+
+## Acceptance Criteria
+
+* User can capture a large batch of business cards continuously.
+* Processing occurs while scanning.
+* Review screen opens almost instantly after tapping **Done**.
+* Moving between review screens does not trigger additional OCR processing.
+* Review becomes a validation step only, not a processing step.
+
+---
+
+# TESTING REQUIREMENTS
+
+Generate a new native Android APK after implementing these changes.
+
+Verify:
+
+* QR Code Capture
+* Assign Teammate
+* My Tasks synchronization
+* Scroll behaviour
+* Follow-Up screen layout
+* Placeholder and validation layout
+* Batch Scan workflow
+* Lead processing performance
+
+Provide screenshots and a short implementation summary before marking this module complete.

@@ -24,12 +24,14 @@ import {
   type MeetingInputType,
   useCreateFollowUp,
   useCreateMeeting,
+  useCreateTask,
   useDeleteContact,
   useGetContact,
   useGetContactStatusHistory,
   useListUsers,
   useUpdateContact,
 } from "@workspace/api-client-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 import { DateTimeField } from "@/components/DateTimeField";
 import {
@@ -92,11 +94,13 @@ export default function ContactDetailScreen() {
   const contactId = Number(id);
 
   const query = useGetContact(contactId);
+  const { user } = useAuth();
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
   const historyQuery = useGetContactStatusHistory(contactId);
   const createFollowUp = useCreateFollowUp();
   const createMeeting = useCreateMeeting();
+  const createTask = useCreateTask();
 
   const [assignOpen, setAssignOpen] = useState(false);
   const [schedule, setSchedule] = useState<"followup" | "meeting" | null>(null);
@@ -223,6 +227,14 @@ export default function ContactDetailScreen() {
         id: contact.id,
         data: { assignedToId: userId },
       });
+      // Auto-create a follow-up task for the new assignee so it appears in
+      // their My Tasks list. Best-effort — failure never blocks the assignment.
+      if (userId !== null) {
+        const taskTitle = contactName(contact, t("common.unnamedContact"));
+        void createTask
+          .mutateAsync({ data: { title: taskTitle, assignedToId: userId } })
+          .catch(() => undefined);
+      }
       setAssignOpen(false);
       query.refetch();
     } catch {
@@ -580,7 +592,7 @@ export default function ContactDetailScreen() {
                   ) : null}
                 </Pressable>
                 {(usersQuery.data?.users ?? [])
-                  .filter((u) => u.isActive !== false)
+                  .filter((u) => u.isActive !== false && u.id !== user?.id)
                   .map((u) => {
                     const active = contact?.assignedToId === u.id;
                     return (

@@ -12,8 +12,10 @@ export function extractedToContact(data: ExtractedCardData): ContactInput {
     contactCompany: data.company ?? null,
     email: data.email ?? null,
     mobile: data.mobile ?? null,
+    officePhone: data.officePhone ?? null,
     website: data.website ?? null,
     linkedin: data.linkedin ?? null,
+    country: data.country ?? null,
     address: data.address ?? null,
   };
 }
@@ -166,10 +168,21 @@ export function parseVCard(raw: string): ExtractedCardData {
         break;
       }
       case "N": {
-        const [last, first] = value.split(";");
-        if (first) out.firstName = first.trim();
-        if (last) out.lastName = last.trim();
-        if (first || last) nameFromN = true;
+        const parts = value.split(";");
+        if (parts.length >= 2) {
+          // Standard structured form: Family;Given[;Additional;Prefix;Suffix]
+          const [last, first] = parts;
+          if (first?.trim()) out.firstName = first.trim();
+          if (last?.trim()) out.lastName = last.trim();
+          if (first?.trim() || last?.trim()) nameFromN = true;
+        } else {
+          // Single-component N with no semicolons (some QR generators omit the
+          // structured separator): treat the whole value as a full name and
+          // space-split it so "John Smith" → firstName="John" lastName="Smith"
+          // rather than the entire name landing in lastName only.
+          setName(out, value);
+          nameFromN = value.trim().length > 0;
+        }
         break;
       }
       case "ORG":
@@ -181,16 +194,45 @@ export function parseVCard(raw: string): ExtractedCardData {
       case "EMAIL":
         out.email = value;
         break;
-      case "TEL":
-        out.mobile = value;
+      case "TEL": {
+        // Prefer CELL/MOBILE-typed numbers for the mobile field; route WORK /
+        // HOME / other explicit non-cell types to officePhone. An untyped TEL
+        // defaults to mobile so the most common QR codes (single number, no
+        // TYPE param) still populate the right field.
+        const isMobile =
+          /CELL|MOBILE/i.test(params) || !/WORK|HOME|FAX/i.test(params);
+        if (isMobile) {
+          if (!out.mobile) out.mobile = value;
+        } else {
+          if (!out.officePhone) out.officePhone = value;
+        }
         break;
+      }
       case "URL":
         if (/linkedin\.com/i.test(value)) out.linkedin = value;
-        else out.website = value;
+        else if (!out.website) out.website = value;
         break;
-      case "ADR":
-        out.address = value.replace(/;/g, " ").trim();
+      case "ADR": {
+        // ADR is semicolon-delimited: PoBox;Ext;Street;Locality;Region;Postal;Country
+        // Extract country from the 7th component and build a clean address from
+        // the remaining meaningful components (street, city, region, postal).
+        const adrParts = value.split(";");
+        const street = (adrParts[2] ?? "").trim();
+        const locality = (adrParts[3] ?? "").trim();
+        const region = (adrParts[4] ?? "").trim();
+        const postal = (adrParts[5] ?? "").trim();
+        const country = (adrParts[6] ?? "").trim();
+        if (country) out.country = country;
+        const addrPieces = [street, locality, region, postal].filter(Boolean);
+        if (addrPieces.length > 0) {
+          out.address = addrPieces.join(", ");
+        } else {
+          // Fallback for unstructured ADR: collapse all components.
+          const raw = value.replace(/;/g, " ").trim();
+          if (raw) out.address = raw;
+        }
         break;
+      }
     }
   }
   return out;
@@ -277,10 +319,13 @@ export function parseContactText(raw: string): ExtractedCardData {
       else if (/^(title|jobtitle|designation|role|position)$/.test(key)) out.jobTitle = value;
       else if (/^(mobile|phone|tel|telephone|cell|cellphone|mob|contact|whatsapp)$/.test(key))
         out.mobile = out.mobile ?? value;
+      else if (/^(officephone|workphone|businessphone|directline|direct)$/.test(key))
+        out.officePhone = out.officePhone ?? value;
       else if (/^(email|emailaddress|mail|e-mail)$/.test(key)) out.email = value;
       else if (/^(website|web|url|site|homepage)$/.test(key)) assignUrl(out, value);
       else if (/^linkedin$/.test(key)) out.linkedin = value;
       else if (/^(address|addr|location)$/.test(key)) out.address = value;
+      else if (/^(country|nation)$/.test(key)) out.country = value;
       continue;
     }
 
@@ -319,7 +364,7 @@ export function parseQr(value: string): ExtractedCardData {
   // whole value as a company name (prior behavior for opaque payloads).
   const structured =
     /\r?\n/.test(v) ||
-    /(name|company|org|title|designation|role|mobile|phone|tel|cell|email|e-mail|website|web|url|addr|address)\s*[:=]/i.test(
+    /(name|company|org|title|designation|role|mobile|phone|tel|cell|email|e-mail|website|web|url|addr|address|country)\s*[:=]/i.test(
       v,
     ) ||
     /[^\s@]+@[^\s@]+\.[^\s@]+/.test(v) ||

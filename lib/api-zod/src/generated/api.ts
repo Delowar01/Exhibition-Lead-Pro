@@ -1233,6 +1233,8 @@ export const ListScansResponse = zod.object({
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "country": zod.string().nullish(),
   "original": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -1293,6 +1295,8 @@ export const GetScanResponse = zod.object({
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "country": zod.string().nullish(),
   "original": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),

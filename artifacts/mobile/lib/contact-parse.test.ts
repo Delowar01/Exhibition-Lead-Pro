@@ -133,6 +133,63 @@ describe("parseVCard", () => {
     expect(out.lastName).toBe("Farouk");
   });
 
+  it("handles single-component N (no semicolons) — name goes to right fields", () => {
+    // Some QR generators emit N:Full Name without the Family;Given separator.
+    // Before the fix, the entire value landed in lastName with firstName=null.
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "N:John Smith",
+      "ORG:Acme Corp",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.firstName).toBe("John");
+    expect(out.lastName).toBe("Smith");
+    expect(out.company).toBe("Acme Corp");
+  });
+
+  it("extracts country from ADR 7th semicolon component, address from street/city/region/postal", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "FN:Sara Khan",
+      "ADR;TYPE=WORK:;;Sheikh Zayed Rd;Dubai;Dubai;00000;UAE",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.country).toBe("UAE");
+    expect(out.address).toBe("Sheikh Zayed Rd, Dubai, Dubai, 00000");
+    expect(out.address).not.toContain("UAE");
+  });
+
+  it("prefers CELL/MOBILE-typed TEL for mobile; routes WORK TEL to officePhone", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "FN:Ali Hassan",
+      "TEL;TYPE=WORK,VOICE:+971 4 555 0000",
+      "TEL;TYPE=CELL:+971 50 999 1234",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.mobile).toBe("+971 50 999 1234");
+    expect(out.officePhone).toBe("+971 4 555 0000");
+  });
+
+  it("routes an untyped TEL (no TYPE param) to mobile by default", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "FN:Bo Chen",
+      "TEL:+86 138 0000 1234",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.mobile).toBe("+86 138 0000 1234");
+    expect(out.officePhone).toBeUndefined();
+  });
+
   it("decodes a vCard 2.1 QUOTED-PRINTABLE value (Outlook / QR generators)", () => {
     const vcf = [
       "BEGIN:VCARD",

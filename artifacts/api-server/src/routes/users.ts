@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { usersTable, companiesTable } from "@workspace/db";
 import { eq, ilike, and, count, inArray } from "drizzle-orm";
-import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, normalizeRole, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { hashPassword } from "../lib/auth.js";
 
@@ -17,7 +17,7 @@ router.use("/users", blockReadOnlyMutations);
 router.use("/users", auditMutations("team"));
 
 function formatUser(user: typeof usersTable.$inferSelect, companyName?: string | null) {
-  return { id: user.id, email: user.email, name: user.name, role: user.role, companyId: user.companyId, companyName: companyName ?? null, avatarUrl: user.avatarUrl, isActive: user.isActive, createdAt: user.createdAt };
+  return { id: user.id, email: user.email, name: user.name, role: normalizeRole(user.role), companyId: user.companyId, companyName: companyName ?? null, avatarUrl: user.avatarUrl, isActive: user.isActive, createdAt: user.createdAt };
 }
 
 // GET /users

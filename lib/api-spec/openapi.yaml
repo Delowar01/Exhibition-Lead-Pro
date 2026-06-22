@@ -2500,6 +2500,10 @@ components:
           type: ["string", "null"]
         address:
           type: ["string", "null"]
+        officePhone:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
         original:
           $ref: "#/components/schemas/ExtractedCardOriginal"
 
