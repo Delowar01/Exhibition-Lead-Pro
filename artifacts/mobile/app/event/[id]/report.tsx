@@ -84,6 +84,22 @@ interface ReportFilters {
   assignedToId: number | null;
   status: string | null;
   temperature: string | null;
+  /**
+   * Client-side filter applied to the contacts list after the API call.
+   * Uses Contact.cardImageUrl as the source-of-truth proxy:
+   *   "camera" → contacts WITH a stored card image (cardImageUrl != null)
+   *   "other"  → contacts WITHOUT a stored card image (cardImageUrl == null)
+   *   null     → all contacts (no filter)
+   *
+   * Only two options are exposed so each selection maps to a distinct,
+   * non-overlapping data bucket. QR/NFC/Manual cannot be distinguished from
+   * Contact data and are therefore grouped under "other".
+   * The API does not support captureMethod as a query param, so this filter
+   * is applied client-side on the contacts list only; the aggregate KPI
+   * stats/charts/team sections come from useGetEventReport which is not
+   * affected by this filter (it IS affected by status/temperature/date/team).
+   */
+  captureMethod: "camera" | "other" | null;
   sortKey: SortKey;
 }
 
@@ -94,10 +110,27 @@ const DEFAULT_FILTERS: ReportFilters = {
   assignedToId: null,
   status: null,
   temperature: null,
+  captureMethod: null,
   sortKey: "none",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Apply client-side capture-method filter.
+ *   "camera" → keep contacts with a stored card image (cardImageUrl != null)
+ *   "other"  → keep contacts without a stored card image (cardImageUrl == null)
+ *   null     → return all (no filter)
+ */
+function applyCaptureMethodClient(
+  contacts: Contact[],
+  captureMethod: ReportFilters["captureMethod"],
+): Contact[] {
+  if (!captureMethod) return contacts;
+  if (captureMethod === "camera")
+    return contacts.filter((c) => c.cardImageUrl != null);
+  return contacts.filter((c) => c.cardImageUrl == null);
+}
 
 const DATE_PRESETS: { key: DatePreset; labelKey: string }[] = [
   { key: "all", labelKey: "eventReport.allTime" },
@@ -242,6 +275,7 @@ function countActive(f: ReportFilters): number {
     f.assignedToId != null,
     f.status != null,
     f.temperature != null,
+    f.captureMethod != null,
     f.sortKey !== "none",
   ].filter(Boolean).length;
 }
@@ -330,15 +364,16 @@ export default function EventReportScreen() {
     return map;
   }, [meetingsQuery.data]);
 
+  // Apply capture method client-side filter, then sort
   const contacts = useMemo(
     () =>
       applySortClient(
-        contactsRaw,
+        applyCaptureMethodClient(contactsRaw, filters.captureMethod),
         filters.sortKey,
         leadValueMap,
         meetingDateMap,
       ),
-    [contactsRaw, filters.sortKey, leadValueMap, meetingDateMap],
+    [contactsRaw, filters.captureMethod, filters.sortKey, leadValueMap, meetingDateMap],
   );
 
   // ── KPI metrics ───────────────────────────────────────────────────────────
@@ -937,6 +972,26 @@ function EventReportFilterSheet({
                 </View>
               </>
             ) : null}
+
+            {/* Capture Method — 2 real buckets based on Contact.cardImageUrl */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("eventReport.captureMethod").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.captureMethod, t("eventReport.any"), () => setDraft({ ...draft, captureMethod: null }), "cm-any")}
+              {chip(
+                draft.captureMethod === "camera",
+                t("capture.businessCard"),
+                () => setDraft({ ...draft, captureMethod: draft.captureMethod === "camera" ? null : "camera" }),
+                "cm-camera",
+              )}
+              {chip(
+                draft.captureMethod === "other",
+                t("eventReport.captureOther"),
+                () => setDraft({ ...draft, captureMethod: draft.captureMethod === "other" ? null : "other" }),
+                "cm-other",
+              )}
+            </View>
 
             {/* Date Range */}
             <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>

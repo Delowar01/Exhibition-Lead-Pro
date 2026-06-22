@@ -756,6 +756,7 @@
     "qualifiedCount_other": "{{count}} qualified",
     "contactsList": "Contacts",
     "captureMethod": "Capture method",
+    "captureOther": "Digital (QR / NFC / Manual)",
     "sortBy": "Sort by",
     "sortLeadName": "Lead Name",
     "sortCompanyName": "Company Name",

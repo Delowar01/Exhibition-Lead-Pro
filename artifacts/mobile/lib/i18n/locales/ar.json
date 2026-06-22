@@ -756,6 +756,7 @@
     "qualifiedCount_other": "{{count}} مؤهّل",
     "contactsList": "جهات الاتصال",
     "captureMethod": "طريقة الالتقاط",
+    "captureOther": "رقمي (QR / NFC / يدوي)",
     "sortBy": "ترتيب حسب",
     "sortLeadName": "اسم العميل",
     "sortCompanyName": "اسم الشركة",
