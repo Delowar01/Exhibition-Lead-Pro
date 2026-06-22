@@ -4,6 +4,7 @@ import { Stack, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -61,6 +62,7 @@ export default function SettingsScreen() {
     { value: "batch", label: t("capture.modeBatch"), sub: t("capture.manualDesc") },
   ];
 
+  const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [bioSupported, setBioSupported] = useState(false);
   const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
   const [bioBusy, setBioBusy] = useState(false);
@@ -247,51 +249,42 @@ export default function SettingsScreen() {
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
             {t("settings.countryDesc")}
           </Text>
-          <View style={{ gap: 8 }}>
-            {COUNTRY_ORDER.map((code) => {
-              const profile = getCountry(code);
-              const active = settings.country === code;
-              const name = language === "ar" ? profile.nameAr : profile.nameEn;
-              return (
-                <Pressable
-                  key={code}
-                  onPress={() => {
-                    haptic();
-                    settings.setCountry(code);
-                  }}
-                  style={[
-                    styles.countryRow,
-                    {
-                      borderColor: active ? colors.primary : colors.border,
-                      backgroundColor: active ? colors.accent : "transparent",
-                      borderRadius: colors.radius + 2,
-                      flexDirection: isRTL ? "row-reverse" : "row",
-                    },
-                  ]}
-                >
-                  <Text style={styles.flag}>{profile.flag}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.countryName, { color: colors.foreground, textAlign }]}>
-                      {name}
-                    </Text>
-                    <Text style={[styles.countryDial, { color: colors.mutedForeground, textAlign }]}>
-                      {profile.dialCode}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.radio,
-                      { borderColor: active ? colors.primary : colors.border },
-                    ]}
-                  >
-                    {active ? (
-                      <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
+          {(() => {
+            const selected = getCountry(settings.country);
+            const selectedName = language === "ar" ? selected.nameAr : selected.nameEn;
+            return (
+              <Pressable
+                onPress={() => {
+                  haptic();
+                  setCountryPickerOpen(true);
+                }}
+                style={[
+                  styles.countryRow,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.muted,
+                    borderRadius: colors.radius + 2,
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                  },
+                ]}
+              >
+                <Text style={styles.flag}>{selected.flag}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.countryName, { color: colors.foreground, textAlign }]}>
+                    {selectedName}
+                  </Text>
+                  <Text style={[styles.countryDial, { color: colors.mutedForeground, textAlign }]}>
+                    {selected.dialCode}
+                  </Text>
+                </View>
+                <Feather
+                  name="chevron-down"
+                  size={20}
+                  color={colors.mutedForeground}
+                />
+              </Pressable>
+            );
+          })()}
         </Section>
 
         {/* Appearance */}
@@ -507,6 +500,83 @@ export default function SettingsScreen() {
           {t("settings.poweredBy")}
         </Text>
       </ScrollView>
+
+      <Modal
+        visible={countryPickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCountryPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setCountryPickerOpen(false)}
+        >
+          <Pressable
+            style={[
+              styles.modalSheet,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                paddingBottom: insets.bottom + 12,
+              },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.modalTitle, { color: colors.foreground, textAlign }]}>
+              {t("settings.country")}
+            </Text>
+            <ScrollView style={{ maxHeight: 420 }}>
+              <View style={{ gap: 8 }}>
+                {COUNTRY_ORDER.map((code) => {
+                  const profile = getCountry(code);
+                  const active = settings.country === code;
+                  const name = language === "ar" ? profile.nameAr : profile.nameEn;
+                  return (
+                    <Pressable
+                      key={code}
+                      onPress={() => {
+                        haptic();
+                        settings.setCountry(code);
+                        setCountryPickerOpen(false);
+                      }}
+                      style={[
+                        styles.countryRow,
+                        {
+                          borderColor: active ? colors.primary : colors.border,
+                          backgroundColor: active ? colors.accent : "transparent",
+                          borderRadius: colors.radius + 2,
+                          flexDirection: isRTL ? "row-reverse" : "row",
+                        },
+                      ]}
+                    >
+                      <Text style={styles.flag}>{profile.flag}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.countryName, { color: colors.foreground, textAlign }]}>
+                          {name}
+                        </Text>
+                        <Text style={[styles.countryDial, { color: colors.mutedForeground, textAlign }]}>
+                          {profile.dialCode}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.radio,
+                          { borderColor: active ? colors.primary : colors.border },
+                        ]}
+                      >
+                        {active ? (
+                          <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -636,6 +706,30 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontFamily: FONT.regular,
     marginTop: 1,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 14,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontFamily: FONT.semibold,
+    marginBottom: 14,
   },
   captureRow: {
     flexDirection: "row",
