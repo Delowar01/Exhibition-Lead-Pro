@@ -42,8 +42,10 @@ import {
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { useSettings } from "@/contexts/SettingsContext";
+import { getCountry } from "@/lib/countries";
 
-const CURRENCIES = ["USD", "EUR", "GBP", "AED", "SAR", "EGP", "QAR", "KWD", "BHD", "OMR", "JOD"];
+const CURRENCIES = ["SAR", "AED", "QAR", "OMR", "KWD", "BHD", "EGP", "MAD", "USD", "EUR", "GBP", "JOD"];
 const PRIORITIES = ["low", "medium", "high"] as const;
 
 function PickerModal({
@@ -118,6 +120,7 @@ export default function PipelineFormScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t } = useLocale();
+  const { country } = useSettings();
   const params = useLocalSearchParams<{ id?: string; contactId?: string }>();
   const editId = params.id ? parseInt(params.id) : null;
   const prefillContactId = params.contactId ? parseInt(params.contactId) : null;
@@ -131,7 +134,7 @@ export default function PipelineFormScreen() {
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [value, setValue] = useState("");
-  const [currency, setCurrency] = useState("USD");
+  const [currency, setCurrency] = useState(() => getCountry(country).currencyCode);
   const [probability, setProbability] = useState("");
   const [closingDate, setClosingDate] = useState<string | null>(null);
   const [priority, setPriority] = useState<string | null>(null);

@@ -1,0 +1,166 @@
+# MOBILE APPLICATION – LOCALIZED PIPELINE CURRENCY
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task enhances Pipeline currency handling and localization.
+
+---
+
+# CURRENT ISSUE
+
+The Pipeline module currently displays all opportunity values in **USD** regardless of the country selected in **Settings**.
+
+This is incorrect.
+
+The application already allows users to select their operating country.
+
+The Pipeline should automatically use the currency associated with that country.
+
+---
+
+# REQUIRED
+
+The Pipeline module must automatically use the currency of the country selected in **Settings**.
+
+Do not default everything to USD.
+
+---
+
+# COUNTRY → CURRENCY MAPPING
+
+Use the following default mapping:
+
+| Country                    | Currency              |
+| -------------------------- | --------------------- |
+| Saudi Arabia (KSA)         | Saudi Riyal (SAR)     |
+| United Arab Emirates (UAE) | UAE Dirham (AED)      |
+| Qatar (QAT)                | Qatari Riyal (QAR)    |
+| Oman (OMN)                 | Omani Rial (OMR)      |
+| Kuwait (KWT)               | Kuwaiti Dinar (KWD)   |
+| Bahrain (BHR)              | Bahraini Dinar (BHD)  |
+| Egypt (EGY)                | Egyptian Pound (EGP)  |
+| Morocco (MAR)              | Moroccan Dirham (MAD) |
+
+---
+
+# PIPELINE
+
+When creating a Pipeline opportunity:
+
+* Default the currency based on the selected country.
+* Display the correct currency symbol and ISO currency code.
+* The user may change the currency manually if needed (future-ready), but the default should always match the selected country.
+
+Examples:
+
+KSA
+
+Estimated Value:
+
+SAR 25,000
+
+UAE
+
+Estimated Value:
+
+AED 18,500
+
+Qatar
+
+Estimated Value:
+
+QAR 40,000
+
+---
+
+# DASHBOARD
+
+All Pipeline Value widgets should display the localized currency.
+
+Examples:
+
+SAR 250,000
+
+AED 185,000
+
+QAR 92,000
+
+instead of always showing USD.
+
+---
+
+# REPORTS
+
+The following should also use the selected country's currency:
+
+* Pipeline Dashboard
+* Event Reports
+* Sales Reports
+* Team Performance
+* Contact Pipeline Summary
+* Opportunity Details
+
+Maintain consistent formatting throughout the application.
+
+---
+
+# FUTURE READY
+
+Design the currency system so it can later support:
+
+* Multi-currency companies
+* Currency conversion
+* Exchange rate synchronization
+* User-selected currency overrides
+* Company default currency
+* Regional number formatting
+
+without requiring database redesign.
+
+Store:
+
+* Currency Code (SAR, AED, QAR, etc.)
+* Currency Symbol
+* Opportunity Value
+
+Do not store formatted text only.
+
+---
+
+# USER EXPERIENCE
+
+The currency should update automatically whenever the user changes the **Country** in **Settings**.
+
+The user should not need to manually update Pipeline currency after changing countries.
+
+Existing Pipeline opportunities should retain the currency that was selected when they were created.
+
+Only new opportunities should use the newly selected default currency.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Pipeline defaults to the currency of the selected country.
+* Dashboard Pipeline Value displays the correct currency.
+* Reports display the correct currency.
+* Opportunity forms use the correct default currency.
+* Currency formatting is consistent across the application.
+* Existing opportunities retain their original currency.
+* New opportunities follow the current country setting.
+* Fully functional on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# IMPORTANT
+
+The selected **Country** should act as the application's default localization setting.
+
+Use it consistently across all financial values, examples, placeholders, reports, and future CRM modules to provide a localized and professional user experience.

@@ -31,17 +31,17 @@ import {
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
-
-function formatCurrency(value: number): string {
-  if (value >= 1000) return `$${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
-  return `$${value}`;
-}
+import { useSettings } from "@/contexts/SettingsContext";
+import { getCountry } from "@/lib/countries";
+import { formatCurrency } from "@/lib/currency";
 
 export default function LeadsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t, isRTL, textAlign } = useLocale();
+  const { country } = useSettings();
+  const currencyCode = getCountry(country).currencyCode;
   const query = useGetLeadPipeline();
   const [activeStage, setActiveStage] = useState<string>("prospect");
 
@@ -87,7 +87,7 @@ export default function LeadsScreen() {
         </View>
         {item.value != null && item.value > 0 ? (
           <Text style={[styles.leadValue, { color: colors.success }]}>
-            {formatCurrency(item.value)}
+            {formatCurrency(item.value, item.currency ?? currencyCode)}
           </Text>
         ) : null}
         <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
@@ -107,7 +107,7 @@ export default function LeadsScreen() {
         </Pressable>
         <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("leads.title")}</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
-          {formatCurrency(totalValue)} {t("leads.openValueSuffix")}
+          {formatCurrency(totalValue, currencyCode)} {t("leads.openValueSuffix")}
         </Text>
       </View>
 

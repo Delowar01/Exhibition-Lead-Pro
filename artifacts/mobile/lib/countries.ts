@@ -41,6 +41,13 @@ export interface CountryProfile {
    * accepts any valid international number.
    */
   nationalDigits: number;
+  /**
+   * ISO 4217 currency code for this country's default currency.
+   * Used to pre-fill pipeline opportunity currency when the country changes.
+   * Future-ready: multi-currency, conversion, and user overrides can be layered
+   * on top without changing the data model.
+   */
+  currencyCode: string;
 }
 
 export const COUNTRIES: Record<CountryCode, CountryProfile> = {
@@ -56,6 +63,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "King Fahd Road, Riyadh, Saudi Arabia",
     addressAr: "طريق الملك فهد، الرياض، المملكة العربية السعودية",
     nationalDigits: 9,
+    currencyCode: "SAR",
   },
   AE: {
     code: "AE",
@@ -69,6 +77,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "Sheikh Zayed Road, Dubai, UAE",
     addressAr: "شارع الشيخ زايد، دبي، الإمارات",
     nationalDigits: 9,
+    currencyCode: "AED",
   },
   QA: {
     code: "QA",
@@ -82,6 +91,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "Al Corniche Street, Doha, Qatar",
     addressAr: "شارع الكورنيش، الدوحة، قطر",
     nationalDigits: 8,
+    currencyCode: "QAR",
   },
   OM: {
     code: "OM",
@@ -95,6 +105,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "Sultan Qaboos Street, Muscat, Oman",
     addressAr: "شارع السلطان قابوس، مسقط، عُمان",
     nationalDigits: 8,
+    currencyCode: "OMR",
   },
   KW: {
     code: "KW",
@@ -108,6 +119,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "Arabian Gulf Street, Kuwait City, Kuwait",
     addressAr: "شارع الخليج العربي، مدينة الكويت، الكويت",
     nationalDigits: 8,
+    currencyCode: "KWD",
   },
   BH: {
     code: "BH",
@@ -121,6 +133,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "King Faisal Highway, Manama, Bahrain",
     addressAr: "طريق الملك فيصل، المنامة، البحرين",
     nationalDigits: 8,
+    currencyCode: "BHD",
   },
   EG: {
     code: "EG",
@@ -134,6 +147,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "Tahrir Square, Cairo, Egypt",
     addressAr: "ميدان التحرير، القاهرة، مصر",
     nationalDigits: 10,
+    currencyCode: "EGP",
   },
   MA: {
     code: "MA",
@@ -147,6 +161,7 @@ export const COUNTRIES: Record<CountryCode, CountryProfile> = {
     addressEn: "Boulevard Mohammed V, Casablanca, Morocco",
     addressAr: "شارع محمد الخامس، الدار البيضاء، المغرب",
     nationalDigits: 9,
+    currencyCode: "MAD",
   },
 };
 

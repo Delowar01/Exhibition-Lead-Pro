@@ -1,0 +1,391 @@
+# MOBILE APPLICATION – FINAL IMPLEMENTATION CHECKLIST BEFORE NEXT APK BUILD
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+Before generating the next native Android APK, please complete **all outstanding requested changes** listed below.
+
+Do **not** generate a new APK until every item has been implemented and verified through your own internal QA.
+
+---
+
+# 1. QR CODE / LINKEDIN CONSOLIDATION
+
+* Merge **QR Code** and **LinkedIn QR** into one capture method.
+* Rename it to:
+
+  * **QR Code / LinkedIn**
+* Remove the separate LinkedIn QR option.
+* Automatically detect:
+
+  * LinkedIn QR
+  * vCard
+  * MECARD
+  * Business Contact QR
+  * Standard Contact QR
+  * Website QR
+* Store the LinkedIn profile URL when applicable.
+
+---
+
+# 2. DEMO DATA
+
+Create realistic demo data.
+
+## Companies
+
+* Company A
+* Company B
+
+## Mobile Users
+
+* 3 users for Company A
+* 3 users for Company B
+
+Total:
+
+* 6 Mobile Application Users
+
+## Contacts
+
+Create **20 realistic contacts for each user**.
+
+Total:
+
+* 120 Demo Contacts
+
+Distribute across:
+
+* Events
+* Pipeline Stages
+* Lead Temperatures
+* Capture Methods
+* Meetings
+* Follow-Ups
+* Tasks
+
+---
+
+# 3. CONTACT DASHBOARD KPI
+
+Keep all 8 KPI cards.
+
+Optimize the design by reducing:
+
+* Card height
+* Padding
+* Margins
+* Icon size
+* Label size
+
+Keep all cards readable and clickable while occupying less vertical space.
+
+---
+
+# 4. DUPLICATE MANAGEMENT
+
+Enhance the Duplicate module.
+
+Add:
+
+* Preview
+* Make Original
+* Multi-selection
+* Delete Selected
+
+Workflow:
+
+* Long press avatar → Enter selection mode.
+* Tap additional contacts to select/deselect.
+* Show:
+
+  * Selected Count
+  * Delete Selected
+  * Select All
+  * Cancel Selection
+
+Keep the existing single Delete action.
+
+---
+
+# 5. CAPTURED IMAGE PREVIEW
+
+Store original images for:
+
+* Business Card
+* Email Signature
+
+Inside Contact Details add:
+
+**Captured Image**
+
+Features:
+
+* Thumbnail
+* Full-screen preview
+* Pinch-to-zoom
+* Pan
+
+Do not show this section for:
+
+* Manual Entry
+* NFC
+* QR Code / LinkedIn
+
+---
+
+# 6. DASHBOARD – LAST EVENT CARD
+
+Remove the duplicate Filter button from the Dashboard Last Event card.
+
+Keep the existing Filter button inside the Last Event Report exactly as it is.
+
+Dashboard card should only display:
+
+* Event Icon
+* Event Name
+* Event Summary
+* Navigation Arrow
+
+---
+
+# 7. LAST EVENT REPORT
+
+Optimize the Event Report.
+
+## KPI Layout
+
+Keep all 8 KPI cards.
+
+Display them in a compact:
+
+* 4 × 2 responsive grid
+
+Reduce unnecessary vertical space.
+
+---
+
+Remove:
+
+* Qualification Distribution
+* Status Distribution
+
+---
+
+Add:
+
+## Top Performer
+
+Display:
+
+* Profile Photo
+* Full Name
+* Job Title
+* Total Leads
+* Hot Leads
+* Won Opportunities
+* Conversion Rate
+
+Card should be clickable.
+
+---
+
+## Leads by Day
+
+Redesign into a modern analytics card.
+
+Improve:
+
+* Visual design
+* Chart style
+* Daily trend visualization
+* Peak day highlight
+* Overall presentation
+
+---
+
+# 8. NOTIFICATION SYSTEM
+
+Make the notification system fully functional.
+
+Support:
+
+## Follow-Up Notifications
+
+* ON / OFF
+
+## Meeting Reminders
+
+* ON / OFF
+
+Default:
+
+* ON
+
+Meeting reminder:
+
+* Notify user 15 minutes before the meeting.
+
+Automatically update notifications after:
+
+* Edit
+* Reschedule
+* Delete
+* Cancel
+
+---
+
+# 9. PIPELINE MANAGEMENT
+
+Complete the Pipeline module.
+
+Add:
+
+* Add to Pipeline
+* Edit Pipeline
+
+Allow creation from:
+
+* Contact Details
+* Pipeline Screen
+
+Support:
+
+* Opportunity Title
+* Value
+* Probability
+* Stage
+* Closing Date
+* Assigned User
+* Notes
+
+Maintain Pipeline History.
+
+---
+
+# 10. PIPELINE CURRENCY LOCALIZATION
+
+## Current Issue
+
+Pipeline values are always displayed in **USD**.
+
+The application already allows the user to select a **Country** in Settings.
+
+The Pipeline should automatically use the currency associated with the selected country.
+
+### Required Country Mapping
+
+* KSA → SAR
+* UAE → AED
+* QAT → QAR
+* OMN → OMR
+* KWT → KWD
+* BHR → BHD
+* EGY → EGP
+* MAR → MAD
+
+### Requirements
+
+* New Pipeline opportunities should default to the selected country's currency.
+* Dashboard Pipeline Value should use the correct currency.
+* Reports should use the correct currency.
+* Existing Pipeline records should retain the currency they were created with.
+* Only newly created opportunities should use the updated default currency after the country setting changes.
+
+Design the currency system to support future multi-currency functionality without database redesign.
+
+---
+
+# 11. PERFORMANCE
+
+Verify:
+
+* Rapid Scan
+* Batch Scan
+* OCR Speed
+* Background OCR Processing
+
+Batch Scan should process OCR, AI extraction, duplicate detection, and GPS **while scanning**, so the review screen opens immediately after tapping **Done**.
+
+---
+
+# INTERNAL QA (MANDATORY)
+
+Before generating the next APK, perform a complete QA review.
+
+## Capture
+
+* Business Card
+* Email Signature
+* QR Code / LinkedIn
+* NFC
+* Manual Entry
+
+## Contacts
+
+* Contact Details
+* Captured Image
+* Duplicate Management
+* Pipeline
+* Status History
+* Lead Score
+* Lead Temperature
+
+## Dashboard
+
+* KPI Cards
+* Last Event Card
+* Last Event Report
+* Top Performer
+* Leads by Day
+
+## Notifications
+
+* Follow-Up Notifications
+* Meeting Reminders
+
+## Pipeline
+
+* Add Pipeline
+* Edit Pipeline
+* Pipeline History
+* Currency Localization
+
+## Performance
+
+* Rapid Scan
+* Batch Scan
+* OCR Processing
+* Navigation
+* Scrolling
+
+## UI
+
+* Responsive Layout
+* No overlapping elements
+* Android
+* iPhone
+
+---
+
+# BEFORE GENERATING THE NEXT APK
+
+Do **not** generate the next native Android APK until:
+
+* Every item above has been completed.
+* Internal QA has passed.
+* Regression testing has been completed.
+
+Before sending the APK, provide:
+
+1. Implementation Summary
+2. QA Report
+3. List of Files Modified
+4. Any Known Limitations (if any)
+
+Only after these steps are complete should the next APK be generated for my testing.

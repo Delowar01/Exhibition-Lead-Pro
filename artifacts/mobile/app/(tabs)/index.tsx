@@ -36,6 +36,8 @@ import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext
 import { useColors } from "@/hooks/useColors";
 import { useLocale, type Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
+import { formatCurrency } from "@/lib/currency";
+import { getCountry } from "@/lib/countries";
 
 function greetingKey(): string {
   const h = new Date().getHours();
@@ -47,12 +49,6 @@ function greetingKey(): string {
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function formatCurrency(value: number): string {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1000) return `$${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
-  return `$${Math.round(value)}`;
 }
 
 function relativeTime(iso: string, t: Locale["t"]): string {
@@ -119,8 +115,9 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { isOnline, queuedCount } = useOffline();
-  const { setContactFilters } = useSettings();
+  const { setContactFilters, country } = useSettings();
   const { t, isRTL, textAlign } = useLocale();
+  const currencyCode = getCountry(country).currencyCode;
 
   const query = useGetMobileDashboard();
   const data = query.data;
@@ -211,7 +208,7 @@ export default function HomeScreen() {
     {
       key: "pipeline",
       label: t("home.stats.openPipeline"),
-      value: formatCurrency(data?.pipelineValue ?? 0),
+      value: formatCurrency(data?.pipelineValue ?? 0, currencyCode),
       icon: "dollar-sign",
       color: colors.success,
       onPress: () => {
@@ -221,7 +218,7 @@ export default function HomeScreen() {
     {
       key: "won",
       label: t("home.stats.won"),
-      value: formatCurrency((data as { wonValue?: number })?.wonValue ?? 0),
+      value: formatCurrency((data as { wonValue?: number })?.wonValue ?? 0, currencyCode),
       icon: "award",
       color: "#22C55E",
       onPress: () => router.push("/leads"),
@@ -229,7 +226,7 @@ export default function HomeScreen() {
     {
       key: "lost",
       label: t("home.stats.lost"),
-      value: formatCurrency((data as { lostValue?: number })?.lostValue ?? 0),
+      value: formatCurrency((data as { lostValue?: number })?.lostValue ?? 0, currencyCode),
       icon: "x-circle",
       color: colors.destructive,
       onPress: () => router.push("/leads"),
