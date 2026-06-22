@@ -118,6 +118,7 @@
       "hotLeads": "عملاء واعدون"
     },
     "activeEvent": "الفعالية النشطة",
+    "lastEvent": "آخر فعالية",
     "noActiveEvent": "لا توجد فعالية نشطة",
     "selectEvent": "اختر فعالية",
     "insightFollowUpsDue_one": "لديك متابعة واحدة مستحقة — تواصل قبل نهاية اليوم.",

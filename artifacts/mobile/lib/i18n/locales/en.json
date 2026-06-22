@@ -118,6 +118,7 @@
       "hotLeads": "Hot leads"
     },
     "activeEvent": "Active event",
+    "lastEvent": "Last event",
     "noActiveEvent": "No active event",
     "selectEvent": "Select event",
     "insightFollowUpsDue_one": "{{count}} follow-up due — reach out before the day ends.",

@@ -1,8 +1,9 @@
 import { Feather } from "@/components/icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -14,13 +15,29 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  getGetEventReportQueryKey,
+  getListEventsQueryKey,
+  type GetEventReportParams,
   type MobileActivityItem,
   type MobileDashboard,
+  type TeamPerformanceItem,
+  useGetEventReport,
   useGetLeadsByEvent,
   useGetMobileDashboard,
+  useGetTeamPerformance,
+  useListEvents,
 } from "@workspace/api-client-react";
 
-import { Avatar, Badge, FONT, LoadingState, prettyLabel } from "@/components/ui";
+import { DateTimeField } from "@/components/DateTimeField";
+import {
+  Avatar,
+  Badge,
+  CONTACT_PIPELINE_ORDER,
+  FONT,
+  LEAD_TEMPERATURE_COLORS,
+  LoadingState,
+  prettyLabel,
+} from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext";
@@ -103,6 +120,33 @@ function buildInsights(t: Locale["t"], data?: MobileDashboard): Insight[] {
   return out.slice(0, 3);
 }
 
+interface DashboardFilters {
+  eventId: number | null;
+  dateFrom: string | null;
+  dateTo: string | null;
+  assignedToId: number | null;
+  status: string | null;
+  temperature: string | null;
+  captureMethod: string | null;
+}
+
+const DEFAULT_DASH_FILTERS: DashboardFilters = {
+  eventId: null,
+  dateFrom: null,
+  dateTo: null,
+  assignedToId: null,
+  status: null,
+  temperature: null,
+  captureMethod: null,
+};
+
+const CAPTURE_METHODS: { key: string; labelKey: string }[] = [
+  { key: "camera", labelKey: "capture.businessCard" },
+  { key: "qr", labelKey: "capture.qrCode" },
+  { key: "nfc", labelKey: "capture.nfc" },
+  { key: "manual", labelKey: "capture.manual" },
+];
+
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -115,10 +159,53 @@ export default function HomeScreen() {
   const query = useGetMobileDashboard();
   const data = query.data;
 
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [dashFilters, setDashFilters] = useState<DashboardFilters>(DEFAULT_DASH_FILTERS);
+
   const eventsQuery = useGetLeadsByEvent();
-  const lastEvent = [...(eventsQuery.data ?? [])].sort((a, b) =>
+  const eventsData = eventsQuery.data ?? [];
+  const lastEvent = [...eventsData].sort((a, b) =>
     (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
   )[0];
+  const selectedEvent = dashFilters.eventId
+    ? (eventsData.find((e) => e.eventId === dashFilters.eventId) ?? lastEvent)
+    : lastEvent;
+  const selectedEventId = selectedEvent?.eventId ?? null;
+
+  const activeDashFilters = useMemo(
+    () =>
+      [
+        dashFilters.eventId,
+        dashFilters.dateFrom,
+        dashFilters.dateTo,
+        dashFilters.assignedToId,
+        dashFilters.status,
+        dashFilters.temperature,
+        dashFilters.captureMethod,
+      ].filter((v) => v != null).length,
+    [dashFilters],
+  );
+
+  const reportParams = useMemo<GetEventReportParams | null>(() => {
+    if (selectedEventId == null) return null;
+    return {
+      eventId: selectedEventId,
+      ...(dashFilters.dateFrom ? { dateFrom: dashFilters.dateFrom } : {}),
+      ...(dashFilters.dateTo ? { dateTo: dashFilters.dateTo } : {}),
+      ...(dashFilters.assignedToId != null ? { assignedToId: dashFilters.assignedToId } : {}),
+      ...(dashFilters.status ? { status: dashFilters.status } : {}),
+      ...(dashFilters.temperature ? { temperature: dashFilters.temperature } : {}),
+    };
+  }, [selectedEventId, dashFilters]);
+
+  const effectiveReportParams = reportParams ?? { eventId: 0 };
+  const eventReportQuery = useGetEventReport(effectiveReportParams, {
+    query: {
+      enabled: reportParams != null,
+      queryKey: getGetEventReportQueryKey(effectiveReportParams),
+    },
+  });
+  const eventReport = eventReportQuery.data;
 
   function openContactsWith(patch: Partial<typeof DEFAULT_CONTACT_FILTERS>) {
     setContactFilters({ ...DEFAULT_CONTACT_FILTERS, ...patch });
@@ -371,14 +458,47 @@ export default function HomeScreen() {
         )}
 
         {/* Last event */}
-        {lastEvent ? (
+        {selectedEvent ? (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
-              {t("home.activeEvent")}
-            </Text>
+            <View style={[styles.eventSectionHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  { color: colors.mutedForeground, marginTop: 0, marginBottom: 0, flex: 1, textAlign },
+                ]}
+              >
+                {t("home.lastEvent")}
+              </Text>
+              <Pressable
+                onPress={() => setFilterOpen(true)}
+                style={[
+                  styles.filterBtn,
+                  {
+                    backgroundColor: activeDashFilters > 0 ? colors.primary : colors.card,
+                    borderColor: activeDashFilters > 0 ? colors.primary : colors.border,
+                    borderRadius: colors.radius,
+                  },
+                ]}
+              >
+                <Feather
+                  name="sliders"
+                  size={18}
+                  color={activeDashFilters > 0 ? "#FFFFFF" : colors.foreground}
+                />
+                {activeDashFilters > 0 ? (
+                  <View style={[styles.filterCount, { backgroundColor: "#FFFFFF" }]}>
+                    <Text style={[styles.filterCountText, { color: colors.primary }]}>
+                      {activeDashFilters}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            </View>
             <Pressable
               onPress={() => {
-                router.push(`/event/${lastEvent.eventId}/report`);
+                if (!selectedEventId) return;
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(`/event/${selectedEventId}/report`);
               }}
               style={({ pressed }) => [
                 styles.eventCard,
@@ -395,23 +515,43 @@ export default function HomeScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={[styles.eventName, { textAlign }]}>
-                  {lastEvent.eventName}
+                  {selectedEvent.eventName}
                 </Text>
                 <Text style={[styles.eventMeta, { textAlign }]}>
-                  {[
-                    t("home.eventLeads", { count: lastEvent.leadCount }),
-                    lastEvent.wonCount != null
-                      ? t("home.eventWon", { count: lastEvent.wonCount })
-                      : null,
-                    lastEvent.conversionRate != null
-                      ? t("home.eventConv", { count: Math.round(lastEvent.conversionRate) })
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {eventReport
+                    ? [
+                        t("home.eventLeads", { count: eventReport.totalLeads }),
+                        t("home.eventWon", { count: eventReport.wonDeals }),
+                        eventReport.totalLeads > 0
+                          ? t("home.eventConv", {
+                              count: Math.round(
+                                (eventReport.wonDeals / eventReport.totalLeads) * 100,
+                              ),
+                            })
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : [
+                        t("home.eventLeads", { count: selectedEvent.leadCount }),
+                        selectedEvent.wonCount != null
+                          ? t("home.eventWon", { count: selectedEvent.wonCount })
+                          : null,
+                        selectedEvent.conversionRate != null
+                          ? t("home.eventConv", {
+                              count: Math.round(selectedEvent.conversionRate),
+                            })
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                 </Text>
               </View>
-              <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={20} color="rgba(255,255,255,0.7)" />
+              <Feather
+                name={isRTL ? "chevron-left" : "chevron-right"}
+                size={20}
+                color="rgba(255,255,255,0.7)"
+              />
             </Pressable>
           </>
         ) : null}
@@ -516,7 +656,217 @@ export default function HomeScreen() {
           </Text>
         </View>
       </ScrollView>
+      <DashboardFilterSheet
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        filters={dashFilters}
+        events={eventsData}
+        onApply={(f) => {
+          setDashFilters(f);
+          setFilterOpen(false);
+        }}
+      />
     </View>
+  );
+}
+
+function DashboardFilterSheet({
+  open,
+  onClose,
+  filters,
+  events,
+  onApply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  filters: DashboardFilters;
+  events: Array<{ eventId: number; eventName: string }>;
+  onApply: (f: DashboardFilters) => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { t, isRTL, textAlign } = useLocale();
+  const [draft, setDraft] = useState<DashboardFilters>(filters);
+
+  const teamQuery = useGetTeamPerformance();
+  const teamMembers: TeamPerformanceItem[] = teamQuery.data ?? [];
+
+  useEffect(() => {
+    if (open) setDraft(filters);
+  }, [open, filters]);
+
+  function chip(active: boolean, label: string, onPress: () => void, key: string) {
+    return (
+      <Pressable
+        key={key}
+        onPress={onPress}
+        style={[
+          styles.chip,
+          {
+            backgroundColor: active ? colors.primary : colors.card,
+            borderColor: active ? colors.primary : colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.chipText, { color: active ? "#FFFFFF" : colors.foreground }]}>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      hardwareAccelerated
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.background,
+              borderColor: colors.border,
+              paddingBottom: insets.bottom + 16,
+              overflow: "hidden",
+            },
+          ]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View style={styles.handleWrap}>
+            <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          </View>
+          <View style={[styles.sheetHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Text style={[styles.sheetTitle, { color: colors.foreground, textAlign }]}>
+              {t("common.filters")}
+            </Text>
+            <Pressable onPress={() => setDraft(DEFAULT_DASH_FILTERS)} hitSlop={8}>
+              <Text style={[styles.resetText, { color: colors.primary }]}>
+                {t("common.clearAll")}
+              </Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={{ maxHeight: 460 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 8 }}
+          >
+            {/* Event */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("contacts.fields.event", { defaultValue: "Event" }).toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.eventId, t("common.all"), () => setDraft({ ...draft, eventId: null }), "ev-any")}
+              {events.map((e) =>
+                chip(
+                  draft.eventId === e.eventId,
+                  e.eventName,
+                  () => setDraft({ ...draft, eventId: e.eventId }),
+                  `ev-${e.eventId}`,
+                ),
+              )}
+            </View>
+
+            {/* Lead Status */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("contacts.statusLabel", { defaultValue: "STATUS" })}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.status, t("common.all"), () => setDraft({ ...draft, status: null }), "st-any")}
+              {CONTACT_PIPELINE_ORDER.map((s) =>
+                chip(
+                  draft.status === s,
+                  t(`leads.stages.${s}`, { defaultValue: prettyLabel(s) }),
+                  () => setDraft({ ...draft, status: s }),
+                  s,
+                ),
+              )}
+            </View>
+
+            {/* Lead Temperature */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("leads.temperature", { defaultValue: "Temperature" }).toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.temperature, t("common.all"), () => setDraft({ ...draft, temperature: null }), "tp-any")}
+              {(["hot", "warm", "cold"] as const).map((temp) =>
+                chip(
+                  draft.temperature === temp,
+                  t(`leads.${temp}`, { defaultValue: prettyLabel(temp) }),
+                  () => setDraft({ ...draft, temperature: temp }),
+                  temp,
+                ),
+              )}
+            </View>
+
+            {/* Team Member */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("contacts.teamMember", { defaultValue: "Team Member" }).toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.assignedToId, t("common.all"), () => setDraft({ ...draft, assignedToId: null }), "tm-any")}
+              {teamMembers.map((m) =>
+                chip(
+                  draft.assignedToId === m.userId,
+                  m.userName,
+                  () => setDraft({ ...draft, assignedToId: m.userId }),
+                  `tm-${m.userId}`,
+                ),
+              )}
+            </View>
+
+            {/* Capture Method */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("capture.title", { defaultValue: "Capture Method" }).toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.captureMethod, t("common.all"), () => setDraft({ ...draft, captureMethod: null }), "cm-any")}
+              {CAPTURE_METHODS.map((m) =>
+                chip(
+                  draft.captureMethod === m.key,
+                  t(m.labelKey, { defaultValue: prettyLabel(m.key) }),
+                  () => setDraft({ ...draft, captureMethod: m.key }),
+                  `cm-${m.key}`,
+                ),
+              )}
+            </View>
+
+            {/* Date Range */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("contacts.capturedDate", { defaultValue: "DATE RANGE" })}
+            </Text>
+            <DateTimeField
+              label={t("common.from")}
+              date={draft.dateFrom}
+              time={null}
+              withTime={false}
+              optional
+              onChange={(d) => setDraft({ ...draft, dateFrom: d })}
+            />
+            <DateTimeField
+              label={t("common.to")}
+              date={draft.dateTo}
+              time={null}
+              withTime={false}
+              optional
+              onChange={(d) => setDraft({ ...draft, dateTo: d })}
+            />
+          </ScrollView>
+
+          <Pressable
+            onPress={() => onApply(draft)}
+            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.applyText}>{t("common.apply")}</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -757,4 +1107,77 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: FONT.medium,
   },
+  eventSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 26,
+    marginBottom: 12,
+  },
+  filterBtn: {
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterCount: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterCountText: {
+    fontSize: 11,
+    fontFamily: FONT.bold,
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  handleWrap: { alignItems: "center", paddingVertical: 8 },
+  handle: { width: 40, height: 4, borderRadius: 2 },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  sheetTitle: { fontSize: 19, fontFamily: FONT.bold },
+  resetText: { fontSize: 14.5, fontFamily: FONT.semibold },
+  fLabel: {
+    fontSize: 11.5,
+    fontFamily: FONT.semibold,
+    letterSpacing: 0.5,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  chipText: { fontSize: 13.5, fontFamily: FONT.medium },
+  applyBtn: {
+    marginTop: 14,
+    height: 52,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  applyText: { color: "#FFFFFF", fontSize: 16, fontFamily: FONT.semibold },
 });

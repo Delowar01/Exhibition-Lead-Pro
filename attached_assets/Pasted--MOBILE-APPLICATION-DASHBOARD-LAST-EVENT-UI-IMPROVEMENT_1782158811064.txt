@@ -1,0 +1,121 @@
+# MOBILE APPLICATION – DASHBOARD "LAST EVENT" UI IMPROVEMENT
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is a UI/UX enhancement only.
+
+No backend logic changes are required unless necessary to support the new filtering options.
+
+---
+
+# LAST EVENT SECTION IMPROVEMENT
+
+## Current Design
+
+The Dashboard currently contains an **Active Event** section.
+
+This section should be updated to better reflect real-world exhibition usage.
+
+---
+
+# 1. RENAME SECTION
+
+Rename:
+
+**Active Event**
+
+To:
+
+**Last Event**
+
+Reason:
+
+Users typically want to review the most recently created or recently attended event rather than only the currently active event.
+
+The Last Event card should automatically display the latest event based on the application's event logic.
+
+---
+
+# 2. ADD FILTER BUTTON
+
+Add a **Filter** button in the **top-right corner** of the Last Event card.
+
+Use the **same filter icon, size, style, spacing, and design** that is already implemented in the **Contacts** screen.
+
+The filter button should be visually identical to maintain a consistent user experience throughout the application.
+
+Please use the Contacts screen filter button as the design reference.
+
+---
+
+# 3. FILTER FUNCTIONALITY
+
+When the user taps the filter button, display a filter panel similar to the Contacts screen.
+
+Allow filtering by:
+
+* Event
+* Date Range
+* Team Member
+* Lead Status
+* Lead Temperature
+* Capture Method
+
+If additional filters already exist in the Contacts screen and are applicable, reuse them here where appropriate.
+
+---
+
+# 4. FILTER BEHAVIOR
+
+After applying a filter:
+
+* The Last Event card should refresh immediately.
+* All KPIs and statistics inside the Last Event section should update dynamically.
+* Charts and reports should reflect the selected filters.
+* The selected filters should remain active until the user clears or changes them.
+
+---
+
+# 5. USER EXPERIENCE
+
+Maintain the same interaction style used in the Contacts screen.
+
+Use the same:
+
+* Filter icon
+* Button size
+* Button position
+* Animation
+* Bottom sheet or modal style
+* Apply / Reset behavior
+
+This ensures consistency across the application.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* "Active Event" renamed to "Last Event".
+* Filter button added to the top-right corner of the Last Event section.
+* Filter button matches the Contacts screen design exactly.
+* Filter panel opens correctly.
+* Last Event statistics update dynamically after filtering.
+* Selected filters persist until changed or cleared.
+* Fully responsive on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# IMPORTANT
+
+This enhancement should reuse existing filter components and UI patterns wherever possible.
+
+Avoid creating a different filter design.
+
+The Contacts screen should be treated as the design standard for all dashboard filter interactions to maintain a consistent and premium user experience.
