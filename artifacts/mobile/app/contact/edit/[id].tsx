@@ -82,9 +82,11 @@ export default function EditContactScreen() {
             paddingHorizontal: 20,
             paddingTop: 16,
             paddingBottom: insets.bottom + 40,
+            flexGrow: 1,
           }}
           bottomOffset={20}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           {updateContact.isError ? (
             <View

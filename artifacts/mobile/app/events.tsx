@@ -130,8 +130,8 @@ export default function EventsScreen() {
             padding: 20,
             paddingBottom: insets.bottom + 100,
             gap: 12,
+            flexGrow: 1,
           }}
-          scrollEnabled={events.length > 0}
           refreshControl={
             <RefreshControl
               refreshing={query.isRefetching}

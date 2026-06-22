@@ -1,0 +1,222 @@
+Thank you for the detailed Root Cause Analysis and backend fixes.
+
+The authorization improvements, role normalization, parser fixes, and security improvements are appreciated.
+
+However, these backend changes are **not the remaining issues I am reporting**.
+
+I have rebuilt the latest native Android APK and tested it on a physical device after these changes.
+
+The backend authorization issue appears to be resolved, but the following **mobile application issues still exist**.
+
+Please focus only on the remaining functional issues below.
+
+Do not revisit the authorization or parser fixes unless they are directly related to these remaining problems.
+
+---
+
+# 1. QR CODE CAPTURE
+
+## Current Result
+
+⚠️ Partially Working
+
+The QR Code is detected.
+
+However:
+
+* Only the person's name is extracted.
+* The extracted name is placed in the wrong field.
+* Remaining contact information is not extracted.
+
+### Required
+
+Review the QR parser and field mapping.
+
+Support:
+
+* vCard
+* MECARD
+* Standard Contact QR
+* Business Contact QR
+
+Correctly map:
+
+* First Name
+* Last Name
+* Company
+* Job Title
+* Email
+* Mobile
+* Telephone
+* Website
+* Address
+* Country
+
+Every extracted value must be stored in the correct database field.
+
+---
+
+# 2. ASSIGN TEAMMATE
+
+## Current Result
+
+⚠️ Partially Working
+
+The assignment can now be saved.
+
+However:
+
+* The currently logged-in user still appears in the teammate selection list.
+* After assigning a lead, it does **not** appear in the assigned user's **Workspace → My Tasks**.
+
+### Required
+
+Exclude the logged-in user from the teammate list.
+
+Automatically create a task for the assigned user.
+
+The assigned lead should immediately appear in:
+
+**Workspace → My Tasks**
+
+---
+
+# 3. SCROLL BEHAVIOUR
+
+## Current Result
+
+❌ Not Fixed
+
+Many screens still only scroll when dragging over text or list items.
+
+Dragging over empty space does not scroll.
+
+### Required
+
+Review every scrollable screen.
+
+Users must be able to scroll by dragging anywhere within the scrollable content area.
+
+This should behave like a normal native mobile application.
+
+---
+
+# 4. FOLLOW-UP SCREEN LAYOUT
+
+## Current Result
+
+❌ Not Fixed
+
+The three-dot action menu still overlaps other UI elements.
+
+### Required
+
+Correct spacing and responsive layout.
+
+No overlapping should remain.
+
+---
+
+# 5. PLACEHOLDERS & VALIDATION TEXT
+
+## Current Result
+
+❌ Not Fixed
+
+Several placeholders, helper text, examples, and validation messages still overlap UI components.
+
+### Required
+
+Review the complete application.
+
+Correct all responsive layout issues.
+
+---
+
+# 6. PERFORMANCE IMPROVEMENT
+
+## Current Result
+
+⚠️ Needs Improvement
+
+The lead extraction process is still noticeably slow after capturing an image.
+
+Although the functionality is improving, the user experience feels slow.
+
+### Required
+
+Optimize:
+
+* Image preprocessing
+* OCR execution
+* AI extraction
+* Background processing
+* Database operations
+
+The goal is to minimize the waiting time between image capture and completed lead creation without reducing OCR accuracy.
+
+---
+
+# 7. BATCH SCAN MODE – WORKFLOW IMPROVEMENT
+
+## Current Workflow
+
+Capture Images
+
+↓
+
+Tap Done
+
+↓
+
+OCR starts
+
+↓
+
+Review Screen
+
+↓
+
+Each time the user taps Next, the next image is processed.
+
+This causes unnecessary waiting during review.
+
+---
+
+## Required Workflow
+
+Capture Images Continuously
+
+↓
+
+Each image is immediately added to a background processing queue.
+
+↓
+
+OCR, AI Extraction, Duplicate Detection, and GPS processing begin automatically while the user continues scanning.
+
+↓
+
+User taps Done.
+
+↓
+
+The review screen opens with all (or nearly all) images already processed.
+
+↓
+
+User only reviews, makes corrections if necessary, and taps Save.
+
+Moving to the next review should be instant and must not trigger OCR processing again.
+
+---
+
+# IMPORTANT
+
+The backend authorization issue appears to be resolved.
+
+Please do not spend additional time on that area unless it is directly related to these remaining issues.
+
+The focus of this task is now entirely on the remaining mobile application behavior and user experience.
+
+Once these items are complete, I will generate a new native Android APK and perform another round of end-to-end testing before we proceed to the next module.

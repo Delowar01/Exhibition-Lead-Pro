@@ -87,7 +87,35 @@ export default function BatchReviewScreen() {
         setOcrError(true);
         return;
       }
-      // Still pending or not yet started — run OCR now.
+      // Background OCR still in-flight ("pending") — show a loading indicator
+      // and poll the store every 500 ms for up to 20 s so we reuse the result
+      // rather than firing a duplicate scan API call. Only if it times out do
+      // we fall through to sequential OCR as a last resort.
+      if (precomputed?.status === "pending") {
+        setOcrLoading(true);
+        setOcrError(false);
+        setValues(null);
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          await new Promise<void>((r) => setTimeout(r, 500));
+          const result = getBatchOcrResult(item.id);
+          if (result?.status === "done") {
+            formKey.current += 1;
+            setValues(extractedToValues(result.extracted ?? {}));
+            setOcrLoading(false);
+            return;
+          }
+          if (result?.status === "error") {
+            formKey.current += 1;
+            setValues({ ...EMPTY_CONTACT });
+            setOcrError(true);
+            setOcrLoading(false);
+            return;
+          }
+        }
+        // 20 s elapsed and still pending — fall through to sequential OCR.
+      }
+      // Not started or timed-out: run OCR sequentially now.
       setOcrLoading(true);
       setOcrError(false);
       setValues(null);

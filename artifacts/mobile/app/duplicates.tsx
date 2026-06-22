@@ -370,7 +370,9 @@ export default function DuplicatesScreen() {
           contentContainerStyle={{
             padding: 20,
             paddingBottom: insets.bottom + 40,
+            flexGrow: 1,
           }}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl

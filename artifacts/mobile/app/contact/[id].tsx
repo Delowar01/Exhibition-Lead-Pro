@@ -232,7 +232,14 @@ export default function ContactDetailScreen() {
       if (userId !== null) {
         const taskTitle = contactName(contact, t("common.unnamedContact"));
         void createTask
-          .mutateAsync({ data: { title: taskTitle, assignedToId: userId } })
+          .mutateAsync({
+            data: {
+              title: taskTitle,
+              assignedToId: userId,
+              contactId: contact.id,
+              type: "follow_up",
+            },
+          })
           .catch(() => undefined);
       }
       setAssignOpen(false);
@@ -294,7 +301,8 @@ export default function ContactDetailScreen() {
         <ErrorState onRetry={() => query.refetch()} />
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40 }}
+          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40, flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Hero */}
           <View style={styles.hero}>

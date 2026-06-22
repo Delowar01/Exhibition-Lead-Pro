@@ -139,10 +139,12 @@ function unfoldVCardLines(raw: string): string[] {
 
 export function parseVCard(raw: string): ExtractedCardData {
   const out: ExtractedCardData = {};
-  // The structured N property (Family;Given) is authoritative for names; FN is a
-  // free-form display string we only fall back to when N is absent (its naive
-  // space-split mishandles titled or multi-word names like "Dr. John Smith").
-  let nameFromN = false;
+  // Defer name resolution: collect raw N components and FN display string, then
+  // cross-reference them after the loop so we can detect whether a generator
+  // used the spec order (Family;Given) or the common non-compliant order
+  // (Given;Family). Without this, N:John;Doe is misread as firstName=Doe.
+  let pendingN: [string, string] | null = null; // [part0, part1] from N field
+  let pendingFn: string | null = null;           // FN display string
   for (const line of unfoldVCardLines(raw)) {
     const [rawKey, ...rest] = line.split(":");
     if (!rawKey || rest.length === 0) continue;
@@ -161,27 +163,20 @@ export function parseVCard(raw: string): ExtractedCardData {
     if (!value) continue;
     switch (key) {
       case "FN": {
-        if (nameFromN) break;
-        const parts = value.split(" ");
-        out.firstName = parts[0] ?? null;
-        out.lastName = parts.slice(1).join(" ") || null;
+        pendingFn = value;
         break;
       }
       case "N": {
         const parts = value.split(";");
         if (parts.length >= 2) {
-          // Standard structured form: Family;Given[;Additional;Prefix;Suffix]
-          const [last, first] = parts;
-          if (first?.trim()) out.firstName = first.trim();
-          if (last?.trim()) out.lastName = last.trim();
-          if (first?.trim() || last?.trim()) nameFromN = true;
+          // Defer — store for cross-reference with FN after the loop.
+          pendingN = [parts[0] ?? "", parts[1] ?? ""];
         } else {
           // Single-component N with no semicolons (some QR generators omit the
           // structured separator): treat the whole value as a full name and
           // space-split it so "John Smith" → firstName="John" lastName="Smith"
           // rather than the entire name landing in lastName only.
           setName(out, value);
-          nameFromN = value.trim().length > 0;
         }
         break;
       }
@@ -235,6 +230,39 @@ export function parseVCard(raw: string): ExtractedCardData {
       }
     }
   }
+
+  // Resolve names: cross-reference N components with FN to detect field order.
+  // Many real-world QR generators emit N:Given;Family (reversed from RFC 2426).
+  // If FN is present we use it as a ground truth: whichever N component matches
+  // the first word of FN is the given name (firstName). Falls back to spec order
+  // (Family;Given) when only N is present, and to FN word-split when only FN.
+  if (pendingN !== null) {
+    const [nPart0, nPart1] = pendingN;
+    if (pendingFn) {
+      const fnWords = pendingFn.trim().split(/\s+/);
+      const fnFirst = (fnWords[0] ?? "").toLowerCase();
+      if (fnFirst && nPart1.trim().toLowerCase().startsWith(fnFirst)) {
+        // N is in spec Family;Given order → nPart1 = given name
+        if (nPart1.trim()) out.firstName = nPart1.trim();
+        if (nPart0.trim()) out.lastName = nPart0.trim();
+      } else if (fnFirst && nPart0.trim().toLowerCase().startsWith(fnFirst)) {
+        // N is in reversed Given;Family order → nPart0 = given name
+        if (nPart0.trim()) out.firstName = nPart0.trim();
+        if (nPart1.trim()) out.lastName = nPart1.trim();
+      } else {
+        // Ambiguous (e.g. single-token name, initials) — use FN word-split
+        setName(out, pendingFn);
+      }
+    } else {
+      // No FN — trust RFC 2426 spec order: Family;Given
+      if (nPart1.trim()) out.firstName = nPart1.trim();
+      if (nPart0.trim()) out.lastName = nPart0.trim();
+    }
+  } else if (pendingFn && !out.firstName && !out.lastName) {
+    // No N field and no name already set (e.g. from single-component N) — use FN
+    setName(out, pendingFn);
+  }
+
   return out;
 }
 

@@ -137,7 +137,7 @@ export default function CaptureCameraScreen() {
     if (cameraRef.current) {
       const photo = await cameraRef.current.takePictureAsync({
         base64: true,
-        quality: 0.5,
+        quality: 0.3,
         skipProcessing: true,
       });
       return photo?.base64 ? `data:image/jpeg;base64,${photo.base64}` : "card";

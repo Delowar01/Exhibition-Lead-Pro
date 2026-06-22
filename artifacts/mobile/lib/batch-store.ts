@@ -18,9 +18,10 @@ const ocrResults = new Map<string, BatchOcrResult>();
 
 export function setBatchCaptures(items: BatchCapture[]): void {
   captures = items;
-  // Clear stale OCR results from any previous session so a new batch never
-  // reads pre-computed results that belong to a different capture set or user.
-  ocrResults.clear();
+  // Do NOT clear ocrResults here — background OCR fires setBatchOcrResult
+  // concurrently with (or before) setBatchCaptures. Clearing here wipes every
+  // pre-computed result a moment before batch-review tries to read them.
+  // ocrResults is only cleared in clearBatchCaptures() (end of a batch session).
 }
 
 export function getBatchCaptures(): BatchCapture[] {

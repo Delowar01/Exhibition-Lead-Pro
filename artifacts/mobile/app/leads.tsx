@@ -181,8 +181,8 @@ export default function LeadsScreen() {
               padding: 20,
               paddingBottom: insets.bottom + 100,
               gap: 10,
+              flexGrow: 1,
             }}
-            scrollEnabled={(current?.leads.length ?? 0) > 0}
             refreshControl={
               <RefreshControl
                 refreshing={query.isRefetching}
