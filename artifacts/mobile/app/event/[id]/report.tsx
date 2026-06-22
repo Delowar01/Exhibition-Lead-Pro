@@ -48,12 +48,16 @@ type DatePreset = "all" | "7d" | "30d";
  * Mutually-exclusive sort key.
  * "none" = default server order on the contacts list (newest first).
  *
- * Supported sorts:
- *  name_*       → client-side sort on Contact.fullName
- *  company_*    → client-side sort on Contact.contactCompany
- *  date_*       → API param  (ListContactsSort.newest / oldest)
- *  score_*      → client-side sort on Contact.leadScore
- *  followup_*   → client-side sort on Contact.followUpDate
+ * Fully applied (API or client-side):
+ *  name_*       → client-side on Contact.fullName
+ *  company_*    → client-side on Contact.contactCompany
+ *  date_*       → API param (ListContactsSort.newest / oldest)
+ *  score_*      → client-side on Contact.leadScore
+ *  followup_*   → client-side on Contact.followUpDate
+ *
+ * Stored / UI-only (Contact type lacks the field; no-op on data):
+ *  pipeline_*   → Contact has no pipelineValue; no reorder applied
+ *  meeting_*    → Contact has no meetingDate; no reorder applied
  */
 type SortKey =
   | "none"
@@ -66,7 +70,11 @@ type SortKey =
   | "score_desc"
   | "score_asc"
   | "followup_asc"
-  | "followup_desc";
+  | "followup_desc"
+  | "pipeline_desc"
+  | "pipeline_asc"
+  | "meeting_asc"
+  | "meeting_desc";
 
 interface ReportFilters {
   datePreset: DatePreset;
@@ -75,6 +83,13 @@ interface ReportFilters {
   assignedToId: number | null;
   status: string | null;
   temperature: string | null;
+  /**
+   * UI-only — the Contact type has no captureMethod field and the API
+   * endpoints don't support it as a filter param.  Stored in state so
+   * Clear All resets it, but NOT included in the active-filter badge count
+   * and NOT applied to any query or client-side collection.
+   */
+  captureMethod: string | null;
   sortKey: SortKey;
 }
 
@@ -85,10 +100,18 @@ const DEFAULT_FILTERS: ReportFilters = {
   assignedToId: null,
   status: null,
   temperature: null,
+  captureMethod: null,
   sortKey: "none",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const CAPTURE_METHODS: { key: string; labelKey: string }[] = [
+  { key: "camera", labelKey: "capture.businessCard" },
+  { key: "qr", labelKey: "capture.qrCode" },
+  { key: "nfc", labelKey: "capture.nfc" },
+  { key: "manual", labelKey: "capture.manual" },
+];
 
 const DATE_PRESETS: { key: DatePreset; labelKey: string }[] = [
   { key: "all", labelKey: "eventReport.allTime" },
@@ -182,12 +205,26 @@ function applySortClient(contacts: Contact[], key: SortKey): Contact[] {
       return copy.sort((a, b) =>
         (b.followUpDate ?? "").localeCompare(a.followUpDate ?? ""),
       );
+    // pipeline_* and meeting_* require fields (pipelineValue, meetingDate) that
+    // are not present on the Contact type returned by listContacts.  The sort
+    // chips are rendered per the task spec; applying them is a no-op until the
+    // API exposes those fields on the contact list response.
+    case "pipeline_desc":
+    case "pipeline_asc":
+    case "meeting_asc":
+    case "meeting_desc":
+      return copy;
     default:
       return copy;
   }
 }
 
-/** Count active (non-default) filter + sort values for badge display. */
+/**
+ * Count active (non-default) filter + sort values for badge display.
+ * captureMethod is intentionally excluded: the Contact type has no such
+ * field and neither endpoint supports it, so selecting it does not
+ * change any returned data.
+ */
 function countActive(f: ReportFilters): number {
   return [
     f.datePreset !== "all" || f.dateFrom != null || f.dateTo != null,
@@ -655,16 +692,20 @@ interface SortOption {
 }
 
 const SORT_OPTIONS: SortOption[] = [
-  { key: "name_asc",     fieldLabelKey: "eventReport.sortLeadName",    dirLabel: "A → Z" },
-  { key: "name_desc",    fieldLabelKey: "eventReport.sortLeadName",    dirLabel: "Z → A" },
-  { key: "company_asc",  fieldLabelKey: "eventReport.sortCompanyName", dirLabel: "A → Z" },
-  { key: "company_desc", fieldLabelKey: "eventReport.sortCompanyName", dirLabel: "Z → A" },
-  { key: "date_desc",    fieldLabelKey: "eventReport.sortCaptureDate", dirLabel: "eventReport.dirNewest" },
-  { key: "date_asc",     fieldLabelKey: "eventReport.sortCaptureDate", dirLabel: "eventReport.dirOldest" },
-  { key: "score_desc",   fieldLabelKey: "eventReport.sortLeadScore",   dirLabel: "eventReport.dirHighest" },
-  { key: "score_asc",    fieldLabelKey: "eventReport.sortLeadScore",   dirLabel: "eventReport.dirLowest" },
-  { key: "followup_asc", fieldLabelKey: "eventReport.sortFollowUpDate", dirLabel: "eventReport.dirEarliest" },
-  { key: "followup_desc",fieldLabelKey: "eventReport.sortFollowUpDate", dirLabel: "eventReport.dirLatest" },
+  { key: "name_asc",      fieldLabelKey: "eventReport.sortLeadName",      dirLabel: "A → Z" },
+  { key: "name_desc",     fieldLabelKey: "eventReport.sortLeadName",      dirLabel: "Z → A" },
+  { key: "company_asc",   fieldLabelKey: "eventReport.sortCompanyName",   dirLabel: "A → Z" },
+  { key: "company_desc",  fieldLabelKey: "eventReport.sortCompanyName",   dirLabel: "Z → A" },
+  { key: "date_desc",     fieldLabelKey: "eventReport.sortCaptureDate",   dirLabel: "eventReport.dirNewest" },
+  { key: "date_asc",      fieldLabelKey: "eventReport.sortCaptureDate",   dirLabel: "eventReport.dirOldest" },
+  { key: "score_desc",    fieldLabelKey: "eventReport.sortLeadScore",     dirLabel: "eventReport.dirHighest" },
+  { key: "score_asc",     fieldLabelKey: "eventReport.sortLeadScore",     dirLabel: "eventReport.dirLowest" },
+  { key: "pipeline_desc", fieldLabelKey: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirHighest" },
+  { key: "pipeline_asc",  fieldLabelKey: "eventReport.sortPipelineValue", dirLabel: "eventReport.dirLowest" },
+  { key: "followup_asc",  fieldLabelKey: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirEarliest" },
+  { key: "followup_desc", fieldLabelKey: "eventReport.sortFollowUpDate",  dirLabel: "eventReport.dirLatest" },
+  { key: "meeting_asc",   fieldLabelKey: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirEarliest" },
+  { key: "meeting_desc",  fieldLabelKey: "eventReport.sortMeetingDate",   dirLabel: "eventReport.dirLatest" },
 ];
 
 type SortGroup = { fieldLabelKey: string; options: SortOption[] };
@@ -847,6 +888,22 @@ function EventReportFilterSheet({
                 </View>
               </>
             ) : null}
+
+            {/* Capture Method (UI only — not in API params or Contact type) */}
+            <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+              {t("eventReport.captureMethod").toUpperCase()}
+            </Text>
+            <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {chip(!draft.captureMethod, t("eventReport.any"), () => setDraft({ ...draft, captureMethod: null }), "cm-any")}
+              {CAPTURE_METHODS.map((m) =>
+                chip(
+                  draft.captureMethod === m.key,
+                  t(m.labelKey as Parameters<typeof t>[0], { defaultValue: prettyLabel(m.key) }),
+                  () => setDraft({ ...draft, captureMethod: draft.captureMethod === m.key ? null : m.key }),
+                  `cm-${m.key}`,
+                ),
+              )}
+            </View>
 
             {/* Date Range */}
             <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
