@@ -41,3 +41,9 @@ id = "JIFVVBnAJVvLTonYFpc0c"
 uri = "file://.local/outputs/Card-Scanner-Pro-Pitch-Deck.pptx"
 type = "slides"
 title = "Card Scanner Pro Pitch Deck (PPTX)"
+
+[[outputs]]
+id = "Wfw4S0l31OU1dblLsI0K_"
+uri = "file://PRODUCTION_RELEASE_CHECKLIST.md"
+type = "text"
+title = "Production Release Checklist & QA Sign-off"

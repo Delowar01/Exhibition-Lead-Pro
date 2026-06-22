@@ -384,7 +384,7 @@ router.patch("/contacts/:id", requirePermission("contacts", "edit"), async (req:
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select({ companyId: contactsTable.companyId, status: contactsTable.status }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId } = req.body;
+    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId } = req.body ?? {};
     if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     const fullName = firstName !== undefined || lastName !== undefined ? [firstName, lastName].filter(Boolean).join(" ") || null : undefined;
@@ -393,6 +393,7 @@ router.patch("/contacts/:id", requirePermission("contacts", "edit"), async (req:
     if (tags !== undefined) updateData.tags = JSON.stringify(tags);
     // Remove undefined
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const statusChanged = status !== undefined && status !== existing.status;
     const [c] = await db.update(contactsTable).set(updateData as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, id)).returning();
     if (!c) { res.status(404).json({ error: "Contact not found" }); return; }

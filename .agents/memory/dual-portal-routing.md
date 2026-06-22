@@ -12,8 +12,4 @@ JWT payload includes `role` and `companyId`. The `ProtectedRoute` component in `
 
 **How to apply:** When adding new routes, decide which portal they belong to and wrap with `<ProtectedRoute role="platform" ...>` or `<ProtectedRoute role="admin" ...>`.
 
-Demo credentials (seeded):
-- Platform Owner: admin@cardscannerpro.com / Admin123!
-- TechCorp Admin: admin@techcorp.com / Admin123!
-- Nexus Admin: admin@nexussys.io / Admin123!
-- Innovatech Admin: admin@innovatech.es / Admin123!
+Seeded demo users (platform owner + per-tenant admins) and their login details live in `replit.md` under "Demo credentials" — do not duplicate credentials here.

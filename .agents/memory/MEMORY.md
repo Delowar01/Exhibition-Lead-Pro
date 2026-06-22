@@ -4,4 +4,5 @@
 - [NFC/QR shared parser](nfc-qr-shared-parser.md) — parseQr in mobile lib/contact-parse.ts is the single source of truth for all text contact payloads (QR + NFC NDEF); extend it, don't fork per-surface.
 - [Mobile Android icon tofu](mobile-android-icons.md) — Feather icons box-out on Android/Expo Go because icon FONTS are unreliable there (family collision + no re-layout on late load); real fix = render icons as SVG (react-native-feather/react-native-svg), not a font.
 - [Mobile global query invalidation](mobile-query-invalidation.md) — Orval hooks don't invalidate; a global MutationCache.onSuccess in app/_layout invalidates all queries so dashboard/lists stay fresh without restart. Don't add per-call invalidation.
+- [Drizzle PATCH empty-set 500](api-patch-empty-set.md) — every PATCH route must guard empty updateData (400, not 500) before db.update().set({}) and destructure req.body ?? {}; bad/empty input is a client error.
 - [Mobile i18n + RTL + OCR language](mobile-i18n.md) — EN/AR locale parity is load-bearing; RTL is JS-driven (no reload); OCR `original` never stores a translation; offline scans translate by capture-time language.

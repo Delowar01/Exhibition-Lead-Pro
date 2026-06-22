@@ -68,7 +68,7 @@ router.patch("/meetings/:id", async (req: AuthRequest, res) => {
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(meetingsTable).where(eq(meetingsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Meeting not found" }); return; }
-    const { status, comment, meetingDate, meetingTime, type, notes } = req.body;
+    const { status, comment, meetingDate, meetingTime, type, notes } = req.body ?? {};
 
     if (status === "rescheduled") {
       // Close the current row and open a new scheduled one (history preserved as rows).
@@ -87,6 +87,7 @@ router.patch("/meetings/:id", async (req: AuthRequest, res) => {
 
     const updateData: Record<string, unknown> = { status, comment, meetingDate, meetingTime, type, notes, updatedAt: new Date() };
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const [row] = await db.update(meetingsTable).set(updateData as Partial<typeof meetingsTable.$inferInsert>).where(eq(meetingsTable.id, id)).returning();
     res.json((await enrich([row]))[0]);
   } catch (err) {

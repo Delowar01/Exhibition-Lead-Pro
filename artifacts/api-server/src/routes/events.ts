@@ -43,7 +43,7 @@ router.post("/events", requirePermission("events", "create"), async (req: AuthRe
   try {
     const companyId = req.user!.companyId;
     if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
-    const { name, venue, country, startDate, endDate, boothNumber, description, status } = req.body;
+    const { name, venue, country, startDate, endDate, boothNumber, description, status } = req.body ?? {};
     if (!name) { res.status(400).json({ error: "name required" }); return; }
     const [event] = await db.insert(eventsTable).values({ companyId, name, venue, country: country ?? null, startDate: startDate ?? null, endDate: endDate ?? null, boothNumber, description, status: status ?? "active" }).returning();
     res.status(201).json(await enrichEvent(event));
@@ -72,9 +72,10 @@ router.patch("/events/:id", requirePermission("events", "edit"), async (req: Aut
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select({ companyId: eventsTable.companyId }).from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Event not found" }); return; }
-    const { name, venue, country, startDate, endDate, boothNumber, description, status } = req.body;
+    const { name, venue, country, startDate, endDate, boothNumber, description, status } = req.body ?? {};
     const updateData: Record<string, unknown> = { name, venue, country, startDate, endDate, boothNumber, description, status };
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const [e] = await db.update(eventsTable).set(updateData as Partial<typeof eventsTable.$inferInsert>).where(eq(eventsTable.id, id)).returning();
     if (!e) { res.status(404).json({ error: "Event not found" }); return; }
     res.json(await enrichEvent(e));

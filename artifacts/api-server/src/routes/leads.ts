@@ -109,11 +109,12 @@ router.patch("/leads/:id", requirePermission("leads", "edit"), async (req: AuthR
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select({ companyId: leadsTable.companyId }).from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Lead not found" }); return; }
-    const { stage, value, notes, assignedToId, eventId } = req.body;
+    const { stage, value, notes, assignedToId, eventId } = req.body ?? {};
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
     const updateData: Record<string, unknown> = { stage, value: value?.toString() ?? undefined, notes, assignedToId, eventId };
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const [lead] = await db.update(leadsTable).set(updateData as Partial<typeof leadsTable.$inferInsert>).where(eq(leadsTable.id, id)).returning();
     if (!lead) { res.status(404).json({ error: "Lead not found" }); return; }
     res.json(await enrichLead(lead));

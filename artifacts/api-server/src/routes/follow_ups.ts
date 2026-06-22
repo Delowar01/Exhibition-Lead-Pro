@@ -77,7 +77,7 @@ router.patch("/follow-ups/:id", async (req: AuthRequest, res) => {
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(followUpsTable).where(eq(followUpsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Follow-up not found" }); return; }
-    const { status, comment, scheduledDate, scheduledTime, notes } = req.body;
+    const { status, comment, scheduledDate, scheduledTime, notes } = req.body ?? {};
 
     if (status === "rescheduled") {
       // Close the current row and open a new pending one (history preserved as rows).
@@ -97,6 +97,7 @@ router.patch("/follow-ups/:id", async (req: AuthRequest, res) => {
 
     const updateData: Record<string, unknown> = { status, comment, scheduledDate, scheduledTime, notes, updatedAt: new Date() };
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const [row] = await db.update(followUpsTable).set(updateData as Partial<typeof followUpsTable.$inferInsert>).where(eq(followUpsTable.id, id)).returning();
     await syncContactFollowUp(existing.contactId);
     res.json((await enrich([row]))[0]);

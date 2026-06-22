@@ -1,0 +1,267 @@
+# Critical Pre-Build Verification – OCR, QR Code, NFC & Contact Extraction
+
+DO NOT build a new APK until every issue below has been fully investigated, fixed, and verified.
+
+These are release-blocking issues.
+
+## Current Problems
+
+1. Business card scanning sometimes returns "Failed".
+2. QR code scanning does not extract the correct contact information.
+3. OCR extraction quality needs verification.
+4. NFC functionality must be verified end-to-end.
+5. Contact parsing must be accurate and consistent.
+
+Do not assume the issue is only in the scanner.
+
+Audit the complete pipeline.
+
+---
+
+# Phase 1 – Camera
+
+Verify:
+
+* Camera permission
+* Camera initialization
+* Focus
+* Auto focus
+* Exposure
+* Image quality
+* Flash
+* Orientation
+* Cropping
+* Image preprocessing
+
+Ensure captured images are suitable for OCR.
+
+---
+
+# Phase 2 – OCR Pipeline
+
+Audit every OCR step.
+
+Verify:
+
+Image Capture
+↓
+
+Image Enhancement
+
+↓
+
+Cropping
+
+↓
+
+Rotation
+
+↓
+
+OCR Engine
+
+↓
+
+Raw Text
+
+↓
+
+AI Parsing
+
+↓
+
+Structured Contact
+
+Log every stage.
+
+If OCR fails, determine exactly where.
+
+---
+
+# Phase 3 – QR Code
+
+Audit the QR scanning workflow.
+
+Verify:
+
+* Camera detects QR
+* QR decoder returns raw payload
+* Payload parser
+* vCard parsing
+* MECARD parsing
+* VCARD 2.1
+* VCARD 3.0
+* VCARD 4.0
+* Plain text QR
+* URL QR
+* Contact QR
+
+Support common QR formats used by business cards.
+
+If unsupported, identify the missing parser.
+
+Log:
+
+* Raw QR payload
+* Parsed fields
+* Validation result
+
+---
+
+# Phase 4 – Contact Parsing
+
+Verify extraction of:
+
+* First Name
+* Last Name
+* Company
+* Job Title
+* Email
+* Mobile
+* Office Phone
+* Website
+* Address
+* Country
+* Notes
+
+Ensure fields are mapped correctly.
+
+Validate multiple phone numbers and emails.
+
+---
+
+# Phase 5 – AI Processing
+
+Verify:
+
+* Prompt quality
+* Parsing accuracy
+* Duplicate detection
+* Confidence score
+* Invalid data handling
+* Hallucination prevention
+
+If OCR text is correct but parsing is wrong, improve the AI prompt rather than modifying valid OCR output.
+
+---
+
+# Phase 6 – NFC
+
+Verify:
+
+* Card detection
+* Tag technology
+* NDEF parsing
+* Contact extraction
+* Error handling
+* Logging
+
+Test both NDEF and unsupported cards.
+
+---
+
+# Phase 7 – Error Handling
+
+Replace generic failures with specific messages.
+
+Examples:
+
+Camera unavailable
+
+Image too blurry
+
+OCR failed
+
+No text detected
+
+QR unsupported
+
+Invalid QR format
+
+NFC disabled
+
+Unsupported NFC tag
+
+Parsing failed
+
+Network error
+
+AI extraction failed
+
+Never display only "Failed".
+
+---
+
+# Phase 8 – Diagnostics
+
+Add developer logging for:
+
+Camera initialized
+
+Image captured
+
+OCR started
+
+OCR completed
+
+Raw OCR text
+
+QR raw payload
+
+Parsed contact
+
+AI response
+
+NFC technology
+
+NDEF records
+
+Contact saved
+
+API response
+
+This logging should only appear in development builds.
+
+---
+
+# Phase 9 – Test Dataset
+
+Verify against multiple samples:
+
+* English business cards
+* Arabic business cards
+* Bilingual business cards
+* Vertical cards
+* Horizontal cards
+* Dark backgrounds
+* Light backgrounds
+* QR-only cards
+* QR + printed cards
+* NFC business cards
+
+Document the success rate for each.
+
+---
+
+# Phase 10 – Final Verification
+
+Do not start a new EAS build until:
+
+✓ Camera works reliably.
+✓ OCR succeeds consistently.
+✓ QR extraction correctly parses supported formats.
+✓ NFC reads supported cards.
+✓ Contact parsing accuracy is verified.
+✓ Dashboard updates immediately.
+✓ Follow-ups update immediately.
+✓ No critical errors remain.
+
+Deliver:
+
+1. Root cause of every issue found.
+2. Files modified.
+3. What was fixed.
+4. Remaining limitations (if any).
+5. Production readiness assessment for OCR, QR, and NFC.
+
+If any release-blocking issue remains, stop and explain it before allowing a new APK build.

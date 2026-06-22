@@ -88,7 +88,7 @@ router.patch("/tasks/:id", async (req: AuthRequest, res) => {
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(tasksTable).where(eq(tasksTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Task not found" }); return; }
-    const { title, type, status, contactId, dueDate, dueTime, notes, assignedToId } = req.body;
+    const { title, type, status, contactId, dueDate, dueTime, notes, assignedToId } = req.body ?? {};
     if (assignedToId !== undefined && assignedToId !== existing.assignedToId && !canAssignToOthers(req.user!.role)) {
       res.status(403).json({ error: "You cannot reassign this task" }); return;
     }
@@ -96,6 +96,7 @@ router.patch("/tasks/:id", async (req: AuthRequest, res) => {
     if (contactId !== undefined && contactId != null && !(await refAccessible(req.user, "contacts", contactId))) { res.status(400).json({ error: "Invalid contactId" }); return; }
     const updateData: Record<string, unknown> = { title, type, status, contactId, dueDate, dueTime, notes, assignedToId, updatedAt: new Date() };
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
+    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const [row] = await db.update(tasksTable).set(updateData as Partial<typeof tasksTable.$inferInsert>).where(eq(tasksTable.id, id)).returning();
     res.json((await enrich([row]))[0]);
   } catch (err) {
