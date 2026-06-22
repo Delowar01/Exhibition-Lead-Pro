@@ -774,7 +774,13 @@
     "dirHighest": "Highest",
     "dirLowest": "Lowest",
     "dirEarliest": "Earliest",
-    "dirLatest": "Latest"
+    "dirLatest": "Latest",
+    "leadsShort": "Leads",
+    "hotShort": "Hot",
+    "convShort": "Conv.",
+    "peakDay": "Peak Day",
+    "avgPerDay": "Avg / Day",
+    "eventDays": "Event Days"
   },
   "more": {
     "syncManage": "Manage offline captures",

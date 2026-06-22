@@ -2979,7 +2979,7 @@ components:
 
     EventReportTeamItem:
       type: object
-      required: [userId, userName, leads, qualified, won]
+      required: [userId, userName, leads, qualified, won, hotLeads]
       properties:
         userId:
           type: integer
@@ -2993,6 +2993,8 @@ components:
         qualified:
           type: integer
         won:
+          type: integer
+        hotLeads:
           type: integer
 
     TeamMemberReport:

@@ -1566,7 +1566,8 @@ export const GetEventReportResponse = zod.object({
   "avatarUrl": zod.string().nullish(),
   "leads": zod.number(),
   "qualified": zod.number(),
-  "won": zod.number()
+  "won": zod.number(),
+  "hotLeads": zod.number()
 })),
   "leadSourceBreakdown": zod.array(zod.object({
   "source": zod.string(),

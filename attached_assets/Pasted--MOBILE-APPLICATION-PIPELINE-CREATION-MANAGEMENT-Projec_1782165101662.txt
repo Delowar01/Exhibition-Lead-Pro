@@ -1,0 +1,214 @@
+# MOBILE APPLICATION – PIPELINE CREATION & MANAGEMENT
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task adds the missing functionality for Pipeline Management.
+
+---
+
+# CURRENT ISSUE
+
+The application currently contains a **Pipeline** module.
+
+However, users cannot create a Pipeline opportunity.
+
+The Pipeline currently acts only as a display screen.
+
+This is incomplete CRM functionality.
+
+---
+
+# REQUIRED
+
+Users must be able to create Pipeline opportunities directly from the Mobile Application.
+
+---
+
+# WHERE USERS CAN CREATE A PIPELINE
+
+Provide the option to create a Pipeline from:
+
+### 1. Contact Details (Primary Method)
+
+Add a new action:
+
+**Add to Pipeline**
+
+If the contact is already in the Pipeline:
+
+Display:
+
+**Edit Pipeline**
+
+instead.
+
+---
+
+### 2. Pipeline Screen
+
+Add a floating **+ Add Pipeline** button.
+
+This allows users to manually create a Pipeline opportunity.
+
+---
+
+# PIPELINE FORM
+
+When creating a Pipeline opportunity, allow users to enter:
+
+### Basic Information
+
+* Opportunity Title
+* Related Contact
+* Company
+* Event (auto-filled when available)
+
+### Sales Information
+
+* Estimated Value
+* Currency
+* Expected Closing Date
+* Probability (%)
+
+### Pipeline Stage
+
+Default stages:
+
+* Prospect
+* Qualified
+* Proposal Sent
+* Negotiation
+* Won
+* Lost
+
+(Stages should support future customization from the Company Portal.)
+
+### Assignment
+
+* Assigned To
+* Priority
+* Notes
+
+---
+
+# EDIT PIPELINE
+
+Users must be able to edit:
+
+* Opportunity Title
+* Value
+* Stage
+* Probability
+* Closing Date
+* Assigned User
+* Notes
+
+Changes should update immediately.
+
+---
+
+# PIPELINE HISTORY
+
+Maintain a complete history of:
+
+* Stage Changes
+* Value Changes
+* Assigned User Changes
+* Date & Time
+* Changed By
+
+Display this history inside the Pipeline Details screen.
+
+---
+
+# PIPELINE DASHBOARD
+
+Every Pipeline opportunity should contribute to:
+
+* Pipeline Value
+* Won Value
+* Lost Value
+* Conversion Rate
+* Sales Reports
+* Team Performance
+* Dashboard KPI
+
+All analytics should update automatically.
+
+---
+
+# PIPELINE STATUS
+
+Changing the Pipeline Stage should **NOT** automatically change the Contact Status.
+
+These are separate concepts.
+
+Example:
+
+Contact Status:
+
+* Contacted
+
+Pipeline Stage:
+
+* Negotiation
+
+Both should be maintained independently.
+
+---
+
+# USER EXPERIENCE
+
+When viewing a Contact:
+
+If no Pipeline exists:
+
+Display:
+
+**Add to Pipeline**
+
+If a Pipeline already exists:
+
+Display:
+
+**View / Edit Pipeline**
+
+Do not allow duplicate Pipeline records for the same opportunity unless future settings permit multiple opportunities per contact.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Users can create Pipeline opportunities.
+* Pipeline can be created from Contact Details.
+* Pipeline can be created from the Pipeline screen.
+* Pipeline opportunities can be edited.
+* Pipeline history is maintained.
+* Dashboard analytics update automatically.
+* Pipeline Value updates correctly.
+* No duplicate Pipeline opportunities are created accidentally.
+* Fully functional on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# IMPORTANT
+
+Design the Pipeline module to be scalable.
+
+In the future, the Company Portal will allow administrators to customize:
+
+* Pipeline stages
+* Stage colors
+* Stage icons
+* Probability defaults
+* Required fields
+* Multiple pipelines per contact
+
+The Mobile Application should be built now so it can support these future customizations without requiring a UI redesign.

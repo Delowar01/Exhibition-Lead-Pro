@@ -387,6 +387,7 @@ router.get("/reports/event", async (req: AuthRequest, res) => {
     const dayMap = new Map<string, number>();
     const userLeadMap = new Map<number, number>();
     const userQualifiedMap = new Map<number, number>();
+    const userHotMap = new Map<number, number>();
     let cardSource = 0;
     let manualSource = 0;
     for (const c of contactRows) {
@@ -400,6 +401,9 @@ router.get("/reports/event", async (req: AuthRequest, res) => {
         userLeadMap.set(c.assignedToId, (userLeadMap.get(c.assignedToId) ?? 0) + 1);
         if (c.status === "qualified" || c.status === "interested") {
           userQualifiedMap.set(c.assignedToId, (userQualifiedMap.get(c.assignedToId) ?? 0) + 1);
+        }
+        if (c.leadTemperature === "hot") {
+          userHotMap.set(c.assignedToId, (userHotMap.get(c.assignedToId) ?? 0) + 1);
         }
       }
       if (c.cardImageUrl) cardSource++;
@@ -437,6 +441,7 @@ router.get("/reports/event", async (req: AuthRequest, res) => {
         leads: userLeadMap.get(uid) ?? 0,
         qualified: userQualifiedMap.get(uid) ?? 0,
         won: wonByUser.get(uid) ?? 0,
+        hotLeads: userHotMap.get(uid) ?? 0,
       }))
       .sort((a, b) => b.leads - a.leads || b.qualified - a.qualified);
     const leadSourceBreakdown = [

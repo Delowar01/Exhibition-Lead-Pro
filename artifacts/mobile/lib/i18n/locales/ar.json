@@ -774,7 +774,13 @@
     "dirHighest": "الأعلى",
     "dirLowest": "الأدنى",
     "dirEarliest": "الأقرب",
-    "dirLatest": "الأبعد"
+    "dirLatest": "الأبعد",
+    "leadsShort": "العملاء",
+    "hotShort": "ساخن",
+    "convShort": "التحويل",
+    "peakDay": "أعلى يوم",
+    "avgPerDay": "المعدل اليومي",
+    "eventDays": "أيام الفعالية"
   },
   "more": {
     "syncManage": "إدارة عمليات المسح دون اتصال",

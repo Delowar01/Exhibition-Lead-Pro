@@ -13,4 +13,5 @@ export interface EventReportTeamItem {
   leads: number;
   qualified: number;
   won: number;
+  hotLeads: number;
 }

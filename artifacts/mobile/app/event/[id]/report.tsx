@@ -1,8 +1,9 @@
 import { Feather } from "@/components/icons";
 import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   Modal,
   Platform,
   Pressable,
@@ -18,7 +19,6 @@ import {
   type Contact,
   type EventReportDayCount,
   type EventReportTeamItem,
-  type EventReportUserCount,
   type GetEventReportParams,
   ListContactsSort,
   useGetEventReport,
@@ -31,7 +31,6 @@ import {
 import { DateTimeField } from "@/components/DateTimeField";
 import {
   Avatar,
-  CONTACT_STATUS_COLORS,
   ErrorState,
   FONT,
   LEAD_TEMPERATURE_COLORS,
@@ -170,14 +169,13 @@ function shortDay(s: string): string {
   });
 }
 
-function qualMax(report?: { qualificationDistribution: { hot: number; warm: number; cold: number } }): number {
-  if (!report) return 1;
-  const q = report.qualificationDistribution;
-  return Math.max(q.hot, q.warm, q.cold, 1);
-}
-
 function rankPerformers(items: EventReportTeamItem[]): EventReportTeamItem[] {
   return [...items].sort((a, b) => b.leads - a.leads || b.qualified - a.qualified);
+}
+
+function conversionRate(leads: number, won: number): number {
+  if (leads <= 0) return 0;
+  return Math.round((won / leads) * 100);
 }
 
 /** Map our SortKey to the API sort param (or null for client-side sorts). */
@@ -450,21 +448,23 @@ export default function EventReportScreen() {
             />
           }
         >
-          {/* KPI metrics grid */}
+          {/* KPI metrics grid — compact 4×2 */}
           <View style={styles.statsGrid}>
             {metrics.map((m) => (
               <View
                 key={m.label}
                 style={[
                   styles.statCard,
-                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
+                  { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 },
                 ]}
               >
                 <View style={[styles.statIcon, { backgroundColor: m.color + "1A" }]}>
-                  <Feather name={m.icon} size={15} color={m.color} />
+                  <Feather name={m.icon} size={13} color={m.color} />
                 </View>
                 <Text style={[styles.statValue, { color: colors.foreground }]}>{m.value}</Text>
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{m.label}</Text>
+                <Text numberOfLines={1} style={[styles.statLabel, { color: colors.mutedForeground }]}>
+                  {m.label}
+                </Text>
               </View>
             ))}
           </View>
@@ -485,82 +485,44 @@ export default function EventReportScreen() {
             </View>
           </View>
 
-          {/* Qualification distribution */}
-          <Section title={t("eventReport.qualificationDistribution")}>
-            <View style={{ gap: 10 }}>
-              <DistRow
-                label={t("leads.hot")}
-                count={report?.qualificationDistribution.hot ?? 0}
-                max={qualMax(report)}
-                color={LEAD_TEMPERATURE_COLORS.hot}
-              />
-              <DistRow
-                label={t("leads.warm")}
-                count={report?.qualificationDistribution.warm ?? 0}
-                max={qualMax(report)}
-                color={LEAD_TEMPERATURE_COLORS.warm}
-              />
-              <DistRow
-                label={t("leads.cold")}
-                count={report?.qualificationDistribution.cold ?? 0}
-                max={qualMax(report)}
-                color={LEAD_TEMPERATURE_COLORS.cold}
-              />
-            </View>
-          </Section>
-
-          {/* Status distribution */}
-          {report && report.statusDistribution.length > 0 ? (
-            <Section title={t("eventReport.statusDistribution")}>
-              <View style={{ gap: 10 }}>
-                {report.statusDistribution.map((s) => (
-                  <DistRow
-                    key={s.status}
-                    label={t("leads.stages." + s.status, { defaultValue: prettyLabel(s.status) })}
-                    count={s.count}
-                    max={Math.max(...report.statusDistribution.map((x) => x.count), 1)}
-                    color={CONTACT_STATUS_COLORS[s.status] ?? colors.primary}
+          {/* Top performer — prominent, tappable card */}
+          {report && report.teamPerformance.length > 0 ? (
+            <Section title={t("eventReport.topPerformer")}>
+              {rankPerformers(report.teamPerformance)
+                .slice(0, 1)
+                .map((m) => (
+                  <PerformerCard
+                    key={m.userId}
+                    performer={m}
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.selectionAsync();
+                      router.push(`/event/${eventId}/member/${m.userId}`);
+                    }}
                   />
                 ))}
-              </View>
             </Section>
           ) : null}
 
-          {/* Leads by day */}
+          {/* Leads by day — animated analytics card */}
           {report && report.leadsByDay.length > 0 ? (
             <Section title={t("eventReport.leadsByDay")}>
               <LeadsByDayChart data={report.leadsByDay} color={colors.primary} />
             </Section>
           ) : null}
 
-          {/* Leads by user */}
-          {report && report.leadsByUser.length > 0 ? (
-            <Section title={t("eventReport.leadsByUser")}>
-              <View style={{ gap: 10 }}>
-                {[...report.leadsByUser]
-                  .sort((a, b) => b.count - a.count)
-                  .map((u: EventReportUserCount) => (
-                    <DistRow
-                      key={u.userId}
-                      label={u.userName}
-                      count={u.count}
-                      max={Math.max(...report.leadsByUser.map((x) => x.count), 1)}
-                      color={colors.primary}
-                    />
-                  ))}
-              </View>
-            </Section>
-          ) : null}
-
-          {/* Team performance */}
+          {/* Team performance — full roster */}
           {report && report.teamPerformance.length > 0 ? (
             <Section title={t("eventReport.teamPerformance")}>
               <View style={{ gap: 12 }}>
                 {[...report.teamPerformance]
                   .sort((a, b) => b.leads - a.leads)
                   .map((m) => (
-                    <View key={m.userId} style={styles.teamRow}>
-                      <Avatar name={m.userName} size={36} color={colors.primary} />
+                    <Pressable
+                      key={m.userId}
+                      onPress={() => router.push(`/event/${eventId}/member/${m.userId}`)}
+                      style={({ pressed }) => [styles.teamRow, { opacity: pressed ? 0.6 : 1 }]}
+                    >
+                      <Avatar name={m.userName} uri={m.avatarUrl} size={36} color={colors.primary} />
                       <View style={{ flex: 1 }}>
                         <Text numberOfLines={1} style={[styles.teamName, { color: colors.foreground }]}>
                           {m.userName}
@@ -569,24 +531,8 @@ export default function EventReportScreen() {
                           {`${t("eventReport.perfLeads", { count: m.leads })} · ${t("eventReport.wonCount", { count: m.won })}`}
                         </Text>
                       </View>
-                    </View>
-                  ))}
-              </View>
-            </Section>
-          ) : null}
-
-          {/* Top performer */}
-          {report && report.teamPerformance.length > 0 ? (
-            <Section title={t("eventReport.topPerformer")}>
-              <View style={{ gap: 12 }}>
-                {rankPerformers(report.teamPerformance)
-                  .slice(0, 1)
-                  .map((m) => (
-                    <PerformerRow
-                      key={m.userId}
-                      performer={m}
-                      onPress={() => router.push(`/event/${eventId}/member/${m.userId}`)}
-                    />
+                      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                    </Pressable>
                   ))}
               </View>
             </Section>
@@ -659,7 +605,11 @@ export default function EventReportScreen() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function PerformerRow({
+/**
+ * Prominent, tappable Top Performer card: avatar (with initials fallback),
+ * full name, and a 4-stat row (Leads, Hot, Won, Conversion rate).
+ */
+function PerformerCard({
   performer,
   onPress,
 }: {
@@ -668,72 +618,121 @@ function PerformerRow({
 }) {
   const colors = useColors();
   const { t } = useLocale();
+  const rate = conversionRate(performer.leads, performer.won);
+  const stats: { label: string; value: string; color: string }[] = [
+    { label: t("eventReport.leadsShort"), value: String(performer.leads), color: colors.primary },
+    { label: t("eventReport.hotShort"), value: String(performer.hotLeads), color: LEAD_TEMPERATURE_COLORS.hot },
+    { label: t("eventReport.won"), value: String(performer.won), color: "#22C55E" },
+    { label: t("eventReport.convShort"), value: `${rate}%`, color: "#F59E0B" },
+  ];
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.performerRow, { opacity: pressed ? 0.6 : 1 }]}
+      style={({ pressed }) => [styles.performerCard, { opacity: pressed ? 0.7 : 1 }]}
     >
-      <Avatar name={performer.userName} uri={performer.avatarUrl} size={44} color={colors.primary} />
-      <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={[styles.teamName, { color: colors.foreground }]}>
-          {performer.userName}
-        </Text>
-        <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-          {`${t("eventReport.perfLeads", { count: performer.leads })} · ${t("eventReport.qualifiedCount", { count: performer.qualified })}`}
-        </Text>
+      <View style={styles.performerHeader}>
+        <Avatar name={performer.userName} uri={performer.avatarUrl} size={48} color={colors.primary} />
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={[styles.performerName, { color: colors.foreground }]}>
+            {performer.userName}
+          </Text>
+          <Text numberOfLines={1} style={[styles.performerSub, { color: colors.mutedForeground }]}>
+            {t("eventReport.topPerformer")}
+          </Text>
+        </View>
+        <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
       </View>
-      <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+      <View style={[styles.performerStats, { borderTopColor: colors.border }]}>
+        {stats.map((s) => (
+          <View key={s.label} style={styles.performerStat}>
+            <Text style={[styles.performerStatValue, { color: s.color }]}>{s.value}</Text>
+            <Text numberOfLines={1} style={[styles.performerStatLabel, { color: colors.mutedForeground }]}>
+              {s.label}
+            </Text>
+          </View>
+        ))}
+      </View>
     </Pressable>
   );
 }
 
+/**
+ * Modern animated leads-by-day chart: bars grow on mount, the peak-capture day
+ * is highlighted, daily totals sit above each bar, and summary stats (Peak Day,
+ * Avg / Day, Event Days) sit below.
+ */
 function LeadsByDayChart({ data, color }: { data: EventReportDayCount[]; color: string }) {
   const colors = useColors();
-  const max = Math.max(...data.map((d) => d.count), 1);
-  return (
-    <View style={styles.chartRow}>
-      {data.map((d) => (
-        <View key={d.date} style={styles.chartCol}>
-          <Text style={[styles.chartValue, { color: colors.mutedForeground }]}>{d.count}</Text>
-          <View style={[styles.chartBarTrack, { backgroundColor: colors.muted }]}>
-            <View
-              style={[
-                styles.chartBarFill,
-                { backgroundColor: color, height: `${(d.count / max) * 100}%` },
-              ]}
-            />
-          </View>
-          <Text numberOfLines={1} style={[styles.chartLabel, { color: colors.mutedForeground }]}>
-            {shortDay(d.date)}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
+  const { t } = useLocale();
+  const progress = useRef(new Animated.Value(0)).current;
 
-function DistRow({
-  label,
-  count,
-  max,
-  color,
-}: {
-  label: string;
-  count: number;
-  max: number;
-  color: string;
-}) {
-  const colors = useColors();
+  useEffect(() => {
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 650,
+      useNativeDriver: false,
+    }).start();
+  }, [data, progress]);
+
+  const TRACK_H = 96;
+  const max = Math.max(...data.map((d) => d.count), 1);
+  const total = data.reduce((sum, d) => sum + d.count, 0);
+  const peak = data.reduce((best, d) => (d.count > best.count ? d : best), data[0]);
+  const avg = data.length > 0 ? Math.round(total / data.length) : 0;
+
+  const summary: { label: string; value: string }[] = [
+    { label: t("eventReport.peakDay"), value: shortDay(peak.date) },
+    { label: t("eventReport.avgPerDay"), value: String(avg) },
+    { label: t("eventReport.eventDays"), value: String(data.length) },
+  ];
+
   return (
     <View>
-      <View style={styles.stageRow}>
-        <Text numberOfLines={1} style={[styles.stageLabel, { color: colors.foreground }]}>
-          {label}
-        </Text>
-        <Text style={[styles.stageCount, { color: colors.mutedForeground }]}>{count}</Text>
+      <View style={styles.chartRow}>
+        {data.map((d) => {
+          const isPeak = d.count === max && d.count > 0;
+          return (
+            <View key={d.date} style={styles.chartCol}>
+              <Text
+                style={[
+                  styles.chartValue,
+                  { color: isPeak ? color : colors.mutedForeground, fontFamily: isPeak ? FONT.bold : FONT.medium },
+                ]}
+              >
+                {d.count}
+              </Text>
+              <View style={[styles.chartBarTrack, { backgroundColor: colors.muted }]}>
+                <Animated.View
+                  style={[
+                    styles.chartBarFill,
+                    {
+                      backgroundColor: isPeak ? color : color + "55",
+                      height: progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, (d.count / max) * TRACK_H],
+                      }),
+                    },
+                  ]}
+                />
+              </View>
+              <Text numberOfLines={1} style={[styles.chartLabel, { color: colors.mutedForeground }]}>
+                {shortDay(d.date)}
+              </Text>
+            </View>
+          );
+        })}
       </View>
-      <View style={[styles.barTrack, { backgroundColor: colors.muted }]}>
-        <View style={[styles.barFill, { backgroundColor: color, width: `${(count / max) * 100}%` }]} />
+
+      <View style={[styles.chartSummary, { borderTopColor: colors.border }]}>
+        {summary.map((s) => (
+          <View key={s.label} style={styles.chartSummaryItem}>
+            <Text style={[styles.chartSummaryValue, { color: colors.foreground }]}>{s.value}</Text>
+            <Text numberOfLines={1} style={[styles.chartSummaryLabel, { color: colors.mutedForeground }]}>
+              {s.label}
+            </Text>
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -742,7 +741,7 @@ function DistRow({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const colors = useColors();
   return (
-    <View style={{ marginTop: 24 }}>
+    <View style={{ marginTop: 16 }}>
       <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
         {title.toUpperCase()}
       </Text>
@@ -1082,38 +1081,41 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 8,
     marginTop: 4,
   },
   statCard: {
-    width: "47%",
+    width: "22%",
     flexGrow: 1,
     borderWidth: 1,
-    padding: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: "center",
   },
   statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 6,
   },
   statValue: {
-    fontSize: 22,
+    fontSize: 17,
     fontFamily: FONT.bold,
   },
   statLabel: {
-    fontSize: 12.5,
+    fontSize: 10,
     fontFamily: FONT.medium,
-    marginTop: 2,
+    marginTop: 1,
+    textAlign: "center",
   },
   pipelineCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
     padding: 18,
-    marginTop: 14,
+    marginTop: 12,
   },
   pipelineValue: {
     color: "#FFFFFF",
@@ -1136,30 +1138,6 @@ const styles = StyleSheet.create({
   sectionBody: {
     borderWidth: 1,
     padding: 16,
-  },
-  stageRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 6,
-    gap: 12,
-  },
-  stageLabel: {
-    flex: 1,
-    fontSize: 13.5,
-    fontFamily: FONT.medium,
-  },
-  stageCount: {
-    fontSize: 13.5,
-    fontFamily: FONT.semibold,
-  },
-  barTrack: {
-    height: 8,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  barFill: {
-    height: "100%",
-    borderRadius: 4,
   },
   chartRow: {
     flexDirection: "row",
@@ -1190,15 +1168,66 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontFamily: FONT.regular,
   },
+  chartSummary: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    marginTop: 14,
+    paddingTop: 12,
+  },
+  chartSummaryItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  chartSummaryValue: {
+    fontSize: 15,
+    fontFamily: FONT.bold,
+  },
+  chartSummaryLabel: {
+    fontSize: 10.5,
+    fontFamily: FONT.medium,
+    marginTop: 2,
+  },
   teamRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
-  performerRow: {
+  performerCard: {
+    borderWidth: 0,
+  },
+  performerHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+  },
+  performerName: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+  },
+  performerSub: {
+    fontSize: 11.5,
+    fontFamily: FONT.medium,
+    letterSpacing: 0.4,
+    marginTop: 2,
+  },
+  performerStats: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    marginTop: 14,
+    paddingTop: 12,
+  },
+  performerStat: {
+    flex: 1,
+    alignItems: "center",
+  },
+  performerStatValue: {
+    fontSize: 18,
+    fontFamily: FONT.bold,
+  },
+  performerStatLabel: {
+    fontSize: 10.5,
+    fontFamily: FONT.medium,
+    marginTop: 2,
   },
   teamName: {
     fontSize: 14.5,
