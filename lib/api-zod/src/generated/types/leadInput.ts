@@ -26,6 +26,8 @@ export interface LeadInput {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
   eventId?: number | null;

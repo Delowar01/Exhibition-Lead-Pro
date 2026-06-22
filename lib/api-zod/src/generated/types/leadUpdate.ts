@@ -24,6 +24,8 @@ export interface LeadUpdate {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
   eventId?: number | null;

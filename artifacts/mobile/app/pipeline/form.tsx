@@ -129,6 +129,7 @@ export default function PipelineFormScreen() {
 
   const [stage, setStage] = useState("prospect");
   const [title, setTitle] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [value, setValue] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [probability, setProbability] = useState("");
@@ -150,6 +151,7 @@ export default function PipelineFormScreen() {
     if (!lead) return;
     setStage(lead.stage ?? "prospect");
     setTitle(lead.title ?? "");
+    setCompanyName((lead as { companyName?: string | null }).companyName ?? "");
     setValue(lead.value != null ? String(lead.value) : "");
     setCurrency(lead.currency ?? "USD");
     setProbability(lead.probability != null ? String(lead.probability) : "");
@@ -179,6 +181,7 @@ export default function PipelineFormScreen() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const basePayload = {
       title: title.trim() || null,
+      companyName: companyName.trim() || null,
       value: value ? parseFloat(value) : null,
       currency,
       probability: probability ? parseInt(probability) : null,
@@ -256,6 +259,18 @@ export default function PipelineFormScreen() {
               placeholderTextColor={colors.mutedForeground}
               value={title}
               onChangeText={setTitle}
+            />
+          </View>
+
+          {/* Company */}
+          <View>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t("pipeline.company").toUpperCase()}</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+              placeholder={t("pipeline.companyPlaceholder")}
+              placeholderTextColor={colors.mutedForeground}
+              value={companyName}
+              onChangeText={setCompanyName}
             />
           </View>
 
@@ -428,7 +443,14 @@ export default function PipelineFormScreen() {
         visible={picker === "contact"}
         title={t("pipeline.selectContact")}
         items={contactItems}
-        onSelect={v => setContactId(v != null ? Number(v) : null)}
+        onSelect={v => {
+          const id = v != null ? Number(v) : null;
+          setContactId(id);
+          if (id != null) {
+            const item = contactItems.find(c => c.id === id);
+            if (item?.sub && !companyName.trim()) setCompanyName(item.sub);
+          }
+        }}
         onClose={() => setPicker(null)}
         searchPlaceholder={t("pipeline.searchContact")}
       />

@@ -113,7 +113,7 @@ export default function ContactDetailScreen() {
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
   const historyQuery = useGetContactStatusHistory(contactId);
-  const leadsQuery = useListLeads({ contactId, limit: 5 });
+  const leadsQuery = useListLeads({ contactId, limit: 100 });
   const createFollowUp = useCreateFollowUp();
   const createMeeting = useCreateMeeting();
   const createTask = useCreateTask();

@@ -677,6 +677,8 @@ export interface Lead {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
   assignedToName?: string | null;
@@ -727,6 +729,8 @@ export interface LeadInput {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
   eventId?: number | null;
@@ -763,6 +767,8 @@ export interface LeadUpdate {
   priority?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  companyName?: string | null;
   /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
@@ -1196,6 +1202,7 @@ export interface MobileDashboard {
   pipelineValue: number;
   wonValue?: number;
   lostValue?: number;
+  conversionRate?: number;
   totalContacts: number;
   recentActivity: MobileActivityItem[];
 }

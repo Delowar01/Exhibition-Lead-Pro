@@ -953,6 +953,7 @@ export const ListLeadsResponse = zod.object({
   "probability": zod.number().nullish(),
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -988,6 +989,7 @@ export const CreateLeadBody = zod.object({
   "probability": zod.number().nullish(),
   "priority": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "eventId": zod.number().nullish()
 })
@@ -1015,6 +1017,7 @@ export const GetLeadResponse = zod.object({
   "probability": zod.number().nullish(),
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -1049,6 +1052,7 @@ export const UpdateLeadBody = zod.object({
   "probability": zod.number().nullish(),
   "priority": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "eventId": zod.number().nullish()
 })
@@ -1068,6 +1072,7 @@ export const UpdateLeadResponse = zod.object({
   "probability": zod.number().nullish(),
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -1120,6 +1125,7 @@ export const GetLeadPipelineResponse = zod.object({
   "probability": zod.number().nullish(),
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -1580,6 +1586,7 @@ export const GetMobileDashboardResponse = zod.object({
   "pipelineValue": zod.number(),
   "wonValue": zod.number().optional(),
   "lostValue": zod.number().optional(),
+  "conversionRate": zod.number().optional(),
   "totalContacts": zod.number(),
   "recentActivity": zod.array(zod.object({
   "id": zod.string(),

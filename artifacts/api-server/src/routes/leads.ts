@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable } from "@workspace/db";
-import { eq, and, count, inArray, ne } from "drizzle-orm";
+import { eq, and, count, inArray, ne, desc } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { refAccessible } from "../lib/tenant.js";
@@ -34,7 +34,7 @@ async function enrichLead(l: typeof leadsTable.$inferSelect, includeHistory = fa
       .from(leadHistoryTable)
       .leftJoin(usersTable, eq(leadHistoryTable.changedBy, usersTable.id))
       .where(eq(leadHistoryTable.leadId, l.id))
-      .orderBy(leadHistoryTable.changedAt);
+      .orderBy(desc(leadHistoryTable.changedAt));
     history = rows.map(r => ({ ...r, changedAt: r.changedAt.toISOString() }));
   }
 
@@ -49,6 +49,7 @@ async function enrichLead(l: typeof leadsTable.$inferSelect, includeHistory = fa
     contactName: contact?.fullName ?? ([contact?.firstName, contact?.lastName].filter(Boolean).join(" ") || null),
     contactEmail: contact?.email ?? null,
     contactCompany: contact?.contactCompany ?? null,
+    companyName: l.companyName ?? null,
     assignedToName: assignee?.name ?? null,
     eventName: event?.name ?? null,
     history: includeHistory ? history : undefined,
@@ -85,7 +86,7 @@ router.post("/leads", requirePermission("leads", "create"), async (req: AuthRequ
   try {
     const companyId = req.user!.companyId;
     if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
-    const { contactId, stage, title, value, currency, closingDate, probability, priority, notes, assignedToId, eventId } = req.body;
+    const { contactId, stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId } = req.body;
 
     if (contactId != null && !(await refAccessible(req.user, "contacts", contactId))) { res.status(400).json({ error: "Invalid contactId" }); return; }
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
@@ -113,6 +114,7 @@ router.post("/leads", requirePermission("leads", "create"), async (req: AuthRequ
       probability: probability ?? null,
       priority: priority ?? null,
       notes: notes ?? null,
+      companyName: companyName ?? null,
       assignedToId: assignedToId ?? null,
       eventId: eventId ?? null,
       createdById: req.user!.id,
@@ -167,7 +169,7 @@ router.patch("/leads/:id", requirePermission("leads", "edit"), async (req: AuthR
     const [existing] = await db.select().from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Lead not found" }); return; }
 
-    const { stage, title, value, currency, closingDate, probability, priority, notes, assignedToId, eventId } = req.body ?? {};
+    const { stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId } = req.body ?? {};
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
 
@@ -180,6 +182,7 @@ router.patch("/leads/:id", requirePermission("leads", "edit"), async (req: AuthR
     if (probability !== undefined) updateData.probability = probability;
     if (priority !== undefined) updateData.priority = priority;
     if (notes !== undefined) updateData.notes = notes;
+    if (companyName !== undefined) updateData.companyName = companyName;
     if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
     if (eventId !== undefined) updateData.eventId = eventId;
 

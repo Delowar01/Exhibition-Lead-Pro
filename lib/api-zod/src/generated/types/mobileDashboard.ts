@@ -17,6 +17,7 @@ export interface MobileDashboard {
   pipelineValue: number;
   wonValue?: number;
   lostValue?: number;
+  conversionRate?: number;
   totalContacts: number;
   recentActivity: MobileActivityItem[];
 }

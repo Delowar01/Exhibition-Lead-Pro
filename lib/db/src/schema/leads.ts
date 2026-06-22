@@ -18,6 +18,7 @@ export const leadsTable = pgTable("leads", {
   probability: integer("probability"),
   priority: text("priority"),
   notes: text("notes"),
+  companyName: text("company_name"),
   assignedToId: integer("assigned_to_id").references(() => usersTable.id, { onDelete: "set null" }),
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),
   createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),

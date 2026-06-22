@@ -215,6 +215,8 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
       [pipelineRow],
       [wonRow],
       [lostRow],
+      [{ wonCount }],
+      [{ lostCount }],
     ] = await Promise.all([
       db
         .select({ todayLeads: count() })
@@ -263,6 +265,14 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
         .select({ lostValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)` })
         .from(leadsTable)
         .where(and(leadScope, eq(leadsTable.stage, "lost"))),
+      db
+        .select({ wonCount: count() })
+        .from(leadsTable)
+        .where(and(leadScope, eq(leadsTable.stage, "won"))),
+      db
+        .select({ lostCount: count() })
+        .from(leadsTable)
+        .where(and(leadScope, eq(leadsTable.stage, "lost"))),
     ]);
 
     const recentContacts = await db
@@ -306,6 +316,7 @@ router.get("/reports/mobile-dashboard", async (req: AuthRequest, res) => {
       pipelineValue: Number(pipelineRow.pipelineValue ?? 0),
       wonValue: Number(wonRow.wonValue ?? 0),
       lostValue: Number(lostRow.lostValue ?? 0),
+      conversionRate: wonCount + lostCount === 0 ? 0 : Math.round((wonCount / (wonCount + lostCount)) * 100),
       totalContacts,
       recentActivity,
     });

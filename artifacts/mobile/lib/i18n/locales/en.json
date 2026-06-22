@@ -118,7 +118,8 @@
       "hotLeads": "Hot leads",
       "openPipeline": "Open Pipeline",
       "won": "Won",
-      "lost": "Lost"
+      "lost": "Lost",
+      "conversionRate": "Conv. Rate"
     },
     "activeEvent": "Active event",
     "lastEvent": "Last event",
@@ -381,6 +382,8 @@
     "editOpportunity": "Edit Opportunity",
     "oppTitle": "Deal Title",
     "oppTitlePlaceholder": "e.g. Enterprise license deal",
+    "company": "Company",
+    "companyPlaceholder": "e.g. Acme Corp",
     "value": "Deal Value",
     "currency": "Currency",
     "probability": "Probability (%)",

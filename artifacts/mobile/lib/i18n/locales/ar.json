@@ -118,7 +118,8 @@
       "hotLeads": "عملاء واعدون",
       "openPipeline": "مسار مفتوح",
       "won": "مكسوب",
-      "lost": "خاسر"
+      "lost": "خاسر",
+      "conversionRate": "نسبة التحويل"
     },
     "activeEvent": "الفعالية النشطة",
     "lastEvent": "آخر فعالية",
@@ -381,6 +382,8 @@
     "editOpportunity": "تعديل الفرصة",
     "oppTitle": "عنوان الصفقة",
     "oppTitlePlaceholder": "مثال: عقد ترخيص مؤسسي",
+    "company": "الشركة",
+    "companyPlaceholder": "مثال: شركة أكمي",
     "value": "قيمة الصفقة",
     "currency": "العملة",
     "probability": "الاحتمالية (%)",

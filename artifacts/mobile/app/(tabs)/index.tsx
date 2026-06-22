@@ -234,6 +234,14 @@ export default function HomeScreen() {
       color: colors.destructive,
       onPress: () => router.push("/leads"),
     },
+    {
+      key: "convRate",
+      label: t("home.stats.conversionRate"),
+      value: `${(data as { conversionRate?: number })?.conversionRate ?? 0}%`,
+      icon: "percent",
+      color: "#8B5CF6",
+      onPress: () => router.push("/leads"),
+    },
   ];
 
   const quickActions: {

@@ -2293,6 +2293,8 @@ components:
           enum: [low, medium, high, "null"]
         notes:
           type: ["string", "null"]
+        companyName:
+          type: ["string", "null"]
         assignedToId:
           type: ["integer", "null"]
         assignedToName:
@@ -2343,6 +2345,8 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+        companyName:
+          type: ["string", "null"]
         assignedToId:
           type: ["integer", "null"]
         eventId:
@@ -2367,6 +2371,8 @@ components:
         priority:
           type: ["string", "null"]
         notes:
+          type: ["string", "null"]
+        companyName:
           type: ["string", "null"]
         assignedToId:
           type: ["integer", "null"]
@@ -2895,6 +2901,8 @@ components:
         wonValue:
           type: number
         lostValue:
+          type: number
+        conversionRate:
           type: number
         totalContacts:
           type: integer
