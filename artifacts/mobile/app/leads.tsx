@@ -48,11 +48,16 @@ export default function LeadsScreen() {
 
   // If a stage was passed from the dashboard, use it as the initial filter.
   // "all" is a virtual stage that shows every opportunity sorted by value.
-  const initialStage = params.stage ?? ALL_STAGE;
+  // Guard against unknown deep-link values (fall back to "all") so an invalid
+  // ?stage= param never lands the user on a confusing empty state.
+  const isValidStage =
+    params.stage != null &&
+    (params.stage === ALL_STAGE || (LEAD_STAGE_ORDER as readonly string[]).includes(params.stage));
+  const initialStage = isValidStage ? (params.stage as string) : ALL_STAGE;
   const [activeStage, setActiveStage] = useState<string>(initialStage);
   // Track whether the active filter came from the dashboard so we can show
   // the filter banner. Cleared when the user manually selects a chip.
-  const [fromDashboard, setFromDashboard] = useState<boolean>(!!params.stage);
+  const [fromDashboard, setFromDashboard] = useState<boolean>(isValidStage);
 
   const query = useGetLeadPipeline();
 

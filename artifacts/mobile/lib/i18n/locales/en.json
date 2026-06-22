@@ -165,8 +165,6 @@
     "flashOff": "Flash off",
     "emailSignature": "Email Signature",
     "emailSignatureDesc": "Scan an email signature block",
-    "linkedinQr": "QR Code / LinkedIn",
-    "linkedinQrDesc": "Auto-detects all QR types including LinkedIn",
     "eventTagged": "Captures are tagged to this event",
     "eventSelectHint": "Tap to select before scanning",
     "newContactFallback": "New contact",

@@ -165,8 +165,6 @@
     "flashOff": "إيقاف الفلاش",
     "emailSignature": "توقيع البريد الإلكتروني",
     "emailSignatureDesc": "امسح كتلة توقيع البريد الإلكتروني",
-    "linkedinQr": "QR / LinkedIn",
-    "linkedinQrDesc": "يكشف تلقائياً عن جميع أنواع رموز QR بما فيها LinkedIn",
     "eventTagged": "ترتبط عمليات المسح بهذه الفعالية",
     "eventSelectHint": "اضغط للاختيار قبل المسح",
     "newContactFallback": "جهة اتصال جديدة",
