@@ -552,6 +552,8 @@ export default function ContactDetailScreen() {
         visible={assignOpen}
         transparent
         animationType="slide"
+        statusBarTranslucent
+        hardwareAccelerated
         onRequestClose={() => setAssignOpen(false)}
       >
         <Pressable
@@ -565,6 +567,7 @@ export default function ContactDetailScreen() {
                 backgroundColor: colors.card,
                 borderColor: colors.border,
                 paddingBottom: insets.bottom + 16,
+                overflow: "hidden",
               },
             ]}
             onPress={(e) => e.stopPropagation()}
@@ -709,12 +712,12 @@ function ScheduleModal({
   const isMeeting = kind === "meeting";
 
   return (
-    <Modal visible={!!kind} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={!!kind} transparent animationType="slide" statusBarTranslucent hardwareAccelerated onRequestClose={onClose}>
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable
           style={[
             styles.modalSheet,
-            { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 16 },
+            { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 16, overflow: "hidden" },
           ]}
           onPress={(e) => e.stopPropagation()}
         >

@@ -142,7 +142,9 @@ export default function SyncScreen() {
           paddingTop: topPad + 14,
           paddingHorizontal: 20,
           paddingBottom: insets.bottom + 40,
+          flexGrow: 1,
         }}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}

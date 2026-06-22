@@ -317,10 +317,10 @@ function TaskActionSheet({
   ];
 
   return (
-    <Modal visible={!!task} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={!!task} transparent animationType="slide" statusBarTranslucent hardwareAccelerated onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable
-          style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16 }]}
+          style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16, overflow: "hidden" }]}
           onPress={(e) => e.stopPropagation()}
         >
           <View style={styles.handleWrap}>
@@ -426,6 +426,8 @@ function CreateTaskSheet({
       visible={open}
       transparent
       animationType="slide"
+      statusBarTranslucent
+      hardwareAccelerated
       onRequestClose={() => {
         reset();
         onClose();
@@ -439,7 +441,7 @@ function CreateTaskSheet({
         }}
       >
         <Pressable
-          style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16 }]}
+          style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16, overflow: "hidden" }]}
           onPress={(e) => e.stopPropagation()}
         >
           <View style={styles.handleWrap}>

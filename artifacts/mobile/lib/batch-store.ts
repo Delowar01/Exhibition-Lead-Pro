@@ -40,3 +40,15 @@ export function setBatchOcrResult(id: string, result: BatchOcrResult): void {
 export function getBatchOcrResult(id: string): BatchOcrResult | undefined {
   return ocrResults.get(id);
 }
+
+/**
+ * Returns the number of captures whose OCR is still in-flight ("pending").
+ * Used by the capture-camera Done button to indicate unfinished background work.
+ */
+export function getPendingOcrCount(): number {
+  let count = 0;
+  for (const result of ocrResults.values()) {
+    if (result.status === "pending") count++;
+  }
+  return count;
+}

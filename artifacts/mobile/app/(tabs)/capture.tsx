@@ -128,7 +128,9 @@ export default function CaptureScreen() {
           paddingTop: topPad + 14,
           paddingHorizontal: 20,
           paddingBottom: insets.bottom + 110,
+          flexGrow: 1,
         }}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>

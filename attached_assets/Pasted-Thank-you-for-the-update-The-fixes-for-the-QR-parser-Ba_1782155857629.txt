@@ -1,0 +1,98 @@
+Thank you for the update.
+
+The fixes for the QR parser, Batch OCR workflow, task creation, scrolling improvements, and OCR performance are appreciated.
+
+Please continue with the remaining Module 1 items before generating another APK.
+
+I would prefer to rebuild and test **one APK after all remaining Module 1 issues have been completed**, rather than rebuilding after every small change.
+
+---
+
+# REMAINING MODULE 1 ITEMS
+
+## 1. Assign Teammate
+
+Please verify the complete workflow.
+
+Current issue:
+
+* The logged-in user should **not** appear in the teammate selection list.
+* After assigning a lead, it must immediately appear in the assigned user's **Workspace → My Tasks**.
+
+Please verify this end-to-end.
+
+---
+
+## 2. Follow-Up Screen
+
+The three-dot action menu overlapping issue is a known and reproducible problem.
+
+Please investigate and fix it.
+
+Do not defer this issue for future investigation.
+
+It should be resolved before Module 1 is considered complete.
+
+---
+
+## 3. Placeholder & Validation Layout
+
+Several placeholders, helper text, examples, and validation messages still overlap UI elements.
+
+Please review the entire application and correct all layout issues.
+
+---
+
+## 4. Scroll Behaviour
+
+You mentioned updates on multiple screens.
+
+Please ensure this behavior is consistent throughout the entire application.
+
+Users should be able to scroll by dragging anywhere inside a scrollable area, including empty space.
+
+---
+
+## 5. Batch Scan Mode
+
+The background OCR improvement is a good step.
+
+However, the final workflow should be:
+
+Capture Images
+
+↓
+
+Each image immediately enters the background processing queue.
+
+↓
+
+OCR, AI Extraction, Duplicate Detection, and GPS processing all execute while the user continues scanning.
+
+↓
+
+User taps **Done**.
+
+↓
+
+Review screen opens with all (or nearly all) captures already processed.
+
+↓
+
+The user only reviews, makes corrections if necessary, and taps **Save**.
+
+Moving between review screens should never trigger additional OCR processing.
+
+The review stage should only be for validation, not processing.
+
+---
+
+# NEXT STEP
+
+After all remaining Module 1 issues are complete:
+
+* Generate one new native Android APK.
+* I will perform another complete end-to-end test.
+* If all remaining issues pass, Module 1 (Complete Lead Capture Engine) will be accepted and we will move to Module 2.
+
+Please do not generate another APK until all remaining Module 1 work has been completed.

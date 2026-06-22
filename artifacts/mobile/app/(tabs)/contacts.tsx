@@ -466,7 +466,7 @@ function FilterSheet({
   }
 
   return (
-    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={open} transparent animationType="slide" statusBarTranslucent hardwareAccelerated onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable
           style={[
@@ -475,6 +475,7 @@ function FilterSheet({
               backgroundColor: colors.background,
               borderColor: colors.border,
               paddingBottom: insets.bottom + 16,
+              overflow: "hidden",
             },
           ]}
           onPress={(e) => e.stopPropagation()}

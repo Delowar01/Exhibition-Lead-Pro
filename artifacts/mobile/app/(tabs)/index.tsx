@@ -240,7 +240,9 @@ export default function HomeScreen() {
           paddingTop: topPad + 14,
           paddingHorizontal: 20,
           paddingBottom: insets.bottom + 110,
+          flexGrow: 1,
         }}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

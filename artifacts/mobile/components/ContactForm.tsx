@@ -134,7 +134,7 @@ export function ContactForm({
   function renderField(f: FieldConfig) {
     return (
       <View key={f.key} style={[styles.fieldWrap, f.half && styles.half]}>
-        <Text style={[styles.label, { color: colors.mutedForeground, textAlign }]}>
+        <Text numberOfLines={1} style={[styles.label, { color: colors.mutedForeground, textAlign }]}>
           {t(`contacts.fields.${f.labelKey}`)}
         </Text>
         <View

@@ -62,6 +62,7 @@ export default function CaptureManualScreen() {
         paddingHorizontal: 20,
         paddingTop: Platform.OS === "web" ? insets.top + 67 + 16 : 16,
         paddingBottom: insets.bottom + 40,
+        flexGrow: 1,
       }}
       bottomOffset={20}
       showsVerticalScrollIndicator={false}

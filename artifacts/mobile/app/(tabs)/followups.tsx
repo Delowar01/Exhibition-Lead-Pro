@@ -403,6 +403,8 @@ function ActionSheet({
       visible={!!followUp}
       transparent
       animationType="slide"
+      statusBarTranslucent
+      hardwareAccelerated
       onRequestClose={() => {
         reset();
         onClose();
@@ -418,7 +420,7 @@ function ActionSheet({
         <Pressable
           style={[
             styles.sheet,
-            { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16, maxHeight: "88%" },
+            { backgroundColor: colors.background, borderColor: colors.border, paddingBottom: insets.bottom + 16, maxHeight: "88%", overflow: "hidden" },
           ]}
           onPress={(e) => e.stopPropagation()}
         >
@@ -429,7 +431,7 @@ function ActionSheet({
             {followUp?.contactName ?? t("followups.fallbackTitle")}
           </Text>
 
-          <ScrollView bounces={false} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView bounces={false} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
           {mode === "menu" ? (
             <View style={{ gap: 10, marginTop: 12 }}>
               {actions.map((a) => (

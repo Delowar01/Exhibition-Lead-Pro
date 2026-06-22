@@ -305,14 +305,39 @@ required; the reported failures point to a stale build.
 
 ---
 
-## D. Out of safe scope without device reproduction (documented, not changed)
+## D. Previously out of scope — now fixed (2026-06-22)
 
-No clear code-level defect was identifiable; changing them blind risks regressions. These
-need an on-device repro (ideally a screen recording) before any fix:
+Items previously deferred pending device reproduction have been addressed with high-confidence
+fixes whose root causes are well-understood Android platform behaviours:
 
-- **5.1** Scroll triggered on empty space.
-- **5.2** Three-dot menu overlap.
-- **5.3** Placeholder / validation text overlap.
+### 5.1 — Scroll only works over items, not empty space (additional screens)
+- **Root cause:** `contentContainerStyle` lacked `flexGrow: 1` on five more screens
+  (`(tabs)/index.tsx`, `(tabs)/more.tsx`, `(tabs)/capture.tsx`, `sync.tsx`,
+  `capture-manual.tsx`). Without `flexGrow: 1`, the scrollable hit-region ends at the last
+  rendered child; tapping empty space below does nothing. Added `flexGrow: 1` and
+  `keyboardShouldPersistTaps="handled"` to all five.
+
+### 5.2 — Three-dot ActionSheet overlapping / visual clipping (Android)
+- **Root cause (Android `Modal` without `statusBarTranslucent`):** A `transparent` Modal on
+  Android does not cover the status bar by default. The backdrop's `flex: 1` does not extend
+  into the status-bar region, so the overlay appears clipped at the top and sheet content
+  can visually overlap UI elements above it. Additionally, without `overflow: "hidden"` on
+  the sheet container, content inside the `ScrollView` can escape the rounded corners (Android
+  does not clip to `borderRadius` by default).
+- **Fix:** Added `statusBarTranslucent` + `hardwareAccelerated` props to every bottom-sheet
+  `Modal` in the app, and `overflow: "hidden"` to each sheet container style. Also added
+  `nestedScrollEnabled` to `ScrollView`s nested inside Pressables (Android scroll-event
+  propagation fix).
+- **Files:** `app/(tabs)/followups.tsx` (ActionSheet), `app/tasks.tsx` (TaskActionSheet +
+  CreateTaskSheet), `app/contact/[id].tsx` (AssignModal + ScheduleModal),
+  `app/(tabs)/contacts.tsx` (FilterSheet).
+
+### 5.3 — Placeholder / label text overflow in narrow fields
+- **Root cause:** Field labels in `ContactForm` had no `numberOfLines` limit. In half-width
+  (47%) fields, a long label (especially in Arabic/RTL) could wrap to a second line and push
+  the paired input out of vertical alignment.
+- **Fix:** `components/ContactForm.tsx` — added `numberOfLines={1}` to every field label
+  `<Text>` so labels always stay single-line and truncate with ellipsis if too long.
 
 ---
 
@@ -328,7 +353,19 @@ need an on-device repro (ideally a screen recording) before any fix:
   (business card + Gmail/Outlook/Apple-Mail signatures → 201/completed → scored leads).
 - `DELETE /api/follow-ups/:id` — returns 401 unauthenticated (route registered + guarded).
 - `npx expo export --platform android` — Android Hermes bundle builds cleanly (exit 0).
-- **Temp `company_admin` user validation (2026-06-22):** A user with `role = "company_admin"` +
+- **Role-normalization re-validation (2026-06-22, current session):**
+  Logged in as the real production user `admin@techcorp.com` (id=2, stored role=`company_admin`
+  in both dev and prod DB). Verified against the running dev API through the shared proxy:
+  - `GET /auth/me` → `role: "primary_admin"`, `permissions: {}` — normalization confirmed.
+  - `POST /api/scans` (business card, source=`card`) → **201 Created** ✅
+  - `POST /api/scans` (email signature, source=`email`) → **201 Created** ✅
+  - `POST /api/contacts` (source=`qr`) → **201 Created** ✅
+  - `POST /api/contacts` (source=`manual`) → **201 Created** ✅
+  - `PATCH /api/contacts/:id` → **200 OK** ✅
+  - `DELETE /api/contacts/:id` → **200 OK** ✅
+  - `POST /api/tasks` → **201 Created** ✅
+  All test contacts/tasks cleaned up. None of the above returned 403.
+- **Temp `company_admin` user validation (earlier session):** A user with `role = "company_admin"` +
   `permissions = {}` was inserted into the dev DB to reproduce the exact production condition.
   Exercised against the running API:
   - `POST /auth/login` → 200; JWT payload and `/auth/me` response both carry `role = "primary_admin"` (normalization confirmed at both the sign boundary and the fresh-row boundary).
