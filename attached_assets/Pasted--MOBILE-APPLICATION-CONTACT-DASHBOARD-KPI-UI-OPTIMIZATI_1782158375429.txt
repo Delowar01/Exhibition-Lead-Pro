@@ -1,0 +1,123 @@
+# MOBILE APPLICATION – CONTACT DASHBOARD KPI UI OPTIMIZATION
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is a UI/UX refinement only.
+
+No backend or business logic changes are required.
+
+---
+
+# CONTACT DASHBOARD KPI CARDS
+
+## Current Design
+
+The current KPI dashboard displays the following eight KPI cards:
+
+* Total
+* New
+* Contacted
+* Hot
+* Warm
+* Cold
+* Won
+* Lost
+
+The information is useful and should remain.
+
+However, the cards are still too large for a mobile application and occupy more screen space than necessary.
+
+---
+
+# Required
+
+Keep **all eight KPI cards**.
+
+Do **not** remove any KPI.
+
+Instead, redesign the cards to be **more compact** while maintaining a premium appearance and excellent readability.
+
+---
+
+# UI Improvements
+
+Reduce the overall size of each KPI card by approximately **25–30%**.
+
+Optimize the layout by:
+
+* Reducing card height.
+* Reducing vertical padding.
+* Reducing horizontal padding.
+* Reducing spacing between cards.
+* Using a slightly smaller icon (approximately 16–18px).
+* Using a compact label font (10–11px).
+* Keeping the KPI value bold, prominent, and easy to read.
+* Maintaining consistent spacing and alignment.
+
+The cards should feel modern, clean, and optimized for mobile.
+
+---
+
+# Touch Area
+
+Although the cards become visually smaller, maintain a comfortable touch target for users.
+
+Do not reduce usability.
+
+---
+
+# Interaction
+
+All KPI cards must remain clickable.
+
+Current functionality must remain unchanged.
+
+Examples:
+
+* Total → Opens all contacts.
+* New → Filters New leads.
+* Contacted → Filters Contacted leads.
+* Hot → Filters Hot leads.
+* Warm → Filters Warm leads.
+* Cold → Filters Cold leads.
+* Won → Filters Won leads.
+* Lost → Filters Lost leads.
+
+---
+
+# Responsive Design
+
+The dashboard must automatically adapt to:
+
+* Android phones
+* iPhone
+* Small screens
+* Large screens
+
+Maintain consistent spacing across all supported devices.
+
+---
+
+# Acceptance Criteria
+
+* All eight KPI cards remain available.
+* Cards occupy noticeably less vertical space.
+* Dashboard feels cleaner and less crowded.
+* Icons, labels, and counts remain easy to read.
+* All cards remain fully clickable.
+* Responsive on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# Design Goal
+
+The Contact Dashboard should have a premium, modern, business-focused appearance.
+
+The KPI section should provide maximum information while occupying minimal screen space, allowing users to see more contacts without scrolling.

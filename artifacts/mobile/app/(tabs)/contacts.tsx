@@ -124,7 +124,7 @@ export default function ContactsScreen() {
   const contacts = query.data?.contacts ?? [];
 
   const { width: windowWidth } = useWindowDimensions();
-  const cardWidth = (windowWidth - 40 - 30) / 4;
+  const cardWidth = (windowWidth - 40 - 21) / 4;
 
   const counts = useMemo(() => {
     const all = countsQuery.data?.contacts ?? [];
@@ -295,11 +295,12 @@ export default function ContactsScreen() {
         </Text>
 
         {/* Dashboard widgets — 2-row 4-column grid */}
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingVertical: 12 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, paddingVertical: 8 }}>
           {widgets.map((w) => (
             <Pressable
               key={w.key}
               onPress={() => toggleWidget(w.key)}
+              hitSlop={4}
               style={[
                 styles.widget,
                 {
@@ -312,9 +313,9 @@ export default function ContactsScreen() {
             >
               <Feather
                 name={w.icon}
-                size={16}
+                size={15}
                 color={w.active ? "#FFFFFF" : w.color}
-                style={{ marginBottom: 4 }}
+                style={{ marginBottom: 2 }}
               />
               <Text
                 style={[
@@ -632,19 +633,19 @@ const styles = StyleSheet.create({
     fontFamily: FONT.bold,
   },
   widget: {
-    paddingHorizontal: 10,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     borderWidth: 1,
     alignItems: "flex-start",
   },
   widgetValue: {
-    fontSize: 22,
+    fontSize: 17,
     fontFamily: FONT.bold,
   },
   widgetLabel: {
-    fontSize: 12.5,
+    fontSize: 10.5,
     fontFamily: FONT.medium,
-    marginTop: 2,
+    marginTop: 1,
   },
   searchRow: {
     flex: 1,
