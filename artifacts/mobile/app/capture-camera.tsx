@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  ApiError,
   type ExtractedCardData,
   useCreateContact,
   useCreateScan,
@@ -32,6 +33,14 @@ import {
   clearBatchCaptures,
   setBatchCaptures,
 } from "@/lib/batch-store";
+
+// Dev-only diagnostics for the capture → OCR → save pipeline. Stripped in
+// production builds (guarded by __DEV__) so it never leaks to end users.
+function scanLog(stage: string, detail?: Record<string, unknown>): void {
+  if (__DEV__) {
+    console.log(`[Scan] ${stage}`, detail ?? "");
+  }
+}
 
 type CaptureMode = "single" | "rapid" | "batch";
 
@@ -137,6 +146,7 @@ export default function CaptureCameraScreen() {
   const processRapid = useCallback(
     async (imageData: string, gps: Gps) => {
       try {
+        scanLog("rapid: OCR started", { bytes: imageData.length, language });
         const scan = await createScan.mutateAsync({
           data: {
             imageData,
@@ -148,14 +158,50 @@ export default function CaptureCameraScreen() {
           },
         });
         const extracted = scan.extractedData ?? {};
+        scanLog("rapid: OCR completed", { confidence: scan.confidence });
         await createContact.mutateAsync({ data: extractedToContact(extracted, gps, eventId) });
+        scanLog("rapid: contact saved");
         setSavedCount((c) => c + 1);
         setLastSaved(contactDisplayName(extracted, t("capture.newContactFallback")));
-      } catch {
+      } catch (e) {
+        scanLog("rapid: FAILED", {
+          status: e instanceof ApiError ? e.status : undefined,
+          message: e instanceof Error ? e.message : String(e),
+        });
         setFailedCount((c) => c + 1);
       }
     },
     [createScan, createContact, eventId, language, t],
+  );
+
+  // Phase 7: turn raw failures into specific, actionable messages instead of a
+  // single generic "Failed". Prefers the server's localized error body, then
+  // maps by HTTP status, then detects offline/network/timeout faults.
+  const captureErrorMessage = useCallback(
+    (err: unknown): string => {
+      if (err instanceof ApiError) {
+        const body = err.data;
+        const serverMsg =
+          body && typeof body === "object" && "error" in body
+            ? String((body as { error: unknown }).error)
+            : null;
+        if (err.status === 413) return t("capture.errTooLarge");
+        if (err.status === 502 || err.status === 503 || err.status === 504)
+          return serverMsg || t("capture.errOcr");
+        if (err.status === 400) return serverMsg || t("capture.errInvalid");
+        if (err.status === 401 || err.status === 403) return t("capture.errAuth");
+        if (err.status >= 500) return t("capture.errServer");
+        if (serverMsg) return serverMsg;
+      }
+      if (
+        err instanceof TypeError ||
+        (err instanceof Error && /network|fetch|timeout|connection/i.test(err.message))
+      ) {
+        return t("capture.errNetwork");
+      }
+      return t("capture.captureFailed");
+    },
+    [t],
   );
 
   async function handleCapture() {
@@ -166,6 +212,7 @@ export default function CaptureCameraScreen() {
 
     try {
       const imageData = await captureImage();
+      scanLog("image captured", { mode, source, bytes: imageData.length });
       const gps = { ...gpsRef.current };
 
       // #4 Batch — capture image only, defer OCR/review to the review screen.
@@ -214,6 +261,7 @@ export default function CaptureCameraScreen() {
       }
 
       if (mode === "single") {
+        scanLog("single: OCR started", { bytes: imageData.length, language });
         const scan = await createScan.mutateAsync({
           data: {
             imageData,
@@ -224,6 +272,7 @@ export default function CaptureCameraScreen() {
             gpsAccuracy: gps.gpsAccuracy,
           },
         });
+        scanLog("single: OCR completed", { confidence: scan.confidence });
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
@@ -247,8 +296,12 @@ export default function CaptureCameraScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       void processRapid(imageData, gps);
-    } catch {
-      setErrorMsg(t("capture.captureFailed"));
+    } catch (e) {
+      scanLog("capture: FAILED", {
+        status: e instanceof ApiError ? e.status : undefined,
+        message: e instanceof Error ? e.message : String(e),
+      });
+      setErrorMsg(captureErrorMessage(e));
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }

@@ -47,3 +47,9 @@ id = "Wfw4S0l31OU1dblLsI0K_"
 uri = "file://PRODUCTION_RELEASE_CHECKLIST.md"
 type = "text"
 title = "Production Release Checklist & QA Sign-off"
+
+[[outputs]]
+id = "m0kXTBHQhi9m3JFerVUll"
+uri = "file://OCR_QR_NFC_VERIFICATION.md"
+type = "text"
+title = "OCR / QR / NFC Pipeline Verification Report"

@@ -1,45 +1,34 @@
 ---
-name: NFC/QR shared parser + NFC multi-tech fix
-description: parseQr is the shared parser for all text payloads; NFC tech-request must be multi-tech array, not single Ndef string.
+name: NFC/QR shared contact parser
+description: parseQr/parseVCard/parseMecard/parseContactText in mobile lib/contact-parse.ts are the single source of truth for all text contact payloads (QR + NFC NDEF).
 ---
 
-## Shared parser
-`parseQr` in `mobile/lib/contact-parse.ts` is the single source of truth for
-all free-text contact payloads coming from QR codes and NFC NDEF text/URI
-records. Extend it there; don't fork per-surface.
+# Shared contact parser (QR + NFC)
 
-## NFC multi-tech request (critical)
-`requestTechnology(NfcTech.Ndef)` with a single tech causes a silent hang when
-the physical tag's NDEF layer isn't recognised by `Ndef.get(tag)`. The
-`TagTechnologyRequest.connect()` Java method returns `false` and the native
-Callback is never invoked — the JS promise never resolves.
+`parseQr` in `artifacts/mobile/lib/contact-parse.ts` is the one entry point for all
+text-based contact payloads — QR codes AND NFC NDEF records both flow through it
+(via `parseVCard` / `parseMecard` / `parseContactText`). Extend it in one place;
+never fork a per-surface parser.
 
-**Always pass a priority array:**
-```js
-await NfcManager.requestTechnology(
-  [NfcTech.Ndef, NfcTech.NfcA, NfcTech.IsoDep, NfcTech.MifareUltralight,
-   NfcTech.MifareClassic, NfcTech.NdefFormatable, NfcTech.NfcB, NfcTech.NfcV],
-  { alertMessage: "..." }
-);
-```
+## vCard property keys carry prefixes/params — normalize before matching
 
-The JS wrapper (`NfcManagerAndroid.requestTechnology`) already handles arrays:
-`if (typeof tech === 'string') { tech = [tech]; }` — array stays as-is.
+Apple/iOS Contacts export **grouped** properties: `item1.URL`, `item2.EMAIL`,
+`item3.ADR`, plus TYPE/ENCODING params (`EMAIL;type=INTERNET`). The bare property
+name must be extracted as `rawKey.split(";")[0].split(".").pop()` before the switch,
+or grouped properties are silently dropped — the root cause of "QR from an iPhone
+loses website/email/address."
 
-**Why:** Android's TagTechnologyRequest iterates the list and connects to the
-first matching technology. With only `Ndef`, a non-NDEF tag silently times out.
+**Why:** iOS "share contact" QR/NFC is the most common real-world source; its
+vCards are almost always grouped. **How to apply:** any new vCard property handling
+must key off the normalized name, not the raw line prefix.
 
-## AndroidManifest
-The Expo plugin (`app.plugin.js`) adds the NFC **permission** but NOT the
-**feature** declaration. `<uses-feature android:name="android.hardware.nfc"
-android:required="false"/>` must be in the hand-edited AndroidManifest.xml.
+## Name precedence: structured N wins over FN
 
-## NDEF data after multi-tech connect
-`getTag()` in Java checks `tag.getTechList().contains(Ndef.class.getName())`.
-If the tag was connected via NfcA but is NDEF-formatted, the NDEF message IS
-still populated in `tag.ndefMessage`. If the tag has no NDEF layer at all,
-`ndefMessage` will be absent — check `tag.techTypes` to report what chip was found.
+`N:Family;Given` is authoritative; `FN` is a free-form display string whose naive
+space-split mishandles titles/multi-word names ("Dr. John Smith"). Let `N` set the
+name and only fall back to `FN` when `N` is absent.
 
-## Logging
-All NFC log lines are tagged `[NFC]` — filter in Logcat/Metro with:
-  `adb logcat | grep NFC`
+## Known gaps (not yet handled)
+
+RFC 2426 line-folding (continuation lines) and QUOTED-PRINTABLE value decoding are
+not implemented; only the primary `TEL` is kept (single `mobile` field by schema).

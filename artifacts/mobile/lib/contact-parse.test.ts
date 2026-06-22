@@ -95,6 +95,43 @@ describe("parseVCard", () => {
     expect(out.website).toBe("https://nexussys.io");
     expect(out.address).toContain("Dubai");
   });
+
+  it("reads grouped (Apple/iOS) properties like item1.URL / item2.EMAIL", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "N:Hassan;Layla;;;",
+      "FN:Layla Hassan",
+      "ORG:Nexus Systems",
+      "item1.URL:https://nexussys.io",
+      "item1.X-ABLabel:_$!<HomePage>!$_",
+      "item2.EMAIL;type=INTERNET:layla@nexussys.io",
+      "item3.ADR;type=WORK:;;Sheikh Zayed Rd;Dubai;;;UAE",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.website).toBe("https://nexussys.io");
+    expect(out.email).toBe("layla@nexussys.io");
+    expect(out.address).toContain("Dubai");
+  });
+
+  it("prefers the structured N name over a titled FN display string", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "FN:Dr. John Smith",
+      "N:Smith;John;;Dr.;",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.firstName).toBe("John");
+    expect(out.lastName).toBe("Smith");
+  });
+
+  it("falls back to FN when no N property is present", () => {
+    const out = parseVCard("BEGIN:VCARD\nFN:Omar Farouk\nEND:VCARD");
+    expect(out.firstName).toBe("Omar");
+    expect(out.lastName).toBe("Farouk");
+  });
 });
 
 describe("parseMecard", () => {

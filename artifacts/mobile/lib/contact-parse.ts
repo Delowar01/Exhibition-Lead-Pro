@@ -88,14 +88,24 @@ export function buildVCard(fields: VCardFields): string {
 
 export function parseVCard(raw: string): ExtractedCardData {
   const out: ExtractedCardData = {};
+  // The structured N property (Family;Given) is authoritative for names; FN is a
+  // free-form display string we only fall back to when N is absent (its naive
+  // space-split mishandles titled or multi-word names like "Dr. John Smith").
+  let nameFromN = false;
   for (const line of raw.split(/\r?\n/)) {
     const [rawKey, ...rest] = line.split(":");
     if (!rawKey || rest.length === 0) continue;
-    const key = rawKey.split(";")[0].toUpperCase();
+    // Strip any group prefix (Apple/iOS exports group properties as
+    // "item1.URL", "item2.EMAIL", "item1.ADR", etc.) and any TYPE/ENCODING
+    // parameters, leaving the bare property name. Without this, grouped
+    // properties were silently dropped and QR/vCard contacts lost their
+    // website, email, and address fields.
+    const key = rawKey.split(";")[0].split(".").pop()!.toUpperCase();
     const value = rest.join(":").trim();
     if (!value) continue;
     switch (key) {
       case "FN": {
+        if (nameFromN) break;
         const parts = value.split(" ");
         out.firstName = parts[0] ?? null;
         out.lastName = parts.slice(1).join(" ") || null;
@@ -103,8 +113,9 @@ export function parseVCard(raw: string): ExtractedCardData {
       }
       case "N": {
         const [last, first] = value.split(";");
-        if (first) out.firstName = first;
-        if (last) out.lastName = last;
+        if (first) out.firstName = first.trim();
+        if (last) out.lastName = last.trim();
+        if (first || last) nameFromN = true;
         break;
       }
       case "ORG":
