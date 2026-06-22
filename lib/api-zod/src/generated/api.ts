@@ -1220,7 +1220,7 @@ export const ListScansResponse = zod.object({
   "companyId": zod.number(),
   "userId": zod.number().nullish(),
   "contactId": zod.number().nullish(),
-  "imageUrl": zod.string().nullish(),
+  "imageUrl": zod.string().nullish().describe('API URL path for streaming the stored card image, e.g. \/api\/scans\/{id}\/image. Null if the image was not stored.'),
   "status": zod.enum(['pending', 'processing', 'completed', 'failed']),
   "extractedData": zod.object({
   "firstName": zod.string().nullish(),
@@ -1282,7 +1282,7 @@ export const GetScanResponse = zod.object({
   "companyId": zod.number(),
   "userId": zod.number().nullish(),
   "contactId": zod.number().nullish(),
-  "imageUrl": zod.string().nullish(),
+  "imageUrl": zod.string().nullish().describe('API URL path for streaming the stored card image, e.g. \/api\/scans\/{id}\/image. Null if the image was not stored.'),
   "status": zod.enum(['pending', 'processing', 'completed', 'failed']),
   "extractedData": zod.object({
   "firstName": zod.string().nullish(),
@@ -1312,6 +1312,14 @@ export const GetScanResponse = zod.object({
 }).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
   "confidence": zod.number().nullish(),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Stream the stored card image for a scan (auth-protected)
+ */
+export const GetScanImageParams = zod.object({
+  "id": zod.coerce.number()
 })
 
 

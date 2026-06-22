@@ -12,6 +12,11 @@ router.use(requireAuth);
 router.use("/scans", blockReadOnlyMutations);
 router.use("/scans", auditMutations("scans"));
 
+/** Return the public-facing API image URL for a scan (or null if not stored). */
+function scanImageApiUrl(scanId: number, hasImage: boolean): string | null {
+  return hasImage ? `/api/scans/${scanId}/image` : null;
+}
+
 // GET /scans
 router.get("/scans", async (req: AuthRequest, res) => {
   try {
@@ -23,7 +28,11 @@ router.get("/scans", async (req: AuthRequest, res) => {
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
     const [{ total }] = await db.select({ total: count() }).from(scansTable).where(whereClause);
     const scans = await db.select().from(scansTable).where(whereClause).limit(limitNum).offset(offset).orderBy(scansTable.createdAt);
-    const formatted = scans.map(s => ({ ...s, extractedData: s.extractedData ? JSON.parse(s.extractedData) : null }));
+    const formatted = scans.map(s => ({
+      ...s,
+      extractedData: s.extractedData ? JSON.parse(s.extractedData) : null,
+      imageUrl: scanImageApiUrl(s.id, s.imageUrl !== null),
+    }));
     res.json({ scans: formatted, total });
   } catch (err) {
     req.log.error(err);
@@ -46,31 +55,49 @@ router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequ
     // Create scan record
     const [scan] = await db.insert(scansTable).values({ companyId, userId: req.user!.id, status: "processing", imageUrl: null, extractedData: null }).returning();
 
-    // Upload image to object storage (best-effort; failure does not block OCR)
-    let storedImageUrl: string | null = null;
+    // Real AI OCR + extraction (image upload happens after, fire-and-forget)
+    let ocrResult: Awaited<ReturnType<typeof extractCardData>> | null = null;
+    let ocrErr: unknown = null;
     try {
-      storedImageUrl = await uploadScanImage(scan.id, companyId, imageData);
-      await db.update(scansTable).set({ imageUrl: storedImageUrl }).where(eq(scansTable.id, scan.id));
-    } catch (imgErr) {
-      req.log.warn({ err: imgErr }, "scan image upload failed; continuing without stored image");
+      ocrResult = await extractCardData(imageData, lang);
+    } catch (err) {
+      ocrErr = err;
     }
 
-    // Real AI OCR + extraction
-    try {
-      const result = await extractCardData(imageData, lang);
-      const [updated] = await db.update(scansTable)
-        .set({ status: "completed", extractedData: JSON.stringify(result.fields), rawOcr: result.rawOcr, confidence: result.confidence })
-        .where(eq(scansTable.id, scan.id))
-        .returning();
-      res.status(201).json({ ...updated, extractedData: result.fields, imageUrl: storedImageUrl });
-    } catch (aiErr) {
-      logAiError("scan-ocr", aiErr);
+    // Upload image to object storage after OCR — best-effort, non-blocking
+    void (async () => {
+      try {
+        const objectKey = await uploadScanImage(scan.id, companyId, imageData);
+        await db.update(scansTable).set({ imageUrl: objectKey }).where(eq(scansTable.id, scan.id));
+      } catch (imgErr) {
+        req.log.warn({ err: imgErr }, "scan image upload failed; stored image unavailable");
+      }
+    })();
+
+    if (ocrErr !== null) {
+      logAiError("scan-ocr", ocrErr);
       const [failed] = await db.update(scansTable)
         .set({ status: "failed" })
         .where(eq(scansTable.id, scan.id))
         .returning();
-      res.status(502).json({ ...failed, extractedData: null, imageUrl: storedImageUrl, error: "Could not read the card. Please retake the photo." });
+      res.status(502).json({
+        ...failed,
+        extractedData: null,
+        imageUrl: scanImageApiUrl(scan.id, true),
+        error: "Could not read the card. Please retake the photo.",
+      });
+      return;
     }
+
+    const [updated] = await db.update(scansTable)
+      .set({ status: "completed", extractedData: JSON.stringify(ocrResult!.fields), rawOcr: ocrResult!.rawOcr, confidence: ocrResult!.confidence })
+      .where(eq(scansTable.id, scan.id))
+      .returning();
+    res.status(201).json({
+      ...updated,
+      extractedData: ocrResult!.fields,
+      imageUrl: scanImageApiUrl(scan.id, true),
+    });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -78,6 +105,7 @@ router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequ
 });
 
 // GET /scans/:id/image — streams the stored card image (auth-protected)
+// MUST be declared before GET /scans/:id to avoid param-swallowing
 router.get("/scans/:id/image", async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));
@@ -110,7 +138,11 @@ router.get("/scans/:id", async (req: AuthRequest, res) => {
     const id = parseInt(String(req.params.id));
     const [scan] = await db.select().from(scansTable).where(eq(scansTable.id, id)).limit(1);
     if (!scan || !canAccessCompany(req.user, scan.companyId)) { res.status(404).json({ error: "Scan not found" }); return; }
-    res.json({ ...scan, extractedData: scan.extractedData ? JSON.parse(scan.extractedData) : null });
+    res.json({
+      ...scan,
+      extractedData: scan.extractedData ? JSON.parse(scan.extractedData) : null,
+      imageUrl: scanImageApiUrl(scan.id, scan.imageUrl !== null),
+    });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

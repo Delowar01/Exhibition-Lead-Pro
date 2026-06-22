@@ -1,4 +1,5 @@
 import type { Readable } from "stream";
+import sharp from "sharp";
 import { objectStorageClient } from "./objectStorage.js";
 
 function getBucketId(): string {
@@ -8,20 +9,30 @@ function getBucketId(): string {
 }
 
 /**
- * Upload a base64-encoded scan image to GCS.
- * Returns the GCS object name (relative key within the bucket).
+ * Decode a data-URL or raw base64 string and compress to JPEG ~80 quality.
+ * Returns { buffer, contentType }.
+ */
+async function decodeAndCompress(imageData: string): Promise<{ buffer: Buffer; contentType: string }> {
+  const base64 = imageData.startsWith("data:") ? imageData.split(",")[1] : imageData;
+  if (!base64) throw new Error("Invalid image data");
+  const raw = Buffer.from(base64, "base64");
+  const buffer = await sharp(raw).jpeg({ quality: 80, progressive: true }).toBuffer();
+  return { buffer, contentType: "image/jpeg" };
+}
+
+/**
+ * Upload a base64-encoded scan image to GCS after compressing to JPEG.
+ * Returns the GCS object name (internal storage key).
  */
 export async function uploadScanImage(
   scanId: number,
   companyId: number,
   imageData: string,
 ): Promise<string> {
-  const base64 = imageData.startsWith("data:") ? imageData.split(",")[1] : imageData;
-  if (!base64) throw new Error("Invalid image data for upload");
-  const buffer = Buffer.from(base64, "base64");
+  const { buffer, contentType } = await decodeAndCompress(imageData);
   const objectName = `scans/${companyId}/${scanId}.jpg`;
   const bucket = objectStorageClient.bucket(getBucketId());
-  await bucket.file(objectName).save(buffer, { contentType: "image/jpeg" });
+  await bucket.file(objectName).save(buffer, { contentType });
   return objectName;
 }
 

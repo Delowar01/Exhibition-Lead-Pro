@@ -883,7 +883,10 @@ export interface Scan {
   userId?: number | null;
   /** @nullable */
   contactId?: number | null;
-  /** @nullable */
+  /**
+     * API URL path for streaming the stored card image, e.g. /api/scans/{id}/image. Null if the image was not stored.
+     * @nullable
+     */
   imageUrl?: string | null;
   status: ScanStatus;
   extractedData?: ExtractedCardData;

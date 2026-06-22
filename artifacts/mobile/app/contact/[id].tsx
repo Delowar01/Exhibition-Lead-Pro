@@ -2,7 +2,7 @@ import { Feather } from "@/components/icons";
 import * as Contacts from "expo-contacts";
 import * as Haptics from "expo-haptics";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   Image,
@@ -16,6 +16,12 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -106,6 +112,80 @@ export default function ContactDetailScreen() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [schedule, setSchedule] = useState<"followup" | "meeting" | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
+
+  // Gesture viewer shared values (pinch-zoom + pan + double-tap reset)
+  const imgScale = useSharedValue(1);
+  const imgSavedScale = useSharedValue(1);
+  const imgX = useSharedValue(0);
+  const imgSavedX = useSharedValue(0);
+  const imgY = useSharedValue(0);
+  const imgSavedY = useSharedValue(0);
+
+  const imgAnimStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: imgScale.value },
+      { translateX: imgX.value },
+      { translateY: imgY.value },
+    ],
+  }));
+
+  const pinchGesture = Gesture.Pinch()
+    .onStart(() => {
+      imgSavedScale.value = imgScale.value;
+    })
+    .onUpdate((e) => {
+      imgScale.value = Math.max(0.5, Math.min(6, imgSavedScale.value * e.scale));
+    })
+    .onEnd(() => {
+      if (imgScale.value < 1) {
+        imgScale.value = withTiming(1);
+        imgX.value = withTiming(0);
+        imgY.value = withTiming(0);
+        imgSavedScale.value = 1;
+        imgSavedX.value = 0;
+        imgSavedY.value = 0;
+      }
+    });
+
+  const panGesture = Gesture.Pan()
+    .averageTouches(true)
+    .onStart(() => {
+      imgSavedX.value = imgX.value;
+      imgSavedY.value = imgY.value;
+    })
+    .onUpdate((e) => {
+      imgX.value = imgSavedX.value + e.translationX;
+      imgY.value = imgSavedY.value + e.translationY;
+    });
+
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      imgScale.value = withTiming(1);
+      imgX.value = withTiming(0);
+      imgY.value = withTiming(0);
+      imgSavedScale.value = 1;
+      imgSavedX.value = 0;
+      imgSavedY.value = 0;
+    });
+
+  const composedImageGesture = Gesture.Exclusive(
+    doubleTapGesture,
+    Gesture.Simultaneous(pinchGesture, panGesture),
+  );
+
+  useEffect(() => {
+    if (!imageModalOpen) {
+      imgScale.value = 1;
+      imgSavedScale.value = 1;
+      imgX.value = 0;
+      imgSavedX.value = 0;
+      imgY.value = 0;
+      imgSavedY.value = 0;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageModalOpen]);
+
   const usersQuery = useListUsers(
     { limit: 100 },
     { query: { enabled: assignOpen, queryKey: getListUsersQueryKey({ limit: 100 }) } },
@@ -663,7 +743,7 @@ export default function ContactDetailScreen() {
         </Pressable>
       </Modal>
 
-      {/* Full-screen card image viewer */}
+      {/* Full-screen card image viewer — pinch-to-zoom + pan + double-tap reset */}
       {(() => {
         const base = getBaseUrl();
         const uri = contact?.cardImageUrl && base ? `${base}${contact.cardImageUrl}` : null;
@@ -677,16 +757,15 @@ export default function ContactDetailScreen() {
             hardwareAccelerated
             onRequestClose={() => setImageModalOpen(false)}
           >
-            <Pressable
-              style={styles.imageViewerBackdrop}
-              onPress={() => setImageModalOpen(false)}
-            >
+            <View style={styles.imageViewerBackdrop}>
               {uri ? (
-                <Image
-                  source={{ uri, headers }}
-                  style={styles.imageViewerFull}
-                  resizeMode="contain"
-                />
+                <GestureDetector gesture={composedImageGesture}>
+                  <Animated.Image
+                    source={{ uri, headers }}
+                    style={[styles.imageViewerFull, imgAnimStyle]}
+                    resizeMode="contain"
+                  />
+                </GestureDetector>
               ) : null}
               <Pressable
                 style={[styles.imageViewerClose, { backgroundColor: colors.card }]}
@@ -695,7 +774,7 @@ export default function ContactDetailScreen() {
               >
                 <Feather name="x" size={20} color={colors.foreground} />
               </Pressable>
-            </Pressable>
+            </View>
           </Modal>
         );
       })()}

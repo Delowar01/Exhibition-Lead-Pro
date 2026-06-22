@@ -3619,6 +3619,83 @@ export function useGetScan<TData = Awaited<ReturnType<typeof getScan>>, TError =
 
 
 
+export const getGetScanImageUrl = (id: number,) => {
+
+
+
+
+  return `/api/scans/${id}/image`
+}
+
+/**
+ * @summary Stream the stored card image for a scan (auth-protected)
+ */
+export const getScanImage = async (id: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetScanImageUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetScanImageQueryKey = (id: number,) => {
+    return [
+    `/api/scans/${id}/image`
+    ] as const;
+    }
+
+
+export const getGetScanImageQueryOptions = <TData = Awaited<ReturnType<typeof getScanImage>>, TError = ErrorType<void>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getScanImage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetScanImageQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getScanImage>>> = ({ signal }) => getScanImage(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getScanImage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetScanImageQueryResult = NonNullable<Awaited<ReturnType<typeof getScanImage>>>
+export type GetScanImageQueryError = ErrorType<void>
+
+
+/**
+ * @summary Stream the stored card image for a scan (auth-protected)
+ */
+
+export function useGetScanImage<TData = Awaited<ReturnType<typeof getScanImage>>, TError = ErrorType<void>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getScanImage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetScanImageQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getGetCurrentSubscriptionUrl = () => {
 
 

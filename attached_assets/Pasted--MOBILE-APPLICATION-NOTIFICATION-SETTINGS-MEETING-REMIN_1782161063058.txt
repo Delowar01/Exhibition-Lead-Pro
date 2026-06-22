@@ -1,0 +1,197 @@
+# MOBILE APPLICATION – NOTIFICATION SETTINGS & MEETING REMINDERS
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION & BACKEND**
+
+This task enhances the notification system and makes all notification settings fully functional.
+
+---
+
+# CURRENT DESIGN
+
+The Settings page currently contains a **Notifications** section.
+
+At present:
+
+* Follow-Up notification can be enabled or disabled.
+* The notification system is not fully functional.
+* There is no Meeting reminder option.
+
+---
+
+# REQUIRED
+
+Implement a complete notification management system.
+
+All notification settings must be fully functional.
+
+Notifications should work even when the application is running in the background (subject to the operating system's notification permissions).
+
+---
+
+# 1. FOLLOW-UP NOTIFICATIONS
+
+Keep the existing setting:
+
+**Follow-Up Notifications**
+
+Options:
+
+* ON
+* OFF
+
+When enabled:
+
+* Notify the user when a Follow-Up is due.
+* Tapping the notification should open the corresponding Follow-Up or Contact.
+
+When disabled:
+
+* No Follow-Up notifications should be sent.
+
+---
+
+# 2. MEETING NOTIFICATIONS
+
+Add a new setting:
+
+**Meeting Reminders**
+
+Options:
+
+* ON
+* OFF
+
+Default:
+
+**ON**
+
+When enabled:
+
+Send a reminder notification **15 minutes before the scheduled meeting**.
+
+The notification should include:
+
+* Contact Name
+* Company Name
+* Meeting Type (Online / Physical / Phone Call)
+* Meeting Time
+
+Example:
+
+**Upcoming Meeting**
+
+"You have a meeting with Ahmed Ali (ABC Company) in 15 minutes."
+
+Tapping the notification should open the Meeting Details screen.
+
+---
+
+# 3. NOTIFICATION SETTINGS
+
+Update the Notifications section to include:
+
+* Follow-Up Notifications
+* Meeting Reminders
+
+Both settings should be independently configurable.
+
+Changing a setting should take effect immediately.
+
+---
+
+# 4. LOCAL NOTIFICATIONS
+
+Use local notifications for scheduled reminders.
+
+The application should automatically schedule, update, or cancel notifications when:
+
+* A Follow-Up is created.
+* A Follow-Up is edited.
+* A Follow-Up is deleted.
+* A Meeting is created.
+* A Meeting is rescheduled.
+* A Meeting is cancelled.
+* A Meeting is deleted.
+
+Old reminders must be removed automatically to avoid duplicate notifications.
+
+---
+
+# 5. BACKGROUND SUPPORT
+
+Notifications should continue to work when:
+
+* The application is in the background.
+* The device screen is locked.
+
+The application should request notification permission only when required and handle permission denial gracefully.
+
+---
+
+# 6. FUTURE READY
+
+Design the notification architecture so additional notification types can be added without redesign.
+
+Future notifications may include:
+
+* Task Assigned
+* Task Due
+* Lead Assigned
+* Event Reminder
+* Daily Summary
+* Weekly Summary
+* Pipeline Reminder
+* AI Suggested Follow-Up
+* Team Announcements
+
+---
+
+# 7. USER EXPERIENCE
+
+Notification settings should be simple and intuitive.
+
+Each setting should include:
+
+* Toggle Switch
+* Short description explaining its purpose
+
+Example:
+
+**Follow-Up Notifications**
+
+Receive reminders when your scheduled follow-ups are due.
+
+**Meeting Reminders**
+
+Receive a notification 15 minutes before your scheduled meetings.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Follow-Up notifications are fully functional.
+* Meeting reminder option added.
+* Meeting reminder triggers 15 minutes before the meeting.
+* Notification opens the correct Follow-Up or Meeting when tapped.
+* Notifications update automatically after edits.
+* Notifications are removed after deletion or cancellation.
+* Works correctly on Android and iPhone.
+* Notification settings persist after app restart.
+* No duplicate notifications.
+* No regressions introduced.
+
+---
+
+# IMPORTANT
+
+Implement a reliable notification scheduling system rather than simple timers.
+
+Notifications must remain accurate after application restarts, device reboots (where supported by the platform), and schedule changes.
+
+Before marking this task complete, verify notification behavior on native Android and iPhone builds using real scheduled Follow-Ups and Meetings.
