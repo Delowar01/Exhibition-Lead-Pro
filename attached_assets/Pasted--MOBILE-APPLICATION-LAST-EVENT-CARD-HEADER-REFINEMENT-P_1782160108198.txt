@@ -1,0 +1,146 @@
+# MOBILE APPLICATION – LAST EVENT CARD HEADER REFINEMENT
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is a UI/UX refinement only.
+
+No backend changes are required.
+
+---
+
+# CURRENT DESIGN
+
+The Filter button is currently positioned as a floating button inside the Last Event card.
+
+Although technically inside the card, it still feels visually separated from the event information.
+
+It looks like an independent floating action instead of being part of the Event Header.
+
+---
+
+# REQUIRED DESIGN
+
+The Filter button should become part of the **Last Event Header**.
+
+Use the Event Name ("Leap 2026") as the design reference.
+
+The Filter button should be aligned on the same horizontal line as the Event Name.
+
+Example Layout:
+
+---
+
+📊  Leap 2026                         [Filter]
+
+```
+ 6 Leads • 0 Won • 0% Conv.
+```
+
+---
+
+The Filter button should feel like an action for the selected event, not a floating button.
+
+---
+
+# REMOVE FLOATING DESIGN
+
+Remove the current floating placement.
+
+Do not leave large empty space between the event information and the filter button.
+
+The header should feel compact and balanced.
+
+---
+
+# FILTER BUTTON
+
+Reuse the existing Contacts filter icon.
+
+Keep:
+
+* Same icon
+* Same size
+* Same colors
+* Same touch feedback
+
+Only change its position.
+
+---
+
+# EVENT INFORMATION
+
+The following should remain unchanged:
+
+* Event Icon
+* Event Name
+* Lead Count
+* Won Count
+* Conversion Rate
+
+Only adjust the layout.
+
+---
+
+# NAVIGATION
+
+The navigation arrow (>) should remain vertically centered on the far right side of the card.
+
+Tapping:
+
+* Filter button → Opens Last Event Filter.
+* Event card or Arrow → Opens Last Event Report.
+
+Both actions must remain independent.
+
+---
+
+# SPACING
+
+Optimize spacing so the header feels like a single component.
+
+Avoid large empty areas.
+
+Everything should align consistently with the rest of the application.
+
+---
+
+# RESPONSIVE DESIGN
+
+The layout must work correctly on:
+
+* Android
+* iPhone
+* Small screens
+* Large screens
+
+The Filter button must never overlap:
+
+* Event Name
+* Event Statistics
+* Navigation Arrow
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Filter button integrated into the Event Header.
+* Filter button aligned with the Event Name.
+* Floating appearance removed.
+* Event Header feels like a single unified component.
+* Navigation arrow remains separate.
+* Responsive on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# DESIGN GOAL
+
+The Last Event card should look like a premium dashboard component where the Filter button is clearly associated with the displayed event.
+
+The filter should feel like an action for **"Leap 2026"**, not an independent floating button.

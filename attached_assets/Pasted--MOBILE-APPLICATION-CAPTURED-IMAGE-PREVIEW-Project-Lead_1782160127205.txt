@@ -1,0 +1,200 @@
+# MOBILE APPLICATION – CAPTURED IMAGE PREVIEW
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION & BACKEND**
+
+This enhancement applies to both the Mobile Application and the backend database.
+
+---
+
+# OBJECTIVE
+
+Store the original captured image for every image-based lead capture and allow users to preview it later from the Contact Details screen.
+
+This feature is intended for:
+
+* OCR verification
+* Manual validation
+* Future AI improvements
+* Quality assurance
+* Audit trail
+
+---
+
+# SUPPORTED CAPTURE METHODS
+
+The **Captured Image Preview** should be available **ONLY** for the following capture methods:
+
+* Business Card
+* Email Signature
+
+The option should **NOT** appear for:
+
+* QR Code / LinkedIn
+* NFC Capture
+* Manual Entry
+
+because these capture methods do not generate a captured image.
+
+---
+
+# CONTACT DETAILS
+
+## New Section
+
+Add a new section inside the Contact Details screen.
+
+Section Title:
+
+**Captured Image**
+
+Display this section near the OCR or Lead Information area.
+
+---
+
+## Image Preview
+
+Display a thumbnail preview of the original captured image.
+
+The thumbnail should maintain the correct aspect ratio.
+
+If no image exists, hide the entire section.
+
+---
+
+## Preview Actions
+
+When the user taps the thumbnail:
+
+Open the image in full-screen preview.
+
+Provide the following actions:
+
+* Zoom In
+* Zoom Out
+* Pinch to Zoom
+* Pan
+* Rotate (optional)
+* Close
+
+The preview should feel like a native image viewer.
+
+---
+
+# IMAGE STORAGE
+
+## Backend
+
+Store the original captured image for every:
+
+* Business Card Capture
+* Email Signature Capture
+
+The image must be linked to the contact record.
+
+Do not store images inside the contact JSON.
+
+Store them using the application's file storage strategy and save only the image reference/path in the database.
+
+This design should support:
+
+* Local storage (development)
+* Cloud storage (production)
+* CDN integration (future)
+
+without requiring database redesign.
+
+---
+
+# IMAGE QUALITY
+
+Store an optimized high-quality version.
+
+Requirements:
+
+* Preserve OCR readability.
+* Optimize file size.
+* Avoid excessive compression.
+* Support future AI reprocessing.
+
+Do not store low-resolution thumbnails as the master image.
+
+Generate thumbnails separately if needed.
+
+---
+
+# SECURITY
+
+Captured images contain personal information.
+
+Requirements:
+
+* Only authenticated users with permission can view the image.
+* Respect company isolation (multi-tenant security).
+* Users must not access images belonging to another company.
+* Image URLs should not be publicly accessible.
+
+---
+
+# FUTURE READY
+
+Design the image storage architecture to support future features without redesign.
+
+Future features may include:
+
+* OCR Reprocess
+* AI Re-extraction
+* OCR Version Comparison
+* Download Original Image
+* Image Annotation
+* Image Quality Analysis
+* Duplicate Image Detection
+* Image Retention Policies
+
+---
+
+# CONTACT DETAILS UI
+
+For supported capture methods:
+
+Display:
+
+**Captured Image**
+
+[Thumbnail]
+
+Tap to Preview
+
+For unsupported capture methods:
+
+Do not display the Captured Image section.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Original image stored for every Business Card capture.
+* Original image stored for every Email Signature capture.
+* Images linked to the correct contact.
+* "Captured Image" section appears only for supported capture methods.
+* Full-screen preview opens correctly.
+* Zoom and pinch gestures work smoothly.
+* Images are stored securely.
+* Multi-tenant security enforced.
+* No performance degradation.
+* Fully functional on Android and iPhone.
+
+---
+
+# IMPORTANT
+
+This feature is intended to preserve the original source image for verification and future processing.
+
+The stored image should always remain available unless the contact is permanently deleted according to the application's data retention policy.
+
+Do not overwrite or discard the original captured image after OCR processing.

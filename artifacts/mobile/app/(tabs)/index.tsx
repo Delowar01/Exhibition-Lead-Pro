@@ -484,11 +484,45 @@ export default function HomeScreen() {
                 <Feather name="bar-chart-2" size={20} color="#FFFFFF" />
               </View>
 
-              {/* Center: name + stats */}
+              {/* Center: header row (name + filter btn) + stats */}
               <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={[styles.eventName, { textAlign }]}>
-                  {selectedEvent.eventName}
-                </Text>
+                <View
+                  style={{
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Text numberOfLines={1} style={[styles.eventName, { flex: 1, textAlign }]}>
+                    {selectedEvent.eventName}
+                  </Text>
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setFilterOpen(true);
+                    }}
+                    hitSlop={8}
+                    style={[
+                      styles.eventFilterBtn,
+                      {
+                        backgroundColor:
+                          activeDashFilters > 0 ? colors.primary : "rgba(255,255,255,0.14)",
+                        borderColor:
+                          activeDashFilters > 0 ? colors.primary : "rgba(255,255,255,0.35)",
+                        borderRadius: colors.radius,
+                      },
+                    ]}
+                  >
+                    <Feather name="sliders" size={16} color="#FFFFFF" />
+                    {activeDashFilters > 0 ? (
+                      <View style={[styles.filterCount, { backgroundColor: "#FFFFFF" }]}>
+                        <Text style={[styles.filterCountText, { color: colors.primary }]}>
+                          {activeDashFilters}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                </View>
                 <Text style={[styles.eventMeta, { textAlign }]}>
                   {eventReport
                     ? [
@@ -520,40 +554,12 @@ export default function HomeScreen() {
                 </Text>
               </View>
 
-              {/* Right column: filter btn (top) + nav arrow (bottom) */}
-              <View style={styles.eventCardRight}>
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    setFilterOpen(true);
-                  }}
-                  hitSlop={8}
-                  style={[
-                    styles.eventFilterBtn,
-                    {
-                      backgroundColor:
-                        activeDashFilters > 0 ? colors.primary : "rgba(255,255,255,0.14)",
-                      borderColor:
-                        activeDashFilters > 0 ? colors.primary : "rgba(255,255,255,0.35)",
-                      borderRadius: colors.radius,
-                    },
-                  ]}
-                >
-                  <Feather name="sliders" size={16} color="#FFFFFF" />
-                  {activeDashFilters > 0 ? (
-                    <View style={[styles.filterCount, { backgroundColor: "#FFFFFF" }]}>
-                      <Text style={[styles.filterCountText, { color: colors.primary }]}>
-                        {activeDashFilters}
-                      </Text>
-                    </View>
-                  ) : null}
-                </Pressable>
-                <Feather
-                  name={isRTL ? "chevron-left" : "chevron-right"}
-                  size={20}
-                  color="rgba(255,255,255,0.7)"
-                />
-              </View>
+              {/* Far-right nav arrow — vertically centered */}
+              <Feather
+                name={isRTL ? "chevron-left" : "chevron-right"}
+                size={20}
+                color="rgba(255,255,255,0.7)"
+              />
             </Pressable>
           </>
         ) : null}
