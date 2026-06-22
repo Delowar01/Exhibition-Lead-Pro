@@ -40,6 +40,11 @@ import {
   useUpdateContact,
 } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSettings } from "@/contexts/SettingsContext";
+import {
+  scheduleFollowUpReminder,
+  scheduleMeetingReminder,
+} from "@/lib/notifications";
 
 import { DateTimeField } from "@/components/DateTimeField";
 import {
@@ -103,6 +108,7 @@ export default function ContactDetailScreen() {
 
   const query = useGetContact(contactId);
   const { user, token } = useAuth();
+  const settings = useSettings();
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
   const historyQuery = useGetContactStatusHistory(contactId);
@@ -790,7 +796,7 @@ export default function ContactDetailScreen() {
           if (Platform.OS !== "web")
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           if (schedule === "followup") {
-            await createFollowUp.mutateAsync({
+            const created = await createFollowUp.mutateAsync({
               data: {
                 contactId: contact.id,
                 scheduledDate: date,
@@ -798,8 +804,11 @@ export default function ContactDetailScreen() {
                 notes: notes || null,
               },
             });
+            if (settings.followUpNotifications) {
+              void scheduleFollowUpReminder(created);
+            }
           } else {
-            await createMeeting.mutateAsync({
+            const created = await createMeeting.mutateAsync({
               data: {
                 contactId: contact.id,
                 meetingDate: date,
@@ -808,6 +817,9 @@ export default function ContactDetailScreen() {
                 notes: notes || null,
               },
             });
+            if (settings.meetingReminders) {
+              void scheduleMeetingReminder(created);
+            }
           }
           setSchedule(null);
           query.refetch();

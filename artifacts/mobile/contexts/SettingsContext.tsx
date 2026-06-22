@@ -40,7 +40,8 @@ export const DEFAULT_CONTACT_FILTERS: ContactFilters = {
 export interface AppSettings {
   theme: ThemePref;
   captureMode: CaptureModePref;
-  notifications: boolean;
+  followUpNotifications: boolean;
+  meetingReminders: boolean;
   language: LanguagePref;
   country: CountryCode;
   biometricEnabled: boolean;
@@ -52,7 +53,8 @@ export interface AppSettings {
 const DEFAULTS: AppSettings = {
   theme: "system",
   captureMode: "single",
-  notifications: true,
+  followUpNotifications: true,
+  meetingReminders: true,
   language: "en",
   country: DEFAULT_COUNTRY,
   biometricEnabled: false,
@@ -65,7 +67,8 @@ interface SettingsContextValue extends AppSettings {
   isLoaded: boolean;
   setTheme: (value: ThemePref) => void;
   setCaptureMode: (value: CaptureModePref) => void;
-  setNotifications: (value: boolean) => void;
+  setFollowUpNotifications: (value: boolean) => void;
+  setMeetingReminders: (value: boolean) => void;
   setLanguage: (value: LanguagePref) => void;
   setCountry: (value: CountryCode) => void;
   setBiometricEnabled: (value: boolean) => void;
@@ -82,7 +85,8 @@ const SettingsContext = createContext<SettingsContextValue>({
   isLoaded: true,
   setTheme: () => {},
   setCaptureMode: () => {},
-  setNotifications: () => {},
+  setFollowUpNotifications: () => {},
+  setMeetingReminders: () => {},
   setLanguage: () => {},
   setCountry: () => {},
   setBiometricEnabled: () => {},
@@ -101,8 +105,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
         if (raw) {
           try {
-            const parsed = JSON.parse(raw) as Partial<AppSettings>;
-            setSettings({ ...DEFAULTS, ...parsed });
+            const parsed = JSON.parse(raw) as Partial<AppSettings> & { notifications?: boolean };
+            const merged: AppSettings = { ...DEFAULTS, ...parsed };
+            // Migrate from single `notifications` flag to two separate keys.
+            // If the old key is present but the new keys are absent, carry the
+            // legacy value forward so existing users keep their preference.
+            const legacy = parsed.notifications;
+            if (legacy !== undefined) {
+              if (parsed.followUpNotifications === undefined) merged.followUpNotifications = legacy;
+              if (parsed.meetingReminders === undefined) merged.meetingReminders = legacy;
+            }
+            setSettings(merged);
           } catch {
             // keep defaults
           }
@@ -139,7 +152,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     isLoaded,
     setTheme: (theme) => patch({ theme }),
     setCaptureMode: (captureMode) => patch({ captureMode }),
-    setNotifications: (notifications) => patch({ notifications }),
+    setFollowUpNotifications: (followUpNotifications) => patch({ followUpNotifications }),
+    setMeetingReminders: (meetingReminders) => patch({ meetingReminders }),
     setLanguage: (language) => patch({ language }),
     setCountry: (country) => patch({ country }),
     setBiometricEnabled: (biometricEnabled) => patch({ biometricEnabled }),

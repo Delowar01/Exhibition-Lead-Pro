@@ -22,6 +22,12 @@ import {
   useUpdateMeeting,
 } from "@workspace/api-client-react";
 
+import { useSettings } from "@/contexts/SettingsContext";
+import {
+  cancelMeetingReminder,
+  scheduleMeetingReminder,
+} from "@/lib/notifications";
+
 import { DateTimeField } from "@/components/DateTimeField";
 import {
   Avatar,
@@ -87,6 +93,7 @@ export default function MeetingsScreen() {
 
   const query = useListMeetings();
   const updateMeeting = useUpdateMeeting();
+  const settings = useSettings();
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -224,6 +231,19 @@ export default function MeetingsScreen() {
               ...(status === "rescheduled" ? { meetingDate: date, meetingTime: time } : {}),
             },
           });
+          // Update local notification for this meeting.
+          if (status === "completed" || status === "cancelled") {
+            void cancelMeetingReminder(active!.id);
+          } else if (status === "rescheduled" && active && settings.meetingReminders) {
+            // Server resets status to "scheduled" after reschedule; mirror that
+            // locally so scheduleMeetingReminder's guard passes.
+            void scheduleMeetingReminder({
+              ...active,
+              status: "scheduled",
+              meetingDate: date ?? active.meetingDate,
+              meetingTime: time ?? active.meetingTime,
+            });
+          }
           setActive(null);
           query.refetch();
         }}

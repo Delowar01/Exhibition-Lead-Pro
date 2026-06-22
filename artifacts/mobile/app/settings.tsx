@@ -379,17 +379,36 @@ export default function SettingsScreen() {
           <View style={[styles.switchRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
-                {t("followups.title")}
+                {t("settings.followUpNotifications")}
               </Text>
               <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
-                {t("settings.notificationsDesc")}
+                {t("settings.followUpNotificationsDesc")}
               </Text>
             </View>
             <Switch
-              value={settings.notifications}
+              value={settings.followUpNotifications}
               onValueChange={(v) => {
                 haptic();
-                settings.setNotifications(v);
+                settings.setFollowUpNotifications(v);
+              }}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+          <View style={[styles.switchRow, { marginTop: 12, flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
+                {t("settings.meetingReminders")}
+              </Text>
+              <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
+                {t("settings.meetingRemindersDesc")}
+              </Text>
+            </View>
+            <Switch
+              value={settings.meetingReminders}
+              onValueChange={(v) => {
+                haptic();
+                settings.setMeetingReminders(v);
               }}
               trackColor={{ false: colors.border, true: colors.primary }}
               thumbColor="#FFFFFF"

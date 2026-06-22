@@ -1,0 +1,227 @@
+# MOBILE APPLICATION – LAST EVENT REPORT UI & ANALYTICS REDESIGN
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is a UI/UX redesign of the **Last Event Report** screen.
+
+This screen is accessed through:
+
+Dashboard
+
+↓
+
+Last Event Card (Example: Leap 2026)
+
+↓
+
+Tap Event
+
+The goal is to improve the layout, reduce unnecessary scrolling, and present more meaningful event analytics.
+
+---
+
+# 1. KPI DASHBOARD OPTIMIZATION
+
+## Current Design
+
+The Event Report currently displays 8 KPI cards.
+
+Although useful, the cards occupy too much vertical space.
+
+---
+
+## Required
+
+Keep all **8 KPI cards**, but redesign them into a more compact layout.
+
+Display them as:
+
+### Row 1
+
+* Total Leads
+* Hot
+* Warm
+* Cold
+
+### Row 2
+
+* Meetings
+* Follow-Ups
+* Won
+* Lost
+
+The layout should be a **4 × 2 responsive grid**.
+
+---
+
+## UI Requirements
+
+Reduce:
+
+* Card height
+* Vertical padding
+* Internal spacing
+* Margin between rows
+
+Maintain:
+
+* Icon
+* KPI value
+* KPI label
+
+The dashboard should occupy significantly less vertical space while remaining easy to read.
+
+No KPI should lose functionality.
+
+All KPI cards must remain clickable.
+
+---
+
+# 2. REMOVE QUALIFICATION DISTRIBUTION
+
+Remove the entire section:
+
+**Qualification Distribution**
+
+This information is already reflected in the KPI cards and does not provide sufficient additional value.
+
+---
+
+# 3. REMOVE STATUS DISTRIBUTION
+
+Remove the entire section:
+
+**Status Distribution**
+
+This section also duplicates information already available elsewhere.
+
+---
+
+# 4. ADD MOST CAPTURED EMPLOYEE
+
+Replace the removed sections with a new analytics card.
+
+## Title
+
+**Top Performer**
+
+Display the user who captured the highest number of leads for the selected event.
+
+Display:
+
+* Profile Photo
+* Full Name
+* Job Title
+* Total Leads Captured
+* Hot Leads
+* Won Opportunities
+* Conversion Rate
+
+If no profile image exists:
+
+Display the user's initials avatar.
+
+---
+
+## Interaction
+
+The Top Performer card should be clickable.
+
+When tapped:
+
+Open the Team Performance screen filtered for:
+
+* Selected Event
+* Selected Employee
+
+---
+
+# 5. REDESIGN "LEADS BY DAY"
+
+## Current Design
+
+The current chart is too basic and does not match the premium design of the application.
+
+---
+
+## Required
+
+Create a modern analytics card.
+
+The design should feel similar to professional CRM dashboards.
+
+Include:
+
+* Interactive bar or line chart
+* Daily lead trend
+* Highest capture day highlighted
+* Daily totals
+* Smooth animations
+* Clean typography
+* Premium spacing
+
+Provide quick visual insight into lead activity during the event.
+
+---
+
+## Optional Enhancements
+
+If available, also display:
+
+* Peak Capture Day
+* Average Leads per Day
+* Total Event Days
+
+without overcrowding the layout.
+
+---
+
+# 6. OVERALL PAGE OPTIMIZATION
+
+Reduce unnecessary vertical spacing throughout the page.
+
+The objective is to allow users to see more analytics without excessive scrolling.
+
+Maintain:
+
+* Consistent spacing
+* Premium design
+* Touch-friendly controls
+* Excellent readability
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* KPI cards redesigned into a compact 4 × 2 responsive grid.
+* Overall KPI section occupies less vertical space.
+* Qualification Distribution removed.
+* Status Distribution removed.
+* Top Performer card added.
+* Top Performer displays live event data.
+* Top Performer card is clickable.
+* Leads by Day redesigned with a modern analytics style.
+* Overall page requires less scrolling.
+* Responsive on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# DESIGN GOAL
+
+The Last Event Report should resemble a modern executive dashboard rather than a simple statistics page.
+
+Users should immediately see:
+
+* Event performance
+* Top performer
+* Lead trends
+* Key KPIs
+
+with minimal scrolling, clean spacing, and a premium business-focused user experience consistent with Lead Capture Pro.
