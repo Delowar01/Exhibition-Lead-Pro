@@ -109,7 +109,6 @@ export default function EventReportScreen() {
     datePreset !== "all" || assignedToId != null || status != null || temperature != null;
 
   function resetFilters() {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
     setDatePreset("all");
     setAssignedToId(null);
     setStatus(null);
@@ -117,7 +116,6 @@ export default function EventReportScreen() {
   }
 
   function tap(fn: () => void) {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
     fn();
   }
 
@@ -370,7 +368,6 @@ export default function EventReportScreen() {
                       key={m.userId}
                       performer={m}
                       onPress={() => {
-                        if (Platform.OS !== "web") Haptics.selectionAsync();
                         router.push(`/event/${eventId}/member/${m.userId}`);
                       }}
                     />

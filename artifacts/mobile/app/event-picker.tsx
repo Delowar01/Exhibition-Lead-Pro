@@ -58,7 +58,6 @@ export default function EventPickerScreen() {
   const events = query.data?.events ?? [];
 
   function select(ev: Event) {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
     setActiveEvent(ev.id, ev.name);
     router.back();
   }
@@ -173,7 +172,6 @@ export default function EventPickerScreen() {
         >
           <Pressable
             onPress={() => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               setCreating(true);
             }}
             style={({ pressed }) => [

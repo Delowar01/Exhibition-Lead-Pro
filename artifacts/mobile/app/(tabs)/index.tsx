@@ -121,7 +121,6 @@ export default function HomeScreen() {
   )[0];
 
   function openContactsWith(patch: Partial<typeof DEFAULT_CONTACT_FILTERS>) {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
     setContactFilters({ ...DEFAULT_CONTACT_FILTERS, ...patch });
     router.push("/(tabs)/contacts");
   }
@@ -161,7 +160,6 @@ export default function HomeScreen() {
       icon: "clock",
       color: "#06B6D4",
       onPress: () => {
-        if (Platform.OS !== "web") Haptics.selectionAsync();
         router.push({ pathname: "/(tabs)/followups", params: { bucket: "due" } });
       },
     },
@@ -172,7 +170,6 @@ export default function HomeScreen() {
       icon: "calendar",
       color: "#8B5CF6",
       onPress: () => {
-        if (Platform.OS !== "web") Haptics.selectionAsync();
         router.push("/meetings");
       },
     },
@@ -191,7 +188,6 @@ export default function HomeScreen() {
       icon: "dollar-sign",
       color: colors.success,
       onPress: () => {
-        if (Platform.OS !== "web") Haptics.selectionAsync();
         router.push("/leads");
       },
     },
@@ -280,7 +276,6 @@ export default function HomeScreen() {
         {!isOnline || queuedCount > 0 ? (
           <Pressable
             onPress={() => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               router.push("/sync");
             }}
             style={({ pressed }) => [
@@ -383,7 +378,6 @@ export default function HomeScreen() {
             </Text>
             <Pressable
               onPress={() => {
-                if (Platform.OS !== "web") Haptics.selectionAsync();
                 router.push(`/event/${lastEvent.eventId}/report`);
               }}
               style={({ pressed }) => [
@@ -473,7 +467,6 @@ export default function HomeScreen() {
             <Pressable
               key={a.key}
               onPress={() => {
-                if (Platform.OS !== "web") Haptics.selectionAsync();
                 a.onPress();
               }}
               style={({ pressed }) => [

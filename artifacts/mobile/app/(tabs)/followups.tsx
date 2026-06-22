@@ -198,7 +198,6 @@ export default function FollowUpsScreen() {
         {tab === "upcoming" ? (
           <Pressable
             onPress={() => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               setActive(f);
             }}
             style={({ pressed }) => [
@@ -226,7 +225,6 @@ export default function FollowUpsScreen() {
               <Pressable
                 key={tabItem.key}
                 onPress={() => {
-                  if (Platform.OS !== "web") Haptics.selectionAsync();
                   setTab(tabItem.key);
                 }}
                 style={[
@@ -249,7 +247,6 @@ export default function FollowUpsScreen() {
         {dueMode && tab === "upcoming" ? (
           <Pressable
             onPress={() => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               router.setParams({ bucket: "" });
             }}
             style={[

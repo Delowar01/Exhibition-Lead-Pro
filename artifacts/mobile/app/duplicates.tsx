@@ -83,7 +83,6 @@ function LinkedDuplicateCard({
   function handleDelete(dup: Contact) {
     const run = async () => {
       try {
-        if (Platform.OS !== "web") Haptics.selectionAsync();
         await del.mutateAsync({ id: dup.id });
         if (Platform.OS !== "web")
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -220,7 +219,6 @@ function DuplicateCard({
 
     const run = async () => {
       try {
-        if (Platform.OS !== "web") Haptics.selectionAsync();
         await merge.mutateAsync({ data: { primaryId, duplicateIds } });
         if (Platform.OS !== "web")
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

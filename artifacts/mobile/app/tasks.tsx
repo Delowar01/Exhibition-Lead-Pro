@@ -128,7 +128,6 @@ export default function TasksScreen() {
       <Pressable
         key={task.id}
         onPress={() => {
-          if (Platform.OS !== "web") Haptics.selectionAsync();
           setActive(task);
         }}
         style={({ pressed }) => [
@@ -180,7 +179,6 @@ export default function TasksScreen() {
           </View>
           <Pressable
             onPress={() => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               setCreateOpen(true);
             }}
             style={[styles.addBtn, { backgroundColor: colors.primary }]}
@@ -197,7 +195,6 @@ export default function TasksScreen() {
                 <Pressable
                   key={s}
                   onPress={() => {
-                    if (Platform.OS !== "web") Haptics.selectionAsync();
                     setScope(s);
                   }}
                   style={[styles.scopeTab, isActive && { backgroundColor: colors.card, borderRadius: colors.radius - 2 }]}
@@ -266,7 +263,6 @@ export default function TasksScreen() {
         pending={updateTask.isPending || deleteTask.isPending}
         onClose={() => setActive(null)}
         onStatus={async (s) => {
-          if (Platform.OS !== "web") Haptics.selectionAsync();
           await updateTask.mutateAsync({ id: active!.id, data: { status: s } });
           setActive(null);
           query.refetch();

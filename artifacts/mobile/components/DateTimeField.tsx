@@ -119,7 +119,6 @@ export function DateTimeField({
   const todayStr = dateToStr(new Date());
 
   function haptic() {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
   }
 
   function commitTime(h12: number, min: number, per: "AM" | "PM") {

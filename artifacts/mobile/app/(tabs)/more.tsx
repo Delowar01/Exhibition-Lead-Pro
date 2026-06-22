@@ -60,7 +60,6 @@ export default function MoreScreen() {
 
   function onAvatarPress() {
     if (updateProfile.isPending) return;
-    if (Platform.OS !== "web") Haptics.selectionAsync();
     if (Platform.OS === "web") {
       void applyAvatar("library");
       return;
@@ -262,7 +261,6 @@ export default function MoreScreen() {
             <Pressable
               key={item.key}
               onPress={() => {
-                if (Platform.OS !== "web") Haptics.selectionAsync();
                 item.onPress();
               }}
               style={({ pressed }) => [

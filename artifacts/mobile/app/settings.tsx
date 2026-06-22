@@ -89,7 +89,6 @@ export default function SettingsScreen() {
   }, []);
 
   function haptic() {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
   }
 
   async function toggleBiometric(value: boolean) {

@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -122,6 +123,9 @@ export default function ContactsScreen() {
 
   const contacts = query.data?.contacts ?? [];
 
+  const { width: windowWidth } = useWindowDimensions();
+  const cardWidth = (windowWidth - 40 - 30) / 4;
+
   const counts = useMemo(() => {
     const all = countsQuery.data?.contacts ?? [];
     return {
@@ -129,6 +133,10 @@ export default function ContactsScreen() {
       new: all.filter((c) => c.status === "new").length,
       contacted: all.filter((c) => c.status === "contacted").length,
       hot: all.filter((c) => c.leadTemperature === "hot").length,
+      warm: all.filter((c) => c.leadTemperature === "warm").length,
+      cold: all.filter((c) => c.leadTemperature === "cold").length,
+      won: all.filter((c) => c.status === "won").length,
+      lost: all.filter((c) => c.status === "lost").length,
     };
   }, [countsQuery.data]);
 
@@ -138,13 +146,12 @@ export default function ContactsScreen() {
     setContactFilters({ ...filters, ...patch });
   }
 
-  function toggleWidget(kind: "total" | "new" | "contacted" | "hot") {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
+  function toggleWidget(kind: "total" | "new" | "contacted" | "hot" | "warm" | "cold" | "won" | "lost") {
     if (kind === "total") {
       patchFilters({ status: null, temperature: null });
-    } else if (kind === "hot") {
+    } else if (kind === "hot" || kind === "warm" || kind === "cold") {
       patchFilters({
-        temperature: filters.temperature === "hot" ? null : "hot",
+        temperature: filters.temperature === kind ? null : kind,
         status: null,
       });
     } else {
@@ -156,7 +163,7 @@ export default function ContactsScreen() {
   }
 
   const widgets: {
-    key: "total" | "new" | "contacted" | "hot";
+    key: "total" | "new" | "contacted" | "hot" | "warm" | "cold" | "won" | "lost";
     label: string;
     value: number;
     color: string;
@@ -194,6 +201,38 @@ export default function ContactsScreen() {
       color: LEAD_TEMPERATURE_COLORS.hot,
       icon: "trending-up",
       active: filters.temperature === "hot",
+    },
+    {
+      key: "warm",
+      label: t("leads.warm"),
+      value: counts.warm,
+      color: LEAD_TEMPERATURE_COLORS.warm,
+      icon: "thermometer",
+      active: filters.temperature === "warm",
+    },
+    {
+      key: "cold",
+      label: t("leads.cold"),
+      value: counts.cold,
+      color: LEAD_TEMPERATURE_COLORS.cold,
+      icon: "wind",
+      active: filters.temperature === "cold",
+    },
+    {
+      key: "won",
+      label: t("leads.stages.won"),
+      value: counts.won,
+      color: (CONTACT_STATUS_COLORS as Record<string, string>).won ?? "#22C55E",
+      icon: "award",
+      active: filters.status === "won",
+    },
+    {
+      key: "lost",
+      label: t("leads.stages.lost"),
+      value: counts.lost,
+      color: (CONTACT_STATUS_COLORS as Record<string, string>).lost ?? "#EF4444",
+      icon: "x-circle",
+      active: filters.status === "lost",
     },
   ];
 
@@ -255,12 +294,8 @@ export default function ContactsScreen() {
           {t("contacts.title")}
         </Text>
 
-        {/* Dashboard widgets */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 10, paddingVertical: 12 }}
-        >
+        {/* Dashboard widgets — 2-row 4-column grid */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingVertical: 12 }}>
           {widgets.map((w) => (
             <Pressable
               key={w.key}
@@ -268,6 +303,7 @@ export default function ContactsScreen() {
               style={[
                 styles.widget,
                 {
+                  width: cardWidth,
                   backgroundColor: w.active ? w.color : colors.card,
                   borderColor: w.active ? w.color : colors.border,
                   borderRadius: colors.radius + 2,
@@ -298,7 +334,7 @@ export default function ContactsScreen() {
               </Text>
             </Pressable>
           ))}
-        </ScrollView>
+        </View>
 
         {/* Search + filter */}
         <View style={{ flexDirection: isRTL ? "row-reverse" : "row", gap: 10 }}>
@@ -330,7 +366,6 @@ export default function ContactsScreen() {
           </View>
           <Pressable
             onPress={() => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               setSheetOpen(true);
             }}
             style={[
@@ -597,8 +632,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT.bold,
   },
   widget: {
-    minWidth: 92,
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
     paddingVertical: 12,
     borderWidth: 1,
     alignItems: "flex-start",

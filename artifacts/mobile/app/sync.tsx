@@ -110,7 +110,6 @@ export default function SyncScreen() {
             {isFailed ? (
               <Pressable
                 onPress={() => {
-                  if (Platform.OS !== "web") Haptics.selectionAsync();
                   retryItem(item.id);
                 }}
                 hitSlop={8}
@@ -121,7 +120,6 @@ export default function SyncScreen() {
             ) : null}
             <Pressable
               onPress={() => {
-                if (Platform.OS !== "web") Haptics.selectionAsync();
                 removeItem(item.id);
               }}
               hitSlop={8}
@@ -205,7 +203,6 @@ export default function SyncScreen() {
           <Switch
             value={manualOffline}
             onValueChange={(v) => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               setManualOffline(v);
             }}
             trackColor={{ false: colors.border, true: colors.primary }}

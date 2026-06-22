@@ -135,7 +135,6 @@ export default function MeetingsScreen() {
         {tab === "upcoming" ? (
           <Pressable
             onPress={() => {
-              if (Platform.OS !== "web") Haptics.selectionAsync();
               setActive(m);
             }}
             hitSlop={8}
@@ -172,7 +171,6 @@ export default function MeetingsScreen() {
               <Pressable
                 key={tabItem.key}
                 onPress={() => {
-                  if (Platform.OS !== "web") Haptics.selectionAsync();
                   setTab(tabItem.key);
                 }}
                 style={[styles.tab, isActive && { backgroundColor: colors.card, borderRadius: colors.radius - 2 }]}

@@ -138,7 +138,6 @@ export default function CaptureScreen() {
         </Text>
         <Pressable
           onPress={() => {
-            if (Platform.OS !== "web") Haptics.selectionAsync();
             router.push("/event-picker");
           }}
           style={({ pressed }) => [
@@ -186,7 +185,6 @@ export default function CaptureScreen() {
               <Pressable
                 key={m.key}
                 onPress={() => {
-                  if (Platform.OS !== "web") Haptics.selectionAsync();
                   setMode(m.key);
                 }}
                 style={[

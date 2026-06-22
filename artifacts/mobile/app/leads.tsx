@@ -125,9 +125,6 @@ export default function LeadsScreen() {
                   <Pressable
                     key={s.stage}
                     onPress={() => {
-                      if (Platform.OS !== "web") {
-                        Haptics.selectionAsync();
-                      }
                       setActiveStage(s.stage);
                     }}
                     style={[
