@@ -1,0 +1,444 @@
+# Complete End-to-End Functional Audit & Bug Fix (Production Readiness)
+
+You are performing a complete production QA audit of the entire Lead Capture Pro application.
+
+Do NOT assume anything is working.
+
+Your job is to systematically test every feature, identify every bug, determine the root cause, fix it properly, and verify the fix.
+
+Do not stop until the entire application behaves like a production-ready SaaS product.
+
+---
+
+# General Requirements
+
+1. Test every screen.
+2. Test every API.
+3. Test every database operation.
+4. Test every navigation flow.
+5. Test every mutation.
+6. Test every React Query cache.
+7. Test every context provider.
+8. Test every offline synchronization flow.
+9. Test every dashboard calculation.
+10. Test every notification.
+11. Test every list refresh.
+12. Test every CRUD operation.
+13. Test every loading state.
+14. Test every error state.
+15. Test every success state.
+16. Test every empty state.
+
+Never assume something works because the code looks correct.
+
+---
+
+# Authentication
+
+Test:
+
+* Login
+* Logout
+* Session restore
+* Token refresh
+* Invalid credentials
+* Network failure
+* Unauthorized responses
+* Expired token
+
+Verify navigation and authentication state update immediately.
+
+---
+
+# Dashboard
+
+Verify every statistic updates immediately after:
+
+* New contact
+* OCR import
+* NFC import
+* Manual contact
+* Contact edit
+* Contact delete
+* Follow-up creation
+* Follow-up completion
+* Follow-up deletion
+* AI enrichment
+* Contact merge
+
+Dashboard must never require restarting the application.
+
+---
+
+# Contacts
+
+Test:
+
+Create
+
+Read
+
+Update
+
+Delete
+
+Search
+
+Filter
+
+Sort
+
+Favorites
+
+Tags
+
+Bulk operations
+
+Verify every list refreshes immediately.
+
+---
+
+# Follow-ups
+
+Test:
+
+Create
+
+Edit
+
+Delete
+
+Complete
+
+Reschedule
+
+Reminder notifications
+
+Filtering
+
+Sorting
+
+Searching
+
+Verify:
+
+* Newly created follow-up appears instantly.
+* Completed follow-up disappears (or moves) instantly.
+* Dashboard counters update instantly.
+* Notifications update instantly.
+* Calendar updates instantly.
+
+Application restart must never be required.
+
+---
+
+# OCR
+
+Test complete workflow:
+
+Camera
+
+Gallery
+
+OCR
+
+AI parsing
+
+Save
+
+Edit
+
+Duplicate prevention
+
+Error handling
+
+Dashboard update
+
+Contact list update
+
+---
+
+# NFC
+
+Test:
+
+NFC availability
+
+NFC enabled
+
+Card detection
+
+NDEF parsing
+
+Non-NDEF cards
+
+Error handling
+
+Success flow
+
+Contact creation
+
+Dashboard update
+
+Follow-up creation
+
+Logging
+
+---
+
+# AI Features
+
+Test:
+
+Contact extraction
+
+Data normalization
+
+Duplicate detection
+
+Company detection
+
+Email validation
+
+Phone validation
+
+Address parsing
+
+Notes generation
+
+---
+
+# Offline Mode
+
+Test:
+
+Offline creation
+
+Offline edits
+
+Offline delete
+
+Reconnect
+
+Conflict resolution
+
+Synchronization
+
+Cache invalidation
+
+---
+
+# React Query Audit
+
+Audit every query and mutation.
+
+Ensure every successful mutation performs the appropriate:
+
+* invalidateQueries()
+* refetchQueries()
+* setQueryData()
+* optimistic updates
+
+Remove stale cache behaviour.
+
+No screen should require manual refresh or application restart.
+
+---
+
+# Navigation Audit
+
+Verify every screen refreshes correctly when focused.
+
+Use:
+
+* useFocusEffect()
+* focus listeners
+* route listeners
+
+where appropriate.
+
+---
+
+# State Management Audit
+
+Audit:
+
+Auth Context
+
+Card Context
+
+Offline Context
+
+Notification Context
+
+Settings Context
+
+Ensure no provider keeps stale state.
+
+---
+
+# API Audit
+
+Verify:
+
+Every endpoint
+
+Every response
+
+Every error
+
+Every retry
+
+Timeouts
+
+Unauthorized
+
+Forbidden
+
+Validation
+
+Logging
+
+---
+
+# Database Audit
+
+Verify:
+
+All writes succeed.
+
+All reads return updated data.
+
+No stale queries.
+
+No duplicate records.
+
+No orphan records.
+
+---
+
+# UI Audit
+
+Check:
+
+Loading indicators
+
+Skeletons
+
+Animations
+
+Success messages
+
+Error messages
+
+Empty states
+
+Disabled buttons
+
+Dark mode consistency
+
+Premium appearance
+
+---
+
+# Performance Audit
+
+Identify:
+
+Duplicate requests
+
+Infinite renders
+
+Unnecessary re-renders
+
+Memory leaks
+
+Slow queries
+
+Large bundle imports
+
+Heavy components
+
+Slow animations
+
+Optimize where appropriate.
+
+---
+
+# Logging
+
+Add development logging for:
+
+Navigation
+
+Query invalidation
+
+Cache updates
+
+API requests
+
+API responses
+
+Database writes
+
+Database reads
+
+NFC
+
+OCR
+
+Authentication
+
+Synchronization
+
+Dashboard refresh
+
+Follow-up refresh
+
+---
+
+# Testing
+
+Simulate a complete user journey:
+
+Login
+
+Create contact manually
+
+OCR import
+
+NFC import
+
+Edit contact
+
+Create follow-up
+
+Complete follow-up
+
+Delete follow-up
+
+Delete contact
+
+Logout
+
+Login again
+
+Everything must work without restarting the application.
+
+---
+
+# Final Deliverables
+
+Provide:
+
+1. Every bug found.
+2. Root cause of each bug.
+3. Files modified.
+4. Why each fix was necessary.
+5. Verification performed.
+6. Features tested.
+7. Remaining issues (if any).
+8. Performance improvements.
+9. Production readiness assessment.
+
+Do not stop until the application is stable, fully synchronized, responsive, and production-ready.

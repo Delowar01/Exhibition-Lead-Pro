@@ -6,7 +6,11 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { Feather } from "@/components/icons";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MutationCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
@@ -54,7 +58,28 @@ if (apiUrl) {
 }
 setAuthTokenGetter(() => getCachedToken());
 
-const queryClient = new QueryClient();
+// Centralized cache freshness: after ANY successful mutation, mark all queries
+// stale. Active (mounted) queries refetch immediately; inactive ones refetch on
+// next mount. This guarantees the dashboard, lists, counters, and detail screens
+// stay in sync across the app without per-call-site invalidation or app restart.
+// Mirrors the offline-sync invalidation so online and offline behave identically.
+const queryClient: QueryClient = new QueryClient({
+  mutationCache: new MutationCache({
+    onSuccess: (_data, _vars, _ctx, mutation) => {
+      if (__DEV__) {
+        const key = mutation.options.mutationKey?.join("/") ?? "mutation";
+        console.log(`[CSP/cache] ${key} success → invalidating all queries`);
+      }
+      void queryClient.invalidateQueries();
+    },
+    onError: (error, _vars, _ctx, mutation) => {
+      if (__DEV__) {
+        const key = mutation.options.mutationKey?.join("/") ?? "mutation";
+        console.warn(`[CSP/cache] ${key} error`, error);
+      }
+    },
+  }),
+});
 
 // On web there is no hardware/native back gesture, so provide an explicit
 // header back affordance. On native, leaving headerLeft unset preserves the
