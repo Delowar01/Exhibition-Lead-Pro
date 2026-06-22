@@ -600,6 +600,13 @@ export interface MergeRequest {
   duplicateIds: number[];
 }
 
+export interface MakeOriginalRequest {
+  /** The duplicate contact to promote as the new original */
+  duplicateId: number;
+  /** The current original contact in the linked group */
+  groupOriginalId: number;
+}
+
 export type LeadStage = typeof LeadStage[keyof typeof LeadStage];
 
 

@@ -688,6 +688,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/Contact"
 
+  /contacts/make-original:
+    post:
+      operationId: makeContactOriginal
+      tags: [contacts]
+      summary: Promote a duplicate contact to be the original in its linked group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MakeOriginalRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /contacts/{id}/enrich:
     post:
       operationId: enrichContact
@@ -2211,6 +2242,17 @@ components:
           type: array
           items:
             type: integer
+
+    MakeOriginalRequest:
+      type: object
+      required: [duplicateId, groupOriginalId]
+      properties:
+        duplicateId:
+          type: integer
+          description: The duplicate contact to promote as the new original
+        groupOriginalId:
+          type: integer
+          description: The current original contact in the linked group
 
     # LEADS
     Lead:

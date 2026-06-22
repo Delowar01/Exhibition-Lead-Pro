@@ -90,6 +90,7 @@ export * from './listTasksParams';
 export * from './listTasksScope';
 export * from './listUsersParams';
 export * from './loginInput';
+export * from './makeOriginalRequest';
 export * from './meeting';
 export * from './meetingInput';
 export * from './meetingInputType';

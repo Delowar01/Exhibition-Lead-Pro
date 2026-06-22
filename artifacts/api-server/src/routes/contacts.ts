@@ -313,6 +313,67 @@ function isEmpty(v: unknown): boolean {
   return v == null || (typeof v === "string" && v.trim() === "");
 }
 
+// POST /contacts/make-original — promote a linked duplicate to be the original
+router.post("/contacts/make-original", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
+  try {
+    const { duplicateId, groupOriginalId } = req.body as { duplicateId?: number; groupOriginalId?: number };
+    if (typeof duplicateId !== "number" || typeof groupOriginalId !== "number") {
+      res.status(400).json({ error: "duplicateId and groupOriginalId are required integers" });
+      return;
+    }
+    if (duplicateId === groupOriginalId) {
+      res.status(400).json({ error: "duplicateId and groupOriginalId must be different" });
+      return;
+    }
+
+    // Load both contacts
+    const [dup] = await db.select().from(contactsTable).where(eq(contactsTable.id, duplicateId)).limit(1);
+    const [orig] = await db.select().from(contactsTable).where(eq(contactsTable.id, groupOriginalId)).limit(1);
+
+    if (!dup || !canAccessCompany(req.user, dup.companyId)) {
+      res.status(404).json({ error: "Duplicate contact not found" });
+      return;
+    }
+    if (!orig || !canAccessCompany(req.user, orig.companyId)) {
+      res.status(404).json({ error: "Original contact not found" });
+      return;
+    }
+    if (dup.companyId !== orig.companyId) {
+      res.status(400).json({ error: "Both contacts must belong to the same company" });
+      return;
+    }
+    // The duplicate must actually point at the original
+    if (dup.duplicateOfId !== groupOriginalId) {
+      res.status(400).json({ error: "The specified contact is not a duplicate of the given original" });
+      return;
+    }
+
+    // Perform the swap in a transaction:
+    // 1. Promote the dup: clear its duplicateOfId (it becomes the new original)
+    // 2. Demote the old original: set its duplicateOfId to the new original
+    // 3. Re-point any other duplicates of the old original to the new original
+    await db.transaction(async (tx) => {
+      // Re-point all siblings (other duplicates of the old original) to the new original
+      await tx.update(contactsTable)
+        .set({ duplicateOfId: duplicateId, updatedAt: new Date() })
+        .where(and(eq(contactsTable.duplicateOfId, groupOriginalId), ne(contactsTable.id, duplicateId)));
+      // Promote the duplicate to original
+      await tx.update(contactsTable)
+        .set({ duplicateOfId: null, updatedAt: new Date() })
+        .where(eq(contactsTable.id, duplicateId));
+      // Demote the old original
+      await tx.update(contactsTable)
+        .set({ duplicateOfId: duplicateId, updatedAt: new Date() })
+        .where(eq(contactsTable.id, groupOriginalId));
+    });
+
+    res.json({ success: true, message: "Contact promoted to original" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // POST /contacts/merge — consolidate duplicates into a primary contact
 router.post("/contacts/merge", requirePermission("contacts", "delete"), async (req: AuthRequest, res) => {
   try {

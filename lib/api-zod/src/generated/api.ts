@@ -860,6 +860,20 @@ export const MergeContactsResponse = zod.object({
 
 
 /**
+ * @summary Promote a duplicate contact to be the original in its linked group
+ */
+export const MakeContactOriginalBody = zod.object({
+  "duplicateId": zod.number().describe('The duplicate contact to promote as the new original'),
+  "groupOriginalId": zod.number().describe('The current original contact in the linked group')
+})
+
+export const MakeContactOriginalResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
  * @summary Run AI enrichment on a contact (industry, seniority, summary, talking points)
  */
 export const EnrichContactParams = zod.object({

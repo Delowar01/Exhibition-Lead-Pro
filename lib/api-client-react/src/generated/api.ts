@@ -67,6 +67,7 @@ import type {
   ListTasksParams,
   ListUsersParams,
   LoginInput,
+  MakeOriginalRequest,
   Meeting,
   MeetingInput,
   MeetingList,
@@ -2413,6 +2414,77 @@ export const useMergeContacts = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getMergeContactsMutationOptions(options));
+    }
+
+export const getMakeContactOriginalUrl = () => {
+
+
+
+
+  return `/api/contacts/make-original`
+}
+
+/**
+ * @summary Promote a duplicate contact to be the original in its linked group
+ */
+export const makeContactOriginal = async (makeOriginalRequest: MakeOriginalRequest, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getMakeContactOriginalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      makeOriginalRequest,)
+  }
+);}
+
+
+
+
+export const getMakeContactOriginalMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof makeContactOriginal>>, TError,{data: BodyType<MakeOriginalRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof makeContactOriginal>>, TError,{data: BodyType<MakeOriginalRequest>}, TContext> => {
+
+const mutationKey = ['makeContactOriginal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof makeContactOriginal>>, {data: BodyType<MakeOriginalRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  makeContactOriginal(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MakeContactOriginalMutationResult = NonNullable<Awaited<ReturnType<typeof makeContactOriginal>>>
+    export type MakeContactOriginalMutationBody = BodyType<MakeOriginalRequest>
+    export type MakeContactOriginalMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Promote a duplicate contact to be the original in its linked group
+ */
+export const useMakeContactOriginal = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof makeContactOriginal>>, TError,{data: BodyType<MakeOriginalRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof makeContactOriginal>>,
+        TError,
+        {data: BodyType<MakeOriginalRequest>},
+        TContext
+      > => {
+      return useMutation(getMakeContactOriginalMutationOptions(options));
     }
 
 export const getEnrichContactUrl = (id: number,) => {
