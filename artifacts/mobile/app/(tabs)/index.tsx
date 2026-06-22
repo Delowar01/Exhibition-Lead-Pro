@@ -389,7 +389,7 @@ export default function HomeScreen() {
 
         {/* Metrics grid */}
         {query.isLoading ? (
-          <View style={{ height: 240 }}>
+          <View style={{ height: 180 }}>
             <LoadingState />
           </View>
         ) : (
@@ -409,7 +409,7 @@ export default function HomeScreen() {
                 ]}
               >
                 <View style={[styles.metricIcon, { backgroundColor: m.color + "1A" }]}>
-                  <Feather name={m.icon} size={16} color={m.color} />
+                  <Feather name={m.icon} size={14} color={m.color} />
                 </View>
                 <Text style={[styles.metricValue, { color: colors.foreground, textAlign }]}>{m.value}</Text>
                 <Text style={[styles.metricLabel, { color: colors.mutedForeground, textAlign }]}>{m.label}</Text>
@@ -673,28 +673,30 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 9,
   },
   metricCard: {
     width: "47.5%",
     flexGrow: 1,
-    padding: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 11,
     borderWidth: 1,
+    minHeight: 44,
   },
   metricIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 7,
   },
   metricValue: {
-    fontSize: 24,
+    fontSize: 19,
     fontFamily: FONT.bold,
   },
   metricLabel: {
-    fontSize: 12.5,
+    fontSize: 10,
     fontFamily: FONT.medium,
     marginTop: 2,
   },

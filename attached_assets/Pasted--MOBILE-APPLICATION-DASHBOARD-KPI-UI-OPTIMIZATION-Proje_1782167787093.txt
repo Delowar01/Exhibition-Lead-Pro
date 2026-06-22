@@ -1,0 +1,132 @@
+# MOBILE APPLICATION – DASHBOARD KPI UI OPTIMIZATION
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is a UI/UX refinement only.
+
+No backend or business logic changes are required.
+
+---
+
+# OBJECTIVE
+
+The Dashboard now contains more KPI widgets than before.
+
+To maintain a premium and professional appearance, optimize the KPI cards so they occupy less space while remaining clear, touch-friendly, and easy to read.
+
+The objective is to display more information **above the fold** without making the dashboard feel crowded.
+
+---
+
+# REQUIRED
+
+Redesign all Dashboard KPI widgets to be more compact.
+
+Do **not** remove any KPI.
+
+Instead, optimize the visual design.
+
+---
+
+# UI IMPROVEMENTS
+
+Reduce the following by approximately **20–25%**:
+
+* Card height
+* Vertical padding
+* Horizontal padding
+* Margin between cards
+* Icon size (approximately 16–18px)
+* Label font size (approximately 10–11px)
+
+Keep the KPI value (number) bold and prominent so it remains the primary focus.
+
+---
+
+# LAYOUT
+
+Maintain the existing responsive layout.
+
+Do not introduce horizontal scrolling.
+
+Ensure consistent spacing and alignment between all KPI cards.
+
+The dashboard should appear balanced and uncluttered.
+
+---
+
+# TOUCH EXPERIENCE
+
+Although the cards become visually smaller, maintain an appropriate touch target for usability.
+
+Cards must remain easy to tap on both Android and iPhone.
+
+---
+
+# VISUAL DESIGN
+
+The KPI cards should have a modern CRM appearance.
+
+Maintain:
+
+* Rounded corners
+* Consistent shadows
+* Clean typography
+* Proper spacing
+* Balanced proportions
+
+Avoid making the cards feel compressed or crowded.
+
+The goal is **compact**, not **cramped**.
+
+---
+
+# INTERACTION
+
+All KPI cards must continue to:
+
+* Navigate correctly
+* Apply filters correctly
+* Refresh data correctly
+
+No existing functionality should change.
+
+---
+
+# RESPONSIVE DESIGN
+
+Verify the layout on:
+
+* Android phones
+* iPhones
+* Small screens
+* Large screens
+
+The dashboard should automatically adapt while maintaining a premium appearance.
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* All Dashboard KPI cards are approximately 20–25% smaller.
+* More dashboard content is visible without scrolling.
+* Dashboard looks cleaner and more professional.
+* KPI values remain easy to read.
+* Cards remain fully clickable.
+* Responsive on Android and iPhone.
+* No overlapping UI elements.
+* No regressions introduced.
+
+---
+
+# DESIGN GOAL
+
+The Dashboard should feel like a modern enterprise CRM.
+
+Users should immediately see the most important KPIs and more dashboard content on the first screen, with a clean, premium, and business-focused interface that reflects the quality of Lead Capture Pro.
