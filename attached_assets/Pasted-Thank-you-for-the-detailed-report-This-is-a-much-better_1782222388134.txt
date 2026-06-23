@@ -1,0 +1,71 @@
+Thank you for the detailed report.
+
+This is a much better optimization than the previous implementation. Capturing directly at a lower native resolution instead of capturing at full sensor resolution is the correct approach for an OCR-based application.
+
+Before I rebuild another APK, I would like to verify a few additional points to ensure we have optimized the entire capture pipeline.
+
+### 1. Verify the Image Processing Pipeline
+
+Please confirm whether the following operations are still executed synchronously on the UI thread:
+
+* Image resize
+* JPEG compression
+* File preparation
+* Upload preparation
+
+If any of these operations are blocking the UI, please move them to a background thread so the user interface remains responsive during processing.
+
+The camera preview and loading animation should remain smooth while these tasks are running.
+
+---
+
+### 2. Optimize Specifically for OCR
+
+This application is designed for exhibition lead capture, where speed is more important than preserving photo-quality images.
+
+Please determine the **lowest image resolution and JPEG quality that still provides consistently accurate OCR results**.
+
+If OCR accuracy is maintained, I prefer a smaller image that processes faster.
+
+The priority should be:
+
+* Fast capture
+* Fast upload
+* Fast OCR
+* Accurate extraction
+
+rather than unnecessarily high image quality.
+
+---
+
+### 3. Review the Entire Capture Pipeline
+
+Please profile and document the time spent in each stage:
+
+* Camera capture
+* Image resize
+* Image compression
+* File write
+* Upload
+* OCR processing
+* Contact creation
+* Duplicate detection
+* Background AI scoring
+
+The goal is to identify whether there are any remaining bottlenecks outside the OCR service itself.
+
+---
+
+### 4. Production Performance Target
+
+Our target remains:
+
+* Total Business Card capture to saved contact: **3–4 seconds or less**
+* UI should remain responsive throughout the process.
+* Users should never feel the application has frozen.
+
+---
+
+Once these additional optimizations have been reviewed, I will rebuild the next native Android APK and perform another round of physical-device testing.
+
+If the application consistently achieves the target performance on a real device, we can consider Module 2 complete.

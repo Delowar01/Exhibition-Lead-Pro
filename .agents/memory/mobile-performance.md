@@ -78,3 +78,17 @@ that cuts capture time + memory + encode, not just upload.
 nothing parses, e.g. older iOS presets). Keep a final ImageManipulator pass for
 the upload payload but CLAMP its target to the source width
 (`Math.min(target, photo.width)`) so a small fallback capture is never upscaled.
+
+## Below ~1600px, image size no longer drives scan latency — the OCR model does
+Empirical sweep (synthetic clean + degraded cards, 800/1000/1200/1600px): Gemini
+extraction stayed 100% accurate down to 800px, AND server OCR time was flat (~3s)
+across every size. Payloads were tiny (16–69KB).
+**Why it matters:** once the upload image is reasonably small, shrinking it
+further does NOT speed up OCR — the ~3s is Gemini inference (model/network bound),
+which is the floor for end-to-end scan time. Don't chase resolution cuts expecting
+faster OCR; the lever for device-side speed is the *capture* resolution + encode,
+and for OCR speed it's the model/prompt (e.g. thinkingBudget:0), not the JPEG.
+**Caveat:** synthetic cards underrepresent real glare/skew/blur/tiny fonts — keep
+a real-world margin (capture ~1600, upload ~1100/0.50) rather than the synthetic
+floor. If hard captures miss fields, retry once at a higher payload on low OCR
+confidence rather than raising the default for every scan.

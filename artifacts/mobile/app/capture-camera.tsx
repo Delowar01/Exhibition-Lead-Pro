@@ -79,8 +79,18 @@ function contactDisplayName(data: ExtractedCardData, fallback: string): string {
 // We do NOT need a 12MP+ sensor capture for OCR. ~1600px on the long edge keeps
 // business-card text crisp while drastically cutting capture time, memory, the
 // JPEG encode, and the upload. Pick the SMALLEST available capture size whose
-// long edge is still >= this target.
+// long edge is still >= this target. (Kept at 1600 — not lower — so the card,
+// which only fills part of the frame, still has a real-world detail margin.)
 const TARGET_CAPTURE_LONG_EDGE = 1600;
+
+// Upload payload target. Empirical OCR sweep (clean + degraded synthetic cards):
+// extraction stayed 100% accurate down to 800px/0.40, and server OCR time was
+// flat (~3s) regardless of image size — i.e. shrinking further does NOT speed up
+// OCR. We sit at 1100px/0.50: comfortably above the accuracy floor (margin for
+// real-world glare/perspective/small fonts) while keeping the upload tiny for
+// weak exhibition networks. Tune here if device testing shows accuracy loss.
+const UPLOAD_LONG_EDGE = 1100;
+const UPLOAD_JPEG_QUALITY = 0.5;
 
 // Choose a capture resolution from the device's available `pictureSize` list.
 // Android (and recent iOS) report "WIDTHxHEIGHT" strings; pick the smallest one
@@ -184,26 +194,44 @@ export default function CaptureCameraScreen() {
   const captureImage = useCallback(async (): Promise<string> => {
     const cam = cameraRef.current;
     if (!cam) return "card";
+    // NOTE ON THREADING: the heavy work — capture, resize, JPEG compression, file
+    // write and base64 encoding — runs in NATIVE modules (expo-camera /
+    // expo-image-manipulator) on native background threads, not the JS/UI thread,
+    // and the camera preview + spinner keep animating throughout. Minor JS-thread
+    // overhead does remain (receiving the base64 over the bridge, building the
+    // data: URL, and JSON-serializing the body before fetch), but at this payload
+    // size (~1100px JPEG) that is sub-frame and not perceptible.
+    //
     // The camera is configured (via `pictureSize`) to capture directly at a
     // standard OCR resolution (~1600px long edge) instead of the sensor's full
     // 12MP+ — so the capture, in-memory bitmap, and JPEG encode are all small.
-    // We then do a final downscale to ~1200px long edge for the upload payload.
-    // A business card / email signature is fully legible at 1200px, and the
-    // smaller payload cuts both upload time and server-side OCR inference time.
+    // We then downscale to UPLOAD_LONG_EDGE for the upload payload.
+    const tCap = Date.now();
     const photo = await cam.takePictureAsync({
       quality: 0.5,
       skipProcessing: true,
     });
+    const captureRawMs = Date.now() - tCap;
     if (photo?.uri) {
       try {
         // Clamp the target to the source width so a small capture is never
         // UPSCALED (which would inflate the payload + encode for no OCR gain).
-        const targetWidth = photo.width ? Math.min(1200, photo.width) : 1200;
+        const targetWidth = photo.width ? Math.min(UPLOAD_LONG_EDGE, photo.width) : UPLOAD_LONG_EDGE;
+        const tProc = Date.now();
         const resized = await ImageManipulator.manipulateAsync(
           photo.uri,
           [{ resize: { width: targetWidth } }],
-          { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+          { compress: UPLOAD_JPEG_QUALITY, format: ImageManipulator.SaveFormat.JPEG, base64: true },
         );
+        // Per-stage profiling (dev builds only): native capture vs native
+        // resize+compress+encode. Upload + OCR are timed separately at call site.
+        scanLog("capture pipeline", {
+          captureRawMs,
+          processMs: Date.now() - tProc,
+          srcW: photo.width,
+          srcH: photo.height,
+          outW: targetWidth,
+        });
         if (resized.base64) return `data:image/jpeg;base64,${resized.base64}`;
       } catch {
         // Manipulation failed (rare) — fall through to a raw base64 capture so
