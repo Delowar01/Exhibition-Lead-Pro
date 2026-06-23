@@ -1,8 +1,8 @@
 import { Feather } from "@/components/icons";
+import { Image } from "expo-image";
 import React from "react";
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -157,6 +157,10 @@ export function Avatar({
       <Image
         source={{ uri }}
         style={{ width: size, height: size, borderRadius: size / 2 }}
+        cachePolicy="memory-disk"
+        recyclingKey={uri}
+        transition={150}
+        contentFit="cover"
       />
     );
   }

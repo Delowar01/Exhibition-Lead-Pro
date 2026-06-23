@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useColorScheme } from "react-native";
 
 import colors from "@/constants/colors";
@@ -16,7 +17,12 @@ export function useColors() {
   const { theme } = useSettings();
 
   const effective = theme === "system" ? deviceScheme : theme;
-  const palette = effective === "dark" ? colors.dark : colors.light;
 
-  return { ...palette, radius: colors.radius };
+  // Memoize so consumers receive a STABLE object reference across renders while
+  // the scheme is unchanged. useColors is called in almost every component, so a
+  // fresh object every render defeats React.memo and forces avoidable re-renders.
+  return useMemo(() => {
+    const palette = effective === "dark" ? colors.dark : colors.light;
+    return { ...palette, radius: colors.radius };
+  }, [effective]);
 }

@@ -37,6 +37,55 @@ import { formatCurrency } from "@/lib/currency";
 
 const ALL_STAGE = "all";
 
+type ColorTokens = ReturnType<typeof useColors>;
+type TFn = (key: string, options?: Record<string, unknown>) => string;
+
+// Memoized pipeline row — re-renders only when its lead (or theme) changes.
+const LeadRow = React.memo(function LeadRow({
+  item,
+  colors,
+  isRTL,
+  textAlign,
+  t,
+  currencyCode,
+  onPress,
+}: {
+  item: Lead;
+  colors: ColorTokens;
+  isRTL: boolean;
+  textAlign: "left" | "right";
+  t: TFn;
+  currencyCode: string;
+  onPress: (id: number) => void;
+}) {
+  const color = LEAD_STAGE_COLORS[item.stage] ?? colors.primary;
+  return (
+    <Pressable
+      onPress={() => onPress(item.id)}
+      style={({ pressed }) => [
+        styles.leadCard,
+        { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row", opacity: pressed ? 0.75 : 1 },
+      ]}
+    >
+      <Avatar name={item.contactName ?? "?"} color={color} size={40} />
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={[styles.leadName, { color: colors.foreground, textAlign }]}>
+          {item.contactName ?? t("common.unnamedLead")}
+        </Text>
+        <Text numberOfLines={1} style={[styles.leadSub, { color: colors.mutedForeground, textAlign }]}>
+          {item.contactCompany ?? item.contactEmail ?? t("common.noCompany")}
+        </Text>
+      </View>
+      {item.value != null && Number(item.value) > 0 ? (
+        <Text style={[styles.leadValue, { color: colors.success }]}>
+          {formatCurrency(Number(item.value), item.currency ?? currencyCode)}
+        </Text>
+      ) : null}
+      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+    </Pressable>
+  );
+});
+
 export default function LeadsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -114,37 +163,27 @@ export default function LeadsScreen() {
     return [allChip, ...stages];
   }, [stages, totalCount, totalValue]);
 
-  function renderLead({ item }: { item: Lead }) {
-    const color = LEAD_STAGE_COLORS[item.stage] ?? colors.primary;
-    return (
-      <Pressable
-        onPress={() => {
-          if (Platform.OS !== "web") Haptics.selectionAsync();
-          router.push(`/pipeline/${item.id}`);
-        }}
-        style={({ pressed }) => [
-          styles.leadCard,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row", opacity: pressed ? 0.75 : 1 },
-        ]}
-      >
-        <Avatar name={item.contactName ?? "?"} color={color} size={40} />
-        <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.leadName, { color: colors.foreground, textAlign }]}>
-            {item.contactName ?? t("common.unnamedLead")}
-          </Text>
-          <Text numberOfLines={1} style={[styles.leadSub, { color: colors.mutedForeground, textAlign }]}>
-            {item.contactCompany ?? item.contactEmail ?? t("common.noCompany")}
-          </Text>
-        </View>
-        {item.value != null && Number(item.value) > 0 ? (
-          <Text style={[styles.leadValue, { color: colors.success }]}>
-            {formatCurrency(Number(item.value), item.currency ?? currencyCode)}
-          </Text>
-        ) : null}
-        <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-      </Pressable>
-    );
-  }
+  const onLeadPress = React.useCallback(
+    (id: number) => {
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+      router.push(`/pipeline/${id}`);
+    },
+    [router],
+  );
+  const renderLead = React.useCallback(
+    ({ item }: { item: Lead }) => (
+      <LeadRow
+        item={item}
+        colors={colors}
+        isRTL={isRTL}
+        textAlign={textAlign}
+        t={t}
+        currencyCode={currencyCode}
+        onPress={onLeadPress}
+      />
+    ),
+    [colors, isRTL, textAlign, t, currencyCode, onLeadPress],
+  );
 
   const activeColor =
     activeStage === ALL_STAGE ? colors.primary : (LEAD_STAGE_COLORS[activeStage] ?? colors.primary);
@@ -253,6 +292,10 @@ export default function LeadsScreen() {
             data={currentLeads}
             keyExtractor={(item) => String(item.id)}
             renderItem={renderLead}
+            removeClippedSubviews
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={11}
             contentContainerStyle={{
               padding: 20,
               paddingBottom: insets.bottom + 120,

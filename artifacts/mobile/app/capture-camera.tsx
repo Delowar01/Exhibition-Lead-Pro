@@ -138,9 +138,11 @@ export default function CaptureCameraScreen() {
     const cam = cameraRef.current;
     if (!cam) return "card";
     // Capture at full sensor resolution (fast — no base64 encode yet), then
-    // downscale to ~1600px before encoding. A business card is fully legible at
-    // 1600px, and shrinking the payload cuts BOTH the upload time and the
-    // server-side OCR inference time — the dominant costs in scan latency.
+    // downscale to ~1200px before encoding. A business card / email signature is
+    // fully legible at 1200px, and shrinking the payload cuts BOTH the upload
+    // time and the server-side OCR inference time — the dominant on-device costs
+    // in scan latency. (Server OCR itself is ~3-4s; the rest is client encode +
+    // upload, which this minimizes.)
     const photo = await cam.takePictureAsync({
       quality: 0.5,
       skipProcessing: true,
@@ -149,8 +151,8 @@ export default function CaptureCameraScreen() {
       try {
         const resized = await ImageManipulator.manipulateAsync(
           photo.uri,
-          [{ resize: { width: 1600 } }],
-          { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+          [{ resize: { width: 1200 } }],
+          { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true },
         );
         if (resized.base64) return `data:image/jpeg;base64,${resized.base64}`;
       } catch {

@@ -39,3 +39,28 @@ QueryClient had no defaults, so every screen mount showed a spinner + refetch. A
 `defaultOptions.queries`: `staleTime 30s`, `gcTime 5m`, `refetchOnWindowFocus false`,
 `retry 1`. The post-mutation blanket invalidation still forces fresh data where it
 matters, so cached navigation is safe.
+
+## The scan/save critical path matters more than raw AI speed
+Measured server-side (live API, demo tenant): OCR `POST /scans` is ~3–4s and
+`POST /contacts` was <1s — the server was NOT the source of the reported "30s".
+The avoidable latency was **inline AI on the request path**: `scoreLead`
+(20s *timeout ceiling*, ~0.5s typical) was awaited BEFORE `POST /contacts`
+responded, and on-device the rest is client image encode + upload.
+**Rule:** never await a Gemini call on a create/save response. Insert the row with
+null score fields, respond immediately, then score in a fire-and-forget IIFE that
+updates the row. Keep duplicate detection inline (it sets `duplicateOfId`, which
+decides immediate list visibility). Image downscale is now ~1200px (was 1600).
+**Why:** "the contact must appear immediately" — a 20s timeout on a shared
+endpoint is a latency landmine even if the call is usually fast.
+
+## Deferred (DB-side) scores do NOT trigger React Query invalidation
+When scoring moves to a background task that updates the DB directly, there is no
+client mutation, so the global `MutationCache.onSuccess -> invalidateQueries()`
+never fires for it. The score surfaces only on the next natural refetch, and with
+`staleTime: 30s` + `refetchOnWindowFocus:false` that can be delayed.
+**How to apply:** this is acceptable for non-essential fields (score/temperature).
+If a deferred field must appear promptly, add a *targeted* delayed refetch — do not
+remove or weaken the global invalidation (it's load-bearing).
+**Also:** background row updates must re-scope the UPDATE (id + `duplicateOfId IS
+NULL`) and gate side effects (hot-lead push) on a returned row, or a deleted/merged
+contact fires a stale notification.

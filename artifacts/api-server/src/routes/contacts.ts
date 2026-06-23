@@ -86,25 +86,12 @@ router.post("/contacts", requirePermission("contacts", "create"), async (req: Au
     const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
     const { arabicName } = req.body;
 
-    // AI lead qualification (resilient: contact still saves if AI is unavailable)
-    let leadScore: number | null = null;
-    let leadTemperature: string | null = null;
-    let aiReasoning: string | null = null;
-    try {
-      let eventName: string | null = null;
-      if (eventId) {
-        const [ev] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, eventId)).limit(1);
-        eventName = ev?.name ?? null;
-      }
-      const score = await scoreLead({ firstName, lastName, jobTitle, contactCompany, email, mobile, website, linkedin, country, notes }, eventName);
-      leadScore = score.score;
-      leadTemperature = score.temperature;
-      aiReasoning = score.reasoning;
-    } catch (aiErr) {
-      logAiError("lead-scoring", aiErr);
-    }
-
-    const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore, leadTemperature, aiReasoning, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
+    // AI lead qualification is deferred to a background task (see below) so the
+    // contact appears IMMEDIATELY. The score/temperature/reasoning start null and
+    // are filled in asynchronously; the mobile client refetches and shows them
+    // within a second or two. Blocking the response on the Gemini call was the
+    // single biggest avoidable latency in the save path.
+    const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
     // Record the initial lead status in the append-only history.
     void db.insert(contactStatusHistoryTable).values({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: req.user!.id }).catch(() => {});
 
@@ -130,18 +117,47 @@ router.post("/contacts", requirePermission("contacts", "create"), async (req: Au
       // Non-fatal: duplicate detection must never block contact creation.
     }
 
+    // Respond immediately — the contact is now persisted and visible. Lead
+    // scoring (and the hot-lead notification) run AFTER the response so the
+    // client never waits on the Gemini call.
     res.status(201).json(formatContact(finalContact));
 
-    // Notify the owning rep when a freshly captured lead scores "hot"
-    // (best-effort, after responding; skip for auto-linked duplicates).
-    if (!finalContact.duplicateOfId && finalContact.leadTemperature === "hot") {
-      const target = finalContact.assignedToId ?? req.user!.id;
-      void db.update(contactsTable).set({ hotNotifiedAt: new Date() }).where(eq(contactsTable.id, finalContact.id)).catch(() => {});
-      void notifyUser(target, {
-        title: "\uD83D\uDD25 Hot lead captured",
-        body: `${finalContact.fullName ?? "New contact"}${finalContact.contactCompany ? ` \u00b7 ${finalContact.contactCompany}` : ""}${finalContact.leadScore != null ? ` scored ${finalContact.leadScore}` : ""}`,
-        data: { type: "hot_lead", contactId: finalContact.id },
-      });
+    // Background: AI lead qualification + hot-lead notify. Skip for auto-linked
+    // duplicates (they are hidden from the list, so a score is pointless). The
+    // scored row is picked up by the client on its next contacts refetch.
+    if (!finalContact.duplicateOfId) {
+      const ownerId = req.user!.id;
+      void (async () => {
+        try {
+          let eventName: string | null = null;
+          if (finalContact.eventId) {
+            const [ev] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, finalContact.eventId)).limit(1);
+            eventName = ev?.name ?? null;
+          }
+          const score = await scoreLead(
+            { firstName: finalContact.firstName, lastName: finalContact.lastName, jobTitle: finalContact.jobTitle, contactCompany: finalContact.contactCompany, email: finalContact.email, mobile: finalContact.mobile, website: finalContact.website, linkedin: finalContact.linkedin, country: finalContact.country, notes: finalContact.notes },
+            eventName,
+          );
+          const isHot = score.temperature === "hot";
+          // Re-target the still-existing, still-original row. If the contact was
+          // deleted or merged-away while scoring ran, `updated` is empty and we
+          // skip the notification to avoid a stale "hot lead" push.
+          const [updated] = await db.update(contactsTable)
+            .set({ leadScore: score.score, leadTemperature: score.temperature, aiReasoning: score.reasoning, hotNotifiedAt: isHot ? new Date() : undefined, updatedAt: new Date() })
+            .where(and(eq(contactsTable.id, finalContact.id), isNull(contactsTable.duplicateOfId)))
+            .returning();
+          if (isHot && updated) {
+            const target = finalContact.assignedToId ?? ownerId;
+            void notifyUser(target, {
+              title: "\uD83D\uDD25 Hot lead captured",
+              body: `${finalContact.fullName ?? "New contact"}${finalContact.contactCompany ? ` \u00b7 ${finalContact.contactCompany}` : ""} scored ${score.score}`,
+              data: { type: "hot_lead", contactId: finalContact.id },
+            });
+          }
+        } catch (aiErr) {
+          logAiError("lead-scoring", aiErr);
+        }
+      })();
     }
   } catch (err) {
     req.log.error(err);

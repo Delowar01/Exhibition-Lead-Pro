@@ -54,6 +54,80 @@ function contactName(c: Contact, fallback: string): string {
   return parts.length ? parts.join(" ") : fallback;
 }
 
+type ColorTokens = ReturnType<typeof useColors>;
+type TFn = (key: string, options?: Record<string, unknown>) => string;
+
+// Memoized list row: with React.memo it only re-renders when ITS contact (or the
+// theme) changes, so scrolling a long list and background lead-score updates
+// don't re-render every visible row. `colors`, `t`, `isRTL`, `textAlign` and
+// `onPress` are all stable references from the parent.
+const ContactRow = React.memo(function ContactRow({
+  item,
+  colors,
+  isRTL,
+  textAlign,
+  t,
+  unnamedLabel,
+  onPress,
+}: {
+  item: Contact;
+  colors: ColorTokens;
+  isRTL: boolean;
+  textAlign: "left" | "right";
+  t: TFn;
+  unnamedLabel: string;
+  onPress: (id: number) => void;
+}) {
+  const statusColor = CONTACT_STATUS_COLORS[item.status] ?? colors.mutedForeground;
+  return (
+    <Pressable
+      onPress={() => onPress(item.id)}
+      style={({ pressed }) => [
+        styles.row,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderRadius: colors.radius + 4,
+          opacity: pressed ? 0.7 : 1,
+          flexDirection: isRTL ? "row-reverse" : "row",
+        },
+      ]}
+    >
+      <Avatar name={contactName(item, unnamedLabel)} color={statusColor} />
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={[styles.name, { color: colors.foreground, textAlign }]}>
+          {contactName(item, unnamedLabel)}
+        </Text>
+        <Text numberOfLines={1} style={[styles.sub, { color: colors.mutedForeground, textAlign }]}>
+          {[item.jobTitle, item.contactCompany].filter(Boolean).join(" · ") ||
+            item.email ||
+            t("common.noDetails")}
+        </Text>
+        <View style={[styles.badgeRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+          <Badge
+            label={t(`leads.stages.${item.status}`, { defaultValue: prettyLabel(item.status) })}
+            color={statusColor}
+          />
+          {item.leadTemperature ? (
+            <Badge
+              label={
+                typeof item.leadScore === "number"
+                  ? `${t(`leads.${item.leadTemperature}`, { defaultValue: prettyLabel(item.leadTemperature) })} · ${item.leadScore}`
+                  : t(`leads.${item.leadTemperature}`, { defaultValue: prettyLabel(item.leadTemperature) })
+              }
+              color={LEAD_TEMPERATURE_COLORS[item.leadTemperature] ?? colors.mutedForeground}
+            />
+          ) : null}
+          {item.followUpDate ? (
+            <Feather name="clock" size={13} color={colors.mutedForeground} />
+          ) : null}
+        </View>
+      </View>
+      <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+    </Pressable>
+  );
+});
+
 const SORT_OPTIONS: { key: ContactSortPref; labelKey: string }[] = [
   { key: "newest", labelKey: "contacts.sortNewest" },
   { key: "oldest", labelKey: "contacts.sortOldest" },
@@ -236,56 +310,25 @@ export default function ContactsScreen() {
     },
   ];
 
-  function renderItem({ item }: { item: Contact }) {
-    const statusColor = CONTACT_STATUS_COLORS[item.status] ?? colors.mutedForeground;
-    return (
-      <Pressable
-        onPress={() => router.push(`/contact/${item.id}`)}
-        style={({ pressed }) => [
-          styles.row,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderRadius: colors.radius + 4,
-            opacity: pressed ? 0.7 : 1,
-            flexDirection: isRTL ? "row-reverse" : "row",
-          },
-        ]}
-      >
-        <Avatar name={contactName(item, t("common.unnamedContact"))} color={statusColor} />
-        <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.name, { color: colors.foreground, textAlign }]}>
-            {contactName(item, t("common.unnamedContact"))}
-          </Text>
-          <Text numberOfLines={1} style={[styles.sub, { color: colors.mutedForeground, textAlign }]}>
-            {[item.jobTitle, item.contactCompany].filter(Boolean).join(" · ") ||
-              item.email ||
-              t("common.noDetails")}
-          </Text>
-          <View style={[styles.badgeRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-            <Badge
-              label={t(`leads.stages.${item.status}`, { defaultValue: prettyLabel(item.status) })}
-              color={statusColor}
-            />
-            {item.leadTemperature ? (
-              <Badge
-                label={
-                  typeof item.leadScore === "number"
-                    ? `${t(`leads.${item.leadTemperature}`, { defaultValue: prettyLabel(item.leadTemperature) })} · ${item.leadScore}`
-                    : t(`leads.${item.leadTemperature}`, { defaultValue: prettyLabel(item.leadTemperature) })
-                }
-                color={LEAD_TEMPERATURE_COLORS[item.leadTemperature] ?? colors.mutedForeground}
-              />
-            ) : null}
-            {item.followUpDate ? (
-              <Feather name="clock" size={13} color={colors.mutedForeground} />
-            ) : null}
-          </View>
-        </View>
-        <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
-      </Pressable>
-    );
-  }
+  const unnamedLabel = t("common.unnamedContact");
+  const onRowPress = React.useCallback(
+    (id: number) => router.push(`/contact/${id}`),
+    [router],
+  );
+  const renderItem = React.useCallback(
+    ({ item }: { item: Contact }) => (
+      <ContactRow
+        item={item}
+        colors={colors}
+        isRTL={isRTL}
+        textAlign={textAlign}
+        t={t}
+        unnamedLabel={unnamedLabel}
+        onPress={onRowPress}
+      />
+    ),
+    [colors, isRTL, textAlign, t, unnamedLabel, onRowPress],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -403,6 +446,10 @@ export default function ContactsScreen() {
           data={contacts}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
+          removeClippedSubviews
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={11}
           contentContainerStyle={{
             padding: 20,
             paddingBottom: insets.bottom + 100,
