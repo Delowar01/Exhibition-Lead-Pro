@@ -33,7 +33,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { useSettings } from "@/contexts/SettingsContext";
 import { getCountry } from "@/lib/countries";
-import { formatCurrency } from "@/lib/currency";
+import { convertCurrency, formatCurrency } from "@/lib/currency";
 
 const ALL_STAGE = "all";
 
@@ -112,18 +112,26 @@ export default function LeadsScreen() {
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
-  const stages = useMemo(() => {
+  const { stages, convertedTotalValue } = useMemo(() => {
     const map = new Map<string, { count: number; value: number; leads: Lead[] }>();
     for (const s of query.data?.stages ?? []) {
       map.set(s.stage, { count: s.count, value: s.value, leads: s.leads });
     }
-    return LEAD_STAGE_ORDER.map((stage) => ({
+    const stagesArr = LEAD_STAGE_ORDER.map((stage) => ({
       stage,
       count: map.get(stage)?.count ?? 0,
       value: map.get(stage)?.value ?? 0,
       leads: map.get(stage)?.leads ?? [],
     }));
-  }, [query.data]);
+    const converted = (query.data?.stages ?? [])
+      .flatMap((s) => s.leads)
+      .filter((l) => l.stage !== "won" && l.stage !== "lost")
+      .reduce(
+        (sum, l) => sum + convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", currencyCode),
+        0,
+      );
+    return { stages: stagesArr, convertedTotalValue: converted };
+  }, [query.data, currencyCode]);
 
   // "All" shows every lead across every stage, sorted by value descending.
   const allLeads = useMemo(
@@ -133,8 +141,6 @@ export default function LeadsScreen() {
         .sort((a, b) => (Number(b.value ?? 0)) - (Number(a.value ?? 0))),
     [stages],
   );
-
-  const totalValue = query.data?.totalValue ?? 0;
   const totalCount = stages.reduce((sum, s) => sum + s.count, 0);
 
   const currentLeads =
@@ -159,9 +165,9 @@ export default function LeadsScreen() {
 
   // Stage chip data: "All" first, then the regular LEAD_STAGE_ORDER stages.
   const stageChips = useMemo(() => {
-    const allChip = { stage: ALL_STAGE, count: totalCount, value: totalValue };
+    const allChip = { stage: ALL_STAGE, count: totalCount, value: convertedTotalValue };
     return [allChip, ...stages];
-  }, [stages, totalCount, totalValue]);
+  }, [stages, totalCount, convertedTotalValue]);
 
   const onLeadPress = React.useCallback(
     (id: number) => {
@@ -202,7 +208,7 @@ export default function LeadsScreen() {
         </Pressable>
         <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("leads.title")}</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
-          {formatCurrency(totalValue, currencyCode)} {t("leads.openValueSuffix")}
+          {formatCurrency(convertedTotalValue, currencyCode)} {t("leads.openValueSuffix")}
         </Text>
 
         {/* Active filter banner — shown when user arrived from a dashboard KPI */}

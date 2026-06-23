@@ -1,15 +1,59 @@
 /**
- * Shared currency formatting for the mobile app.
+ * Shared currency formatting and conversion for the mobile app.
  *
- * All financial values should flow through formatCurrency() so the display
+ * Every financial value flows through formatCurrency() so the display
  * automatically reflects the user's selected country currency.
  *
- * Future-ready design:
- *  - currencyCode is stored per-opportunity in the DB; existing records are
- *    unaffected when the user changes their country setting.
- *  - Multi-currency, exchange-rate sync, and user overrides can be added later
- *    by replacing this formatter — no data model changes required.
+ * Multi-currency design:
+ *  - Each opportunity stores its own `currency` (ISO 4217) alongside `value`.
+ *  - Totals are computed by converting each record to the user's display
+ *    currency via convertCurrency(), then summing — never by summing raw
+ *    numbers and re-labelling them with a different currency code.
+ *  - GCC rates are fixed pegs (authoritative); EGP/MAD are representative
+ *    approximations. Update FX_RATES_TO_USD to refresh rates in future.
  */
+
+/**
+ * Exchange rates relative to USD as the common base.
+ * Value = how many units of that currency equal 1 USD.
+ *   SAR: 3.75  → 1 USD = 3.75 SAR  → 35,000 USD × 3.75 = 131,250 SAR
+ */
+export const FX_RATES_TO_USD: Record<string, number> = {
+  USD: 1.0,
+  SAR: 3.75,    // fixed peg
+  AED: 3.6725,  // fixed peg
+  QAR: 3.64,    // fixed peg
+  OMR: 0.3845,  // fixed peg (1 OMR ≈ 2.60 USD)
+  KWD: 0.3067,  // fixed peg (1 KWD ≈ 3.26 USD)
+  BHD: 0.376,   // fixed peg (1 BHD ≈ 2.66 USD)
+  EGP: 50.0,    // representative rate (floating)
+  MAD: 10.0,    // representative rate (floating)
+  EUR: 0.92,
+  GBP: 0.79,
+  JOD: 0.709,
+};
+
+/**
+ * Convert `value` from `fromCurrency` to `toCurrency` using USD as the
+ * common intermediate. Returns the original value unchanged when both
+ * currencies are the same. Unknown currencies fall back to USD (1:1).
+ *
+ * Example:
+ *   convertCurrency(35000, "USD", "SAR") → 131,250
+ *   convertCurrency(85000, "USD", "SAR") → 318,750
+ */
+export function convertCurrency(
+  value: number,
+  fromCurrency: string,
+  toCurrency: string,
+): number {
+  const from = (fromCurrency || "USD").toUpperCase();
+  const to = (toCurrency || "USD").toUpperCase();
+  if (from === to) return value;
+  const fromRate = FX_RATES_TO_USD[from] ?? 1.0;
+  const toRate = FX_RATES_TO_USD[to] ?? 1.0;
+  return (value / fromRate) * toRate;
+}
 
 /**
  * Format a numeric amount with an ISO 4217 currency code prefix.

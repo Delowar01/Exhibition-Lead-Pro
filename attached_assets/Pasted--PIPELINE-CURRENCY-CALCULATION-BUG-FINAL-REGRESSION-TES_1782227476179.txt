@@ -1,0 +1,137 @@
+# PIPELINE CURRENCY CALCULATION BUG + FINAL REGRESSION TEST UPDATE
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+Before running the **Final App Lock Enhancement & Full Regression Test**, there is one additional critical issue that must be resolved.
+
+Do not start the final regression until this issue has been fixed and verified.
+
+---
+
+# CRITICAL ISSUE – PIPELINE CURRENCY CALCULATION
+
+## Current Result
+
+The Pipeline currency conversion is not calculating correctly.
+
+### Example
+
+I currently have **4 Pipeline opportunities**, all stored in **USD**.
+
+* USD 35,000
+* USD 25,000
+* USD 15,000
+* USD 10,000
+
+Total:
+
+**USD 85,000**
+
+My selected country is **Saudi Arabia (SAR)**.
+
+Using the standard exchange rate (approximately **1 USD = 3.75 SAR**), the dashboard should display approximately:
+
+**SAR 318,750**
+
+However, the Dashboard currently displays:
+
+**SAR 260.4K**
+
+This indicates that either the currency conversion or the total calculation is incorrect.
+
+---
+
+# REQUIRED INVESTIGATION
+
+Perform a complete Root Cause Analysis.
+
+Verify:
+
+* Are all Pipeline records included in the calculation?
+* Is every opportunity converted individually before summing?
+* Is the total converted after summing instead of converting each record?
+* Are some records already stored in SAR and converted again?
+* Are Won/Lost opportunities being incorrectly excluded?
+* Is dashboard caching returning stale totals?
+* Is the selected country being applied correctly?
+* Is the dashboard using the same calculation as the Pipeline list?
+
+Do not assume the exchange rate is the problem.
+
+Identify the exact cause.
+
+---
+
+# REQUIRED BEHAVIOR
+
+Every Pipeline record should retain its original currency.
+
+For Dashboard display:
+
+1. Read each Pipeline record.
+2. Detect its stored currency.
+3. Convert each record to the user's selected currency.
+4. Sum the converted values.
+5. Display the final total.
+
+This architecture is required for future multi-currency support.
+
+---
+
+# TEST CASE
+
+Please use the following exact values during testing:
+
+USD 35,000
+
+USD 25,000
+
+USD 15,000
+
+USD 10,000
+
+Expected Total:
+
+USD 85,000
+
+Expected Dashboard (SAR):
+
+Approximately **SAR 318,750**
+
+Verify that the Dashboard displays the correct amount.
+
+---
+
+# QA REQUIREMENTS
+
+Before marking this issue complete, provide:
+
+1. Root Cause Analysis.
+2. Files Modified.
+3. Calculation logic implemented.
+4. Test results using the values above.
+5. Screenshot of the corrected Dashboard total.
+
+---
+
+# FINAL REGRESSION TEST
+
+After this issue has been resolved, include it as an additional test case in the upcoming:
+
+**MOBILE APPLICATION – FINAL APP LOCK ENHANCEMENT & FULL REGRESSION TEST BEFORE NEXT APK BUILD**
+
+The final regression must also verify:
+
+* Pipeline currency conversion.
+* Dashboard Pipeline totals.
+* Mixed-currency calculations (future-ready).
+* Correct application of the user's selected country currency.
+* No regression to existing Pipeline functionality.
+
+Do not generate the next native Android APK until this issue has been fixed, tested, and included in the final regression report.

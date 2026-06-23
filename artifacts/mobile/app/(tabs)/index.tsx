@@ -19,6 +19,7 @@ import {
   type MobileActivityItem,
   type MobileDashboard,
   useGetEventReport,
+  useGetLeadPipeline,
   useGetLeadsByEvent,
   useGetMobileDashboard,
 } from "@workspace/api-client-react";
@@ -36,7 +37,7 @@ import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext
 import { useColors } from "@/hooks/useColors";
 import { useLocale, type Locale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
-import { formatCurrency } from "@/lib/currency";
+import { convertCurrency, formatCurrency } from "@/lib/currency";
 import { getCountry } from "@/lib/countries";
 
 function greetingKey(): string {
@@ -121,6 +122,35 @@ export default function HomeScreen() {
 
   const query = useGetMobileDashboard();
   const data = query.data;
+
+  const pipelineQuery = useGetLeadPipeline();
+  const convertedPipelineValue = useMemo(() => {
+    return (pipelineQuery.data?.stages ?? [])
+      .flatMap((s) => s.leads)
+      .filter((l) => l.stage !== "won" && l.stage !== "lost")
+      .reduce(
+        (sum, l) => sum + convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", currencyCode),
+        0,
+      );
+  }, [pipelineQuery.data, currencyCode]);
+  const convertedWonValue = useMemo(() => {
+    return (pipelineQuery.data?.stages ?? [])
+      .flatMap((s) => s.leads)
+      .filter((l) => l.stage === "won")
+      .reduce(
+        (sum, l) => sum + convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", currencyCode),
+        0,
+      );
+  }, [pipelineQuery.data, currencyCode]);
+  const convertedLostValue = useMemo(() => {
+    return (pipelineQuery.data?.stages ?? [])
+      .flatMap((s) => s.leads)
+      .filter((l) => l.stage === "lost")
+      .reduce(
+        (sum, l) => sum + convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", currencyCode),
+        0,
+      );
+  }, [pipelineQuery.data, currencyCode]);
 
   const eventsQuery = useGetLeadsByEvent();
   const eventsData = eventsQuery.data ?? [];
@@ -208,7 +238,7 @@ export default function HomeScreen() {
     {
       key: "pipeline",
       label: t("home.stats.openPipeline"),
-      value: formatCurrency(data?.pipelineValue ?? 0, currencyCode),
+      value: formatCurrency(convertedPipelineValue, currencyCode),
       icon: "dollar-sign",
       color: colors.success,
       onPress: () => router.push({ pathname: "/leads", params: { stage: "all" } }),
@@ -216,7 +246,7 @@ export default function HomeScreen() {
     {
       key: "won",
       label: t("home.stats.won"),
-      value: formatCurrency((data as { wonValue?: number })?.wonValue ?? 0, currencyCode),
+      value: formatCurrency(convertedWonValue, currencyCode),
       icon: "award",
       color: "#22C55E",
       onPress: () => router.push({ pathname: "/leads", params: { stage: "won" } }),
@@ -224,7 +254,7 @@ export default function HomeScreen() {
     {
       key: "lost",
       label: t("home.stats.lost"),
-      value: formatCurrency((data as { lostValue?: number })?.lostValue ?? 0, currencyCode),
+      value: formatCurrency(convertedLostValue, currencyCode),
       icon: "x-circle",
       color: colors.destructive,
       onPress: () => router.push({ pathname: "/leads", params: { stage: "lost" } }),
