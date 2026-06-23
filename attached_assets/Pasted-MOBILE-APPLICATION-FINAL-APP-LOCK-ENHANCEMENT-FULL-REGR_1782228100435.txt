@@ -1,0 +1,393 @@
+MOBILE APPLICATION – FINAL APP LOCK ENHANCEMENT & FULL REGRESSION TEST BEFORE NEXT APK BUILD
+Project
+
+Lead Capture Pro
+
+Scope
+
+MOBILE APPLICATION ONLY
+
+Before generating the next native Android APK, complete the remaining App Lock enhancements, then perform a full regression test covering every change implemented since my last APK build.
+
+Do not generate the next APK until every item below has been implemented, tested, and verified.
+
+PART 1 – APP LOCK ENHANCEMENT
+1. App PIN Fallback
+Current Status
+
+Biometric Unlock has been implemented.
+
+Now add a secure App PIN fallback.
+
+Requirements
+
+When a user enables Biometric Unlock for the first time:
+
+Verify biometric authentication.
+After successful verification, prompt the user to create a 6-digit App PIN.
+Confirm the PIN before saving.
+Store the PIN securely using the device's secure storage.
+
+Do not store the PIN in plain text.
+
+PIN Unlock Flow
+
+When the application is locked, users should be able to unlock using either:
+
+Face ID / Fingerprint
+App PIN
+
+If biometric authentication fails or is unavailable:
+
+Automatically allow PIN entry.
+
+Failed PIN Attempts
+
+Protect against brute-force attacks.
+
+Example:
+
+Maximum 5 incorrect attempts
+
+Then:
+
+Require biometric authentication again (if available)
+Or temporarily lock the App PIN for 30 seconds
+PIN Management
+
+Inside Settings add:
+
+Change App PIN
+
+Workflow:
+
+Verify existing biometric or PIN
+Enter new PIN
+Confirm new PIN
+Disable PIN
+
+When Biometric Unlock is turned OFF:
+
+Ask:
+
+Do you also want to remove your App PIN?
+
+Options:
+
+Keep PIN
+Remove PIN
+2. Automatic App Re-Lock
+Current Issue
+
+The application currently locks only when returning from the background.
+
+If the device screen turns off while the app is open, sensitive information may briefly appear before authentication.
+
+This is a security gap.
+
+Required
+
+Automatically lock the application whenever:
+
+Device screen turns off
+Device is manually locked
+Device auto-lock activates
+Application returns from the background after the configured timeout
+
+Authentication must occur before any application content becomes visible.
+
+Lock Timeout
+
+Keep the default timeout:
+
+30 seconds
+
+Design the architecture so future timeout options can be added without redesign:
+
+Immediately
+15 Seconds
+30 Seconds
+1 Minute
+5 Minutes
+Security
+
+Do not rely only on AppState.
+
+Monitor all relevant lifecycle events to ensure sensitive information is never exposed during:
+
+Screen off
+Device sleep
+Device wake
+App resume
+User Experience
+
+Display a professional unlock screen with:
+
+Lead Capture Pro logo
+Unlock with Biometrics
+Enter App PIN
+
+Maintain a clean, premium design consistent with the application.
+
+PART 2 – FULL REGRESSION TEST
+
+Before generating the next APK, perform a complete regression test covering all changes implemented since my last APK build.
+
+1. LEAD CAPTURE
+
+Verify:
+
+Business Card
+OCR extraction
+Contact creation
+Duplicate detection
+AI scoring
+Captured Image Preview
+Download Captured Image
+Email Signature
+OCR extraction
+Contact creation
+AI scoring
+Captured Image Preview
+Download Captured Image
+QR Code / LinkedIn
+
+Verify:
+
+The QR Code I previously provided
+vCard
+MECARD
+Standard Contact QR
+Business Contact QR
+LinkedIn QR
+Website QR
+
+Confirm:
+
+Correct contact extraction
+Correct field mapping
+Automatic contact creation
+NFC
+
+Verify:
+
+Supported NFC tags
+Unsupported tags
+Error handling
+Manual Entry
+
+Verify:
+
+Validation
+Contact creation
+Saving
+2. CONTACT DETAILS
+
+Verify:
+
+Edit Contact
+Delete Contact
+Save to Phone Contacts
+Share Contact (.VCF)
+Captured Image Preview
+Download Captured Image
+Lead Status
+
+Verify:
+
+Immediate UI update
+Background synchronization
+Status History
+Lead Pipeline
+
+Verify:
+
+Immediate UI update
+Background synchronization
+Pipeline Creation
+Workspace
+
+Manual creation.
+
+From Contact
+
+Automatically populate:
+
+Contact
+Name
+Company
+Designation
+Email
+Mobile
+Event
+Assigned User
+3. COMMUNICATION
+
+Verify:
+
+WhatsApp
+Native application chooser
+WhatsApp
+WhatsApp Business
+Email
+
+Verify:
+
+Native application chooser
+Gmail
+Outlook
+Samsung Email
+Apple Mail
+Call
+
+Verify:
+
+Opens default phone dialer directly.
+No application chooser.
+4. PIPELINE
+
+Verify:
+
+Add
+Edit
+History
+Dashboard navigation
+Dashboard filters
+Pipeline widgets
+Currency localization
+5. DASHBOARD
+
+Verify:
+
+KPI widgets
+Compact layout
+Correct navigation
+Correct filtering
+Last Event Card
+Last Event Report
+Top Performer
+Leads by Day
+6. DUPLICATES
+
+Verify:
+
+Preview
+Make Original
+Multi-selection
+Delete Selected
+Single Delete
+7. NOTIFICATIONS
+
+Verify:
+
+Follow-Up
+ON / OFF
+Meetings
+ON / OFF
+15-minute reminder
+Notification tap behavior
+8. BIOMETRIC APP LOCK
+
+Verify:
+
+Android
+Fingerprint
+Face Unlock
+App PIN
+Screen Off Lock
+Device Lock
+Background Timeout
+Change PIN
+Remove PIN
+iPhone
+Face ID
+Touch ID
+App PIN
+Screen Off Lock
+Device Lock
+Background Timeout
+Change PIN
+Remove PIN
+9. PERFORMANCE
+
+Using the Developer Performance Dashboard, verify:
+
+Camera Capture Time
+Image Processing Time
+Upload Time
+OCR Time
+Contact Creation Time
+Total End-to-End Time
+
+Target:
+
+Approximately 3–4 seconds under normal network conditions.
+10. UI / UX
+
+Verify:
+
+No overlapping UI
+Responsive layouts
+Smooth scrolling
+Native-feeling navigation
+No unnecessary loading delays
+No visible lag
+11. REGRESSION TEST
+
+Confirm previously fixed features continue to work:
+
+Duplicate Detection
+Status History
+Lead Score
+Lead Temperature
+GPS Location
+Meetings
+Follow-Ups
+Team Assignment
+Contact Sharing
+Save to Contacts
+Digital Business Card
+Workspace features
+
+Ensure that no previously working functionality has been broken.
+
+QA REPORT (MANDATORY)
+
+Before generating the next APK, provide:
+
+1. Test Summary
+Total Test Cases
+Passed
+Failed
+Blocked
+2. Performance Summary
+
+Include timing results from the Developer Performance Dashboard.
+
+3. Known Issues
+
+List any remaining known issues.
+
+Do not omit known issues.
+
+4. Files Modified
+
+Provide a complete list of modified files.
+
+5. Verification Status
+
+Clearly identify what has been verified by:
+
+Automated Testing
+Code Review
+Native Android Testing
+Native iPhone Testing
+IMPORTANT
+
+Do not generate the next native Android APK until:
+
+All App Lock enhancements are completed.
+All regression tests have passed.
+The QA report has been prepared.
+
+The goal is to deliver the next APK as a stable release candidate, ready for comprehensive real-device validation rather than another iterative debugging build.
