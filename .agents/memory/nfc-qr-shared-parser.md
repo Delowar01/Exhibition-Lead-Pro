@@ -40,6 +40,23 @@ order, because that SWAPS names for the reversed-order nickname case
 (`FN:Bob Smith` + `N:Robert;Smith` → wrongly Smith/Robert). Only assume spec order
 when there is no FN at all.
 
+## Real QR encoders mangle line endings — never trust clean CRLF
+
+Field QR generators emit mixed/broken endings in ONE payload: `\n`, `\r\n`, AND a
+bare `\r` mid-value. A common one: a CRLF fold whose `\n` is lost, leaving
+`FN:ASLAM\r SIDHIC` (CR+space, not split by `/\r?\n/`). Name resolution survives
+because the FN word-split uses `/\s+/` (matches `\r`), but any field that re-joins
+sub-components must `.trim()` each part to drop stray `\r` (ADR region did, so
+"\rRiyadh"→"Riyadh"). When adding new structured-field handling, trim per-component.
+
+## ADR components carry baked-in commas → clean before re-joining
+
+A single ADR component often already ends with a comma ("Al Khubra,"); naive
+`parts.join(", ")` then yields a double comma. `cleanAdrPart()` strips surrounding
+whitespace AND commas per component. Also normalize vCard `URL` values through
+`normalizeWebsite()` (scheme-less → https) so saved sites are tappable — the v3.0
+`URL:www.x.com` case was previously stored scheme-less.
+
 ## vCard 4.0 URI schemes: strip tel:/mailto: from TEL/EMAIL
 
 v4.0 emits `TEL;VALUE=uri:tel:+...` and `EMAIL:mailto:...`; strip the scheme prefix or

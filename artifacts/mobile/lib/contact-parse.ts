@@ -210,18 +210,21 @@ export function parseVCard(raw: string): ExtractedCardData {
       }
       case "URL":
         if (/linkedin\.com/i.test(value)) out.linkedin = value;
-        else if (!out.website) out.website = value;
+        else if (!out.website) out.website = normalizeWebsite(value);
         break;
       case "ADR": {
         // ADR is semicolon-delimited: PoBox;Ext;Street;Locality;Region;Postal;Country
         // Extract country from the 7th component and build a clean address from
         // the remaining meaningful components (street, city, region, postal).
+        // cleanAdrPart trims whitespace AND stray commas: real-world cards often
+        // bake a comma into a single component (e.g. "Al Khubra,"), which would
+        // otherwise produce a double comma once components are re-joined.
         const adrParts = value.split(";");
-        const street = (adrParts[2] ?? "").trim();
-        const locality = (adrParts[3] ?? "").trim();
-        const region = (adrParts[4] ?? "").trim();
-        const postal = (adrParts[5] ?? "").trim();
-        const country = (adrParts[6] ?? "").trim();
+        const street = cleanAdrPart(adrParts[2]);
+        const locality = cleanAdrPart(adrParts[3]);
+        const region = cleanAdrPart(adrParts[4]);
+        const postal = cleanAdrPart(adrParts[5]);
+        const country = cleanAdrPart(adrParts[6]);
         if (country) out.country = country;
         const addrPieces = [street, locality, region, postal].filter(Boolean);
         if (addrPieces.length > 0) {
@@ -298,6 +301,27 @@ function stripHonorifics(words: string[]): string[] {
     else break;
   }
   return words.slice(i);
+}
+
+// Normalize a single structured-ADR component: strip whitespace (incl. stray
+// \r left by QR encoders that lose the \n of a CRLF fold) and surrounding commas.
+// Real cards frequently bake a comma into one component (e.g. "Al Khubra,"),
+// which would produce a double comma ("Al Khubra,, ...") once components rejoin.
+function cleanAdrPart(part: string | undefined): string {
+  return (part ?? "").replace(/[\s,]+$/, "").replace(/^[\s,]+/, "").trim();
+}
+
+// Normalize a website value to a tappable https:// URL. Scheme-less values
+// (e.g. "www.elitemarcom.com", "acme.com/me") get an https:// prefix; values
+// that already carry a scheme are returned unchanged.
+function normalizeWebsite(value: string): string {
+  const v = value.trim();
+  if (!v) return v;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return v;
+  if (/^(www\.[^\s]+|[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/[^\s]*)?)$/i.test(v)) {
+    return `https://${v.replace(/^\/\//, "")}`;
+  }
+  return v;
 }
 
 function setName(out: ExtractedCardData, value: string): void {

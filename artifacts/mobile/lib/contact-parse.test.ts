@@ -433,6 +433,30 @@ describe("parseQr", () => {
     expect(out.mobile).toBe("+971501234567");
     expect(out.email).toBe("layla@nexussys.io");
   });
+
+  it("extracts a real-world Elite Marcom card with mangled line endings", () => {
+    // Exact payload decoded from a real Elite Marcom QR. Quirks it exercises:
+    //  - mixed line endings (\n, \r\n, and a bare \r mid-value)
+    //  - an FN fold that lost its \n ("ASLAM\r SIDHIC")
+    //  - N:Family;Given reversed vs FN, resolved via FN cross-reference
+    //  - a comma baked into one ADR component ("Al Khubra,") → no double comma
+    //  - a scheme-less URL normalized to https
+    const qr =
+      "BEGIN:VCARD\nVERSION:3.0\nN:SIDHIC;ASLAM\r\nFN:ASLAM\r SIDHIC\n" +
+      "ORG:Elite Marcom\nTITLE:Sales Executive\nTEL;TYPE=CELL:+966 5 332 97567\n" +
+      "ADR;TYPE=WORK:;;Al Khubra,;Al Aziziyah Dist.;\rRiyadh;14514;Saudi Arabia\n" +
+      "EMAIL;TYPE=WORK,INTERNET:aslam@elitemarcom.com\nURL:www.elitemarcom.com\nEND:VCARD";
+    const out = parseQr(qr);
+    expect(out.firstName).toBe("ASLAM");
+    expect(out.lastName).toBe("SIDHIC");
+    expect(out.company).toBe("Elite Marcom");
+    expect(out.jobTitle).toBe("Sales Executive");
+    expect(out.mobile).toBe("+966 5 332 97567");
+    expect(out.email).toBe("aslam@elitemarcom.com");
+    expect(out.country).toBe("Saudi Arabia");
+    expect(out.address).toBe("Al Khubra, Al Aziziyah Dist., Riyadh, 14514");
+    expect(out.website).toBe("https://www.elitemarcom.com");
+  });
 });
 
 describe("mergeExtracted / hasAnyContactField", () => {
