@@ -21,7 +21,14 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 
 export function AppLockOverlay() {
-  const { isLocked, triggerUnlock, pinFallbackAvailable, submitPin } = useAppLock();
+  const {
+    isLocked,
+    triggerUnlock,
+    pinFallbackAvailable,
+    submitPin,
+    pinLockedUntil,
+    clearExpiredLockout,
+  } = useAppLock();
   const { isAuthenticated } = useAuth();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -36,6 +43,28 @@ export function AppLockOverlay() {
   const [pinResetSignal, setPinResetSignal] = useState(0);
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinBusy, setPinBusy] = useState(false);
+
+  // Brute-force lockout countdown (seconds remaining).
+  const [lockoutSecs, setLockoutSecs] = useState(0);
+  const isLockedOut = pinLockedUntil !== null && lockoutSecs > 0;
+
+  useEffect(() => {
+    if (pinLockedUntil === null) {
+      setLockoutSecs(0);
+      return;
+    }
+    const tick = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((pinLockedUntil - Date.now()) / 1000),
+      );
+      setLockoutSecs(remaining);
+      if (remaining <= 0) clearExpiredLockout();
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [pinLockedUntil, clearExpiredLockout]);
 
   useEffect(() => {
     if (Platform.OS !== "web") {
@@ -87,14 +116,25 @@ export function AppLockOverlay() {
   }
 
   async function handlePinComplete(pin: string) {
-    if (pinBusy) return;
+    if (pinBusy || isLockedOut) return;
     setPinBusy(true);
     setPinError(null);
     try {
-      const ok = await submitPin(pin);
-      if (!ok) {
-        setPinError(t("appLock.wrongPin"));
-        setPinResetSignal((s) => s + 1);
+      const result = await submitPin(pin);
+      if (!result.ok) {
+        if (result.lockedOut) {
+          // Lockout just triggered — the countdown UI takes over, no inline error.
+          setPinError(null);
+        } else if (result.attemptsRemaining <= 2) {
+          // Warn the user as they approach the lockout threshold.
+          setPinError(
+            t("appLock.wrongPinAttempts", { remaining: result.attemptsRemaining }),
+          );
+          setPinResetSignal((s) => s + 1);
+        } else {
+          setPinError(t("appLock.wrongPin"));
+          setPinResetSignal((s) => s + 1);
+        }
       }
     } finally {
       setPinBusy(false);
@@ -149,14 +189,26 @@ export function AppLockOverlay() {
         {pinMode ? (
           <>
             <Text style={styles.lockedLabel}>{t("appLock.enterPin")}</Text>
-            <PinPad
-              onComplete={handlePinComplete}
-              resetSignal={pinResetSignal}
-              disabled={pinBusy}
-              subtitle={t("appLock.pinSubtitle")}
-              error={pinError ?? undefined}
-            />
-            {/* "Use biometrics" link */}
+            {isLockedOut ? (
+              <View style={styles.lockoutBox}>
+                <Feather name="lock" size={26} color="rgba(239,68,68,0.9)" />
+                <Text style={styles.lockoutTitle}>
+                  {t("appLock.tooManyAttempts")}
+                </Text>
+                <Text style={styles.lockoutCountdown}>
+                  {t("appLock.tryAgainIn", { seconds: lockoutSecs })}
+                </Text>
+              </View>
+            ) : (
+              <PinPad
+                onComplete={handlePinComplete}
+                resetSignal={pinResetSignal}
+                disabled={pinBusy}
+                subtitle={t("appLock.pinSubtitle")}
+                error={pinError ?? undefined}
+              />
+            )}
+            {/* "Use biometrics" link — available even during a PIN lockout */}
             <Pressable
               onPress={switchToBioMode}
               style={({ pressed }) => [styles.altLink, { opacity: pressed ? 0.6 : 1 }]}
@@ -280,6 +332,25 @@ const styles = StyleSheet.create({
     fontFamily: FONT.medium,
     textAlign: "center",
     marginTop: 4,
+  },
+  lockoutBox: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    marginVertical: 8,
+  },
+  lockoutTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontFamily: FONT.semibold,
+    textAlign: "center",
+  },
+  lockoutCountdown: {
+    color: "rgba(239,68,68,0.9)",
+    fontSize: 15,
+    fontFamily: FONT.medium,
+    textAlign: "center",
   },
   altLink: {
     flexDirection: "row",

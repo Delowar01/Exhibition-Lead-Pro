@@ -702,6 +702,7 @@
     "lockTimeout15s": "15 s",
     "lockTimeout30s": "30 s",
     "lockTimeout1min": "1 min",
+    "lockTimeout5min": "5 min",
     "account": "Account",
     "about": "About",
     "version": "Version",
@@ -710,14 +711,18 @@
     "english": "English",
     "arabic": "العربية",
     "pinSetupTitle": "Set up a PIN backup",
-    "pinSetupBody": "Add a 4-digit PIN so you can unlock the app if biometrics fail.",
-    "pinStep1": "Enter a 4-digit PIN",
+    "pinSetupBody": "Add a 6-digit PIN so you can unlock the app if biometrics fail.",
+    "pinStep1": "Enter a 6-digit PIN",
     "pinStep2": "Confirm your PIN",
     "pinMismatch": "PINs don't match — try again",
     "pinSkip": "Skip",
     "changePin": "Change PIN",
     "changePinTitle": "Change your PIN",
     "forgotPin": "Forgot PIN? Reset with biometrics",
+    "removePinTitle": "Remove App PIN?",
+    "removePinBody": "Biometric unlock is now off. Do you also want to remove your backup App PIN?",
+    "keepPin": "Keep PIN",
+    "removePin": "Remove PIN",
     "pinSet": "Save PIN"
   },
   "sync": {
@@ -950,8 +955,11 @@
     "promptMessage": "Unlock Card Scanner Pro",
     "usePinInstead": "Use PIN instead",
     "enterPin": "Enter PIN",
-    "pinSubtitle": "Enter your 4-digit backup PIN",
+    "pinSubtitle": "Enter your 6-digit backup PIN",
     "wrongPin": "Incorrect PIN — try again",
+    "wrongPinAttempts": "Incorrect PIN — {{remaining}} attempt(s) left",
+    "tooManyAttempts": "Too many failed attempts",
+    "tryAgainIn": "Try again in {{seconds}}s, or use biometrics",
     "useBiometrics": "Use biometrics"
   }
 }

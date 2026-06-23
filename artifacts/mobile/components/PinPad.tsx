@@ -22,6 +22,8 @@ interface PinPadProps {
   subtitle?: string;
   /** Short error message displayed below the dots (e.g. "Incorrect PIN"). */
   error?: string;
+  /** Number of digits in the PIN. Defaults to 6. */
+  length?: number;
 }
 
 const KEY_ROWS = [
@@ -32,9 +34,10 @@ const KEY_ROWS = [
 ];
 
 /**
- * A dark-themed 4-digit numeric PIN pad (4 dot indicators + 3×4 keypad).
- * The onComplete callback fires when the 4th digit is pressed and the pad
- * immediately clears itself. The parent controls error state via resetSignal.
+ * A dark-themed numeric PIN pad (one dot indicator per digit + 3×4 keypad).
+ * Defaults to 6 digits. The onComplete callback fires when the final digit is
+ * pressed and the pad immediately clears itself. The parent controls error
+ * state via resetSignal.
  */
 export function PinPad({
   onComplete,
@@ -42,6 +45,7 @@ export function PinPad({
   disabled = false,
   subtitle,
   error,
+  length = 6,
 }: PinPadProps) {
   const [digits, setDigits] = useState<string[]>([]);
   const [flash, setFlash] = useState(false);
@@ -62,17 +66,17 @@ export function PinPad({
     return () => clearTimeout(t);
   }, [resetSignal]);
 
-  // Auto-submit on 4th digit.
+  // Auto-submit once the full PIN length is reached.
   useEffect(() => {
-    if (digits.length !== 4) return;
+    if (digits.length !== length) return;
     const pin = digits.join("");
     setDigits([]);
     onCompleteRef.current(pin);
-  }, [digits]);
+  }, [digits, length]);
 
   function pressKey(d: string) {
     if (disabled) return;
-    setDigits((prev) => (prev.length < 4 ? [...prev, d] : prev));
+    setDigits((prev) => (prev.length < length ? [...prev, d] : prev));
   }
 
   function pressDelete() {
@@ -86,9 +90,9 @@ export function PinPad({
         <Text style={styles.subtitle}>{subtitle}</Text>
       ) : null}
 
-      {/* 4-dot progress row */}
+      {/* Progress dots — one per PIN digit */}
       <View style={styles.dots}>
-        {[0, 1, 2, 3].map((i) => (
+        {Array.from({ length }, (_, i) => i).map((i) => (
           <View
             key={i}
             style={[

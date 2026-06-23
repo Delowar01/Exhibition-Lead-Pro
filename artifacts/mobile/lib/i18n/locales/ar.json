@@ -702,6 +702,7 @@
     "lockTimeout15s": "١٥ ث",
     "lockTimeout30s": "٣٠ ث",
     "lockTimeout1min": "دقيقة",
+    "lockTimeout5min": "٥ دقائق",
     "account": "الحساب",
     "about": "حول التطبيق",
     "version": "الإصدار",
@@ -710,14 +711,18 @@
     "english": "English",
     "arabic": "العربية",
     "pinSetupTitle": "إعداد رمز PIN احتياطي",
-    "pinSetupBody": "أضف رمز PIN مكوّنًا من 4 أرقام حتى تتمكن من فتح التطبيق إذا فشلت السمات الحيوية.",
-    "pinStep1": "أدخل رمز PIN المكوّن من 4 أرقام",
+    "pinSetupBody": "أضف رمز PIN مكوّنًا من 6 أرقام حتى تتمكن من فتح التطبيق إذا فشلت السمات الحيوية.",
+    "pinStep1": "أدخل رمز PIN المكوّن من 6 أرقام",
     "pinStep2": "أكّد رمز PIN",
     "pinMismatch": "رموز PIN غير متطابقة — حاول مرة أخرى",
     "pinSkip": "تخطّ",
     "changePin": "تغيير رمز PIN",
     "changePinTitle": "تغيير رمز PIN",
     "forgotPin": "نسيت رمز PIN؟ إعادة التعيين عبر القياسات الحيوية",
+    "removePinTitle": "إزالة رمز PIN؟",
+    "removePinBody": "تم إيقاف الفتح بالسمات الحيوية. هل تريد أيضًا إزالة رمز PIN الاحتياطي؟",
+    "keepPin": "الاحتفاظ بالرمز",
+    "removePin": "إزالة الرمز",
     "pinSet": "حفظ رمز PIN"
   },
   "sync": {
@@ -950,8 +955,11 @@
     "promptMessage": "افتح تطبيق Card Scanner Pro",
     "usePinInstead": "استخدام رمز PIN",
     "enterPin": "أدخل رمز PIN",
-    "pinSubtitle": "أدخل رمز PIN الاحتياطي المكوّن من 4 أرقام",
+    "pinSubtitle": "أدخل رمز PIN الاحتياطي المكوّن من 6 أرقام",
     "wrongPin": "رمز PIN غير صحيح — حاول مرة أخرى",
+    "wrongPinAttempts": "رمز PIN غير صحيح — بقي {{remaining}} محاولة/محاولات",
+    "tooManyAttempts": "محاولات فاشلة كثيرة جدًا",
+    "tryAgainIn": "حاول مرة أخرى بعد {{seconds}} ثانية، أو استخدم السمات الحيوية",
     "useBiometrics": "استخدام السمات الحيوية"
   }
 }

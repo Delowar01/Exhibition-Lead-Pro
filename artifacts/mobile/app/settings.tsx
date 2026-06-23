@@ -35,6 +35,7 @@ import {
   clearBiometricVault,
   clearPin,
   getBiometricLabel,
+  hasPinSet,
   isBiometricSupported,
   savePin,
   saveBiometricVault,
@@ -154,11 +155,37 @@ export default function SettingsScreen() {
       setBioBusy(true);
       try {
         await clearBiometricVault();
-        await clearPin();
         settings.setBiometricEnabled(false);
-        void refreshPinAvailability();
         // Dismiss the lock overlay immediately if it happens to be showing.
         unlock();
+        // If a PIN backup exists, ask whether to keep or remove it rather than
+        // silently wiping it — the user may re-enable the lock later.
+        const pinExists = await hasPinSet();
+        if (pinExists && Platform.OS !== "web") {
+          Alert.alert(
+            t("settings.removePinTitle"),
+            t("settings.removePinBody"),
+            [
+              {
+                text: t("settings.keepPin"),
+                style: "cancel",
+              },
+              {
+                text: t("settings.removePin"),
+                style: "destructive",
+                onPress: () => {
+                  void (async () => {
+                    await clearPin();
+                    await refreshPinAvailability();
+                  })();
+                },
+              },
+            ],
+          );
+        } else {
+          await clearPin();
+          void refreshPinAvailability();
+        }
       } finally {
         setBioBusy(false);
       }
@@ -817,6 +844,7 @@ const LOCK_TIMEOUT_OPTIONS: { value: LockTimeoutMs; labelKey: string }[] = [
   { value: 15_000, labelKey: "settings.lockTimeout15s" },
   { value: 30_000, labelKey: "settings.lockTimeout30s" },
   { value: 60_000, labelKey: "settings.lockTimeout1min" },
+  { value: 300_000, labelKey: "settings.lockTimeout5min" },
 ];
 
 function LockTimeoutPicker({

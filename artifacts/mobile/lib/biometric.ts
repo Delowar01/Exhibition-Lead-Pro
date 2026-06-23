@@ -98,12 +98,21 @@ export async function clearBiometricVault(): Promise<void> {
 // ---------------------------------------------------------------------------
 // PIN fallback storage
 //
-// A 4-digit PIN stored in the hardware-backed secure store alongside (or
+// A 6-digit PIN stored in the hardware-backed secure store alongside (or
 // instead of) the biometric vault. The PIN itself is stored directly — the
 // SecureStore backend is AES-256-GCM encrypted and hardware-attested, so
 // storing the plain PIN value there is equivalent in security to storing a
 // hashed value (the TEE gates both equally).
 // ---------------------------------------------------------------------------
+
+/** Required number of digits in the App PIN. */
+export const PIN_LENGTH = 6;
+
+/** Max consecutive wrong PIN attempts before a temporary lockout kicks in. */
+export const MAX_PIN_ATTEMPTS = 5;
+
+/** Duration of the temporary PIN lockout after MAX_PIN_ATTEMPTS failures. */
+export const PIN_LOCKOUT_MS = 30_000;
 
 const PIN_KEY = "csp_app_lock_pin";
 
@@ -119,10 +128,59 @@ export async function verifyPin(pin: string): Promise<boolean> {
 
 export async function clearPin(): Promise<void> {
   await deleteSecureItem(PIN_KEY);
+  await clearPinLockState();
 }
 
 export async function hasPinSet(): Promise<boolean> {
   if (Platform.OS === "web") return false;
   const stored = await getSecureItem(PIN_KEY);
   return stored !== null && stored.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Brute-force lockout state
+//
+// After MAX_PIN_ATTEMPTS consecutive wrong PINs we lock PIN entry for
+// PIN_LOCKOUT_MS. The state is persisted so quitting + relaunching the app
+// cannot reset the attempt counter or bypass an active lockout. Biometrics
+// remain available throughout — this only throttles PIN guessing. The lockout
+// is always temporary; it never permanently locks the app or the account.
+// ---------------------------------------------------------------------------
+
+const PIN_LOCK_STATE_KEY = "csp_app_lock_pin_state";
+
+export interface PinLockState {
+  /** Consecutive wrong attempts since the last success / lockout reset. */
+  failedAttempts: number;
+  /** Epoch ms until which PIN entry is locked, or null if not locked. */
+  lockedUntil: number | null;
+}
+
+const EMPTY_PIN_LOCK_STATE: PinLockState = {
+  failedAttempts: 0,
+  lockedUntil: null,
+};
+
+export async function readPinLockState(): Promise<PinLockState> {
+  const raw = await getSecureItem(PIN_LOCK_STATE_KEY);
+  if (!raw) return { ...EMPTY_PIN_LOCK_STATE };
+  try {
+    const parsed = JSON.parse(raw) as Partial<PinLockState>;
+    return {
+      failedAttempts:
+        typeof parsed.failedAttempts === "number" ? parsed.failedAttempts : 0,
+      lockedUntil:
+        typeof parsed.lockedUntil === "number" ? parsed.lockedUntil : null,
+    };
+  } catch {
+    return { ...EMPTY_PIN_LOCK_STATE };
+  }
+}
+
+export async function writePinLockState(state: PinLockState): Promise<void> {
+  await setSecureItem(PIN_LOCK_STATE_KEY, JSON.stringify(state));
+}
+
+export async function clearPinLockState(): Promise<void> {
+  await deleteSecureItem(PIN_LOCK_STATE_KEY);
 }

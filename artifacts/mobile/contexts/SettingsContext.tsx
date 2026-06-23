@@ -15,7 +15,7 @@ export type CaptureModePref = "single" | "rapid" | "batch";
 export type LanguagePref = "en" | "ar";
 export type ContactSortPref = "newest" | "oldest" | "name";
 /** 0 = lock immediately when screen turns off; others = grace period in ms. */
-export type LockTimeoutMs = 0 | 15_000 | 30_000 | 60_000;
+export type LockTimeoutMs = 0 | 15_000 | 30_000 | 60_000 | 300_000;
 
 export interface ContactFilters {
   sort: ContactSortPref;
