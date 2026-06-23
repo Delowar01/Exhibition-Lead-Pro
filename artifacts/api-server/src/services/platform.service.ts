@@ -1,0 +1,54 @@
+import { db } from "@workspace/db";
+import { companiesTable, usersTable, scansTable, leadsTable, activityLogsTable } from "@workspace/db";
+import { eq, count, sql } from "drizzle-orm";
+
+export async function getStats() {
+  const [{ totalCompanies }] = await db.select({ totalCompanies: count() }).from(companiesTable);
+  const [{ activeCompanies }] = await db.select({ activeCompanies: count() }).from(companiesTable).where(eq(companiesTable.status, "active"));
+  const [{ totalUsers }] = await db.select({ totalUsers: count() }).from(usersTable);
+  const [{ totalScans }] = await db.select({ totalScans: count() }).from(scansTable);
+  const [{ totalLeads }] = await db.select({ totalLeads: count() }).from(leadsTable);
+
+  const planDistribution = await db.select({ status: companiesTable.plan, count: count() }).from(companiesTable).groupBy(companiesTable.plan);
+
+  // Simulate monthly revenue from plans
+  const planRevenue: Record<string, number> = { free: 0, starter: 29, professional: 99, enterprise: 299 };
+  const monthlyRevenue = planDistribution.reduce((sum, p) => sum + (planRevenue[p.status] ?? 0) * p.count, 0);
+
+  return {
+    totalCompanies, activeCompanies, totalUsers, totalScans, totalLeads,
+    monthlyRevenue,
+    churnRate: totalCompanies > 0 ? Math.round(((totalCompanies - activeCompanies) / totalCompanies) * 100) : 0,
+    subscriptionDistribution: planDistribution.map(p => ({ status: p.status, count: p.count, label: p.status })),
+  };
+}
+
+export async function getRevenueTrend() {
+  // Generate 12-month revenue trend (simulated based on company creation dates)
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const label = d.toLocaleString("default", { month: "short", year: "2-digit" });
+    // Simulate growing revenue
+    const baseRevenue = 1200 + (11 - i) * 450 + Math.floor(Math.random() * 300);
+    months.push({ date: d.toISOString().slice(0, 7), value: baseRevenue, label });
+  }
+  return months;
+}
+
+export async function getScanTrend() {
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const label = d.toLocaleDateString("default", { month: "short", day: "numeric" });
+    days.push({ date: d.toISOString().slice(0, 10), value: Math.floor(40 + Math.random() * 120), label });
+  }
+  return days;
+}
+
+export async function getActivity() {
+  const activity = await db.select().from(activityLogsTable).orderBy(sql`${activityLogsTable.createdAt} DESC`).limit(50);
+  return activity;
+}

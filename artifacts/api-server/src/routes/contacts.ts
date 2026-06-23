@@ -1,560 +1,66 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { contactsTable, usersTable, eventsTable, scansTable, leadsTable, meetingsTable, contactStatusHistoryTable } from "@workspace/db";
-import { eq, ne, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc } from "drizzle-orm";
-import { requireAuth, blockReadOnlyMutations, requirePermission, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
-import { refAccessible } from "../lib/tenant.js";
-import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/ai.js";
-import { notifyUser } from "../lib/push.js";
+import * as contacts from "../services/contacts.service.js";
 
 const router = Router();
 router.use(requireAuth);
 router.use("/contacts", blockReadOnlyMutations);
 router.use("/contacts", auditMutations("contacts"));
 
-function parseTags(tags: string | null): string[] {
-  if (!tags) return [];
-  try { return JSON.parse(tags); } catch { return []; }
-}
-
-function formatContact(c: typeof contactsTable.$inferSelect, eventName?: string | null, assignedToName?: string | null) {
-  return {
-    ...c,
-    fullName: c.fullName ?? ([c.firstName, c.lastName].filter(Boolean).join(" ") || null),
-    tags: parseTags(c.tags),
-    talkingPoints: parseTags(c.talkingPoints),
-    eventName: eventName ?? null,
-    assignedToName: assignedToName ?? null,
-  };
-}
-
-function getCompanyId(req: AuthRequest): number | null {
-  return req.user!.companyId ?? null;
-}
-
 // GET /contacts
 router.get("/contacts", async (req: AuthRequest, res) => {
-  try {
-    const { search, status, temperature, eventId, assignedTo, sort, hasFollowUp, hasMeeting, dateFrom, dateTo, includeDuplicates, page = "1", limit = "20" } = req.query as Record<string, string>;
-    const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(200, parseInt(limit));
-    const offset = (pageNum - 1) * limitNum;
-    const conditions = [];
-    if (req.user!.role !== "platform_owner") conditions.push(inArray(contactsTable.companyId, req.user!.accessibleCompanies));
-    if (search) conditions.push(ilike(contactsTable.fullName, `%${search}%`));
-    if (status) conditions.push(eq(contactsTable.status, status));
-    if (temperature) conditions.push(eq(contactsTable.leadTemperature, temperature));
-    if (eventId && !isNaN(parseInt(eventId))) conditions.push(eq(contactsTable.eventId, parseInt(eventId)));
-    if (assignedTo && !isNaN(parseInt(assignedTo))) conditions.push(eq(contactsTable.assignedToId, parseInt(assignedTo)));
-    // Duplicate management: the main list shows originals only (duplicateOfId IS NULL).
-    if (includeDuplicates !== "true") conditions.push(isNull(contactsTable.duplicateOfId));
-    if (hasFollowUp === "true") conditions.push(isNotNull(contactsTable.followUpDate));
-    if (hasFollowUp === "false") conditions.push(isNull(contactsTable.followUpDate));
-    if (hasMeeting === "true") conditions.push(inArray(contactsTable.id, db.select({ id: meetingsTable.contactId }).from(meetingsTable).where(eq(meetingsTable.status, "scheduled"))));
-    if (dateFrom) conditions.push(sql`${contactsTable.createdAt} >= ${dateFrom}`);
-    if (dateTo) conditions.push(sql`${contactsTable.createdAt} <= ${dateTo + " 23:59:59"}`);
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const orderBy = sort === "oldest" ? asc(contactsTable.createdAt)
-      : sort === "name" ? asc(contactsTable.fullName)
-      : desc(contactsTable.createdAt);
-    const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(whereClause);
-    const contacts = await db.select().from(contactsTable).where(whereClause).limit(limitNum).offset(offset).orderBy(orderBy);
-
-    const enriched = await Promise.all(contacts.map(async (c) => {
-      const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
-      const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
-      return formatContact(c, event?.name, assignee?.name);
-    }));
-
-    res.json({ contacts: enriched, total, page: pageNum, limit: limitNum });
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.listContacts(req.user!, req.query as contacts.ListContactsParams));
 });
 
 // POST /contacts
 router.post("/contacts", requirePermission("contacts", "create"), async (req: AuthRequest, res) => {
-  try {
-    const companyId = getCompanyId(req);
-    if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
-    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, cardImageUrl } = req.body;
-    if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
-    if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
-    const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
-    const { arabicName } = req.body;
-
-    // AI lead qualification is deferred to a background task (see below) so the
-    // contact appears IMMEDIATELY. The score/temperature/reasoning start null and
-    // are filled in asynchronously; the mobile client refetches and shows them
-    // within a second or two. Blocking the response on the Gemini call was the
-    // single biggest avoidable latency in the save path.
-    const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
-    // Record the initial lead status in the append-only history.
-    void db.insert(contactStatusHistoryTable).values({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: req.user!.id }).catch(() => {});
-
-    // Auto-link: if this new contact matches an existing original (same email /
-    // phone / name+company), mark it as a duplicate immediately so it is hidden
-    // from All Contacts, stats, and reports without waiting for a manual merge.
-    let finalContact = contact;
-    try {
-      const original = await findOriginalContact(
-        companyId,
-        { email: contact.email, mobile: contact.mobile, officePhone: contact.officePhone, fullName: contact.fullName, firstName: contact.firstName, lastName: contact.lastName, contactCompany: contact.contactCompany },
-        contact.id,
-      );
-      if (original) {
-        const [linked] = await db
-          .update(contactsTable)
-          .set({ duplicateOfId: original.id, updatedAt: new Date() })
-          .where(eq(contactsTable.id, contact.id))
-          .returning();
-        if (linked) finalContact = linked;
-      }
-    } catch {
-      // Non-fatal: duplicate detection must never block contact creation.
-    }
-
-    // Respond immediately — the contact is now persisted and visible. Lead
-    // scoring (and the hot-lead notification) run AFTER the response so the
-    // client never waits on the Gemini call.
-    res.status(201).json(formatContact(finalContact));
-
-    // Background: AI lead qualification + hot-lead notify. Skip for auto-linked
-    // duplicates (they are hidden from the list, so a score is pointless). The
-    // scored row is picked up by the client on its next contacts refetch.
-    if (!finalContact.duplicateOfId) {
-      const ownerId = req.user!.id;
-      void (async () => {
-        try {
-          let eventName: string | null = null;
-          if (finalContact.eventId) {
-            const [ev] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, finalContact.eventId)).limit(1);
-            eventName = ev?.name ?? null;
-          }
-          const score = await scoreLead(
-            { firstName: finalContact.firstName, lastName: finalContact.lastName, jobTitle: finalContact.jobTitle, contactCompany: finalContact.contactCompany, email: finalContact.email, mobile: finalContact.mobile, website: finalContact.website, linkedin: finalContact.linkedin, country: finalContact.country, notes: finalContact.notes },
-            eventName,
-          );
-          const isHot = score.temperature === "hot";
-          // Re-target the still-existing, still-original row. If the contact was
-          // deleted or merged-away while scoring ran, `updated` is empty and we
-          // skip the notification to avoid a stale "hot lead" push.
-          const [updated] = await db.update(contactsTable)
-            .set({ leadScore: score.score, leadTemperature: score.temperature, aiReasoning: score.reasoning, hotNotifiedAt: isHot ? new Date() : undefined, updatedAt: new Date() })
-            .where(and(eq(contactsTable.id, finalContact.id), isNull(contactsTable.duplicateOfId)))
-            .returning();
-          if (isHot && updated) {
-            const target = finalContact.assignedToId ?? ownerId;
-            void notifyUser(target, {
-              title: "\uD83D\uDD25 Hot lead captured",
-              body: `${finalContact.fullName ?? "New contact"}${finalContact.contactCompany ? ` \u00b7 ${finalContact.contactCompany}` : ""} scored ${score.score}`,
-              data: { type: "hot_lead", contactId: finalContact.id },
-            });
-          }
-        } catch (aiErr) {
-          logAiError("lead-scoring", aiErr);
-        }
-      })();
-    }
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.status(201).json(await contacts.createContact(req.user!, req.body ?? {}));
 });
 
 // GET /contacts/stats
 router.get("/contacts/stats", async (req: AuthRequest, res) => {
-  try {
-    const whereClause = tenantScope(req.user, contactsTable.companyId);
-
-    const statsWhere = and(whereClause, isNull(contactsTable.duplicateOfId));
-    const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(statsWhere);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const todayContacts = await db.select({ count: count() }).from(contactsTable).where(and(statsWhere, sql`${contactsTable.createdAt} >= ${today}`));
-    const byStatus = await db.select({ status: contactsTable.status, count: count() }).from(contactsTable).where(statsWhere).groupBy(contactsTable.status);
-
-    const wonCount = byStatus.find(s => s.status === "won")?.count ?? 0;
-    const conversionRate = total > 0 ? Math.round((wonCount / total) * 100) : 0;
-
-    res.json({
-      total,
-      newToday: todayContacts[0]?.count ?? 0,
-      byStatus: byStatus.map(s => ({ status: s.status, count: s.count, label: s.status })),
-      conversionRate,
-    });
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.contactStats(req.user!));
 });
-
-function normEmail(v: string | null): string | null {
-  if (!v) return null;
-  const t = v.trim().toLowerCase();
-  return t.length > 0 ? t : null;
-}
-function normPhone(v: string | null): string | null {
-  if (!v) return null;
-  const digits = v.replace(/\D/g, "");
-  return digits.length >= 7 ? digits : null;
-}
-function normName(c: typeof contactsTable.$inferSelect): string | null {
-  const name = (c.fullName ?? [c.firstName, c.lastName].filter(Boolean).join(" ")).trim().toLowerCase().replace(/\s+/g, " ");
-  const company = (c.contactCompany ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-  if (!name || !company) return null;
-  return `${name}|${company}`;
-}
-
-// Finds the first ORIGINAL contact (duplicateOfId IS NULL) in the same company
-// that matches by email, phone, or name+company. Returns null if no match.
-// Used by POST /contacts to auto-link new duplicates immediately at scan time.
-async function findOriginalContact(
-  companyId: number,
-  fields: {
-    email?: string | null; mobile?: string | null; officePhone?: string | null;
-    fullName?: string | null; firstName?: string | null; lastName?: string | null;
-    contactCompany?: string | null;
-  },
-  excludeId: number,
-): Promise<typeof contactsTable.$inferSelect | null> {
-  const candidates = await db
-    .select()
-    .from(contactsTable)
-    .where(and(eq(contactsTable.companyId, companyId), isNull(contactsTable.duplicateOfId), ne(contactsTable.id, excludeId)))
-    .limit(2000);
-
-  const normE = normEmail(fields.email ?? null);
-  const normM = normPhone(fields.mobile ?? null);
-  const normO = normPhone(fields.officePhone ?? null);
-  const fn = (fields.fullName ?? [fields.firstName, fields.lastName].filter(Boolean).join(" ")) || null;
-  const nc = fn ? fn.trim().toLowerCase().replace(/\s+/g, " ") : null;
-  const comp = fields.contactCompany ? fields.contactCompany.trim().toLowerCase().replace(/\s+/g, " ") : null;
-  const normN = nc && comp ? `${nc}|${comp}` : null;
-
-  for (const c of candidates) {
-    if (normE && normE === normEmail(c.email)) return c;
-    const cMobile = normPhone(c.mobile);
-    const cOffice = normPhone(c.officePhone);
-    if (normM && (normM === cMobile || normM === cOffice)) return c;
-    if (normO && (normO === cMobile || normO === cOffice)) return c;
-    if (normN && normN === normName(c)) return c;
-  }
-  return null;
-}
 
 // GET /contacts/duplicates — group likely-duplicate contacts within the tenant
 router.get("/contacts/duplicates", async (req: AuthRequest, res) => {
-  try {
-    const whereClause = tenantScope(req.user, contactsTable.companyId);
-    const allGroups: { matchType: string; matchValue: string; contacts: ReturnType<typeof formatContact>[] }[] = [];
-
-    // ── 1. Linked groups — auto-detected duplicates (duplicateOfId IS NOT NULL)
-    // These are definite duplicates stored at scan time; show original + duplicates.
-    const linked = await db.select().from(contactsTable)
-      .where(and(whereClause, isNotNull(contactsTable.duplicateOfId))).limit(2000);
-
-    if (linked.length > 0) {
-      const originalIds = [...new Set(linked.map((c) => c.duplicateOfId).filter((id): id is number => id != null))];
-      const originals = await db.select().from(contactsTable).where(inArray(contactsTable.id, originalIds));
-      const origMap = new Map(originals.map((o) => [o.id, o]));
-      const byOriginal = new Map<number, typeof contactsTable.$inferSelect[]>();
-      for (const c of linked) {
-        if (!c.duplicateOfId) continue;
-        const arr = byOriginal.get(c.duplicateOfId) ?? [];
-        arr.push(c);
-        byOriginal.set(c.duplicateOfId, arr);
-      }
-      for (const [origId, dups] of byOriginal) {
-        const orig = origMap.get(origId);
-        if (!orig) continue;
-        allGroups.push({
-          matchType: "linked",
-          matchValue: (orig.fullName ?? [orig.firstName, orig.lastName].filter(Boolean).join(" ")) || `Contact #${origId}`,
-          contacts: [orig, ...dups].map((m) => formatContact(m)),
-        });
-      }
-    }
-
-    // ── 2. Similarity groups — unlinked contacts only (legacy / still-pending)
-    const rows = await db.select().from(contactsTable)
-      .where(and(whereClause, isNull(contactsTable.duplicateOfId))).limit(2000);
-
-    const byKey = (extract: (c: typeof contactsTable.$inferSelect) => string | null) => {
-      const map = new Map<string, typeof contactsTable.$inferSelect[]>();
-      for (const c of rows) {
-        const k = extract(c);
-        if (!k) continue;
-        const arr = map.get(k) ?? [];
-        arr.push(c);
-        map.set(k, arr);
-      }
-      return map;
-    };
-
-    const sources: { matchType: "email" | "phone" | "name"; map: Map<string, typeof contactsTable.$inferSelect[]> }[] = [
-      { matchType: "email", map: byKey((c) => normEmail(c.email)) },
-      { matchType: "phone", map: byKey((c) => normPhone(c.mobile) ?? normPhone(c.officePhone)) },
-      { matchType: "name", map: byKey(normName) },
-    ];
-
-    const seen = new Set<string>();
-    for (const { matchType, map } of sources) {
-      for (const [key, members] of map) {
-        if (members.length < 2) continue;
-        const idKey = members.map((m) => m.id).sort((a, b) => a - b).join(",");
-        if (seen.has(idKey)) continue;
-        seen.add(idKey);
-        allGroups.push({ matchType, matchValue: key, contacts: members.map((m) => formatContact(m)) });
-      }
-    }
-
-    res.json({ groups: allGroups });
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.listDuplicates(req.user!));
 });
-
-const MERGE_BACKFILL_FIELDS = [
-  "firstName", "lastName", "fullName", "arabicName", "jobTitle", "contactCompany",
-  "email", "mobile", "officePhone", "website", "country", "address", "linkedin",
-  "notes", "leadScore", "leadTemperature", "aiReasoning", "industry", "seniority",
-  "enrichmentSummary", "talkingPoints", "followUpDate", "cardImageUrl", "eventId", "assignedToId",
-] as const;
-
-function isEmpty(v: unknown): boolean {
-  return v == null || (typeof v === "string" && v.trim() === "");
-}
 
 // POST /contacts/make-original — promote a linked duplicate to be the original
 router.post("/contacts/make-original", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
-  try {
-    const { duplicateId, groupOriginalId } = req.body as { duplicateId?: number; groupOriginalId?: number };
-    if (typeof duplicateId !== "number" || typeof groupOriginalId !== "number") {
-      res.status(400).json({ error: "duplicateId and groupOriginalId are required integers" });
-      return;
-    }
-    if (duplicateId === groupOriginalId) {
-      res.status(400).json({ error: "duplicateId and groupOriginalId must be different" });
-      return;
-    }
-
-    // Load both contacts
-    const [dup] = await db.select().from(contactsTable).where(eq(contactsTable.id, duplicateId)).limit(1);
-    const [orig] = await db.select().from(contactsTable).where(eq(contactsTable.id, groupOriginalId)).limit(1);
-
-    if (!dup || !canAccessCompany(req.user, dup.companyId)) {
-      res.status(404).json({ error: "Duplicate contact not found" });
-      return;
-    }
-    if (!orig || !canAccessCompany(req.user, orig.companyId)) {
-      res.status(404).json({ error: "Original contact not found" });
-      return;
-    }
-    if (dup.companyId !== orig.companyId) {
-      res.status(400).json({ error: "Both contacts must belong to the same company" });
-      return;
-    }
-    // The duplicate must actually point at the original
-    if (dup.duplicateOfId !== groupOriginalId) {
-      res.status(400).json({ error: "The specified contact is not a duplicate of the given original" });
-      return;
-    }
-
-    // Perform the swap in a transaction:
-    // 1. Promote the dup: clear its duplicateOfId (it becomes the new original)
-    // 2. Demote the old original: set its duplicateOfId to the new original
-    // 3. Re-point any other duplicates of the old original to the new original
-    await db.transaction(async (tx) => {
-      // Re-point all siblings (other duplicates of the old original) to the new original
-      await tx.update(contactsTable)
-        .set({ duplicateOfId: duplicateId, updatedAt: new Date() })
-        .where(and(eq(contactsTable.duplicateOfId, groupOriginalId), ne(contactsTable.id, duplicateId)));
-      // Promote the duplicate to original
-      await tx.update(contactsTable)
-        .set({ duplicateOfId: null, updatedAt: new Date() })
-        .where(eq(contactsTable.id, duplicateId));
-      // Demote the old original
-      await tx.update(contactsTable)
-        .set({ duplicateOfId: duplicateId, updatedAt: new Date() })
-        .where(eq(contactsTable.id, groupOriginalId));
-    });
-
-    res.json({ success: true, message: "Contact promoted to original" });
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.makeOriginal(req.user!, req.body ?? {}));
 });
 
 // POST /contacts/merge — consolidate duplicates into a primary contact
 router.post("/contacts/merge", requirePermission("contacts", "delete"), async (req: AuthRequest, res) => {
-  try {
-    const { primaryId, duplicateIds } = req.body as { primaryId?: number; duplicateIds?: number[] };
-    if (typeof primaryId !== "number" || !Array.isArray(duplicateIds) || duplicateIds.length === 0) {
-      res.status(400).json({ error: "primaryId and a non-empty duplicateIds array are required" });
-      return;
-    }
-    const dupIds = [...new Set(duplicateIds)].filter((id) => id !== primaryId);
-    if (dupIds.length === 0) { res.status(400).json({ error: "No distinct duplicate ids to merge" }); return; }
-
-    const [primary] = await db.select().from(contactsTable).where(eq(contactsTable.id, primaryId)).limit(1);
-    if (!primary || !canAccessCompany(req.user, primary.companyId)) { res.status(404).json({ error: "Primary contact not found" }); return; }
-
-    const dups = await db.select().from(contactsTable).where(inArray(contactsTable.id, dupIds));
-    if (dups.length !== dupIds.length || dups.some((d) => d.companyId !== primary.companyId)) {
-      res.status(400).json({ error: "All duplicates must exist and belong to the same company as the primary contact" });
-      return;
-    }
-
-    // Backfill empty primary fields from duplicates (in request order), and union tags.
-    const updates: Record<string, unknown> = {};
-    for (const field of MERGE_BACKFILL_FIELDS) {
-      if (!isEmpty(primary[field])) continue;
-      for (const d of dups) {
-        if (!isEmpty(d[field])) { updates[field] = d[field]; break; }
-      }
-    }
-    const tagSet = new Set<string>(parseTags(primary.tags));
-    for (const d of dups) for (const t of parseTags(d.tags)) tagSet.add(t);
-    updates.tags = JSON.stringify([...tagSet]);
-    updates.updatedAt = new Date();
-
-    const merged = await db.transaction(async (tx) => {
-      await tx.update(scansTable).set({ contactId: primaryId }).where(inArray(scansTable.contactId, dupIds));
-      await tx.update(leadsTable).set({ contactId: primaryId }).where(inArray(leadsTable.contactId, dupIds));
-      const [updated] = await tx.update(contactsTable).set(updates as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, primaryId)).returning();
-      await tx.delete(contactsTable).where(inArray(contactsTable.id, dupIds));
-      return updated;
-    });
-
-    const event = merged.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, merged.eventId)).then(r => r[0]) : null;
-    const assignee = merged.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, merged.assignedToId)).then(r => r[0]) : null;
-    res.json(formatContact(merged, event?.name, assignee?.name));
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.mergeContacts(req.user!, req.body ?? {}));
 });
 
 // GET /contacts/:id
 router.get("/contacts/:id", async (req: AuthRequest, res) => {
-  try {
-    const id = parseInt(String(req.params.id));
-    const [c] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-    if (!c || !canAccessCompany(req.user, c.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-    const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
-    const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
-    res.json(formatContact(c, event?.name, assignee?.name));
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.getContact(req.user!, parseInt(String(req.params.id))));
 });
 
 // PATCH /contacts/:id
 router.patch("/contacts/:id", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
-  try {
-    const id = parseInt(String(req.params.id));
-    const [existing] = await db.select({ companyId: contactsTable.companyId, status: contactsTable.status }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-    const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId } = req.body ?? {};
-    if (!(await refAccessible(req.user, "events", eventId))) { res.status(400).json({ error: "Invalid eventId" }); return; }
-    if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
-    const fullName = firstName !== undefined || lastName !== undefined ? [firstName, lastName].filter(Boolean).join(" ") || null : undefined;
-    const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId };
-    if (fullName !== undefined) updateData.fullName = fullName;
-    if (tags !== undefined) updateData.tags = JSON.stringify(tags);
-    // Remove undefined
-    Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
-    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
-    const statusChanged = status !== undefined && status !== existing.status;
-    const [c] = await db.update(contactsTable).set(updateData as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, id)).returning();
-    if (!c) { res.status(404).json({ error: "Contact not found" }); return; }
-    // Log lead status transitions to the append-only history.
-    if (statusChanged) {
-      void db.insert(contactStatusHistoryTable).values({ companyId: existing.companyId, contactId: id, fromStatus: existing.status, toStatus: status, comment: statusComment ?? null, changedById: req.user!.id }).catch(() => {});
-    }
-    const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
-    const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
-    res.json(formatContact(c, event?.name, assignee?.name));
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.updateContact(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 
 // DELETE /contacts/:id
 router.delete("/contacts/:id", requirePermission("contacts", "delete"), async (req: AuthRequest, res) => {
-  try {
-    const id = parseInt(String(req.params.id));
-    const [existing] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-    await db.delete(contactsTable).where(eq(contactsTable.id, id));
-    res.json({ success: true, message: "Contact deleted" });
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.deleteContact(req.user!, parseInt(String(req.params.id))));
 });
 
 // POST /contacts/:id/enrich — AI enrichment (industry, seniority, summary, talking points)
 router.post("/contacts/:id/enrich", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
-  try {
-    const id = parseInt(String(req.params.id));
-    const [c] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-    if (!c || !canAccessCompany(req.user, c.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-
-    let result;
-    try {
-      result = await aiEnrichContact({
-        firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle,
-        contactCompany: c.contactCompany, email: c.email, website: c.website,
-        linkedin: c.linkedin, country: c.country, notes: c.notes,
-      });
-    } catch (aiErr) {
-      logAiError("contact-enrichment", aiErr);
-      res.status(502).json({ error: "AI enrichment is temporarily unavailable. Please try again." });
-      return;
-    }
-
-    const [updated] = await db.update(contactsTable).set({
-      industry: result.industry,
-      seniority: result.seniority,
-      enrichmentSummary: result.summary,
-      talkingPoints: JSON.stringify(result.talkingPoints),
-      enrichedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(contactsTable.id, id)).returning();
-
-    const event = updated.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, updated.eventId)).then(r => r[0]) : null;
-    const assignee = updated.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, updated.assignedToId)).then(r => r[0]) : null;
-    res.json(formatContact(updated, event?.name, assignee?.name));
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.enrichContact(req.user!, parseInt(String(req.params.id))));
 });
 
 // GET /contacts/:id/status-history — lead status change history
 router.get("/contacts/:id/status-history", async (req: AuthRequest, res) => {
-  try {
-    const id = parseInt(String(req.params.id));
-    const [c] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-    if (!c || !canAccessCompany(req.user, c.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-    const rows = await db.select().from(contactStatusHistoryTable).where(eq(contactStatusHistoryTable.contactId, id)).orderBy(desc(contactStatusHistoryTable.createdAt));
-    const userIds = [...new Set(rows.map(r => r.changedById).filter((v): v is number => v != null))];
-    const users = userIds.length > 0 ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, userIds)) : [];
-    const nameById = new Map(users.map(u => [u.id, u.name]));
-    const history = rows.map(r => ({ ...r, changedByName: r.changedById != null ? (nameById.get(r.changedById) ?? null) : null }));
-    res.json({ history, total: history.length });
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  res.json(await contacts.statusHistory(req.user!, parseInt(String(req.params.id))));
 });
 
 export default router;
