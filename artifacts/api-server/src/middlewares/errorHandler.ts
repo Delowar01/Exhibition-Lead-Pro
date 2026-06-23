@@ -20,6 +20,23 @@ export function notFoundHandler(_req: Request, res: Response): void {
   res.status(404).json({ error: "Not Found" });
 }
 
+// Resolve the HTTP status carried by an error. AppError wins; otherwise honor the
+// `statusCode`/`status` that framework errors set (e.g. body-parser's 413 for an
+// oversized body, 400 for malformed JSON). Falls back to 500 for true unknowns.
+function statusOf(err: unknown): number {
+  if (err instanceof AppError) return err.statusCode;
+  if (typeof err === "object" && err !== null) {
+    const e = err as { statusCode?: unknown; status?: unknown };
+    if (typeof e.statusCode === "number" && e.statusCode >= 400 && e.statusCode <= 599) {
+      return e.statusCode;
+    }
+    if (typeof e.status === "number" && e.status >= 400 && e.status <= 599) {
+      return e.status;
+    }
+  }
+  return 500;
+}
+
 /**
  * Global error handler — the single place unhandled route errors funnel
  * through. It emits the same `{ error }` shape used across the API, so existing
@@ -39,9 +56,17 @@ export function errorHandler(
     return;
   }
 
-  const statusCode = err instanceof AppError ? err.statusCode : 500;
-  const message =
-    err instanceof AppError ? err.message : "Internal server error";
+  const statusCode = statusOf(err);
+  // Client errors (4xx) carry safe, caller-actionable messages (e.g. body-parser
+  // "request entity too large" -> 413, malformed JSON -> 400) — preserve both
+  // their status AND message. Server errors (5xx) and true unknowns get a
+  // generic message so internal details never leak.
+  let message = "Internal server error";
+  if (err instanceof AppError) {
+    message = err.message;
+  } else if (statusCode < 500 && err instanceof Error && err.message) {
+    message = err.message;
+  }
 
   res.status(statusCode).json({ error: message });
 }
