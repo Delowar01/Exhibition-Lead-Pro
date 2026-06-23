@@ -1,40 +1,25 @@
-import { db } from "@workspace/db";
-import { contactsTable, leadsTable, eventsTable, usersTable, scansTable, meetingsTable, followUpsTable, contactStatusHistoryTable } from "@workspace/db";
-import { eq, and, count, sql, desc, inArray, gte, lte, isNotNull, isNull } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
-import { tenantScope, canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
+import { type AuthUser } from "../middlewares/requireAuth.js";
+import * as reportsRepo from "../repositories/reports.repository.js";
 
 export async function getAdminDashboard(user: AuthUser) {
-  const whereClause = tenantScope(user, contactsTable.companyId);
-  const leadWhere = tenantScope(user, leadsTable.companyId);
-  const eventWhere = tenantScope(user, eventsTable.companyId);
-  const userWhere = tenantScope(user, usersTable.companyId);
-  const scanWhere = tenantScope(user, scansTable.companyId);
-
-  const [{ totalContacts }] = await db.select({ totalContacts: count() }).from(contactsTable).where(and(whereClause, isNull(contactsTable.duplicateOfId)));
-  const [{ totalLeads }] = await db.select({ totalLeads: count() }).from(leadsTable).where(leadWhere);
-  const [{ totalEvents }] = await db.select({ totalEvents: count() }).from(eventsTable).where(eventWhere);
-  const [{ teamCount }] = await db.select({ teamCount: count() }).from(usersTable).where(userWhere);
-
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const [{ newContactsToday }] = await db.select({ newContactsToday: count() }).from(contactsTable).where(and(whereClause, isNull(contactsTable.duplicateOfId), sql`${contactsTable.createdAt} >= ${today}`));
-
-  const wonLeads = await db.select({ count: count() }).from(leadsTable).where(and(leadWhere, eq(leadsTable.stage, "won")));
-  const conversionRate = totalLeads > 0 ? Math.round((wonLeads[0].count / totalLeads) * 100) : 0;
-
   const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0);
-  const [{ scansThisMonth }] = await db.select({ scansThisMonth: count() }).from(scansTable).where(and(scanWhere, sql`${scansTable.createdAt} >= ${startOfMonth}`));
+
+  const { totalContacts, totalLeads, totalEvents, teamCount, newContactsToday, wonLeadsCount, scansThisMonth } =
+    await reportsRepo.adminDashboardCounts(user, today, startOfMonth);
+
+  const conversionRate = totalLeads > 0 ? Math.round((wonLeadsCount / totalLeads) * 100) : 0;
 
   return { totalContacts, totalLeads, totalEvents, newContactsToday, conversionRate, scansThisMonth, teamCount };
 }
 
 export async function getLeadsByEvent(user: AuthUser) {
-  const events = await db.select().from(eventsTable).where(tenantScope(user, eventsTable.companyId));
+  const events = await reportsRepo.listEventsForLeadsByEvent(user);
 
-  const leadScope = tenantScope(user, leadsTable.companyId);
   const result = await Promise.all(events.map(async (e) => {
-    const [{ leadCount }] = await db.select({ leadCount: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, e.id), leadScope));
-    const [{ wonCount }] = await db.select({ wonCount: count() }).from(leadsTable).where(and(eq(leadsTable.eventId, e.id), eq(leadsTable.stage, "won"), leadScope));
+    const leadCount = await reportsRepo.eventLeadCount(user, e.id);
+    const wonCount = await reportsRepo.eventWonLeadCount(user, e.id);
     const conversionRate = leadCount > 0 ? Math.round((wonCount / leadCount) * 100) : 0;
     return { eventId: e.id, eventName: e.name, leadCount, wonCount, conversionRate, createdAt: e.createdAt.toISOString() };
   }));
@@ -43,12 +28,12 @@ export async function getLeadsByEvent(user: AuthUser) {
 }
 
 export async function getTeamPerformance(user: AuthUser) {
-  const users = await db.select().from(usersTable).where(tenantScope(user, usersTable.companyId));
+  const users = await reportsRepo.listUsersForTeamPerformance(user);
 
   const result = await Promise.all(users.map(async (u) => {
-    const [{ scanCount }] = await db.select({ scanCount: count() }).from(scansTable).where(eq(scansTable.userId, u.id));
-    const [{ leadCount }] = await db.select({ leadCount: count() }).from(leadsTable).where(eq(leadsTable.assignedToId, u.id));
-    const [{ wonCount }] = await db.select({ wonCount: count() }).from(leadsTable).where(and(eq(leadsTable.assignedToId, u.id), eq(leadsTable.stage, "won")));
+    const scanCount = await reportsRepo.userScanCount(u.id);
+    const leadCount = await reportsRepo.userLeadCount(u.id);
+    const wonCount = await reportsRepo.userWonLeadCount(u.id);
     return { userId: u.id, userName: u.name, scanCount, leadCount, wonCount };
   }));
 
@@ -56,19 +41,11 @@ export async function getTeamPerformance(user: AuthUser) {
 }
 
 export async function getScanActivity(user: AuthUser) {
-  const scanScope = tenantScope(user, scansTable.companyId);
   const since = new Date();
   since.setDate(since.getDate() - 29);
   since.setHours(0, 0, 0, 0);
 
-  const rows = await db
-    .select({
-      day: sql<string>`to_char(${scansTable.createdAt}, 'YYYY-MM-DD')`,
-      value: count(),
-    })
-    .from(scansTable)
-    .where(and(scanScope, gte(scansTable.createdAt, since)))
-    .groupBy(sql`to_char(${scansTable.createdAt}, 'YYYY-MM-DD')`);
+  const rows = await reportsRepo.scanActivityByDay(user, since);
 
   const counts = new Map(rows.map((r) => [r.day, Number(r.value)]));
 
@@ -84,67 +61,10 @@ export async function getScanActivity(user: AuthUser) {
 }
 
 export async function getLeadIntelligence(user: AuthUser) {
-  const contactScope = tenantScope(user, contactsTable.companyId);
-
-  const [
-    [{ hot }],
-    [{ warm }],
-    [{ cold }],
-    [{ scoredCount }],
-    [{ unscoredCount }],
-    [avgRow],
-  ] = await Promise.all([
-    db.select({ hot: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.leadTemperature, "hot"))),
-    db.select({ warm: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.leadTemperature, "warm"))),
-    db.select({ cold: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.leadTemperature, "cold"))),
-    db.select({ scoredCount: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), isNotNull(contactsTable.leadScore))),
-    db.select({ unscoredCount: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), sql`${contactsTable.leadScore} IS NULL`)),
-    db.select({ avg: sql<string | null>`AVG(${contactsTable.leadScore})` }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId), isNotNull(contactsTable.leadScore))),
-  ]);
-
-  const hotLeads = await db
-    .select({
-      id: contactsTable.id,
-      firstName: contactsTable.firstName,
-      lastName: contactsTable.lastName,
-      contactCompany: contactsTable.contactCompany,
-      jobTitle: contactsTable.jobTitle,
-      leadScore: contactsTable.leadScore,
-      leadTemperature: contactsTable.leadTemperature,
-      aiReasoning: contactsTable.aiReasoning,
-    })
-    .from(contactsTable)
-    .where(and(contactScope, isNull(contactsTable.duplicateOfId), isNotNull(contactsTable.leadScore), sql`${contactsTable.status} NOT IN ('won', 'lost')`))
-    .orderBy(desc(contactsTable.leadScore))
-    .limit(6);
-
   const todayDateStr = new Date().toISOString().slice(0, 10);
-  const followUpWhere = and(
-    contactScope,
-    isNull(contactsTable.duplicateOfId),
-    isNotNull(contactsTable.followUpDate),
-    lte(contactsTable.followUpDate, todayDateStr),
-    sql`${contactsTable.status} NOT IN ('won', 'lost')`,
-  );
 
-  const [followUpsDue, [{ followUpsDueCount }]] = await Promise.all([
-    db
-      .select({
-        id: contactsTable.id,
-        firstName: contactsTable.firstName,
-        lastName: contactsTable.lastName,
-        contactCompany: contactsTable.contactCompany,
-        followUpDate: contactsTable.followUpDate,
-        status: contactsTable.status,
-        leadScore: contactsTable.leadScore,
-        leadTemperature: contactsTable.leadTemperature,
-      })
-      .from(contactsTable)
-      .where(followUpWhere)
-      .orderBy(contactsTable.followUpDate)
-      .limit(6),
-    db.select({ followUpsDueCount: count() }).from(contactsTable).where(followUpWhere),
-  ]);
+  const { hot, warm, cold, scoredCount, unscoredCount, avgRow, hotLeads, followUpsDue, followUpsDueCount } =
+    await reportsRepo.leadIntelligenceData(user, todayDateStr);
 
   const averageScore = avgRow.avg != null ? Math.round(Number(avgRow.avg)) : null;
 
@@ -160,100 +80,27 @@ export async function getLeadIntelligence(user: AuthUser) {
 }
 
 export async function getMobileDashboard(user: AuthUser) {
-  const contactScope = tenantScope(user, contactsTable.companyId);
-  const leadScope = tenantScope(user, leadsTable.companyId);
-
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
   const todayDateStr = startOfToday.toISOString().slice(0, 10);
 
-  const [
-    [{ todayLeads }],
-    [{ totalContacts }],
-    [{ contactedLeads }],
-    [{ hotLeads }],
-    [{ followUpsDue }],
-    [{ meetingsScheduled }],
-    [{ proposalsSent }],
-    [pipelineRow],
-    [wonRow],
-    [lostRow],
-    [{ wonCount }],
-    [{ lostCount }],
-  ] = await Promise.all([
-    db
-      .select({ todayLeads: count() })
-      .from(contactsTable)
-      .where(and(contactScope, isNull(contactsTable.duplicateOfId), gte(contactsTable.createdAt, startOfToday))),
-    db.select({ totalContacts: count() }).from(contactsTable).where(and(contactScope, isNull(contactsTable.duplicateOfId))),
-    db
-      .select({ contactedLeads: count() })
-      .from(contactsTable)
-      .where(and(contactScope, isNull(contactsTable.duplicateOfId), eq(contactsTable.status, "contacted"))),
-    db
-      .select({ hotLeads: count() })
-      .from(contactsTable)
-      .where(and(contactScope, isNull(contactsTable.duplicateOfId), inArray(contactsTable.status, ["qualified", "interested"]))),
-    db
-      .select({ followUpsDue: count() })
-      .from(contactsTable)
-      .where(
-        and(
-          contactScope,
-          isNull(contactsTable.duplicateOfId),
-          isNotNull(contactsTable.followUpDate),
-          lte(contactsTable.followUpDate, todayDateStr),
-          sql`${contactsTable.status} NOT IN ('won', 'lost')`,
-        ),
-      ),
-    db
-      .select({ meetingsScheduled: count() })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "meeting_scheduled"))),
-    db
-      .select({ proposalsSent: count() })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "proposal_sent"))),
-    db
-      .select({
-        pipelineValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)`,
-      })
-      .from(leadsTable)
-      .where(and(leadScope, sql`${leadsTable.stage} NOT IN ('won', 'lost')`)),
-    db
-      .select({ wonValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)` })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "won"))),
-    db
-      .select({ lostValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)` })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "lost"))),
-    db
-      .select({ wonCount: count() })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "won"))),
-    db
-      .select({ lostCount: count() })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "lost"))),
-  ]);
-
-  const recentContacts = await db
-    .select({
-      id: contactsTable.id,
-      fullName: contactsTable.fullName,
-      firstName: contactsTable.firstName,
-      lastName: contactsTable.lastName,
-      contactCompany: contactsTable.contactCompany,
-      status: contactsTable.status,
-      createdAt: contactsTable.createdAt,
-    })
-    .from(contactsTable)
-    .where(contactScope)
-    .orderBy(desc(contactsTable.createdAt))
-    .limit(8);
+  const {
+    todayLeads,
+    totalContacts,
+    contactedLeads,
+    hotLeads,
+    followUpsDue,
+    meetingsScheduled,
+    proposalsSent,
+    pipelineRow,
+    wonRow,
+    lostRow,
+    wonCount,
+    lostCount,
+    recentContacts,
+  } = await reportsRepo.mobileDashboardData(user, startOfToday, todayDateStr);
 
   const recentActivity = recentContacts.map((c) => {
     const name =
@@ -301,8 +148,8 @@ export async function getEventReport(user: AuthUser, params: EventReportParams) 
   if (Number.isNaN(id)) {
     throw new AppError(400, "eventId required");
   }
-  const [evt] = await db.select().from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
-  if (!evt || !canAccessCompany(user, evt.companyId)) {
+  const evt = await reportsRepo.findEventById(user, id);
+  if (!evt) {
     throw new AppError(404, "Event not found");
   }
 
@@ -313,60 +160,28 @@ export async function getEventReport(user: AuthUser, params: EventReportParams) 
   const dateFrom = q.dateFrom || null; // YYYY-MM-DD
   const dateTo = q.dateTo || null; // YYYY-MM-DD
 
-  const contactConds = [
-    eq(contactsTable.eventId, id),
-    isNull(contactsTable.duplicateOfId),
-    tenantScope(user, contactsTable.companyId),
-  ];
-  if (assignedToId != null && !Number.isNaN(assignedToId)) contactConds.push(eq(contactsTable.assignedToId, assignedToId));
-  if (statusFilter) contactConds.push(eq(contactsTable.status, statusFilter));
-  if (temperatureFilter) contactConds.push(eq(contactsTable.leadTemperature, temperatureFilter));
-  if (dateFrom) contactConds.push(gte(contactsTable.createdAt, new Date(`${dateFrom}T00:00:00.000`)));
-  if (dateTo) contactConds.push(lte(contactsTable.createdAt, new Date(`${dateTo}T23:59:59.999`)));
+  const contactRows = await reportsRepo.eventReportContacts(user, {
+    eventId: id,
+    assignedToId,
+    statusFilter,
+    temperatureFilter,
+    dateFrom,
+    dateTo,
+  });
 
-  const contactRows = await db
-    .select({
-      id: contactsTable.id,
-      status: contactsTable.status,
-      leadTemperature: contactsTable.leadTemperature,
-      assignedToId: contactsTable.assignedToId,
-      createdAt: contactsTable.createdAt,
-      cardImageUrl: contactsTable.cardImageUrl,
-    })
-    .from(contactsTable)
-    .where(and(...contactConds));
-
-  const users = await db
-    .select({ id: usersTable.id, name: usersTable.name, avatarUrl: usersTable.avatarUrl })
-    .from(usersTable)
-    .where(tenantScope(user, usersTable.companyId));
+  const users = await reportsRepo.listUsersWithAvatar(user);
   const userName = new Map(users.map((u) => [u.id, u.name]));
   const userAvatar = new Map(users.map((u) => [u.id, u.avatarUrl]));
 
   const contactIds = contactRows.map((c) => c.id);
 
-  const leadConds = [eq(leadsTable.eventId, id), tenantScope(user, leadsTable.companyId)];
-  if (assignedToId != null && !Number.isNaN(assignedToId)) leadConds.push(eq(leadsTable.assignedToId, assignedToId));
-  if (dateFrom) leadConds.push(gte(leadsTable.createdAt, new Date(`${dateFrom}T00:00:00.000`)));
-  if (dateTo) leadConds.push(lte(leadsTable.createdAt, new Date(`${dateTo}T23:59:59.999`)));
-  const leadRows = await db
-    .select({ stage: leadsTable.stage, value: leadsTable.value, assignedToId: leadsTable.assignedToId })
-    .from(leadsTable)
-    .where(and(...leadConds));
+  const leadRows = await reportsRepo.eventReportLeads(user, { eventId: id, assignedToId, dateFrom, dateTo });
 
   let meetings = 0;
   let followUps = 0;
   if (contactIds.length > 0) {
-    const [m] = await db
-      .select({ c: count() })
-      .from(meetingsTable)
-      .where(and(inArray(meetingsTable.contactId, contactIds), eq(meetingsTable.status, "scheduled")));
-    const [f] = await db
-      .select({ c: count() })
-      .from(followUpsTable)
-      .where(and(inArray(followUpsTable.contactId, contactIds), eq(followUpsTable.status, "pending")));
-    meetings = m.c;
-    followUps = f.c;
+    meetings = await reportsRepo.meetingsScheduledCount(contactIds);
+    followUps = await reportsRepo.followUpsPendingCount(contactIds);
   }
 
   let hotLeads = 0;
@@ -471,38 +286,17 @@ export async function getTeamMemberReport(user: AuthUser, params: TeamMemberRepo
     throw new AppError(400, "eventId and userId required");
   }
 
-  const [evt] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId)).limit(1);
-  if (!evt || !canAccessCompany(user, evt.companyId)) {
+  const evt = await reportsRepo.findEventById(user, eventId);
+  if (!evt) {
     throw new AppError(404, "Event not found");
   }
 
-  const [member] = await db
-    .select({ id: usersTable.id, name: usersTable.name, avatarUrl: usersTable.avatarUrl })
-    .from(usersTable)
-    .where(and(eq(usersTable.id, userId), tenantScope(user, usersTable.companyId)))
-    .limit(1);
+  const member = await reportsRepo.findTeamMember(user, userId);
   if (!member) {
     throw new AppError(404, "Team member not found");
   }
 
-  const contactRows = await db
-    .select({
-      id: contactsTable.id,
-      fullName: contactsTable.fullName,
-      firstName: contactsTable.firstName,
-      lastName: contactsTable.lastName,
-      status: contactsTable.status,
-      createdAt: contactsTable.createdAt,
-    })
-    .from(contactsTable)
-    .where(
-      and(
-        eq(contactsTable.eventId, eventId),
-        eq(contactsTable.assignedToId, userId),
-        isNull(contactsTable.duplicateOfId),
-        tenantScope(user, contactsTable.companyId),
-      ),
-    );
+  const contactRows = await reportsRepo.teamMemberContacts(user, eventId, userId);
 
   const contactIds = contactRows.map((c) => c.id);
   const contactName = new Map(
@@ -518,16 +312,7 @@ export async function getTeamMemberReport(user: AuthUser, params: TeamMemberRepo
     if (c.status === "qualified" || c.status === "interested") qualifiedLeads++;
   }
 
-  const leadRows = await db
-    .select({ stage: leadsTable.stage, value: leadsTable.value })
-    .from(leadsTable)
-    .where(
-      and(
-        eq(leadsTable.eventId, eventId),
-        eq(leadsTable.assignedToId, userId),
-        tenantScope(user, leadsTable.companyId),
-      ),
-    );
+  const leadRows = await reportsRepo.teamMemberLeads(user, eventId, userId);
 
   let won = 0;
   let lost = 0;
@@ -542,35 +327,12 @@ export async function getTeamMemberReport(user: AuthUser, params: TeamMemberRepo
   let followUps = 0;
   const historyRows: { contactId: number; fromStatus: string | null; toStatus: string; createdAt: Date }[] =
     contactIds.length > 0
-      ? await db
-          .select({
-            contactId: contactStatusHistoryTable.contactId,
-            fromStatus: contactStatusHistoryTable.fromStatus,
-            toStatus: contactStatusHistoryTable.toStatus,
-            createdAt: contactStatusHistoryTable.createdAt,
-          })
-          .from(contactStatusHistoryTable)
-          .where(
-            and(
-              inArray(contactStatusHistoryTable.contactId, contactIds),
-              eq(contactStatusHistoryTable.changedById, userId),
-            ),
-          )
-          .orderBy(desc(contactStatusHistoryTable.createdAt))
-          .limit(40)
+      ? await reportsRepo.statusHistoryForContacts(contactIds, userId)
       : [];
 
   if (contactIds.length > 0) {
-    const [m] = await db
-      .select({ c: count() })
-      .from(meetingsTable)
-      .where(and(inArray(meetingsTable.contactId, contactIds), eq(meetingsTable.status, "scheduled")));
-    const [f] = await db
-      .select({ c: count() })
-      .from(followUpsTable)
-      .where(and(inArray(followUpsTable.contactId, contactIds), eq(followUpsTable.status, "pending")));
-    meetings = m.c;
-    followUps = f.c;
+    meetings = await reportsRepo.meetingsScheduledCount(contactIds);
+    followUps = await reportsRepo.followUpsPendingCount(contactIds);
   }
 
   const conversionRate = totalLeads > 0 ? Math.round((won / totalLeads) * 100) : 0;

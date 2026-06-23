@@ -1,15 +1,13 @@
-import { db } from "@workspace/db";
-import { companiesTable, usersTable, scansTable, leadsTable, activityLogsTable } from "@workspace/db";
-import { eq, count, sql } from "drizzle-orm";
+import * as platformRepo from "../repositories/platform.repository.js";
 
 export async function getStats() {
-  const [{ totalCompanies }] = await db.select({ totalCompanies: count() }).from(companiesTable);
-  const [{ activeCompanies }] = await db.select({ activeCompanies: count() }).from(companiesTable).where(eq(companiesTable.status, "active"));
-  const [{ totalUsers }] = await db.select({ totalUsers: count() }).from(usersTable);
-  const [{ totalScans }] = await db.select({ totalScans: count() }).from(scansTable);
-  const [{ totalLeads }] = await db.select({ totalLeads: count() }).from(leadsTable);
+  const totalCompanies = await platformRepo.countCompanies();
+  const activeCompanies = await platformRepo.countActiveCompanies();
+  const totalUsers = await platformRepo.countUsers();
+  const totalScans = await platformRepo.countScans();
+  const totalLeads = await platformRepo.countLeads();
 
-  const planDistribution = await db.select({ status: companiesTable.plan, count: count() }).from(companiesTable).groupBy(companiesTable.plan);
+  const planDistribution = await platformRepo.planDistribution();
 
   // Simulate monthly revenue from plans
   const planRevenue: Record<string, number> = { free: 0, starter: 29, professional: 99, enterprise: 299 };
@@ -49,6 +47,6 @@ export async function getScanTrend() {
 }
 
 export async function getActivity() {
-  const activity = await db.select().from(activityLogsTable).orderBy(sql`${activityLogsTable.createdAt} DESC`).limit(50);
+  const activity = await platformRepo.recentActivity(50);
   return activity;
 }

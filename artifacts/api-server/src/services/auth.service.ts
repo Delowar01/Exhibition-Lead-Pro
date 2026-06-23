@@ -1,17 +1,4 @@
-import { db } from "@workspace/db";
-import {
-  usersTable,
-  companiesTable,
-  subscriptionsTable,
-  activityLogsTable,
-  plansTable,
-  userCompanyAccessTable,
-  sessionsTable,
-  trustedDevicesTable,
-  mfaBackupCodesTable,
-  type Company,
-} from "@workspace/db";
-import { and, eq, isNull, gt } from "drizzle-orm";
+import { type Company } from "@workspace/db";
 import { hashPassword, comparePassword } from "../lib/auth.js";
 import { evaluateCompanyAccess, normalizeRole } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
@@ -29,14 +16,12 @@ import {
   hashBackupCode,
 } from "../lib/mfa.js";
 import { sha256 } from "../lib/crypto.js";
+import * as authRepo from "../repositories/auth.repository.js";
 
-type UserRow = typeof usersTable.$inferSelect;
+type UserRow = authRepo.UserRow;
 
 async function accessibleCompaniesFor(userId: number, companyId: number | null): Promise<number[]> {
-  const rows = await db
-    .select({ companyId: userCompanyAccessTable.companyId })
-    .from(userCompanyAccessTable)
-    .where(eq(userCompanyAccessTable.userId, userId));
+  const rows = await authRepo.findAccessibleCompanyIds(userId);
   return Array.from(new Set([...(companyId ? [companyId] : []), ...rows.map((r) => r.companyId)]));
 }
 
@@ -63,12 +48,12 @@ export async function buildUserResponse(user: UserRow, companyName: string | nul
 }
 
 export async function markLoggedIn(userId: number): Promise<void> {
-  await db.update(usersTable).set({ lastLoginAt: new Date(), updatedAt: new Date() }).where(eq(usersTable.id, userId));
+  await authRepo.updateUser(userId, { lastLoginAt: new Date(), updatedAt: new Date() });
 }
 
 export async function companyNameFor(companyId: number | null): Promise<string | null> {
   if (!companyId) return null;
-  const [c] = await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const c = await authRepo.findCompanyName(companyId);
   return c?.name ?? null;
 }
 
@@ -77,22 +62,12 @@ export async function companyNameFor(companyId: number | null): Promise<string |
 export async function findTrustedDevice(raw: unknown, userId: number) {
   if (!raw || typeof raw !== "string") return null;
   const tokenHash = sha256(raw);
-  const [device] = await db
-    .select()
-    .from(trustedDevicesTable)
-    .where(
-      and(
-        eq(trustedDevicesTable.userId, userId),
-        eq(trustedDevicesTable.tokenHash, tokenHash),
-        gt(trustedDevicesTable.expiresAt, new Date()),
-      ),
-    )
-    .limit(1);
+  const device = await authRepo.findTrustedDeviceByHash(userId, tokenHash);
   return device ?? null;
 }
 
 export async function touchTrustedDevice(id: number) {
-  await db.update(trustedDevicesTable).set({ lastUsedAt: new Date() }).where(eq(trustedDevicesTable.id, id));
+  await authRepo.touchTrustedDevice(id);
 }
 
 export async function insertTrustedDevice(values: {
@@ -103,7 +78,7 @@ export async function insertTrustedDevice(values: {
   ipAddress: string | null;
   expiresAt: Date;
 }) {
-  await db.insert(trustedDevicesTable).values(values);
+  await authRepo.insertTrustedDevice(values);
 }
 
 function checkCompanyAccessOrThrow(company: Pick<Company, "status" | "trialEndsAt"> | undefined): string | null {
@@ -134,7 +109,7 @@ export async function authenticateLogin(params: {
     };
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  const user = await authRepo.findUserByEmail(email);
   if (!user || !comparePassword(password, user.passwordHash)) {
     await recordLoginAttempt({ email, ip, userId: user?.id ?? null, success: false, reason: "invalid_credentials", userAgent });
     throw new AppError(401, "Invalid credentials");
@@ -145,11 +120,7 @@ export async function authenticateLogin(params: {
   }
 
   if (user.companyId) {
-    const [c] = await db
-      .select({ status: companiesTable.status, trialEndsAt: companiesTable.trialEndsAt })
-      .from(companiesTable)
-      .where(eq(companiesTable.id, user.companyId))
-      .limit(1);
+    const c = await authRepo.findCompanyAccessInfo(user.companyId);
     const blockedReason = checkCompanyAccessOrThrow(c);
     if (blockedReason) {
       await recordLoginAttempt({ email, ip, userId: user.id, success: false, reason: "company_blocked", userAgent });
@@ -158,9 +129,7 @@ export async function authenticateLogin(params: {
   }
 
   // MFA: required either by the user's own enrollment or a company-wide policy.
-  const [company] = user.companyId
-    ? await db.select({ mfaRequired: companiesTable.mfaRequired }).from(companiesTable).where(eq(companiesTable.id, user.companyId)).limit(1)
-    : [undefined];
+  const company = user.companyId ? await authRepo.findCompanyMfaRequired(user.companyId) : undefined;
   const mfaNeeded = user.mfaEnabled || (company?.mfaRequired ?? false);
   return { kind: "ok", user, mfaNeeded };
 }
@@ -175,7 +144,7 @@ export async function verifyMfaLogin(params: {
   if (!mfaToken || !code) throw new AppError(400, "mfaToken and code are required");
   const userId = verifyMfaChallenge(mfaToken);
   if (!userId) throw new AppError(401, "MFA session expired. Please sign in again.");
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user || !user.isActive || !user.mfaEnabled || !user.mfaSecret) throw new AppError(401, "MFA is not available for this account.");
 
   let verified = await verifyTotp(decryptMfaSecret(user.mfaSecret), String(code));
@@ -183,13 +152,9 @@ export async function verifyMfaLogin(params: {
   if (!verified) {
     // Fall back to a single-use backup code.
     const hash = hashBackupCode(String(code));
-    const [backup] = await db
-      .select()
-      .from(mfaBackupCodesTable)
-      .where(and(eq(mfaBackupCodesTable.userId, user.id), eq(mfaBackupCodesTable.codeHash, hash), isNull(mfaBackupCodesTable.usedAt)))
-      .limit(1);
+    const backup = await authRepo.findActiveBackupCode(user.id, hash);
     if (backup) {
-      await db.update(mfaBackupCodesTable).set({ usedAt: new Date() }).where(eq(mfaBackupCodesTable.id, backup.id));
+      await authRepo.markBackupCodeUsed(backup.id);
       verified = true;
       usedBackup = true;
     }
@@ -213,19 +178,16 @@ export async function registerCompany(input: {
   if (!email || !password || !name || !companyName) throw new AppError(400, "email, password, name, companyName required");
   const pw = validatePassword(password);
   if (!pw.valid) throw new AppError(400, pw.errors.join(". "));
-  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  const existing = await authRepo.findUserIdByEmail(email);
   if (existing) throw new AppError(400, "Email already registered");
 
-  const [freePlan] = await db.select().from(plansTable).where(eq(plansTable.id, "free")).limit(1);
+  const freePlan = await authRepo.findPlanById("free");
   const trialDays = freePlan?.trialDays ?? 14;
   const trialEndsAt = new Date();
   trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
 
-  const [company] = await db
-    .insert(companiesTable)
-    .values({ name: companyName, industry: industry ?? null, country: country ?? null, plan: "free", status: "trial", trialEndsAt })
-    .returning();
-  await db.insert(subscriptionsTable).values({
+  const company = await authRepo.insertCompany({ name: companyName, industry: industry ?? null, country: country ?? null, plan: "free", status: "trial", trialEndsAt });
+  await authRepo.insertSubscription({
     companyId: company.id,
     plan: "free",
     status: "trial",
@@ -242,19 +204,16 @@ export async function registerCompany(input: {
   });
 
   const passwordHash = hashPassword(password);
-  const [user] = await db
-    .insert(usersTable)
-    .values({ email, passwordHash, name, role: "primary_admin", companyId: company.id, isActive: true, contactVisibility: "all", companyVisibility: "own" })
-    .returning();
-  await db.update(companiesTable).set({ createdById: user.id }).where(eq(companiesTable.id, company.id));
+  const user = await authRepo.insertUser({ email, passwordHash, name, role: "primary_admin", companyId: company.id, isActive: true, contactVisibility: "all", companyVisibility: "own" });
+  await authRepo.updateCompany(company.id, { createdById: user.id });
 
-  await db.insert(activityLogsTable).values({ type: "company_created", description: `New company registered: ${companyName}`, companyId: company.id, companyName, userId: user.id, userName: name });
+  await authRepo.insertActivityLog({ type: "company_created", description: `New company registered: ${companyName}`, companyId: company.id, companyName, userId: user.id, userName: name });
 
   return { user, company };
 }
 
 export async function getMe(userId: number) {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user) throw new AppError(404, "User not found");
   const companyName = await companyNameFor(user.companyId);
   return buildUserResponse(user, companyName);
@@ -262,31 +221,29 @@ export async function getMe(userId: number) {
 
 export async function revokeUserSession(userId: number, id: number): Promise<void> {
   if (!Number.isInteger(id)) throw new AppError(400, "Invalid session id");
-  const [session] = await db.select().from(sessionsTable).where(eq(sessionsTable.id, id)).limit(1);
+  const session = await authRepo.findSessionById(id);
   if (!session || session.userId !== userId) throw new AppError(404, "Session not found");
   await revokeSession(id, "terminated");
 }
 
 export async function mfaStatus(userId: number) {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user) throw new AppError(404, "User not found");
   let companyRequired = false;
   if (user.companyId) {
-    const [c] = await db.select({ mfaRequired: companiesTable.mfaRequired }).from(companiesTable).where(eq(companiesTable.id, user.companyId)).limit(1);
+    const c = await authRepo.findCompanyMfaRequired(user.companyId);
     companyRequired = c?.mfaRequired ?? false;
   }
-  const remaining = user.mfaEnabled
-    ? await db.select({ id: mfaBackupCodesTable.id }).from(mfaBackupCodesTable).where(and(eq(mfaBackupCodesTable.userId, user.id), isNull(mfaBackupCodesTable.usedAt)))
-    : [];
+  const remaining = user.mfaEnabled ? await authRepo.findUnusedBackupCodes(user.id) : [];
   return { enabled: user.mfaEnabled, enrolledAt: user.mfaEnrolledAt, companyRequired, backupCodesRemaining: remaining.length };
 }
 
 export async function mfaSetup(userId: number) {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user) throw new AppError(404, "User not found");
   if (user.mfaEnabled) throw new AppError(400, "MFA is already enabled");
   const secret = generateMfaSecret();
-  await db.update(usersTable).set({ mfaSecret: encryptMfaSecret(secret), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+  await authRepo.updateUser(user.id, { mfaSecret: encryptMfaSecret(secret), updatedAt: new Date() });
   const otpauthUrl = buildOtpauthUrl(user.email, secret);
   const qrDataUrl = await otpauthQrDataUrl(otpauthUrl);
   return { secret, otpauthUrl, qrDataUrl };
@@ -294,42 +251,42 @@ export async function mfaSetup(userId: number) {
 
 export async function mfaEnable(userId: number, code?: unknown): Promise<{ user: UserRow; backupCodes: string[] }> {
   if (!code) throw new AppError(400, "Verification code is required");
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user || !user.mfaSecret) throw new AppError(400, "Start MFA setup first");
   if (user.mfaEnabled) throw new AppError(400, "MFA is already enabled");
   const ok = await verifyTotp(decryptMfaSecret(user.mfaSecret), String(code));
   if (!ok) throw new AppError(400, "Invalid verification code");
 
-  await db.update(usersTable).set({ mfaEnabled: true, mfaEnrolledAt: new Date(), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-  await db.delete(mfaBackupCodesTable).where(eq(mfaBackupCodesTable.userId, user.id));
+  await authRepo.updateUser(user.id, { mfaEnabled: true, mfaEnrolledAt: new Date(), updatedAt: new Date() });
+  await authRepo.deleteBackupCodes(user.id);
   const codes = generateBackupCodes(10);
-  await db.insert(mfaBackupCodesTable).values(codes.map((c) => ({ userId: user.id, codeHash: hashBackupCode(c) })));
+  await authRepo.insertBackupCodes(codes.map((c) => ({ userId: user.id, codeHash: hashBackupCode(c) })));
   return { user, backupCodes: codes };
 }
 
 export async function mfaDisable(userId: number, password?: string): Promise<UserRow> {
   if (!password) throw new AppError(400, "Password is required");
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user) throw new AppError(404, "User not found");
   if (!comparePassword(password, user.passwordHash)) throw new AppError(401, "Incorrect password");
   if (user.companyId) {
-    const [c] = await db.select({ mfaRequired: companiesTable.mfaRequired }).from(companiesTable).where(eq(companiesTable.id, user.companyId)).limit(1);
+    const c = await authRepo.findCompanyMfaRequired(user.companyId);
     if (c?.mfaRequired) throw new AppError(403, "Your company requires MFA. It cannot be disabled.");
   }
-  await db.update(usersTable).set({ mfaEnabled: false, mfaSecret: null, mfaEnrolledAt: null, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-  await db.delete(mfaBackupCodesTable).where(eq(mfaBackupCodesTable.userId, user.id));
+  await authRepo.updateUser(user.id, { mfaEnabled: false, mfaSecret: null, mfaEnrolledAt: null, updatedAt: new Date() });
+  await authRepo.deleteBackupCodes(user.id);
   return user;
 }
 
 export async function regenerateBackupCodes(userId: number, password?: string): Promise<{ user: UserRow; backupCodes: string[] }> {
   if (!password) throw new AppError(400, "Password is required");
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user) throw new AppError(404, "User not found");
   if (!user.mfaEnabled) throw new AppError(400, "MFA is not enabled");
   if (!comparePassword(password, user.passwordHash)) throw new AppError(401, "Incorrect password");
-  await db.delete(mfaBackupCodesTable).where(eq(mfaBackupCodesTable.userId, user.id));
+  await authRepo.deleteBackupCodes(user.id);
   const codes = generateBackupCodes(10);
-  await db.insert(mfaBackupCodesTable).values(codes.map((c) => ({ userId: user.id, codeHash: hashBackupCode(c) })));
+  await authRepo.insertBackupCodes(codes.map((c) => ({ userId: user.id, codeHash: hashBackupCode(c) })));
   return { user, backupCodes: codes };
 }
 
@@ -342,10 +299,10 @@ export async function changePassword(
   if (!currentPassword || !newPassword) throw new AppError(400, "currentPassword and newPassword are required");
   const pw = validatePassword(newPassword);
   if (!pw.valid) throw new AppError(400, pw.errors.join(". "));
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const user = await authRepo.findUserById(userId);
   if (!user) throw new AppError(404, "User not found");
   if (!comparePassword(currentPassword, user.passwordHash)) throw new AppError(401, "Current password is incorrect");
-  await db.update(usersTable).set({ passwordHash: hashPassword(newPassword), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+  await authRepo.updateUser(user.id, { passwordHash: hashPassword(newPassword), updatedAt: new Date() });
   // Revoke all OTHER sessions on a password change; keep the current one alive.
   await revokeOtherSessions(user.id, currentSessionId ?? -1, "password_changed");
   return user;

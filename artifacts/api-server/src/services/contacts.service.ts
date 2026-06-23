@@ -1,18 +1,17 @@
-import { db } from "@workspace/db";
-import { contactsTable, usersTable, eventsTable, scansTable, leadsTable, meetingsTable, contactStatusHistoryTable } from "@workspace/db";
-import { eq, ne, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
-import { canAccessCompany, tenantScope, type AuthUser } from "../middlewares/requireAuth.js";
+import type { AuthUser } from "../middlewares/requireAuth.js";
 import { refAccessible } from "../lib/tenant.js";
 import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/ai.js";
 import { notifyUser } from "../lib/push.js";
+import * as contactsRepo from "../repositories/contacts.repository.js";
+import type { ContactRow } from "../repositories/contacts.repository.js";
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
   try { return JSON.parse(tags); } catch { return []; }
 }
 
-function formatContact(c: typeof contactsTable.$inferSelect, eventName?: string | null, assignedToName?: string | null) {
+function formatContact(c: ContactRow, eventName?: string | null, assignedToName?: string | null) {
   return {
     ...c,
     fullName: c.fullName ?? ([c.firstName, c.lastName].filter(Boolean).join(" ") || null),
@@ -21,6 +20,12 @@ function formatContact(c: typeof contactsTable.$inferSelect, eventName?: string 
     eventName: eventName ?? null,
     assignedToName: assignedToName ?? null,
   };
+}
+
+async function namesFor(c: ContactRow) {
+  const event = c.eventId ? await contactsRepo.eventName(c.eventId) : null;
+  const assignee = c.assignedToId ? await contactsRepo.assigneeName(c.assignedToId) : null;
+  return { eventName: event?.name, assignedToName: assignee?.name };
 }
 
 export interface ListContactsParams {
@@ -44,32 +49,26 @@ export async function listContacts(user: AuthUser, params: ListContactsParams) {
   const pageNum = Math.max(1, parseInt(page));
   const limitNum = Math.min(200, parseInt(limit));
   const offset = (pageNum - 1) * limitNum;
-  const conditions = [];
-  if (user.role !== "platform_owner") conditions.push(inArray(contactsTable.companyId, user.accessibleCompanies));
-  if (search) conditions.push(ilike(contactsTable.fullName, `%${search}%`));
-  if (status) conditions.push(eq(contactsTable.status, status));
-  if (temperature) conditions.push(eq(contactsTable.leadTemperature, temperature));
-  if (eventId && !isNaN(parseInt(eventId))) conditions.push(eq(contactsTable.eventId, parseInt(eventId)));
-  if (assignedTo && !isNaN(parseInt(assignedTo))) conditions.push(eq(contactsTable.assignedToId, parseInt(assignedTo)));
-  // Duplicate management: the main list shows originals only (duplicateOfId IS NULL).
-  if (includeDuplicates !== "true") conditions.push(isNull(contactsTable.duplicateOfId));
-  if (hasFollowUp === "true") conditions.push(isNotNull(contactsTable.followUpDate));
-  if (hasFollowUp === "false") conditions.push(isNull(contactsTable.followUpDate));
-  if (hasMeeting === "true") conditions.push(inArray(contactsTable.id, db.select({ id: meetingsTable.contactId }).from(meetingsTable).where(eq(meetingsTable.status, "scheduled"))));
-  if (dateFrom) conditions.push(sql`${contactsTable.createdAt} >= ${dateFrom}`);
-  if (dateTo) conditions.push(sql`${contactsTable.createdAt} <= ${dateTo + " 23:59:59"}`);
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-  const orderBy = sort === "oldest" ? asc(contactsTable.createdAt)
-    : sort === "name" ? asc(contactsTable.fullName)
-    : desc(contactsTable.createdAt);
-  const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(whereClause);
-  const contacts = await db.select().from(contactsTable).where(whereClause).limit(limitNum).offset(offset).orderBy(orderBy);
+  const { rows, total } = await contactsRepo.list(user, {
+    search,
+    status,
+    temperature,
+    eventId: eventId && !isNaN(parseInt(eventId)) ? parseInt(eventId) : undefined,
+    assignedToId: assignedTo && !isNaN(parseInt(assignedTo)) ? parseInt(assignedTo) : undefined,
+    excludeDuplicates: includeDuplicates !== "true",
+    followUp: hasFollowUp === "true" ? "has" : hasFollowUp === "false" ? "none" : undefined,
+    scheduledMeetingOnly: hasMeeting === "true",
+    dateFrom,
+    dateTo,
+    sort,
+    limit: limitNum,
+    offset,
+  });
 
-  const enriched = await Promise.all(contacts.map(async (c) => {
-    const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
-    const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
-    return formatContact(c, event?.name, assignee?.name);
+  const enriched = await Promise.all(rows.map(async (c) => {
+    const { eventName, assignedToName } = await namesFor(c);
+    return formatContact(c, eventName, assignedToName);
   }));
 
   return { contacts: enriched, total, page: pageNum, limit: limitNum };
@@ -115,9 +114,9 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   // are filled in asynchronously; the mobile client refetches and shows them
   // within a second or two. Blocking the response on the Gemini call was the
   // single biggest avoidable latency in the save path.
-  const [contact] = await db.insert(contactsTable).values({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null }).returning();
+  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null });
   // Record the initial lead status in the append-only history.
-  void db.insert(contactStatusHistoryTable).values({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: user.id }).catch(() => {});
+  void contactsRepo.insertStatusHistory({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: user.id }).catch(() => {});
 
   // Auto-link: if this new contact matches an existing original (same email /
   // phone / name+company), mark it as a duplicate immediately so it is hidden
@@ -130,11 +129,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
       contact.id,
     );
     if (original) {
-      const [linked] = await db
-        .update(contactsTable)
-        .set({ duplicateOfId: original.id, updatedAt: new Date() })
-        .where(eq(contactsTable.id, contact.id))
-        .returning();
+      const linked = await contactsRepo.linkAsDuplicate(contact.id, original.id);
       if (linked) finalContact = linked;
     }
   } catch {
@@ -150,7 +145,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
       try {
         let eventName: string | null = null;
         if (finalContact.eventId) {
-          const [ev] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, finalContact.eventId)).limit(1);
+          const ev = await contactsRepo.eventName(finalContact.eventId);
           eventName = ev?.name ?? null;
         }
         const score = await scoreLead(
@@ -161,10 +156,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
         // Re-target the still-existing, still-original row. If the contact was
         // deleted or merged-away while scoring ran, `updated` is empty and we
         // skip the notification to avoid a stale "hot lead" push.
-        const [updated] = await db.update(contactsTable)
-          .set({ leadScore: score.score, leadTemperature: score.temperature, aiReasoning: score.reasoning, hotNotifiedAt: isHot ? new Date() : undefined, updatedAt: new Date() })
-          .where(and(eq(contactsTable.id, finalContact.id), isNull(contactsTable.duplicateOfId)))
-          .returning();
+        const updated = await contactsRepo.updateScoreIfOriginal(finalContact.id, { leadScore: score.score, leadTemperature: score.temperature, aiReasoning: score.reasoning, hotNotifiedAt: isHot ? new Date() : undefined, updatedAt: new Date() });
         if (isHot && updated) {
           const target = finalContact.assignedToId ?? ownerId;
           void notifyUser(target, {
@@ -183,20 +175,15 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
 }
 
 export async function contactStats(user: AuthUser) {
-  const whereClause = tenantScope(user, contactsTable.companyId);
-
-  const statsWhere = and(whereClause, isNull(contactsTable.duplicateOfId));
-  const [{ total }] = await db.select({ total: count() }).from(contactsTable).where(statsWhere);
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todayContacts = await db.select({ count: count() }).from(contactsTable).where(and(statsWhere, sql`${contactsTable.createdAt} >= ${today}`));
-  const byStatus = await db.select({ status: contactsTable.status, count: count() }).from(contactsTable).where(statsWhere).groupBy(contactsTable.status);
+  const { total, todayCount, byStatus } = await contactsRepo.stats(user, today);
 
   const wonCount = byStatus.find(s => s.status === "won")?.count ?? 0;
   const conversionRate = total > 0 ? Math.round((wonCount / total) * 100) : 0;
 
   return {
     total,
-    newToday: todayContacts[0]?.count ?? 0,
+    newToday: todayCount,
     byStatus: byStatus.map(s => ({ status: s.status, count: s.count, label: s.status })),
     conversionRate,
   };
@@ -212,7 +199,7 @@ function normPhone(v: string | null): string | null {
   const digits = v.replace(/\D/g, "");
   return digits.length >= 7 ? digits : null;
 }
-function normName(c: typeof contactsTable.$inferSelect): string | null {
+function normName(c: ContactRow): string | null {
   const name = (c.fullName ?? [c.firstName, c.lastName].filter(Boolean).join(" ")).trim().toLowerCase().replace(/\s+/g, " ");
   const company = (c.contactCompany ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   if (!name || !company) return null;
@@ -230,12 +217,8 @@ async function findOriginalContact(
     contactCompany?: string | null;
   },
   excludeId: number,
-): Promise<typeof contactsTable.$inferSelect | null> {
-  const candidates = await db
-    .select()
-    .from(contactsTable)
-    .where(and(eq(contactsTable.companyId, companyId), isNull(contactsTable.duplicateOfId), ne(contactsTable.id, excludeId)))
-    .limit(2000);
+): Promise<ContactRow | null> {
+  const candidates = await contactsRepo.originalCandidates(companyId, excludeId);
 
   const normE = normEmail(fields.email ?? null);
   const normM = normPhone(fields.mobile ?? null);
@@ -257,19 +240,17 @@ async function findOriginalContact(
 }
 
 export async function listDuplicates(user: AuthUser) {
-  const whereClause = tenantScope(user, contactsTable.companyId);
   const allGroups: { matchType: string; matchValue: string; contacts: ReturnType<typeof formatContact>[] }[] = [];
 
   // ── 1. Linked groups — auto-detected duplicates (duplicateOfId IS NOT NULL)
   // These are definite duplicates stored at scan time; show original + duplicates.
-  const linked = await db.select().from(contactsTable)
-    .where(and(whereClause, isNotNull(contactsTable.duplicateOfId))).limit(2000);
+  const linked = await contactsRepo.duplicatesLinked(user);
 
   if (linked.length > 0) {
     const originalIds = [...new Set(linked.map((c) => c.duplicateOfId).filter((id): id is number => id != null))];
-    const originals = await db.select().from(contactsTable).where(inArray(contactsTable.id, originalIds));
+    const originals = await contactsRepo.byIds(originalIds);
     const origMap = new Map(originals.map((o) => [o.id, o]));
-    const byOriginal = new Map<number, typeof contactsTable.$inferSelect[]>();
+    const byOriginal = new Map<number, ContactRow[]>();
     for (const c of linked) {
       if (!c.duplicateOfId) continue;
       const arr = byOriginal.get(c.duplicateOfId) ?? [];
@@ -288,11 +269,10 @@ export async function listDuplicates(user: AuthUser) {
   }
 
   // ── 2. Similarity groups — unlinked contacts only (legacy / still-pending)
-  const rows = await db.select().from(contactsTable)
-    .where(and(whereClause, isNull(contactsTable.duplicateOfId))).limit(2000);
+  const rows = await contactsRepo.duplicatesUnlinked(user);
 
-  const byKey = (extract: (c: typeof contactsTable.$inferSelect) => string | null) => {
-    const map = new Map<string, typeof contactsTable.$inferSelect[]>();
+  const byKey = (extract: (c: ContactRow) => string | null) => {
+    const map = new Map<string, ContactRow[]>();
     for (const c of rows) {
       const k = extract(c);
       if (!k) continue;
@@ -303,7 +283,7 @@ export async function listDuplicates(user: AuthUser) {
     return map;
   };
 
-  const sources: { matchType: "email" | "phone" | "name"; map: Map<string, typeof contactsTable.$inferSelect[]> }[] = [
+  const sources: { matchType: "email" | "phone" | "name"; map: Map<string, ContactRow[]> }[] = [
     { matchType: "email", map: byKey((c) => normEmail(c.email)) },
     { matchType: "phone", map: byKey((c) => normPhone(c.mobile) ?? normPhone(c.officePhone)) },
     { matchType: "name", map: byKey(normName) },
@@ -344,15 +324,11 @@ export async function makeOriginal(user: AuthUser, body: { duplicateId?: number;
   }
 
   // Load both contacts
-  const [dup] = await db.select().from(contactsTable).where(eq(contactsTable.id, duplicateId)).limit(1);
-  const [orig] = await db.select().from(contactsTable).where(eq(contactsTable.id, groupOriginalId)).limit(1);
+  const dup = await contactsRepo.findById(user, duplicateId);
+  const orig = await contactsRepo.findById(user, groupOriginalId);
 
-  if (!dup || !canAccessCompany(user, dup.companyId)) {
-    throw new AppError(404, "Duplicate contact not found");
-  }
-  if (!orig || !canAccessCompany(user, orig.companyId)) {
-    throw new AppError(404, "Original contact not found");
-  }
+  if (!dup) throw new AppError(404, "Duplicate contact not found");
+  if (!orig) throw new AppError(404, "Original contact not found");
   if (dup.companyId !== orig.companyId) {
     throw new AppError(400, "Both contacts must belong to the same company");
   }
@@ -365,20 +341,7 @@ export async function makeOriginal(user: AuthUser, body: { duplicateId?: number;
   // 1. Promote the dup: clear its duplicateOfId (it becomes the new original)
   // 2. Demote the old original: set its duplicateOfId to the new original
   // 3. Re-point any other duplicates of the old original to the new original
-  await db.transaction(async (tx) => {
-    // Re-point all siblings (other duplicates of the old original) to the new original
-    await tx.update(contactsTable)
-      .set({ duplicateOfId: duplicateId, updatedAt: new Date() })
-      .where(and(eq(contactsTable.duplicateOfId, groupOriginalId), ne(contactsTable.id, duplicateId)));
-    // Promote the duplicate to original
-    await tx.update(contactsTable)
-      .set({ duplicateOfId: null, updatedAt: new Date() })
-      .where(eq(contactsTable.id, duplicateId));
-    // Demote the old original
-    await tx.update(contactsTable)
-      .set({ duplicateOfId: duplicateId, updatedAt: new Date() })
-      .where(eq(contactsTable.id, groupOriginalId));
-  });
+  await contactsRepo.makeOriginalSwap(duplicateId, groupOriginalId);
 
   return { success: true, message: "Contact promoted to original" };
 }
@@ -391,10 +354,10 @@ export async function mergeContacts(user: AuthUser, body: { primaryId?: number; 
   const dupIds = [...new Set(duplicateIds)].filter((id) => id !== primaryId);
   if (dupIds.length === 0) throw new AppError(400, "No distinct duplicate ids to merge");
 
-  const [primary] = await db.select().from(contactsTable).where(eq(contactsTable.id, primaryId)).limit(1);
-  if (!primary || !canAccessCompany(user, primary.companyId)) throw new AppError(404, "Primary contact not found");
+  const primary = await contactsRepo.findById(user, primaryId);
+  if (!primary) throw new AppError(404, "Primary contact not found");
 
-  const dups = await db.select().from(contactsTable).where(inArray(contactsTable.id, dupIds));
+  const dups = await contactsRepo.byIds(dupIds);
   if (dups.length !== dupIds.length || dups.some((d) => d.companyId !== primary.companyId)) {
     throw new AppError(400, "All duplicates must exist and belong to the same company as the primary contact");
   }
@@ -412,25 +375,17 @@ export async function mergeContacts(user: AuthUser, body: { primaryId?: number; 
   updates.tags = JSON.stringify([...tagSet]);
   updates.updatedAt = new Date();
 
-  const merged = await db.transaction(async (tx) => {
-    await tx.update(scansTable).set({ contactId: primaryId }).where(inArray(scansTable.contactId, dupIds));
-    await tx.update(leadsTable).set({ contactId: primaryId }).where(inArray(leadsTable.contactId, dupIds));
-    const [updated] = await tx.update(contactsTable).set(updates as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, primaryId)).returning();
-    await tx.delete(contactsTable).where(inArray(contactsTable.id, dupIds));
-    return updated;
-  });
+  const merged = await contactsRepo.mergeTransaction(primaryId, dupIds, updates as Partial<ContactRow>);
 
-  const event = merged.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, merged.eventId)).then(r => r[0]) : null;
-  const assignee = merged.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, merged.assignedToId)).then(r => r[0]) : null;
-  return formatContact(merged, event?.name, assignee?.name);
+  const { eventName, assignedToName } = await namesFor(merged);
+  return formatContact(merged, eventName, assignedToName);
 }
 
 export async function getContact(user: AuthUser, id: number) {
-  const [c] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-  if (!c || !canAccessCompany(user, c.companyId)) throw new AppError(404, "Contact not found");
-  const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
-  const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
-  return formatContact(c, event?.name, assignee?.name);
+  const c = await contactsRepo.findById(user, id);
+  if (!c) throw new AppError(404, "Contact not found");
+  const { eventName, assignedToName } = await namesFor(c);
+  return formatContact(c, eventName, assignedToName);
 }
 
 export interface UpdateContactInput {
@@ -456,8 +411,8 @@ export interface UpdateContactInput {
 }
 
 export async function updateContact(user: AuthUser, id: number, body: UpdateContactInput) {
-  const [existing] = await db.select({ companyId: contactsTable.companyId, status: contactsTable.status }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-  if (!existing || !canAccessCompany(user, existing.companyId)) throw new AppError(404, "Contact not found");
+  const existing = await contactsRepo.findById(user, id);
+  if (!existing) throw new AppError(404, "Contact not found");
   const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId } = body;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
@@ -469,27 +424,26 @@ export async function updateContact(user: AuthUser, id: number, body: UpdateCont
   Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
   if (Object.keys(updateData).length === 0) throw new AppError(400, "No valid fields to update");
   const statusChanged = status !== undefined && status !== existing.status;
-  const [c] = await db.update(contactsTable).set(updateData as Partial<typeof contactsTable.$inferInsert>).where(eq(contactsTable.id, id)).returning();
+  const c = await contactsRepo.update(id, updateData as Partial<ContactRow>);
   if (!c) throw new AppError(404, "Contact not found");
   // Log lead status transitions to the append-only history.
   if (statusChanged) {
-    void db.insert(contactStatusHistoryTable).values({ companyId: existing.companyId, contactId: id, fromStatus: existing.status, toStatus: status, comment: statusComment ?? null, changedById: user.id }).catch(() => {});
+    void contactsRepo.insertStatusHistory({ companyId: existing.companyId, contactId: id, fromStatus: existing.status, toStatus: status, comment: statusComment ?? null, changedById: user.id }).catch(() => {});
   }
-  const event = c.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, c.eventId)).then(r => r[0]) : null;
-  const assignee = c.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, c.assignedToId)).then(r => r[0]) : null;
-  return formatContact(c, event?.name, assignee?.name);
+  const { eventName, assignedToName } = await namesFor(c);
+  return formatContact(c, eventName, assignedToName);
 }
 
 export async function deleteContact(user: AuthUser, id: number) {
-  const [existing] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-  if (!existing || !canAccessCompany(user, existing.companyId)) throw new AppError(404, "Contact not found");
-  await db.delete(contactsTable).where(eq(contactsTable.id, id));
+  const existing = await contactsRepo.findById(user, id);
+  if (!existing) throw new AppError(404, "Contact not found");
+  await contactsRepo.softDelete(id);
   return { success: true, message: "Contact deleted" };
 }
 
 export async function enrichContact(user: AuthUser, id: number) {
-  const [c] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-  if (!c || !canAccessCompany(user, c.companyId)) throw new AppError(404, "Contact not found");
+  const c = await contactsRepo.findById(user, id);
+  if (!c) throw new AppError(404, "Contact not found");
 
   let result;
   try {
@@ -503,26 +457,26 @@ export async function enrichContact(user: AuthUser, id: number) {
     throw new AppError(502, "AI enrichment is temporarily unavailable. Please try again.");
   }
 
-  const [updated] = await db.update(contactsTable).set({
+  const updated = await contactsRepo.update(id, {
     industry: result.industry,
     seniority: result.seniority,
     enrichmentSummary: result.summary,
     talkingPoints: JSON.stringify(result.talkingPoints),
     enrichedAt: new Date(),
     updatedAt: new Date(),
-  }).where(eq(contactsTable.id, id)).returning();
+  });
+  if (!updated) throw new AppError(404, "Contact not found");
 
-  const event = updated.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, updated.eventId)).then(r => r[0]) : null;
-  const assignee = updated.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, updated.assignedToId)).then(r => r[0]) : null;
-  return formatContact(updated, event?.name, assignee?.name);
+  const { eventName, assignedToName } = await namesFor(updated);
+  return formatContact(updated, eventName, assignedToName);
 }
 
 export async function statusHistory(user: AuthUser, id: number) {
-  const [c] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
-  if (!c || !canAccessCompany(user, c.companyId)) throw new AppError(404, "Contact not found");
-  const rows = await db.select().from(contactStatusHistoryTable).where(eq(contactStatusHistoryTable.contactId, id)).orderBy(desc(contactStatusHistoryTable.createdAt));
+  const c = await contactsRepo.findById(user, id);
+  if (!c) throw new AppError(404, "Contact not found");
+  const rows = await contactsRepo.statusHistoryRows(id);
   const userIds = [...new Set(rows.map(r => r.changedById).filter((v): v is number => v != null))];
-  const users = userIds.length > 0 ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, userIds)) : [];
+  const users = await contactsRepo.usersByIds(userIds);
   const nameById = new Map(users.map(u => [u.id, u.name]));
   const history = rows.map(r => ({ ...r, changedByName: r.changedById != null ? (nameById.get(r.changedById) ?? null) : null }));
   return { history, total: history.length };

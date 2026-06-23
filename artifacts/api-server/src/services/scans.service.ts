@@ -1,10 +1,8 @@
-import { db } from "@workspace/db";
-import { scansTable, companiesTable } from "@workspace/db";
-import { eq, and, count, inArray, sql } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
-import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
+import { type AuthUser } from "../middlewares/requireAuth.js";
 import { extractCardData, logAiError } from "../lib/ai.js";
 import { streamScanImage } from "../lib/imageStorage.js";
+import * as scansRepo from "../repositories/scans.repository.js";
 
 /** Return the public-facing API image URL for a scan (or null if not stored). */
 export function scanImageApiUrl(scanId: number, hasImage: boolean): string | null {
@@ -16,10 +14,7 @@ export async function listScans(user: AuthUser, query: Record<string, string>) {
   const pageNum = Math.max(1, parseInt(page));
   const limitNum = Math.min(100, parseInt(limit));
   const offset = (pageNum - 1) * limitNum;
-  const conditions = user.role !== "platform_owner" ? [inArray(scansTable.companyId, user.accessibleCompanies)] : [];
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-  const [{ total }] = await db.select({ total: count() }).from(scansTable).where(whereClause);
-  const scans = await db.select().from(scansTable).where(whereClause).limit(limitNum).offset(offset).orderBy(scansTable.createdAt);
+  const { rows: scans, total } = await scansRepo.list(user, { limit: limitNum, offset });
   const formatted = scans.map((s) => ({
     ...s,
     extractedData: s.extractedData ? JSON.parse(s.extractedData) : null,
@@ -44,10 +39,10 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   const lang = appLanguage === "ar" ? "ar" : "en";
 
   // Increment company scans used
-  await db.update(companiesTable).set({ scansUsed: sql`${companiesTable.scansUsed} + 1` }).where(eq(companiesTable.id, companyId));
+  await scansRepo.incrementScansUsed(companyId);
 
   // Create scan record
-  const [scan] = await db.insert(scansTable).values({ companyId, userId: user.id, status: "processing", imageUrl: null, extractedData: null }).returning();
+  const scan = await scansRepo.insert({ companyId, userId: user.id, status: "processing", imageUrl: null, extractedData: null });
 
   // Real AI OCR + extraction (image upload happens after, fire-and-forget in route)
   let ocrResult: Awaited<ReturnType<typeof extractCardData>> | null = null;
@@ -60,7 +55,7 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
 
   if (ocrErr !== null) {
     logAiError("scan-ocr", ocrErr);
-    const [failed] = await db.update(scansTable).set({ status: "failed" }).where(eq(scansTable.id, scan.id)).returning();
+    const failed = await scansRepo.update(scan.id, { status: "failed" });
     return {
       scanId: scan.id,
       companyId,
@@ -75,11 +70,12 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
     };
   }
 
-  const [updated] = await db
-    .update(scansTable)
-    .set({ status: "completed", extractedData: JSON.stringify(ocrResult!.fields), rawOcr: ocrResult!.rawOcr, confidence: ocrResult!.confidence })
-    .where(eq(scansTable.id, scan.id))
-    .returning();
+  const updated = await scansRepo.update(scan.id, {
+    status: "completed",
+    extractedData: JSON.stringify(ocrResult!.fields),
+    rawOcr: ocrResult!.rawOcr,
+    confidence: ocrResult!.confidence,
+  });
   return {
     scanId: scan.id,
     companyId,
@@ -94,12 +90,12 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
 }
 
 export async function setScanImageUrl(scanId: number, objectKey: string) {
-  await db.update(scansTable).set({ imageUrl: objectKey }).where(eq(scansTable.id, scanId));
+  await scansRepo.setImageUrl(scanId, objectKey);
 }
 
 export async function getScanImageStream(user: AuthUser, id: number) {
-  const [scan] = await db.select().from(scansTable).where(eq(scansTable.id, id)).limit(1);
-  if (!scan || !canAccessCompany(user, scan.companyId)) throw new AppError(404, "Scan not found");
+  const scan = await scansRepo.findById(user, id);
+  if (!scan) throw new AppError(404, "Scan not found");
   if (!scan.imageUrl) throw new AppError(404, "No image stored for this scan");
   try {
     return await streamScanImage(scan.imageUrl);
@@ -109,8 +105,8 @@ export async function getScanImageStream(user: AuthUser, id: number) {
 }
 
 export async function getScan(user: AuthUser, id: number) {
-  const [scan] = await db.select().from(scansTable).where(eq(scansTable.id, id)).limit(1);
-  if (!scan || !canAccessCompany(user, scan.companyId)) throw new AppError(404, "Scan not found");
+  const scan = await scansRepo.findById(user, id);
+  if (!scan) throw new AppError(404, "Scan not found");
   return {
     ...scan,
     extractedData: scan.extractedData ? JSON.parse(scan.extractedData) : null,

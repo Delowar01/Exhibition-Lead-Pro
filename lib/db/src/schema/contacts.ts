@@ -46,6 +46,7 @@ export const contactsTable = pgTable("contacts", {
   createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"), // soft-delete marker; rows with a value are excluded from all reads by default
 });
 
 export const insertContactSchema = createInsertSchema(contactsTable).omit({ id: true, createdAt: true });

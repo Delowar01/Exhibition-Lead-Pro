@@ -1,9 +1,8 @@
-import { db } from "@workspace/db";
-import { usersTable, companiesTable } from "@workspace/db";
-import { eq, ilike, and, count, inArray } from "drizzle-orm";
-import { canAccessCompany, normalizeRole, type AuthUser } from "../middlewares/requireAuth.js";
+import { usersTable } from "@workspace/db";
+import { normalizeRole, type AuthUser } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
 import { hashPassword } from "../lib/auth.js";
+import * as usersRepo from "../repositories/users.repository.js";
 
 // Role ranks for escalation checks: a caller may never create or promote a user
 // to a role higher than their own.
@@ -28,24 +27,11 @@ export async function listUsers(user: AuthUser, params: ListUsersParams) {
   const limitNum = Math.min(100, parseInt(limit));
   const offset = (pageNum - 1) * limitNum;
 
-  const conditions = [];
-  if (search) conditions.push(ilike(usersTable.name, `%${search}%`));
-  if (role) conditions.push(eq(usersTable.role, role));
-  // Only platform_owner may filter by an arbitrary companyId; everyone else is
-  // hard-scoped to their own company regardless of any caller-supplied companyId.
-  if (user.role === "platform_owner") {
-    if (companyId && !isNaN(parseInt(companyId))) conditions.push(eq(usersTable.companyId, parseInt(companyId)));
-  } else {
-    conditions.push(inArray(usersTable.companyId, user.accessibleCompanies));
-  }
+  const { rows, total } = await usersRepo.list(user, { search, role, companyId, limit: limitNum, offset });
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-  const [{ total }] = await db.select({ total: count() }).from(usersTable).where(whereClause);
-  const users = await db.select().from(usersTable).where(whereClause).limit(limitNum).offset(offset).orderBy(usersTable.createdAt);
-
-  const enriched = await Promise.all(users.map(async (u) => {
-    const company = u.companyId ? await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, u.companyId)).then(r => r[0]) : null;
-    return formatUser(u, company?.name);
+  const enriched = await Promise.all(rows.map(async (u) => {
+    const name = u.companyId ? await usersRepo.companyName(u.companyId) : null;
+    return formatUser(u, name);
   }));
 
   return { users: enriched, total, page: pageNum, limit: limitNum };
@@ -79,9 +65,9 @@ export async function createUser(user: AuthUser, input: CreateUserInput) {
   }
   const pw = password ?? "Welcome123!";
   const passwordHash = hashPassword(pw);
-  const [created] = await db.insert(usersTable).values({ email, passwordHash, name, role, companyId: cid, isActive: true }).returning();
-  const company = cid ? await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, cid)).then(r => r[0]) : null;
-  return formatUser(created, company?.name);
+  const created = await usersRepo.insert({ email, passwordHash, name, role, companyId: cid, isActive: true });
+  const name2 = cid ? await usersRepo.companyName(cid) : null;
+  return formatUser(created, name2);
 }
 
 export interface UpdateMeInput {
@@ -96,17 +82,17 @@ export async function updateMe(user: AuthUser, input: UpdateMeInput) {
   if (typeof name === "string" && name.trim().length > 0) patch.name = name.trim();
   if (avatarUrl === null || typeof avatarUrl === "string") patch.avatarUrl = avatarUrl;
   if (Object.keys(patch).length === 0) throw new AppError(400, "Nothing to update");
-  const [updated] = await db.update(usersTable).set(patch).where(eq(usersTable.id, id)).returning();
+  const updated = await usersRepo.update(id, patch);
   if (!updated) throw new AppError(404, "User not found");
-  const company = updated.companyId ? await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, updated.companyId)).then(r => r[0]) : null;
-  return formatUser(updated, company?.name);
+  const companyName = updated.companyId ? await usersRepo.companyName(updated.companyId) : null;
+  return formatUser(updated, companyName);
 }
 
 export async function getUser(user: AuthUser, id: number) {
-  const [found] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
-  if (!found || !canAccessCompany(user, found.companyId)) throw new AppError(404, "User not found");
-  const company = found.companyId ? await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, found.companyId)).then(r => r[0]) : null;
-  return formatUser(found, company?.name);
+  const found = await usersRepo.findById(user, id);
+  if (!found) throw new AppError(404, "User not found");
+  const companyName = found.companyId ? await usersRepo.companyName(found.companyId) : null;
+  return formatUser(found, companyName);
 }
 
 export interface UpdateUserInput {
@@ -116,22 +102,22 @@ export interface UpdateUserInput {
 }
 
 export async function updateUser(user: AuthUser, id: number, input: UpdateUserInput) {
-  const [target] = await db.select({ companyId: usersTable.companyId }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
-  if (!target || !canAccessCompany(user, target.companyId)) throw new AppError(404, "User not found");
+  const target = await usersRepo.findById(user, id);
+  if (!target) throw new AppError(404, "User not found");
   const { name, role, isActive } = input;
   // No privilege escalation: cannot promote a user to a role higher than your own.
   if (role !== undefined && (!ROLE_RANK[role] || roleRank(role) > roleRank(user.role))) {
     throw new AppError(403, "Cannot assign a role higher than your own");
   }
-  const [updated] = await db.update(usersTable).set({ name, role, isActive }).where(eq(usersTable.id, id)).returning();
+  const updated = await usersRepo.update(id, { name, role, isActive });
   if (!updated) throw new AppError(404, "User not found");
-  const company = updated.companyId ? await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, updated.companyId)).then(r => r[0]) : null;
-  return formatUser(updated, company?.name);
+  const companyName = updated.companyId ? await usersRepo.companyName(updated.companyId) : null;
+  return formatUser(updated, companyName);
 }
 
 export async function deleteUser(user: AuthUser, id: number) {
-  const [target] = await db.select({ companyId: usersTable.companyId }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
-  if (!target || !canAccessCompany(user, target.companyId)) throw new AppError(404, "User not found");
-  await db.delete(usersTable).where(eq(usersTable.id, id));
+  const target = await usersRepo.findById(user, id);
+  if (!target) throw new AppError(404, "User not found");
+  await usersRepo.remove(id);
   return { success: true, message: "User deleted" };
 }

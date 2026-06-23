@@ -1,34 +1,18 @@
-import { db } from "@workspace/db";
-import { leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable } from "@workspace/db";
-import { eq, and, count, inArray, ne, desc } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
-import { canAccessCompany, tenantScope, type AuthUser } from "../middlewares/requireAuth.js";
+import type { AuthUser } from "../middlewares/requireAuth.js";
 import { refAccessible } from "../lib/tenant.js";
+import * as leadsRepo from "../repositories/leads.repository.js";
 
 const PIPELINE_STAGES = ["prospect", "qualified", "proposal_sent", "negotiation", "won", "lost"];
 
-async function enrichLead(l: typeof leadsTable.$inferSelect, includeHistory = false) {
-  const contact = l.contactId ? await db.select({ firstName: contactsTable.firstName, lastName: contactsTable.lastName, fullName: contactsTable.fullName, email: contactsTable.email, contactCompany: contactsTable.contactCompany }).from(contactsTable).where(eq(contactsTable.id, l.contactId)).then(r => r[0]) : null;
-  const assignee = l.assignedToId ? await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, l.assignedToId)).then(r => r[0]) : null;
-  const event = l.eventId ? await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, l.eventId)).then(r => r[0]) : null;
+async function enrichLead(l: leadsRepo.LeadRow, includeHistory = false) {
+  const contact = l.contactId ? await leadsRepo.contactSummary(l.contactId) : null;
+  const assignee = l.assignedToId ? await leadsRepo.assigneeName(l.assignedToId) : null;
+  const event = l.eventId ? await leadsRepo.eventName(l.eventId) : null;
 
   let history: Array<{ id: number; leadId: number; changedBy: number | null; changedByName: string | null; fieldName: string; oldValue: string | null; newValue: string | null; changedAt: string }> = [];
   if (includeHistory) {
-    const rows = await db
-      .select({
-        id: leadHistoryTable.id,
-        leadId: leadHistoryTable.leadId,
-        changedBy: leadHistoryTable.changedBy,
-        changedByName: usersTable.name,
-        fieldName: leadHistoryTable.fieldName,
-        oldValue: leadHistoryTable.oldValue,
-        newValue: leadHistoryTable.newValue,
-        changedAt: leadHistoryTable.changedAt,
-      })
-      .from(leadHistoryTable)
-      .leftJoin(usersTable, eq(leadHistoryTable.changedBy, usersTable.id))
-      .where(eq(leadHistoryTable.leadId, l.id))
-      .orderBy(desc(leadHistoryTable.changedAt));
+    const rows = await leadsRepo.history(l.id);
     history = rows.map(r => ({ ...r, changedAt: r.changedAt.toISOString() }));
   }
 
@@ -64,17 +48,16 @@ export async function listLeads(user: AuthUser, params: ListLeadsParams) {
   const pageNum = Math.max(1, parseInt(page));
   const limitNum = Math.min(500, parseInt(limit));
   const offset = (pageNum - 1) * limitNum;
-  const conditions = [];
-  if (user.role !== "platform_owner") conditions.push(inArray(leadsTable.companyId, user.accessibleCompanies));
-  if (stage) conditions.push(eq(leadsTable.stage, stage));
-  if (assignedTo && !isNaN(parseInt(assignedTo))) conditions.push(eq(leadsTable.assignedToId, parseInt(assignedTo)));
-  if (eventId && !isNaN(parseInt(eventId))) conditions.push(eq(leadsTable.eventId, parseInt(eventId)));
-  if (contactId && !isNaN(parseInt(contactId))) conditions.push(eq(leadsTable.contactId, parseInt(contactId)));
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-  const [{ total }] = await db.select({ total: count() }).from(leadsTable).where(whereClause);
-  const leads = await db.select().from(leadsTable).where(whereClause).limit(limitNum).offset(offset).orderBy(leadsTable.createdAt);
-  const enriched = await Promise.all(leads.map(l => enrichLead(l, false)));
+  const { rows, total } = await leadsRepo.list(user, {
+    stage,
+    assignedToId: assignedTo && !isNaN(parseInt(assignedTo)) ? parseInt(assignedTo) : undefined,
+    eventId: eventId && !isNaN(parseInt(eventId)) ? parseInt(eventId) : undefined,
+    contactId: contactId && !isNaN(parseInt(contactId)) ? parseInt(contactId) : undefined,
+    limit: limitNum,
+    offset,
+  });
+  const enriched = await Promise.all(rows.map(l => enrichLead(l, false)));
   return { leads: enriched, total };
 }
 
@@ -108,15 +91,13 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
 
   // 409 if this contact already has a non-lost lead in this company
   if (contactId != null) {
-    const existing = await db.select({ id: leadsTable.id }).from(leadsTable)
-      .where(and(eq(leadsTable.contactId, contactId), eq(leadsTable.companyId, companyId), ne(leadsTable.stage, "lost")))
-      .limit(1);
-    if (existing.length > 0) {
-      return { conflict: true, existingId: existing[0].id };
+    const existingId = await leadsRepo.activeLeadIdForContact(companyId, contactId);
+    if (existingId !== undefined) {
+      return { conflict: true, existingId };
     }
   }
 
-  const [lead] = await db.insert(leadsTable).values({
+  const lead = await leadsRepo.insert({
     companyId,
     contactId: contactId ?? null,
     stage: stage ?? "prospect",
@@ -131,13 +112,12 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
     assignedToId: assignedToId ?? null,
     eventId: eventId ?? null,
     createdById: user.id,
-  }).returning();
+  });
   return { conflict: false, lead: await enrichLead(lead, false) };
 }
 
 export async function getPipeline(user: AuthUser) {
-  const whereClause = tenantScope(user, leadsTable.companyId);
-  const allLeads = await db.select().from(leadsTable).where(whereClause).orderBy(leadsTable.createdAt);
+  const allLeads = await leadsRepo.pipelineLeads(user);
   const enriched = await Promise.all(allLeads.map(l => enrichLead(l, false)));
 
   const stages = await Promise.all(PIPELINE_STAGES.map(async (stage) => {
@@ -153,14 +133,14 @@ export async function getPipeline(user: AuthUser) {
 }
 
 export async function getLead(user: AuthUser, id: number) {
-  const [lead] = await db.select().from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
-  if (!lead || !canAccessCompany(user, lead.companyId)) throw new AppError(404, "Lead not found");
+  const lead = await leadsRepo.findById(user, id);
+  if (!lead) throw new AppError(404, "Lead not found");
   return await enrichLead(lead, true);
 }
 
 export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
-  const [existing] = await db.select().from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
-  if (!existing || !canAccessCompany(user, existing.companyId)) throw new AppError(404, "Lead not found");
+  const existing = await leadsRepo.findById(user, id);
+  if (!existing) throw new AppError(404, "Lead not found");
 
   const { stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId } = input;
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
@@ -195,28 +175,19 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
     trackedFields.push({ field: "assignedToId", oldVal: existing.assignedToId != null ? String(existing.assignedToId) : null, newVal: assignedToId != null ? String(assignedToId) : null });
   }
 
-  const [lead] = await db.transaction(async (tx) => {
-    if (trackedFields.length > 0) {
-      await tx.insert(leadHistoryTable).values(
-        trackedFields.map(f => ({
-          leadId: id,
-          changedBy: user.id,
-          fieldName: f.field,
-          oldValue: f.oldVal,
-          newValue: f.newVal,
-        }))
-      );
-    }
-    return tx.update(leadsTable).set(updateData as Partial<typeof leadsTable.$inferInsert>).where(eq(leadsTable.id, id)).returning();
-  });
+  const lead = await leadsRepo.updateWithHistory(
+    id,
+    updateData as Partial<leadsRepo.LeadRow>,
+    trackedFields.map(f => ({ leadId: id, changedBy: user.id, fieldName: f.field, oldValue: f.oldVal, newValue: f.newVal })),
+  );
 
   if (!lead) throw new AppError(404, "Lead not found");
   return await enrichLead(lead, true);
 }
 
 export async function deleteLead(user: AuthUser, id: number) {
-  const [existing] = await db.select({ companyId: leadsTable.companyId }).from(leadsTable).where(eq(leadsTable.id, id)).limit(1);
-  if (!existing || !canAccessCompany(user, existing.companyId)) throw new AppError(404, "Lead not found");
-  await db.delete(leadsTable).where(eq(leadsTable.id, id));
+  const existing = await leadsRepo.findById(user, id);
+  if (!existing) throw new AppError(404, "Lead not found");
+  await leadsRepo.softDelete(id);
   return { success: true, message: "Lead deleted" };
 }
