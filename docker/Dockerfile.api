@@ -1,0 +1,87 @@
+# syntax=docker/dockerfile:1.7
+#
+# Production image for the Card Scanner Pro API server.
+#
+# This is a self-hosting-only artifact. It is never used by Replit, which builds
+# and runs the API via workflows / autoscale. The build context MUST be the repo
+# root so the whole pnpm workspace is available:
+#
+#   docker build -f docker/Dockerfile.api --target runtime -t cardscanner/api .
+#
+# Stages:
+#   base    — Node + pnpm (via corepack)
+#   build   — install workspace deps, esbuild the server bundle, prune to prod deps
+#   migrate — full-deps image used only to run `drizzle-kit push` (DB migrations)
+#   runtime — tiny final image: bundled output + production node_modules, non-root
+
+##############################################################################
+# base
+##############################################################################
+FROM node:24-bookworm-slim AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+# corepack ships with Node and pins pnpm to the version in package.json
+# ("packageManager") so the image matches local/CI installs exactly.
+RUN corepack enable
+WORKDIR /repo
+
+##############################################################################
+# build — install deps, build the bundle, produce a pruned prod node_modules
+##############################################################################
+FROM base AS build
+# Copy the whole workspace. .dockerignore keeps node_modules / build output /
+# attached_assets out of the context so this stays small.
+COPY . .
+# Install only what the api-server (and its workspace deps) need, including
+# devDeps required to build (esbuild, the pino plugin, etc.). The pnpm store is
+# cached across builds for speed.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter "@workspace/api-server..."
+# Bundle the server into artifacts/api-server/dist (esbuild → ESM, single file
+# plus pino transport workers).
+RUN pnpm --filter @workspace/api-server run build
+# Create a self-contained, production-only deployment. This prunes devDeps and
+# produces a node_modules we can copy into the runtime image. The bundle
+# externalizes native/dynamic packages (sharp, @google/genai,
+# @google-cloud/storage), so they must be present here at runtime.
+# --legacy is required on pnpm v10 to deploy without injected-workspace-packages.
+RUN pnpm --filter @workspace/api-server deploy --legacy --prod /prod/api
+
+##############################################################################
+# migrate — run database schema push (drizzle-kit). Used by the `migrate`
+# compose service: `docker compose --profile migrate run --rm migrate`.
+##############################################################################
+FROM build AS migrate
+WORKDIR /repo
+# DATABASE_URL is provided at runtime via the environment.
+ENTRYPOINT ["pnpm", "--filter", "@workspace/db", "run", "push"]
+
+##############################################################################
+# runtime — minimal production image
+##############################################################################
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production
+ENV PORT=8080
+WORKDIR /app
+
+# Run as a dedicated non-root user. Secrets come only from the environment;
+# nothing sensitive is baked into the image.
+RUN groupadd --system app && useradd --system --gid app --create-home app
+
+# Production dependencies (includes the externalized native sharp binaries).
+COPY --from=build --chown=app:app /prod/api/node_modules ./node_modules
+# Bundled server output (index.mjs + pino transport workers + source maps).
+COPY --from=build --chown=app:app /repo/artifacts/api-server/dist ./dist
+# Startup script.
+COPY --chown=app:app docker/scripts/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
+RUN chmod +x /usr/local/bin/api-entrypoint.sh
+
+EXPOSE 8080
+USER app
+
+# Liveness probe against the API's own /api/healthz endpoint. Uses Node's global
+# fetch so we don't need curl/wget in the slim image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["/usr/local/bin/api-entrypoint.sh"]

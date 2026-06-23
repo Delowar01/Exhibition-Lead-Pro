@@ -1,0 +1,129 @@
+# Card Scanner Pro — self-hosting stack.
+#
+# Brings up the API, the static web app (nginx), and an optional bundled
+# PostgreSQL. Replit deployments do NOT use this file; it exists only for
+# running the platform on your own infrastructure.
+#
+# Quick start (from this docker/ directory):
+#   cp .env.example .env      # then edit secrets
+#   docker compose up -d --build
+#
+# The web app is then served on http://localhost:${WEB_PORT:-8080}.
+#
+# Build contexts are the repo root ("..") so the whole pnpm workspace is
+# available to the Dockerfiles.
+
+name: card-scanner-pro
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+      target: runtime
+    image: cardscanner/api:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      # Required. Defaults below point at the bundled postgres service; override
+      # in .env to use an external managed database.
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required (set it in docker/.env)}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required (set it in docker/.env)}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Optional integrations (left empty by default).
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEFAULT_OBJECT_STORAGE_BUCKET_ID: ${DEFAULT_OBJECT_STORAGE_BUCKET_ID:-}
+      PUBLIC_OBJECT_SEARCH_PATHS: ${PUBLIC_OBJECT_SEARCH_PATHS:-}
+      PRIVATE_OBJECT_DIR: ${PRIVATE_OBJECT_DIR:-}
+    ports:
+      # Expose the API directly too (handy for debugging / mobile clients).
+      - "${API_PORT:-5000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        # required:false means the stack still works when postgres is disabled
+        # (external database) without Compose force-enabling the profile.
+        required: false
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+      args:
+        BASE_PATH: ${WEB_BASE_PATH:-/}
+    image: cardscanner/web:latest
+    restart: unless-stopped
+    environment:
+      # Where nginx forwards /api requests. The default targets the api service
+      # on the compose network.
+      API_UPSTREAM: ${API_UPSTREAM:-http://api:8080}
+      NGINX_ENVSUBST_FILTER: ^API_UPSTREAM$$
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+
+  # Optional bundled database. Enabled by default via COMPOSE_PROFILES=local-db
+  # in .env.example. To use an external managed database instead, set
+  # COMPOSE_PROFILES= (empty) and point DATABASE_URL at your server.
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["local-db"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cardscanner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cardscanner}
+      POSTGRES_DB: ${POSTGRES_DB:-cardscanner}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cardscanner} -d ${POSTGRES_DB:-cardscanner}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot database schema push (drizzle-kit). Run it once after first boot
+  # and after any schema change:
+  #   docker compose --profile migrate run --rm migrate
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+      target: migrate
+    image: cardscanner/migrate:latest
+    profiles: ["migrate"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required (set it in docker/.env)}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+
+  # OPTIONAL — disabled by default. The application does not require Redis today.
+  # It is included as a clearly-marked, ready-to-use service for future caching
+  # or job-queue needs. Enable explicitly with: docker compose --profile redis up
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis"]
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

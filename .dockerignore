@@ -1,0 +1,44 @@
+# Build context exclusions for the self-hosting Docker images (docker/).
+# Keep all package.json / source needed by pnpm + the api-server and web-app
+# builds, but drop large or machine-local files. Installed deps and build
+# output are regenerated inside the image.
+
+# Dependencies & build output (reinstalled / rebuilt in-image)
+**/node_modules
+**/dist
+**/.tsbuildinfo
+**/*.tsbuildinfo
+**/out-tsc
+
+# Version control & CI
+.git
+.gitignore
+
+# Replit / agent / local-only tooling (never needed in images)
+.local
+.cache
+.config
+.agents
+.replit
+.replitignore
+.pythonlibs
+**/.expo
+**/.expo-shared
+**/.replit-artifact
+
+# Large assets not referenced by the web build
+attached_assets
+https:
+
+# Docs & reports
+*.md
+**/*.md
+
+# Editor noise
+.vscode
+.idea
+.DS_Store
+
+# The docker bundle itself doesn't need to be inside the build context
+docker/.env
+**/.env

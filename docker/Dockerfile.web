@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.7
+#
+# Production image for the Card Scanner Pro web app (static SPA + nginx).
+#
+# Self-hosting only — never used by Replit. Build context MUST be the repo root:
+#
+#   docker build -f docker/Dockerfile.web -t cardscanner/web .
+#
+# The web app calls the API with relative `/api/...` URLs, so nginx serves the
+# built static assets AND reverse-proxies `/api/` to the API container. The
+# upstream is parameterized at runtime via the API_UPSTREAM env var.
+
+##############################################################################
+# base
+##############################################################################
+FROM node:24-bookworm-slim AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+WORKDIR /repo
+
+##############################################################################
+# build — produce the static bundle in artifacts/web-app/dist/public
+##############################################################################
+FROM base AS build
+COPY . .
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter "@workspace/web-app..."
+
+# vite.config.ts requires PORT and BASE_PATH at config load. PORT only matters
+# for the dev/preview server (unused here); BASE_PATH controls the base href of
+# the built assets. Default "/" serves the app at the domain root. Override at
+# build time if you host the app under a sub-path (e.g. /app/).
+ARG BASE_PATH=/
+ENV BASE_PATH=${BASE_PATH}
+ENV PORT=8080
+ENV NODE_ENV=production
+RUN pnpm --filter @workspace/web-app run build
+
+##############################################################################
+# runtime — nginx serving static assets + proxying /api
+##############################################################################
+FROM nginx:1.27-alpine AS runtime
+
+# Static assets.
+COPY --from=build /repo/artifacts/web-app/dist/public /usr/share/nginx/html
+# Config template — the official nginx entrypoint runs envsubst over files in
+# /etc/nginx/templates at startup, writing the result to /etc/nginx/conf.d.
+COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+
+# Where to forward /api requests. Defaults to the bundled API service name on
+# the compose network. NGINX_ENVSUBST_FILTER restricts substitution to this one
+# variable so nginx's own $host/$uri/etc. are left untouched.
+ENV API_UPSTREAM=http://api:8080
+ENV NGINX_ENVSUBST_FILTER=^API_UPSTREAM$
+
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1/healthz || exit 1

@@ -1,0 +1,46 @@
+# nginx site config for the Card Scanner Pro web app.
+#
+# ${API_UPSTREAM} is substituted at container start by the nginx entrypoint
+# (envsubst). All other $-variables below are nginx runtime variables and are
+# preserved because NGINX_ENVSUBST_FILTER only allows API_UPSTREAM.
+
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Lightweight health endpoint for container/orchestrator probes.
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Reverse-proxy the API. The API server owns the full /api prefix, and
+    # proxy_pass without a URI path preserves the original request URI.
+    location /api/ {
+        proxy_pass ${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        # Card images are sent as base64 JSON bodies (API accepts up to 15mb).
+        client_max_body_size 20m;
+    }
+
+    # Static assets with long cache lifetime (filenames are content-hashed).
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA fallback — every other route resolves to the app shell.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
