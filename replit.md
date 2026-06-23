@@ -92,4 +92,5 @@ Quick demo login buttons are available on the login page.
 
 ## Pointers
 
+- See [`docs/`](docs/README.md) for the full architecture review, logical structure map, technical-debt register, and developer/API/deployment guides. Historical QA/release/verification reports live under [`docs/reports/`](docs/reports/README.md).
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
