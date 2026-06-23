@@ -181,6 +181,18 @@ export default function MoreScreen() {
       color: "#67707D",
       onPress: () => router.push("/settings"),
     },
+    ...(__DEV__
+      ? [
+          {
+            key: "dev-perf",
+            label: "Dev Performance",
+            sub: "Scan pipeline timings (dev build only)",
+            icon: "activity" as keyof typeof Feather.glyphMap,
+            color: "#8B5CF6",
+            onPress: () => router.push("/dev-perf"),
+          },
+        ]
+      : []),
   ];
 
   return (

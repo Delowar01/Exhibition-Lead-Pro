@@ -35,6 +35,7 @@ import {
   setBatchCaptures,
   setBatchOcrResult,
 } from "@/lib/batch-store";
+import { addScanMetric } from "@/lib/scan-perf";
 
 // Dev-only diagnostics for the capture → OCR → save pipeline. Stripped in
 // production builds (guarded by __DEV__) so it never leaks to end users.
@@ -163,6 +164,16 @@ export default function CaptureCameraScreen() {
   // #2 GPS — fetched once, non-blocking. Capture works even if this never resolves.
   const gpsRef = useRef<Gps>({ latitude: null, longitude: null, gpsAccuracy: null });
   const batchRef = useRef<BatchCapture[]>([]);
+  // Per-stage capture timing — populated inside captureImage(), read in
+  // handleCapture() once the await returns. Avoids changing captureImage's
+  // return type while still surfacing native-thread timing to the caller.
+  const capturePerfRef = useRef<{
+    captureRawMs: number;
+    processMs: number;
+    srcW: number;
+    srcH: number;
+    outW: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,11 +234,19 @@ export default function CaptureCameraScreen() {
           [{ resize: { width: targetWidth } }],
           { compress: UPLOAD_JPEG_QUALITY, format: ImageManipulator.SaveFormat.JPEG, base64: true },
         );
-        // Per-stage profiling (dev builds only): native capture vs native
-        // resize+compress+encode. Upload + OCR are timed separately at call site.
+        // Per-stage profiling: store in ref so handleCapture can assemble the
+        // full metric once upload + OCR + contact timings are also known.
+        const perfProcessMs = Date.now() - tProc;
+        capturePerfRef.current = {
+          captureRawMs,
+          processMs: perfProcessMs,
+          srcW: photo.width ?? 0,
+          srcH: photo.height ?? 0,
+          outW: targetWidth,
+        };
         scanLog("capture pipeline", {
           captureRawMs,
-          processMs: Date.now() - tProc,
+          processMs: perfProcessMs,
           srcW: photo.width,
           srcH: photo.height,
           outW: targetWidth,
@@ -247,8 +266,25 @@ export default function CaptureCameraScreen() {
   }, []);
 
   // #3 Rapid — OCR + save happen in the background so the camera frees instantly.
+  //
+  // perfTiming carries the device-side capture metrics captured before the call
+  // so the background task can assemble and record a complete ScanMetric once
+  // both OCR and contact creation finish.
   const processRapid = useCallback(
-    async (imageData: string, gps: Gps) => {
+    async (
+      imageData: string,
+      gps: Gps,
+      perfTiming: {
+        captureRawMs: number;
+        processMs: number;
+        srcW: number;
+        srcH: number;
+        outW: number;
+        payloadKb: number;
+        tStart: number;
+      } | null,
+    ) => {
+      const tOcr = Date.now();
       try {
         scanLog("rapid: OCR started", { bytes: imageData.length, language });
         const scan = await createScan.mutateAsync({
@@ -261,10 +297,32 @@ export default function CaptureCameraScreen() {
             gpsAccuracy: gps.gpsAccuracy,
           },
         });
+        const uploadAndOcrMs = Date.now() - tOcr;
         const extracted = scan.extractedData ?? {};
-        scanLog("rapid: OCR completed", { confidence: scan.confidence });
+        scanLog("rapid: OCR completed", { confidence: scan.confidence, uploadAndOcrMs });
+        const tContact = Date.now();
         await createContact.mutateAsync({ data: extractedToContact(extracted, gps, eventId) });
-        scanLog("rapid: contact saved");
+        const contactMs = Date.now() - tContact;
+        const totalMs = perfTiming ? Date.now() - perfTiming.tStart : uploadAndOcrMs + contactMs;
+        scanLog("rapid: contact saved", { contactMs, totalMs });
+        if (__DEV__ && perfTiming) {
+          addScanMetric({
+            id: String(perfTiming.tStart),
+            ts: perfTiming.tStart,
+            mode: "rapid",
+            source,
+            captureRawMs: perfTiming.captureRawMs,
+            processMs: perfTiming.processMs,
+            uploadAndOcrMs,
+            contactMs,
+            totalMs,
+            captureW: perfTiming.srcW,
+            captureH: perfTiming.srcH,
+            uploadW: perfTiming.outW,
+            payloadKb: perfTiming.payloadKb,
+            confidence: scan.confidence ?? null,
+          });
+        }
         setSavedCount((c) => c + 1);
         setLastSaved(contactDisplayName(extracted, t("capture.newContactFallback")));
       } catch (e) {
@@ -275,7 +333,7 @@ export default function CaptureCameraScreen() {
         setFailedCount((c) => c + 1);
       }
     },
-    [createScan, createContact, eventId, language, t],
+    [createScan, createContact, eventId, language, source, t],
   );
 
   // Phase 7: turn raw failures into specific, actionable messages instead of a
@@ -337,9 +395,13 @@ export default function CaptureCameraScreen() {
         };
         batchRef.current = [...batchRef.current, item];
         setBatchCount(batchRef.current.length);
+        // Snapshot capture timing for the background metric (ref will be
+        // overwritten on the next shutter press before the IIFE finishes).
+        const batchCapTiming = capturePerfRef.current ? { ...capturePerfRef.current } : null;
         // Mark pending then fire-and-forget background OCR.
         setBatchOcrResult(batchId, { status: "pending", extracted: null, scanId: null });
         void (async () => {
+          const tOcr = Date.now();
           try {
             const scan = await createScan.mutateAsync({
               data: {
@@ -351,12 +413,31 @@ export default function CaptureCameraScreen() {
                 gpsAccuracy: gps.gpsAccuracy,
               },
             });
+            const uploadAndOcrMs = Date.now() - tOcr;
             setBatchOcrResult(batchId, {
               status: "done",
               extracted: scan.extractedData ?? null,
               scanId: scan.id,
             });
-            scanLog("batch: OCR done", { id: batchId });
+            scanLog("batch: OCR done", { id: batchId, uploadAndOcrMs });
+            if (__DEV__ && batchCapTiming) {
+              addScanMetric({
+                id: batchId,
+                ts: tStart,
+                mode: "batch",
+                source,
+                captureRawMs: batchCapTiming.captureRawMs,
+                processMs: batchCapTiming.processMs,
+                uploadAndOcrMs,
+                contactMs: null,
+                totalMs: uploadAndOcrMs + (batchCapTiming.captureRawMs + batchCapTiming.processMs),
+                captureW: batchCapTiming.srcW,
+                captureH: batchCapTiming.srcH,
+                uploadW: batchCapTiming.outW,
+                payloadKb,
+                confidence: scan.confidence ?? null,
+              });
+            }
           } catch (e) {
             setBatchOcrResult(batchId, { status: "error", extracted: null, scanId: null });
             scanLog("batch: OCR error", {
@@ -412,12 +493,34 @@ export default function CaptureCameraScreen() {
             gpsAccuracy: gps.gpsAccuracy,
           },
         });
+        const uploadAndOcrMs = Date.now() - tOcr;
+        const totalMs = Date.now() - tStart;
         // ocrMs = upload + server OCR round-trip; totalMs = shutter press → review.
+        // Contact creation happens in scan-review, so contactMs is null here.
         scanLog("single: OCR completed", {
           confidence: scan.confidence,
-          ocrMs: Date.now() - tOcr,
-          totalMs: Date.now() - tStart,
+          uploadAndOcrMs,
+          totalMs,
         });
+        if (__DEV__ && capturePerfRef.current) {
+          const ct = capturePerfRef.current;
+          addScanMetric({
+            id: String(tStart),
+            ts: tStart,
+            mode: "single",
+            source,
+            captureRawMs: ct.captureRawMs,
+            processMs: ct.processMs,
+            uploadAndOcrMs,
+            contactMs: null,
+            totalMs,
+            captureW: ct.srcW,
+            captureH: ct.srcH,
+            uploadW: ct.outW,
+            payloadKb,
+            confidence: scan.confidence ?? null,
+          });
+        }
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
@@ -441,7 +544,12 @@ export default function CaptureCameraScreen() {
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-      void processRapid(imageData, gps);
+      // Pass captured timing so processRapid can record a complete metric once
+      // OCR + contact creation both finish in the background.
+      const rapidPerfTiming = capturePerfRef.current
+        ? { ...capturePerfRef.current, payloadKb, tStart }
+        : null;
+      void processRapid(imageData, gps, rapidPerfTiming);
     } catch (e) {
       scanLog("capture: FAILED", {
         status: e instanceof ApiError ? e.status : undefined,

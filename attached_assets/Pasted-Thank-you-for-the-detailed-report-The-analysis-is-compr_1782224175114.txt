@@ -1,0 +1,65 @@
+Thank you for the detailed report.
+
+The analysis is comprehensive, and I appreciate the honest distinction between measured server-side timings and the parts that still require native device verification.
+
+I agree that we've reached the point where further optimization should now be driven by real-world APK testing rather than additional assumptions.
+
+Before I rebuild the next APK, I have two final requests that I believe will benefit the project long-term.
+
+---
+
+## 1. Developer Performance Dashboard (Development Builds Only)
+
+Instead of only writing timing information to the console, create a small **Developer Performance** screen that is available only in Development builds.
+
+For every Business Card and Email Signature scan, record:
+
+* Camera Capture Time
+* Image Processing Time
+* Image Upload Time
+* OCR Processing Time
+* Contact Creation Time
+* Total End-to-End Time
+* Captured Image Resolution
+* Uploaded Image Resolution
+* Upload Payload Size (KB)
+
+Display the most recent scan along with a history of recent scans (for example, the last 20).
+
+This screen should **not** be included in Production builds.
+
+This will make future performance investigations much easier without requiring a debugger or logcat.
+
+---
+
+## 2. Automatic Performance Monitoring
+
+If the total scan time exceeds configurable thresholds, record the reason.
+
+For example:
+
+* Camera Capture > 1 second
+* Image Processing > 1 second
+* Upload > 2 seconds
+* OCR > 5 seconds
+* Total > 8 seconds
+
+This information should be visible in the Developer Performance screen.
+
+The thresholds should be configurable constants so they can be adjusted later.
+
+---
+
+## Native Verification
+
+After these additions:
+
+* Commit the current implementation.
+* Leave Module 2 as **Pending Native Verification**.
+* I will rebuild the native Android APK and perform testing on a physical device.
+
+If the application consistently achieves approximately **3–4 seconds** from capture to saved contact and the UI feels smooth and responsive, I will consider Module 2 complete.
+
+If any stage is still slower than expected, the new Developer Performance screen will allow us to identify the exact bottleneck quickly and continue optimizing based on measured data rather than assumptions.
+
+At this point, I do not want further speculative optimizations. The next improvements should be based entirely on actual measurements from the native APK.
