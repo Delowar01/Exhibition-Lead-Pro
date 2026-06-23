@@ -1,0 +1,572 @@
+STAGE 2 — Enterprise Authentication, Multi-Tenant Organizations & Security
+Objective
+Transform the Admin Portal into a production-ready enterprise SaaS platform with complete authentication, organization management, role-based permissions, tenant isolation, security hardening, and audit logging.
+Everything must be production quality.
+No placeholders.
+No mock data.
+No demo implementations.
+
+PART 1 — Enterprise Authentication
+Replace any existing basic authentication with a secure enterprise authentication system.
+Implement:
+
+
+Email & Password Login
+
+
+Remember Me
+
+
+Password Strength Validation
+
+
+Password Visibility Toggle
+
+
+Forgot Password
+
+
+Reset Password
+
+
+Email Verification
+
+
+Session Expiration
+
+
+Secure Logout
+
+
+Refresh Token Rotation
+
+
+Device Tracking
+
+
+Multi-device Sessions
+
+
+Security:
+
+
+JWT Access Token
+
+
+Refresh Token
+
+
+Secure HttpOnly Cookies (where applicable)
+
+
+Token Rotation
+
+
+CSRF Protection
+
+
+Rate Limiting
+
+
+Brute-force Protection
+
+
+Login Attempt Monitoring
+
+
+
+PART 2 — Organization (Tenant) Management
+Implement true multi-tenancy.
+Each company is a completely isolated tenant.
+Create Organization entity containing:
+
+
+Company Name
+
+
+Legal Name
+
+
+Registration Number
+
+
+VAT Number
+
+
+Country
+
+
+Timezone
+
+
+Currency
+
+
+Address
+
+
+Logo
+
+
+Primary Contact
+
+
+Subscription Plan
+
+
+Status
+
+
+Created Date
+
+
+Every resource must belong to an organization.
+Examples:
+
+
+Users
+
+
+Leads
+
+
+Events
+
+
+Teams
+
+
+Reports
+
+
+Billing
+
+
+AI Usage
+
+
+Exports
+
+
+Notifications
+
+
+No organization should ever be able to access another organization's data.
+Tenant isolation must be enforced at:
+
+
+API
+
+
+Database Queries
+
+
+Middleware
+
+
+Services
+
+
+Permissions
+
+
+
+PART 3 — User Management
+Create complete user administration.
+Each user should have:
+
+
+Name
+
+
+Email
+
+
+Phone
+
+
+Job Title
+
+
+Department
+
+
+Profile Photo
+
+
+Status
+
+
+Last Login
+
+
+Created Date
+
+
+Login History
+
+
+Support:
+
+
+Invite User
+
+
+Resend Invitation
+
+
+Disable User
+
+
+Enable User
+
+
+Delete User
+
+
+Reset Password
+
+
+Force Logout
+
+
+
+PART 4 — Enterprise Role-Based Access Control (RBAC)
+Replace any simple role implementation.
+Create granular permission management.
+Default Roles:
+Platform Owner
+Full platform control.
+Company Admin
+Controls only their own organization.
+Manager
+Can manage team members.
+Sales Executive
+Limited access.
+Viewer
+Read-only.
+Custom Roles
+Company admins can create unlimited custom roles.
+Permissions should include:
+Dashboard
+Users
+Leads
+Events
+Exports
+Reports
+Billing
+Subscription
+Settings
+AI
+API Keys
+Audit Logs
+System Logs
+Notifications
+Permissions should support:
+View
+Create
+Edit
+Delete
+Approve
+Export
+Import
+Manage
+Admin
+Every API endpoint must validate permissions.
+
+PART 5 — Invitation System
+Implement secure invitation workflow.
+Features:
+
+
+Invite via Email
+
+
+Expiring Invitation Links
+
+
+Invitation Status
+
+
+Accept Invitation
+
+
+Reject Invitation
+
+
+Resend Invitation
+
+
+Cancel Invitation
+
+
+
+PART 6 — User Profile
+Create full profile management.
+Users can:
+Update
+
+
+Name
+
+
+Phone
+
+
+Password
+
+
+Profile Picture
+
+
+Language
+
+
+Timezone
+
+
+Activity page:
+
+
+Login History
+
+
+Recent Devices
+
+
+Active Sessions
+
+
+
+PART 7 — Security Center
+Create a dedicated Security Center.
+Include:
+Password Policy
+Session Timeout
+Allowed Domains
+Blocked Domains
+IP Restrictions
+Allowed Countries
+MFA Enforcement
+API Security
+Security Alerts
+Security Events
+
+PART 8 — Multi-Factor Authentication
+Support:
+Authenticator Apps
+Backup Codes
+Recovery Process
+Remember Device
+MFA Required Policies
+
+PART 9 — Active Sessions
+Users can view:
+Browser
+OS
+IP
+Country
+Login Time
+Current Session
+Ability to:
+Terminate One Session
+Terminate All Sessions
+Force Logout
+
+PART 10 — Audit Logging
+Every critical action must be logged.
+Log:
+Login
+Logout
+Create
+Update
+Delete
+Export
+Import
+Invite
+Role Changes
+Permission Changes
+Subscription Changes
+Billing Changes
+Security Changes
+Include:
+Timestamp
+User
+Organization
+IP
+Browser
+OS
+Action
+Entity
+Old Value
+New Value
+Result
+Logs must be searchable and filterable.
+
+PART 11 — Notifications
+Create notification infrastructure.
+Support:
+In-App Notifications
+Email Notifications
+System Notifications
+Categories:
+Security
+Billing
+Invitations
+Reports
+AI
+Subscription
+Events
+User Management
+Support:
+Unread Counter
+Mark Read
+Mark All Read
+Delete
+Notification Preferences
+
+PART 12 — API Security
+Implement:
+Rate Limiting
+Request Validation
+Input Sanitization
+SQL Injection Protection
+XSS Protection
+CORS
+Helmet
+Secure Headers
+API Versioning
+Request IDs
+Structured Error Responses
+
+PART 13 — Enterprise UI
+Create modern enterprise interfaces for:
+Login
+Forgot Password
+Reset Password
+Invite User
+Organization Settings
+Security Center
+Roles
+Permissions
+Users
+Audit Logs
+Sessions
+Profile
+Notification Center
+Use:
+Responsive Layout
+Dark Mode Compatibility
+Loading Skeletons
+Empty States
+Error States
+Confirmation Dialogs
+Accessibility (WCAG AA)
+Keyboard Navigation
+
+PART 14 — Database
+Create proper migrations for:
+Organizations
+Roles
+Permissions
+Role Permissions
+User Roles
+Invitations
+Sessions
+Audit Logs
+Notifications
+Devices
+Security Policies
+MFA
+Backup Codes
+Refresh Tokens
+Everything must support soft delete where appropriate.
+
+PART 15 — API
+Create production-ready REST APIs for all modules.
+Requirements:
+OpenAPI documentation
+Zod validation
+Typed responses
+Pagination
+Filtering
+Sorting
+Searching
+Proper HTTP status codes
+Consistent error handling
+
+PART 16 — Testing
+Add comprehensive testing for:
+Authentication
+Permissions
+Organization Isolation
+Session Management
+Invitation Flow
+Audit Logging
+Security Middleware
+API Validation
+Critical User Flows
+
+PART 17 — Definition of Done
+Stage 2 is complete only when:
+
+
+Enterprise authentication is fully implemented.
+
+
+Multi-tenant organization isolation is enforced across the platform.
+
+
+Granular RBAC is operational.
+
+
+Invitation workflow is complete.
+
+
+MFA is functional.
+
+
+Session management works across multiple devices.
+
+
+Audit logs capture all critical actions.
+
+
+Security Center is operational.
+
+
+Notification system is functional.
+
+
+APIs are fully documented and validated.
+
+
+Database migrations are complete.
+
+
+UI is polished, responsive, and production-ready.
+
+
+All tests pass successfully.
+
+
+No placeholder data, mock implementations, or incomplete workflows remain.
+
+
+Expected Deliverables:
+
+
+Production-ready authentication and authorization system.
+
+
+Enterprise-grade multi-tenant organization management.
+
+
+Complete RBAC with custom roles and permissions.
+
+
+Security Center with MFA, session management, and audit logging.
+
+
+Fully documented APIs, database migrations, automated tests, and a polished admin interface ready for subsequent stages.
+
