@@ -7,6 +7,7 @@ import {
   parseContactText,
   parseMecard,
   parseQr,
+  parseQrBest,
   parseVCard,
 } from "./contact-parse";
 
@@ -474,5 +475,76 @@ describe("mergeExtracted / hasAnyContactField", () => {
     expect(hasAnyContactField({})).toBe(false);
     expect(hasAnyContactField({ firstName: null, company: "" })).toBe(false);
     expect(hasAnyContactField({ email: "x@y.z" })).toBe(true);
+  });
+});
+
+// Official regression case — the exact bytes decoded from the attached Elite
+// Marcom QR (Screenshot_2026-06-23_023442). The payload is a standard vCard 3.0
+// but with non-standard line endings: a CRLF after N, and stray bare CRs folded
+// into FN ("ASLAM\r SIDHIC") and ADR ("...Dist.;\rRiyadh..."). Do NOT change
+// these literals — they are the ground-truth scanner output for this QR.
+const ELITE_MARCOM_VCARD =
+  "BEGIN:VCARD\nVERSION:3.0\nN:SIDHIC;ASLAM\r\nFN:ASLAM\r SIDHIC\n" +
+  "ORG:Elite Marcom\nTITLE:Sales Executive\nTEL;TYPE=CELL:+966 5 332 97567\n" +
+  "ADR;TYPE=WORK:;;Al Khubra,;Al Aziziyah Dist.;\rRiyadh;14514;Saudi Arabia\n" +
+  "EMAIL;TYPE=WORK,INTERNET:aslam@elitemarcom.com\nURL:www.elitemarcom.com\nEND:VCARD";
+
+describe("attached QR regression (Elite Marcom vCard)", () => {
+  it("extracts every field from the raw vCard payload", () => {
+    const out = parseQr(ELITE_MARCOM_VCARD);
+    expect(out.firstName).toBe("ASLAM");
+    expect(out.lastName).toBe("SIDHIC");
+    expect(out.company).toBe("Elite Marcom");
+    expect(out.jobTitle).toBe("Sales Executive");
+    expect(out.mobile).toBe("+966 5 332 97567");
+    expect(out.email).toBe("aslam@elitemarcom.com");
+    expect(out.website).toBe("https://www.elitemarcom.com");
+    expect(out.country).toBe("Saudi Arabia");
+    expect(out.address).toBe("Al Khubra, Al Aziziyah Dist., Riyadh, 14514");
+  });
+});
+
+describe("parseQrBest (Android ML Kit raw vs lossy data)", () => {
+  it("uses the raw vCard when ML Kit's `data` is a lossy display value", () => {
+    // Simulates the Android scan: raw = full vCard, data = ML Kit's stripped
+    // display string (name only). The full contact must still be extracted.
+    const out = parseQrBest(ELITE_MARCOM_VCARD, "ASLAM SIDHIC");
+    expect(out.firstName).toBe("ASLAM");
+    expect(out.lastName).toBe("SIDHIC");
+    expect(out.company).toBe("Elite Marcom");
+    expect(out.email).toBe("aslam@elitemarcom.com");
+    expect(out.mobile).toBe("+966 5 332 97567");
+  });
+
+  it("falls back to `data` when `raw` is absent (iOS/web)", () => {
+    const out = parseQrBest(undefined, ELITE_MARCOM_VCARD);
+    expect(out.firstName).toBe("ASLAM");
+    expect(out.company).toBe("Elite Marcom");
+    expect(out.email).toBe("aslam@elitemarcom.com");
+  });
+
+  it("keeps the richer decode regardless of argument order", () => {
+    const lossy = "ASLAM SIDHIC";
+    expect(parseQrBest(lossy, ELITE_MARCOM_VCARD).email).toBe("aslam@elitemarcom.com");
+    expect(parseQrBest(ELITE_MARCOM_VCARD, lossy).email).toBe("aslam@elitemarcom.com");
+  });
+
+  it("supports MECARD, LinkedIn, and website QR payloads", () => {
+    const mecard = parseQrBest(
+      "MECARD:N:Tan,Wei;ORG:Globex;TEL:+6591234567;EMAIL:wei@globex.sg;;",
+    );
+    expect(mecard.firstName).toBe("Wei");
+    expect(mecard.lastName).toBe("Tan");
+    expect(mecard.company).toBe("Globex");
+    expect(mecard.mobile).toBe("+6591234567");
+
+    expect(parseQrBest("https://www.linkedin.com/in/aslam").linkedin).toBe(
+      "https://www.linkedin.com/in/aslam",
+    );
+    expect(parseQrBest("www.elitemarcom.com").website).toBe("https://www.elitemarcom.com");
+  });
+
+  it("returns an empty result for empty/whitespace candidates", () => {
+    expect(hasAnyContactField(parseQrBest(undefined, "", "   "))).toBe(false);
   });
 });

@@ -497,3 +497,44 @@ export function hasAnyContactField(data: ExtractedCardData): boolean {
     ([k, v]) => k !== "original" && v != null && String(v).trim() !== "",
   );
 }
+
+// Count populated contact fields (ignoring the verbatim `original` payload). Used
+// to rank multiple decode candidates and keep the richest as the merge base.
+function contactFieldCount(data: ExtractedCardData): number {
+  return Object.entries(data).filter(
+    ([k, v]) => k !== "original" && v != null && String(v).trim() !== "",
+  ).length;
+}
+
+// Parse a QR scan from one or more candidate payloads and return the richest
+// result.
+//
+// WHY this exists: Android's barcode engine (Google ML Kit, via expo-camera)
+// PARSES structured QR codes (vCard / MECARD) and exposes a lossy, human-readable
+// display string in `result.data` — it strips the BEGIN:VCARD wrapper and drops
+// most fields (ML Kit's getDisplayValue() "may omit some of the information
+// encoded in the barcode"). The original, complete payload is only in
+// `result.raw`. iOS/web return the full payload in `result.data` and leave `raw`
+// empty. Feeding only `result.data` to the parser therefore yields an empty /
+// company-only contact on Android even though detection succeeded — the exact
+// "QR detected but no contact extracted" device failure.
+//
+// We parse every distinct non-empty candidate, then keep whichever yielded the
+// most fields as the base and let the others fill any gaps. This is robust to
+// platform differences (raw-only, data-only, or both) without hardcoding any one
+// QR or assuming which field carries the raw bytes.
+export function parseQrBest(
+  ...candidates: (string | null | undefined)[]
+): ExtractedCardData {
+  const seen = new Set<string>();
+  const parsed: ExtractedCardData[] = [];
+  for (const candidate of candidates) {
+    const trimmed = (candidate ?? "").trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    parsed.push(parseQr(trimmed));
+  }
+  if (parsed.length === 0) return {};
+  parsed.sort((a, b) => contactFieldCount(b) - contactFieldCount(a));
+  return parsed.reduce((acc, next) => mergeExtracted(acc, next));
+}

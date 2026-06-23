@@ -20,7 +20,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FONT, PrimaryButton } from "@/components/ui";
-import { extractedToContact, parseQr } from "@/lib/contact-parse";
+import { extractedToContact, parseQrBest } from "@/lib/contact-parse";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
@@ -47,7 +47,12 @@ export default function CaptureQrScreen() {
     if (Platform.OS !== "web") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-    const data = parseQr(result.data ?? "");
+    // On Android, ML Kit parses structured QR codes (vCard/MECARD) and exposes a
+    // lossy display string in `result.data` while the complete payload lives in
+    // `result.raw`. Pass BOTH so parseQrBest keeps the richest decode — without
+    // this, Android scans yield an empty/company-only contact even though the QR
+    // was detected. iOS/web populate only `result.data` and degrade gracefully.
+    const data = parseQrBest(result.raw, result.data);
     // QR data is parsed entirely on-device, so we can queue a ready contact
     // when offline — no server OCR required.
     if (!isOnline) {
