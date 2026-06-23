@@ -13,9 +13,17 @@ it means an Expo module's native code was compiled against a different
 
 **Root cause pattern:** a package.json pins an Expo package to a version from the
 wrong SDK era (saw `expo-file-system: ^56.0.8` / `expo-sharing: ^56.0.18` against
-SDK 54, whose correct versions are `~19.0.x` / `~14.0.x`). pnpm then keeps the
+SDK 54, whose correct versions are `~19.0.x` / `~14.0.x`; later recurred with
+`expo-intent-launcher: ^56.0.4` → expected `~13.0.8`). pnpm then keeps the
 wrong direct copy AND the SDK's transitive correct copy side-by-side; the app
 symlink resolves to the wrong one, which autolinks mismatched Java.
+
+**Crash signature evolves by which wrong module loads first:** SDK-56-era modules
+reference newer `expo-modules-core` Kotlin APIs absent in SDK 54's core@3.0.30 —
+`NoSuchMethodError: getDirectConverter` (file-system) and
+`NoClassDefFoundError: expo.modules.kotlin.types.AnyTypeCache`
+(`IntentLauncherModule.definition()`) are the SAME class of bug, different module.
+`expo install --fix` resolves all flagged mismatches to the SDK pins in one shot.
 
 **Why versions look "weird":** modern Expo modules are SDK-aligned but each on its
 own version line — `expo-file-system` is 19.x for SDK 54, `expo-sharing` is 14.x.
@@ -60,3 +68,12 @@ strongest offline proof is `npx expo export --platform android` (full Metro +
 Hermes compile of the shipped bundle) + `expo install --check` clean +
 single-copy check. `expo-doctor` itself is network-blocked in the container and
 times out with no output — don't rely on it here.
+
+**`expo prebuild --clean` is BLOCKED in the main-agent sandbox:** prebuild invokes
+git, which trips the destructive-git guard (`.git/index.lock`, exit 254). This is
+not the actual native path anyway — EAS runs prebuild + autolinking on the cloud
+build from the (now-corrected) installed deps. The local `android/`/`ios/` dirs are
+gitignored and stale; don't rely on them. So the dependency-level fix
+(`expo install --check` clean + single core copy) IS the complete fix; native
+regen/autolinking happen on EAS. A side effect: the failed prebuild can leave a
+stale 0-byte `.git/index.lock` that the main agent cannot remove (destructive git).
