@@ -1,6 +1,6 @@
 import { Feather } from "@/components/icons";
 import React, { useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
@@ -85,7 +85,7 @@ const FIELDS: FieldConfig[] = [
   { key: "website", labelKey: "website", icon: "globe", placeholderKey: "website", keyboardType: "url", autoCapitalize: "none" },
   { key: "linkedin", labelKey: "linkedin", icon: "linkedin", placeholderKey: "linkedin", keyboardType: "url", autoCapitalize: "none" },
   { key: "country", labelKey: "country", icon: "map-pin", placeholderKind: "country", autoCapitalize: "words", half: true },
-  { key: "address", labelKey: "address", icon: "map", placeholderKind: "address", autoCapitalize: "words", half: true },
+  { key: "address", labelKey: "address", icon: "map", placeholderKind: "address", autoCapitalize: "words" },
   { key: "notes", labelKey: "notes", icon: "file-text", placeholderKey: "notes", autoCapitalize: "sentences", multiline: true },
 ];
 
@@ -168,6 +168,7 @@ export function ContactForm({
               styles.input,
               { color: colors.foreground, textAlign },
               f.multiline && { height: 84, textAlignVertical: "top" },
+              Platform.OS === "android" && { includeFontPadding: false },
             ]}
           />
         </View>

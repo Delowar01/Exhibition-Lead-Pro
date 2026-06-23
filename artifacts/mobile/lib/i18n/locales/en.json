@@ -324,6 +324,7 @@
     "sectionCapturedCard": "Captured card",
     "previewImage": "Preview image",
     "downloadImage": "Download image",
+    "shareImage": "Share image",
     "imageSavedTitle": "Image saved",
     "imageSavedBody": "Image saved to your photo library.",
     "imageDownloadErrorTitle": "Could not save image",

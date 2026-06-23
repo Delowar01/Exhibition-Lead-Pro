@@ -1,0 +1,247 @@
+MOBILE APPLICATION – UI/UX POLISH (FINAL MINOR IMPROVEMENTS)
+Project
+Lead Capture Pro
+Scope
+MOBILE APPLICATION ONLY
+The latest APK is working well overall. The remaining items are minor UI/UX improvements before we move on to the Platform Portal.
+Please complete all items below before generating the next APK.
+
+1. CAPTURED IMAGE PREVIEW
+Current Behavior
+Inside Contact Details, there are currently two buttons:
+
+
+Preview Image
+
+
+Download Image
+
+
+When tapping Preview Image, the image opens, but:
+
+
+It cannot be zoomed.
+
+
+It cannot be panned.
+
+
+There is no Share option.
+
+
+Download is outside the preview.
+
+
+
+Required
+Replace the two-button approach with a single button:
+Preview Image
+When the user taps Preview Image, open a full-screen image viewer.
+The viewer should support:
+
+
+Pinch-to-zoom
+
+
+Double-tap to zoom
+
+
+Pan while zoomed
+
+
+High-resolution viewing
+
+
+
+Viewer Toolbar
+Inside the image preview screen, display:
+
+
+Download Image
+
+
+Share Image
+
+
+Close
+
+
+This creates a cleaner and more professional user experience.
+
+Acceptance Criteria
+
+
+Remove the separate Download Image button from Contact Details.
+
+
+Keep only Preview Image.
+
+
+Full-screen image viewer supports zoom and pan.
+
+
+Download and Share are available inside the preview.
+
+
+Works on Android and iPhone.
+
+
+
+2. CONTACT FORM PLACEHOLDER OVERFLOW
+Current Issue
+Several placeholder/example texts are being clipped or overlapping inside input fields.
+Examples shown in the attached screenshot:
+
+
+Mobile
+
+
+Phone
+
+
+Address
+
+
+The placeholder text is partially hidden.
+
+Required
+Review the Contact Form layout.
+Ensure all placeholders, example values and entered text are fully visible.
+Verify on:
+
+
+Small Android devices
+
+
+Large Android devices
+
+
+iPhone
+
+
+Different font scaling settings
+
+
+
+Acceptance Criteria
+
+
+No placeholder text is clipped.
+
+
+No entered text is clipped.
+
+
+No overlapping.
+
+
+Responsive on all supported screen sizes.
+
+
+
+3. FOLLOW-UPS – THREE-DOT MENU OVERLAP
+Current Issue
+The three-dot action button overlaps the status badge/content on the Follow-Ups screen.
+As shown in the attached screenshot.
+
+Required
+Redesign the Follow-Up card header so the action menu has its own dedicated space.
+Do not overlay the menu on top of the badge or other content.
+Use proper spacing and alignment.
+
+Acceptance Criteria
+
+
+No overlapping UI.
+
+
+Three-dot menu remains easily accessible.
+
+
+Status badge remains fully visible.
+
+
+Layout is responsive across all device sizes.
+
+
+
+REGRESSION TEST
+Before generating the next APK, verify:
+Contact Details
+
+
+Preview Image
+
+
+Zoom
+
+
+Pan
+
+
+Download
+
+
+Share
+
+
+
+Contact Form
+
+
+Mobile placeholder
+
+
+Phone placeholder
+
+
+Address placeholder
+
+
+Long values
+
+
+Arabic text
+
+
+English text
+
+
+
+Follow-Ups
+
+
+Three-dot menu
+
+
+Status badge
+
+
+Different screen sizes
+
+
+Different font scaling
+
+
+
+QA REPORT
+Provide:
+
+
+Files Modified.
+
+
+Root Cause for each issue.
+
+
+Screenshots after the fixes.
+
+
+Confirmation that no regressions were introduced.
+
+
+
+IMPORTANT
+These are UI/UX polish items only.
+Do not modify any business logic or backend functionality.
+The goal is to make the application visually polished and production-ready before we begin work on the Platform Portal.

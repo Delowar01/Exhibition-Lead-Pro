@@ -3,6 +3,7 @@ import * as Contacts from "expo-contacts";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
+import * as Sharing from "expo-sharing";
 import * as MediaLibrary from "expo-media-library";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -149,6 +150,7 @@ export default function ContactDetailScreen() {
   const [schedule, setSchedule] = useState<"followup" | "meeting" | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [isDownloadingImage, setIsDownloadingImage] = useState(false);
+  const [isSharingImage, setIsSharingImage] = useState(false);
 
   // Gesture viewer shared values (pinch-zoom + pan + double-tap reset)
   const imgScale = useSharedValue(1);
@@ -353,6 +355,29 @@ export default function ContactDetailScreen() {
     } catch {
       setIsDownloadingImage(false);
       Alert.alert(t("contacts.imageDownloadErrorTitle"), t("contacts.imageDownloadErrorBody"));
+    }
+  }
+
+  async function handleShareImage() {
+    const base = getBaseUrl();
+    const uri = contact?.cardImageUrl && base ? `${base}${contact.cardImageUrl}` : null;
+    if (!uri || Platform.OS === "web") return;
+    setIsSharingImage(true);
+    try {
+      const filename = `card_${contact?.id ?? "image"}.jpg`;
+      const localUri = `${FileSystem.cacheDirectory}${filename}`;
+      await FileSystem.downloadAsync(uri, localUri, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(localUri, { mimeType: "image/jpeg" });
+      } else {
+        Alert.alert(t("contacts.unavailableTitle"), t("contacts.unavailableBody"));
+      }
+    } catch {
+      Alert.alert(t("contacts.imageDownloadErrorTitle"), t("contacts.imageDownloadErrorBody"));
+    } finally {
+      setIsSharingImage(false);
     }
   }
 
@@ -677,13 +702,6 @@ export default function ContactDetailScreen() {
                   label={t("contacts.previewImage")}
                   onPress={() => setImageModalOpen(true)}
                 />
-                <ManageRow
-                  icon="download"
-                  label={t("contacts.downloadImage")}
-                  onPress={handleDownloadImage}
-                  loading={isDownloadingImage}
-                  divider
-                />
               </Section>
             );
           })()}
@@ -911,7 +929,7 @@ export default function ContactDetailScreen() {
             hardwareAccelerated
             onRequestClose={() => setImageModalOpen(false)}
           >
-            <View style={styles.imageViewerBackdrop}>
+            <View style={[styles.imageViewerBackdrop, { paddingTop: insets.top }]}>
               {uri ? (
                 <GestureDetector gesture={composedImageGesture}>
                   <Animated.Image
@@ -920,14 +938,41 @@ export default function ContactDetailScreen() {
                     resizeMode="contain"
                   />
                 </GestureDetector>
-              ) : null}
-              <Pressable
-                style={[styles.imageViewerClose, { backgroundColor: colors.card }]}
-                onPress={() => setImageModalOpen(false)}
-                hitSlop={12}
-              >
-                <Feather name="x" size={20} color={colors.foreground} />
-              </Pressable>
+              ) : (
+                <View style={styles.imageViewerFull} />
+              )}
+              <View style={[styles.imageViewerToolbar, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+                <Pressable
+                  style={styles.imageViewerBtn}
+                  onPress={handleDownloadImage}
+                  disabled={isDownloadingImage}
+                  hitSlop={8}
+                >
+                  {isDownloadingImage
+                    ? <ActivityIndicator size="small" color="#FFFFFF" />
+                    : <Feather name="download" size={24} color="#FFFFFF" />}
+                  <Text style={styles.imageViewerBtnLabel}>{t("contacts.downloadImage")}</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.imageViewerBtn}
+                  onPress={handleShareImage}
+                  disabled={isSharingImage}
+                  hitSlop={8}
+                >
+                  {isSharingImage
+                    ? <ActivityIndicator size="small" color="#FFFFFF" />
+                    : <Feather name="share-2" size={24} color="#FFFFFF" />}
+                  <Text style={styles.imageViewerBtnLabel}>{t("contacts.shareImage")}</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.imageViewerBtn}
+                  onPress={() => setImageModalOpen(false)}
+                  hitSlop={8}
+                >
+                  <Feather name="x" size={24} color="#FFFFFF" />
+                  <Text style={styles.imageViewerBtnLabel}>{t("common.close")}</Text>
+                </Pressable>
+              </View>
             </View>
           </Modal>
         );
@@ -1534,21 +1579,29 @@ const styles = StyleSheet.create({
   imageViewerBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.94)",
-    alignItems: "center",
-    justifyContent: "center",
   },
   imageViewerFull: {
+    flex: 1,
     width: "100%",
-    height: "80%",
   },
-  imageViewerClose: {
-    position: "absolute",
-    top: 56,
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  imageViewerToolbar: {
+    flexDirection: "row",
+    justifyContent: "space-around",
     alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  imageViewerBtn: {
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minWidth: 80,
+  },
+  imageViewerBtnLabel: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: FONT.medium,
   },
 });

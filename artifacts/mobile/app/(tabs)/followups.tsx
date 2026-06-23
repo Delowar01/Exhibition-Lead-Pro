@@ -178,10 +178,23 @@ export default function FollowUpsScreen() {
         ]}
       >
         <Avatar name={f.contactName ?? "?"} size={42} color={colors.primary} />
-        <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={[styles.itemName, { color: colors.foreground, textAlign }]}>
-            {f.contactName ?? t("common.contact")}
-          </Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center" }}>
+            <Text numberOfLines={1} style={[styles.itemName, { flex: 1, color: colors.foreground, textAlign }]}>
+              {f.contactName ?? t("common.contact")}
+            </Text>
+            {tab === "upcoming" ? (
+              <Pressable
+                onPress={() => setActive(f)}
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  { backgroundColor: colors.muted, borderRadius: colors.radius, opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Feather name="more-horizontal" size={18} color={colors.foreground} />
+              </Pressable>
+            ) : null}
+          </View>
           {f.notes ? (
             <Text numberOfLines={1} style={[styles.itemSub, { color: colors.mutedForeground, textAlign }]}>
               {f.notes}
@@ -189,25 +202,12 @@ export default function FollowUpsScreen() {
           ) : null}
           <View style={[styles.itemMeta, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="calendar" size={12} color={colors.mutedForeground} />
-            <Text style={[styles.itemDate, { color: colors.mutedForeground, textAlign }]}>
+            <Text numberOfLines={1} style={[styles.itemDate, { flex: 1, color: colors.mutedForeground, textAlign }]}>
               {formatDate(t, f.scheduledDate, f.scheduledTime)}
             </Text>
             <Badge label={t("statuses." + f.status, { defaultValue: prettyLabel(f.status) })} color={statusColor} />
           </View>
         </View>
-        {tab === "upcoming" ? (
-          <Pressable
-            onPress={() => {
-              setActive(f);
-            }}
-            style={({ pressed }) => [
-              styles.actionBtn,
-              { backgroundColor: colors.muted, borderRadius: colors.radius, opacity: pressed ? 0.6 : 1 },
-            ]}
-          >
-            <Feather name="more-horizontal" size={18} color={colors.foreground} />
-          </Pressable>
-        ) : null}
       </Pressable>
     );
   }
