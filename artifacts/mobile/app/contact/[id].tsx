@@ -6,6 +6,7 @@ import * as MediaLibrary from "expo-media-library";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Modal,
@@ -146,6 +147,7 @@ export default function ContactDetailScreen() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [schedule, setSchedule] = useState<"followup" | "meeting" | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [isDownloadingImage, setIsDownloadingImage] = useState(false);
 
   // Gesture viewer shared values (pinch-zoom + pan + double-tap reset)
   const imgScale = useSharedValue(1);
@@ -290,9 +292,11 @@ export default function ContactDetailScreen() {
       Alert.alert(t("contacts.notAvailableTitle"), t("contacts.notAvailableBody"));
       return;
     }
+    setIsDownloadingImage(true);
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== "granted") {
+        setIsDownloadingImage(false);
         Alert.alert(
           t("contacts.photoLibraryPermissionTitle"),
           t("contacts.photoLibraryPermissionBody"),
@@ -305,8 +309,10 @@ export default function ContactDetailScreen() {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       await MediaLibrary.saveToLibraryAsync(result.uri);
+      setIsDownloadingImage(false);
       Alert.alert(t("contacts.imageSavedTitle"), t("contacts.imageSavedBody"));
     } catch {
+      setIsDownloadingImage(false);
       Alert.alert(t("contacts.imageDownloadErrorTitle"), t("contacts.imageDownloadErrorBody"));
     }
   }
@@ -636,6 +642,7 @@ export default function ContactDetailScreen() {
                   icon="download"
                   label={t("contacts.downloadImage")}
                   onPress={handleDownloadImage}
+                  loading={isDownloadingImage}
                   divider
                 />
               </Section>
@@ -1103,27 +1110,35 @@ function ManageRow({
   onPress,
   destructive,
   divider,
+  loading,
 }: {
   icon: keyof typeof Feather.glyphMap;
   label: string;
   onPress: () => void;
   destructive?: boolean;
   divider?: boolean;
+  loading?: boolean;
 }) {
   const colors = useColors();
-  const tint = destructive ? colors.destructive : colors.foreground;
+  const tint = loading ? colors.mutedForeground : destructive ? colors.destructive : colors.foreground;
   return (
     <Pressable
-      onPress={onPress}
+      onPress={loading ? undefined : onPress}
       style={({ pressed }) => [
         styles.manageRow,
         divider && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-        pressed && { backgroundColor: colors.muted },
+        !loading && pressed && { backgroundColor: colors.muted },
       ]}
     >
-      <Feather name={icon} size={18} color={destructive ? colors.destructive : colors.primary} />
-      <Text style={[styles.manageLabel, { color: tint }]}>{label}</Text>
-      <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.primary} />
+      ) : (
+        <Feather name={icon} size={18} color={destructive ? colors.destructive : colors.primary} />
+      )}
+      <Text style={[styles.manageLabel, { color: tint }]}>
+        {loading ? "Downloading…" : label}
+      </Text>
+      {!loading && <Feather name="chevron-right" size={18} color={colors.mutedForeground} />}
     </Pressable>
   );
 }
