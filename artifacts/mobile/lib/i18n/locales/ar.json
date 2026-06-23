@@ -715,6 +715,9 @@
     "pinStep2": "أكّد رمز PIN",
     "pinMismatch": "رموز PIN غير متطابقة — حاول مرة أخرى",
     "pinSkip": "تخطّ",
+    "changePin": "تغيير رمز PIN",
+    "changePinTitle": "تغيير رمز PIN",
+    "forgotPin": "نسيت رمز PIN؟ إعادة التعيين عبر القياسات الحيوية",
     "pinSet": "حفظ رمز PIN"
   },
   "sync": {

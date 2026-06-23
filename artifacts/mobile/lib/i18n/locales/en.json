@@ -715,6 +715,9 @@
     "pinStep2": "Confirm your PIN",
     "pinMismatch": "PINs don't match — try again",
     "pinSkip": "Skip",
+    "changePin": "Change PIN",
+    "changePinTitle": "Change your PIN",
+    "forgotPin": "Forgot PIN? Reset with biometrics",
     "pinSet": "Save PIN"
   },
   "sync": {

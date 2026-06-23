@@ -53,7 +53,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { user, token, logout } = useAuth();
   const settings = useSettings();
-  const { unlock, refreshPinAvailability } = useAppLock();
+  const { unlock, refreshPinAvailability, pinFallbackAvailable } = useAppLock();
   const changePassword = useChangePassword();
   const { t, language, isRTL, textAlign, row } = useLocale();
 
@@ -80,6 +80,13 @@ export default function SettingsScreen() {
   const [pinFirstPin, setPinFirstPin] = useState("");
   const [pinResetSignal, setPinResetSignal] = useState(0);
   const [pinError, setPinError] = useState<string | null>(null);
+
+  // Change PIN modal state (shown when user taps "Change PIN" in Settings)
+  const [changePinVisible, setChangePinVisible] = useState(false);
+  const [changePinStep, setChangePinStep] = useState<1 | 2>(1);
+  const [changePinFirstPin, setChangePinFirstPin] = useState("");
+  const [changePinResetSignal, setChangePinResetSignal] = useState(0);
+  const [changePinError, setChangePinError] = useState<string | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -181,6 +188,50 @@ export default function SettingsScreen() {
 
   function skipPinSetup() {
     setPinSetupVisible(false);
+  }
+
+  function openChangePinModal() {
+    setChangePinStep(1);
+    setChangePinFirstPin("");
+    setChangePinError(null);
+    setChangePinResetSignal(0);
+    setChangePinVisible(true);
+  }
+
+  async function handleChangePinComplete(pin: string) {
+    if (changePinStep === 1) {
+      setChangePinFirstPin(pin);
+      setChangePinStep(2);
+      setChangePinError(null);
+    } else {
+      if (pin !== changePinFirstPin) {
+        setChangePinError(t("settings.pinMismatch"));
+        setChangePinResetSignal((s) => s + 1);
+        setChangePinStep(1);
+        setChangePinFirstPin("");
+        return;
+      }
+      await savePin(pin);
+      await refreshPinAvailability();
+      setChangePinVisible(false);
+    }
+  }
+
+  async function handleForgotPin() {
+    setChangePinVisible(false);
+    setBioBusy(true);
+    try {
+      const ok = await authenticateBiometric(t("settings.biometricEnablePrompt"));
+      if (!ok) return;
+      await clearPin();
+      await refreshPinAvailability();
+      // Re-open the modal so the user can set a brand-new PIN.
+      openChangePinModal();
+    } catch {
+      // silently ignore
+    } finally {
+      setBioBusy(false);
+    }
   }
 
   async function handleChangePassword() {
@@ -510,6 +561,34 @@ export default function SettingsScreen() {
                   onChange={settings.setLockTimeoutMs}
                 />
               ) : null}
+              {settings.biometricEnabled && pinFallbackAvailable ? (
+                <Pressable
+                  onPress={() => {
+                    haptic();
+                    openChangePinModal();
+                  }}
+                  style={({ pressed }) => [
+                    styles.changePinRow,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.muted,
+                      borderRadius: colors.radius + 2,
+                      opacity: pressed ? 0.7 : 1,
+                      flexDirection: isRTL ? "row-reverse" : "row",
+                    },
+                  ]}
+                >
+                  <Feather name="key" size={16} color={colors.primary} />
+                  <Text style={[styles.changePinLabel, { color: colors.foreground, textAlign }]}>
+                    {t("settings.changePin")}
+                  </Text>
+                  <Feather
+                    name={isRTL ? "chevron-left" : "chevron-right"}
+                    size={16}
+                    color={colors.mutedForeground}
+                  />
+                </Pressable>
+              ) : null}
             </>
           ) : null}
 
@@ -619,6 +698,35 @@ export default function SettingsScreen() {
               style={({ pressed }) => [pinStyles.skipBtn, { opacity: pressed ? 0.6 : 1 }]}
             >
               <Text style={pinStyles.skipText}>{t("settings.pinSkip")}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change PIN modal — shown when user taps "Change PIN" in Settings */}
+      <Modal
+        visible={changePinVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setChangePinVisible(false)}
+      >
+        <View style={pinStyles.backdrop}>
+          <View style={[pinStyles.card, { paddingBottom: insets.bottom + 24 }]}>
+            <Text style={pinStyles.title}>{t("settings.changePinTitle")}</Text>
+            <Text style={pinStyles.stepLabel}>
+              {changePinStep === 1 ? t("settings.pinStep1") : t("settings.pinStep2")}
+            </Text>
+            <PinPad
+              onComplete={handleChangePinComplete}
+              resetSignal={changePinResetSignal}
+              subtitle={undefined}
+              error={changePinError ?? undefined}
+            />
+            <Pressable
+              onPress={handleForgotPin}
+              style={({ pressed }) => [pinStyles.skipBtn, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Text style={pinStyles.skipText}>{t("settings.forgotPin")}</Text>
             </Pressable>
           </View>
         </View>
@@ -978,6 +1086,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FONT.regular,
     padding: 0,
+  },
+  changePinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    marginTop: 10,
+  },
+  changePinLabel: {
+    flex: 1,
+    fontSize: 14.5,
+    fontFamily: FONT.medium,
   },
   logoutBtn: {
     flexDirection: "row",
