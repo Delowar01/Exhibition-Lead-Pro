@@ -4,6 +4,7 @@ import { db, businessCardsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { config } from "../config.js";
 
 const router = Router();
 
@@ -12,7 +13,7 @@ type CardRow = typeof businessCardsTable.$inferSelect;
 // Absolute origin for public share links. Prefer the published domain, fall
 // back to the forwarded host of the current request (dev preview).
 function publicBaseUrl(req: AuthRequest): string {
-  const published = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+  const published = config.replitDomains?.split(",")[0]?.trim();
   if (published) return `https://${published}`;
   const proto = String(req.headers["x-forwarded-proto"] ?? "https").split(",")[0];
   const host = req.headers["host"];

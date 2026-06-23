@@ -1,9 +1,10 @@
 import type { Readable } from "stream";
 import sharp from "sharp";
 import { objectStorageClient } from "./objectStorage.js";
+import { config } from "../config.js";
 
 function getBucketId(): string {
-  const id = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "";
+  const id = config.objectStorage.bucketId;
   if (!id) throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID not set");
   return id;
 }

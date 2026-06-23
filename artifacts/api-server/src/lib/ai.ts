@@ -1,9 +1,10 @@
 import { ai } from "@workspace/integrations-gemini-ai";
 import { logger } from "./logger.js";
+import { config } from "../config.js";
 
-const MODEL = "gemini-2.5-flash";
-const EXTRACTION_TIMEOUT_MS = 30_000;
-const SCORING_TIMEOUT_MS = 20_000;
+const MODEL = config.ai.model;
+const EXTRACTION_TIMEOUT_MS = config.ai.extractionTimeoutMs;
+const SCORING_TIMEOUT_MS = config.ai.scoringTimeoutMs;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -205,12 +206,12 @@ export async function extractCardData(
       ],
       config: {
         responseMimeType: "application/json",
-        maxOutputTokens: 8192,
+        maxOutputTokens: config.ai.maxOutputTokens,
         // gemini-2.5-flash runs "thinking" ON by default, adding 5-15s of latency
         // before the first output token. OCR + structured extraction is not a
         // heavy-reasoning task, so disabling thinking is a pure speedup with no
         // measurable quality loss — the single biggest lever for the scan latency.
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
       },
     }),
     EXTRACTION_TIMEOUT_MS,
@@ -298,9 +299,9 @@ export async function scoreLead(
       ],
       config: {
         responseMimeType: "application/json",
-        maxOutputTokens: 8192,
+        maxOutputTokens: config.ai.maxOutputTokens,
         // Disable default "thinking" latency (see extractCardData for rationale).
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
       },
     }),
     SCORING_TIMEOUT_MS,
@@ -375,9 +376,9 @@ export async function enrichContact(input: EnrichmentInput): Promise<EnrichmentR
       ],
       config: {
         responseMimeType: "application/json",
-        maxOutputTokens: 8192,
+        maxOutputTokens: config.ai.maxOutputTokens,
         // Disable default "thinking" latency (see extractCardData for rationale).
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
       },
     }),
     SCORING_TIMEOUT_MS,

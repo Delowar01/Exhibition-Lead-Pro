@@ -1,11 +1,8 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { config } from "../config.js";
 
-const JWT_SECRET: string = (() => {
-  const s = process.env["SESSION_SECRET"];
-  if (!s) throw new Error("SESSION_SECRET environment variable is required");
-  return s;
-})();
+const JWT_SECRET: string = config.sessionSecret;
 
 export function hashPassword(password: string): string {
   return bcrypt.hashSync(password, 10);

@@ -114,6 +114,8 @@ export * from './publicBusinessCard';
 export * from './pushTokenInput';
 export * from './pushTokenInputPlatform';
 export * from './pushTokenUnregisterInput';
+export * from './readinessStatus';
+export * from './readinessStatusChecks';
 export * from './registerInput';
 export * from './scan';
 export * from './scanInput';

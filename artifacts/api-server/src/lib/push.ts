@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { deviceTokensTable } from "@workspace/db";
 import { inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { config } from "../config.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
@@ -33,7 +34,7 @@ interface ExpoTicket {
 // DeviceNotRegistered are pruned so we stop pushing to dead devices.
 async function sendExpoMessages(messages: ExpoMessage[]): Promise<boolean> {
   if (messages.length === 0) return false;
-  const accessToken = process.env.EXPO_ACCESS_TOKEN;
+  const accessToken = config.push.expoAccessToken;
 
   let allOk = true;
   for (const batch of chunk(messages, 100)) {

@@ -46,6 +46,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  /readyz:
+    get:
+      operationId: readinessCheck
+      tags: [health]
+      summary: Readiness check
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+
   # AUTH
   /auth/login:
     post:
@@ -1680,6 +1699,21 @@ components:
         status:
           type: string
       required: [status]
+
+    ReadinessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+        checks:
+          type: object
+          properties:
+            database:
+              type: string
+            storage:
+              type: string
+          required: [database, storage]
+      required: [status, checks]
 
     SuccessResponse:
       type: object

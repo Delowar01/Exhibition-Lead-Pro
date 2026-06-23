@@ -17,6 +17,18 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Readiness check
+ */
+export const ReadinessCheckResponse = zod.object({
+  "status": zod.string(),
+  "checks": zod.object({
+  "database": zod.string(),
+  "storage": zod.string()
+})
+})
+
+
+/**
  * @summary Login
  */
 export const LoginBody = zod.object({

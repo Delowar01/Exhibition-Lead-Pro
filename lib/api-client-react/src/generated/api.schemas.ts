@@ -9,6 +9,16 @@ export interface HealthStatus {
   status: string;
 }
 
+export type ReadinessStatusChecks = {
+  database: string;
+  storage: string;
+};
+
+export interface ReadinessStatus {
+  status: string;
+  checks: ReadinessStatusChecks;
+}
+
 export interface SuccessResponse {
   success: boolean;
   message?: string;
