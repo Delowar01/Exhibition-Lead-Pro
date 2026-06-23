@@ -91,6 +91,29 @@ describe("rotating refresh tokens + server-side sessions", () => {
     expect(familyRevoked.status).toBe(401);
   });
 
+  it("an unknown secret for a valid session is rejected WITHOUT revoking it", async () => {
+    const { refreshToken: rt } = await loginJson(TECHCORP);
+    // The token prefix is the (unguessable) family id; reuse it with a garbage
+    // secret to simulate an attacker who somehow learned/guessed the prefix.
+    const familyId = rt.slice(0, rt.indexOf("."));
+    const forged = `${familyId}.notarealsecret_${"x".repeat(40)}`;
+
+    const attack = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: forged }),
+    });
+    expect(attack.status).toBe(401);
+
+    // The forged attempt must NOT have revoked the family: the real token still works.
+    const stillValid = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+    expect(stillValid.status).toBe(200);
+  });
+
   it("lists sessions and terminating others immediately invalidates that device", async () => {
     const a = await loginJson(TECHCORP);
     const b = await loginJson(TECHCORP);

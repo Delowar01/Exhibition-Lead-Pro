@@ -51,21 +51,24 @@ export function verifyMfaChallenge(token: string): number | null {
   }
 }
 
-// Refresh token format: `<sessionId>.<secret>`. Only sha256(secret) is stored
-// server-side, so the raw token is never persisted. The session id prefix lets
-// us look up the family in one indexed query before the constant-time compare.
-export function generateRefreshToken(sessionId: number): { token: string; secretHash: string } {
+// Refresh token format: `<familyId>.<secret>`. The prefix is the session family's
+// unguessable random UUID (NOT a serial id), so an attacker cannot enumerate ids to
+// target a victim's session. Only sha256(secret) is stored server-side, so the raw
+// token is never persisted. The UUID prefix lets us look up the family in one
+// indexed query before the constant-time compare. (UUIDs contain no `.`, so the
+// first-dot split always recovers the full secret.)
+export function generateRefreshToken(familyId: string): { token: string; secretHash: string } {
   const secret = randomToken(48);
-  return { token: `${sessionId}.${secret}`, secretHash: sha256(secret) };
+  return { token: `${familyId}.${secret}`, secretHash: sha256(secret) };
 }
 
-export function parseRefreshToken(token: string): { sessionId: number; secret: string } | null {
+export function parseRefreshToken(token: string): { familyId: string; secret: string } | null {
   const idx = token.indexOf(".");
   if (idx <= 0) return null;
-  const sessionId = Number(token.slice(0, idx));
+  const familyId = token.slice(0, idx);
   const secret = token.slice(idx + 1);
-  if (!Number.isInteger(sessionId) || sessionId <= 0 || !secret) return null;
-  return { sessionId, secret };
+  if (!familyId || !secret) return null;
+  return { familyId, secret };
 }
 
 export function hashRefreshSecret(secret: string): string {

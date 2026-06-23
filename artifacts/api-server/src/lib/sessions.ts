@@ -58,7 +58,7 @@ export async function createSession(
     })
     .returning();
 
-  const { token: refreshToken, secretHash } = generateRefreshToken(session.id);
+  const { token: refreshToken, secretHash } = generateRefreshToken(familyId);
   await db.update(sessionsTable).set({ refreshTokenHash: secretHash }).where(eq(sessionsTable.id, session.id));
 
   const accessToken = signAccessToken({
@@ -83,22 +83,37 @@ export async function rotateSession(rawToken: string, req: Request): Promise<Rot
   const parsed = parseRefreshToken(rawToken);
   if (!parsed) return { ok: false, status: 401, error: "Invalid refresh token" };
 
-  const [session] = await db.select().from(sessionsTable).where(eq(sessionsTable.id, parsed.sessionId)).limit(1);
+  // Look up by the unguessable family id (a random UUID), never a serial id, so an
+  // attacker cannot enumerate ids to reach a victim's session row.
+  const [session] = await db.select().from(sessionsTable).where(eq(sessionsTable.familyId, parsed.familyId)).limit(1);
   if (!session) return { ok: false, status: 401, error: "Invalid refresh token" };
 
+  const presentedHash = hashRefreshSecret(parsed.secret);
+  // A secret counts as a "known" (previously- or currently-valid) secret for this
+  // family only if it matches the current OR the immediately-prior stored hash.
+  const matchesCurrent = presentedHash === session.refreshTokenHash;
+  const matchesPrev = !!session.prevRefreshTokenHash && presentedHash === session.prevRefreshTokenHash;
+
   if (session.revokedAt) {
-    await revokeFamily(session.familyId, "reuse_after_revoke");
+    // Presenting a *known* secret for an already-revoked family is a theft signal
+    // (re-fire the family revoke, idempotent); an unknown secret is just rejected.
+    if (matchesCurrent || matchesPrev) await revokeFamily(session.familyId, "reuse_after_revoke");
     return { ok: false, status: 401, error: "Session revoked" };
   }
   if (session.expiresAt.getTime() < Date.now()) {
     return { ok: false, status: 401, error: "Session expired" };
   }
 
-  const presentedHash = hashRefreshSecret(parsed.secret);
-  if (presentedHash !== session.refreshTokenHash) {
-    // A previously-rotated (now invalid) secret from this family was replayed.
-    await revokeFamily(session.familyId, "token_reuse");
-    return { ok: false, status: 401, error: "Refresh token reuse detected" };
+  if (!matchesCurrent) {
+    // Only revoke the family on a PROVEN replay: the presented secret is a
+    // previously-valid (now rotated-out) secret. An arbitrary/unknown secret —
+    // e.g. a guessed `<familyId>.<garbage>` — is rejected WITHOUT revoking, so it
+    // cannot be used to force-logout a victim.
+    if (matchesPrev) {
+      await revokeFamily(session.familyId, "token_reuse");
+      return { ok: false, status: 401, error: "Refresh token reuse detected" };
+    }
+    return { ok: false, status: 401, error: "Invalid refresh token" };
   }
 
   // Load the live user so the rotated access token carries fresh claims and we
@@ -109,12 +124,15 @@ export async function rotateSession(rawToken: string, req: Request): Promise<Rot
     return { ok: false, status: 401, error: "Account is disabled" };
   }
 
-  const { token: refreshToken, secretHash } = generateRefreshToken(session.id);
+  const { token: refreshToken, secretHash } = generateRefreshToken(session.familyId);
   const device = parseDevice(req);
   await db
     .update(sessionsTable)
     .set({
       refreshTokenHash: secretHash,
+      // Remember the secret we just superseded so a replay of it is detectable as
+      // a proven theft signal (vs. arbitrary garbage, which we never revoke on).
+      prevRefreshTokenHash: session.refreshTokenHash,
       lastUsedAt: new Date(),
       ipAddress: getClientIp(req) ?? session.ipAddress,
       userAgent: device.userAgent ?? session.userAgent,
