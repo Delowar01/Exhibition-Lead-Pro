@@ -13,8 +13,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import {
   getGetLeadQueryKey,
+  type Lead,
   LeadUpdateStage,
   useDeleteLead,
   useGetLead,
@@ -101,22 +104,39 @@ export default function PipelineDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const leadId = parseInt(id ?? "0");
 
+  const queryClient = useQueryClient();
   const query = useGetLead(leadId, { query: { enabled: leadId > 0, queryKey: getGetLeadQueryKey(leadId) } });
-  const updateLead = useUpdateLead();
+  // Optimistic stage change: update the cache the instant the user taps so the
+  // badge/actions reflect the new stage with zero perceived latency. The server
+  // round-trip + the global post-mutation invalidation then reconcile with the
+  // authoritative record (including the new history row). On failure we roll the
+  // cache back and surface an alert.
+  const updateLead = useUpdateLead({
+    mutation: {
+      onMutate: async (vars) => {
+        const key = getGetLeadQueryKey(leadId);
+        await queryClient.cancelQueries({ queryKey: key });
+        const prev = queryClient.getQueryData<Lead>(key);
+        if (vars.data.stage && prev) {
+          queryClient.setQueryData<Lead>(key, { ...prev, stage: vars.data.stage });
+        }
+        return { prev, key };
+      },
+      onError: (_err, _vars, ctx) => {
+        if (ctx?.prev) queryClient.setQueryData(ctx.key, ctx.prev);
+        Alert.alert(t("pipeline.failedSave"));
+      },
+    },
+  });
   const deleteLead = useDeleteLead();
 
   const lead = query.data;
   const history = (lead as { history?: unknown[] })?.history ?? [];
 
-  async function moveStage(newStage: string) {
-    if (!lead) return;
+  function moveStage(newStage: string) {
+    if (!lead || updateLead.isPending) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await updateLead.mutateAsync({ id: lead.id, data: { stage: newStage as LeadUpdateStage } });
-      query.refetch();
-    } catch {
-      Alert.alert(t("pipeline.failedSave"));
-    }
+    updateLead.mutate({ id: lead.id, data: { stage: newStage as LeadUpdateStage } });
   }
 
   function confirmMarkWon() {

@@ -203,7 +203,15 @@ export async function extractCardData(
           ],
         },
       ],
-      config: { responseMimeType: "application/json", maxOutputTokens: 8192 },
+      config: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 8192,
+        // gemini-2.5-flash runs "thinking" ON by default, adding 5-15s of latency
+        // before the first output token. OCR + structured extraction is not a
+        // heavy-reasoning task, so disabling thinking is a pure speedup with no
+        // measurable quality loss — the single biggest lever for the scan latency.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
     EXTRACTION_TIMEOUT_MS,
     "card extraction",
@@ -288,7 +296,12 @@ export async function scoreLead(
           parts: [{ text: `${SCORING_PROMPT}\n\nLead:\n${lines}` }],
         },
       ],
-      config: { responseMimeType: "application/json", maxOutputTokens: 8192 },
+      config: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 8192,
+        // Disable default "thinking" latency (see extractCardData for rationale).
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
     SCORING_TIMEOUT_MS,
     "lead scoring",
@@ -360,7 +373,12 @@ export async function enrichContact(input: EnrichmentInput): Promise<EnrichmentR
           parts: [{ text: `${ENRICHMENT_PROMPT}\n\nContact:\n${lines}` }],
         },
       ],
-      config: { responseMimeType: "application/json", maxOutputTokens: 8192 },
+      config: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 8192,
+        // Disable default "thinking" latency (see extractCardData for rationale).
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
     SCORING_TIMEOUT_MS,
     "contact enrichment",

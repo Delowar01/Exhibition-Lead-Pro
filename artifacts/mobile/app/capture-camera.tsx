@@ -1,6 +1,7 @@
 import { Feather } from "@/components/icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
+import * as ImageManipulator from "expo-image-manipulator";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -134,15 +135,35 @@ export default function CaptureCameraScreen() {
   const sourceLabel = source === "signature" ? t("capture.sourceLabelSignature") : t("capture.sourceLabelCard");
 
   const captureImage = useCallback(async (): Promise<string> => {
-    if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync({
-        base64: true,
-        quality: 0.3,
-        skipProcessing: true,
-      });
-      return photo?.base64 ? `data:image/jpeg;base64,${photo.base64}` : "card";
+    const cam = cameraRef.current;
+    if (!cam) return "card";
+    // Capture at full sensor resolution (fast — no base64 encode yet), then
+    // downscale to ~1600px before encoding. A business card is fully legible at
+    // 1600px, and shrinking the payload cuts BOTH the upload time and the
+    // server-side OCR inference time — the dominant costs in scan latency.
+    const photo = await cam.takePictureAsync({
+      quality: 0.5,
+      skipProcessing: true,
+    });
+    if (photo?.uri) {
+      try {
+        const resized = await ImageManipulator.manipulateAsync(
+          photo.uri,
+          [{ resize: { width: 1600 } }],
+          { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        );
+        if (resized.base64) return `data:image/jpeg;base64,${resized.base64}`;
+      } catch {
+        // Manipulation failed (rare) — fall through to a raw base64 capture so
+        // the scan still works, just without the size optimization.
+      }
     }
-    return "card";
+    const raw = await cam.takePictureAsync({
+      base64: true,
+      quality: 0.4,
+      skipProcessing: true,
+    });
+    return raw?.base64 ? `data:image/jpeg;base64,${raw.base64}` : "card";
   }, []);
 
   // #3 Rapid — OCR + save happen in the background so the camera frees instantly.

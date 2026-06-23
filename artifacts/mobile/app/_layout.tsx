@@ -64,6 +64,18 @@ setAuthTokenGetter(() => getCachedToken());
 // stay in sync across the app without per-call-site invalidation or app restart.
 // Mirrors the offline-sync invalidation so online and offline behave identically.
 const queryClient: QueryClient = new QueryClient({
+  // Snappy navigation: serve cached data instantly when revisiting a screen
+  // within staleTime instead of showing a spinner + refetch on every mount.
+  // The blanket invalidation below still forces a refresh after any mutation,
+  // so data never goes stale where it matters.
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
   mutationCache: new MutationCache({
     onSuccess: (_data, _vars, _ctx, mutation) => {
       if (__DEV__) {

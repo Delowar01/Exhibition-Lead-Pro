@@ -24,10 +24,13 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import {
   type Contact,
   type ContactUpdateStatus,
   getBaseUrl,
+  getGetContactQueryKey,
   getListUsersQueryKey,
   type MeetingInputType,
   useCreateFollowUp,
@@ -107,10 +110,32 @@ export default function ContactDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const contactId = Number(id);
 
+  const queryClient = useQueryClient();
   const query = useGetContact(contactId);
   const { user, token } = useAuth();
   const settings = useSettings();
-  const updateContact = useUpdateContact();
+  // Optimistic status change: flip the cached contact's status the moment the
+  // user taps so the badge updates instantly. Only the `status` write is made
+  // optimistic (the critical "instant" path); other writes (e.g. assignment)
+  // fall through to the global post-mutation invalidation. On error we roll the
+  // cache back. The global invalidation reconciles status history afterwards.
+  const updateContact = useUpdateContact({
+    mutation: {
+      onMutate: async (vars) => {
+        if (!vars.data.status) return undefined;
+        const key = getGetContactQueryKey(contactId);
+        await queryClient.cancelQueries({ queryKey: key });
+        const prev = queryClient.getQueryData<Contact>(key);
+        if (prev) {
+          queryClient.setQueryData<Contact>(key, { ...prev, status: vars.data.status });
+        }
+        return { prev, key };
+      },
+      onError: (_err, _vars, ctx) => {
+        if (ctx?.prev) queryClient.setQueryData(ctx.key, ctx.prev);
+      },
+    },
+  });
   const deleteContact = useDeleteContact();
   const historyQuery = useGetContactStatusHistory(contactId);
   const leadsQuery = useListLeads({ contactId, limit: 100 });
@@ -297,16 +322,16 @@ export default function ContactDetailScreen() {
     }
   }
 
-  async function changeStatus(status: keyof typeof ContactUpdateStatus) {
-    if (!contact) return;
+  function changeStatus(status: keyof typeof ContactUpdateStatus) {
+    if (!contact || updateContact.isPending) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
-    try {
-      await updateContact.mutateAsync({ id: contact.id, data: { status } });
-      query.refetch();
-      historyQuery.refetch();
-    } catch {
-      Alert.alert(t("contacts.updateFailedTitle"), t("contacts.updateFailedBody"));
-    }
+    // Fire-and-forget: onMutate flips the cached status instantly, onError rolls
+    // it back, and the global post-mutation invalidation refreshes the status
+    // history. No manual await/refetch needed.
+    updateContact.mutate(
+      { id: contact.id, data: { status } },
+      { onError: () => Alert.alert(t("contacts.updateFailedTitle"), t("contacts.updateFailedBody")) },
+    );
   }
 
   async function assignTo(userId: number | null) {
