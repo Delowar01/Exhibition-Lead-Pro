@@ -127,6 +127,54 @@ describe("parseVCard", () => {
     expect(out.lastName).toBe("Smith");
   });
 
+  it("strips a leading honorific from FN even when N is reversed (Given;Family)", () => {
+    // FN carries "Eng." and N is in the common non-compliant Given;Family order.
+    const vcf = [
+      "BEGIN:VCARD",
+      "FN:Eng. Layla Hassan",
+      "N:Layla;Hassan",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.firstName).toBe("Layla");
+    expect(out.lastName).toBe("Hassan");
+  });
+
+  it("does NOT swap names when FN is a nickname matching neither N part", () => {
+    // FN:"Bob Smith" + N:"Robert;Smith" (Given;Family). FN matches neither N
+    // component, so order is ambiguous — fall back to the FN split (Bob/Smith)
+    // rather than forcing RFC order, which would swap to Smith/Robert.
+    const vcf = ["BEGIN:VCARD", "FN:Bob Smith", "N:Robert;Smith", "END:VCARD"].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.firstName).toBe("Bob");
+    expect(out.lastName).toBe("Smith");
+  });
+
+  it("strips a Gulf honorific (Sheikh) from an FN-only card", () => {
+    const out = parseVCard("BEGIN:VCARD\nFN:Sheikh Ahmed Al Maktoum\nEND:VCARD");
+    expect(out.firstName).toBe("Ahmed");
+    expect(out.lastName).toBe("Al Maktoum");
+  });
+
+  it("keeps the name intact when the FN is only a title token", () => {
+    const out = parseVCard("BEGIN:VCARD\nFN:Dr.\nEND:VCARD");
+    expect(out.firstName).toBe("Dr.");
+  });
+
+  it("strips vCard 4.0 tel:/mailto: URI schemes from phone and email", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:4.0",
+      "FN:Noura Said",
+      "TEL;VALUE=uri;TYPE=cell:tel:+971501234567",
+      "EMAIL:mailto:noura@example.ae",
+      "END:VCARD",
+    ].join("\n");
+    const out = parseVCard(vcf);
+    expect(out.mobile).toBe("+971501234567");
+    expect(out.email).toBe("noura@example.ae");
+  });
+
   it("falls back to FN when no N property is present", () => {
     const out = parseVCard("BEGIN:VCARD\nFN:Omar Farouk\nEND:VCARD");
     expect(out.firstName).toBe("Omar");
@@ -347,6 +395,15 @@ describe("parseQr", () => {
   it("parses structured text but treats opaque single tokens as company", () => {
     expect(parseQr("Name: Ada Lovelace\nCompany: Analytical").firstName).toBe("Ada");
     expect(parseQr("BOOTH-42").company).toBe("BOOTH-42");
+  });
+
+  it("treats a scheme-less website QR as a website (normalized to https)", () => {
+    expect(parseQr("www.example.com").website).toBe("https://www.example.com");
+    expect(parseQr("acme.com/me").website).toBe("https://acme.com/me");
+    // Still routes a bare LinkedIn domain to the linkedin field.
+    expect(parseQr("linkedin.com/in/jo").linkedin).toBe("https://linkedin.com/in/jo");
+    // A plain token without a TLD stays a company name.
+    expect(parseQr("BOOTH-42").website).toBeUndefined();
   });
 
   it("LinkedIn QR carries only a profile URL — no name/email is extractable", () => {

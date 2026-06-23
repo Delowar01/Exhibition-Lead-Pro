@@ -187,9 +187,14 @@ export function parseVCard(raw: string): ExtractedCardData {
         out.jobTitle = value;
         break;
       case "EMAIL":
-        out.email = value;
+        // vCard 4.0 may carry a "mailto:" URI scheme — strip it.
+        out.email = value.replace(/^mailto:/i, "").trim();
         break;
       case "TEL": {
+        // vCard 4.0 emits TEL;VALUE=uri:tel:+1555... — drop the "tel:" scheme so
+        // the stored number is dialable and not prefixed with junk.
+        const tel = value.replace(/^tel:/i, "").trim();
+        if (!tel) break;
         // Prefer CELL/MOBILE-typed numbers for the mobile field; route WORK /
         // HOME / other explicit non-cell types to officePhone. An untyped TEL
         // defaults to mobile so the most common QR codes (single number, no
@@ -197,9 +202,9 @@ export function parseVCard(raw: string): ExtractedCardData {
         const isMobile =
           /CELL|MOBILE/i.test(params) || !/WORK|HOME|FAX/i.test(params);
         if (isMobile) {
-          if (!out.mobile) out.mobile = value;
+          if (!out.mobile) out.mobile = tel;
         } else {
-          if (!out.officePhone) out.officePhone = value;
+          if (!out.officePhone) out.officePhone = tel;
         }
         break;
       }
@@ -239,7 +244,11 @@ export function parseVCard(raw: string): ExtractedCardData {
   if (pendingN !== null) {
     const [nPart0, nPart1] = pendingN;
     if (pendingFn) {
-      const fnWords = pendingFn.trim().split(/\s+/);
+      // Strip leading honorifics ("Dr.", "Eng.", "Sheikh", ...) so the FN's
+      // first word is the actual given name, not a title. Without this, a card
+      // with FN:"Dr. John Smith" + N:"Smith;John" failed both order checks and
+      // fell back to a raw FN split → firstName="Dr.", lastName="John Smith".
+      const fnWords = stripHonorifics(pendingFn.trim().split(/\s+/));
       const fnFirst = (fnWords[0] ?? "").toLowerCase();
       if (fnFirst && nPart1.trim().toLowerCase().startsWith(fnFirst)) {
         // N is in spec Family;Given order → nPart1 = given name
@@ -250,8 +259,13 @@ export function parseVCard(raw: string): ExtractedCardData {
         if (nPart0.trim()) out.firstName = nPart0.trim();
         if (nPart1.trim()) out.lastName = nPart1.trim();
       } else {
-        // Ambiguous (e.g. single-token name, initials) — use FN word-split
-        setName(out, pendingFn);
+        // Ambiguous order (FN uses a nickname/variant matching neither N part,
+        // single-token N, initials). We cannot reliably tell Family;Given from
+        // Given;Family, so use the honorific-stripped FN word-split — the FN is
+        // the human-readable display name and yields a usable first/last. Do NOT
+        // blindly assume RFC order here: many generators emit Given;Family, so a
+        // forced Family;Given would SWAP names for the nickname case.
+        setName(out, fnWords.join(" ") || pendingFn);
       }
     } else {
       // No FN — trust RFC 2426 spec order: Family;Given
@@ -259,11 +273,31 @@ export function parseVCard(raw: string): ExtractedCardData {
       if (nPart0.trim()) out.lastName = nPart0.trim();
     }
   } else if (pendingFn && !out.firstName && !out.lastName) {
-    // No N field and no name already set (e.g. from single-component N) — use FN
-    setName(out, pendingFn);
+    // No N field and no name already set (e.g. from single-component N) — use
+    // the honorific-stripped FN so a leading title never lands in firstName.
+    setName(out, stripHonorifics(pendingFn.trim().split(/\s+/)).join(" ") || pendingFn);
   }
 
   return out;
+}
+
+// Common name-leading honorifics/titles (incl. UAE/Gulf "Sheikh"/"Sheikha"),
+// matched case-insensitively with an optional trailing dot. Never strips the
+// final remaining token, so a name that is *only* a title stays intact.
+const HONORIFICS = new Set([
+  "dr", "mr", "mrs", "ms", "miss", "mx", "prof", "professor", "eng", "engineer",
+  "sir", "madam", "rev", "fr", "hon", "capt", "col", "gen", "lt", "sgt", "maj",
+  "sheikh", "sheikha", "shaikh", "shaikha", "hh", "he",
+]);
+
+function stripHonorifics(words: string[]): string[] {
+  let i = 0;
+  while (i < words.length - 1) {
+    const w = words[i].toLowerCase().replace(/\.$/, "");
+    if (HONORIFICS.has(w)) i++;
+    else break;
+  }
+  return words.slice(i);
 }
 
 function setName(out: ExtractedCardData, value: string): void {
@@ -385,6 +419,18 @@ export function parseQr(value: string): ExtractedCardData {
   }
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
     return { email: v };
+  }
+  // "Website QR" without a scheme — e.g. "www.example.com" or "acme.com/me".
+  // Requires a single token with a domain + TLD (≥2 letters) so opaque codes
+  // like "BOOTH-42" still fall through to the company branch below. Normalizes
+  // to https:// so the saved website is tappable.
+  if (
+    !/\s/.test(v) &&
+    /^(www\.[^\s]+|[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/[^\s]*)?)$/i.test(v)
+  ) {
+    const out: ExtractedCardData = {};
+    assignUrl(out, `https://${v.replace(/^\/\//, "")}`);
+    return out;
   }
 
   // Anything that looks like structured contact text (multiline, labeled, or

@@ -22,11 +22,30 @@ loses website/email/address."
 vCards are almost always grouped. **How to apply:** any new vCard property handling
 must key off the normalized name, not the raw line prefix.
 
-## Name precedence: structured N wins over FN
+## Name resolution: FN order-detects N; honorifics must be stripped first
 
-`N:Family;Given` is authoritative; `FN` is a free-form display string whose naive
-space-split mishandles titles/multi-word names ("Dr. John Smith"). Let `N` set the
-name and only fall back to `FN` when `N` is absent.
+N (`Family;Given`) is NOT blindly trusted for order — many real generators emit the
+reversed `Given;Family`. The resolver cross-references N's two components against the
+first word of FN to detect which order this card uses, then assigns first/last.
+
+**Strip leading honorifics from FN before taking its first word** (Dr/Mr/Eng/Sheikh/
+etc, optional trailing dot). Otherwise `FN:"Dr. John Smith"` + `N:"Smith;John"` makes
+the first word "Dr.", which matches neither N part → falls through to a raw FN split →
+firstName="Dr.". This was a real shipped extraction bug.
+
+**Why:** honorifics are common on Gulf/UAE business cards (the app's market).
+**How to apply:** when FN matches NEITHER N component (nickname/variant, single-token
+N), fall back to the honorific-stripped FN word-split — do NOT force RFC `Family;Given`
+order, because that SWAPS names for the reversed-order nickname case
+(`FN:Bob Smith` + `N:Robert;Smith` → wrongly Smith/Robert). Only assume spec order
+when there is no FN at all.
+
+## vCard 4.0 URI schemes: strip tel:/mailto: from TEL/EMAIL
+
+v4.0 emits `TEL;VALUE=uri:tel:+...` and `EMAIL:mailto:...`; strip the scheme prefix or
+the saved number/email carries junk. Scheme-less website QRs (`www.x.com`, `acme.com/me`)
+are normalized to `https://` but opaque tokens without a TLD (e.g. `BOOTH-42`) stay a
+company name.
 
 ## vCard 2.1 / QUOTED-PRINTABLE + folding ARE handled (don't re-add)
 
