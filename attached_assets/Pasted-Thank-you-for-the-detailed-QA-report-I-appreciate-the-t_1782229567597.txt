@@ -1,0 +1,101 @@
+Thank you for the detailed QA report.
+
+I appreciate the transparency regarding the native testing limitations. I prefer an honest report over marking features as verified without real-device validation.
+
+However, before I consider this the final QA report, I need the following updates.
+
+---
+
+## 1. Pipeline Currency Verification
+
+Please include the Pipeline Currency Calculation issue that I reported.
+
+The QA report currently states:
+
+> Currency localization (per-lead conversion before sum) — Passed
+
+However, my latest APK clearly showed an incorrect calculation.
+
+Example:
+
+USD 35,000
+
+USD 25,000
+
+USD 15,000
+
+USD 10,000
+
+Total:
+
+USD 85,000
+
+Expected Dashboard:
+
+Approximately SAR 318,750
+
+Actual Dashboard:
+
+SAR 260.4K
+
+Please investigate and verify this specific scenario.
+
+Do not mark Currency Localization as Passed until this exact case has been tested and confirmed.
+
+---
+
+## 2. QR Code Verification
+
+Although the parser tests passed, this feature has failed repeatedly on native Android.
+
+Please keep QR Code Capture under **Pending Native Verification** until I confirm it works on my physical device using the QR Code I previously provided.
+
+---
+
+## 3. Performance
+
+The Developer Performance Dashboard is implemented, which is good.
+
+However, the report should clearly state that the 3–4 second performance target is **Pending Native Measurement** rather than implying it has been achieved.
+
+---
+
+## 4. Native Verification Status
+
+Please continue using the current approach.
+
+Do not mark native-only features as Passed until they have been validated on a physical Android and iPhone device.
+
+I appreciate this level of honesty.
+
+---
+
+## 5. Release Status
+
+Please change the release status from:
+
+"Stable Release Candidate"
+
+to:
+
+**Release Candidate – Pending Native Verification**
+
+because the following items are still awaiting confirmation:
+
+* QR Code Capture
+* Pipeline Currency Calculation
+* Performance Timing
+* NFC
+* Biometric Unlock
+* Save to Contacts
+* Share Contact (.VCF)
+* GPS
+* Notifications
+
+---
+
+## 6. Next APK
+
+Once the Pipeline Currency Calculation issue has been fixed and verified, regenerate the QA report and then prepare the next native APK.
+
+At that point, I will perform the complete physical-device validation and provide feedback before we close this milestone.

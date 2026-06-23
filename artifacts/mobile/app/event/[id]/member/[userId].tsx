@@ -1,24 +1,22 @@
 import { Feather } from "@/components/icons";
 import { Stack, useLocalSearchParams } from "expo-router";
-import React from "react";
+import React, { useMemo } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   type TeamMemberActivity,
   useGetTeamMemberReport,
+  useListLeads,
 } from "@workspace/api-client-react";
 
 import { Avatar, ErrorState, FONT, LoadingState } from "@/components/ui";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { getCountry } from "@/lib/countries";
+import { convertCurrency, formatCurrencyFull } from "@/lib/currency";
 import { formatGregorian } from "@/lib/date";
-
-function formatMoney(value: number): string {
-  return `$${Math.round(value)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-}
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
@@ -47,6 +45,21 @@ export default function TeamMemberReportScreen() {
 
   const query = useGetTeamMemberReport({ eventId, userId: memberId });
   const report = query.data;
+
+  const { country } = useSettings();
+  const currencyCode = getCountry(country).currencyCode;
+  // Per-lead currency conversion before summing (same fix as the dashboard):
+  // the server aggregate is a raw cross-currency sum, so compute the open-
+  // pipeline total client-side from this member's own leads.
+  const leadsQuery = useListLeads({ eventId, assignedTo: memberId, limit: 200 });
+  const convertedPipelineValue = useMemo(() => {
+    return (leadsQuery.data?.leads ?? [])
+      .filter((l) => l.stage !== "won" && l.stage !== "lost")
+      .reduce((sum, l) => {
+        const v = Number(l.value ?? 0);
+        return sum + (Number.isFinite(v) ? convertCurrency(v, l.currency ?? "USD", currencyCode) : 0);
+      }, 0);
+  }, [leadsQuery.data, currencyCode]);
 
   const metrics: { label: string; value: string; icon: keyof typeof Feather.glyphMap; color: string }[] =
     report
@@ -83,8 +96,11 @@ export default function TeamMemberReportScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
-              refreshing={query.isRefetching}
-              onRefresh={() => query.refetch()}
+              refreshing={query.isRefetching || leadsQuery.isRefetching}
+              onRefresh={() => {
+                query.refetch();
+                leadsQuery.refetch();
+              }}
               tintColor={colors.primary}
             />
           }
@@ -132,7 +148,7 @@ export default function TeamMemberReportScreen() {
               <Feather name="dollar-sign" size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.pipelineValue}>{formatMoney(report?.pipelineValue ?? 0)}</Text>
+              <Text style={styles.pipelineValue}>{formatCurrencyFull(convertedPipelineValue, currencyCode)}</Text>
               <Text style={styles.pipelineLabel}>{t("eventReport.pipelineValue")}</Text>
             </View>
           </View>

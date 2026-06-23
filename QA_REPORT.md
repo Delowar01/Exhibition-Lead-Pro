@@ -1,17 +1,36 @@
-# QA Report — Full Regression (Pre-APK Release Candidate)
+# QA Report — Full Regression
+
+## Release status: **Release Candidate – Pending Native Verification**
 
 _Date: 2026-06-23 · App: Card Scanner Pro / Lead Capture Pro (`artifacts/mobile`)_
-_Scope: every change since the last APK build — App Lock enhancements + full feature regression._
+_Scope: every change since the last APK build — App Lock enhancements + currency fix + full feature regression._
+
+The following items are **awaiting confirmation on a physical Android + iPhone**
+before this milestone can be closed:
+
+- QR Code Capture
+- Pipeline Currency Calculation
+- Performance Timing (3–4 s target)
+- NFC
+- Biometric Unlock
+- Save to Contacts
+- Share Contact (.VCF)
+- GPS
+- Notifications
 
 > **Verification method & honest limitation.** This environment has **no physical
 > device, camera, fingerprint/Face sensor, NFC radio, or push-notification
 > delivery**, and the Expo web preview is blank for native modules. Therefore:
 > - **Automated** = exercised by the vitest unit suite and a clean TypeScript compile.
 > - **Code Review** = implementation audited end-to-end and confirmed wired (deterministic logic that does not need hardware).
-> - **Blocked (Native)** = correct by code audit but **cannot be exercised here**; requires a `development`/`preview` EAS build on a real Android + iPhone.
+> - **Pending Native** = correct by code audit (and where noted, by unit test) but **cannot be exercised here**; requires a `development`/`preview` EAS build on a real Android + iPhone.
 >
-> Per project policy, nothing native is reported as "Passed on device." Those rows
-> are **Blocked** and listed explicitly in §Verification Status and §Known Issues.
+> Per project policy and the user's explicit instruction, **nothing native is
+> reported as "Passed."** Native-only items — including QR Code Capture (which has
+> failed repeatedly on the user's Android device despite passing parser tests) and
+> the Pipeline Currency Calculation (fixed in code + unit-verified, but not yet
+> confirmed against the user's exact device scenario) — remain **Pending Native
+> Verification** until the user confirms them on hardware.
 
 ---
 
@@ -20,48 +39,98 @@ _Scope: every change since the last APK build — App Lock enhancements + full f
 | Result | Count |
 |---|---|
 | **Total test cases** | **96** |
-| **Passed** (Automated + Code Review) | **62** |
+| **Passed** (Automated + Code Review) | **52** |
 | **Failed** | **0** |
-| **Blocked** (require native device sign-off) | **34** |
+| **Pending Native Verification** (require real-device sign-off) | **44** |
 
-No defects were found in code during this regression. "Blocked" items are not
-failures — they are gated on real-device validation that cannot run in this
-environment.
+No defects were found in the **current** code during this regression. "Pending
+Native Verification" items are not failures — they are gated on real-device
+validation that cannot run in this environment.
 
 ---
 
 ## 2. Detailed results by area
 
-Legend — **Method**: `A` = Automated test, `CR` = Code review, `N` = Native-only (Blocked).
+Legend — **Method**: `A` = Automated test, `CR` = Code review, `N` = Native-only.
+**Verdict**: `Passed` = automated/code-review confirmed, no hardware needed ·
+`Pending Native` = awaiting physical-device confirmation.
+
+### 2a · Pipeline Currency Calculation — bug investigation (the reported scenario)
+
+**Reported:** USD 35,000 + 25,000 + 15,000 + 10,000 = USD 85,000, which should show
+**≈ SAR 318,750** on the dashboard (the SAR peg is exactly 3.75), but the user's APK
+showed **SAR 260.4K** — an effective rate of ~3.06, which is wrong.
+
+**Root cause (in the APK the user tested):** the dashboard read a single
+server-provided total (`mobile-dashboard.pipelineValue`) that **summed the raw
+numeric `value` of every lead across mixed currencies and then re-labelled the sum
+with the display currency (SAR)**. Summing raw amounts that are in different
+currencies, then stamping one currency code on the result, produces a meaningless
+figure like 260.4K. No per-lead conversion happened.
+
+**Fix (already in the current source, locked by a new test):** the dashboard and the
+leads screen now **convert each lead to the display currency first, then sum**
+(`convertCurrency(value, lead.currency, displayCurrency)` inside the reduce). The
+SAR peg in `lib/currency.ts` is the authoritative `3.75`, and
+`convertCurrency(85000, "USD", "SAR") === 318750`.
+
+**Same fix applied to every other pipeline-total surface** so no screen sums raw
+mixed-currency values: the **event report** (`app/event/[id]/report.tsx`) and the
+**team-member report** (`app/event/[id]/member/[userId].tsx`) now compute the
+open-pipeline total client-side from per-lead data (`useListLeads`, converting each
+lead by its own currency, matching the server's "stage NOT IN (won, lost)"
+semantics). The member screen previously rendered a hardcoded `$` on a raw
+server sum — that is gone. A `Number.isFinite` guard prevents a malformed value
+from poisoning the total with `NaN`.
+
+**Verification added:** `lib/currency.test.ts` (10 new cases) asserts the **exact
+reported scenario** — four USD leads (35k/25k/15k/10k) aggregated for an SAR display
+equals **318,750** (`formatCurrencyFull` → `"SAR 318,750"`, compact → `"SAR
+318.8k"`), explicitly asserts the result is **not** the raw-sum/relabel bug value,
+and covers a mixed-currency pipeline (USD + AED + SAR) converting each by its own
+currency.
+
+**Honest status:** the calculation is **correct in code and unit-verified**, but per
+the user's instruction it is **NOT marked Passed**. It stays **Pending Native
+Verification** until the user reproduces the exact scenario on the rebuilt APK and
+confirms the dashboard shows ≈ SAR 318,750. (Note: if individual leads were saved
+with a currency other than what was intended at entry time, the per-lead currency —
+not the math — would need correcting; the conversion engine itself is verified.)
 
 ### 1 · Lead Capture
 
 | Case | Method | Verdict |
 |---|---|---|
-| Business card — OCR extraction | N | Blocked |
+| Business card — OCR extraction | N | Pending Native |
 | Business card — contact creation | CR | Passed |
 | Business card — duplicate detection | CR | Passed |
 | Business card — AI scoring (score/temperature) | CR | Passed |
-| Captured image preview | N | Blocked |
-| Download captured image (to gallery) | N | Blocked |
-| Email signature — OCR extraction | N | Blocked |
+| Captured image preview | N | Pending Native |
+| Download captured image (to gallery) | N | Pending Native |
+| Email signature — OCR extraction | N | Pending Native |
 | Email signature — contact creation | CR | Passed |
 | Email signature — AI scoring | CR | Passed |
-| QR — vCard (2.1/3.0/4.0) | A | Passed |
-| QR — MECARD | A | Passed |
-| QR — Standard contact QR | A | Passed |
-| QR — Business contact QR | A | Passed |
-| QR — LinkedIn QR | A | Passed |
-| QR — Website QR | A | Passed |
-| QR — correct field mapping / auto contact creation | A + CR | Passed |
-| NFC — supported tags (NDEF text/URI/MIME) | N | Blocked |
-| NFC — unsupported tags | N | Blocked |
-| NFC — error handling (disabled/empty/unreadable) | CR | Passed |
+| **QR Code Capture (on-device scan → contact)** | N | **Pending Native** |
+| QR — vCard (2.1/3.0/4.0) parser | A | Pending Native (parser unit-tested) |
+| QR — MECARD parser | A | Pending Native (parser unit-tested) |
+| QR — Standard contact QR parser | A | Pending Native (parser unit-tested) |
+| QR — Business contact QR parser | A | Pending Native (parser unit-tested) |
+| QR — LinkedIn QR parser | A | Pending Native (parser unit-tested) |
+| QR — Website QR parser | A | Pending Native (parser unit-tested) |
+| QR — field mapping / auto contact creation | A + CR | Pending Native (logic unit-tested) |
+| NFC — supported tags (NDEF text/URI/MIME) | N | Pending Native |
+| NFC — unsupported tags | N | Pending Native |
+| NFC — error handling (disabled/empty/unreadable) | CR | Pending Native |
 | Manual entry — validation | CR | Passed |
 | Manual entry — contact creation / saving | CR | Passed |
 
-_QR/vCard/MECARD parsing is covered by the 43-case vitest suite in_
-`lib/contact-parse.test.ts` _(incl. iOS grouped vCards and ML Kit raw-vs-data)._
+> **QR Code Capture is explicitly held at Pending Native Verification.** The
+> parsing layer (vCard / MECARD / LinkedIn / website) passes the vitest suite in
+> `lib/contact-parse.test.ts` (incl. iOS grouped vCards and the Android ML Kit
+> raw-vs-data case), but the **end-to-end camera scan has failed repeatedly on the
+> user's physical Android device**. Unit tests confirm the parser, NOT the native
+> scanner pipeline. This stays Pending until the user confirms a successful scan
+> on-device using their reference QR code.
 
 ### 2 · Contact Details
 
@@ -69,10 +138,10 @@ _QR/vCard/MECARD parsing is covered by the 43-case vitest suite in_
 |---|---|---|
 | Edit contact | CR | Passed |
 | Delete contact | CR | Passed |
-| Save to phone contacts | N | Blocked |
-| Share contact (.VCF) | N | Blocked |
-| Captured image preview | N | Blocked |
-| Download captured image | N | Blocked |
+| Save to phone contacts | N | Pending Native |
+| Share contact (.VCF) | N | Pending Native |
+| Captured image preview | N | Pending Native |
+| Download captured image | N | Pending Native |
 | Lead status — immediate UI update (optimistic) | CR | Passed |
 | Lead status — background sync | CR | Passed |
 | Lead status — status history ("Lead Journey") | CR | Passed |
@@ -84,9 +153,9 @@ _QR/vCard/MECARD parsing is covered by the 43-case vitest suite in_
 
 | Case | Method | Verdict |
 |---|---|---|
-| WhatsApp — native chooser (WhatsApp / WhatsApp Business) | N | Blocked |
-| Email — native app chooser (Gmail/Outlook/Samsung/Apple Mail; must NOT force Gmail) | N | Blocked |
-| Call — opens default dialer directly, no chooser | N | Blocked |
+| WhatsApp — native chooser (WhatsApp / WhatsApp Business) | N | Pending Native |
+| Email — native app chooser (Gmail/Outlook/Samsung/Apple Mail; must NOT force Gmail) | N | Pending Native |
+| Call — opens default dialer directly, no chooser | N | Pending Native |
 
 _Intent construction reviewed: Android email uses `ACTION_SEND` + `message/rfc822`_
 _(system chooser, no forced Gmail — matches the stated user preference); call uses_
@@ -102,7 +171,11 @@ _(system chooser, no forced Gmail — matches the stated user preference); call 
 | Dashboard navigation | CR | Passed |
 | Dashboard filters | CR | Passed |
 | Pipeline widgets (Open/Won/Lost/Conversion) | CR | Passed |
-| **Currency localization (per-lead conversion before sum)** | A + CR | Passed |
+| **Pipeline Currency Calculation (USD→SAR aggregate)** | A + CR | **Pending Native** (fixed + unit-verified; awaiting device confirm) |
+
+> **Pipeline Currency Calculation — reported bug investigated & fixed (see §2a).**
+> Held at Pending Native Verification until the user confirms the exact scenario
+> (USD 35k+25k+15k+10k → **SAR 318,750**) on their device with the rebuilt APK.
 
 ### 5 · Dashboard
 
@@ -134,18 +207,18 @@ _(system chooser, no forced Gmail — matches the stated user preference); call 
 | Follow-up ON/OFF (persisted) | CR | Passed |
 | Meetings ON/OFF (persisted) | CR | Passed |
 | 15-minute reminder scheduling | CR | Passed |
-| Notification delivery + tap deep-link behavior | N | Blocked |
+| Notification delivery + tap deep-link behavior | N | Pending Native |
 
 ### 8 · Biometric App Lock (this release's primary work)
 
 | Case | Android | iPhone |
 |---|---|---|
-| Fingerprint / Touch ID | Blocked (N) | Blocked (N) |
-| Face Unlock / Face ID | Blocked (N) | Blocked (N) |
+| Fingerprint / Touch ID | Pending Native | Pending Native |
+| Face Unlock / Face ID | Pending Native | Pending Native |
 | App PIN (6-digit) | Passed (CR) | Passed (CR) |
-| Screen-off lock | Blocked (N) | Blocked (N) |
-| Device lock | Blocked (N) | Blocked (N) |
-| Background timeout (0/15s/30s/1min/5min) | Passed (CR logic) / Blocked (N on-device) | Passed (CR logic) / Blocked (N on-device) |
+| Screen-off lock | Pending Native | Pending Native |
+| Device lock | Pending Native | Pending Native |
+| Background timeout (0/15s/30s/1min/5min) | Passed (CR logic) / Pending Native (on-device) | Passed (CR logic) / Pending Native (on-device) |
 | Change PIN | Passed (CR) | Passed (CR) |
 | Remove PIN (Keep/Remove prompt) | Passed (CR) | Passed (CR) |
 | Brute-force lockout (5 wrong → 30s countdown, biometrics stay usable, never permanent, no forced logout) | Passed (CR) | Passed (CR) |
@@ -160,11 +233,11 @@ _the AppState screen-off/device-lock transitions themselves are native-only._
 
 | Metric | Tracked? | Method | Verdict |
 |---|---|---|---|
-| Camera capture time | Yes (`captureRawMs`) | N | Blocked |
-| Image processing time | Yes (`processMs`) | N | Blocked |
-| Upload time + OCR time | Yes (`uploadAndOcrMs`) | N | Blocked |
-| Contact creation time | Yes (`contactMs`) | N | Blocked |
-| Total end-to-end time | Yes (`totalMs`) | N | Blocked |
+| Camera capture time | Yes (`captureRawMs`) | N | Pending Native |
+| Image processing time | Yes (`processMs`) | N | Pending Native |
+| Upload time + OCR time | Yes (`uploadAndOcrMs`) | N | Pending Native |
+| Contact creation time | Yes (`contactMs`) | N | Pending Native |
+| Total end-to-end time | Yes (`totalMs`) | N | Pending Native |
 
 The dashboard (`app/dev-perf.tsx` + `lib/scan-perf.ts`) is implemented and records
 all six metrics with threshold warnings. **Actual timing numbers cannot be produced
@@ -178,7 +251,7 @@ must be measured on-device. (See Known Issues.)
 | No overlapping UI / responsive layouts | CR | Passed |
 | Smooth scrolling (flexGrow + keyboardShouldPersistTaps) | CR | Passed |
 | Native-feeling navigation | CR | Passed |
-| No unnecessary loading delays / visible lag | N | Blocked |
+| No unnecessary loading delays / visible lag | N | Pending Native |
 
 ### 11 · Regression (previously fixed features still work)
 
@@ -188,26 +261,30 @@ must be measured on-device. (See Known Issues.)
 | Status history | CR | Passed |
 | Lead score | CR | Passed |
 | Lead temperature | CR | Passed |
-| GPS location (capture at shutter, shown on map) | N | Blocked |
+| GPS location (capture at shutter, shown on map) | N | Pending Native |
 | Meetings | CR | Passed |
 | Follow-ups | CR | Passed |
 | Team assignment | CR | Passed |
-| Contact sharing | N | Blocked |
-| Save to contacts | N | Blocked |
-| Digital business card (vCard QR + share JPEG) | N | Blocked |
+| Contact sharing | N | Pending Native |
+| Save to contacts | N | Pending Native |
+| Digital business card (vCard QR + share JPEG) | N | Pending Native |
 | Workspace features | CR | Passed |
 
 ---
 
 ## 3. Performance Summary
 
-**No live timing results are available from this environment** — the Developer
-Performance Dashboard requires a real camera capture → image processing → upload →
-Gemini OCR → contact-creation round-trip, none of which exist in the server sandbox.
+**The 3–4 second performance target is PENDING NATIVE MEASUREMENT — it has NOT been
+achieved or measured.** No live timing results are available from this environment:
+the Developer Performance Dashboard requires a real camera capture → image processing
+→ upload → Gemini OCR → contact-creation round-trip, none of which exist in the
+server sandbox.
 
 - Instrumentation status: **complete** — all six stages are timed and surfaced with
-  threshold warnings (e.g. total > 8 s flagged).
-- Target to validate on-device: **~3–4 s** end-to-end under normal network.
+  threshold warnings (e.g. total > 8 s flagged). This means the app can *report* the
+  numbers; it does not mean the target is met.
+- Target to validate on-device: **~3–4 s** end-to-end under normal network —
+  **Pending Native Measurement**.
 - **Action:** capture the dashboard numbers on the next EAS build and append them
   here before sign-off.
 
@@ -215,18 +292,31 @@ Gemini OCR → contact-creation round-trip, none of which exist in the server sa
 
 ## 4. Known Issues
 
-1. **All native flows are unverified on-device (release gate, not a code defect).**
+1. **QR Code Capture has failed repeatedly on the user's physical Android device.**
+   The parser passes all unit tests, but the native camera-scan pipeline is the
+   suspect. **Highest-priority on-device item** — must be confirmed with the user's
+   reference QR code before this feature can be called working.
+2. **Pipeline Currency Calculation** — fixed in code and unit-verified (USD 85,000 →
+   SAR 318,750), but **Pending Native Verification** against the user's exact device
+   scenario. If a lead was *saved* with an unintended currency, the per-lead data —
+   not the conversion math — would be the remaining cause. **Known limitation:** the
+   event-report and team-member pipeline totals convert per-lead client-side from the
+   first **200** leads (`useListLeads(limit: 200)`); an event or member with **more
+   than 200 leads** will undercount. The dashboard total is unaffected (it uses the
+   server-grouped pipeline endpoint). A proper fix is server-side currency
+   normalization in `reports.ts` — deferred (larger scope, separate from the reported
+   dashboard bug).
+3. **All native flows are unverified on-device (release gate, not a code defect).**
    Biometric prompts, screen-off/device-lock re-lock, NFC radio, camera OCR
    accuracy, save-to-phone, .VCF share, image download to gallery, notification
-   delivery/tap, GPS capture, and performance timings must be validated on a real
-   Android + iPhone build.
-2. **Performance numbers not yet captured** — instrumentation is in place but no
-   on-device run exists to confirm the 3–4 s target.
-3. **Carried over from `OCR_QR_NFC_VERIFICATION.md`:** vCard line-folding (RFC 2426
+   delivery/tap, and GPS capture must be validated on a real Android + iPhone build.
+4. **Performance target Pending Native Measurement** — instrumentation is in place
+   but no on-device run exists to confirm (or refute) the 3–4 s target.
+5. **Carried over from `OCR_QR_NFC_VERIFICATION.md`:** vCard line-folding (RFC 2426
    continuation lines) and QUOTED-PRINTABLE value decoding are not handled (low
    real-world frequency); only the primary `TEL` is kept; extracted Arabic-script
    name is stored in notes, not a dedicated column.
-4. **App Lock auto-lock is a deliberate grace-period model** (not a bug): with a
+6. **App Lock auto-lock is a deliberate grace-period model** (not a bug): with a
    non-zero timeout, a quick screen-off/return within the grace window does not
    re-prompt — by design, so the 5-minute timeout option is meaningful. Users who
    want zero grace select "Immediately".
@@ -254,6 +344,15 @@ App Lock enhancements + currency fix (current working set):
   remove-PIN / 5-min keys.
 - `artifacts/mobile/app/(tabs)/index.tsx` — per-lead currency conversion before
   aggregation (pipeline/won/lost totals).
+- `artifacts/mobile/app/leads.tsx` — per-lead currency conversion before summing.
+- `artifacts/mobile/app/event/[id]/report.tsx` — event-report pipeline total now
+  converts per-lead before summing (was the raw server `pipelineValue`).
+- `artifacts/mobile/app/event/[id]/member/[userId].tsx` — team-member pipeline total
+  now converts per-lead; removed hardcoded `$` raw-sum display.
+- `artifacts/mobile/lib/currency.ts` — `convertCurrency` (USD-base, SAR peg 3.75),
+  `formatCurrency`/`formatCurrencyFull`.
+- `artifacts/mobile/lib/currency.test.ts` — **NEW** 10-case suite locking the
+  reported scenario (USD 85,000 → SAR 318,750) and mixed-currency aggregation.
 
 ---
 
@@ -261,17 +360,27 @@ App Lock enhancements + currency fix (current working set):
 
 | Verification type | Status |
 |---|---|
-| **Automated testing** | ✅ Done — `pnpm --filter @workspace/mobile run typecheck` clean; vitest **43/43**; Metro bundles clean. Covers QR/vCard/MECARD parsing + currency logic. |
-| **Code review** | ✅ Done — App Lock logic + all 11 feature areas audited end-to-end (file/function level) and confirmed wired; independent architect review run on App Lock changes. |
-| **Native Android testing** | ⛔ Not performed — no device in this environment. **Required before APK sign-off.** |
-| **Native iPhone testing** | ⛔ Not performed — no device in this environment. **Required before sign-off.** |
+| **Automated testing** | ✅ Done — `pnpm --filter @workspace/mobile run typecheck` clean; vitest **53/53** (43 parser + **10 new currency** cases); Metro bundles clean. Covers QR/vCard/MECARD parsing + the currency conversion/aggregation logic. |
+| **Code review** | ✅ Done — App Lock logic + currency aggregation + all 11 feature areas audited end-to-end (file/function level) and confirmed wired; independent architect review run on App Lock changes. |
+| **Native Android testing** | ⛔ Not performed — no device in this environment. **Required before milestone close** (esp. QR Capture + currency scenario). |
+| **Native iPhone testing** | ⛔ Not performed — no device in this environment. **Required before milestone close.** |
 
 ---
 
 ## Release gate
 
-All App Lock enhancements are **complete**; all automated + code-review checks
-**pass** with **zero defects**; this QA report is prepared. The **only** outstanding
-gate is **on-device validation on Android + iPhone** (and capturing the performance
-numbers). Once that native sign-off passes, the build is clear as a stable release
-candidate. **Per instruction, the next APK has not been generated.**
+**Release status: Release Candidate – Pending Native Verification.**
+
+App Lock enhancements are **complete**; the reported **Pipeline Currency
+Calculation bug is fixed and unit-verified** (USD 85,000 → SAR 318,750); all
+automated + code-review checks **pass** with **zero code defects**; this QA report is
+regenerated. Per the user's instruction, **no native-only feature is marked Passed**.
+
+**Outstanding before milestone close — on-device validation on Android + iPhone:**
+QR Code Capture · Pipeline Currency Calculation · Performance Timing · NFC ·
+Biometric Unlock · Save to Contacts · Share Contact (.VCF) · GPS · Notifications.
+
+**Next APK:** the currency fix is in place and verified by unit test, so the next
+native APK can now be prepared for the user's physical-device validation. The user
+will then run full device validation and provide feedback before the milestone is
+closed.

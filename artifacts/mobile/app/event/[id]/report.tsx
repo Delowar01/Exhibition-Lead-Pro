@@ -42,7 +42,7 @@ import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
 import { useSettings } from "@/contexts/SettingsContext";
 import { getCountry } from "@/lib/countries";
-import { formatCurrencyFull } from "@/lib/currency";
+import { convertCurrency, formatCurrencyFull } from "@/lib/currency";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -345,6 +345,18 @@ export default function EventReportScreen() {
     return map;
   }, [leadsQuery.data]);
 
+  // Open-pipeline value: convert EACH lead to the display currency first, then
+  // sum. Mirrors the dashboard fix — never sum raw mixed-currency values and
+  // relabel them. Matches the server's "stage NOT IN (won,lost)" semantics.
+  const convertedPipelineValue = useMemo(() => {
+    return (leadsQuery.data?.leads ?? [])
+      .filter((l) => l.stage !== "won" && l.stage !== "lost")
+      .reduce((sum, l) => {
+        const v = Number(l.value ?? 0);
+        return sum + (Number.isFinite(v) ? convertCurrency(v, l.currency ?? "USD", currencyCode) : 0);
+      }, 0);
+  }, [leadsQuery.data, currencyCode]);
+
   // Fetch all company meetings (tenant-scoped by requireAuth) to build a
   // contactId → earliest meetingDate map for the meeting_* sort modes.
   const meetingsQuery = useListMeetings({});
@@ -439,10 +451,11 @@ export default function EventReportScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
-              refreshing={query.isRefetching || contactsQuery.isRefetching}
+              refreshing={query.isRefetching || contactsQuery.isRefetching || leadsQuery.isRefetching}
               onRefresh={() => {
                 query.refetch();
                 contactsQuery.refetch();
+                leadsQuery.refetch();
               }}
               tintColor={colors.primary}
             />
@@ -480,7 +493,7 @@ export default function EventReportScreen() {
               <Feather name="dollar-sign" size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.pipelineValue}>{formatCurrencyFull(report?.pipelineValue ?? 0, currencyCode)}</Text>
+              <Text style={styles.pipelineValue}>{formatCurrencyFull(convertedPipelineValue, currencyCode)}</Text>
               <Text style={styles.pipelineLabel}>{t("eventReport.pipelineValue")}</Text>
             </View>
           </View>
