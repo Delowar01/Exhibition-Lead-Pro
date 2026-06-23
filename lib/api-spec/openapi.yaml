@@ -167,6 +167,224 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Rotate the refresh token and issue a new access token
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+        "401":
+          description: Missing/invalid/expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: CSRF validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/sessions:
+    get:
+      operationId: listSessions
+      tags: [auth]
+      summary: List the caller's active sessions
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+    delete:
+      operationId: terminateOtherSessions
+      tags: [auth]
+      summary: Revoke all sessions except the current one
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerminateSessionsResponse"
+
+  /auth/sessions/{id}:
+    delete:
+      operationId: terminateSession
+      tags: [auth]
+      summary: Revoke a single session by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/mfa/verify-login:
+    post:
+      operationId: mfaVerifyLogin
+      tags: [auth]
+      summary: Complete login with a second factor (TOTP or backup code)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaVerifyLoginInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid code or expired MFA session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/mfa/status:
+    get:
+      operationId: getMfaStatus
+      tags: [auth]
+      summary: Get the caller's MFA status
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaStatus"
+
+  /auth/mfa/setup:
+    post:
+      operationId: mfaSetup
+      tags: [auth]
+      summary: Begin MFA enrollment (generate secret + QR)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaSetupData"
+        "400":
+          description: MFA already enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/mfa/enable:
+    post:
+      operationId: mfaEnable
+      tags: [auth]
+      summary: Confirm a TOTP code, enable MFA, and issue backup codes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaEnableInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaBackupCodesResponse"
+        "400":
+          description: Invalid code or setup not started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/mfa/disable:
+    post:
+      operationId: mfaDisable
+      tags: [auth]
+      summary: Disable MFA (requires the account password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaPasswordInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Incorrect password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Company policy requires MFA
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/mfa/backup-codes:
+    post:
+      operationId: regenerateBackupCodes
+      tags: [auth]
+      summary: Regenerate the backup-code set (requires the account password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaPasswordInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaBackupCodesResponse"
+        "401":
+          description: Incorrect password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PLATFORM DASHBOARD
   /platform/stats:
     get:
@@ -1760,6 +1978,8 @@ components:
           format: email
         password:
           type: string
+        rememberMe:
+          type: boolean
 
     ChangePasswordInput:
       type: object
@@ -1791,12 +2011,150 @@ components:
 
     AuthResponse:
       type: object
-      required: [token, user]
+      description: >-
+        Successful login/register. On a password-only success, `token`, `refreshToken`,
+        and `user` are present. When a second factor is required, only `mfaRequired`
+        (true) and `mfaToken` are returned and the client must call /auth/mfa/verify-login.
+        When the user's company mandates MFA but the user has not enrolled,
+        `mfaEnrollmentRequired` (true) and `mfaToken` are returned with NO operational
+        token; the client must complete MFA enrollment before access is granted.
       properties:
         token:
           type: string
+        refreshToken:
+          type: string
         user:
           $ref: "#/components/schemas/User"
+        mfaRequired:
+          type: boolean
+        mfaEnrollmentRequired:
+          type: boolean
+        mfaToken:
+          type: string
+
+    RefreshInput:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+
+    RefreshResponse:
+      type: object
+      required: [token, refreshToken]
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+
+    MfaVerifyLoginInput:
+      type: object
+      required: [mfaToken, code]
+      properties:
+        mfaToken:
+          type: string
+        code:
+          type: string
+        rememberMe:
+          type: boolean
+        rememberDevice:
+          type: boolean
+
+    SessionInfo:
+      type: object
+      required: [id, current, createdAt]
+      properties:
+        id:
+          type: integer
+        current:
+          type: boolean
+        ipAddress:
+          type: ["string", "null"]
+        userAgent:
+          type: ["string", "null"]
+        browser:
+          type: ["string", "null"]
+        os:
+          type: ["string", "null"]
+        deviceType:
+          type: ["string", "null"]
+        lastUsedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+
+    SessionList:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionInfo"
+
+    TerminateSessionsResponse:
+      type: object
+      required: [success, terminated]
+      properties:
+        success:
+          type: boolean
+        terminated:
+          type: integer
+
+    MfaStatus:
+      type: object
+      required: [enabled, companyRequired, backupCodesRemaining]
+      properties:
+        enabled:
+          type: boolean
+        enrolledAt:
+          type: ["string", "null"]
+          format: date-time
+        companyRequired:
+          type: boolean
+        backupCodesRemaining:
+          type: integer
+
+    MfaSetupData:
+      type: object
+      required: [secret, otpauthUrl, qrDataUrl]
+      properties:
+        secret:
+          type: string
+        otpauthUrl:
+          type: string
+        qrDataUrl:
+          type: string
+
+    MfaEnableInput:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+
+    MfaBackupCodesResponse:
+      type: object
+      required: [success, backupCodes]
+      properties:
+        success:
+          type: boolean
+        backupCodes:
+          type: array
+          items:
+            type: string
+
+    MfaPasswordInput:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
 
     # USERS
     User:
@@ -1836,6 +2194,8 @@ components:
           type: array
           items:
             type: integer
+        mfaEnabled:
+          type: boolean
         isActive:
           type: boolean
         lastLoginAt:

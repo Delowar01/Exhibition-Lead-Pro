@@ -27,6 +27,7 @@ export interface User {
   contactVisibility?: UserContactVisibility;
   companyVisibility?: UserCompanyVisibility;
   accessibleCompanies?: number[];
+  mfaEnabled?: boolean;
   isActive?: boolean;
   /** @nullable */
   lastLoginAt?: Date | null;

@@ -7,7 +7,14 @@
  */
 import type { User } from './user';
 
+/**
+ * Successful login/register. On a password-only success, `token`, `refreshToken`, and `user` are present. When a second factor is required, only `mfaRequired` (true) and `mfaToken` are returned and the client must call /auth/mfa/verify-login. When the user's company mandates MFA but the user has not enrolled, `mfaEnrollmentRequired` (true) and `mfaToken` are returned with NO operational token; the client must complete MFA enrollment before access is granted.
+ */
 export interface AuthResponse {
-  token: string;
-  user: User;
+  token?: string;
+  refreshToken?: string;
+  user?: User;
+  mfaRequired?: boolean;
+  mfaEnrollmentRequired?: boolean;
+  mfaToken?: string;
 }

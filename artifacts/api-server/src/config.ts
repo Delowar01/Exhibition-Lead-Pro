@@ -42,6 +42,40 @@ export const config = {
   // Required secret — throws at module load if missing.
   sessionSecret: requireEnv("SESSION_SECRET"),
 
+  auth: {
+    // Access token (JWT, sent as Bearer). Kept long enough not to disrupt the
+    // mobile client; logout/terminate are immediate via server-side session
+    // validation regardless of this TTL.
+    accessTokenTtl: process.env.ACCESS_TOKEN_TTL ?? "7d",
+    // Refresh-token / session lifetime. Remember-me extends it.
+    refreshTtlDays: Number(process.env.REFRESH_TTL_DAYS ?? 30),
+    rememberMeRefreshTtlDays: Number(process.env.REMEMBER_ME_TTL_DAYS ?? 90),
+    // Short-lived token that carries a pending (password-verified) MFA challenge.
+    mfaChallengeTtl: "10m",
+    // "Remember this device" lifetime for skipping MFA.
+    trustedDeviceTtlDays: Number(process.env.TRUSTED_DEVICE_TTL_DAYS ?? 30),
+    // Optional dedicated key for encrypting MFA secrets; derived from
+    // SESSION_SECRET when unset so no new required env is introduced.
+    mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
+    issuer: "card-scanner-pro",
+  },
+
+  security: {
+    // Brute-force lockout: N failed attempts for the same email+IP within the
+    // window locks further attempts for the lockout duration.
+    maxFailedAttempts: Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5),
+    lockoutWindowMinutes: Number(process.env.LOGIN_LOCKOUT_WINDOW_MIN ?? 15),
+    lockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MIN ?? 15),
+    // express-rate-limit window/ceiling for the /api/auth surface.
+    rateLimitWindowMs: Number(process.env.AUTH_RATE_WINDOW_MS ?? 15 * 60 * 1000),
+    rateLimitMax: Number(process.env.AUTH_RATE_MAX ?? 100),
+    loginRateLimitMax: Number(process.env.LOGIN_RATE_MAX ?? 20),
+    // Minimum password length; complexity is enforced in validatePassword.
+    minPasswordLength: Number(process.env.MIN_PASSWORD_LENGTH ?? 8),
+    // Secure cookie flag — on in production (https), off in dev (http preview).
+    cookieSecure: nodeEnv === "production",
+  },
+
   // Validated on access (used by the entrypoint only).
   get port(): number {
     return resolvePort();

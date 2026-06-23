@@ -23,6 +23,11 @@ export const usersTable = pgTable("users", {
   companyVisibility: text("company_visibility").notNull().default("own"), // own, selected, all
   selectedUserIds: jsonb("selected_user_ids").$type<number[]>().notNull().default([]),
   isActive: boolean("is_active").notNull().default(true),
+  // MFA (TOTP). `mfaSecret` holds the AES-256-GCM-encrypted base32 secret; it is
+  // never returned to clients. `mfaEnabled` gates the login challenge.
+  mfaEnabled: boolean("mfa_enabled").notNull().default(false),
+  mfaSecret: text("mfa_secret"),
+  mfaEnrolledAt: timestamp("mfa_enrolled_at"),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

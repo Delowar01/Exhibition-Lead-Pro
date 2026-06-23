@@ -1,0 +1,73 @@
+import jwt from "jsonwebtoken";
+import { config } from "../config.js";
+import { randomToken, sha256 } from "./crypto.js";
+
+const SECRET: string = config.sessionSecret;
+
+export interface AccessTokenPayload {
+  id: number;
+  email: string;
+  role: string;
+  companyId: number | null;
+  // Server-side session id this token belongs to. Optional for backward
+  // compatibility with legacy tokens minted before sessions existed.
+  sid?: number;
+  typ?: "access";
+}
+
+export function signAccessToken(payload: Omit<AccessTokenPayload, "typ">): string {
+  return jwt.sign({ ...payload, typ: "access" }, SECRET, {
+    expiresIn: config.auth.accessTokenTtl as jwt.SignOptions["expiresIn"],
+    issuer: config.auth.issuer,
+  });
+}
+
+export function verifyAccessToken(token: string): AccessTokenPayload | null {
+  try {
+    const decoded = jwt.verify(token, SECRET, { issuer: config.auth.issuer }) as AccessTokenPayload;
+    if (decoded.typ && decoded.typ !== "access") return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+// Short-lived token that proves a password was verified and an MFA code is still
+// required. Carries only the user id; useless without a valid TOTP/backup code.
+export function signMfaChallenge(userId: number): string {
+  return jwt.sign({ uid: userId, typ: "mfa" }, SECRET, {
+    expiresIn: config.auth.mfaChallengeTtl as jwt.SignOptions["expiresIn"],
+    issuer: config.auth.issuer,
+  });
+}
+
+export function verifyMfaChallenge(token: string): number | null {
+  try {
+    const decoded = jwt.verify(token, SECRET, { issuer: config.auth.issuer }) as { uid: number; typ?: string };
+    if (decoded.typ !== "mfa") return null;
+    return decoded.uid;
+  } catch {
+    return null;
+  }
+}
+
+// Refresh token format: `<sessionId>.<secret>`. Only sha256(secret) is stored
+// server-side, so the raw token is never persisted. The session id prefix lets
+// us look up the family in one indexed query before the constant-time compare.
+export function generateRefreshToken(sessionId: number): { token: string; secretHash: string } {
+  const secret = randomToken(48);
+  return { token: `${sessionId}.${secret}`, secretHash: sha256(secret) };
+}
+
+export function parseRefreshToken(token: string): { sessionId: number; secret: string } | null {
+  const idx = token.indexOf(".");
+  if (idx <= 0) return null;
+  const sessionId = Number(token.slice(0, idx));
+  const secret = token.slice(idx + 1);
+  if (!Number.isInteger(sessionId) || sessionId <= 0 || !secret) return null;
+  return { sessionId, secret };
+}
+
+export function hashRefreshSecret(secret: string): string {
+  return sha256(secret);
+}

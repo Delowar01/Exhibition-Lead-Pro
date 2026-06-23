@@ -99,6 +99,13 @@ export default function LoginScreen() {
       const res = await loginMutation.mutateAsync({
         data: { email: emailValue, password: passwordValue },
       });
+      if (!res.token || !res.user) {
+        setError(t("auth.mfaWebOnly"));
+        if (Platform.OS !== "web") {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+        return;
+      }
       await persistRemember(emailValue);
       await login(res.token, res.user);
     } catch (err) {

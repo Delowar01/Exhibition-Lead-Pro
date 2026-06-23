@@ -1,6 +1,15 @@
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
+  /** Internal: set on the single automatic retry after a 401 refresh. */
+  __isRetry?: boolean;
 };
+
+/**
+ * Handler invoked when a request returns 401. Should attempt to obtain a fresh
+ * access token (e.g. by calling the refresh endpoint). Returns the new token on
+ * success, or null when the session can no longer be refreshed.
+ */
+export type UnauthorizedHandler = () => Promise<string | null>;
 
 export type ErrorType<T = unknown> = ApiError<T>;
 
@@ -17,6 +26,9 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _onUnauthorized: UnauthorizedHandler | null = null;
+// Shared in-flight refresh promise so concurrent 401s trigger only one refresh.
+let _refreshInFlight: Promise<string | null> | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -50,6 +62,26 @@ export function getBaseUrl(): string | null {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register a handler that is invoked when a request returns 401. When set, a
+ * 401 triggers a single refresh attempt (deduplicated across concurrent
+ * requests); if the handler returns a new token the original request is retried
+ * once. Pass `null` to clear the handler.
+ */
+export function setOnUnauthorized(handler: UnauthorizedHandler | null): void {
+  _onUnauthorized = handler;
+}
+
+// Endpoints that must never trigger the refresh-on-401 retry, otherwise a failed
+// login or a refresh that itself 401s would recurse.
+function isAuthFlowEndpoint(url: string): boolean {
+  return (
+    url.includes("/auth/login") ||
+    url.includes("/auth/refresh") ||
+    url.includes("/auth/mfa/verify-login")
+  );
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -334,8 +366,9 @@ export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
 ): Promise<T> {
+  const originalInput = input;
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, ...init } = options;
+  const { responseType = "auto", headers: headersInit, __isRetry, ...init } = options;
 
   const method = resolveMethod(input, init.method);
 
@@ -371,6 +404,26 @@ export async function customFetch<T = unknown>(
   const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
+    // Attempt a one-shot token refresh on 401, then retry the original request.
+    if (
+      response.status === 401 &&
+      _onUnauthorized &&
+      !__isRetry &&
+      !isAuthFlowEndpoint(requestInfo.url)
+    ) {
+      if (!_refreshInFlight) {
+        _refreshInFlight = Promise.resolve()
+          .then(() => _onUnauthorized!())
+          .finally(() => {
+            _refreshInFlight = null;
+          });
+      }
+      const newToken = await _refreshInFlight;
+      if (newToken) {
+        return customFetch<T>(originalInput, { ...options, __isRetry: true });
+      }
+    }
+
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }

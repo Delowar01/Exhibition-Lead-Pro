@@ -22,12 +22,16 @@
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "google-auth-library": "^10.7.0",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
+    "otplib": "^13.4.1",
     "pino": "^9.14.0",
     "pino-http": "^10.5.0",
-    "sharp": "^0.35.2"
+    "qrcode": "^1.5.4",
+    "sharp": "^0.35.2",
+    "ua-parser-js": "^2.0.10"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
@@ -36,6 +40,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "catalog:",
+    "@types/qrcode": "^1.5.6",
     "esbuild": "0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13.1.3",

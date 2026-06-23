@@ -2,7 +2,7 @@ import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { setAuthTokenGetter, setOnUnauthorized } from "@workspace/api-client-react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 // Pages
@@ -30,6 +30,7 @@ import AdminReports from "@/pages/admin/Reports";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
 import AdminScan from "@/pages/admin/Scan";
+import AdminSessions from "@/pages/admin/Sessions";
 import PublicCard from "@/pages/PublicCard";
 
 import { PlatformLayout } from "@/components/layouts/PlatformLayout";
@@ -76,8 +77,40 @@ function ProtectedRoute({ component: Component, role, layout: Layout }: any) {
 }
 
 function Router() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
+
+  // Register the refresh-on-401 handler: rotate the refresh token, update
+  // stored credentials, and return the new access token. On failure, clear
+  // auth so the user is redirected to login.
+  useEffect(() => {
+    setOnUnauthorized(async () => {
+      const refreshToken = localStorage.getItem("csp_refresh_token");
+      if (!refreshToken) {
+        logout();
+        return null;
+      }
+      try {
+        const res = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (!res.ok) throw new Error("refresh failed");
+        const data = await res.json();
+        localStorage.setItem("csp_token", data.token);
+        if (data.refreshToken) {
+          localStorage.setItem("csp_refresh_token", data.refreshToken);
+        }
+        return data.token as string;
+      } catch {
+        logout();
+        return null;
+      }
+    });
+    return () => setOnUnauthorized(null);
+  }, [logout]);
 
   useEffect(() => {
     if (window.location.pathname === "/") {
@@ -160,6 +193,9 @@ function Router() {
       </Route>
       <Route path="/admin/settings">
         {() => <ProtectedRoute component={AdminSettings} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/sessions">
+        {() => <ProtectedRoute component={AdminSessions} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/scan">
         {() => <ProtectedRoute component={AdminScan} role="admin" layout={AdminLayout} />}

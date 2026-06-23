@@ -2,7 +2,8 @@ import type { Request, Response, NextFunction } from "express";
 import { db, usersTable, companiesTable, userCompanyAccessTable, type Company } from "@workspace/db";
 import { eq, inArray, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
-import { verifyToken } from "../lib/auth.js";
+import { verifyAccessToken } from "../lib/tokens.js";
+import { validateSession } from "../lib/sessions.js";
 
 export interface AuthUser {
   id: number;
@@ -18,6 +19,9 @@ export interface AuthUser {
   companyStatus: string | null;
   readOnly: boolean;
   accessibleCompanies: number[];
+  // Server-side session id this request's token belongs to. Absent for legacy
+  // tokens minted before sessions existed (still accepted for back-compat).
+  sessionId: number | null;
 }
 
 export interface AuthRequest extends Request {
@@ -76,10 +80,24 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const payload = verifyToken(authHeader.slice(7));
+    const payload = verifyAccessToken(authHeader.slice(7));
     if (!payload) {
       res.status(401).json({ error: "Invalid or expired token" });
       return;
+    }
+
+    // Server-side session validation: when the token carries a session id, the
+    // session must still be live (not revoked/expired) so logout and terminate
+    // take effect immediately. Legacy tokens without `sid` skip this for
+    // back-compat (e.g. existing mobile clients).
+    let sessionId: number | null = null;
+    if (typeof payload.sid === "number") {
+      const session = await validateSession(payload.sid);
+      if (!session || session.userId !== payload.id) {
+        res.status(401).json({ error: "Session expired. Please sign in again." });
+        return;
+      }
+      sessionId = session.id;
     }
 
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.id)).limit(1);
@@ -136,6 +154,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       companyStatus,
       readOnly,
       accessibleCompanies,
+      sessionId,
     };
     next();
   } catch (err) {

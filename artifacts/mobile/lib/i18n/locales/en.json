@@ -91,6 +91,7 @@
     "useBiometric": "Use biometrics",
     "signInWith": "Sign in with {{method}}",
     "invalidCredentials": "Incorrect email or password.",
+    "mfaWebOnly": "This account has two-factor authentication enabled. Please sign in from the web portal.",
     "signInFailed": "Couldn't sign you in. Please try again.",
     "logout": "Log out",
     "logoutConfirm": "Are you sure you want to log out?",

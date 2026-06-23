@@ -4,7 +4,7 @@ import { User } from "@workspace/api-client-react";
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (user: User, token: string) => void;
+  login: (user: User, token: string, refreshToken?: string | null) => void;
   logout: () => void;
   isLoading: boolean;
 }
@@ -32,11 +32,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = (newUser: User, newToken: string) => {
+  const login = (newUser: User, newToken: string, refreshToken?: string | null) => {
     setUser(newUser);
     setToken(newToken);
     localStorage.setItem("csp_token", newToken);
     localStorage.setItem("csp_user", JSON.stringify(newUser));
+    if (refreshToken) {
+      localStorage.setItem("csp_refresh_token", refreshToken);
+    } else {
+      localStorage.removeItem("csp_refresh_token");
+    }
     if (newUser.companyId) {
       localStorage.setItem("csp_company_id", newUser.companyId.toString());
     }
@@ -46,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setToken(null);
     localStorage.removeItem("csp_token");
+    localStorage.removeItem("csp_refresh_token");
     localStorage.removeItem("csp_user");
     localStorage.removeItem("csp_company_id");
   };

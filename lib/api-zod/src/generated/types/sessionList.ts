@@ -5,9 +5,8 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { SessionInfo } from './sessionInfo';
 
-export interface LoginInput {
-  email: string;
-  password: string;
-  rememberMe?: boolean;
+export interface SessionList {
+  sessions: SessionInfo[];
 }

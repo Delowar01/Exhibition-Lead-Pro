@@ -1,11 +1,13 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { config } from "./config.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
+import { authRateLimiter, loginRateLimiter } from "./middlewares/rateLimit.js";
 
 const app: Express = express();
 
@@ -42,8 +44,15 @@ app.use(
   }),
 );
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json({ limit: config.http.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
+
+// Rate limiting on the auth surface. The stricter login limiter is mounted on the
+// credential-checking endpoints; a broader limiter covers the rest of /api/auth.
+app.use("/api/auth/login", loginRateLimiter);
+app.use("/api/auth/mfa/verify-login", loginRateLimiter);
+app.use("/api/auth", authRateLimiter);
 
 app.use("/api", router);
 

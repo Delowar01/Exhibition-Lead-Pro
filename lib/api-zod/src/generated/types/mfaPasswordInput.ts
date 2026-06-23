@@ -6,8 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LoginInput {
-  email: string;
+export interface MfaPasswordInput {
   password: string;
-  rememberMe?: boolean;
 }

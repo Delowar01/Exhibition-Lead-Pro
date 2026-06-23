@@ -6,8 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LoginInput {
-  email: string;
-  password: string;
-  rememberMe?: boolean;
+export interface MfaBackupCodesResponse {
+  success: boolean;
+  backupCodes: string[];
 }

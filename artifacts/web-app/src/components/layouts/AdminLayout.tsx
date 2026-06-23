@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck } from "lucide-react";
+import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
 
@@ -27,6 +27,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { name: "Team", href: "/admin/team", icon: Users },
     { name: "Reports", href: "/admin/reports", icon: BarChart2 },
     { name: "Subscription", href: "/admin/subscription", icon: CreditCard },
+    { name: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
     { name: "Settings", href: "/admin/settings", icon: Settings },
   ];
 

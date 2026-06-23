@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,6 +17,9 @@ export const companiesTable = pgTable("companies", {
   suspendedReason: text("suspended_reason"),
   trialEndsAt: timestamp("trial_ends_at"),
   scansUsed: integer("scans_used").notNull().default(0),
+  // Security policy: when true, every member must have MFA enabled; login forces
+  // enrollment. The broader Security Center UI lands in a later phase.
+  mfaRequired: boolean("mfa_required").notNull().default(false),
   createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

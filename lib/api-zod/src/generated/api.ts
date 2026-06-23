@@ -33,11 +33,13 @@ export const ReadinessCheckResponse = zod.object({
  */
 export const LoginBody = zod.object({
   "email": zod.string().email(),
-  "password": zod.string()
+  "password": zod.string(),
+  "rememberMe": zod.boolean().optional()
 })
 
 export const LoginResponse = zod.object({
-  "token": zod.string(),
+  "token": zod.string().optional(),
+  "refreshToken": zod.string().optional(),
   "user": zod.object({
   "id": zod.number(),
   "email": zod.string(),
@@ -51,11 +53,15 @@ export const LoginResponse = zod.object({
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
-})
-})
+}).optional(),
+  "mfaRequired": zod.boolean().optional(),
+  "mfaEnrollmentRequired": zod.boolean().optional(),
+  "mfaToken": zod.string().optional()
+}).describe('Successful login\/register. On a password-only success, `token`, `refreshToken`, and `user` are present. When a second factor is required, only `mfaRequired` (true) and `mfaToken` are returned and the client must call \/auth\/mfa\/verify-login. When the user\'s company mandates MFA but the user has not enrolled, `mfaEnrollmentRequired` (true) and `mfaToken` are returned with NO operational token; the client must complete MFA enrollment before access is granted.')
 
 
 /**
@@ -87,6 +93,7 @@ export const GetMeResponse = zod.object({
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
@@ -117,6 +124,157 @@ export const ChangePasswordBody = zod.object({
 export const ChangePasswordResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Rotate the refresh token and issue a new access token
+ */
+export const RefreshTokenBody = zod.object({
+  "refreshToken": zod.string().optional()
+})
+
+export const RefreshTokenResponse = zod.object({
+  "token": zod.string(),
+  "refreshToken": zod.string()
+})
+
+
+/**
+ * @summary List the caller's active sessions
+ */
+export const ListSessionsResponse = zod.object({
+  "sessions": zod.array(zod.object({
+  "id": zod.number(),
+  "current": zod.boolean(),
+  "ipAddress": zod.string().nullish(),
+  "userAgent": zod.string().nullish(),
+  "browser": zod.string().nullish(),
+  "os": zod.string().nullish(),
+  "deviceType": zod.string().nullish(),
+  "lastUsedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Revoke all sessions except the current one
+ */
+export const TerminateOtherSessionsResponse = zod.object({
+  "success": zod.boolean(),
+  "terminated": zod.number()
+})
+
+
+/**
+ * @summary Revoke a single session by id
+ */
+export const TerminateSessionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const TerminateSessionResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Complete login with a second factor (TOTP or backup code)
+ */
+export const MfaVerifyLoginBody = zod.object({
+  "mfaToken": zod.string(),
+  "code": zod.string(),
+  "rememberMe": zod.boolean().optional(),
+  "rememberDevice": zod.boolean().optional()
+})
+
+export const MfaVerifyLoginResponse = zod.object({
+  "token": zod.string().optional(),
+  "refreshToken": zod.string().optional(),
+  "user": zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
+  "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}).optional(),
+  "mfaRequired": zod.boolean().optional(),
+  "mfaEnrollmentRequired": zod.boolean().optional(),
+  "mfaToken": zod.string().optional()
+}).describe('Successful login\/register. On a password-only success, `token`, `refreshToken`, and `user` are present. When a second factor is required, only `mfaRequired` (true) and `mfaToken` are returned and the client must call \/auth\/mfa\/verify-login. When the user\'s company mandates MFA but the user has not enrolled, `mfaEnrollmentRequired` (true) and `mfaToken` are returned with NO operational token; the client must complete MFA enrollment before access is granted.')
+
+
+/**
+ * @summary Get the caller's MFA status
+ */
+export const GetMfaStatusResponse = zod.object({
+  "enabled": zod.boolean(),
+  "enrolledAt": zod.coerce.date().nullish(),
+  "companyRequired": zod.boolean(),
+  "backupCodesRemaining": zod.number()
+})
+
+
+/**
+ * @summary Begin MFA enrollment (generate secret + QR)
+ */
+export const MfaSetupResponse = zod.object({
+  "secret": zod.string(),
+  "otpauthUrl": zod.string(),
+  "qrDataUrl": zod.string()
+})
+
+
+/**
+ * @summary Confirm a TOTP code, enable MFA, and issue backup codes
+ */
+export const MfaEnableBody = zod.object({
+  "code": zod.string()
+})
+
+export const MfaEnableResponse = zod.object({
+  "success": zod.boolean(),
+  "backupCodes": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Disable MFA (requires the account password)
+ */
+export const MfaDisableBody = zod.object({
+  "password": zod.string()
+})
+
+export const MfaDisableResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Regenerate the backup-code set (requires the account password)
+ */
+export const RegenerateBackupCodesBody = zod.object({
+  "password": zod.string()
+})
+
+export const RegenerateBackupCodesResponse = zod.object({
+  "success": zod.boolean(),
+  "backupCodes": zod.array(zod.string())
 })
 
 
@@ -391,6 +549,7 @@ export const ListUsersResponse = zod.object({
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
@@ -438,6 +597,7 @@ export const UpdateOwnProfileResponse = zod.object({
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
@@ -464,6 +624,7 @@ export const GetUserResponse = zod.object({
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
@@ -500,6 +661,7 @@ export const UpdateUserResponse = zod.object({
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
   "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
