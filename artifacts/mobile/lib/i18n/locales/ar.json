@@ -433,7 +433,8 @@
     "selectStage": "اختر المرحلة",
     "savingLabel": "جاري الحفظ…",
     "wonBadge": "مكسوب",
-    "lostBadge": "خاسر"
+    "lostBadge": "خاسر",
+    "fromContact": "من جهة الاتصال"
   },
   "followups": {
     "title": "المتابعات",

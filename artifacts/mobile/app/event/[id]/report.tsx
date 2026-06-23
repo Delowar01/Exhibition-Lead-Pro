@@ -40,6 +40,9 @@ import {
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
+import { useSettings } from "@/contexts/SettingsContext";
+import { getCountry } from "@/lib/countries";
+import { formatCurrencyFull } from "@/lib/currency";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -155,11 +158,6 @@ function dateFromPreset(preset: DatePreset): string | undefined {
   return localDateStr(d);
 }
 
-function formatMoney(value: number): string {
-  return `$${Math.round(value)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-}
 
 function shortDay(s: string): string {
   const [y, m, d] = s.split("-").map(Number);
@@ -283,6 +281,8 @@ function countActive(f: ReportFilters): number {
 export default function EventReportScreen() {
   const colors = useColors();
   const { t } = useLocale();
+  const { country } = useSettings();
+  const currencyCode = getCountry(country).currencyCode;
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -480,7 +480,7 @@ export default function EventReportScreen() {
               <Feather name="dollar-sign" size={16} color="#FFFFFF" />
             </View>
             <View>
-              <Text style={styles.pipelineValue}>{formatMoney(report?.pipelineValue ?? 0)}</Text>
+              <Text style={styles.pipelineValue}>{formatCurrencyFull(report?.pipelineValue ?? 0, currencyCode)}</Text>
               <Text style={styles.pipelineLabel}>{t("eventReport.pipelineValue")}</Text>
             </View>
           </View>

@@ -433,7 +433,8 @@
     "selectStage": "Select stage",
     "savingLabel": "Saving…",
     "wonBadge": "Won",
-    "lostBadge": "Lost"
+    "lostBadge": "Lost",
+    "fromContact": "From contact"
   },
   "followups": {
     "title": "Follow-Ups",

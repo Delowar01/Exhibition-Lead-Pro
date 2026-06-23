@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  getGetContactQueryKey,
   getGetLeadQueryKey,
   getListContactsQueryKey,
   getListEventsQueryKey,
@@ -24,6 +25,7 @@ import {
   LeadInputStage,
   LeadUpdateStage,
   useCreateLead,
+  useGetContact,
   useGetLead,
   useListContacts,
   useListEvents,
@@ -127,6 +129,9 @@ export default function PipelineFormScreen() {
   const isEdit = editId != null;
 
   const existingLead = useGetLead(editId ?? 0, { query: { enabled: isEdit, queryKey: getGetLeadQueryKey(editId ?? 0) } });
+  const prefillContact = useGetContact(prefillContactId ?? 0, {
+    query: { enabled: prefillContactId != null, queryKey: getGetContactQueryKey(prefillContactId ?? 0) },
+  });
   const createLead = useCreateLead();
   const updateLead = useUpdateLead();
 
@@ -165,6 +170,22 @@ export default function PipelineFormScreen() {
     setAssignedToId(lead.assignedToId ?? null);
     setEventId(lead.eventId ?? null);
   }, [lead]);
+
+  // Auto-fill fields from the pre-selected contact when creating from contact detail.
+  const prefillContactData = prefillContact.data;
+  useEffect(() => {
+    if (!prefillContactData || isEdit) return;
+    const name =
+      prefillContactData.fullName ??
+      [prefillContactData.firstName, prefillContactData.lastName].filter(Boolean).join(" ");
+    if (name.trim()) setTitle(t => (t.trim() ? t : name.trim()));
+    if (prefillContactData.contactCompany)
+      setCompanyName(c => (c.trim() ? c : (prefillContactData.contactCompany ?? "")));
+    if (prefillContactData.eventId != null)
+      setEventId(e => (e != null ? e : (prefillContactData.eventId ?? null)));
+    if (prefillContactData.assignedToId != null)
+      setAssignedToId(a => (a != null ? a : (prefillContactData.assignedToId ?? null)));
+  }, [prefillContactData, isEdit]);
 
   const contactItems = (contactsQuery.data?.contacts ?? []).map(c => ({
     id: c.id,
@@ -358,16 +379,48 @@ export default function PipelineFormScreen() {
           {/* Contact */}
           <View>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>{t("pipeline.contact").toUpperCase()}</Text>
-            <Pressable
-              onPress={() => { if (!contactsQuery.isFetched) contactsQuery.refetch(); setPicker("contact"); }}
-              style={[styles.pickerBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              <Feather name="user" size={16} color={colors.mutedForeground} />
-              <Text style={[styles.pickerBtnText, { color: selectedContact ? colors.foreground : colors.mutedForeground, flex: 1 }]}>
-                {selectedContact?.label ?? t("pipeline.noContact")}
-              </Text>
-              <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
-            </Pressable>
+            {prefillContactId != null ? (
+              /* Locked contact card — auto-filled from the contact this was opened from */
+              <View style={[styles.contactCard, { backgroundColor: colors.card, borderColor: colors.primary + "55" }]}>
+                <Feather name="user" size={16} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contactCardName, { color: colors.foreground }]} numberOfLines={1}>
+                    {prefillContactData
+                      ? ((prefillContactData.fullName ??
+                          [prefillContactData.firstName, prefillContactData.lastName].filter(Boolean).join(" ")) ||
+                          t("pipeline.noContact"))
+                      : "…"}
+                  </Text>
+                  {prefillContactData?.jobTitle ? (
+                    <Text style={[styles.contactCardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {prefillContactData.jobTitle}
+                    </Text>
+                  ) : null}
+                  {prefillContactData?.email ? (
+                    <Text style={[styles.contactCardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {prefillContactData.email}
+                    </Text>
+                  ) : null}
+                  {prefillContactData?.mobile ? (
+                    <Text style={[styles.contactCardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {prefillContactData.mobile}
+                    </Text>
+                  ) : null}
+                </View>
+                <Feather name="lock" size={14} color={colors.mutedForeground} />
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => { if (!contactsQuery.isFetched) contactsQuery.refetch(); setPicker("contact"); }}
+                style={[styles.pickerBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <Feather name="user" size={16} color={colors.mutedForeground} />
+                <Text style={[styles.pickerBtnText, { color: selectedContact ? colors.foreground : colors.mutedForeground, flex: 1 }]}>
+                  {selectedContact?.label ?? t("pipeline.noContact")}
+                </Text>
+                <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
+              </Pressable>
+            )}
           </View>
 
           {/* Assigned To */}
@@ -568,6 +621,24 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
   },
   pickerItemSub: {
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    marginTop: 2,
+  },
+  contactCard: {
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  contactCardName: {
+    fontSize: 15,
+    fontFamily: FONT.semibold,
+  },
+  contactCardSub: {
     fontSize: 13,
     fontFamily: FONT.regular,
     marginTop: 2,
