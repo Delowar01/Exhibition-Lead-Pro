@@ -101,3 +101,9 @@ id = "AZVUt2B7fRZKngqOgKisL"
 uri = "file://attached_assets/ocr_test/sig_applemail.png"
 type = "image"
 title = "OCR input — Apple Mail signature (→ James Carter, 98% confidence, lead score 85)"
+
+[[outputs]]
+id = "XoolCSC72JAQuI5vZE2MR"
+uri = "file://QA_REPORT.md"
+type = "text"
+title = "Full Regression QA Report (Pre-APK Release Candidate)"

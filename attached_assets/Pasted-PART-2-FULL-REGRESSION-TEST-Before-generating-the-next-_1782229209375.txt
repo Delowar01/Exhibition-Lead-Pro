@@ -1,0 +1,262 @@
+PART 2 – FULL REGRESSION TEST
+
+Before generating the next APK, perform a complete regression test covering all changes implemented since my last APK build.
+
+1. LEAD CAPTURE
+
+Verify:
+
+Business Card
+OCR extraction
+Contact creation
+Duplicate detection
+AI scoring
+Captured Image Preview
+Download Captured Image
+Email Signature
+OCR extraction
+Contact creation
+AI scoring
+Captured Image Preview
+Download Captured Image
+QR Code / LinkedIn
+
+Verify:
+
+The QR Code I previously provided
+vCard
+MECARD
+Standard Contact QR
+Business Contact QR
+LinkedIn QR
+Website QR
+
+Confirm:
+
+Correct contact extraction
+Correct field mapping
+Automatic contact creation
+NFC
+
+Verify:
+
+Supported NFC tags
+Unsupported tags
+Error handling
+Manual Entry
+
+Verify:
+
+Validation
+Contact creation
+Saving
+2. CONTACT DETAILS
+
+Verify:
+
+Edit Contact
+Delete Contact
+Save to Phone Contacts
+Share Contact (.VCF)
+Captured Image Preview
+Download Captured Image
+Lead Status
+
+Verify:
+
+Immediate UI update
+Background synchronization
+Status History
+Lead Pipeline
+
+Verify:
+
+Immediate UI update
+Background synchronization
+Pipeline Creation
+Workspace
+
+Manual creation.
+
+From Contact
+
+Automatically populate:
+
+Contact
+Name
+Company
+Designation
+Email
+Mobile
+Event
+Assigned User
+3. COMMUNICATION
+
+Verify:
+
+WhatsApp
+Native application chooser
+WhatsApp
+WhatsApp Business
+Email
+
+Verify:
+
+Native application chooser
+Gmail
+Outlook
+Samsung Email
+Apple Mail
+Call
+
+Verify:
+
+Opens default phone dialer directly.
+No application chooser.
+4. PIPELINE
+
+Verify:
+
+Add
+Edit
+History
+Dashboard navigation
+Dashboard filters
+Pipeline widgets
+Currency localization
+5. DASHBOARD
+
+Verify:
+
+KPI widgets
+Compact layout
+Correct navigation
+Correct filtering
+Last Event Card
+Last Event Report
+Top Performer
+Leads by Day
+6. DUPLICATES
+
+Verify:
+
+Preview
+Make Original
+Multi-selection
+Delete Selected
+Single Delete
+7. NOTIFICATIONS
+
+Verify:
+
+Follow-Up
+ON / OFF
+Meetings
+ON / OFF
+15-minute reminder
+Notification tap behavior
+8. BIOMETRIC APP LOCK
+
+Verify:
+
+Android
+Fingerprint
+Face Unlock
+App PIN
+Screen Off Lock
+Device Lock
+Background Timeout
+Change PIN
+Remove PIN
+iPhone
+Face ID
+Touch ID
+App PIN
+Screen Off Lock
+Device Lock
+Background Timeout
+Change PIN
+Remove PIN
+9. PERFORMANCE
+
+Using the Developer Performance Dashboard, verify:
+
+Camera Capture Time
+Image Processing Time
+Upload Time
+OCR Time
+Contact Creation Time
+Total End-to-End Time
+
+Target:
+
+Approximately 3–4 seconds under normal network conditions.
+10. UI / UX
+
+Verify:
+
+No overlapping UI
+Responsive layouts
+Smooth scrolling
+Native-feeling navigation
+No unnecessary loading delays
+No visible lag
+11. REGRESSION TEST
+
+Confirm previously fixed features continue to work:
+
+Duplicate Detection
+Status History
+Lead Score
+Lead Temperature
+GPS Location
+Meetings
+Follow-Ups
+Team Assignment
+Contact Sharing
+Save to Contacts
+Digital Business Card
+Workspace features
+
+Ensure that no previously working functionality has been broken.
+
+QA REPORT (MANDATORY)
+
+Before generating the next APK, provide:
+
+1. Test Summary
+Total Test Cases
+Passed
+Failed
+Blocked
+2. Performance Summary
+
+Include timing results from the Developer Performance Dashboard.
+
+3. Known Issues
+
+List any remaining known issues.
+
+Do not omit known issues.
+
+4. Files Modified
+
+Provide a complete list of modified files.
+
+5. Verification Status
+
+Clearly identify what has been verified by:
+
+Automated Testing
+Code Review
+Native Android Testing
+Native iPhone Testing
+IMPORTANT
+
+Do not generate the next native Android APK until:
+
+All App Lock enhancements are completed.
+All regression tests have passed.
+The QA report has been prepared.
+
+The goal is to deliver the next APK as a stable release candidate, ready for comprehensive real-device validation rather than another iterative debugging build.
