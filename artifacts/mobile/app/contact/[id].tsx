@@ -1,5 +1,6 @@
 import { Feather } from "@/components/icons";
 import * as Contacts from "expo-contacts";
+import * as IntentLauncher from "expo-intent-launcher";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import * as MediaLibrary from "expo-media-library";
@@ -254,8 +255,24 @@ export default function ContactDetailScreen() {
     });
   }
 
-  function handleCall() {
-    if (contact?.mobile) openUrl(`tel:${contact.mobile}`);
+  async function handleCall() {
+    if (!contact?.mobile) return;
+    if (Platform.OS === "android") {
+      // ACTION_DIAL routes the intent directly to the system phone dialer.
+      // Linking.openURL('tel:...') fires ACTION_VIEW which VoIP and calling
+      // apps also register for — that triggers the Android app chooser.
+      // ACTION_DIAL is exclusively handled by the telephony stack (default
+      // phone dialer), so no chooser appears.
+      try {
+        await IntentLauncher.startActivityAsync("android.intent.action.DIAL", {
+          data: `tel:${contact.mobile}`,
+        });
+      } catch {
+        openUrl(`tel:${contact.mobile}`);
+      }
+    } else {
+      openUrl(`tel:${contact.mobile}`);
+    }
   }
 
   function handleWhatsApp() {
@@ -277,11 +294,33 @@ export default function ContactDetailScreen() {
     }
   }
 
-  function handleEmail() {
-    // mailto: already triggers the native chooser on Android when multiple mail
-    // apps are present, and opens the default app directly when only one exists.
-    // On iOS it opens the default mail app (no chooser — correct per platform norms).
-    if (contact?.email) openUrl(`mailto:${contact.email}`);
+  async function handleEmail() {
+    if (!contact?.email) return;
+    if (Platform.OS === "android") {
+      // ACTION_SEND with MIME type message/rfc822 shows Android's app picker
+      // filtered to email clients (Gmail, Outlook, Samsung Email, etc.).
+      // Unlike ACTION_SENDTO / mailto:, ACTION_SEND has no "default app"
+      // concept, so the picker always appears when multiple email apps are
+      // installed and opens directly when only one is found.
+      // On iOS, mailto: is correct — the system always opens the default mail
+      // app and iOS has no concept of an email chooser.
+      try {
+        await IntentLauncher.startActivityAsync(
+          "android.intent.action.SEND",
+          {
+            type: "message/rfc822",
+            extra: {
+              "android.intent.extra.EMAIL": contact.email,
+            },
+          },
+        );
+      } catch {
+        // No email app installed — fall back to the same alert as other actions.
+        Alert.alert(t("contacts.unavailableTitle"), t("contacts.unavailableBody"));
+      }
+    } else {
+      openUrl(`mailto:${contact.email}`);
+    }
   }
 
   async function handleDownloadImage() {

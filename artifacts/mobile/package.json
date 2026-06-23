@@ -73,6 +73,7 @@
     "expo-device": "~8.0.10",
     "expo-file-system": "~19.0.23",
     "expo-image-manipulator": "~14.0.8",
+    "expo-intent-launcher": "^56.0.4",
     "expo-local-authentication": "~17.0.8",
     "expo-media-library": "~18.2.1",
     "expo-network": "~8.0.8",

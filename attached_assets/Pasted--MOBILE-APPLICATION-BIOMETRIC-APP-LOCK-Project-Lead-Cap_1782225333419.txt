@@ -1,0 +1,199 @@
+# MOBILE APPLICATION – BIOMETRIC APP LOCK
+
+## Project
+
+Lead Capture Pro
+
+## Scope
+
+**MOBILE APPLICATION ONLY**
+
+This task is to make the existing **Biometric Unlock** setting fully functional.
+
+No redesign of the Settings page is required.
+
+---
+
+# CURRENT ISSUE
+
+The application already contains a **Biometric Unlock** option under **Settings**.
+
+However, the toggle is currently non-functional.
+
+Turning it ON or OFF has no effect.
+
+---
+
+# OBJECTIVE
+
+Implement a secure App Lock using the device's native biometric authentication.
+
+Supported authentication methods include:
+
+* Fingerprint
+* Face ID
+* Face Unlock
+* Iris Scan (where supported)
+
+The application should use the device's native biometric APIs.
+
+---
+
+# ENABLE BIOMETRIC
+
+When the user enables **Biometric Unlock** for the first time:
+
+1. Verify that biometric authentication is available on the device.
+2. Verify that at least one biometric credential is enrolled.
+3. Request biometric authentication.
+4. If authentication succeeds:
+
+   * Enable Biometric Unlock.
+5. If authentication fails or is cancelled:
+
+   * Keep the setting OFF.
+
+Do not enable the feature without successful authentication.
+
+---
+
+# APP LOCK BEHAVIOR
+
+When Biometric Unlock is enabled:
+
+Require authentication when:
+
+* The application is launched.
+* The application returns from the background after a configurable timeout (default: 30 seconds).
+* The application has been locked by the operating system.
+
+Do **not** require authentication every time the user changes screens inside the application.
+
+---
+
+# AUTHENTICATION FLOW
+
+When authentication is required:
+
+Display the device's native biometric prompt.
+
+Examples:
+
+Android:
+
+* Fingerprint
+* Face Unlock
+
+iPhone:
+
+* Face ID
+* Touch ID
+
+If authentication succeeds:
+
+* Unlock the application immediately.
+
+If authentication fails:
+
+Allow retries.
+
+If the user cancels:
+
+Keep the application locked.
+
+---
+
+# FALLBACK
+
+If biometric authentication is unavailable:
+
+Examples:
+
+* Device has no biometric hardware.
+* No fingerprint enrolled.
+* Face ID not configured.
+
+Display an informative message explaining why Biometric Unlock cannot be enabled.
+
+Do not silently fail.
+
+---
+
+# OPTIONAL PIN FALLBACK (FUTURE READY)
+
+Design the authentication architecture so a future App PIN can be added without redesign.
+
+Future flow:
+
+* Face ID / Fingerprint
+* If unavailable:
+
+  * 6-digit App PIN
+
+This does not need to be implemented now, but the architecture should support it.
+
+---
+
+# SETTINGS
+
+Keep the existing toggle:
+
+**Biometric Unlock**
+
+ON / OFF
+
+When the user disables the setting:
+
+Stop requiring biometric authentication immediately.
+
+---
+
+# SECURITY
+
+Biometric data must never be stored by the application.
+
+Use only the operating system's secure biometric APIs.
+
+Do not bypass authentication through cached values.
+
+---
+
+# PLATFORM SUPPORT
+
+Android
+
+Support:
+
+* Fingerprint
+* Face Unlock
+* Other supported Android biometric methods
+
+iPhone
+
+Support:
+
+* Face ID
+* Touch ID
+
+---
+
+# ACCEPTANCE CRITERIA
+
+* Existing Biometric Unlock toggle is fully functional.
+* Users must authenticate before the feature is enabled.
+* App requests biometric authentication on launch and when returning from the background after the timeout.
+* Native biometric prompt is used.
+* Proper error handling for unsupported devices.
+* Setting persists after app restart.
+* Fully functional on Android and iPhone.
+* No regressions introduced.
+
+---
+
+# IMPORTANT
+
+Implement this as a secure **App Lock** feature using native biometric authentication.
+
+Do not implement a custom biometric solution.
+
+Use the operating system's official biometric APIs to ensure security, reliability, and compatibility with future OS updates.
