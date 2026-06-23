@@ -505,6 +505,27 @@ describe("attached QR regression (Elite Marcom vCard)", () => {
 });
 
 describe("parseQrBest (Android ML Kit raw vs lossy data)", () => {
+  // Reproduces the EXACT shape of the native event delivered by expo-camera's
+  // live scanner (BarcodeAnalyzer.kt) on Android for a TYPE_CONTACT_INFO QR:
+  //   result.data = barcode.displayValue  → ML Kit's lossy human-readable string
+  //   result.raw  = barcode.rawValue      → the complete vCard payload
+  // This is the production scan path; it must yield ALL nine required fields.
+  const ML_KIT_DISPLAY_VALUE =
+    "ASLAM SIDHIC\nSales Executive\nElite Marcom\n+966 5 332 97567\naslam@elitemarcom.com";
+
+  it("extracts every required field from the live Android scan event", () => {
+    const out = parseQrBest(ELITE_MARCOM_VCARD, ML_KIT_DISPLAY_VALUE);
+    expect(out.firstName).toBe("ASLAM");
+    expect(out.lastName).toBe("SIDHIC");
+    expect(out.company).toBe("Elite Marcom");
+    expect(out.jobTitle).toBe("Sales Executive");
+    expect(out.mobile).toBe("+966 5 332 97567");
+    expect(out.email).toBe("aslam@elitemarcom.com");
+    expect(out.website).toBe("https://www.elitemarcom.com");
+    expect(out.address).toBe("Al Khubra, Al Aziziyah Dist., Riyadh, 14514");
+    expect(out.country).toBe("Saudi Arabia");
+  });
+
   it("uses the raw vCard when ML Kit's `data` is a lossy display value", () => {
     // Simulates the Android scan: raw = full vCard, data = ML Kit's stripped
     // display string (name only). The full contact must still be extracted.
