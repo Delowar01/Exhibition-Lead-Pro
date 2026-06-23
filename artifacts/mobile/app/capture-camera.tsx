@@ -76,6 +76,35 @@ function contactDisplayName(data: ExtractedCardData, fallback: string): string {
   return [data.firstName, data.lastName].filter(Boolean).join(" ") || data.company || fallback;
 }
 
+// We do NOT need a 12MP+ sensor capture for OCR. ~1600px on the long edge keeps
+// business-card text crisp while drastically cutting capture time, memory, the
+// JPEG encode, and the upload. Pick the SMALLEST available capture size whose
+// long edge is still >= this target.
+const TARGET_CAPTURE_LONG_EDGE = 1600;
+
+// Choose a capture resolution from the device's available `pictureSize` list.
+// Android (and recent iOS) report "WIDTHxHEIGHT" strings; pick the smallest one
+// that still has enough detail for OCR. If nothing parses (older iOS preset
+// strings), return undefined so the camera keeps its default.
+function pickCaptureSize(sizes: string[]): string | undefined {
+  const parsed = sizes
+    .map((s) => {
+      const m = /^(\d+)\s*x\s*(\d+)$/i.exec(s.trim());
+      if (!m) return null;
+      const w = parseInt(m[1], 10);
+      const h = parseInt(m[2], 10);
+      if (!w || !h) return null;
+      return { s, longEdge: Math.max(w, h), pixels: w * h };
+    })
+    .filter((x): x is { s: string; longEdge: number; pixels: number } => x !== null)
+    .sort((a, b) => a.pixels - b.pixels);
+  if (parsed.length === 0) return undefined;
+  // Smallest size that still clears the OCR detail threshold; if none do (all
+  // smaller than target), fall back to the largest available.
+  const adequate = parsed.find((p) => p.longEdge >= TARGET_CAPTURE_LONG_EDGE);
+  return (adequate ?? parsed[parsed.length - 1]).s;
+}
+
 export default function CaptureCameraScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -102,6 +131,24 @@ export default function CaptureCameraScreen() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [batchCount, setBatchCount] = useState(0);
+  // Direct lower-res capture (set once the camera is ready). undefined = sensor
+  // default until we've queried the device's supported sizes.
+  const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
+
+  const onCameraReady = useCallback(async () => {
+    const cam = cameraRef.current;
+    if (!cam || pictureSize) return;
+    try {
+      const sizes = await cam.getAvailablePictureSizesAsync();
+      const chosen = pickCaptureSize(sizes ?? []);
+      if (chosen) {
+        setPictureSize(chosen);
+        scanLog("capture size selected", { chosen, available: sizes });
+      }
+    } catch {
+      // Keep the camera default if size enumeration isn't supported.
+    }
+  }, [pictureSize]);
 
   // #2 GPS — fetched once, non-blocking. Capture works even if this never resolves.
   const gpsRef = useRef<Gps>({ latitude: null, longitude: null, gpsAccuracy: null });
@@ -137,21 +184,24 @@ export default function CaptureCameraScreen() {
   const captureImage = useCallback(async (): Promise<string> => {
     const cam = cameraRef.current;
     if (!cam) return "card";
-    // Capture at full sensor resolution (fast — no base64 encode yet), then
-    // downscale to ~1200px before encoding. A business card / email signature is
-    // fully legible at 1200px, and shrinking the payload cuts BOTH the upload
-    // time and the server-side OCR inference time — the dominant on-device costs
-    // in scan latency. (Server OCR itself is ~3-4s; the rest is client encode +
-    // upload, which this minimizes.)
+    // The camera is configured (via `pictureSize`) to capture directly at a
+    // standard OCR resolution (~1600px long edge) instead of the sensor's full
+    // 12MP+ — so the capture, in-memory bitmap, and JPEG encode are all small.
+    // We then do a final downscale to ~1200px long edge for the upload payload.
+    // A business card / email signature is fully legible at 1200px, and the
+    // smaller payload cuts both upload time and server-side OCR inference time.
     const photo = await cam.takePictureAsync({
       quality: 0.5,
       skipProcessing: true,
     });
     if (photo?.uri) {
       try {
+        // Clamp the target to the source width so a small capture is never
+        // UPSCALED (which would inflate the payload + encode for no OCR gain).
+        const targetWidth = photo.width ? Math.min(1200, photo.width) : 1200;
         const resized = await ImageManipulator.manipulateAsync(
           photo.uri,
-          [{ resize: { width: 1200 } }],
+          [{ resize: { width: targetWidth } }],
           { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true },
         );
         if (resized.base64) return `data:image/jpeg;base64,${resized.base64}`;
@@ -237,8 +287,12 @@ export default function CaptureCameraScreen() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
+      const tStart = Date.now();
       const imageData = await captureImage();
-      scanLog("image captured", { mode, source, bytes: imageData.length });
+      const captureMs = Date.now() - tStart;
+      // base64 is ~4/3 of the raw byte size; report the actual upload payload KB.
+      const payloadKb = Math.round((imageData.length * 0.75) / 1024);
+      scanLog("image captured", { mode, source, captureMs, payloadKb, pictureSize });
       const gps = { ...gpsRef.current };
 
       // #4 Batch — capture image and start background OCR immediately so results
@@ -318,7 +372,8 @@ export default function CaptureCameraScreen() {
       }
 
       if (mode === "single") {
-        scanLog("single: OCR started", { bytes: imageData.length, language });
+        scanLog("single: OCR started", { payloadKb, language });
+        const tOcr = Date.now();
         const scan = await createScan.mutateAsync({
           data: {
             imageData,
@@ -329,7 +384,12 @@ export default function CaptureCameraScreen() {
             gpsAccuracy: gps.gpsAccuracy,
           },
         });
-        scanLog("single: OCR completed", { confidence: scan.confidence });
+        // ocrMs = upload + server OCR round-trip; totalMs = shutter press → review.
+        scanLog("single: OCR completed", {
+          confidence: scan.confidence,
+          ocrMs: Date.now() - tOcr,
+          totalMs: Date.now() - tStart,
+        });
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
@@ -437,7 +497,13 @@ export default function CaptureCameraScreen() {
 
   return (
     <View style={[styles.fill, { backgroundColor: colors.dark }]}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+      <CameraView
+        ref={cameraRef}
+        style={StyleSheet.absoluteFill}
+        facing="back"
+        pictureSize={pictureSize}
+        onCameraReady={onCameraReady}
+      />
 
       {/* Top overlay */}
       <LinearGradient

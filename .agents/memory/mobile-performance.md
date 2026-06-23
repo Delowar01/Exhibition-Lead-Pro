@@ -64,3 +64,17 @@ remove or weaken the global invalidation (it's load-bearing).
 **Also:** background row updates must re-scope the UPDATE (id + `duplicateOfId IS
 NULL`) and gate side effects (hot-lead push) on a returned row, or a deleted/merged
 contact fires a stale notification.
+
+## Set the camera's capture resolution; don't capture full-sensor then shrink
+`takePictureAsync` with no `pictureSize` captures at the sensor's FULL resolution
+(12MP+), so even with a post-capture downscale you pay full capture time, a huge
+in-memory bitmap, and a heavy JPEG decode before resizing. Configure capture
+resolution directly: on `onCameraReady`, call `getAvailablePictureSizesAsync()`,
+pick the smallest "WxH" whose long edge clears an OCR threshold (~1600px), and set
+it via the `<CameraView pictureSize>` prop.
+**Why:** business-card OCR needs ~1600px, not 12MP; capturing small is the lever
+that cuts capture time + memory + encode, not just upload.
+**How to apply:** parse sizes defensively (return undefined → keep default when
+nothing parses, e.g. older iOS presets). Keep a final ImageManipulator pass for
+the upload payload but CLAMP its target to the source width
+(`Math.min(target, photo.width)`) so a small fallback capture is never upscaled.
