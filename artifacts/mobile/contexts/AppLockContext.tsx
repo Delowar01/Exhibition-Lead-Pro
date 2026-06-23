@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 
-import { authenticateBiometric } from "@/lib/biometric";
+import { authenticateBiometric, hasPinSet, verifyPin } from "@/lib/biometric";
 import { useSettings } from "@/contexts/SettingsContext";
 
 
@@ -18,6 +18,8 @@ export const APP_LOCK_TIMEOUT_MS = 30_000;
 
 interface AppLockContextValue {
   isLocked: boolean;
+  /** Whether the user has set up a PIN fallback they can use instead of biometrics. */
+  pinFallbackAvailable: boolean;
   /** Imperatively lock the app (e.g. after enabling the feature). */
   lock: () => void;
   /** Imperatively unlock the app (e.g. after disabling the feature). */
@@ -28,18 +30,33 @@ interface AppLockContextValue {
    * changing callers — just replace the body of `triggerUnlock`.
    */
   triggerUnlock: (promptMessage: string) => Promise<boolean>;
+  /**
+   * Verify a PIN entered by the user and unlock if correct.
+   * Returns true on success, false on wrong PIN.
+   */
+  submitPin: (pin: string) => Promise<boolean>;
+  /**
+   * Re-read hasPinSet() from SecureStore and refresh `pinFallbackAvailable`.
+   * Call this after saving or clearing a PIN in Settings so the overlay
+   * shows/hides the "Use PIN instead" button without a full restart.
+   */
+  refreshPinAvailability: () => Promise<void>;
 }
 
 const AppLockContext = createContext<AppLockContextValue>({
   isLocked: false,
+  pinFallbackAvailable: false,
   lock: () => {},
   unlock: () => {},
   triggerUnlock: async () => false,
+  submitPin: async () => false,
+  refreshPinAvailability: async () => {},
 });
 
 export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const { biometricEnabled, isLoaded } = useSettings();
   const [isLocked, setIsLocked] = useState(false);
+  const [pinFallbackAvailable, setPinFallbackAvailable] = useState(false);
 
   // Track when the app moved to background so we can compute elapsed time.
   const lastBackgroundAtRef = useRef<number | null>(null);
@@ -94,6 +111,20 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.remove();
   }, []);
 
+  const refreshPinAvailability = useCallback(async () => {
+    if (Platform.OS === "web") {
+      setPinFallbackAvailable(false);
+      return;
+    }
+    const has = await hasPinSet();
+    setPinFallbackAvailable(has);
+  }, []);
+
+  // Load PIN availability on mount.
+  useEffect(() => {
+    void refreshPinAvailability();
+  }, [refreshPinAvailability]);
+
   const lock = useCallback(() => {
     setIsLocked(true);
   }, []);
@@ -105,9 +136,6 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   /**
    * Calls the biometric prompt and unlocks on success.
    * Returns true if the app was successfully unlocked, false otherwise.
-   *
-   * PIN-ready: replace the body here to add a PIN fallback without touching
-   * any caller (AppLockOverlay, future PIN screen, etc.).
    */
   const triggerUnlock = useCallback(
     async (promptMessage: string): Promise<boolean> => {
@@ -124,8 +152,29 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  /**
+   * Verify a PIN and unlock if correct.
+   */
+  const submitPin = useCallback(async (pin: string): Promise<boolean> => {
+    const ok = await verifyPin(pin);
+    if (ok) {
+      setIsLocked(false);
+    }
+    return ok;
+  }, []);
+
   return (
-    <AppLockContext.Provider value={{ isLocked, lock, unlock, triggerUnlock }}>
+    <AppLockContext.Provider
+      value={{
+        isLocked,
+        pinFallbackAvailable,
+        lock,
+        unlock,
+        triggerUnlock,
+        submitPin,
+        refreshPinAvailability,
+      }}
+    >
       {children}
     </AppLockContext.Provider>
   );

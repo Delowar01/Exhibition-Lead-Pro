@@ -1,4 +1,5 @@
 import { Feather } from "@/components/icons";
+import { PinPad } from "@/components/PinPad";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import {
@@ -20,7 +21,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 
 export function AppLockOverlay() {
-  const { isLocked, triggerUnlock } = useAppLock();
+  const { isLocked, triggerUnlock, pinFallbackAvailable, submitPin } = useAppLock();
   const { isAuthenticated } = useAuth();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -30,18 +31,35 @@ export function AppLockOverlay() {
   const [failed, setFailed] = useState(false);
   const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
 
+  // PIN mode state
+  const [pinMode, setPinMode] = useState(false);
+  const [pinResetSignal, setPinResetSignal] = useState(0);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+
   useEffect(() => {
     if (Platform.OS !== "web") {
       getBiometricLabel().then(setBioLabel).catch(() => {});
     }
   }, []);
 
-  // Fire the prompt automatically as soon as the overlay becomes visible.
+  // Fire the biometric prompt automatically as soon as the overlay becomes
+  // visible (but only in biometric mode, not PIN mode).
   useEffect(() => {
     if (!isLocked || !isAuthenticated) return;
+    if (pinMode) return;
     void attemptUnlock();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLocked, isAuthenticated]);
+
+  // Reset PIN mode when the overlay is dismissed.
+  useEffect(() => {
+    if (!isLocked) {
+      setPinMode(false);
+      setFailed(false);
+      setPinError(null);
+    }
+  }, [isLocked]);
 
   // Intercept Android hardware back button while locked — return true to
   // swallow the event so the user cannot back out of the lock screen.
@@ -57,13 +75,44 @@ export function AppLockOverlay() {
     setBusy(true);
     setFailed(false);
     try {
-      const ok = await triggerUnlock(t("appLock.promptMessage", { defaultValue: "Unlock Card Scanner Pro" }));
+      const ok = await triggerUnlock(
+        t("appLock.promptMessage", { defaultValue: "Unlock Card Scanner Pro" }),
+      );
       if (!ok) {
         setFailed(true);
       }
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handlePinComplete(pin: string) {
+    if (pinBusy) return;
+    setPinBusy(true);
+    setPinError(null);
+    try {
+      const ok = await submitPin(pin);
+      if (!ok) {
+        setPinError(t("appLock.wrongPin"));
+        setPinResetSignal((s) => s + 1);
+      }
+    } finally {
+      setPinBusy(false);
+    }
+  }
+
+  function switchToPinMode() {
+    setPinMode(true);
+    setFailed(false);
+    setPinError(null);
+  }
+
+  function switchToBioMode() {
+    setPinMode(false);
+    setFailed(false);
+    setPinError(null);
+    // Trigger bio prompt immediately on switch.
+    void attemptUnlock();
   }
 
   // Only show on native when the user is authenticated and the app is locked.
@@ -78,7 +127,11 @@ export function AppLockOverlay() {
       style={[
         StyleSheet.absoluteFill,
         styles.container,
-        { backgroundColor: colors.dark, paddingTop: insets.top + 40, paddingBottom: insets.bottom + 32 },
+        {
+          backgroundColor: colors.dark,
+          paddingTop: insets.top + 40,
+          paddingBottom: insets.bottom + 32,
+        },
       ]}
     >
       <View style={styles.inner} pointerEvents="box-none">
@@ -91,38 +144,79 @@ export function AppLockOverlay() {
         </View>
 
         <Text style={styles.appName}>Card Scanner Pro</Text>
-        <Text style={styles.lockedLabel}>{t("appLock.locked")}</Text>
 
-        {busy ? (
-          <ActivityIndicator color={colors.primary} size="large" style={styles.spinner} />
-        ) : (
-          <Pressable
-            onPress={attemptUnlock}
-            style={({ pressed }) => [
-              styles.unlockBtn,
-              {
-                backgroundColor: colors.primary,
-                borderRadius: colors.radius + 4,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-          >
-            <Feather
-              name={bioLabel === "Face ID" ? "user" : "unlock"}
-              size={20}
-              color="#FFFFFF"
+        {/* ── PIN entry mode ── */}
+        {pinMode ? (
+          <>
+            <Text style={styles.lockedLabel}>{t("appLock.enterPin")}</Text>
+            <PinPad
+              onComplete={handlePinComplete}
+              resetSignal={pinResetSignal}
+              disabled={pinBusy}
+              subtitle={t("appLock.pinSubtitle")}
+              error={pinError ?? undefined}
             />
-            <Text style={styles.unlockText}>
-              {failed ? t("common.retry") : t("appLock.tapToUnlock")}
-            </Text>
-          </Pressable>
-        )}
+            {/* "Use biometrics" link */}
+            <Pressable
+              onPress={switchToBioMode}
+              style={({ pressed }) => [styles.altLink, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Feather name="cpu" size={14} color="rgba(255,255,255,0.55)" />
+              <Text style={styles.altLinkText}>{t("appLock.useBiometrics")}</Text>
+            </Pressable>
+          </>
+        ) : (
+          /* ── Biometric mode ── */
+          <>
+            <Text style={styles.lockedLabel}>{t("appLock.locked")}</Text>
 
-        {failed && !busy ? (
-          <Text style={[styles.failedText, { color: colors.mutedForeground }]}>
-            {t("appLock.authFailed")}
-          </Text>
-        ) : null}
+            {busy ? (
+              <ActivityIndicator
+                color={colors.primary}
+                size="large"
+                style={styles.spinner}
+              />
+            ) : (
+              <Pressable
+                onPress={attemptUnlock}
+                style={({ pressed }) => [
+                  styles.unlockBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    borderRadius: colors.radius + 4,
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
+              >
+                <Feather
+                  name={bioLabel === "Face ID" ? "user" : "unlock"}
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.unlockText}>
+                  {failed ? t("common.retry") : t("appLock.tapToUnlock")}
+                </Text>
+              </Pressable>
+            )}
+
+            {failed && !busy ? (
+              <Text style={[styles.failedText, { color: colors.mutedForeground }]}>
+                {t("appLock.authFailed")}
+              </Text>
+            ) : null}
+
+            {/* "Use PIN instead" — shown after first bio failure if PIN is set */}
+            {failed && !busy && pinFallbackAvailable ? (
+              <Pressable
+                onPress={switchToPinMode}
+                style={({ pressed }) => [styles.altLink, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Feather name="hash" size={14} color="rgba(255,255,255,0.55)" />
+                <Text style={styles.altLinkText}>{t("appLock.usePinInstead")}</Text>
+              </Pressable>
+            ) : null}
+          </>
+        )}
       </View>
     </View>
   );
@@ -139,6 +233,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
     paddingHorizontal: 32,
+    width: "100%",
   },
   logoBadge: {
     width: 80,
@@ -185,5 +280,18 @@ const styles = StyleSheet.create({
     fontFamily: FONT.medium,
     textAlign: "center",
     marginTop: 4,
+  },
+  altLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  altLinkText: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 14,
+    fontFamily: FONT.medium,
   },
 });

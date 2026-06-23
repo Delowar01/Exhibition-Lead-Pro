@@ -32,11 +32,14 @@ import { COUNTRY_ORDER, getCountry } from "@/lib/countries";
 import {
   authenticateBiometric,
   clearBiometricVault,
+  clearPin,
   getBiometricLabel,
   isBiometricSupported,
+  savePin,
   saveBiometricVault,
 } from "@/lib/biometric";
 import { useAppLock } from "@/contexts/AppLockContext";
+import { PinPad } from "@/components/PinPad";
 
 const LANGUAGE_OPTIONS: { value: LanguagePref; labelKey: string }[] = [
   { value: "en", labelKey: "settings.english" },
@@ -49,7 +52,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { user, token, logout } = useAuth();
   const settings = useSettings();
-  const { unlock } = useAppLock();
+  const { unlock, refreshPinAvailability } = useAppLock();
   const changePassword = useChangePassword();
   const { t, language, isRTL, textAlign, row } = useLocale();
 
@@ -69,6 +72,13 @@ export default function SettingsScreen() {
   const [bioSupported, setBioSupported] = useState(false);
   const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
   const [bioBusy, setBioBusy] = useState(false);
+
+  // PIN setup modal state (shown after biometric lock is enabled)
+  const [pinSetupVisible, setPinSetupVisible] = useState(false);
+  const [pinStep, setPinStep] = useState<1 | 2>(1);
+  const [pinFirstPin, setPinFirstPin] = useState("");
+  const [pinResetSignal, setPinResetSignal] = useState(0);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -121,6 +131,12 @@ export default function SettingsScreen() {
         // Step 3: persist the vault and enable the setting.
         await saveBiometricVault(token, user);
         settings.setBiometricEnabled(true);
+        // Step 4: offer PIN setup as a backup.
+        setPinStep(1);
+        setPinFirstPin("");
+        setPinError(null);
+        setPinResetSignal(0);
+        setPinSetupVisible(true);
       } catch {
         Alert.alert(t("errors.generic"), `${bioLabel}`);
       } finally {
@@ -130,13 +146,40 @@ export default function SettingsScreen() {
       setBioBusy(true);
       try {
         await clearBiometricVault();
+        await clearPin();
         settings.setBiometricEnabled(false);
+        void refreshPinAvailability();
         // Dismiss the lock overlay immediately if it happens to be showing.
         unlock();
       } finally {
         setBioBusy(false);
       }
     }
+  }
+
+  async function handlePinSetupComplete(pin: string) {
+    if (pinStep === 1) {
+      // Store the first entry and move to confirmation step.
+      setPinFirstPin(pin);
+      setPinStep(2);
+      setPinError(null);
+    } else {
+      // Confirm step — verify the two entries match.
+      if (pin !== pinFirstPin) {
+        setPinError(t("settings.pinMismatch"));
+        setPinResetSignal((s) => s + 1);
+        setPinStep(1);
+        setPinFirstPin("");
+        return;
+      }
+      await savePin(pin);
+      await refreshPinAvailability();
+      setPinSetupVisible(false);
+    }
+  }
+
+  function skipPinSetup() {
+    setPinSetupVisible(false);
   }
 
   async function handleChangePassword() {
@@ -542,6 +585,36 @@ export default function SettingsScreen() {
         </Text>
       </ScrollView>
 
+      {/* PIN setup modal — shown after enabling biometric lock */}
+      <Modal
+        visible={pinSetupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={skipPinSetup}
+      >
+        <View style={pinStyles.backdrop}>
+          <View style={[pinStyles.card, { paddingBottom: insets.bottom + 24 }]}>
+            <Text style={pinStyles.title}>{t("settings.pinSetupTitle")}</Text>
+            <Text style={pinStyles.body}>{t("settings.pinSetupBody")}</Text>
+            <Text style={pinStyles.stepLabel}>
+              {pinStep === 1 ? t("settings.pinStep1") : t("settings.pinStep2")}
+            </Text>
+            <PinPad
+              onComplete={handlePinSetupComplete}
+              resetSignal={pinResetSignal}
+              subtitle={undefined}
+              error={pinError ?? undefined}
+            />
+            <Pressable
+              onPress={skipPinSetup}
+              style={({ pressed }) => [pinStyles.skipBtn, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Text style={pinStyles.skipText}>{t("settings.pinSkip")}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={countryPickerOpen}
         transparent
@@ -860,5 +933,56 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     textAlign: "center",
     marginTop: 22,
+  },
+});
+
+const pinStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.88)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#1A1A1A",
+    borderRadius: 20,
+    padding: 28,
+    alignItems: "center",
+    gap: 12,
+  },
+  title: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontFamily: FONT.bold,
+    textAlign: "center",
+  },
+  body: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  stepLabel: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 13,
+    fontFamily: FONT.semibold,
+    textAlign: "center",
+    marginTop: 4,
+    letterSpacing: 0.4,
+  },
+  skipBtn: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  skipText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 14,
+    fontFamily: FONT.medium,
+    textAlign: "center",
   },
 });

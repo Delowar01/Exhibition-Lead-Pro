@@ -703,7 +703,14 @@
     "poweredBy": "بدعمٍ من Elite Marcom",
     "logout": "تسجيل الخروج",
     "english": "English",
-    "arabic": "العربية"
+    "arabic": "العربية",
+    "pinSetupTitle": "إعداد رمز PIN احتياطي",
+    "pinSetupBody": "أضف رمز PIN مكوّنًا من 4 أرقام حتى تتمكن من فتح التطبيق إذا فشلت السمات الحيوية.",
+    "pinStep1": "أدخل رمز PIN المكوّن من 4 أرقام",
+    "pinStep2": "أكّد رمز PIN",
+    "pinMismatch": "رموز PIN غير متطابقة — حاول مرة أخرى",
+    "pinSkip": "تخطّ",
+    "pinSet": "حفظ رمز PIN"
   },
   "sync": {
     "title": "المزامنة",
@@ -932,6 +939,11 @@
     "locked": "التطبيق مقفل",
     "tapToUnlock": "اضغط للفتح",
     "authFailed": "فشلت المصادقة — اضغط للمحاولة مجددًا",
-    "promptMessage": "افتح تطبيق Card Scanner Pro"
+    "promptMessage": "افتح تطبيق Card Scanner Pro",
+    "usePinInstead": "استخدام رمز PIN",
+    "enterPin": "أدخل رمز PIN",
+    "pinSubtitle": "أدخل رمز PIN الاحتياطي المكوّن من 4 أرقام",
+    "wrongPin": "رمز PIN غير صحيح — حاول مرة أخرى",
+    "useBiometrics": "استخدام السمات الحيوية"
   }
 }

@@ -94,3 +94,35 @@ export async function readBiometricVault(): Promise<BiometricVault | null> {
 export async function clearBiometricVault(): Promise<void> {
   await deleteSecureItem(VAULT_KEY);
 }
+
+// ---------------------------------------------------------------------------
+// PIN fallback storage
+//
+// A 4-digit PIN stored in the hardware-backed secure store alongside (or
+// instead of) the biometric vault. The PIN itself is stored directly — the
+// SecureStore backend is AES-256-GCM encrypted and hardware-attested, so
+// storing the plain PIN value there is equivalent in security to storing a
+// hashed value (the TEE gates both equally).
+// ---------------------------------------------------------------------------
+
+const PIN_KEY = "csp_app_lock_pin";
+
+export async function savePin(pin: string): Promise<void> {
+  await setSecureItem(PIN_KEY, pin);
+}
+
+export async function verifyPin(pin: string): Promise<boolean> {
+  if (Platform.OS === "web") return false;
+  const stored = await getSecureItem(PIN_KEY);
+  return stored !== null && stored === pin;
+}
+
+export async function clearPin(): Promise<void> {
+  await deleteSecureItem(PIN_KEY);
+}
+
+export async function hasPinSet(): Promise<boolean> {
+  if (Platform.OS === "web") return false;
+  const stored = await getSecureItem(PIN_KEY);
+  return stored !== null && stored.length > 0;
+}
