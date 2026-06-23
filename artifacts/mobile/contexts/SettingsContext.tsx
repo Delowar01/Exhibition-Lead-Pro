@@ -14,6 +14,8 @@ export type ThemePref = "light" | "dark" | "system";
 export type CaptureModePref = "single" | "rapid" | "batch";
 export type LanguagePref = "en" | "ar";
 export type ContactSortPref = "newest" | "oldest" | "name";
+/** 0 = lock immediately when screen turns off; others = grace period in ms. */
+export type LockTimeoutMs = 0 | 15_000 | 30_000 | 60_000;
 
 export interface ContactFilters {
   sort: ContactSortPref;
@@ -45,6 +47,7 @@ export interface AppSettings {
   language: LanguagePref;
   country: CountryCode;
   biometricEnabled: boolean;
+  lockTimeoutMs: LockTimeoutMs;
   activeEventId: number | null;
   activeEventName: string | null;
   contactFilters: ContactFilters;
@@ -58,6 +61,7 @@ const DEFAULTS: AppSettings = {
   language: "en",
   country: DEFAULT_COUNTRY,
   biometricEnabled: false,
+  lockTimeoutMs: 30_000,
   activeEventId: null,
   activeEventName: null,
   contactFilters: DEFAULT_CONTACT_FILTERS,
@@ -72,6 +76,7 @@ interface SettingsContextValue extends AppSettings {
   setLanguage: (value: LanguagePref) => void;
   setCountry: (value: CountryCode) => void;
   setBiometricEnabled: (value: boolean) => void;
+  setLockTimeoutMs: (value: LockTimeoutMs) => void;
   setActiveEvent: (id: number | null, name: string | null) => void;
   setContactFilters: (value: ContactFilters) => void;
 }
@@ -90,6 +95,7 @@ const SettingsContext = createContext<SettingsContextValue>({
   setLanguage: () => {},
   setCountry: () => {},
   setBiometricEnabled: () => {},
+  setLockTimeoutMs: () => {},
   setActiveEvent: () => {},
   setContactFilters: () => {},
 });
@@ -157,6 +163,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setLanguage: (language) => patch({ language }),
     setCountry: (country) => patch({ country }),
     setBiometricEnabled: (biometricEnabled) => patch({ biometricEnabled }),
+    setLockTimeoutMs: (lockTimeoutMs) => patch({ lockTimeoutMs }),
     setActiveEvent: (activeEventId, activeEventName) =>
       patch({ activeEventId, activeEventName }),
     setContactFilters: (contactFilters) => patch({ contactFilters }),

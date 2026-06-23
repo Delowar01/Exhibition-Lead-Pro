@@ -12,10 +12,6 @@ import { authenticateBiometric, hasPinSet, verifyPin } from "@/lib/biometric";
 import { useSettings } from "@/contexts/SettingsContext";
 
 
-// How long (ms) the app can be in the background before locking on return.
-// Extracted as a constant so it is easy to make user-configurable later.
-export const APP_LOCK_TIMEOUT_MS = 30_000;
-
 interface AppLockContextValue {
   isLocked: boolean;
   /** Whether the user has set up a PIN fallback they can use instead of biometrics. */
@@ -54,16 +50,19 @@ const AppLockContext = createContext<AppLockContextValue>({
 });
 
 export function AppLockProvider({ children }: { children: React.ReactNode }) {
-  const { biometricEnabled, isLoaded } = useSettings();
+  const { biometricEnabled, lockTimeoutMs, isLoaded } = useSettings();
   const [isLocked, setIsLocked] = useState(false);
   const [pinFallbackAvailable, setPinFallbackAvailable] = useState(false);
 
   // Track when the app moved to background so we can compute elapsed time.
   const lastBackgroundAtRef = useRef<number | null>(null);
-  // Keep a stable ref to biometricEnabled so the AppState listener doesn't
-  // capture a stale closure.
+
+  // Keep stable refs to settings so the AppState listener never captures
+  // stale closures.
   const biometricEnabledRef = useRef(biometricEnabled);
   biometricEnabledRef.current = biometricEnabled;
+  const lockTimeoutMsRef = useRef(lockTimeoutMs);
+  lockTimeoutMsRef.current = lockTimeoutMs;
 
   // Track whether the initial cold-launch lock check has been performed.
   // We must defer until `isLoaded` is true because SettingsProvider loads
@@ -93,14 +92,30 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     if (Platform.OS === "web") return;
 
     function handleAppStateChange(nextState: AppStateStatus) {
-      if (nextState === "background" || nextState === "inactive") {
-        lastBackgroundAtRef.current = Date.now();
+      if (nextState === "inactive" || nextState === "background") {
+        if (!biometricEnabledRef.current) return;
+
+        if (lockTimeoutMsRef.current === 0) {
+          // "Immediately" mode: lock as soon as the screen goes inactive /
+          // the device locks. The user will see the unlock prompt on resume.
+          setIsLocked(true);
+        } else {
+          // Grace-period mode: record the timestamp; we'll compare on resume.
+          lastBackgroundAtRef.current = Date.now();
+        }
       } else if (nextState === "active") {
         if (!biometricEnabledRef.current) return;
+
+        if (lockTimeoutMsRef.current === 0) {
+          // Already locked above; nothing more to do here.
+          lastBackgroundAtRef.current = null;
+          return;
+        }
+
         const backgroundAt = lastBackgroundAtRef.current;
         if (backgroundAt === null) return;
         const elapsed = Date.now() - backgroundAt;
-        if (elapsed >= APP_LOCK_TIMEOUT_MS) {
+        if (elapsed >= lockTimeoutMsRef.current) {
           setIsLocked(true);
         }
         lastBackgroundAtRef.current = null;

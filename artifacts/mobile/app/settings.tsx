@@ -23,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   type CaptureModePref,
   type LanguagePref,
+  type LockTimeoutMs,
   type ThemePref,
   useSettings,
 } from "@/contexts/SettingsContext";
@@ -483,25 +484,33 @@ export default function SettingsScreen() {
         {/* Security */}
         <Section title={t("settings.account")}>
           {Platform.OS !== "web" ? (
-            <View style={[styles.switchRow, { marginBottom: 8, flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
-                  {t("settings.biometric")}
-                </Text>
-                <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
-                  {bioSupported
-                    ? t("settings.biometricDesc")
-                    : t("settings.biometricUnavailableTitle")}
-                </Text>
+            <>
+              <View style={[styles.switchRow, { marginBottom: 8, flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
+                    {t("settings.biometric")}
+                  </Text>
+                  <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
+                    {bioSupported
+                      ? t("settings.biometricDesc")
+                      : t("settings.biometricUnavailableTitle")}
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.biometricEnabled}
+                  disabled={bioBusy}
+                  onValueChange={toggleBiometric}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#FFFFFF"
+                />
               </View>
-              <Switch
-                value={settings.biometricEnabled}
-                disabled={bioBusy}
-                onValueChange={toggleBiometric}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
+              {settings.biometricEnabled ? (
+                <LockTimeoutPicker
+                  value={settings.lockTimeoutMs}
+                  onChange={settings.setLockTimeoutMs}
+                />
+              ) : null}
+            </>
           ) : null}
 
           <Text
@@ -691,6 +700,61 @@ export default function SettingsScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+    </View>
+  );
+}
+
+const LOCK_TIMEOUT_OPTIONS: { value: LockTimeoutMs; labelKey: string }[] = [
+  { value: 0, labelKey: "settings.lockTimeoutImmediately" },
+  { value: 15_000, labelKey: "settings.lockTimeout15s" },
+  { value: 30_000, labelKey: "settings.lockTimeout30s" },
+  { value: 60_000, labelKey: "settings.lockTimeout1min" },
+];
+
+function LockTimeoutPicker({
+  value,
+  onChange,
+}: {
+  value: LockTimeoutMs;
+  onChange: (v: LockTimeoutMs) => void;
+}) {
+  const colors = useColors();
+  const { t, isRTL, textAlign } = useLocale();
+  return (
+    <View style={{ marginTop: 4, marginBottom: 4 }}>
+      <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+        {t("settings.lockTimeoutLabel")}
+      </Text>
+      <View style={[styles.segment, { flexWrap: "wrap", flexDirection: isRTL ? "row-reverse" : "row" }]}>
+        {LOCK_TIMEOUT_OPTIONS.map((opt) => {
+          const active = value === opt.value;
+          return (
+            <Pressable
+              key={opt.value}
+              onPress={() => onChange(opt.value)}
+              style={[
+                styles.segmentItem,
+                {
+                  backgroundColor: active ? colors.primary : colors.muted,
+                  borderRadius: colors.radius,
+                  minWidth: 72,
+                  flex: undefined,
+                  paddingHorizontal: 10,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  { color: active ? "#FFFFFF" : colors.foreground, fontSize: 13 },
+                ]}
+              >
+                {t(opt.labelKey)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
