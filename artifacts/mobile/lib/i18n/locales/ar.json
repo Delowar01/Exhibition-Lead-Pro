@@ -694,6 +694,9 @@
     "meetingRemindersDesc": "تنبيه قبل ١٥ دقيقة من كل اجتماع",
     "biometric": "الفتح بالسمات الحيوية",
     "biometricDesc": "استخدم بصمة الوجه / الإصبع للفتح",
+    "biometricUnavailableTitle": "القياسات الحيوية غير متاحة",
+    "biometricUnavailableBody": "جهازك لا يدعم المصادقة البيومترية أو لم يتم تسجيل بيانات اعتماد. انتقل إلى إعدادات الجهاز لإعداد Face ID أو بصمة الإصبع أولًا.",
+    "biometricEnablePrompt": "أكّد هويتك لتفعيل قفل التطبيق البيومتري",
     "account": "الحساب",
     "about": "حول التطبيق",
     "version": "الإصدار",
@@ -924,5 +927,11 @@
     "cancelled": "ملغاة",
     "rescheduled": "أُعيدت جدولتها",
     "scheduled": "مجدولة"
+  },
+  "appLock": {
+    "locked": "التطبيق مقفل",
+    "tapToUnlock": "اضغط للفتح",
+    "authFailed": "فشلت المصادقة — اضغط للمحاولة مجددًا",
+    "promptMessage": "افتح تطبيق Card Scanner Pro"
   }
 }

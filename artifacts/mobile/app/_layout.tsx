@@ -23,7 +23,9 @@ import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NotificationsManager } from "@/components/NotificationsManager";
+import { AppLockOverlay } from "@/components/AppLockOverlay";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AppLockProvider, useAppLock } from "@/contexts/AppLockContext";
 import { useLocale } from "@/hooks/useLocale";
 import { CardProvider } from "@/contexts/CardContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
@@ -112,6 +114,7 @@ function WebHeaderBack({ canGoBack }: { canGoBack?: boolean }) {
 
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useAuth();
+  const { isLocked } = useAppLock();
   const segments = useSegments();
   const router = useRouter();
   const { t } = useLocale();
@@ -130,9 +133,13 @@ function RootLayoutNav() {
   return (
     <>
       <NotificationsManager />
+      <AppLockOverlay />
       <Stack
         screenOptions={{
           headerBackTitle: t("common.back"),
+          // Disable all swipe-back / swipe-down gestures while the app is
+          // locked so the overlay cannot be bypassed by navigation gestures.
+          gestureEnabled: !isLocked,
           ...(Platform.OS === "web"
             ? { headerLeft: (props) => <WebHeaderBack canGoBack={props.canGoBack} /> }
             : {}),
@@ -208,15 +215,17 @@ export default function RootLayout() {
         <ErrorBoundary>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
-              <OfflineProvider>
-                <CardProvider>
-                  <GestureHandlerRootView>
-                    <KeyboardProvider>
-                      <RootLayoutNav />
-                    </KeyboardProvider>
-                  </GestureHandlerRootView>
-                </CardProvider>
-              </OfflineProvider>
+              <AppLockProvider>
+                <OfflineProvider>
+                  <CardProvider>
+                    <GestureHandlerRootView>
+                      <KeyboardProvider>
+                        <RootLayoutNav />
+                      </KeyboardProvider>
+                    </GestureHandlerRootView>
+                  </CardProvider>
+                </OfflineProvider>
+              </AppLockProvider>
             </AuthProvider>
           </QueryClientProvider>
         </ErrorBoundary>

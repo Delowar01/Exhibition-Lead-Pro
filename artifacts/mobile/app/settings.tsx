@@ -30,11 +30,13 @@ import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { COUNTRY_ORDER, getCountry } from "@/lib/countries";
 import {
+  authenticateBiometric,
   clearBiometricVault,
   getBiometricLabel,
   isBiometricSupported,
   saveBiometricVault,
 } from "@/lib/biometric";
+import { useAppLock } from "@/contexts/AppLockContext";
 
 const LANGUAGE_OPTIONS: { value: LanguagePref; labelKey: string }[] = [
   { value: "en", labelKey: "settings.english" },
@@ -47,6 +49,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { user, token, logout } = useAuth();
   const settings = useSettings();
+  const { unlock } = useAppLock();
   const changePassword = useChangePassword();
   const { t, language, isRTL, textAlign, row } = useLocale();
 
@@ -98,8 +101,24 @@ export default function SettingsScreen() {
         Alert.alert(t("errors.notFound"), t("auth.signInFailed"));
         return;
       }
+      // Step 1: verify biometrics are available on this device.
+      const supported = await isBiometricSupported();
+      if (!supported) {
+        Alert.alert(
+          t("settings.biometricUnavailableTitle"),
+          t("settings.biometricUnavailableBody"),
+        );
+        return;
+      }
+      // Step 2: require the user to authenticate before enabling the lock.
       setBioBusy(true);
       try {
+        const ok = await authenticateBiometric(t("settings.biometricEnablePrompt"));
+        if (!ok) {
+          // User cancelled or failed — leave the toggle OFF.
+          return;
+        }
+        // Step 3: persist the vault and enable the setting.
         await saveBiometricVault(token, user);
         settings.setBiometricEnabled(true);
       } catch {
@@ -112,6 +131,8 @@ export default function SettingsScreen() {
       try {
         await clearBiometricVault();
         settings.setBiometricEnabled(false);
+        // Dismiss the lock overlay immediately if it happens to be showing.
+        unlock();
       } finally {
         setBioBusy(false);
       }
@@ -418,14 +439,16 @@ export default function SettingsScreen() {
 
         {/* Security */}
         <Section title={t("settings.account")}>
-          {bioSupported ? (
+          {Platform.OS !== "web" ? (
             <View style={[styles.switchRow, { marginBottom: 8, flexDirection: isRTL ? "row-reverse" : "row" }]}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
                   {t("settings.biometric")}
                 </Text>
                 <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
-                  {t("settings.biometricDesc")}
+                  {bioSupported
+                    ? t("settings.biometricDesc")
+                    : t("settings.biometricUnavailableTitle")}
                 </Text>
               </View>
               <Switch
@@ -441,7 +464,7 @@ export default function SettingsScreen() {
           <Text
             style={[
               styles.fieldLabel,
-              { color: colors.mutedForeground, marginTop: bioSupported ? 8 : 0, textAlign },
+              { color: colors.mutedForeground, marginTop: 8, textAlign },
             ]}
           >
             {t("auth.password")}

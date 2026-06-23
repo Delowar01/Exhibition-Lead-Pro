@@ -694,6 +694,9 @@
     "meetingRemindersDesc": "Alert 15 minutes before each meeting",
     "biometric": "Biometric unlock",
     "biometricDesc": "Use Face ID / fingerprint to unlock",
+    "biometricUnavailableTitle": "Biometrics unavailable",
+    "biometricUnavailableBody": "Your device doesn't support biometric authentication or no credentials are enrolled. Go to your device Settings to set up Face ID or fingerprint first.",
+    "biometricEnablePrompt": "Confirm your identity to enable biometric lock",
     "account": "Account",
     "about": "About",
     "version": "Version",
@@ -924,5 +927,11 @@
     "cancelled": "Cancelled",
     "rescheduled": "Rescheduled",
     "scheduled": "Scheduled"
+  },
+  "appLock": {
+    "locked": "App Locked",
+    "tapToUnlock": "Tap to unlock",
+    "authFailed": "Authentication failed — tap to try again",
+    "promptMessage": "Unlock Card Scanner Pro"
   }
 }
