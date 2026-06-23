@@ -1,0 +1,466 @@
+# STAGE 1 — FOUNDATION
+
+# PART 1 — Enterprise Architecture & Project Foundation
+
+## Project
+
+Lead Capture Pro
+
+---
+
+# Scope
+
+This task focuses ONLY on establishing the enterprise architecture and project foundation.
+
+This is NOT a feature-development task.
+
+Do NOT build new Platform Portal pages.
+
+Do NOT build Company Portal pages.
+
+Do NOT modify the Mobile Application.
+
+The objective is to prepare the project for long-term enterprise development, self-hosting, scalability, maintainability, and commercial SaaS deployment.
+
+---
+
+# IMPORTANT
+
+This task is an architectural review and refactoring task.
+
+Do not redesign functionality.
+
+Do not introduce regressions.
+
+Do not change existing business logic.
+
+Only reorganize and prepare the project for future development.
+
+---
+
+# OBJECTIVES
+
+Prepare Lead Capture Pro as an enterprise-grade SaaS platform.
+
+The codebase should be clean, modular, maintainable, scalable, and easy for future developers to understand.
+
+---
+
+# REVIEW THE ENTIRE PROJECT
+
+Perform a complete architectural review.
+
+Review:
+
+* Mobile Application
+* API Server
+* Existing Admin Portal
+* Database
+* Shared Libraries
+* Configuration
+* Docker
+* Build Process
+* Scripts
+* Assets
+* Documentation
+
+Do not assume anything.
+
+Review every major folder.
+
+---
+
+# ENTERPRISE PROJECT STRUCTURE
+
+Reorganize the project into a clear enterprise structure.
+
+Examples:
+
+* apps/
+* packages/
+* services/
+* shared/
+* infrastructure/
+* docs/
+* docker/
+* scripts/
+
+Separate responsibilities clearly.
+
+---
+
+# REMOVE CODE DUPLICATION
+
+Locate duplicated:
+
+* Components
+* Hooks
+* Services
+* Helpers
+* Utilities
+* Validation
+* API Clients
+
+Extract shared logic.
+
+---
+
+# STANDARDIZE NAMING
+
+Review the complete project.
+
+Standardize:
+
+* File names
+* Folder names
+* Components
+* Services
+* DTOs
+* Models
+* Constants
+* Enums
+
+Use one consistent naming convention.
+
+---
+
+# SEPARATE BUSINESS LOGIC
+
+Business logic must not live inside UI components.
+
+Move business logic into:
+
+* Services
+* Domain Layer
+* Shared Modules
+
+---
+
+# CENTRALIZED CONFIGURATION
+
+Move all configurable values into centralized configuration.
+
+Examples:
+
+* API URLs
+* Upload Limits
+* OCR Settings
+* AI Settings
+* Feature Flags
+* Timeout Values
+* Theme Defaults
+
+No hardcoded configuration throughout the project.
+
+---
+
+# CORE PLATFORM LAYER
+
+Create the shared Core Platform Layer.
+
+This will become the foundation for:
+
+* Platform Portal
+* Company Portal
+* Mobile Application
+
+Include architecture for:
+
+* Authentication
+* Authorization
+* Tenant Resolution
+* Configuration Service
+* Feature Flags
+* Audit Logging
+* Notification Service
+* Email Service
+* Localization
+* Theme Service
+* Storage Service
+* OCR Provider
+* AI Provider
+* API Gateway
+
+This is architectural preparation only.
+
+Do not rewrite existing implementations unless necessary.
+
+---
+
+# API ORGANIZATION
+
+Review:
+
+* Routes
+* Controllers
+* Services
+* Validation
+* DTOs
+* Middleware
+
+Organize consistently.
+
+---
+
+# DATABASE ORGANIZATION
+
+Review:
+
+* Tables
+* Relationships
+* Indexes
+* Constraints
+* Audit Fields
+* Soft Delete Strategy
+* Multi-Tenant Isolation
+
+Prepare for future scalability.
+
+---
+
+# CENTRALIZED ERROR HANDLING
+
+Implement one unified error-handling strategy.
+
+Standardize:
+
+* API Errors
+* Validation Errors
+* Logging
+* Client Errors
+
+---
+
+# LOGGING FRAMEWORK
+
+Review logging.
+
+Separate:
+
+* Debug
+* Information
+* Warning
+* Error
+* Security
+* Audit
+
+Prepare for production logging.
+
+---
+
+# ENVIRONMENT CONFIGURATION
+
+Review:
+
+* Development
+* Staging
+* Production
+
+Ensure secrets are never hardcoded.
+
+---
+
+# DOCKER
+
+Review Docker support.
+
+Verify:
+
+* Dockerfile
+* Docker Compose
+* Environment Variables
+* Production Readiness
+
+---
+
+# DATABASE MIGRATION STRATEGY
+
+Review migration system.
+
+Ensure versioned migrations.
+
+Rollback support.
+
+---
+
+# HEALTH CHECKS
+
+Review:
+
+* API Health
+* Database Health
+* Storage Health
+* Queue Health
+
+---
+
+# BUILD SCRIPTS
+
+Review:
+
+* Build
+* Test
+* Lint
+* Docker
+* Deployment
+
+Organize consistently.
+
+---
+
+# TESTING FOUNDATION
+
+Review:
+
+* Unit Tests
+* Integration Tests
+* End-to-End Tests
+
+Identify gaps.
+
+---
+
+# SECURITY FOUNDATION
+
+Review:
+
+* Authentication
+* Authorization
+* Session Management
+* Secrets
+* Rate Limiting
+* Input Validation
+* XSS
+* CSRF
+* SQL Injection
+* File Upload Security
+
+---
+
+# PERFORMANCE FOUNDATION
+
+Review:
+
+* Caching
+* Query Optimization
+* Lazy Loading
+* Background Jobs
+* Parallel Processing
+
+---
+
+# OBSERVABILITY
+
+Prepare architecture for:
+
+* Metrics
+* Monitoring
+* Logging
+* Tracing
+
+---
+
+# DOCUMENTATION
+
+Update project documentation.
+
+Include:
+
+* Folder Structure
+* Development Guide
+* Deployment Guide
+* Environment Setup
+* Docker Guide
+* Coding Standards
+
+---
+
+# DELIVERABLES
+
+Provide:
+
+## 1. Enterprise Architecture Review
+
+Current Architecture
+
+Recommended Architecture
+
+---
+
+## 2. Folder Structure
+
+Before
+
+After
+
+---
+
+## 3. Files Modified
+
+Complete list.
+
+---
+
+## 4. Technical Debt
+
+List everything found.
+
+Priority:
+
+Critical
+
+High
+
+Medium
+
+Low
+
+---
+
+## 5. Recommendations
+
+Future improvements.
+
+---
+
+## 6. QA
+
+Verify:
+
+* Existing functionality still works.
+* No regressions introduced.
+* Mobile builds still succeed.
+* API still functions correctly.
+* Docker still builds correctly.
+
+---
+
+# IMPORTANT
+
+This is the final architectural cleanup before we begin building the Platform Portal.
+
+Do not implement new business features.
+
+Do not redesign the UI.
+
+Do not add Platform Portal functionality.
+
+The objective is to create a clean enterprise foundation that all future development will build upon.
+
+Once this architecture is approved, every future module should follow the workflow:
+
+Phase A — UI/UX Design
+
+↓
+
+Phase B — Database & Data Model
+
+↓
+
+Phase C — Functional Implementation
+
+↓
+
+Phase D — QA & Review
+
+No functionality should be implemented before the UI/UX and Data Model have been approved.
