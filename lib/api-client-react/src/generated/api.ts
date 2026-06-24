@@ -1695,6 +1695,7 @@ export const getListInvitationsUrl = (params?: ListInvitationsParams,) => {
 }
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients filter it client-side). Pass page/pageSize to paginate.
  * @summary List invitations for the caller's accessible companies
  */
 export const listInvitations = async (params?: ListInvitationsParams, options?: RequestInit): Promise<InvitationListResponse> => {
@@ -2209,6 +2210,7 @@ export const getListNotificationsUrl = (params?: ListNotificationsParams,) => {
 }
 
 /**
+ * Most-recent-first feed. Defaults to the 50 most recent (cap 200). Pass page/pageSize (or limit) to page through older notifications.
  * @summary List the current user's notifications
  */
 export const listNotifications = async (params?: ListNotificationsParams, options?: RequestInit): Promise<NotificationListResponse> => {
@@ -6943,6 +6945,7 @@ export const getListFollowUpsUrl = (params?: ListFollowUpsParams,) => {
 }
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients bucket it client-side). Pass page/pageSize to paginate.
  * @summary List follow-ups
  */
 export const listFollowUps = async (params?: ListFollowUpsParams, options?: RequestInit): Promise<FollowUpList> => {
@@ -7240,6 +7243,7 @@ export const getListMeetingsUrl = (params?: ListMeetingsParams,) => {
 }
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients filter it client-side). Pass page/pageSize to paginate.
  * @summary List meetings
  */
 export const listMeetings = async (params?: ListMeetingsParams, options?: RequestInit): Promise<MeetingList> => {
@@ -7467,6 +7471,7 @@ export const getListTasksUrl = (params?: ListTasksParams,) => {
 }
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients sort/filter it client-side). Pass page/pageSize to paginate.
  * @summary List tasks
  */
 export const listTasks = async (params?: ListTasksParams, options?: RequestInit): Promise<TaskList> => {

@@ -1,8 +1,25 @@
 import { db, invitationsTable, type Invitation } from "@workspace/db";
-import { and, eq, inArray, desc, type SQL } from "drizzle-orm";
+import { and, or, eq, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 
 export type { Invitation };
+
+// Sortable columns for listInvitations (allowlist → real columns). Default createdAt desc.
+const INVITATION_SORT: Record<string, AnyColumn> = {
+  createdAt: invitationsTable.createdAt,
+  updatedAt: invitationsTable.updatedAt,
+  email: invitationsTable.email,
+  status: invitationsTable.status,
+};
+
+export interface ListInvitationsOpts {
+  search?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+  paginated?: boolean;
+}
 
 export async function insert(values: typeof invitationsTable.$inferInsert): Promise<Invitation> {
   const [row] = await db.insert(invitationsTable).values(values).returning();
@@ -11,14 +28,31 @@ export async function insert(values: typeof invitationsTable.$inferInsert): Prom
 
 // Tenant-scoped list. platform_owner sees all; everyone else only their accessible
 // companies (never scope by a single companyId that could be null).
-export async function list(user: AuthUser, companyId?: number): Promise<Invitation[]> {
+export async function list(
+  user: AuthUser,
+  companyId?: number,
+  opts: ListInvitationsOpts = {},
+): Promise<{ rows: Invitation[]; total: number }> {
   const filters: SQL[] = [];
   if (user.role !== "platform_owner") {
     filters.push(inArray(invitationsTable.companyId, user.accessibleCompanies));
   }
   if (companyId != null) filters.push(eq(invitationsTable.companyId, companyId));
+  if (opts.search) {
+    const term = `%${opts.search}%`;
+    filters.push(or(ilike(invitationsTable.email, term), ilike(invitationsTable.name, term))!);
+  }
   const where = filters.length > 0 ? and(...filters) : undefined;
-  return db.select().from(invitationsTable).where(where).orderBy(desc(invitationsTable.createdAt));
+  const sortCol = INVITATION_SORT[opts.sort ?? "createdAt"] ?? invitationsTable.createdAt;
+  const orderExpr = opts.order === "asc" ? asc(sortCol) : desc(sortCol);
+  // Opt-in pagination: callers that pass no page/limit keep the full result set.
+  let query = db.select().from(invitationsTable).where(where).orderBy(orderExpr, desc(invitationsTable.id)).$dynamic();
+  if (opts.paginated) query = query.limit(opts.limit ?? 50).offset(opts.offset ?? 0);
+  const rows = await query;
+  const total = opts.paginated
+    ? Number((await db.select({ c: sql<number>`count(*)::int` }).from(invitationsTable).where(where))[0]?.c ?? 0)
+    : rows.length;
+  return { rows, total };
 }
 
 export async function findById(id: number): Promise<Invitation | undefined> {

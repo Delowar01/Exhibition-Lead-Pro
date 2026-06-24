@@ -3,15 +3,17 @@ import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
 import { validateBody } from "../middlewares/validate.js";
 import { UpdateNotificationPreferenceBody } from "@workspace/api-zod";
 import * as notifications from "../services/notifications.service.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 const router = Router();
 router.use(requireAuth);
 
-// GET /notifications?limit&unreadOnly — the caller's own feed.
+// GET /notifications?page&pageSize|limit&unreadOnly — the caller's own feed.
+// Standard list contract; defaults to the 50 most-recent (cap 200) to preserve behavior.
 router.get("/notifications", async (req: AuthRequest, res) => {
-  const limit = req.query.limit ? parseInt(String(req.query.limit)) : undefined;
+  const lq = parseListQuery(req.query, { defaultPageSize: 50, maxPageSize: 200 });
   const unreadOnly = req.query.unreadOnly === "true";
-  res.json(await notifications.listNotifications(req.user!, { limit, unreadOnly }));
+  res.json(await notifications.listNotifications(req.user!, { limit: lq.limit, offset: lq.offset, unreadOnly }));
 });
 
 // GET /notifications/unread-count — registered before /:id-style routes (none here,

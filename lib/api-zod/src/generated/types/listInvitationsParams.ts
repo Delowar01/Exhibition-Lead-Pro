@@ -5,7 +5,17 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListInvitationsOrder } from './listInvitationsOrder';
+import type { ListInvitationsSort } from './listInvitationsSort';
 
 export type ListInvitationsParams = {
 companyId?: number;
+page?: number;
+pageSize?: number;
+sort?: ListInvitationsSort;
+order?: ListInvitationsOrder;
+/**
+ * Free-text search over email and name.
+ */
+q?: string;
 };

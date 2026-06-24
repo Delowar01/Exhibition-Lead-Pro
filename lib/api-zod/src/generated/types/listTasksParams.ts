@@ -5,7 +5,9 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListTasksOrder } from './listTasksOrder';
 import type { ListTasksScope } from './listTasksScope';
+import type { ListTasksSort } from './listTasksSort';
 
 export type ListTasksParams = {
 status?: string;
@@ -22,4 +24,12 @@ contactId?: number | null;
  * mine (default, tasks assigned to me) or all (admins only)
  */
 scope?: ListTasksScope;
+page?: number;
+pageSize?: number;
+sort?: ListTasksSort;
+order?: ListTasksOrder;
+/**
+ * Free-text search over title and notes.
+ */
+q?: string;
 };

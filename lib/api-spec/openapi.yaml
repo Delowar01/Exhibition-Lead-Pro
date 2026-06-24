@@ -493,12 +493,39 @@ paths:
       operationId: listInvitations
       tags: [invitations]
       summary: List invitations for the caller's accessible companies
+      description: >-
+        Pagination is opt-in: with no page/pageSize the full result set is returned
+        (clients filter it client-side). Pass page/pageSize to paginate.
       parameters:
         - name: companyId
           in: query
           required: false
           schema:
             type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, email, status]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: q
+          in: query
+          description: Free-text search over email and name.
+          schema:
+            type: string
       responses:
         "200":
           description: Success
@@ -706,8 +733,22 @@ paths:
       operationId: listNotifications
       tags: [notifications]
       summary: List the current user's notifications
+      description: >-
+        Most-recent-first feed. Defaults to the 50 most recent (cap 200). Pass
+        page/pageSize (or limit) to page through older notifications.
       parameters:
         - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
           in: query
           required: false
           schema:
@@ -2017,6 +2058,9 @@ paths:
       operationId: listFollowUps
       tags: [follow-ups]
       summary: List follow-ups
+      description: >-
+        Pagination is opt-in: with no page/pageSize the full result set is returned
+        (clients bucket it client-side). Pass page/pageSize to paginate.
       parameters:
         - name: status
           in: query
@@ -2030,6 +2074,30 @@ paths:
           in: query
           schema:
             type: ["integer", "null"]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, scheduledDate, status]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: q
+          in: query
+          description: Free-text search over notes.
+          schema:
+            type: string
       responses:
         "200":
           description: Success
@@ -2103,6 +2171,9 @@ paths:
       operationId: listMeetings
       tags: [meetings]
       summary: List meetings
+      description: >-
+        Pagination is opt-in: with no page/pageSize the full result set is returned
+        (clients filter it client-side). Pass page/pageSize to paginate.
       parameters:
         - name: status
           in: query
@@ -2116,6 +2187,30 @@ paths:
           in: query
           schema:
             type: ["integer", "null"]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, meetingDate, status, type]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: q
+          in: query
+          description: Free-text search over notes.
+          schema:
+            type: string
       responses:
         "200":
           description: Success
@@ -2172,6 +2267,9 @@ paths:
       operationId: listTasks
       tags: [tasks]
       summary: List tasks
+      description: >-
+        Pagination is opt-in: with no page/pageSize the full result set is returned
+        (clients sort/filter it client-side). Pass page/pageSize to paginate.
       parameters:
         - name: status
           in: query
@@ -2196,6 +2294,30 @@ paths:
             type: string
             enum: [mine, all]
             default: mine
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, dueDate, status, type, title]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: q
+          in: query
+          description: Free-text search over title and notes.
+          schema:
+            type: string
       responses:
         "200":
           description: Success

@@ -12,6 +12,14 @@ export interface ListQuery {
   pageSize: number;
   limit: number;
   offset: number;
+  /**
+   * True only when the caller explicitly asked for a page or page size (`page`,
+   * `pageSize`, or `limit`). Endpoints that historically returned the full result
+   * set can consult this to keep that behavior by default (return everything) and
+   * apply `limit`/`offset` only when pagination was requested — so adding the shared
+   * contract stays backward compatible with existing clients that pass no paging params.
+   */
+  paginated: boolean;
   search?: string;
   sort?: string;
   order: "asc" | "desc";
@@ -47,6 +55,8 @@ export function parseListQuery(query: unknown, options: ParseListQueryOptions = 
   const { defaultPageSize = 25, maxPageSize = 100, allowedSort, defaultSort } = options;
   const q = (query ?? {}) as Record<string, unknown>;
 
+  const pageProvided = toInt(q.page) !== undefined;
+  const sizeProvided = toInt(q.pageSize) !== undefined || toInt(q.limit) !== undefined;
   const page = Math.max(1, toInt(q.page) ?? 1);
   const requestedSize = toInt(q.pageSize) ?? toInt(q.limit) ?? defaultPageSize;
   const pageSize = Math.min(maxPageSize, Math.max(1, requestedSize));
@@ -61,6 +71,7 @@ export function parseListQuery(query: unknown, options: ParseListQueryOptions = 
     pageSize,
     limit: pageSize,
     offset: (page - 1) * pageSize,
+    paginated: pageProvided || sizeProvided,
     search: firstStr(q.q) ?? firstStr(q.search),
     sort,
     order,

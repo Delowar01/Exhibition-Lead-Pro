@@ -15,11 +15,17 @@ export async function insert(values: typeof notificationsTable.$inferInsert): Pr
   return row;
 }
 
-export async function list(userId: number, opts: { limit: number; unreadOnly: boolean }): Promise<Notification[]> {
+export async function list(userId: number, opts: { limit: number; offset?: number; unreadOnly: boolean }): Promise<Notification[]> {
   const where = opts.unreadOnly
     ? and(eq(notificationsTable.userId, userId), isNull(notificationsTable.readAt))
     : eq(notificationsTable.userId, userId);
-  return db.select().from(notificationsTable).where(where).orderBy(desc(notificationsTable.createdAt)).limit(opts.limit);
+  return db
+    .select()
+    .from(notificationsTable)
+    .where(where)
+    .orderBy(desc(notificationsTable.createdAt))
+    .limit(opts.limit)
+    .offset(opts.offset ?? 0);
 }
 
 export async function unreadCount(userId: number): Promise<number> {

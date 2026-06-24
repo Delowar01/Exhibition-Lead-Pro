@@ -1,14 +1,23 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { followUpsTable, contactsTable, usersTable } from "@workspace/db";
-import { eq, and, inArray, desc, type SQL } from "drizzle-orm";
+import { eq, and, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateFollowUpBody, UpdateFollowUpBody } from "@workspace/api-zod";
 import { refAccessible } from "../lib/tenant.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 const router = Router();
+
+// Sortable columns for GET /follow-ups (allowlist → real columns). Default createdAt desc.
+const FOLLOW_UP_SORT: Record<string, AnyColumn> = {
+  createdAt: followUpsTable.createdAt,
+  updatedAt: followUpsTable.updatedAt,
+  scheduledDate: followUpsTable.scheduledDate,
+  status: followUpsTable.status,
+};
 router.use(requireAuth);
 router.use("/follow-ups", blockReadOnlyMutations);
 router.use("/follow-ups", auditMutations("follow_ups"));
@@ -38,15 +47,31 @@ async function syncContactFollowUp(contactId: number) {
 router.get("/follow-ups", async (req: AuthRequest, res) => {
   try {
     const { status, contactId, assignedTo } = req.query as Record<string, string>;
+    const lq = parseListQuery(req.query, {
+      defaultPageSize: 50,
+      maxPageSize: 200,
+      allowedSort: Object.keys(FOLLOW_UP_SORT),
+      defaultSort: "createdAt",
+    });
     const conditions: SQL[] = [];
     const scope = tenantScope(req.user, followUpsTable.companyId);
     if (scope) conditions.push(scope);
     if (status) conditions.push(eq(followUpsTable.status, status));
     if (contactId && !isNaN(parseInt(contactId))) conditions.push(eq(followUpsTable.contactId, parseInt(contactId)));
     if (assignedTo && !isNaN(parseInt(assignedTo))) conditions.push(eq(followUpsTable.assignedToId, parseInt(assignedTo)));
+    if (lq.search) conditions.push(ilike(followUpsTable.notes, `%${lq.search}%`));
     const whereClause = conditions.length ? and(...conditions) : undefined;
-    const rows = await db.select().from(followUpsTable).where(whereClause).orderBy(desc(followUpsTable.createdAt));
-    res.json({ followUps: await enrich(rows), total: rows.length });
+    const sortCol = FOLLOW_UP_SORT[lq.sort ?? "createdAt"] ?? followUpsTable.createdAt;
+    const orderExpr = lq.order === "asc" ? asc(sortCol) : desc(sortCol);
+    // Opt-in pagination: callers that pass no page/limit keep the full result set
+    // (existing web/mobile clients bucket the whole list client-side).
+    let query = db.select().from(followUpsTable).where(whereClause).orderBy(orderExpr, desc(followUpsTable.id)).$dynamic();
+    if (lq.paginated) query = query.limit(lq.limit).offset(lq.offset);
+    const rows = await query;
+    const total = lq.paginated
+      ? Number((await db.select({ c: sql<number>`count(*)::int` }).from(followUpsTable).where(whereClause))[0]?.c ?? 0)
+      : rows.length;
+    res.json({ followUps: await enrich(rows), total });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

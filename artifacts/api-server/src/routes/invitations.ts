@@ -4,6 +4,7 @@ import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { AcceptInvitationBody, RejectInvitationBody, CreateInvitationBody } from "@workspace/api-zod";
 import * as invitations from "../services/invitations.service.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 const router = Router();
 
@@ -29,9 +30,25 @@ router.post("/invitations/reject", validateBody(RejectInvitationBody), async (re
 router.use("/invitations", requireAuth, auditMutations("invitations"));
 
 // GET /invitations — list invitations for the caller's accessible companies.
+// Standard list contract; pagination is opt-in (no page/limit → full result set).
 router.get("/invitations", async (req: AuthRequest, res) => {
   const companyId = req.query.companyId ? parseInt(String(req.query.companyId)) : undefined;
-  res.json(await invitations.listInvitations(req.user!, companyId));
+  const lq = parseListQuery(req.query, {
+    defaultPageSize: 50,
+    maxPageSize: 200,
+    allowedSort: ["createdAt", "updatedAt", "email", "status"],
+    defaultSort: "createdAt",
+  });
+  res.json(
+    await invitations.listInvitations(req.user!, companyId, {
+      search: lq.search,
+      sort: lq.sort,
+      order: lq.order,
+      limit: lq.limit,
+      offset: lq.offset,
+      paginated: lq.paginated,
+    }),
+  );
 });
 
 // POST /invitations — create + email an invitation.

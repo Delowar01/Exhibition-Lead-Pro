@@ -328,10 +328,18 @@ export const ResendVerificationResponse = zod.object({
 
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients filter it client-side). Pass page/pageSize to paginate.
  * @summary List invitations for the caller's accessible companies
  */
+export const listInvitationsQueryPageDefault = 1;
+
 export const ListInvitationsQueryParams = zod.object({
-  "companyId": zod.coerce.number().optional()
+  "companyId": zod.coerce.number().optional(),
+  "page": zod.coerce.number().default(listInvitationsQueryPageDefault),
+  "pageSize": zod.coerce.number().optional(),
+  "sort": zod.enum(['createdAt', 'updatedAt', 'email', 'status']).optional(),
+  "order": zod.enum(['asc', 'desc']).optional(),
+  "q": zod.coerce.string().optional().describe('Free-text search over email and name.')
 })
 
 export const ListInvitationsResponse = zod.object({
@@ -461,10 +469,15 @@ export const RejectInvitationResponse = zod.object({
 
 
 /**
+ * Most-recent-first feed. Defaults to the 50 most recent (cap 200). Pass page/pageSize (or limit) to page through older notifications.
  * @summary List the current user's notifications
  */
+export const listNotificationsQueryPageDefault = 1;
+
 export const ListNotificationsQueryParams = zod.object({
   "limit": zod.coerce.number().optional(),
+  "page": zod.coerce.number().default(listNotificationsQueryPageDefault),
+  "pageSize": zod.coerce.number().optional(),
   "unreadOnly": zod.coerce.boolean().optional()
 })
 
@@ -2168,12 +2181,20 @@ export const UnregisterPushTokenResponse = zod.object({
 
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients bucket it client-side). Pass page/pageSize to paginate.
  * @summary List follow-ups
  */
+export const listFollowUpsQueryPageDefault = 1;
+
 export const ListFollowUpsQueryParams = zod.object({
   "status": zod.coerce.string().optional(),
   "contactId": zod.coerce.number().nullish(),
-  "assignedTo": zod.coerce.number().nullish()
+  "assignedTo": zod.coerce.number().nullish(),
+  "page": zod.coerce.number().default(listFollowUpsQueryPageDefault),
+  "pageSize": zod.coerce.number().optional(),
+  "sort": zod.enum(['createdAt', 'updatedAt', 'scheduledDate', 'status']).optional(),
+  "order": zod.enum(['asc', 'desc']).optional(),
+  "q": zod.coerce.string().optional().describe('Free-text search over notes.')
 })
 
 export const ListFollowUpsResponse = zod.object({
@@ -2256,12 +2277,20 @@ export const DeleteFollowUpResponse = zod.object({
 
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients filter it client-side). Pass page/pageSize to paginate.
  * @summary List meetings
  */
+export const listMeetingsQueryPageDefault = 1;
+
 export const ListMeetingsQueryParams = zod.object({
   "status": zod.coerce.string().optional(),
   "contactId": zod.coerce.number().nullish(),
-  "assignedTo": zod.coerce.number().nullish()
+  "assignedTo": zod.coerce.number().nullish(),
+  "page": zod.coerce.number().default(listMeetingsQueryPageDefault),
+  "pageSize": zod.coerce.number().optional(),
+  "sort": zod.enum(['createdAt', 'updatedAt', 'meetingDate', 'status', 'type']).optional(),
+  "order": zod.enum(['asc', 'desc']).optional(),
+  "q": zod.coerce.string().optional().describe('Free-text search over notes.')
 })
 
 export const ListMeetingsResponse = zod.object({
@@ -2335,16 +2364,23 @@ export const UpdateMeetingResponse = zod.object({
 
 
 /**
+ * Pagination is opt-in: with no page/pageSize the full result set is returned (clients sort/filter it client-side). Pass page/pageSize to paginate.
  * @summary List tasks
  */
 export const listTasksQueryScopeDefault = `mine`;
+export const listTasksQueryPageDefault = 1;
 
 export const ListTasksQueryParams = zod.object({
   "status": zod.coerce.string().optional(),
   "type": zod.coerce.string().optional(),
   "assignedTo": zod.coerce.number().nullish(),
   "contactId": zod.coerce.number().nullish(),
-  "scope": zod.enum(['mine', 'all']).default(listTasksQueryScopeDefault).describe('mine (default, tasks assigned to me) or all (admins only)')
+  "scope": zod.enum(['mine', 'all']).default(listTasksQueryScopeDefault).describe('mine (default, tasks assigned to me) or all (admins only)'),
+  "page": zod.coerce.number().default(listTasksQueryPageDefault),
+  "pageSize": zod.coerce.number().optional(),
+  "sort": zod.enum(['createdAt', 'updatedAt', 'dueDate', 'status', 'type', 'title']).optional(),
+  "order": zod.enum(['asc', 'desc']).optional(),
+  "q": zod.coerce.string().optional().describe('Free-text search over title and notes.')
 })
 
 export const ListTasksResponse = zod.object({

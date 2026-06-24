@@ -8,5 +8,7 @@
 
 export type ListNotificationsParams = {
 limit?: number;
+page?: number;
+pageSize?: number;
 unreadOnly?: boolean;
 };

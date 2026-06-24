@@ -5,6 +5,8 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListFollowUpsOrder } from './listFollowUpsOrder';
+import type { ListFollowUpsSort } from './listFollowUpsSort';
 
 export type ListFollowUpsParams = {
 status?: string;
@@ -16,4 +18,12 @@ contactId?: number | null;
  * @nullable
  */
 assignedTo?: number | null;
+page?: number;
+pageSize?: number;
+sort?: ListFollowUpsSort;
+order?: ListFollowUpsOrder;
+/**
+ * Free-text search over notes.
+ */
+q?: string;
 };

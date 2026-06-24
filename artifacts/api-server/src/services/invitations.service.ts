@@ -133,9 +133,13 @@ export async function createInvitation(user: AuthUser, input: CreateInvitationIn
   return { invitation: publicView(inv) };
 }
 
-export async function listInvitations(user: AuthUser, companyId?: number) {
-  const rows = await invitationsRepo.list(user, companyId);
-  return { invitations: rows.map(publicView) };
+export async function listInvitations(
+  user: AuthUser,
+  companyId?: number,
+  opts: invitationsRepo.ListInvitationsOpts = {},
+) {
+  const { rows, total } = await invitationsRepo.list(user, companyId, opts);
+  return { invitations: rows.map(publicView), total };
 }
 
 // Loads an invitation the caller is allowed to manage (tenant-scoped). 404 on

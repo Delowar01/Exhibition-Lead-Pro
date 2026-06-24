@@ -158,3 +158,46 @@ describe("list-query contract", () => {
     expect(body.page).toBeGreaterThanOrEqual(1);
   });
 });
+
+// The collection endpoints below historically returned the FULL result set (clients
+// bucket/filter/sort client-side). Standardizing them must stay backward compatible:
+// with no paging params they still return everything (total === rows returned), and
+// pagination is opt-in via page/limit.
+describe("opt-in list pagination (backward compatible)", () => {
+  const cases: Array<{ path: string; key: string }> = [
+    { path: "/follow-ups", key: "followUps" },
+    { path: "/meetings", key: "meetings" },
+    { path: "/tasks", key: "tasks" },
+    { path: "/invitations", key: "invitations" },
+  ];
+
+  for (const { path, key } of cases) {
+    it(`${path} returns the full set by default (total === rows returned)`, async () => {
+      const res = await fetch(`${BASE}${path}`, { headers: auth() });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(Array.isArray(body[key])).toBe(true);
+      // Unpaginated: total reflects exactly what was returned (no truncation).
+      expect(body.total).toBe(body[key].length);
+    });
+
+    it(`${path} paginates only when limit is passed`, async () => {
+      const res = await fetch(`${BASE}${path}?limit=1`, { headers: auth() });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body[key].length).toBeLessThanOrEqual(1);
+    });
+  }
+
+  it("/notifications defaults to the recent feed and respects limit", async () => {
+    const dflt = await fetch(`${BASE}/notifications`, { headers: auth() });
+    expect(dflt.status).toBe(200);
+    const dbody = await dflt.json();
+    expect(Array.isArray(dbody.notifications)).toBe(true);
+    expect(dbody.notifications.length).toBeLessThanOrEqual(50);
+
+    const capped = await fetch(`${BASE}/notifications?limit=1`, { headers: auth() });
+    const cbody = await capped.json();
+    expect(cbody.notifications.length).toBeLessThanOrEqual(1);
+  });
+});

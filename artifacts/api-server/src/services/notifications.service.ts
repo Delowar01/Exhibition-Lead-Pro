@@ -68,9 +68,10 @@ export async function createNotification(input: CreateNotificationInput): Promis
   return row;
 }
 
-export async function listNotifications(user: AuthUser, opts: { limit?: number; unreadOnly?: boolean }) {
+export async function listNotifications(user: AuthUser, opts: { limit?: number; offset?: number; unreadOnly?: boolean }) {
   const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
-  const notifications = await notifRepo.list(user.id, { limit, unreadOnly: Boolean(opts.unreadOnly) });
+  const offset = Math.max(0, opts.offset ?? 0);
+  const notifications = await notifRepo.list(user.id, { limit, offset, unreadOnly: Boolean(opts.unreadOnly) });
   return { notifications };
 }
 

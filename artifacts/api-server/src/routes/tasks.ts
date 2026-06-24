@@ -1,17 +1,28 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { tasksTable, contactsTable, usersTable } from "@workspace/db";
-import { eq, and, inArray, desc, type SQL } from "drizzle-orm";
+import { eq, and, or, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateTaskBody, UpdateTaskBody } from "@workspace/api-zod";
 import { refAccessible } from "../lib/tenant.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 const router = Router();
 router.use(requireAuth);
 router.use("/tasks", blockReadOnlyMutations);
 router.use("/tasks", auditMutations("tasks"));
+
+// Sortable columns for GET /tasks (allowlist → real columns). Default createdAt desc.
+const TASK_SORT: Record<string, AnyColumn> = {
+  createdAt: tasksTable.createdAt,
+  updatedAt: tasksTable.updatedAt,
+  dueDate: tasksTable.dueDate,
+  status: tasksTable.status,
+  type: tasksTable.type,
+  title: tasksTable.title,
+};
 
 type Row = typeof tasksTable.$inferSelect;
 
@@ -39,6 +50,12 @@ async function enrich(rows: Row[]) {
 router.get("/tasks", async (req: AuthRequest, res) => {
   try {
     const { status, type, assignedTo, contactId, scope = "mine" } = req.query as Record<string, string>;
+    const lq = parseListQuery(req.query, {
+      defaultPageSize: 50,
+      maxPageSize: 200,
+      allowedSort: Object.keys(TASK_SORT),
+      defaultSort: "createdAt",
+    });
     const conditions: SQL[] = [];
     const tScope = tenantScope(req.user, tasksTable.companyId);
     if (tScope) conditions.push(tScope);
@@ -50,9 +67,22 @@ router.get("/tasks", async (req: AuthRequest, res) => {
     if (status) conditions.push(eq(tasksTable.status, status));
     if (type) conditions.push(eq(tasksTable.type, type));
     if (contactId && !isNaN(parseInt(contactId))) conditions.push(eq(tasksTable.contactId, parseInt(contactId)));
+    if (lq.search) {
+      const term = `%${lq.search}%`;
+      conditions.push(or(ilike(tasksTable.title, term), ilike(tasksTable.notes, term))!);
+    }
     const whereClause = conditions.length ? and(...conditions) : undefined;
-    const rows = await db.select().from(tasksTable).where(whereClause).orderBy(desc(tasksTable.createdAt));
-    res.json({ tasks: await enrich(rows), total: rows.length });
+    const sortCol = TASK_SORT[lq.sort ?? "createdAt"] ?? tasksTable.createdAt;
+    const orderExpr = lq.order === "asc" ? asc(sortCol) : desc(sortCol);
+    // Opt-in pagination: callers that pass no page/limit keep the full result set
+    // (existing web/mobile clients sort/filter the whole list client-side).
+    let query = db.select().from(tasksTable).where(whereClause).orderBy(orderExpr, desc(tasksTable.id)).$dynamic();
+    if (lq.paginated) query = query.limit(lq.limit).offset(lq.offset);
+    const rows = await query;
+    const total = lq.paginated
+      ? Number((await db.select({ c: sql<number>`count(*)::int` }).from(tasksTable).where(whereClause))[0]?.c ?? 0)
+      : rows.length;
+    res.json({ tasks: await enrich(rows), total });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

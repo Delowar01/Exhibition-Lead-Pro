@@ -5,6 +5,8 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListMeetingsOrder } from './listMeetingsOrder';
+import type { ListMeetingsSort } from './listMeetingsSort';
 
 export type ListMeetingsParams = {
 status?: string;
@@ -16,4 +18,12 @@ contactId?: number | null;
  * @nullable
  */
 assignedTo?: number | null;
+page?: number;
+pageSize?: number;
+sort?: ListMeetingsSort;
+order?: ListMeetingsOrder;
+/**
+ * Free-text search over notes.
+ */
+q?: string;
 };

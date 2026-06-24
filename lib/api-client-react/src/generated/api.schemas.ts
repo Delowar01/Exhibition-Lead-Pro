@@ -2306,10 +2306,38 @@ export interface PublicBusinessCard {
 
 export type ListInvitationsParams = {
 companyId?: number;
+page?: number;
+pageSize?: number;
+sort?: ListInvitationsSort;
+order?: ListInvitationsOrder;
+/**
+ * Free-text search over email and name.
+ */
+q?: string;
 };
+
+export type ListInvitationsSort = typeof ListInvitationsSort[keyof typeof ListInvitationsSort];
+
+
+export const ListInvitationsSort = {
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  email: 'email',
+  status: 'status',
+} as const;
+
+export type ListInvitationsOrder = typeof ListInvitationsOrder[keyof typeof ListInvitationsOrder];
+
+
+export const ListInvitationsOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
 
 export type ListNotificationsParams = {
 limit?: number;
+page?: number;
+pageSize?: number;
 unreadOnly?: boolean;
 };
 
@@ -2425,7 +2453,33 @@ contactId?: number | null;
  * @nullable
  */
 assignedTo?: number | null;
+page?: number;
+pageSize?: number;
+sort?: ListFollowUpsSort;
+order?: ListFollowUpsOrder;
+/**
+ * Free-text search over notes.
+ */
+q?: string;
 };
+
+export type ListFollowUpsSort = typeof ListFollowUpsSort[keyof typeof ListFollowUpsSort];
+
+
+export const ListFollowUpsSort = {
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  scheduledDate: 'scheduledDate',
+  status: 'status',
+} as const;
+
+export type ListFollowUpsOrder = typeof ListFollowUpsOrder[keyof typeof ListFollowUpsOrder];
+
+
+export const ListFollowUpsOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
 
 export type ListMeetingsParams = {
 status?: string;
@@ -2437,7 +2491,34 @@ contactId?: number | null;
  * @nullable
  */
 assignedTo?: number | null;
+page?: number;
+pageSize?: number;
+sort?: ListMeetingsSort;
+order?: ListMeetingsOrder;
+/**
+ * Free-text search over notes.
+ */
+q?: string;
 };
+
+export type ListMeetingsSort = typeof ListMeetingsSort[keyof typeof ListMeetingsSort];
+
+
+export const ListMeetingsSort = {
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  meetingDate: 'meetingDate',
+  status: 'status',
+  type: 'type',
+} as const;
+
+export type ListMeetingsOrder = typeof ListMeetingsOrder[keyof typeof ListMeetingsOrder];
+
+
+export const ListMeetingsOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
 
 export type ListTasksParams = {
 status?: string;
@@ -2454,6 +2535,14 @@ contactId?: number | null;
  * mine (default, tasks assigned to me) or all (admins only)
  */
 scope?: ListTasksScope;
+page?: number;
+pageSize?: number;
+sort?: ListTasksSort;
+order?: ListTasksOrder;
+/**
+ * Free-text search over title and notes.
+ */
+q?: string;
 };
 
 export type ListTasksScope = typeof ListTasksScope[keyof typeof ListTasksScope];
@@ -2462,6 +2551,26 @@ export type ListTasksScope = typeof ListTasksScope[keyof typeof ListTasksScope];
 export const ListTasksScope = {
   mine: 'mine',
   all: 'all',
+} as const;
+
+export type ListTasksSort = typeof ListTasksSort[keyof typeof ListTasksSort];
+
+
+export const ListTasksSort = {
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  dueDate: 'dueDate',
+  status: 'status',
+  type: 'type',
+  title: 'title',
+} as const;
+
+export type ListTasksOrder = typeof ListTasksOrder[keyof typeof ListTasksOrder];
+
+
+export const ListTasksOrder = {
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 
 export type GetOrganizationParams = {
