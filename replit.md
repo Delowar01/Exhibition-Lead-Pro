@@ -6,7 +6,7 @@ An enterprise SaaS platform for business card scanning and lead management. Two 
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000 → proxied at /api)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm --filter @workspace/api-server run test` — integration tests (vitest, run against the LIVE API at localhost:80 + seeded demo tenants; api-server workflow must be running)
+- `pnpm --filter @workspace/api-server run test` — integration + unit tests (vitest, run against the LIVE API at localhost:80 + seeded demo tenants; api-server workflow must be running). **Pre-merge gate** (registered as the `test` validation alongside `typecheck`): a clean run is fully green (unit-lib, audit, api-standardization, auth-security, contacts-ai, health-errors, jobs, phase24/25, repositories-softdelete, services). Run it before merging any Stage-2 change.
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
@@ -89,6 +89,7 @@ Quick demo login buttons are available on the login page.
 - **Tenant invariant**: `requireAuth` 403s non-platform users with empty `accessibleCompanies`; `POST /users` 400s non-platform roles with null company.
 - **Static sub-paths before `/:id`**: routes like `GET /contacts/duplicates` and `POST /contacts/merge` MUST be registered before `GET/PATCH/DELETE /contacts/:id` (Express + wouter match in declaration order) or `:id` swallows them. Same applies to the `/admin/duplicates` web route vs `/admin/contacts/:id`.
 - **Contact merge FKs**: contacts are referenced ONLY by `scans.contactId` + `leads.contactId` (both onDelete set null). Merge must reassign both to the primary inside one transaction before deleting dups, or surviving scans/leads get orphaned (null contactId).
+- **Test-suite reruns need a server restart**: the per-IP login limiter (`loginRateLimiter`, max 20 FAILED logins / 15-min window) lives in the running server's memory. A single full `test` run stays under the cap and is green, but two back-to-back full runs against the SAME running server accumulate the brute-force/invalid-cred failures past 20 → valid logins start returning 429. Restart the api-server workflow before re-running the full suite (the gate run must hit a freshly-started server).
 
 ## Pointers
 
