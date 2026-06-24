@@ -55,6 +55,22 @@ function validateGrants(permissions: Array<{ module: string; action: string }> |
   return grants;
 }
 
+// Anti-escalation: a non-bypass caller may only define a role with grants that are
+// a SUBSET of their own effective permissions. Without this, anyone with
+// roles.create/roles.edit could mint or inflate a role carrying higher authority
+// (security.edit, team.delete, ...) and gain it on the next auth load — bypassing
+// the assignment-time subset check. platform_owner/primary_admin hold everything
+// within their tenant and are exempt.
+function assertGrantsWithinCallerScope(user: AuthUser, grants: Array<{ module: string; action: string }>) {
+  if (user.role === "platform_owner" || user.role === "primary_admin") return;
+  const held = user.permissions ?? {};
+  for (const g of grants) {
+    if (!(held[g.module] ?? []).includes(g.action)) {
+      throw new AppError(403, `Cannot grant ${g.module}:${g.action} — you do not hold this permission`);
+    }
+  }
+}
+
 export async function createRole(user: AuthUser, input: RoleInput) {
   if (user.role !== "platform_owner" && user.role !== "primary_admin") {
     // admins/employees need explicit roles.create permission (enforced at route),
@@ -63,6 +79,7 @@ export async function createRole(user: AuthUser, input: RoleInput) {
   const name = input.name?.trim();
   if (!name) throw new AppError(400, "name is required");
   const grants = validateGrants(input.permissions);
+  assertGrantsWithinCallerScope(user, grants);
   // Custom roles are always tenant-owned. platform_owner without a company creates a
   // system template (companyId null); everyone else binds to their own company.
   const companyId = user.role === "platform_owner" ? user.companyId ?? null : user.companyId;
@@ -92,6 +109,7 @@ export async function updateRole(user: AuthUser, id: number, input: RoleInput) {
   await rbacRepo.updateRole(id, patch);
   if (input.permissions !== undefined) {
     const grants = validateGrants(input.permissions);
+    assertGrantsWithinCallerScope(user, grants);
     await rbacRepo.replaceRolePermissions(id, grants);
   }
   return getRole(user, id);

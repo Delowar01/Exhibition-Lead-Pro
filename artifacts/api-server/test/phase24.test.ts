@@ -33,7 +33,7 @@ let orgAdminId = 0;
 let empId = 0;
 let blockedId = 0;
 let roleId = 0;
-let escAdminId = 0;
+const escAdminIds: number[] = [];
 
 function headers(token: string) {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
@@ -100,7 +100,7 @@ afterAll(async () => {
   await db.delete(securityEventsTable).where(eq(securityEventsTable.companyId, companyId));
   await db.delete(loginAttemptsTable).where(like(loginAttemptsTable.email, `%@${ORG_DOMAIN}`));
   await db.delete(loginAttemptsTable).where(like(loginAttemptsTable.email, `%@${BLOCKED_DOMAIN}`));
-  await db.delete(usersTable).where(inArray(usersTable.id, [orgAdminId, empId, blockedId, escAdminId].filter(Boolean)));
+  await db.delete(usersTable).where(inArray(usersTable.id, [orgAdminId, empId, blockedId, ...escAdminIds].filter(Boolean)));
   await db.delete(rolesTable).where(eq(rolesTable.companyId, companyId));
   await db.delete(securityPoliciesTable).where(eq(securityPoliciesTable.companyId, companyId));
   await db.delete(companiesTable).where(eq(companiesTable.id, companyId));
@@ -208,7 +208,8 @@ describe("RBAC — custom roles + effective-permission resolution", () => {
       password: PW,
     });
     expect(createAdmin.status).toBe(201);
-    escAdminId = (await createAdmin.json()).id;
+    const escAdminId = (await createAdmin.json()).id;
+    escAdminIds.push(escAdminId);
 
     // primary_admin (orgToken) grants the admin only team.edit.
     const teamRole = await api("POST", "/rbac/roles", orgToken, {
@@ -234,6 +235,55 @@ describe("RBAC — custom roles + effective-permission resolution", () => {
     const adminToken = await loginToken({ email: `qa-escadmin@${ORG_DOMAIN}`, password: PW });
     const escalate = await api("PUT", `/users/${escAdminId}/roles`, adminToken, { roleIds: [teamRoleId, superRoleId] });
     expect(escalate.status).toBe(403);
+  });
+
+  it("blocks privilege escalation via role create/update: cannot mint or inflate grants beyond own scope", async () => {
+    // A role-administrator who holds roles.* but NOT security.edit must not be able
+    // to mint (or later inflate) a role carrying security.edit — that would be a back
+    // door to authority they do not hold, recoverable on next auth load.
+    const createAdmin = await api("POST", "/users", orgToken, {
+      email: `qa-roleadmin@${ORG_DOMAIN}`,
+      name: "QA Role Admin",
+      role: "admin",
+      password: PW,
+    });
+    expect(createAdmin.status).toBe(201);
+    const roleAdminId = (await createAdmin.json()).id;
+    escAdminIds.push(roleAdminId);
+
+    // Grant only the roles.* capability (no security.edit).
+    const rbacRole = await api("POST", "/rbac/roles", orgToken, {
+      name: `QA RBAC Mgr ${SUFFIX}`,
+      permissions: [
+        { module: "roles", action: "view" },
+        { module: "roles", action: "create" },
+        { module: "roles", action: "edit" },
+      ],
+    });
+    expect(rbacRole.status).toBe(201);
+    const rbacRoleId = (await rbacRole.json()).id;
+    expect((await api("PUT", `/users/${roleAdminId}/roles`, orgToken, { roleIds: [rbacRoleId] })).status).toBe(200);
+
+    const roleAdminToken = await loginToken({ email: `qa-roleadmin@${ORG_DOMAIN}`, password: PW });
+
+    // Cannot CREATE a role granting a permission the caller does not hold.
+    const mint = await api("POST", "/rbac/roles", roleAdminToken, {
+      name: `QA Inflate ${SUFFIX}`,
+      permissions: [{ module: "security", action: "edit" }],
+    });
+    expect(mint.status).toBe(403);
+
+    // Cannot INFLATE an existing in-scope role with an out-of-scope grant.
+    const inScope = await api("POST", "/rbac/roles", roleAdminToken, {
+      name: `QA InScope ${SUFFIX}`,
+      permissions: [{ module: "roles", action: "view" }],
+    });
+    expect(inScope.status).toBe(201);
+    const inScopeId = (await inScope.json()).id;
+    const inflate = await api("PATCH", `/rbac/roles/${inScopeId}`, roleAdminToken, {
+      permissions: [{ module: "roles", action: "view" }, { module: "security", action: "edit" }],
+    });
+    expect(inflate.status).toBe(403);
   });
 });
 

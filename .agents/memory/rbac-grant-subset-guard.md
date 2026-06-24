@@ -21,3 +21,10 @@ the base `role` column, not custom-role permission grants.
 **How to apply:** enforce in the setUserRoles service path (compute union of the
 target roles' permissions, compare against caller's held matrix). Tenant-
 accessibility of role IDs is a separate, insufficient check.
+
+**Two enforcement points, not one:** the subset check must fire on BOTH
+(1) role assignment (setUserRoles) AND (2) role definition (createRole/updateRole).
+Guarding only assignment leaves a back door: a roles.create/roles.edit holder can
+mint or inflate a role with higher grants, get it (already-assigned editable role,
+or self-assign), and gain the authority on next auth load. Gate grant definition
+with assertGrantsWithinCallerScope too.
