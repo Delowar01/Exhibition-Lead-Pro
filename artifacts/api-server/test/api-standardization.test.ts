@@ -201,3 +201,35 @@ describe("opt-in list pagination (backward compatible)", () => {
     expect(cbody.notifications.length).toBeLessThanOrEqual(1);
   });
 });
+
+// The canonical version is /api/v1 but auth cookies must work on BOTH the legacy
+// /api/auth/* and versioned /api/v1/auth/* paths — so they are scoped to /api, not
+// /api/auth. A path mismatch would silently drop refresh/CSRF cookies on /api/v1.
+describe("versioned auth cookie scoping", () => {
+  it("scopes auth cookies to /api so they apply to legacy + versioned auth paths", async () => {
+    const res = await fetch(`${V1}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(TECHCORP),
+    });
+    expect(res.status).toBe(200);
+    const cookies = res.headers.getSetCookie();
+    const refresh = cookies.find((c) => c.startsWith("csp_refresh="));
+    expect(refresh).toBeTruthy();
+    // Path must be exactly /api (covers /api/auth AND /api/v1/auth), not /api/auth.
+    expect(/;\s*Path=\/api(?:;|$)/i.test(refresh!)).toBe(true);
+  });
+});
+
+describe("write validation on auth writes (closes H1)", () => {
+  it("rejects an empty body on POST /auth/mfa/backup-codes with 400", async () => {
+    const res = await fetch(`${BASE}/auth/mfa/backup-codes`, {
+      method: "POST",
+      headers: auth(),
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
+  });
+});

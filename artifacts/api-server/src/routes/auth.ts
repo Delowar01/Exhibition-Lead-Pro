@@ -32,7 +32,7 @@ function refreshCookieOptions(expiresAt: Date) {
     httpOnly: true,
     secure: config.security.cookieSecure,
     sameSite: "lax" as const,
-    path: "/api/auth",
+    path: "/api",
     expires: expiresAt,
   };
 }
@@ -42,7 +42,7 @@ function deviceCookieOptions(expiresAt: Date) {
     httpOnly: true,
     secure: config.security.cookieSecure,
     sameSite: "lax" as const,
-    path: "/api/auth",
+    path: "/api",
     expires: expiresAt,
   };
 }
@@ -55,14 +55,14 @@ function setAuthCookies(res: Response, refreshToken: string, expiresAt: Date): v
     httpOnly: false,
     secure: config.security.cookieSecure,
     sameSite: "lax",
-    path: "/api/auth",
+    path: "/api",
     expires: expiresAt,
   });
 }
 
 function clearAuthCookies(res: Response): void {
-  res.clearCookie(REFRESH_COOKIE, { path: "/api/auth" });
-  res.clearCookie(CSRF_COOKIE, { path: "/api/auth" });
+  res.clearCookie(REFRESH_COOKIE, { path: "/api" });
+  res.clearCookie(CSRF_COOKIE, { path: "/api" });
 }
 
 type UserRow = Parameters<typeof auth.buildUserResponse>[0];
@@ -255,7 +255,7 @@ router.post("/auth/mfa/disable", requireAuth, validateBody(MfaDisableBody), asyn
 });
 
 // POST /auth/mfa/backup-codes — regenerate the backup-code set (requires password).
-router.post("/auth/mfa/backup-codes", requireAuth, async (req: AuthRequest, res) => {
+router.post("/auth/mfa/backup-codes", requireAuth, validateBody(MfaDisableBody), async (req: AuthRequest, res) => {
   const { password } = req.body ?? {};
   const { user, backupCodes } = await auth.regenerateBackupCodes(req.user!.id, password);
   await writeAudit(req, { action: "user.mfa_backup_regenerated", userId: user.id, userName: user.email, companyId: user.companyId, entityType: "user", entityId: user.id });
