@@ -393,6 +393,445 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # PASSWORD RESET & EMAIL VERIFICATION (Phase 2.5)
+  /auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      summary: Request a password-reset email (no account enumeration)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordInput"
+      responses:
+        "200":
+          description: Always succeeds, whether or not the email matched an account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Reset a password using a single-use token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordInput"
+      responses:
+        "200":
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Invalid/expired token or weak password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/verify-email:
+    post:
+      operationId: verifyEmail
+      tags: [auth]
+      summary: Verify an email address using a single-use token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailInput"
+      responses:
+        "200":
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/resend-verification:
+    post:
+      operationId: resendVerification
+      tags: [auth]
+      summary: Re-send the email-verification message to the current user
+      responses:
+        "200":
+          description: Verification email queued (or already verified)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResendVerificationResult"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # INVITATIONS (Phase 2.5)
+  /invitations:
+    get:
+      operationId: listInvitations
+      tags: [invitations]
+      summary: List invitations for the caller's accessible companies
+      parameters:
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationListResponse"
+    post:
+      operationId: createInvitation
+      tags: [invitations]
+      summary: Create and email an invitation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvitationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Existing user or pending invitation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invitations/{id}/resend:
+    post:
+      operationId: resendInvitation
+      tags: [invitations]
+      summary: Re-issue the token and resend the invitation email
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Resent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationResponse"
+        "400":
+          description: Not pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invitations/{id}:
+    delete:
+      operationId: cancelInvitation
+      tags: [invitations]
+      summary: Cancel a pending invitation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationResponse"
+        "400":
+          description: Not pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invitations/token/{token}:
+    get:
+      operationId: getInvitationByToken
+      tags: [invitations]
+      summary: Fetch public invitation details for the accept screen
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicInvitationResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "410":
+          description: Expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invitations/accept:
+    post:
+      operationId: acceptInvitation
+      tags: [invitations]
+      summary: Accept an invitation, creating the user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInvitationInput"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptInvitationResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Already accepted or account exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "410":
+          description: Expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invitations/reject:
+    post:
+      operationId: rejectInvitation
+      tags: [invitations]
+      summary: Reject an invitation
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectInvitationInput"
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "409":
+          description: No longer active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # NOTIFICATIONS (Phase 2.5)
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List the current user's notifications
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: unreadOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+
+  /notifications/unread-count:
+    get:
+      operationId: getUnreadCount
+      tags: [notifications]
+      summary: Count the current user's unread notifications
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnreadCountResponse"
+
+  /notifications/preferences:
+    get:
+      operationId: getNotificationPreferences
+      tags: [notifications]
+      summary: Get the per-category notification preference matrix
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferencesResponse"
+    patch:
+      operationId: updateNotificationPreference
+      tags: [notifications]
+      summary: Update a single category's notification preference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationPreferenceInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreference"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all of the current user's notifications as read
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkAllReadResponse"
+
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark a single notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /notifications/{id}:
+    delete:
+      operationId: deleteNotification
+      tags: [notifications]
+      summary: Delete a notification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PLATFORM DASHBOARD
   /platform/stats:
     get:
@@ -2306,6 +2745,264 @@ components:
         error:
           type: string
       required: [error]
+
+    # PHASE 2.5 — AUTH EMAIL FLOWS
+    ForgotPasswordInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    ResetPasswordInput:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+
+    VerifyEmailInput:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    ResendVerificationResult:
+      type: object
+      required: [success, alreadyVerified]
+      properties:
+        success:
+          type: boolean
+        alreadyVerified:
+          type: boolean
+
+    # PHASE 2.5 — INVITATIONS
+    Invitation:
+      type: object
+      required: [id, companyId, email, role, status, expiresAt, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+          nullable: true
+        role:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected, cancelled, expired]
+        invitedByUserId:
+          type: integer
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    InvitationResponse:
+      type: object
+      required: [invitation]
+      properties:
+        invitation:
+          $ref: "#/components/schemas/Invitation"
+
+    InvitationListResponse:
+      type: object
+      required: [invitations]
+      properties:
+        invitations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invitation"
+
+    CreateInvitationInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [admin, employee, primary_admin]
+        roleIds:
+          type: array
+          items:
+            type: integer
+        companyId:
+          type: integer
+          nullable: true
+
+    PublicInvitation:
+      type: object
+      required: [email, role, status]
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+          nullable: true
+        role:
+          type: string
+        status:
+          type: string
+        companyName:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+
+    PublicInvitationResponse:
+      type: object
+      required: [invitation]
+      properties:
+        invitation:
+          $ref: "#/components/schemas/PublicInvitation"
+
+    AcceptInvitationInput:
+      type: object
+      required: [token, password]
+      properties:
+        token:
+          type: string
+        name:
+          type: string
+        password:
+          type: string
+
+    AcceptInvitationResult:
+      type: object
+      required: [success, user]
+      properties:
+        success:
+          type: boolean
+        user:
+          type: object
+          required: [id, email, name, role]
+          properties:
+            id:
+              type: integer
+            email:
+              type: string
+            name:
+              type: string
+            role:
+              type: string
+
+    RejectInvitationInput:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    # PHASE 2.5 — NOTIFICATIONS
+    Notification:
+      type: object
+      required: [id, userId, category, title, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        companyId:
+          type: integer
+          nullable: true
+        category:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+          nullable: true
+        link:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    NotificationListResponse:
+      type: object
+      required: [notifications]
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+
+    UnreadCountResponse:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+
+    MarkAllReadResponse:
+      type: object
+      required: [success, updated]
+      properties:
+        success:
+          type: boolean
+        updated:
+          type: integer
+
+    NotificationPreference:
+      type: object
+      required: [category, inApp, email]
+      properties:
+        category:
+          type: string
+        inApp:
+          type: boolean
+        email:
+          type: boolean
+
+    NotificationPreferencesResponse:
+      type: object
+      required: [preferences]
+      properties:
+        preferences:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationPreference"
+
+    UpdateNotificationPreferenceInput:
+      type: object
+      required: [category, inApp, email]
+      properties:
+        category:
+          type: string
+        inApp:
+          type: boolean
+        email:
+          type: boolean
 
     # PUSH NOTIFICATIONS
     PushTokenInput:

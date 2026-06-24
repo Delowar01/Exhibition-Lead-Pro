@@ -16,9 +16,17 @@ import {
   useListRoles,
   getListUsersQueryKey,
   getGetUserLoginHistoryQueryKey,
+  useListInvitations,
+  useCreateInvitation,
+  useResendInvitation,
+  useCancelInvitation,
+  getListInvitationsQueryKey,
   User,
   UserInput,
   UserInputRole,
+  Invitation,
+  CreateInvitationInput,
+  CreateInvitationInputRole,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,9 +50,15 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus, MoreHorizontal, Ban, CheckCircle2, LogOut, KeyRound, Trash2, History, Shield } from "lucide-react";
+import { UserPlus, MoreHorizontal, Ban, CheckCircle2, LogOut, KeyRound, Trash2, History, Shield, Mail, Send, X } from "lucide-react";
 
 const ASSIGNABLE_ROLES: { value: UserInputRole; label: string }[] = [
+  { value: "primary_admin", label: "Primary Admin" },
+  { value: "admin", label: "Admin" },
+  { value: "employee", label: "Employee" },
+];
+
+const INVITE_ROLES: { value: CreateInvitationInputRole; label: string }[] = [
   { value: "primary_admin", label: "Primary Admin" },
   { value: "admin", label: "Admin" },
   { value: "employee", label: "Employee" },
@@ -141,6 +155,167 @@ function CreateUserDialog({ companyId, onSaved }: { companyId?: number | null; o
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function InviteByEmailDialog({ companyId, onSaved }: { companyId?: number | null; onSaved: () => void }) {
+  const { toast } = useToast();
+  const create = useCreateInvitation();
+  const [open, setOpen] = React.useState(false);
+  const [email, setEmail] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [role, setRole] = React.useState<CreateInvitationInputRole>("employee");
+
+  React.useEffect(() => {
+    if (open) {
+      setEmail(""); setName(""); setRole("employee");
+    }
+  }, [open]);
+
+  const onSubmit = () => {
+    if (!email.trim()) {
+      toast({ variant: "destructive", title: "Email is required" });
+      return;
+    }
+    const data: CreateInvitationInput = {
+      email: email.trim(),
+      name: name.trim() || null,
+      role,
+      companyId: companyId ?? null,
+    };
+    create.mutate(
+      { data },
+      {
+        onSuccess: () => {
+          toast({ title: "Invitation sent" });
+          setOpen(false);
+          onSaved();
+        },
+        onError: () => toast({ variant: "destructive", title: "Failed to send invitation" }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><Mail className="mr-2 h-4 w-4" />Invite by Email</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite by Email</DialogTitle>
+          <DialogDescription>Send an email invitation. The recipient sets their own password when they accept.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="inv-email">Email</Label>
+            <Input id="inv-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="inv-name">Full Name (optional)</Label>
+            <Input id="inv-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Role</Label>
+            <Select value={role} onValueChange={(v) => setRole(v as CreateInvitationInputRole)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {INVITE_ROLES.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={onSubmit} disabled={create.isPending}>{create.isPending ? "Sending..." : "Send Invitation"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PendingInvitations({ companyId }: { companyId?: number | null }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useListInvitations({
+    companyId: companyId ?? undefined,
+  });
+  const resend = useResendInvitation();
+  const cancel = useCancelInvitation();
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: getListInvitationsQueryKey() });
+
+  const invitations = (data?.invitations ?? []).filter((inv) => inv.status === "pending");
+
+  if (!isLoading && invitations.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Pending Invitations</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader className="bg-secondary/50">
+              <TableRow>
+                <TableHead>Invitee</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead className="w-12"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Loading invitations...</TableCell></TableRow>
+              ) : (
+                invitations.map((inv: Invitation) => (
+                  <TableRow key={inv.id}>
+                    <TableCell>
+                      <div className="font-medium">{inv.name || "—"}</div>
+                      <div className="text-xs text-muted-foreground">{inv.email}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="capitalize">{inv.role.replace("_", " ")}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{fmt(inv.expiresAt)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Resend"
+                          disabled={resend.isPending}
+                          onClick={() => resend.mutate({ id: inv.id }, {
+                            onSuccess: () => { toast({ title: "Invitation resent" }); refresh(); },
+                            onError: () => toast({ variant: "destructive", title: "Failed to resend" }),
+                          })}
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Cancel"
+                          disabled={cancel.isPending}
+                          onClick={() => cancel.mutate({ id: inv.id }, {
+                            onSuccess: () => { toast({ title: "Invitation cancelled" }); refresh(); },
+                            onError: () => toast({ variant: "destructive", title: "Failed to cancel" }),
+                          })}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -282,6 +457,7 @@ export default function AdminTeam() {
   const [deleteUser, setDeleteUser] = React.useState<User | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
+  const refreshInvites = () => queryClient.invalidateQueries({ queryKey: getListInvitationsQueryKey() });
 
   const action = (label: string) => ({
     onSuccess: () => { toast({ title: label }); refresh(); },
@@ -292,8 +468,13 @@ export default function AdminTeam() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Team Members</h1>
-        <CreateUserDialog companyId={user?.companyId} onSaved={refresh} />
+        <div className="flex items-center gap-2">
+          <InviteByEmailDialog companyId={user?.companyId} onSaved={refreshInvites} />
+          <CreateUserDialog companyId={user?.companyId} onSaved={refresh} />
+        </div>
       </div>
+
+      <PendingInvitations companyId={user?.companyId} />
 
       <Card>
         <CardHeader>

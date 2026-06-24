@@ -16,8 +16,11 @@ import {
   generateBackupCodes,
   hashBackupCode,
 } from "../lib/mfa.js";
-import { sha256 } from "../lib/crypto.js";
+import { sha256, randomToken } from "../lib/crypto.js";
+import { config } from "../config.js";
 import * as authRepo from "../repositories/auth.repository.js";
+import * as tokenRepo from "../repositories/verification_tokens.repository.js";
+import { sendPasswordResetEmail, sendEmailVerificationEmail } from "../lib/email/index.js";
 
 type UserRow = authRepo.UserRow;
 
@@ -318,4 +321,65 @@ export async function changePassword(
   // Revoke all OTHER sessions on a password change; keep the current one alive.
   await revokeOtherSessions(user.id, currentSessionId ?? -1, "password_changed");
   return user;
+}
+
+// ── Email-dependent flows (Phase 2.5) ────────────────────────────────────────
+// Tokens are high-entropy random values; only their SHA-256 is stored. The raw
+// token is mailed to the user and used to build the link. All flows degrade
+// gracefully when email is unconfigured (the token is still issued + logged).
+
+function buildLink(path: string, token: string): string {
+  const base = config.email.appBaseUrl.replace(/\/$/, "");
+  return `${base}${path}?token=${encodeURIComponent(token)}`;
+}
+
+// POST /auth/forgot-password — always resolves the same way regardless of whether
+// the email exists, to avoid account enumeration. When the user exists, a single
+// live reset token is issued (prior ones invalidated) and a reset email is sent.
+export async function requestPasswordReset(email?: string): Promise<void> {
+  if (!email || typeof email !== "string") return;
+  const user = await authRepo.findUserByEmail(email.trim().toLowerCase());
+  if (!user || !user.isActive) return;
+  await tokenRepo.invalidateOutstanding(user.id, "password_reset");
+  const raw = randomToken(32);
+  const expiresAt = new Date(Date.now() + config.tokens.passwordResetTtlMinutes * 60 * 1000);
+  await tokenRepo.insertToken({ userId: user.id, type: "password_reset", tokenHash: sha256(raw), expiresAt });
+  await sendPasswordResetEmail({ to: user.email, name: user.name, link: buildLink("/reset-password", raw) });
+}
+
+// POST /auth/reset-password — consumes a live reset token, sets the new password,
+// marks the token used, and revokes ALL sessions (no session to preserve here).
+export async function resetPassword(token?: string, newPassword?: string): Promise<void> {
+  if (!token || !newPassword) throw new AppError(400, "token and newPassword are required");
+  const pw = validatePassword(newPassword);
+  if (!pw.valid) throw new AppError(400, pw.errors.join(". "));
+  const row = await tokenRepo.findLiveToken(sha256(token), "password_reset");
+  if (!row) throw new AppError(400, "This reset link is invalid or has expired. Please request a new one.");
+  await authRepo.updateUser(row.userId, { passwordHash: hashPassword(newPassword), updatedAt: new Date() });
+  await tokenRepo.markUsed(row.id);
+  await revokeOtherSessions(row.userId, -1, "password_reset");
+}
+
+// POST /auth/resend-verification (authed) — issues a fresh verification token and
+// emails it. No-op (idempotent success) when already verified.
+export async function sendVerification(userId: number): Promise<{ alreadyVerified: boolean }> {
+  const user = await authRepo.findUserById(userId);
+  if (!user) throw new AppError(404, "User not found");
+  if (user.emailVerifiedAt) return { alreadyVerified: true };
+  await tokenRepo.invalidateOutstanding(user.id, "email_verify");
+  const raw = randomToken(32);
+  const expiresAt = new Date(Date.now() + config.tokens.emailVerifyTtlHours * 60 * 60 * 1000);
+  await tokenRepo.insertToken({ userId: user.id, type: "email_verify", tokenHash: sha256(raw), expiresAt });
+  await sendEmailVerificationEmail({ to: user.email, name: user.name, link: buildLink("/verify-email", raw) });
+  return { alreadyVerified: false };
+}
+
+// POST /auth/verify-email — consumes a live verification token and stamps the user
+// as verified. Single-use; idempotent for an already-used-but-verified user.
+export async function verifyEmail(token?: string): Promise<void> {
+  if (!token) throw new AppError(400, "token is required");
+  const row = await tokenRepo.findLiveToken(sha256(token), "email_verify");
+  if (!row) throw new AppError(400, "This verification link is invalid or has expired. Please request a new one.");
+  await authRepo.updateUser(row.userId, { emailVerifiedAt: new Date(), updatedAt: new Date() });
+  await tokenRepo.markUsed(row.id);
 }

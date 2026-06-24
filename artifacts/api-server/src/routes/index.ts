@@ -19,6 +19,8 @@ import rbacRouter from "./rbac.js";
 import orgRouter from "./org.js";
 import securityRouter from "./security.js";
 import profileRouter from "./profile.js";
+import invitationsRouter from "./invitations.js";
+import notificationsRouter from "./notifications.js";
 
 const router: IRouter = Router();
 
@@ -29,6 +31,11 @@ router.use(authRouter);
 // before the request ever reaches here. Its own guards are path-scoped to
 // /cards/me, so this does not leak onto other modules.
 router.use(cardsRouter);
+// Mounted early: invitations.ts has PUBLIC routes (/invitations/token/:token,
+// /invitations/accept, /invitations/reject) with no auth. Its authed management
+// guards are path-scoped to /invitations, so this does not leak onto other modules.
+router.use(invitationsRouter);
+router.use(notificationsRouter);
 router.use(companiesRouter);
 router.use(usersRouter);
 router.use(rbacRouter);

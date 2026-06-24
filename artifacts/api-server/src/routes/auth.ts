@@ -250,6 +250,34 @@ router.post("/auth/mfa/backup-codes", requireAuth, async (req: AuthRequest, res)
   res.json({ success: true, backupCodes });
 });
 
+// POST /auth/forgot-password — public. Always 200 (no account enumeration); a reset
+// email is sent only when the account exists. Never reveals whether the email matched.
+router.post("/auth/forgot-password", async (req: AuthRequest, res) => {
+  const { email } = req.body ?? {};
+  await auth.requestPasswordReset(email);
+  res.json({ success: true, message: "If an account exists for that email, a password reset link has been sent." });
+});
+
+// POST /auth/reset-password — public. Consumes a single-use token + sets new password.
+router.post("/auth/reset-password", async (req: AuthRequest, res) => {
+  const { token, newPassword } = req.body ?? {};
+  await auth.resetPassword(token, newPassword);
+  res.json({ success: true, message: "Your password has been reset. Please sign in with your new password." });
+});
+
+// POST /auth/verify-email — public. Consumes a single-use email-verification token.
+router.post("/auth/verify-email", async (req: AuthRequest, res) => {
+  const { token } = req.body ?? {};
+  await auth.verifyEmail(token);
+  res.json({ success: true, message: "Your email has been verified." });
+});
+
+// POST /auth/resend-verification — authed. Re-issues a verification email to self.
+router.post("/auth/resend-verification", requireAuth, async (req: AuthRequest, res) => {
+  const { alreadyVerified } = await auth.sendVerification(req.user!.id);
+  res.json({ success: true, alreadyVerified });
+});
+
 // POST /auth/change-password
 router.post("/auth/change-password", requireAuth, async (req: AuthRequest, res) => {
   const { currentPassword, newPassword } = req.body ?? {};

@@ -128,3 +128,20 @@ export async function firstInaccessibleRole(user: AuthUser, roleIds: number[]): 
   }
   return null;
 }
+
+// Verifies every role id belongs to the given company (system roles with null
+// companyId are always allowed). Returns the first role id that belongs to a
+// different company (or does not exist), or null when all are valid. Used to scope
+// invitation roleIds to the TARGET company, not just the inviter's accessibility.
+export async function firstRoleNotInCompany(roleIds: number[], companyId: number): Promise<number | null> {
+  if (roleIds.length === 0) return null;
+  const rows = await db.select().from(rolesTable).where(inArray(rolesTable.id, roleIds));
+  const found = new Map(rows.map((r) => [r.id, r]));
+  for (const id of roleIds) {
+    const r = found.get(id);
+    if (!r) return id;
+    if (r.companyId === null) continue;
+    if (r.companyId !== companyId) return id;
+  }
+  return null;
+}

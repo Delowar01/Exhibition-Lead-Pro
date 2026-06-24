@@ -28,6 +28,152 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface ResetPasswordInput {
+  token: string;
+  newPassword: string;
+}
+
+export interface VerifyEmailInput {
+  token: string;
+}
+
+export interface ResendVerificationResult {
+  success: boolean;
+  alreadyVerified: boolean;
+}
+
+export type InvitationStatus = typeof InvitationStatus[keyof typeof InvitationStatus];
+
+
+export const InvitationStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  rejected: 'rejected',
+  cancelled: 'cancelled',
+  expired: 'expired',
+} as const;
+
+export interface Invitation {
+  id: number;
+  companyId: number;
+  email: string;
+  name?: string | null;
+  role: string;
+  status: InvitationStatus;
+  invitedByUserId?: number | null;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  createdAt: string;
+}
+
+export interface InvitationResponse {
+  invitation: Invitation;
+}
+
+export interface InvitationListResponse {
+  invitations: Invitation[];
+}
+
+export type CreateInvitationInputRole = typeof CreateInvitationInputRole[keyof typeof CreateInvitationInputRole];
+
+
+export const CreateInvitationInputRole = {
+  admin: 'admin',
+  employee: 'employee',
+  primary_admin: 'primary_admin',
+} as const;
+
+export interface CreateInvitationInput {
+  email: string;
+  name?: string | null;
+  role?: CreateInvitationInputRole;
+  roleIds?: number[];
+  companyId?: number | null;
+}
+
+export interface PublicInvitation {
+  email: string;
+  name?: string | null;
+  role: string;
+  status: string;
+  companyName?: string | null;
+  expiresAt?: string;
+}
+
+export interface PublicInvitationResponse {
+  invitation: PublicInvitation;
+}
+
+export interface AcceptInvitationInput {
+  token: string;
+  name?: string;
+  password: string;
+}
+
+export type AcceptInvitationResultUser = {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+};
+
+export interface AcceptInvitationResult {
+  success: boolean;
+  user: AcceptInvitationResultUser;
+}
+
+export interface RejectInvitationInput {
+  token: string;
+}
+
+export type NotificationMetadata = { [key: string]: unknown } | null;
+
+export interface Notification {
+  id: number;
+  userId: number;
+  companyId?: number | null;
+  category: string;
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  metadata?: NotificationMetadata;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface NotificationListResponse {
+  notifications: Notification[];
+}
+
+export interface UnreadCountResponse {
+  count: number;
+}
+
+export interface MarkAllReadResponse {
+  success: boolean;
+  updated: number;
+}
+
+export interface NotificationPreference {
+  category: string;
+  inApp: boolean;
+  email: boolean;
+}
+
+export interface NotificationPreferencesResponse {
+  preferences: NotificationPreference[];
+}
+
+export interface UpdateNotificationPreferenceInput {
+  category: string;
+  inApp: boolean;
+  email: boolean;
+}
+
 export type PushTokenInputPlatform = typeof PushTokenInputPlatform[keyof typeof PushTokenInputPlatform];
 
 
@@ -2148,6 +2294,15 @@ export interface PublicBusinessCard {
   /** @nullable */
   publicUrl?: string | null;
 }
+
+export type ListInvitationsParams = {
+companyId?: number;
+};
+
+export type ListNotificationsParams = {
+limit?: number;
+unreadOnly?: boolean;
+};
 
 export type ListCompaniesParams = {
 search?: string;

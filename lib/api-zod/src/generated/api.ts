@@ -279,6 +279,283 @@ export const RegenerateBackupCodesResponse = zod.object({
 
 
 /**
+ * @summary Request a password-reset email (no account enumeration)
+ */
+export const ForgotPasswordBody = zod.object({
+  "email": zod.string().email()
+})
+
+export const ForgotPasswordResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Reset a password using a single-use token
+ */
+export const ResetPasswordBody = zod.object({
+  "token": zod.string(),
+  "newPassword": zod.string()
+})
+
+export const ResetPasswordResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Verify an email address using a single-use token
+ */
+export const VerifyEmailBody = zod.object({
+  "token": zod.string()
+})
+
+export const VerifyEmailResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Re-send the email-verification message to the current user
+ */
+export const ResendVerificationResponse = zod.object({
+  "success": zod.boolean(),
+  "alreadyVerified": zod.boolean()
+})
+
+
+/**
+ * @summary List invitations for the caller's accessible companies
+ */
+export const ListInvitationsQueryParams = zod.object({
+  "companyId": zod.coerce.number().optional()
+})
+
+export const ListInvitationsResponse = zod.object({
+  "invitations": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "email": zod.string(),
+  "name": zod.string().nullish(),
+  "role": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'cancelled', 'expired']),
+  "invitedByUserId": zod.number().nullish(),
+  "expiresAt": zod.coerce.date(),
+  "acceptedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create and email an invitation
+ */
+export const CreateInvitationBody = zod.object({
+  "email": zod.string().email(),
+  "name": zod.string().nullish(),
+  "role": zod.enum(['admin', 'employee', 'primary_admin']).optional(),
+  "roleIds": zod.array(zod.number()).optional(),
+  "companyId": zod.number().nullish()
+})
+
+
+/**
+ * @summary Re-issue the token and resend the invitation email
+ */
+export const ResendInvitationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ResendInvitationResponse = zod.object({
+  "invitation": zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "email": zod.string(),
+  "name": zod.string().nullish(),
+  "role": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'cancelled', 'expired']),
+  "invitedByUserId": zod.number().nullish(),
+  "expiresAt": zod.coerce.date(),
+  "acceptedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Cancel a pending invitation
+ */
+export const CancelInvitationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CancelInvitationResponse = zod.object({
+  "invitation": zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "email": zod.string(),
+  "name": zod.string().nullish(),
+  "role": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'cancelled', 'expired']),
+  "invitedByUserId": zod.number().nullish(),
+  "expiresAt": zod.coerce.date(),
+  "acceptedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Fetch public invitation details for the accept screen
+ */
+export const GetInvitationByTokenParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetInvitationByTokenResponse = zod.object({
+  "invitation": zod.object({
+  "email": zod.string(),
+  "name": zod.string().nullish(),
+  "role": zod.string(),
+  "status": zod.string(),
+  "companyName": zod.string().nullish(),
+  "expiresAt": zod.coerce.date().optional()
+})
+})
+
+
+/**
+ * @summary Accept an invitation, creating the user account
+ */
+export const AcceptInvitationBody = zod.object({
+  "token": zod.string(),
+  "name": zod.string().optional(),
+  "password": zod.string()
+})
+
+export const AcceptInvitationResponse = zod.object({
+  "success": zod.boolean(),
+  "user": zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.string()
+})
+})
+
+
+/**
+ * @summary Reject an invitation
+ */
+export const RejectInvitationBody = zod.object({
+  "token": zod.string()
+})
+
+export const RejectInvitationResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List the current user's notifications
+ */
+export const ListNotificationsQueryParams = zod.object({
+  "limit": zod.coerce.number().optional(),
+  "unreadOnly": zod.coerce.boolean().optional()
+})
+
+export const ListNotificationsResponse = zod.object({
+  "notifications": zod.array(zod.object({
+  "id": zod.number(),
+  "userId": zod.number(),
+  "companyId": zod.number().nullish(),
+  "category": zod.string(),
+  "title": zod.string(),
+  "body": zod.string().nullish(),
+  "link": zod.string().nullish(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "readAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Count the current user's unread notifications
+ */
+export const GetUnreadCountResponse = zod.object({
+  "count": zod.number()
+})
+
+
+/**
+ * @summary Get the per-category notification preference matrix
+ */
+export const GetNotificationPreferencesResponse = zod.object({
+  "preferences": zod.array(zod.object({
+  "category": zod.string(),
+  "inApp": zod.boolean(),
+  "email": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Update a single category's notification preference
+ */
+export const UpdateNotificationPreferenceBody = zod.object({
+  "category": zod.string(),
+  "inApp": zod.boolean(),
+  "email": zod.boolean()
+})
+
+export const UpdateNotificationPreferenceResponse = zod.object({
+  "category": zod.string(),
+  "inApp": zod.boolean(),
+  "email": zod.boolean()
+})
+
+
+/**
+ * @summary Mark all of the current user's notifications as read
+ */
+export const MarkAllNotificationsReadResponse = zod.object({
+  "success": zod.boolean(),
+  "updated": zod.number()
+})
+
+
+/**
+ * @summary Mark a single notification as read
+ */
+export const MarkNotificationReadParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const MarkNotificationReadResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete a notification
+ */
+export const DeleteNotificationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteNotificationResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
  * @summary Get platform-level KPIs
  */
 export const GetPlatformStatsResponse = zod.object({

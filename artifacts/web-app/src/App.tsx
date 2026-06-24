@@ -35,7 +35,12 @@ import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
 import AdminScan from "@/pages/admin/Scan";
 import AdminSessions from "@/pages/admin/Sessions";
+import AdminNotifications from "@/pages/admin/Notifications";
 import PublicCard from "@/pages/PublicCard";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
+import VerifyEmail from "@/pages/VerifyEmail";
+import AcceptInvite from "@/pages/AcceptInvite";
 
 import { PlatformLayout } from "@/components/layouts/PlatformLayout";
 import { AdminLayout } from "@/components/layouts/AdminLayout";
@@ -135,6 +140,12 @@ function Router() {
       {/* Public digital business card — no auth, no layout */}
       <Route path="/c/:token" component={PublicCard} />
 
+      {/* Public email/invitation flows — no auth, no layout */}
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/verify-email" component={VerifyEmail} />
+      <Route path="/accept-invite/:token" component={AcceptInvite} />
+
       {/* Platform Routes */}
       <Route path="/platform">
         {() => <ProtectedRoute component={PlatformDashboard} role="platform" layout={PlatformLayout} />}
@@ -215,6 +226,9 @@ function Router() {
       </Route>
       <Route path="/admin/scan">
         {() => <ProtectedRoute component={AdminScan} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/notifications">
+        {() => <ProtectedRoute component={AdminNotifications} role="admin" layout={AdminLayout} />}
       </Route>
 
       <Route component={NotFound} />

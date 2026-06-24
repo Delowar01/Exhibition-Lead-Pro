@@ -1,13 +1,15 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle } from "lucide-react";
+import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLogout } from "@workspace/api-client-react";
+import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const logoutMutation = useLogout();
+  const { data: unreadData } = useGetUnreadCount({ query: { refetchInterval: 60000, queryKey: getGetUnreadCountQueryKey() } });
+  const unreadCount = unreadData?.count ?? 0;
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
@@ -24,6 +26,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { name: "Leads Pipeline", href: "/admin/leads", icon: BarChart2 },
     { name: "Events", href: "/admin/events", icon: Calendar },
     { name: "Scan Card", href: "/admin/scan", icon: Camera },
+    { name: "Notifications", href: "/admin/notifications", icon: Bell },
     { name: "Team", href: "/admin/team", icon: Users },
     { name: "Roles & Permissions", href: "/admin/roles", icon: ShieldCheck },
     { name: "Reports", href: "/admin/reports", icon: BarChart2 },
@@ -64,7 +67,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <Icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
-                {item.name}
+                <span className="flex-1">{item.name}</span>
+                {item.href === "/admin/notifications" && unreadCount > 0 && (
+                  <span className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
               </Link>
             );
           })}

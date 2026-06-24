@@ -29,6 +29,10 @@ export const usersTable = pgTable("users", {
   mfaSecret: text("mfa_secret"),
   mfaEnrolledAt: timestamp("mfa_enrolled_at"),
   lastLoginAt: timestamp("last_login_at"),
+  // Email verification (Phase 2.5). Null = unverified. ADDITIVE and non-blocking:
+  // existing users default to null but are NOT prevented from signing in — the
+  // verification flow surfaces status and lets users confirm, it does not gate login.
+  emailVerifiedAt: timestamp("email_verified_at"),
   // Profile preferences (Phase 2.4).
   language: text("language").notNull().default("en"),
   timezone: text("timezone"),

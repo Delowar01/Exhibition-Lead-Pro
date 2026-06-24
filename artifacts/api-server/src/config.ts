@@ -106,6 +106,38 @@ export const config = {
     expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
   },
 
+  // Email (Phase 2.5). Provider-agnostic; SMTP is the default and only built-in
+  // transport. ALL values are optional and read from env — when host/user/pass are
+  // unset the email service degrades to a no-op that logs a clear warning instead of
+  // crashing. SendGrid/SES/Mailgun/Postmark/M365/Gmail are added later behind the
+  // same interface without touching business logic.
+  email: {
+    provider: process.env.EMAIL_PROVIDER ?? "smtp",
+    smtpHost: process.env.SMTP_HOST,
+    smtpPort: Number(process.env.SMTP_PORT ?? 587),
+    smtpUser: process.env.SMTP_USER,
+    smtpPass: process.env.SMTP_PASS,
+    // STARTTLS by default (587); set SMTP_SECURE=true for implicit TLS (465).
+    smtpSecure: process.env.SMTP_SECURE === "true",
+    fromAddress: process.env.EMAIL_FROM ?? "no-reply@cardscannerpro.com",
+    fromName: process.env.EMAIL_FROM_NAME ?? "Card Scanner Pro",
+    // Brand name shown in templates (white-label friendly).
+    brandName: process.env.EMAIL_BRAND_NAME ?? "Card Scanner Pro",
+    // Base URL used to build reset/verify/invite links. Falls back to the first
+    // published Replit domain, then localhost for dev.
+    appBaseUrl:
+      process.env.APP_BASE_URL ??
+      (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000"),
+  },
+
+  tokens: {
+    // Password-reset and email-verification link lifetimes.
+    passwordResetTtlMinutes: Number(process.env.PASSWORD_RESET_TTL_MIN ?? 60),
+    emailVerifyTtlHours: Number(process.env.EMAIL_VERIFY_TTL_HOURS ?? 48),
+    // Invitation link lifetime.
+    invitationTtlDays: Number(process.env.INVITATION_TTL_DAYS ?? 7),
+  },
+
   // Comma-separated list of published domains (Replit). Optional.
   replitDomains: process.env.REPLIT_DOMAINS,
 } as const;

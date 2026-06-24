@@ -20,3 +20,4 @@
 - [Refresh-token family revocation](refresh-rotation-revoke.md) — revoke a refresh family ONLY on proven replay (presented secret matches prior hash) + look up by unguessable familyId, else `<guessedId>.<garbage>` is an unauthenticated forced-logout DoS.
 - [Login rate limiter counts failures only](login-ratelimiter-skip-success.md) — per-IP credential guard must skipSuccessfulRequests; counting successful logins false-positives shared-IP/NAT and breaks live integration suites (cumulative localhost logins → 429).
 - [RBAC grant subset guard](rbac-grant-subset-guard.md) — assigning custom roles needs a permission-subset check vs the caller's own perms, not just base-role rank; else self-escalation via custom roles.
+- [Invitation roleIds escalation](invitation-roleids-escalation.md) — assigning custom roleIds needs BOTH target-company scoping (firstRoleNotInCompany) AND a permission-subset check (mirror users.service#setUserRoles); accessibility alone is a back door.
