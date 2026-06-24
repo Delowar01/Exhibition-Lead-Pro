@@ -41,7 +41,14 @@ export function decryptMfaSecret(payload: string): string {
 export function generateBackupCodes(count = 10): string[] {
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
-    const raw = randomToken(8).replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 10);
+    // randomToken is base64url (contains '-'/'_'); after stripping non-alphanumerics
+    // a single token can yield fewer than 10 chars, producing a malformed code.
+    // Accumulate until we have at least 10 alphanumerics, then slice to 10.
+    let raw = "";
+    while (raw.length < 10) {
+      raw += randomToken(8).replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    }
+    raw = raw.slice(0, 10);
     codes.push(`${raw.slice(0, 5)}-${raw.slice(5, 10)}`);
   }
   return codes;
