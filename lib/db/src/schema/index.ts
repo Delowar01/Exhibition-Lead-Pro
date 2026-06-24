@@ -19,3 +19,8 @@ export * from "./meetings";
 export * from "./tasks";
 export * from "./contact_status_history";
 export * from "./business_cards";
+export * from "./roles";
+export * from "./role_permissions";
+export * from "./user_roles";
+export * from "./security_policies";
+export * from "./security_events";

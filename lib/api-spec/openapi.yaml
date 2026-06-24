@@ -31,6 +31,14 @@ tags:
     description: Reports and analytics
   - name: cards
     description: Digital business cards
+  - name: rbac
+    description: Roles and permissions (RBAC)
+  - name: organization
+    description: Self-service organization profile
+  - name: security
+    description: Security Center policies and events
+  - name: profile
+    description: Self-service user profile and activity
 
 paths:
   /healthz:
@@ -685,7 +693,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/UserDetail"
     patch:
       operationId: updateUser
       tags: [users]
@@ -1909,6 +1917,356 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # USER LIFECYCLE (Phase 2.4)
+  /users/{id}/enable:
+    post:
+      operationId: enableUser
+      tags: [users]
+      summary: Enable a user account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /users/{id}/disable:
+    post:
+      operationId: disableUser
+      tags: [users]
+      summary: Disable a user account (revokes sessions)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /users/{id}/force-logout:
+    post:
+      operationId: forceLogoutUser
+      tags: [users]
+      summary: Revoke all of a user's active sessions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForceLogoutResult"
+  /users/{id}/reset-password:
+    post:
+      operationId: requestUserPasswordReset
+      tags: [users]
+      summary: Trigger a password reset for a user (record-only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+  /users/{id}/login-history:
+    get:
+      operationId: getUserLoginHistory
+      tags: [users]
+      summary: List a user's login attempts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginHistoryList"
+  /users/{id}/roles:
+    put:
+      operationId: setUserRoles
+      tags: [users]
+      summary: Replace a user's assigned custom roles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetUserRolesInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDetail"
+
+  # RBAC (Phase 2.4)
+  /rbac/permissions:
+    get:
+      operationId: getPermissionCatalog
+      tags: [rbac]
+      summary: The permission catalog (modules x actions)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionCatalog"
+  /rbac/roles:
+    get:
+      operationId: listRoles
+      tags: [rbac]
+      summary: List roles available to the caller
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleList"
+    post:
+      operationId: createRole
+      tags: [rbac]
+      summary: Create a custom role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+  /rbac/roles/{id}:
+    get:
+      operationId: getRole
+      tags: [rbac]
+      summary: Get a role with its grants
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+    patch:
+      operationId: updateRole
+      tags: [rbac]
+      summary: Update a custom role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+    delete:
+      operationId: deleteRole
+      tags: [rbac]
+      summary: Delete a custom role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ORGANIZATION (Phase 2.4)
+  /organization:
+    get:
+      operationId: getOrganization
+      tags: [organization]
+      summary: Get the caller's organization profile
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+    patch:
+      operationId: updateOrganization
+      tags: [organization]
+      summary: Update the caller's organization profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+
+  # SECURITY CENTER (Phase 2.4)
+  /security/policy:
+    get:
+      operationId: getSecurityPolicy
+      tags: [security]
+      summary: Get the company security policy
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityPolicy"
+    patch:
+      operationId: updateSecurityPolicy
+      tags: [security]
+      summary: Update the company security policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecurityPolicyInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityPolicy"
+  /security/events:
+    get:
+      operationId: listSecurityEvents
+      tags: [security]
+      summary: List security events
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityEventList"
+
+  # PROFILE (Phase 2.4)
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get the authenticated user's profile
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+    patch:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update the authenticated user's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /profile/activity:
+    get:
+      operationId: getProfileActivity
+      tags: [profile]
+      summary: Sessions, login history, and trusted devices
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileActivity"
+
 components:
   schemas:
     HealthStatus:
@@ -2283,6 +2641,444 @@ components:
           type: string
         avatarUrl:
           type: ["string", "null"]
+
+    # USER LIFECYCLE / RBAC / ORG / SECURITY / PROFILE (Phase 2.4)
+    UserDetail:
+      type: object
+      required: [id, email, name, role, createdAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [platform_owner, primary_admin, admin, employee]
+        companyId:
+          type: ["integer", "null"]
+        companyName:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        phone:
+          type: ["string", "null"]
+        language:
+          type: ["string", "null"]
+        timezone:
+          type: ["string", "null"]
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        roleIds:
+          type: array
+          items:
+            type: integer
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleRef"
+        createdAt:
+          type: string
+          format: date-time
+
+    ForceLogoutResult:
+      type: object
+      required: [success, terminated]
+      properties:
+        success:
+          type: boolean
+        terminated:
+          type: integer
+
+    LoginHistoryEntry:
+      type: object
+      required: [id, success, createdAt]
+      properties:
+        id:
+          type: integer
+        ipAddress:
+          type: ["string", "null"]
+        userAgent:
+          type: ["string", "null"]
+        success:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    LoginHistoryList:
+      type: object
+      required: [history]
+      properties:
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoginHistoryEntry"
+
+    SetUserRolesInput:
+      type: object
+      required: [roleIds]
+      properties:
+        roleIds:
+          type: array
+          items:
+            type: integer
+
+    RoleRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+    PermissionGrant:
+      type: object
+      required: [module, action]
+      properties:
+        module:
+          type: string
+        action:
+          type: string
+
+    PermissionCatalog:
+      type: object
+      required: [modules]
+      properties:
+        modules:
+          type: array
+          items:
+            type: object
+            required: [module, label, actions]
+            properties:
+              module:
+                type: string
+              label:
+                type: string
+              actions:
+                type: array
+                items:
+                  type: string
+
+    Role:
+      type: object
+      required: [id, name, isSystem, isDefault, permissions]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: ["integer", "null"]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        isSystem:
+          type: boolean
+        isDefault:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionGrant"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RoleList:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+
+    RoleInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        isDefault:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionGrant"
+
+    RoleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        isDefault:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionGrant"
+
+    Organization:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        legalName:
+          type: ["string", "null"]
+        registrationNumber:
+          type: ["string", "null"]
+        industry:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        vatNumber:
+          type: ["string", "null"]
+        timezone:
+          type: ["string", "null"]
+        currency:
+          type: ["string", "null"]
+        logoUrl:
+          type: ["string", "null"]
+        primaryContactName:
+          type: ["string", "null"]
+        primaryContactEmail:
+          type: ["string", "null"]
+        plan:
+          type: string
+        status:
+          type: string
+
+    OrganizationInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        name:
+          type: string
+        legalName:
+          type: ["string", "null"]
+        registrationNumber:
+          type: ["string", "null"]
+        industry:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        vatNumber:
+          type: ["string", "null"]
+        timezone:
+          type: ["string", "null"]
+        currency:
+          type: ["string", "null"]
+        logoUrl:
+          type: ["string", "null"]
+        primaryContactName:
+          type: ["string", "null"]
+        primaryContactEmail:
+          type: ["string", "null"]
+
+    SecurityPolicy:
+      type: object
+      required: [companyId, passwordMinLength, mfaRequired]
+      properties:
+        companyId:
+          type: integer
+        passwordMinLength:
+          type: integer
+        passwordRequireUppercase:
+          type: boolean
+        passwordRequireNumber:
+          type: boolean
+        passwordRequireSymbol:
+          type: boolean
+        sessionTimeoutMinutes:
+          type: ["integer", "null"]
+        mfaRequired:
+          type: boolean
+        allowedEmailDomains:
+          type: array
+          items:
+            type: string
+        blockedEmailDomains:
+          type: array
+          items:
+            type: string
+        allowedIps:
+          type: array
+          items:
+            type: string
+        allowedCountries:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    SecurityPolicyInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        passwordMinLength:
+          type: integer
+        passwordRequireUppercase:
+          type: boolean
+        passwordRequireNumber:
+          type: boolean
+        passwordRequireSymbol:
+          type: boolean
+        sessionTimeoutMinutes:
+          type: ["integer", "null"]
+        mfaRequired:
+          type: boolean
+        allowedEmailDomains:
+          type: array
+          items:
+            type: string
+        blockedEmailDomains:
+          type: array
+          items:
+            type: string
+        allowedIps:
+          type: array
+          items:
+            type: string
+        allowedCountries:
+          type: array
+          items:
+            type: string
+
+    SecurityEvent:
+      type: object
+      required: [id, type, description, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: ["integer", "null"]
+        userId:
+          type: ["integer", "null"]
+        type:
+          type: string
+        description:
+          type: string
+        ipAddress:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    SecurityEventList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityEvent"
+
+    Profile:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        phone:
+          type: ["string", "null"]
+        role:
+          type: string
+          enum: [platform_owner, primary_admin, admin, employee]
+        companyId:
+          type: ["integer", "null"]
+        companyName:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        language:
+          type: ["string", "null"]
+        timezone:
+          type: ["string", "null"]
+        mfaEnabled:
+          type: boolean
+        lastLoginAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleRef"
+
+    ProfileInput:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        language:
+          type: string
+        timezone:
+          type: ["string", "null"]
+
+    ProfileActivity:
+      type: object
+      required: [sessions, loginHistory, devices]
+      properties:
+        sessions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        loginHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoginHistoryEntry"
+        devices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
 
     # COMPANIES
     Company:

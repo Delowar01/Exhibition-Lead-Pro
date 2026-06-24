@@ -2,7 +2,10 @@ import { usersTable } from "@workspace/db";
 import { normalizeRole, type AuthUser } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
 import { hashPassword } from "../lib/auth.js";
+import { revokeOtherSessions } from "../lib/sessions.js";
 import * as usersRepo from "../repositories/users.repository.js";
+import * as rbacRepo from "../repositories/rbac.repository.js";
+import * as securityRepo from "../repositories/security.repository.js";
 
 // Role ranks for escalation checks: a caller may never create or promote a user
 // to a role higher than their own.
@@ -73,15 +76,22 @@ export async function createUser(user: AuthUser, input: CreateUserInput) {
 export interface UpdateMeInput {
   name?: string;
   avatarUrl?: string | null;
+  phone?: string | null;
+  language?: string;
+  timezone?: string | null;
 }
 
 export async function updateMe(user: AuthUser, input: UpdateMeInput) {
   const id = user.id;
-  const { name, avatarUrl } = input;
-  const patch: { name?: string; avatarUrl?: string | null } = {};
+  const { name, avatarUrl, phone, language, timezone } = input;
+  const patch: Partial<typeof usersTable.$inferInsert> = {};
   if (typeof name === "string" && name.trim().length > 0) patch.name = name.trim();
   if (avatarUrl === null || typeof avatarUrl === "string") patch.avatarUrl = avatarUrl;
+  if (phone === null || typeof phone === "string") patch.phone = phone;
+  if (typeof language === "string" && language.trim().length > 0) patch.language = language.trim();
+  if (timezone === null || typeof timezone === "string") patch.timezone = timezone;
   if (Object.keys(patch).length === 0) throw new AppError(400, "Nothing to update");
+  patch.updatedAt = new Date();
   const updated = await usersRepo.update(id, patch);
   if (!updated) throw new AppError(404, "User not found");
   const companyName = updated.companyId ? await usersRepo.companyName(updated.companyId) : null;
@@ -92,7 +102,16 @@ export async function getUser(user: AuthUser, id: number) {
   const found = await usersRepo.findById(user, id);
   if (!found) throw new AppError(404, "User not found");
   const companyName = found.companyId ? await usersRepo.companyName(found.companyId) : null;
-  return formatUser(found, companyName);
+  const roles = await rbacRepo.rolesForUser(found.id);
+  return {
+    ...formatUser(found, companyName),
+    phone: found.phone,
+    language: found.language,
+    timezone: found.timezone,
+    permissions: found.permissions ?? {},
+    roleIds: roles.map((r) => r.id),
+    roles: roles.map((r) => ({ id: r.id, name: r.name })),
+  };
 }
 
 export interface UpdateUserInput {
@@ -115,9 +134,103 @@ export async function updateUser(user: AuthUser, id: number, input: UpdateUserIn
   return formatUser(updated, companyName);
 }
 
+// Soft-delete (Phase 2.4): mark deletedAt, deactivate, and force-logout all the
+// target's sessions. Non-destructive — preserves their authored records.
 export async function deleteUser(user: AuthUser, id: number) {
   const target = await usersRepo.findById(user, id);
   if (!target) throw new AppError(404, "User not found");
-  await usersRepo.remove(id);
+  if (target.id === user.id) throw new AppError(400, "You cannot delete your own account");
+  await usersRepo.softDelete(id);
+  await revokeOtherSessions(id, -1, "user_deleted");
+  await recordUserEvent(user, target, "user_deleted", `User deleted: ${target.email}`);
   return { success: true, message: "User deleted" };
+}
+
+// Enable/disable a user account. Disabling also revokes all active sessions so
+// access is cut immediately (requireAuth already rejects inactive accounts).
+export async function setUserActive(user: AuthUser, id: number, active: boolean) {
+  const target = await usersRepo.findById(user, id);
+  if (!target) throw new AppError(404, "User not found");
+  if (target.id === user.id && !active) throw new AppError(400, "You cannot disable your own account");
+  const updated = await usersRepo.update(id, { isActive: active, updatedAt: new Date() });
+  if (!updated) throw new AppError(404, "User not found");
+  if (!active) await revokeOtherSessions(id, -1, "user_disabled");
+  await recordUserEvent(user, target, active ? "user_enabled" : "user_disabled", `User ${active ? "enabled" : "disabled"}: ${target.email}`);
+  const companyName = updated.companyId ? await usersRepo.companyName(updated.companyId) : null;
+  return formatUser(updated, companyName);
+}
+
+// Force-logout: revoke every active session for the target user.
+export async function forceLogout(user: AuthUser, id: number) {
+  const target = await usersRepo.findById(user, id);
+  if (!target) throw new AppError(404, "User not found");
+  const count = await revokeOtherSessions(id, -1, "force_logout");
+  await recordUserEvent(user, target, "user_force_logout", `Forced logout: ${target.email}`);
+  return { success: true, terminated: count };
+}
+
+// Password-reset trigger. Record-only for now — the actual reset email is wired
+// in Phase 2.5 (Email/Notifications). Records a security event so the request is
+// auditable; no token is minted here.
+export async function requestPasswordReset(user: AuthUser, id: number) {
+  const target = await usersRepo.findById(user, id);
+  if (!target) throw new AppError(404, "User not found");
+  await recordUserEvent(user, target, "password_reset_requested", `Password reset requested for: ${target.email}`);
+  return { success: true, message: "Password reset requested" };
+}
+
+export async function loginHistory(user: AuthUser, id: number, limit = 50) {
+  const target = await usersRepo.findById(user, id);
+  if (!target) throw new AppError(404, "User not found");
+  const history = await usersRepo.loginHistory(id, Math.min(200, Math.max(1, limit)));
+  return { history };
+}
+
+// Assigns a set of custom/system roles to a user (replaces the existing set).
+// Validates each role is assignable by the caller (own tenant or a system
+// template). RBAC grants are ADDITIVE on top of the user's legacy permissions.
+export async function setUserRoles(user: AuthUser, id: number, roleIds: number[]) {
+  const target = await usersRepo.findById(user, id);
+  if (!target) throw new AppError(404, "User not found");
+  const ids = Array.from(new Set(roleIds.filter((n) => Number.isInteger(n))));
+  const bad = await rbacRepo.firstInaccessibleRole(user, ids);
+  if (bad !== null) throw new AppError(400, `Role ${bad} is not assignable`);
+
+  // Anti-escalation: a caller may not grant authority they do not themselves
+  // hold. platform_owner/primary_admin bypass all permission checks, so they may
+  // grant anything within their accessible tenants. Everyone else can only assign
+  // roles whose permissions are a subset of their own effective permissions —
+  // otherwise an actor with team/roles edit could self-assign a powerful custom
+  // role and escalate past the base-role rank guard.
+  if (user.role !== "platform_owner" && user.role !== "primary_admin") {
+    const granted = await rbacRepo.permissionsForRoles(ids);
+    const held = user.permissions ?? {};
+    for (const [module, actions] of Object.entries(granted)) {
+      const owned = new Set(held[module] ?? []);
+      for (const action of actions) {
+        if (!owned.has(action)) {
+          throw new AppError(403, `Cannot grant ${module}:${action} — you do not hold this permission`);
+        }
+      }
+    }
+  }
+
+  await rbacRepo.setUserRoles(id, ids);
+  await recordUserEvent(user, target, "user_roles_changed", `Roles updated for: ${target.email}`);
+  return getUser(user, id);
+}
+
+async function recordUserEvent(
+  actor: AuthUser,
+  target: typeof usersTable.$inferSelect,
+  type: string,
+  description: string,
+) {
+  await securityRepo.insertEvent({
+    companyId: target.companyId,
+    userId: target.id,
+    type,
+    description,
+    metadata: { actorId: actor.id, actorEmail: actor.email },
+  });
 }

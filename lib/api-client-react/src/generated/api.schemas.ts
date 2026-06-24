@@ -304,6 +304,289 @@ export interface UserSelfUpdate {
   avatarUrl?: string | null;
 }
 
+export type UserDetailRole = typeof UserDetailRole[keyof typeof UserDetailRole];
+
+
+export const UserDetailRole = {
+  platform_owner: 'platform_owner',
+  primary_admin: 'primary_admin',
+  admin: 'admin',
+  employee: 'employee',
+} as const;
+
+export type UserDetailPermissions = {[key: string]: string[]};
+
+export interface RoleRef {
+  id: number;
+  name: string;
+}
+
+export interface UserDetail {
+  id: number;
+  email: string;
+  name: string;
+  role: UserDetailRole;
+  /** @nullable */
+  companyId?: number | null;
+  /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  isActive?: boolean;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  language?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  permissions?: UserDetailPermissions;
+  roleIds?: number[];
+  roles?: RoleRef[];
+  createdAt: string;
+}
+
+export interface ForceLogoutResult {
+  success: boolean;
+  terminated: number;
+}
+
+export interface LoginHistoryEntry {
+  id: number;
+  /** @nullable */
+  ipAddress?: string | null;
+  /** @nullable */
+  userAgent?: string | null;
+  success: boolean;
+  /** @nullable */
+  reason?: string | null;
+  createdAt: string;
+}
+
+export interface LoginHistoryList {
+  history: LoginHistoryEntry[];
+}
+
+export interface SetUserRolesInput {
+  roleIds: number[];
+}
+
+export interface PermissionGrant {
+  module: string;
+  action: string;
+}
+
+export type PermissionCatalogModulesItem = {
+  module: string;
+  label: string;
+  actions: string[];
+};
+
+export interface PermissionCatalog {
+  modules: PermissionCatalogModulesItem[];
+}
+
+export interface Role {
+  id: number;
+  /** @nullable */
+  companyId?: number | null;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  isSystem: boolean;
+  isDefault: boolean;
+  permissions: PermissionGrant[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RoleList {
+  roles: Role[];
+}
+
+export interface RoleInput {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  isDefault?: boolean;
+  permissions?: PermissionGrant[];
+}
+
+export interface RoleUpdate {
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  isDefault?: boolean;
+  permissions?: PermissionGrant[];
+}
+
+export interface Organization {
+  id: number;
+  name: string;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  registrationNumber?: string | null;
+  /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  vatNumber?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  primaryContactName?: string | null;
+  /** @nullable */
+  primaryContactEmail?: string | null;
+  plan?: string;
+  status?: string;
+}
+
+export interface OrganizationInput {
+  companyId?: number;
+  name?: string;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  registrationNumber?: string | null;
+  /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  vatNumber?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  primaryContactName?: string | null;
+  /** @nullable */
+  primaryContactEmail?: string | null;
+}
+
+export interface SecurityPolicy {
+  companyId: number;
+  passwordMinLength: number;
+  passwordRequireUppercase?: boolean;
+  passwordRequireNumber?: boolean;
+  passwordRequireSymbol?: boolean;
+  /** @nullable */
+  sessionTimeoutMinutes?: number | null;
+  mfaRequired: boolean;
+  allowedEmailDomains?: string[];
+  blockedEmailDomains?: string[];
+  allowedIps?: string[];
+  allowedCountries?: string[];
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export interface SecurityPolicyInput {
+  companyId?: number;
+  passwordMinLength?: number;
+  passwordRequireUppercase?: boolean;
+  passwordRequireNumber?: boolean;
+  passwordRequireSymbol?: boolean;
+  /** @nullable */
+  sessionTimeoutMinutes?: number | null;
+  mfaRequired?: boolean;
+  allowedEmailDomains?: string[];
+  blockedEmailDomains?: string[];
+  allowedIps?: string[];
+  allowedCountries?: string[];
+}
+
+export interface SecurityEvent {
+  id: number;
+  /** @nullable */
+  companyId?: number | null;
+  /** @nullable */
+  userId?: number | null;
+  type: string;
+  description: string;
+  /** @nullable */
+  ipAddress?: string | null;
+  createdAt: string;
+}
+
+export interface SecurityEventList {
+  events: SecurityEvent[];
+}
+
+export type ProfileRole = typeof ProfileRole[keyof typeof ProfileRole];
+
+
+export const ProfileRole = {
+  platform_owner: 'platform_owner',
+  primary_admin: 'primary_admin',
+  admin: 'admin',
+  employee: 'employee',
+} as const;
+
+export interface Profile {
+  id: number;
+  email: string;
+  name: string;
+  /** @nullable */
+  phone?: string | null;
+  role: ProfileRole;
+  /** @nullable */
+  companyId?: number | null;
+  /** @nullable */
+  companyName?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  language?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  mfaEnabled?: boolean;
+  /** @nullable */
+  lastLoginAt?: string | null;
+  createdAt?: string;
+  roles?: RoleRef[];
+}
+
+export interface ProfileInput {
+  name?: string;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  language?: string;
+  /** @nullable */
+  timezone?: string | null;
+}
+
+export type ProfileActivitySessionsItem = { [key: string]: unknown };
+
+export type ProfileActivityDevicesItem = { [key: string]: unknown };
+
+export interface ProfileActivity {
+  sessions: ProfileActivitySessionsItem[];
+  loginHistory: LoginHistoryEntry[];
+  devices: ProfileActivityDevicesItem[];
+}
+
 export type CompanyPlan = typeof CompanyPlan[keyof typeof CompanyPlan];
 
 
@@ -2016,4 +2299,16 @@ export const ListTasksScope = {
   mine: 'mine',
   all: 'all',
 } as const;
+
+export type GetOrganizationParams = {
+companyId?: number;
+};
+
+export type GetSecurityPolicyParams = {
+companyId?: number;
+};
+
+export type ListSecurityEventsParams = {
+limit?: number;
+};
 

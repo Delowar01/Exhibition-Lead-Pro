@@ -29,6 +29,12 @@ export const usersTable = pgTable("users", {
   mfaSecret: text("mfa_secret"),
   mfaEnrolledAt: timestamp("mfa_enrolled_at"),
   lastLoginAt: timestamp("last_login_at"),
+  // Profile preferences (Phase 2.4).
+  language: text("language").notNull().default("en"),
+  timezone: text("timezone"),
+  // Soft-delete (Phase 2.4 — deferred here from 2.3). Null = active. Login + auth
+  // user-load must exclude soft-deleted users.
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

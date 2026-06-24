@@ -618,15 +618,17 @@ export const GetUserResponse = zod.object({
   "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
   "companyId": zod.number().nullish(),
   "companyName": zod.string().nullish(),
-  "phone": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
-  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
-  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
-  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
-  "accessibleCompanies": zod.array(zod.number()).optional(),
-  "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
-  "lastLoginAt": zod.coerce.date().nullish(),
+  "phone": zod.string().nullish(),
+  "language": zod.string().nullish(),
+  "timezone": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "roleIds": zod.array(zod.number()).optional(),
+  "roles": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})).optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -2299,6 +2301,475 @@ export const GetPublicCardResponse = zod.object({
   "avatarUrl": zod.string().nullish(),
   "templateId": zod.string(),
   "publicUrl": zod.string().nullish()
+})
+
+
+/**
+ * @summary Enable a user account
+ */
+export const EnableUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const EnableUserResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
+  "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Disable a user account (revokes sessions)
+ */
+export const DisableUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DisableUserResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
+  "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Revoke all of a user's active sessions
+ */
+export const ForceLogoutUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ForceLogoutUserResponse = zod.object({
+  "success": zod.boolean(),
+  "terminated": zod.number()
+})
+
+
+/**
+ * @summary Trigger a password reset for a user (record-only)
+ */
+export const RequestUserPasswordResetParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RequestUserPasswordResetResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List a user's login attempts
+ */
+export const GetUserLoginHistoryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetUserLoginHistoryResponse = zod.object({
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "ipAddress": zod.string().nullish(),
+  "userAgent": zod.string().nullish(),
+  "success": zod.boolean(),
+  "reason": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Replace a user's assigned custom roles
+ */
+export const SetUserRolesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetUserRolesBody = zod.object({
+  "roleIds": zod.array(zod.number())
+})
+
+export const SetUserRolesResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "isActive": zod.boolean().optional(),
+  "phone": zod.string().nullish(),
+  "language": zod.string().nullish(),
+  "timezone": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "roleIds": zod.array(zod.number()).optional(),
+  "roles": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})).optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary The permission catalog (modules x actions)
+ */
+export const GetPermissionCatalogResponse = zod.object({
+  "modules": zod.array(zod.object({
+  "module": zod.string(),
+  "label": zod.string(),
+  "actions": zod.array(zod.string())
+}))
+})
+
+
+/**
+ * @summary List roles available to the caller
+ */
+export const ListRolesResponse = zod.object({
+  "roles": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number().nullish(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "isSystem": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "permissions": zod.array(zod.object({
+  "module": zod.string(),
+  "action": zod.string()
+})),
+  "createdAt": zod.coerce.date().optional(),
+  "updatedAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Create a custom role
+ */
+export const CreateRoleBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "isDefault": zod.boolean().optional(),
+  "permissions": zod.array(zod.object({
+  "module": zod.string(),
+  "action": zod.string()
+})).optional()
+})
+
+
+/**
+ * @summary Get a role with its grants
+ */
+export const GetRoleParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetRoleResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number().nullish(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "isSystem": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "permissions": zod.array(zod.object({
+  "module": zod.string(),
+  "action": zod.string()
+})),
+  "createdAt": zod.coerce.date().optional(),
+  "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Update a custom role
+ */
+export const UpdateRoleParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateRoleBody = zod.object({
+  "name": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "isDefault": zod.boolean().optional(),
+  "permissions": zod.array(zod.object({
+  "module": zod.string(),
+  "action": zod.string()
+})).optional()
+})
+
+export const UpdateRoleResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number().nullish(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "isSystem": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "permissions": zod.array(zod.object({
+  "module": zod.string(),
+  "action": zod.string()
+})),
+  "createdAt": zod.coerce.date().optional(),
+  "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Delete a custom role
+ */
+export const DeleteRoleParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteRoleResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Get the caller's organization profile
+ */
+export const GetOrganizationQueryParams = zod.object({
+  "companyId": zod.coerce.number().optional()
+})
+
+export const GetOrganizationResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "legalName": zod.string().nullish(),
+  "registrationNumber": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "vatNumber": zod.string().nullish(),
+  "timezone": zod.string().nullish(),
+  "currency": zod.string().nullish(),
+  "logoUrl": zod.string().nullish(),
+  "primaryContactName": zod.string().nullish(),
+  "primaryContactEmail": zod.string().nullish(),
+  "plan": zod.string().optional(),
+  "status": zod.string().optional()
+})
+
+
+/**
+ * @summary Update the caller's organization profile
+ */
+export const UpdateOrganizationBody = zod.object({
+  "companyId": zod.number().optional(),
+  "name": zod.string().optional(),
+  "legalName": zod.string().nullish(),
+  "registrationNumber": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "vatNumber": zod.string().nullish(),
+  "timezone": zod.string().nullish(),
+  "currency": zod.string().nullish(),
+  "logoUrl": zod.string().nullish(),
+  "primaryContactName": zod.string().nullish(),
+  "primaryContactEmail": zod.string().nullish()
+})
+
+export const UpdateOrganizationResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "legalName": zod.string().nullish(),
+  "registrationNumber": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "vatNumber": zod.string().nullish(),
+  "timezone": zod.string().nullish(),
+  "currency": zod.string().nullish(),
+  "logoUrl": zod.string().nullish(),
+  "primaryContactName": zod.string().nullish(),
+  "primaryContactEmail": zod.string().nullish(),
+  "plan": zod.string().optional(),
+  "status": zod.string().optional()
+})
+
+
+/**
+ * @summary Get the company security policy
+ */
+export const GetSecurityPolicyQueryParams = zod.object({
+  "companyId": zod.coerce.number().optional()
+})
+
+export const GetSecurityPolicyResponse = zod.object({
+  "companyId": zod.number(),
+  "passwordMinLength": zod.number(),
+  "passwordRequireUppercase": zod.boolean().optional(),
+  "passwordRequireNumber": zod.boolean().optional(),
+  "passwordRequireSymbol": zod.boolean().optional(),
+  "sessionTimeoutMinutes": zod.number().nullish(),
+  "mfaRequired": zod.boolean(),
+  "allowedEmailDomains": zod.array(zod.string()).optional(),
+  "blockedEmailDomains": zod.array(zod.string()).optional(),
+  "allowedIps": zod.array(zod.string()).optional(),
+  "allowedCountries": zod.array(zod.string()).optional(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Update the company security policy
+ */
+export const UpdateSecurityPolicyBody = zod.object({
+  "companyId": zod.number().optional(),
+  "passwordMinLength": zod.number().optional(),
+  "passwordRequireUppercase": zod.boolean().optional(),
+  "passwordRequireNumber": zod.boolean().optional(),
+  "passwordRequireSymbol": zod.boolean().optional(),
+  "sessionTimeoutMinutes": zod.number().nullish(),
+  "mfaRequired": zod.boolean().optional(),
+  "allowedEmailDomains": zod.array(zod.string()).optional(),
+  "blockedEmailDomains": zod.array(zod.string()).optional(),
+  "allowedIps": zod.array(zod.string()).optional(),
+  "allowedCountries": zod.array(zod.string()).optional()
+})
+
+export const UpdateSecurityPolicyResponse = zod.object({
+  "companyId": zod.number(),
+  "passwordMinLength": zod.number(),
+  "passwordRequireUppercase": zod.boolean().optional(),
+  "passwordRequireNumber": zod.boolean().optional(),
+  "passwordRequireSymbol": zod.boolean().optional(),
+  "sessionTimeoutMinutes": zod.number().nullish(),
+  "mfaRequired": zod.boolean(),
+  "allowedEmailDomains": zod.array(zod.string()).optional(),
+  "blockedEmailDomains": zod.array(zod.string()).optional(),
+  "allowedIps": zod.array(zod.string()).optional(),
+  "allowedCountries": zod.array(zod.string()).optional(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List security events
+ */
+export const listSecurityEventsQueryLimitDefault = 100;
+
+export const ListSecurityEventsQueryParams = zod.object({
+  "limit": zod.coerce.number().default(listSecurityEventsQueryLimitDefault)
+})
+
+export const ListSecurityEventsResponse = zod.object({
+  "events": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "type": zod.string(),
+  "description": zod.string(),
+  "ipAddress": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Get the authenticated user's profile
+ */
+export const GetProfileResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "language": zod.string().nullish(),
+  "timezone": zod.string().nullish(),
+  "mfaEnabled": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date().optional(),
+  "roles": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})).optional()
+})
+
+
+/**
+ * @summary Update the authenticated user's profile
+ */
+export const UpdateProfileBody = zod.object({
+  "name": zod.string().optional(),
+  "phone": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "language": zod.string().optional(),
+  "timezone": zod.string().nullish()
+})
+
+export const UpdateProfileResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "language": zod.string().nullish(),
+  "timezone": zod.string().nullish(),
+  "mfaEnabled": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date().optional(),
+  "roles": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string()
+})).optional()
+})
+
+
+/**
+ * @summary Sessions, login history, and trusted devices
+ */
+export const GetProfileActivityResponse = zod.object({
+  "sessions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "loginHistory": zod.array(zod.object({
+  "id": zod.number(),
+  "ipAddress": zod.string().nullish(),
+  "userAgent": zod.string().nullish(),
+  "success": zod.boolean(),
+  "reason": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "devices": zod.array(zod.record(zod.string(), zod.unknown()))
 })
 
 

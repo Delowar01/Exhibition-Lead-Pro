@@ -5,7 +5,7 @@ import { writeAudit } from "../lib/audit.js";
 import { config } from "../config.js";
 import { signMfaChallenge } from "../lib/tokens.js";
 import { createSession, rotateSession, revokeSession, revokeOtherSessions, listActiveSessions } from "../lib/sessions.js";
-import { getClientIp, parseDevice, recordLoginAttempt } from "../lib/security.js";
+import { getClientIp, getCountry, parseDevice, recordLoginAttempt } from "../lib/security.js";
 import { randomToken, sha256 } from "../lib/crypto.js";
 import * as auth from "../services/auth.service.js";
 
@@ -77,7 +77,7 @@ router.post("/auth/login", async (req: AuthRequest, res) => {
   const ip = getClientIp(req);
   const userAgent = req.headers["user-agent"] ?? null;
 
-  const outcome = await auth.authenticateLogin({ email, password, ip, userAgent });
+  const outcome = await auth.authenticateLogin({ email, password, ip, userAgent, country: getCountry(req) });
   if (outcome.kind === "locked") {
     res.status(429).json({ error: outcome.message, retryAfter: outcome.retryAfterSeconds });
     return;

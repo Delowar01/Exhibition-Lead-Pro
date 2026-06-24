@@ -5,6 +5,7 @@ import { AppError } from "../middlewares/errorHandler.js";
 import { verifyMfaChallenge } from "../lib/tokens.js";
 import { revokeSession, revokeOtherSessions } from "../lib/sessions.js";
 import { validatePassword, checkLockout, recordLoginAttempt } from "../lib/security.js";
+import * as securityService from "./security.service.js";
 import {
   generateMfaSecret,
   buildOtpauthUrl,
@@ -96,8 +97,9 @@ export async function authenticateLogin(params: {
   password?: string;
   ip: string | null;
   userAgent: string | null;
+  country?: string | null;
 }): Promise<LoginOutcome> {
-  const { email, password, ip, userAgent } = params;
+  const { email, password, ip, userAgent, country = null } = params;
   if (!email || !password) throw new AppError(400, "Email and password required");
 
   const lockout = await checkLockout(email, ip);
@@ -125,6 +127,16 @@ export async function authenticateLogin(params: {
     if (blockedReason) {
       await recordLoginAttempt({ email, ip, userId: user.id, success: false, reason: "company_blocked", userAgent });
       throw new AppError(403, blockedReason);
+    }
+
+    // Security Center policy enforcement (domain / IP / country). Runs only after
+    // the password is verified, so it never leaks account existence. Empty policy
+    // lists impose no restriction → no-op for companies without a configured policy.
+    const policyBlock = await securityService.evaluateLoginPolicy({ companyId: user.companyId, email, ip, country });
+    if (policyBlock) {
+      await recordLoginAttempt({ email, ip, userId: user.id, success: false, reason: "policy_blocked", userAgent });
+      await securityService.recordLoginBlock({ companyId: user.companyId, userId: user.id, email, ip, reason: policyBlock });
+      throw new AppError(403, policyBlock);
     }
   }
 

@@ -29,6 +29,12 @@ export interface CompanyInput {
   vatNumber?: string;
   website?: string;
   plan?: string;
+  legalName?: string | null;
+  registrationNumber?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
+  primaryContactName?: string | null;
+  primaryContactEmail?: string | null;
 }
 
 export async function createCompany(user: AuthUser, input: CompanyInput) {
@@ -42,6 +48,12 @@ export async function createCompany(user: AuthUser, input: CompanyInput) {
     vatNumber: input.vatNumber,
     website: input.website,
     plan: input.plan ?? "free",
+    legalName: input.legalName,
+    registrationNumber: input.registrationNumber,
+    timezone: input.timezone,
+    currency: input.currency,
+    primaryContactName: input.primaryContactName,
+    primaryContactEmail: input.primaryContactEmail,
   });
   await companiesRepo.insertActivityLog({
     type: "company_created",
@@ -69,6 +81,12 @@ export async function updateCompany(id: number, input: CompanyInput) {
     vatNumber: input.vatNumber,
     website: input.website,
     plan: input.plan,
+    legalName: input.legalName,
+    registrationNumber: input.registrationNumber,
+    timezone: input.timezone,
+    currency: input.currency,
+    primaryContactName: input.primaryContactName,
+    primaryContactEmail: input.primaryContactEmail,
   });
   if (!company) throw new AppError(404, "Company not found");
   return { ...company, userCount: 0, contactCount: 0, scanCount: 0 };

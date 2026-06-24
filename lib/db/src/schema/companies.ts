@@ -12,6 +12,13 @@ export const companiesTable = pgTable("companies", {
   website: text("website"),
   logoUrl: text("logo_url"),
   phone: text("phone"),
+  // Extended organization profile (Phase 2.4). All nullable/additive.
+  legalName: text("legal_name"),
+  registrationNumber: text("registration_number"),
+  timezone: text("timezone"),
+  currency: text("currency"),
+  primaryContactName: text("primary_contact_name"),
+  primaryContactEmail: text("primary_contact_email"),
   plan: text("plan").notNull().default("free"), // free, starter, professional, business, enterprise (references plans.id)
   status: text("status").notNull().default("trial"), // trial, active, suspended, expired, cancelled
   suspendedReason: text("suspended_reason"),

@@ -15,6 +15,10 @@ import followUpsRouter from "./follow_ups.js";
 import meetingsRouter from "./meetings.js";
 import tasksRouter from "./tasks.js";
 import cardsRouter from "./cards.js";
+import rbacRouter from "./rbac.js";
+import orgRouter from "./org.js";
+import securityRouter from "./security.js";
+import profileRouter from "./profile.js";
 
 const router: IRouter = Router();
 
@@ -27,6 +31,10 @@ router.use(authRouter);
 router.use(cardsRouter);
 router.use(companiesRouter);
 router.use(usersRouter);
+router.use(rbacRouter);
+router.use(orgRouter);
+router.use(securityRouter);
+router.use(profileRouter);
 router.use(contactsRouter);
 router.use(leadsRouter);
 router.use(eventsRouter);

@@ -26,6 +26,10 @@ import AdminLeadDetail from "@/pages/admin/LeadDetail";
 import AdminEvents from "@/pages/admin/Events";
 import AdminEventDetail from "@/pages/admin/EventDetail";
 import AdminTeam from "@/pages/admin/Team";
+import AdminRoles from "@/pages/admin/Roles";
+import AdminOrganization from "@/pages/admin/Organization";
+import AdminSecurity from "@/pages/admin/Security";
+import AdminProfile from "@/pages/admin/Profile";
 import AdminReports from "@/pages/admin/Reports";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
@@ -184,6 +188,18 @@ function Router() {
       </Route>
       <Route path="/admin/team">
         {() => <ProtectedRoute component={AdminTeam} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/roles">
+        {() => <ProtectedRoute component={AdminRoles} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/organization">
+        {() => <ProtectedRoute component={AdminOrganization} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/security">
+        {() => <ProtectedRoute component={AdminSecurity} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/profile">
+        {() => <ProtectedRoute component={AdminProfile} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/reports">
         {() => <ProtectedRoute component={AdminReports} role="admin" layout={AdminLayout} />}

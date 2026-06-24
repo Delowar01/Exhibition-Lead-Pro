@@ -1,9 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
-import { db, usersTable, companiesTable, userCompanyAccessTable, type Company } from "@workspace/db";
-import { eq, inArray, type SQL } from "drizzle-orm";
+import { db, usersTable, companiesTable, userCompanyAccessTable, userRolesTable, rolePermissionsTable, type Company } from "@workspace/db";
+import { and, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { verifyAccessToken } from "../lib/tokens.js";
 import { validateSession } from "../lib/sessions.js";
+import { mergePermissions, type PermissionMatrix } from "../lib/rbac.js";
 
 export interface AuthUser {
   id: number;
@@ -100,7 +101,11 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       sessionId = session.id;
     }
 
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.id)).limit(1);
+    const [user] = await db
+      .select()
+      .from(usersTable)
+      .where(and(eq(usersTable.id, payload.id), isNull(usersTable.deletedAt)))
+      .limit(1);
     if (!user || !user.isActive) {
       res.status(401).json({ error: "Account is disabled" });
       return;
@@ -140,13 +145,35 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       return;
     }
 
+    // Effective permissions = legacy per-user JSON ∪ grants from assigned roles.
+    // This keeps the RBAC model ADDITIVE: existing permission JSON still works and
+    // requirePermission stays unchanged. platform_owner/primary_admin bypass anyway,
+    // so the role join is skipped for them to save a round-trip.
+    let permissions: PermissionMatrix = user.permissions ?? {};
+    if (user.role !== "platform_owner" && user.role !== "primary_admin") {
+      const grantRows = await db
+        .select({ module: rolePermissionsTable.module, action: rolePermissionsTable.action })
+        .from(userRolesTable)
+        .innerJoin(rolePermissionsTable, eq(userRolesTable.roleId, rolePermissionsTable.roleId))
+        .where(eq(userRolesTable.userId, user.id));
+      if (grantRows.length > 0) {
+        const roleMatrix: PermissionMatrix = {};
+        for (const r of grantRows) {
+          const set = new Set(roleMatrix[r.module] ?? []);
+          set.add(r.action);
+          roleMatrix[r.module] = Array.from(set);
+        }
+        permissions = mergePermissions(permissions, roleMatrix);
+      }
+    }
+
     req.user = {
       id: user.id,
       email: user.email,
       name: user.name,
       role: normalizeRole(user.role),
       companyId: user.companyId,
-      permissions: user.permissions ?? {},
+      permissions,
       contactVisibility: user.contactVisibility,
       companyVisibility: user.companyVisibility,
       selectedUserIds: user.selectedUserIds ?? [],
