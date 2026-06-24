@@ -107,3 +107,9 @@ id = "XoolCSC72JAQuI5vZE2MR"
 uri = "file://QA_REPORT.md"
 type = "text"
 title = "Full Regression QA Report (Pre-APK Release Candidate)"
+
+[[outputs]]
+id = "yVkdvr_2ppRt8E3bo6upk"
+uri = "file://docs/reports/STAGE_2_PHASE_REPORT.md"
+type = "text"
+title = "Stage 2 Report — Phases 2.1 to 2.10"
