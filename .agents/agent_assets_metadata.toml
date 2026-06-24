@@ -113,3 +113,9 @@ id = "yVkdvr_2ppRt8E3bo6upk"
 uri = "file://docs/reports/STAGE_2_PHASE_REPORT.md"
 type = "text"
 title = "Stage 2 Report — Phases 2.1 to 2.10"
+
+[[outputs]]
+id = "Qt2Vogg35mCvllf3U0n1k"
+uri = "file://docs/reports/ENTERPRISE_PRIVACY_AUDIT.md"
+type = "text"
+title = "Enterprise Privacy & Data Governance Audit"

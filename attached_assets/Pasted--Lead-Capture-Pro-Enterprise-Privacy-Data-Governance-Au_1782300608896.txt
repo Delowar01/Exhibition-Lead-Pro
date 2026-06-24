@@ -1,0 +1,422 @@
+# Lead Capture Pro – Enterprise Privacy & Data Governance Audit
+
+## Objective
+
+Conduct a comprehensive **Enterprise Privacy & Data Governance Audit** of the entire Lead Capture Pro platform.
+
+This is an **audit and verification task first**, not a feature development task.
+
+The purpose is to verify that the platform follows enterprise SaaS best practices where the **Platform Owner (Elite Marcom)** can fully operate the SaaS platform **without having routine access to customer business data**.
+
+If any gaps are found, identify them, classify their severity, and recommend remediation. Only implement fixes after documenting and verifying them.
+
+---
+
+# Background
+
+Lead Capture Pro is an enterprise multi-tenant SaaS platform.
+
+There are two completely separate administrative levels:
+
+## Level 1 — Platform Owner (Elite Marcom)
+
+Responsible for:
+
+* Platform management
+* Company onboarding
+* Subscription management
+* Billing
+* Licensing
+* Infrastructure
+* Platform monitoring
+* Queue monitoring
+* Security monitoring
+* System maintenance
+* Global configuration
+
+Platform Owner is **NOT** a customer.
+
+Platform Owner should manage the platform itself, **not customer business data**.
+
+---
+
+## Level 2 — Customer Company
+
+Each customer owns its own isolated environment.
+
+Examples of customer-owned data include:
+
+* Contacts
+* Leads
+* Business Cards
+* OCR Results
+* Meeting Notes
+* Events
+* Follow-ups
+* Sales Pipeline
+* Reports
+* Analytics
+* AI Results
+* Attachments
+* Imported Files
+* Exported Data
+* User Activity
+* Company Documents
+
+Only authorized users belonging to that company may access this information.
+
+---
+
+# Enterprise Privacy Policy
+
+The platform must follow the Standard Enterprise SaaS Privacy Model.
+
+---
+
+## Platform Owner CAN access
+
+Platform operational information only.
+
+Examples:
+
+* Company profile
+* Subscription
+* License
+* Billing
+* User counts
+* Storage usage
+* API usage
+* Queue health
+* Background jobs
+* Security alerts
+* Audit summaries
+* System metrics
+* Infrastructure health
+* Feature flags
+* Platform configuration
+
+---
+
+## Platform Owner MUST NOT access
+
+Unless a future support-access feature is intentionally implemented.
+
+Platform Owner must not be able to:
+
+* Browse customer contacts
+* Search customer leads
+* View customer pipelines
+* Open customer reports
+* Read customer notes
+* View customer meetings
+* Read OCR results
+* View business cards
+* Download attachments
+* Export customer data
+* View customer analytics
+* Read AI-generated customer insights
+* Access customer dashboards
+* Read customer communications
+
+---
+
+# Audit Scope
+
+Perform a complete review of the platform.
+
+---
+
+## 1. Authentication Review
+
+Verify:
+
+* Platform authentication
+* Customer authentication
+* Session separation
+* Refresh tokens
+* JWT scopes
+* MFA enforcement
+* Company isolation
+
+---
+
+## 2. Authorization Review
+
+Review every permission.
+
+Verify Platform Owner cannot inherit customer permissions.
+
+Verify customer users cannot inherit platform permissions.
+
+Review all role mappings.
+
+---
+
+## 3. Repository Layer Review
+
+Inspect every repository.
+
+Verify repositories enforce tenant isolation.
+
+Ensure Platform Owner cannot query customer business data through repository classes.
+
+---
+
+## 4. Service Layer Review
+
+Inspect every service.
+
+Verify all business services require proper tenant context.
+
+Identify any service capable of bypassing tenant isolation.
+
+---
+
+## 5. API Review
+
+Inspect every API endpoint.
+
+Verify:
+
+* Authentication
+* Authorization
+* Tenant validation
+* Company validation
+* Ownership validation
+
+Identify endpoints exposing customer information to Platform Owner.
+
+---
+
+## 6. Platform Dashboard Review
+
+Review every page available to Platform Owner.
+
+Confirm the dashboard only exposes platform operational information.
+
+Verify no page can browse customer CRM data.
+
+---
+
+## 7. Customer Dashboard Review
+
+Verify every customer only sees their own tenant.
+
+Confirm:
+
+* Contacts
+* Leads
+* Events
+* Reports
+* Analytics
+* Attachments
+
+cannot cross tenant boundaries.
+
+---
+
+## 8. Search Review
+
+Verify Platform Owner search only searches platform metadata.
+
+It must never search:
+
+* contacts
+* leads
+* OCR
+* notes
+* business cards
+* meetings
+
+belonging to customers.
+
+---
+
+## 9. Reports Review
+
+Verify Platform Owner cannot:
+
+* open reports
+* view analytics
+* inspect customer dashboards
+
+unless a future support-access mechanism is explicitly implemented.
+
+---
+
+## 10. Export Review
+
+Review every export endpoint.
+
+Verify Platform Owner cannot export customer CRM data.
+
+---
+
+## 11. Background Jobs Review
+
+Verify queue workers cannot leak tenant data.
+
+Verify background jobs always execute within tenant boundaries.
+
+---
+
+## 12. Notifications Review
+
+Verify notifications remain tenant scoped.
+
+Platform notifications must remain separate from customer notifications.
+
+---
+
+## 13. Logging Review
+
+Review all application logs.
+
+Verify sensitive customer information is not unnecessarily written to logs.
+
+Ensure secrets, passwords, tokens, and confidential customer information remain protected.
+
+---
+
+## 14. Audit Log Review
+
+Verify every privileged Platform Owner action is recorded.
+
+Examples:
+
+* Company created
+* Company suspended
+* Subscription modified
+* Billing updated
+* Security configuration changed
+* User disabled
+* Platform configuration updated
+
+---
+
+# Security Review
+
+Perform a complete security review.
+
+Check for:
+
+* Privilege escalation
+* Broken access control
+* IDOR vulnerabilities
+* Cross-tenant access
+* Missing authorization
+* Hidden admin endpoints
+* Debug endpoints
+* Development routes
+* Export vulnerabilities
+* Search vulnerabilities
+* Repository bypasses
+* Service bypasses
+
+---
+
+# Data Protection Review
+
+Verify:
+
+* Tenant isolation
+* Repository isolation
+* Service isolation
+* Permission isolation
+* API isolation
+* Dashboard isolation
+
+---
+
+# Database Review
+
+Verify customer data is protected by:
+
+* PostgreSQL permissions
+* Repository layer
+* Service layer
+* Authorization
+* Multi-tenant enforcement
+
+Document whether database encryption at rest is already provided by the hosting platform and identify any additional recommendations.
+
+---
+
+# Deliverables
+
+Produce a complete Enterprise Privacy & Data Governance Report.
+
+Include:
+
+## 1. Existing Protections
+
+Everything already implemented.
+
+---
+
+## 2. Missing Protections
+
+Everything not yet implemented.
+
+---
+
+## 3. Risk Assessment
+
+Classify every finding:
+
+* Critical
+* High
+* Medium
+* Low
+
+---
+
+## 4. Recommendations
+
+Recommend only necessary improvements.
+
+Do not introduce unnecessary architectural changes.
+
+---
+
+## 5. Implementation Plan
+
+If gaps exist, provide a phased remediation plan.
+
+Do not implement immediately.
+
+---
+
+## 6. Final Compliance Statement
+
+Answer the following:
+
+"Does Lead Capture Pro currently satisfy the Standard Enterprise SaaS Privacy Model where Elite Marcom can fully operate the platform without having routine access to customer business data?"
+
+Answer with:
+
+PASS
+
+PASS WITH RECOMMENDATIONS
+
+or
+
+FAIL
+
+Provide detailed justification.
+
+---
+
+# Constraints
+
+* Do not redesign the UI.
+* Do not change existing APIs.
+* Do not change database schema unless absolutely required.
+* Do not introduce regressions.
+* Preserve all current functionality.
+* Preserve all authentication flows.
+* Preserve all mobile app functionality.
+* Preserve all admin dashboard functionality.
+* Preserve all multi-tenant behavior.
+
+This task is primarily an **audit and verification exercise**. Only implement fixes if genuine security or privacy gaps are discovered, and ensure every change remains fully backward-compatible.
