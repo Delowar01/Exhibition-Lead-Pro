@@ -32,10 +32,32 @@ app.use(
 );
 
 // Surface the per-request id (assigned by pino-http) on every response so clients and
-// logs can correlate a failed call to a server log line. Additive — purely a header.
+// logs can correlate a failed call to a server log line, AND guarantee every error
+// envelope carries `requestId` without each handler having to add it. Additive: the
+// header is new, and the field is injected only into error-shaped bodies ({ error })
+// that don't already set it — success payloads are never touched.
 app.use((req: Request, res: Response, next: NextFunction) => {
   const id = (req as Request & { id?: unknown }).id;
-  if (id !== undefined) res.setHeader("X-Request-Id", String(id));
+  if (id === undefined) {
+    next();
+    return;
+  }
+  const requestId = String(id);
+  res.setHeader("X-Request-Id", requestId);
+  const originalJson = res.json.bind(res);
+  res.json = ((body?: unknown) => {
+    if (
+      res.statusCode >= 400 &&
+      body !== null &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      "error" in (body as Record<string, unknown>) &&
+      (body as Record<string, unknown>).requestId === undefined
+    ) {
+      (body as Record<string, unknown>).requestId = requestId;
+    }
+    return originalJson(body);
+  }) as typeof res.json;
   next();
 });
 // Security response headers. CSP and the cross-origin resource/embedder policies

@@ -3,6 +3,7 @@ import { type AuthUser } from "../middlewares/requireAuth.js";
 import { extractCardData, logAiError } from "../lib/ai.js";
 import { streamScanImage } from "../lib/imageStorage.js";
 import * as scansRepo from "../repositories/scans.repository.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 /** Return the public-facing API image URL for a scan (or null if not stored). */
 export function scanImageApiUrl(scanId: number, hasImage: boolean): string | null {
@@ -10,10 +11,7 @@ export function scanImageApiUrl(scanId: number, hasImage: boolean): string | nul
 }
 
 export async function listScans(user: AuthUser, query: Record<string, string>) {
-  const { page = "1", limit = "20" } = query;
-  const pageNum = Math.max(1, parseInt(page));
-  const limitNum = Math.min(100, parseInt(limit));
-  const offset = (pageNum - 1) * limitNum;
+  const { page: pageNum, limit: limitNum, offset } = parseListQuery(query, { defaultPageSize: 20, maxPageSize: 100 });
   const { rows: scans, total } = await scansRepo.list(user, { limit: limitNum, offset });
   const formatted = scans.map((s) => ({
     ...s,

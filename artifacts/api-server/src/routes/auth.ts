@@ -8,6 +8,18 @@ import { createSession, rotateSession, revokeSession, revokeOtherSessions, listA
 import { getClientIp, getCountry, parseDevice, recordLoginAttempt } from "../lib/security.js";
 import { randomToken, sha256 } from "../lib/crypto.js";
 import * as auth from "../services/auth.service.js";
+import { validateBody } from "../middlewares/validate.js";
+import {
+  LoginBody,
+  MfaVerifyLoginBody,
+  RegisterBody,
+  MfaEnableBody,
+  MfaDisableBody,
+  ForgotPasswordBody,
+  ResetPasswordBody,
+  VerifyEmailBody,
+  ChangePasswordBody,
+} from "@workspace/api-zod";
 
 const router = Router();
 
@@ -72,7 +84,7 @@ async function completeLogin(req: AuthRequest, res: Response, user: UserRow, rem
 }
 
 // POST /auth/login
-router.post("/auth/login", async (req: AuthRequest, res) => {
+router.post("/auth/login", validateBody(LoginBody), async (req: AuthRequest, res) => {
   const { email, password, rememberMe } = req.body ?? {};
   const ip = getClientIp(req);
   const userAgent = req.headers["user-agent"] ?? null;
@@ -108,7 +120,7 @@ router.post("/auth/login", async (req: AuthRequest, res) => {
 });
 
 // POST /auth/mfa/verify-login — second factor after a password-verified challenge.
-router.post("/auth/mfa/verify-login", async (req: AuthRequest, res) => {
+router.post("/auth/mfa/verify-login", validateBody(MfaVerifyLoginBody), async (req: AuthRequest, res) => {
   const { mfaToken, code, rememberMe, rememberDevice } = req.body ?? {};
   const ip = getClientIp(req);
   const { user, usedBackup } = await auth.verifyMfaLogin({ mfaToken, code, ip, userAgent: req.headers["user-agent"] ?? null });
@@ -167,7 +179,7 @@ router.post("/auth/refresh", async (req: AuthRequest, res) => {
 });
 
 // POST /auth/register
-router.post("/auth/register", async (req: AuthRequest, res) => {
+router.post("/auth/register", validateBody(RegisterBody), async (req: AuthRequest, res) => {
   const { user, company } = await auth.registerCompany(req.body ?? {});
   await writeAudit(req, { action: "company.register", userId: user.id, userName: user.email, companyId: company.id, entityType: "company", entityId: company.id, metadata: { companyName: company.name } });
   const { accessToken, refreshToken, expiresAt } = await createSession(
@@ -227,7 +239,7 @@ router.post("/auth/mfa/setup", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // POST /auth/mfa/enable — confirm a TOTP code, enable MFA, issue backup codes.
-router.post("/auth/mfa/enable", requireAuth, async (req: AuthRequest, res) => {
+router.post("/auth/mfa/enable", requireAuth, validateBody(MfaEnableBody), async (req: AuthRequest, res) => {
   const { code } = req.body ?? {};
   const { user, backupCodes } = await auth.mfaEnable(req.user!.id, code);
   await writeAudit(req, { action: "user.mfa_enabled", userId: user.id, userName: user.email, companyId: user.companyId, entityType: "user", entityId: user.id });
@@ -235,7 +247,7 @@ router.post("/auth/mfa/enable", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // POST /auth/mfa/disable — requires the account password.
-router.post("/auth/mfa/disable", requireAuth, async (req: AuthRequest, res) => {
+router.post("/auth/mfa/disable", requireAuth, validateBody(MfaDisableBody), async (req: AuthRequest, res) => {
   const { password } = req.body ?? {};
   const user = await auth.mfaDisable(req.user!.id, password);
   await writeAudit(req, { action: "user.mfa_disabled", userId: user.id, userName: user.email, companyId: user.companyId, entityType: "user", entityId: user.id });
@@ -252,21 +264,21 @@ router.post("/auth/mfa/backup-codes", requireAuth, async (req: AuthRequest, res)
 
 // POST /auth/forgot-password — public. Always 200 (no account enumeration); a reset
 // email is sent only when the account exists. Never reveals whether the email matched.
-router.post("/auth/forgot-password", async (req: AuthRequest, res) => {
+router.post("/auth/forgot-password", validateBody(ForgotPasswordBody), async (req: AuthRequest, res) => {
   const { email } = req.body ?? {};
   await auth.requestPasswordReset(email);
   res.json({ success: true, message: "If an account exists for that email, a password reset link has been sent." });
 });
 
 // POST /auth/reset-password — public. Consumes a single-use token + sets new password.
-router.post("/auth/reset-password", async (req: AuthRequest, res) => {
+router.post("/auth/reset-password", validateBody(ResetPasswordBody), async (req: AuthRequest, res) => {
   const { token, newPassword } = req.body ?? {};
   await auth.resetPassword(token, newPassword);
   res.json({ success: true, message: "Your password has been reset. Please sign in with your new password." });
 });
 
 // POST /auth/verify-email — public. Consumes a single-use email-verification token.
-router.post("/auth/verify-email", async (req: AuthRequest, res) => {
+router.post("/auth/verify-email", validateBody(VerifyEmailBody), async (req: AuthRequest, res) => {
   const { token } = req.body ?? {};
   await auth.verifyEmail(token);
   res.json({ success: true, message: "Your email has been verified." });
@@ -279,7 +291,7 @@ router.post("/auth/resend-verification", requireAuth, async (req: AuthRequest, r
 });
 
 // POST /auth/change-password
-router.post("/auth/change-password", requireAuth, async (req: AuthRequest, res) => {
+router.post("/auth/change-password", requireAuth, validateBody(ChangePasswordBody), async (req: AuthRequest, res) => {
   const { currentPassword, newPassword } = req.body ?? {};
   const user = await auth.changePassword(req.user!.id, req.user!.sessionId ?? null, currentPassword, newPassword);
   await writeAudit(req, {

@@ -1,6 +1,7 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as eventsRepo from "../repositories/events.repository.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 async function enrichEvent(e: eventsRepo.EventRow) {
   const { contactCount, leadCount } = await eventsRepo.counts(e.id);
@@ -14,10 +15,7 @@ export interface ListEventsParams {
 }
 
 export async function listEvents(user: AuthUser, params: ListEventsParams) {
-  const { search, page = "1", limit = "20" } = params;
-  const pageNum = Math.max(1, parseInt(page));
-  const limitNum = Math.min(100, parseInt(limit));
-  const offset = (pageNum - 1) * limitNum;
+  const { search, page: pageNum, limit: limitNum, offset } = parseListQuery(params, { defaultPageSize: 20, maxPageSize: 100 });
 
   const { rows, total } = await eventsRepo.list(user, { search, limit: limitNum, offset });
   const enriched = await Promise.all(rows.map(enrichEvent));

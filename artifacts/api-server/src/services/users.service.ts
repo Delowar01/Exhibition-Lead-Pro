@@ -6,6 +6,7 @@ import { revokeOtherSessions } from "../lib/sessions.js";
 import * as usersRepo from "../repositories/users.repository.js";
 import * as rbacRepo from "../repositories/rbac.repository.js";
 import * as securityRepo from "../repositories/security.repository.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 // Role ranks for escalation checks: a caller may never create or promote a user
 // to a role higher than their own.
@@ -25,10 +26,8 @@ export interface ListUsersParams {
 }
 
 export async function listUsers(user: AuthUser, params: ListUsersParams) {
-  const { search, role, companyId, page = "1", limit = "20" } = params;
-  const pageNum = Math.max(1, parseInt(page));
-  const limitNum = Math.min(100, parseInt(limit));
-  const offset = (pageNum - 1) * limitNum;
+  const { role, companyId } = params;
+  const { search, page: pageNum, limit: limitNum, offset } = parseListQuery(params, { defaultPageSize: 20, maxPageSize: 100 });
 
   const { rows, total } = await usersRepo.list(user, { search, role, companyId, limit: limitNum, offset });
 

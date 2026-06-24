@@ -4,8 +4,13 @@ info:
   version: 0.1.0
   description: Card Scanner Pro API
 servers:
+  - url: /api/v1
+    description: Canonical versioned base path.
   - url: /api
-    description: Base API path
+    description: >-
+      Legacy base path, retained for backward compatibility and deprecated in favor of
+      /api/v1. Responses on this prefix include RFC 8594 Deprecation and Link
+      (rel="successor-version") headers.
 tags:
   - name: health
     description: Health operations

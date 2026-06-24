@@ -2,6 +2,7 @@ import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { refAccessible } from "../lib/tenant.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 const PIPELINE_STAGES = ["prospect", "qualified", "proposal_sent", "negotiation", "won", "lost"];
 
@@ -44,10 +45,8 @@ export interface ListLeadsParams {
 }
 
 export async function listLeads(user: AuthUser, params: ListLeadsParams) {
-  const { stage, assignedTo, eventId, contactId, page = "1", limit = "100" } = params;
-  const pageNum = Math.max(1, parseInt(page));
-  const limitNum = Math.min(500, parseInt(limit));
-  const offset = (pageNum - 1) * limitNum;
+  const { stage, assignedTo, eventId, contactId } = params;
+  const { page: pageNum, limit: limitNum, offset } = parseListQuery(params, { defaultPageSize: 100, maxPageSize: 500 });
 
   const { rows, total } = await leadsRepo.list(user, {
     stage,

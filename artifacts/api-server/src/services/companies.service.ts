@@ -1,6 +1,7 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as companiesRepo from "../repositories/companies.repository.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 export interface ListCompaniesParams {
   search?: string;
@@ -11,9 +12,7 @@ export interface ListCompaniesParams {
 }
 
 export async function listCompanies(params: ListCompaniesParams) {
-  const pageNum = Math.max(1, parseInt(params.page ?? "1"));
-  const limitNum = Math.min(100, parseInt(params.limit ?? "20"));
-  const offset = (pageNum - 1) * limitNum;
+  const { page: pageNum, limit: limitNum, offset } = parseListQuery(params, { defaultPageSize: 20, maxPageSize: 100 });
 
   const { rows, total } = await companiesRepo.list({ search: params.search, status: params.status, plan: params.plan, limit: limitNum, offset });
   const enriched = await Promise.all(rows.map(async (c) => ({ ...c, ...(await companiesRepo.counts(c.id)) })));
