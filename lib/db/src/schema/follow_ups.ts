@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, date, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -21,7 +21,7 @@ export const followUpsTable = pgTable("follow_ups", {
   createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [index("follow_ups_contact_status_idx").on(t.contactId, t.status)]);
 
 export const insertFollowUpSchema = createInsertSchema(followUpsTable).omit({ id: true, createdAt: true });
 export type InsertFollowUp = z.infer<typeof insertFollowUpSchema>;

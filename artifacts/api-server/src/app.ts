@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import compression from "compression";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -8,6 +9,7 @@ import { logger } from "./lib/logger";
 import { config } from "./config.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 import { authRateLimiter, loginRateLimiter } from "./middlewares/rateLimit.js";
+import { bustCacheOnWrite } from "./middlewares/microCache.js";
 
 const app: Express = express();
 
@@ -74,9 +76,18 @@ app.use(
   }),
 );
 app.use(cors());
+// gzip/deflate response bodies. Large JSON analytics payloads (reports, lists)
+// compress well; small bodies fall under compression's default threshold and are
+// sent uncompressed. Additive: changes transport encoding only, never the body.
+app.use(compression());
 app.use(cookieParser());
 app.use(express.json({ limit: config.http.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
+
+// Bust the analytics micro-cache after every successful mutation. Mounted before
+// the router so it observes all non-GET requests regardless of which base path
+// (/api or /api/v1) they arrive on.
+app.use(bustCacheOnWrite);
 
 // Rate limiting on the auth surface. The stricter login limiter is mounted on the
 // credential-checking endpoints; a broader limiter covers the rest of /api/auth.

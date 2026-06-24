@@ -1,6 +1,7 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import { type AuthUser } from "../middlewares/requireAuth.js";
 import * as reportsRepo from "../repositories/reports.repository.js";
+import { convertCurrency } from "../lib/currency.js";
 
 export async function getAdminDashboard(user: AuthUser) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -15,29 +16,40 @@ export async function getAdminDashboard(user: AuthUser) {
 }
 
 export async function getLeadsByEvent(user: AuthUser) {
-  const events = await reportsRepo.listEventsForLeadsByEvent(user);
+  const [events, countRows] = await Promise.all([
+    reportsRepo.listEventsForLeadsByEvent(user),
+    reportsRepo.leadCountsByEvent(user),
+  ]);
+  const countsByEvent = new Map(countRows.map((r) => [r.eventId, r]));
 
-  const result = await Promise.all(events.map(async (e) => {
-    const leadCount = await reportsRepo.eventLeadCount(user, e.id);
-    const wonCount = await reportsRepo.eventWonLeadCount(user, e.id);
+  return events.map((e) => {
+    const c = countsByEvent.get(e.id);
+    const leadCount = c ? Number(c.leadCount) : 0;
+    const wonCount = c ? Number(c.wonCount) : 0;
     const conversionRate = leadCount > 0 ? Math.round((wonCount / leadCount) * 100) : 0;
     return { eventId: e.id, eventName: e.name, leadCount, wonCount, conversionRate, createdAt: e.createdAt.toISOString() };
-  }));
-
-  return result;
+  });
 }
 
 export async function getTeamPerformance(user: AuthUser) {
-  const users = await reportsRepo.listUsersForTeamPerformance(user);
+  const [users, scanRows, leadRows] = await Promise.all([
+    reportsRepo.listUsersForTeamPerformance(user),
+    reportsRepo.scanCountsByUser(user),
+    reportsRepo.leadCountsByUser(user),
+  ]);
+  const scanByUser = new Map(scanRows.map((r) => [r.userId, Number(r.scanCount)]));
+  const leadByUser = new Map(leadRows.map((r) => [r.userId, r]));
 
-  const result = await Promise.all(users.map(async (u) => {
-    const scanCount = await reportsRepo.userScanCount(u.id);
-    const leadCount = await reportsRepo.userLeadCount(u.id);
-    const wonCount = await reportsRepo.userWonLeadCount(u.id);
-    return { userId: u.id, userName: u.name, scanCount, leadCount, wonCount };
-  }));
-
-  return result;
+  return users.map((u) => {
+    const lr = leadByUser.get(u.id);
+    return {
+      userId: u.id,
+      userName: u.name,
+      scanCount: scanByUser.get(u.id) ?? 0,
+      leadCount: lr ? Number(lr.leadCount) : 0,
+      wonCount: lr ? Number(lr.wonCount) : 0,
+    };
+  });
 }
 
 export async function getScanActivity(user: AuthUser) {
@@ -94,13 +106,24 @@ export async function getMobileDashboard(user: AuthUser) {
     followUpsDue,
     meetingsScheduled,
     proposalsSent,
-    pipelineRow,
-    wonRow,
-    lostRow,
+    valueRows,
     wonCount,
     lostCount,
     recentContacts,
   } = await reportsRepo.mobileDashboardData(user, startOfToday, todayDateStr);
+
+  // Cross-currency aggregation: each row is one currency bucket; convert every
+  // bucket to USD (server base) before summing — never sum raw amounts across
+  // currencies.
+  let pipelineValue = 0;
+  let wonValue = 0;
+  let lostValue = 0;
+  for (const r of valueRows) {
+    const cur = r.currency ?? "USD";
+    pipelineValue += convertCurrency(Number(r.pipelineValue ?? 0), cur, "USD");
+    wonValue += convertCurrency(Number(r.wonValue ?? 0), cur, "USD");
+    lostValue += convertCurrency(Number(r.lostValue ?? 0), cur, "USD");
+  }
 
   const recentActivity = recentContacts.map((c) => {
     const name =
@@ -125,9 +148,9 @@ export async function getMobileDashboard(user: AuthUser) {
     meetingsScheduled,
     proposalsSent,
     contactedLeads,
-    pipelineValue: Number(pipelineRow.pipelineValue ?? 0),
-    wonValue: Number(wonRow.wonValue ?? 0),
-    lostValue: Number(lostRow.lostValue ?? 0),
+    pipelineValue,
+    wonValue,
+    lostValue,
     conversionRate: wonCount + lostCount === 0 ? 0 : Math.round((wonCount / (wonCount + lostCount)) * 100),
     totalContacts,
     recentActivity,
@@ -225,7 +248,7 @@ export async function getEventReport(user: AuthUser, params: EventReportParams) 
     } else if (l.stage === "lost") {
       lostDeals++;
     } else {
-      pipelineValue += Number(l.value ?? 0);
+      pipelineValue += convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", "USD");
     }
   }
 
@@ -320,7 +343,7 @@ export async function getTeamMemberReport(user: AuthUser, params: TeamMemberRepo
   for (const l of leadRows) {
     if (l.stage === "won") won++;
     else if (l.stage === "lost") lost++;
-    else pipelineValue += Number(l.value ?? 0);
+    else pipelineValue += convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", "USD");
   }
 
   let meetings = 0;

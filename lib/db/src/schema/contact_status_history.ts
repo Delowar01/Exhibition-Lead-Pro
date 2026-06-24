@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -15,7 +15,10 @@ export const contactStatusHistoryTable = pgTable("contact_status_history", {
   comment: text("comment"),
   changedById: integer("changed_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("contact_status_history_contact_id_idx").on(t.contactId),
+  index("contact_status_history_changed_by_id_idx").on(t.changedById),
+]);
 
 export const insertContactStatusHistorySchema = createInsertSchema(contactStatusHistoryTable).omit({ id: true, createdAt: true });
 export type InsertContactStatusHistory = z.infer<typeof insertContactStatusHistorySchema>;

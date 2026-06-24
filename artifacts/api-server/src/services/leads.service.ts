@@ -3,20 +3,23 @@ import type { AuthUser } from "../middlewares/requireAuth.js";
 import { refAccessible } from "../lib/tenant.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
+import { convertCurrency } from "../lib/currency.js";
 
 const PIPELINE_STAGES = ["prospect", "qualified", "proposal_sent", "negotiation", "won", "lost"];
 
-async function enrichLead(l: leadsRepo.LeadRow, includeHistory = false) {
-  const contact = l.contactId ? await leadsRepo.contactSummary(l.contactId) : null;
-  const assignee = l.assignedToId ? await leadsRepo.assigneeName(l.assignedToId) : null;
-  const event = l.eventId ? await leadsRepo.eventName(l.eventId) : null;
+type ContactSummary = { firstName: string | null; lastName: string | null; fullName: string | null; email: string | null; contactCompany: string | null };
+type LeadHistoryItem = { id: number; leadId: number; changedBy: number | null; changedByName: string | null; fieldName: string; oldValue: string | null; newValue: string | null; changedAt: string };
 
-  let history: Array<{ id: number; leadId: number; changedBy: number | null; changedByName: string | null; fieldName: string; oldValue: string | null; newValue: string | null; changedAt: string }> = [];
-  if (includeHistory) {
-    const rows = await leadsRepo.history(l.id);
-    history = rows.map(r => ({ ...r, changedAt: r.changedAt.toISOString() }));
-  }
-
+// Single source of truth for the enriched-lead response shape. Both the per-row
+// path (enrichLead, needs history) and the batched path (enrichLeads, for
+// list/pipeline) build their output here so the JSON is byte-for-byte identical.
+function formatLead(
+  l: leadsRepo.LeadRow,
+  contact: ContactSummary | null | undefined,
+  assignedToName: string | null,
+  eventName: string | null,
+  history?: LeadHistoryItem[],
+) {
   return {
     ...l,
     value: l.value ? parseFloat(l.value) : null,
@@ -29,10 +32,49 @@ async function enrichLead(l: leadsRepo.LeadRow, includeHistory = false) {
     contactEmail: contact?.email ?? null,
     contactCompany: contact?.contactCompany ?? null,
     companyName: l.companyName ?? null,
-    assignedToName: assignee?.name ?? null,
-    eventName: event?.name ?? null,
-    history: includeHistory ? history : undefined,
+    assignedToName: assignedToName ?? null,
+    eventName: eventName ?? null,
+    history,
   };
+}
+
+async function enrichLead(l: leadsRepo.LeadRow, includeHistory = false) {
+  const contact = l.contactId ? await leadsRepo.contactSummary(l.contactId) : null;
+  const assignee = l.assignedToId ? await leadsRepo.assigneeName(l.assignedToId) : null;
+  const event = l.eventId ? await leadsRepo.eventName(l.eventId) : null;
+
+  let history: LeadHistoryItem[] = [];
+  if (includeHistory) {
+    const rows = await leadsRepo.history(l.id);
+    history = rows.map(r => ({ ...r, changedAt: r.changedAt.toISOString() }));
+  }
+
+  return formatLead(l, contact, assignee?.name ?? null, event?.name ?? null, includeHistory ? history : undefined);
+}
+
+// Batched enrichment for list/pipeline: three lookups total (contacts + users +
+// events) instead of three per row. Never includes history (list views don't
+// need it), matching the per-row enrichLead(l, false) shape exactly.
+async function enrichLeads(rows: leadsRepo.LeadRow[]) {
+  const contactIds = [...new Set(rows.map((l) => l.contactId).filter((v): v is number => v != null))];
+  const userIds = [...new Set(rows.map((l) => l.assignedToId).filter((v): v is number => v != null))];
+  const eventIds = [...new Set(rows.map((l) => l.eventId).filter((v): v is number => v != null))];
+  const [contacts, users, events] = await Promise.all([
+    leadsRepo.contactSummariesByIds(contactIds),
+    leadsRepo.userNamesByIds(userIds),
+    leadsRepo.eventNamesByIds(eventIds),
+  ]);
+  const contactById = new Map(contacts.map((c) => [c.id, c]));
+  const userNameById = new Map(users.map((u) => [u.id, u.name]));
+  const eventNameById = new Map(events.map((e) => [e.id, e.name]));
+  return rows.map((l) =>
+    formatLead(
+      l,
+      l.contactId != null ? contactById.get(l.contactId) : null,
+      l.assignedToId != null ? (userNameById.get(l.assignedToId) ?? null) : null,
+      l.eventId != null ? (eventNameById.get(l.eventId) ?? null) : null,
+    ),
+  );
 }
 
 export interface ListLeadsParams {
@@ -56,7 +98,7 @@ export async function listLeads(user: AuthUser, params: ListLeadsParams) {
     limit: limitNum,
     offset,
   });
-  const enriched = await Promise.all(rows.map(l => enrichLead(l, false)));
+  const enriched = await enrichLeads(rows);
   return { leads: enriched, total };
 }
 
@@ -117,17 +159,23 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
 
 export async function getPipeline(user: AuthUser) {
   const allLeads = await leadsRepo.pipelineLeads(user);
-  const enriched = await Promise.all(allLeads.map(l => enrichLead(l, false)));
+  const enriched = await enrichLeads(allLeads);
 
-  const stages = await Promise.all(PIPELINE_STAGES.map(async (stage) => {
+  // Cross-currency aggregation: convert each lead's value to USD (the server
+  // base) BEFORE summing — never add raw amounts across currencies. Per-lead
+  // `value`/`currency` in the response stay in the lead's own currency.
+  const usdValue = (l: { value: number | null; currency: string }) =>
+    convertCurrency(l.value ?? 0, l.currency, "USD");
+
+  const stages = PIPELINE_STAGES.map((stage) => {
     const stageLeads = enriched.filter(l => l.stage === stage);
-    const value = stageLeads.reduce((sum, l) => sum + (l.value ?? 0), 0);
+    const value = stageLeads.reduce((sum, l) => sum + usdValue(l), 0);
     return { stage, leads: stageLeads, count: stageLeads.length, value };
-  }));
+  });
 
   const totalValue = enriched
     .filter(l => l.stage !== "won" && l.stage !== "lost")
-    .reduce((sum, l) => sum + (l.value ?? 0), 0);
+    .reduce((sum, l) => sum + usdValue(l), 0);
   return { stages, totalValue };
 }
 

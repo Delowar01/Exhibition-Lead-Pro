@@ -31,6 +31,17 @@ export async function assigneeName(userId: number) {
   return r;
 }
 
+// Batch event-name lookup for listContacts enrichment (O(1) query, not O(N)).
+// Mirrors eventName(): soft-deleted events excluded so a contact never resolves
+// a name from a deleted event.
+export async function eventNamesByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select({ id: eventsTable.id, name: eventsTable.name })
+    .from(eventsTable)
+    .where(and(inArray(eventsTable.id, ids), notDeleted(eventsTable.deletedAt)));
+}
+
 export interface ListContactsOpts {
   search?: string;
   status?: string;

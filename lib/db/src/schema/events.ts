@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, date, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -18,7 +18,7 @@ export const eventsTable = pgTable("events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"), // soft-delete marker; rows with a value are excluded from all reads by default
-});
+}, (t) => [index("events_company_id_idx").on(t.companyId)]);
 
 export const insertEventSchema = createInsertSchema(eventsTable).omit({ id: true, createdAt: true });
 export type InsertEvent = z.infer<typeof insertEventSchema>;

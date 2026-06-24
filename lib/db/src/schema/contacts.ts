@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, date, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, date, doublePrecision, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -47,7 +47,16 @@ export const contactsTable = pgTable("contacts", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"), // soft-delete marker; rows with a value are excluded from all reads by default
-});
+}, (t) => [
+  index("contacts_company_id_idx").on(t.companyId),
+  index("contacts_company_duplicate_idx").on(t.companyId, t.duplicateOfId),
+  index("contacts_event_id_idx").on(t.eventId),
+  index("contacts_assigned_to_id_idx").on(t.assignedToId),
+  index("contacts_status_idx").on(t.status),
+  index("contacts_lead_temperature_idx").on(t.leadTemperature),
+  index("contacts_created_at_idx").on(t.createdAt),
+  index("contacts_follow_up_date_idx").on(t.followUpDate),
+]);
 
 export const insertContactSchema = createInsertSchema(contactsTable).omit({ id: true, createdAt: true });
 export type InsertContact = z.infer<typeof insertContactSchema>;

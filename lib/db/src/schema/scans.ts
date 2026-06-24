@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -16,7 +16,12 @@ export const scansTable = pgTable("scans", {
   rawOcr: text("raw_ocr"),
   confidence: integer("confidence"), // 0-100 AI extraction confidence
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("scans_company_id_idx").on(t.companyId),
+  index("scans_user_id_idx").on(t.userId),
+  index("scans_contact_id_idx").on(t.contactId),
+  index("scans_created_at_idx").on(t.createdAt),
+]);
 
 export const insertScanSchema = createInsertSchema(scansTable).omit({ id: true, createdAt: true });
 export type InsertScan = z.infer<typeof insertScanSchema>;

@@ -19,12 +19,14 @@ the bug.
 - This bug hides on EVERY total surface, not just the one reported. When fixing one,
   audit all of them: dashboard, leads list, event report, team-member report. They
   were each independently wrong.
-- The server's report endpoints (`api-server/src/routes/reports.ts`) use raw
-  `SUM(leads.value)` with no currency normalization — so client screens that display
-  the server's aggregate are wrong for mixed-currency data. The durable fix is either
-  server-side normalization (per-currency grouping + rates) or client-side per-lead
-  conversion. We chose client-side for the mobile screens that already had per-lead
-  data; server-side was deferred as larger scope.
+- The server now normalizes to USD server-side (closes tech-debt M1). `api-server/src/lib/currency.ts`
+  is a deliberate DUPLICATE of `artifacts/mobile/lib/currency.ts` (FX_RATES_TO_USD) — the mobile
+  bundle can't import server code. **Drift trap:** changing a rate in one file silently makes the
+  two clients disagree; change both in lockstep. Convert-before-sum is applied on `getPipeline`
+  (totalValue + per-stage), `getEventReport.pipelineValue`, `getTeamMemberReport.pipelineValue`,
+  and the mobile dashboard. The dashboard uses a GROUP BY currency SQL query, then the service
+  converts each currency bucket to USD before summing — never sum raw across currencies at the SQL
+  level. The two report lead selects had to add `currency` to their projection for this to work.
 - **Trap 1 (staleness):** if you switch a card from a server aggregate to a value
   derived from a *separate* per-lead query (`useListLeads`), the pull-to-refresh
   handler must also `refetch()` that lead query — otherwise the card goes stale.

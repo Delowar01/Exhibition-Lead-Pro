@@ -1,5 +1,5 @@
 import { db, leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable } from "@workspace/db";
-import { eq, and, count, ne, desc } from "drizzle-orm";
+import { eq, and, count, ne, desc, inArray } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, notDeleted, type Executor } from "./base.js";
 
@@ -28,6 +28,29 @@ export async function eventName(eventId: number) {
     .where(and(eq(eventsTable.id, eventId), notDeleted(eventsTable.deletedAt)))
     .limit(1);
   return r;
+}
+
+// ── Batch enrichment lookups for list/pipeline (O(1) queries, not O(N)).
+// Mirror the per-row lookups above: contacts/events exclude soft-deleted rows.
+export async function contactSummariesByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select({ id: contactsTable.id, firstName: contactsTable.firstName, lastName: contactsTable.lastName, fullName: contactsTable.fullName, email: contactsTable.email, contactCompany: contactsTable.contactCompany })
+    .from(contactsTable)
+    .where(and(inArray(contactsTable.id, ids), notDeleted(contactsTable.deletedAt)));
+}
+
+export async function userNamesByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, ids));
+}
+
+export async function eventNamesByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select({ id: eventsTable.id, name: eventsTable.name })
+    .from(eventsTable)
+    .where(and(inArray(eventsTable.id, ids), notDeleted(eventsTable.deletedAt)));
 }
 
 export async function history(leadId: number) {

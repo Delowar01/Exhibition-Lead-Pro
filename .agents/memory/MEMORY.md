@@ -22,3 +22,4 @@
 - [RBAC grant subset guard](rbac-grant-subset-guard.md) — assigning custom roles needs a permission-subset check vs the caller's own perms, not just base-role rank; else self-escalation via custom roles.
 - [Invitation roleIds escalation](invitation-roleids-escalation.md) — assigning custom roleIds needs BOTH target-company scoping (firstRoleNotInCompany) AND a permission-subset check (mirror users.service#setUserRoles); accessibility alone is a back door.
 - [Background jobs & queue](background-jobs-queue.md) — in-process queue for async email/maintenance; worker MUST skip (not throw) when email unconfigured but throw on transport error (else dead-letter flood / no retry); audit retention opt-in.
+- [Analytics micro-cache + write-epoch](analytics-microcache.md) — expensive report GETs cached ~30s; invalidation is one global writeEpoch bumped on any successful non-GET; key includes userId to stop cross-user leak. Don't add per-tenant invalidation.

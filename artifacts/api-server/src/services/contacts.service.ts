@@ -65,10 +65,24 @@ export async function listContacts(user: AuthUser, params: ListContactsParams) {
     offset,
   });
 
-  const enriched = await Promise.all(rows.map(async (c) => {
-    const { eventName, assignedToName } = await namesFor(c);
-    return formatContact(c, eventName, assignedToName);
-  }));
+  // Batch the FK name lookups: two queries total (events + users) instead of
+  // two per row. Same output shape as the per-row namesFor() path.
+  const eventIds = [...new Set(rows.map((c) => c.eventId).filter((v): v is number => v != null))];
+  const userIds = [...new Set(rows.map((c) => c.assignedToId).filter((v): v is number => v != null))];
+  const [events, users] = await Promise.all([
+    contactsRepo.eventNamesByIds(eventIds),
+    contactsRepo.usersByIds(userIds),
+  ]);
+  const eventNameById = new Map(events.map((e) => [e.id, e.name]));
+  const userNameById = new Map(users.map((u) => [u.id, u.name]));
+
+  const enriched = rows.map((c) =>
+    formatContact(
+      c,
+      c.eventId != null ? eventNameById.get(c.eventId) : null,
+      c.assignedToId != null ? userNameById.get(c.assignedToId) : null,
+    ),
+  );
 
   return { contacts: enriched, total, page: pageNum, limit: limitNum };
 }

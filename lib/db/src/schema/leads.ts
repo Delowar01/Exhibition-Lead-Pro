@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, numeric, timestamp, varchar, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, timestamp, varchar, date, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -25,7 +25,13 @@ export const leadsTable = pgTable("leads", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"), // soft-delete marker; rows with a value are excluded from all reads by default
-});
+}, (t) => [
+  index("leads_company_id_idx").on(t.companyId),
+  index("leads_contact_id_idx").on(t.contactId),
+  index("leads_assigned_to_id_idx").on(t.assignedToId),
+  index("leads_event_id_idx").on(t.eventId),
+  index("leads_company_stage_idx").on(t.companyId, t.stage),
+]);
 
 export const leadHistoryTable = pgTable("lead_history", {
   id: serial("id").primaryKey(),
@@ -35,7 +41,7 @@ export const leadHistoryTable = pgTable("lead_history", {
   oldValue: text("old_value"),
   newValue: text("new_value"),
   changedAt: timestamp("changed_at").notNull().defaultNow(),
-});
+}, (t) => [index("lead_history_lead_id_idx").on(t.leadId)]);
 
 export const insertLeadSchema = createInsertSchema(leadsTable).omit({ id: true, createdAt: true });
 export type InsertLead = z.infer<typeof insertLeadSchema>;

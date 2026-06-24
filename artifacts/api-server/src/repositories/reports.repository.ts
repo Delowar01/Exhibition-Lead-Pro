@@ -82,22 +82,26 @@ export async function listEventsForLeadsByEvent(user: AuthUser): Promise<EventRo
     .where(and(tenantScope(user, eventsTable.companyId), notDeleted(eventsTable.deletedAt)));
 }
 
-// leads: + notDeleted(leads.deletedAt)
-export async function eventLeadCount(user: AuthUser, eventId: number): Promise<number> {
-  const [{ leadCount }] = await db
-    .select({ leadCount: count() })
-    .from(leadsTable)
-    .where(and(eq(leadsTable.eventId, eventId), tenantScope(user, leadsTable.companyId), notDeleted(leadsTable.deletedAt)));
-  return leadCount;
+export interface EventLeadCountRow {
+  eventId: number | null;
+  leadCount: number;
+  wonCount: number;
 }
 
+// One grouped pass over the tenant's leads: lead + won count per event, instead
+// of two count queries per event (was 2*N queries for N events). won is a
+// FILTER aggregate; .mapWith(Number) coerces pg's bigint-as-string to a number.
 // leads: + notDeleted(leads.deletedAt)
-export async function eventWonLeadCount(user: AuthUser, eventId: number): Promise<number> {
-  const [{ wonCount }] = await db
-    .select({ wonCount: count() })
+export async function leadCountsByEvent(user: AuthUser): Promise<EventLeadCountRow[]> {
+  return await db
+    .select({
+      eventId: leadsTable.eventId,
+      leadCount: count(),
+      wonCount: sql<number>`COUNT(*) FILTER (WHERE ${leadsTable.stage} = 'won')`.mapWith(Number),
+    })
     .from(leadsTable)
-    .where(and(eq(leadsTable.eventId, eventId), eq(leadsTable.stage, "won"), tenantScope(user, leadsTable.companyId), notDeleted(leadsTable.deletedAt)));
-  return wonCount;
+    .where(and(tenantScope(user, leadsTable.companyId), notDeleted(leadsTable.deletedAt)))
+    .groupBy(leadsTable.eventId);
 }
 
 // ---------------------------------------------------------------------------
@@ -109,27 +113,40 @@ export async function listUsersForTeamPerformance(user: AuthUser): Promise<UserR
   return await db.select().from(usersTable).where(tenantScope(user, usersTable.companyId));
 }
 
-export async function userScanCount(userId: number): Promise<number> {
-  const [{ scanCount }] = await db.select({ scanCount: count() }).from(scansTable).where(eq(scansTable.userId, userId));
-  return scanCount;
+export interface UserScanCountRow {
+  userId: number | null;
+  scanCount: number;
 }
 
-// leads: + notDeleted(leads.deletedAt)
-export async function userLeadCount(userId: number): Promise<number> {
-  const [{ leadCount }] = await db
-    .select({ leadCount: count() })
-    .from(leadsTable)
-    .where(and(eq(leadsTable.assignedToId, userId), notDeleted(leadsTable.deletedAt)));
-  return leadCount;
+// One grouped pass over the tenant's scans: scan count per user (was one count
+// query per user). Tenant-scoped — a user's scans live in their own company, so
+// this matches the prior per-user count for every user in the team list.
+export async function scanCountsByUser(user: AuthUser): Promise<UserScanCountRow[]> {
+  return await db
+    .select({ userId: scansTable.userId, scanCount: count() })
+    .from(scansTable)
+    .where(tenantScope(user, scansTable.companyId))
+    .groupBy(scansTable.userId);
 }
 
-// leads: + notDeleted(leads.deletedAt)
-export async function userWonLeadCount(userId: number): Promise<number> {
-  const [{ wonCount }] = await db
-    .select({ wonCount: count() })
+export interface UserLeadCountRow {
+  userId: number | null;
+  leadCount: number;
+  wonCount: number;
+}
+
+// One grouped pass over the tenant's leads: lead + won count per assignee (was
+// two count queries per user). leads: + notDeleted(leads.deletedAt)
+export async function leadCountsByUser(user: AuthUser): Promise<UserLeadCountRow[]> {
+  return await db
+    .select({
+      userId: leadsTable.assignedToId,
+      leadCount: count(),
+      wonCount: sql<number>`COUNT(*) FILTER (WHERE ${leadsTable.stage} = 'won')`.mapWith(Number),
+    })
     .from(leadsTable)
-    .where(and(eq(leadsTable.assignedToId, userId), eq(leadsTable.stage, "won"), notDeleted(leadsTable.deletedAt)));
-  return wonCount;
+    .where(and(tenantScope(user, leadsTable.companyId), notDeleted(leadsTable.deletedAt)))
+    .groupBy(leadsTable.assignedToId);
 }
 
 // ---------------------------------------------------------------------------
@@ -241,9 +258,7 @@ export async function mobileDashboardData(user: AuthUser, startOfToday: Date, to
     [{ followUpsDue }],
     [{ meetingsScheduled }],
     [{ proposalsSent }],
-    [pipelineRow],
-    [wonRow],
-    [lostRow],
+    valueRows,
     [{ wonCount }],
     [{ lostCount }],
   ] = await Promise.all([
@@ -288,23 +303,19 @@ export async function mobileDashboardData(user: AuthUser, startOfToday: Date, to
       .select({ proposalsSent: count() })
       .from(leadsTable)
       .where(and(leadScope, eq(leadsTable.stage, "proposal_sent"), notDeleted(leadsTable.deletedAt))),
-    // leads: + notDeleted(leads.deletedAt)
+    // leads: + notDeleted(leads.deletedAt). Pipeline/won/lost value sums grouped
+    // by currency in ONE pass; the service converts each bucket to USD before
+    // summing (cross-currency totals can't be summed raw at the SQL level).
     db
       .select({
-        pipelineValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)`,
+        currency: leadsTable.currency,
+        pipelineValue: sql<string>`COALESCE(SUM(${leadsTable.value}) FILTER (WHERE ${leadsTable.stage} NOT IN ('won', 'lost')), 0)`,
+        wonValue: sql<string>`COALESCE(SUM(${leadsTable.value}) FILTER (WHERE ${leadsTable.stage} = 'won'), 0)`,
+        lostValue: sql<string>`COALESCE(SUM(${leadsTable.value}) FILTER (WHERE ${leadsTable.stage} = 'lost'), 0)`,
       })
       .from(leadsTable)
-      .where(and(leadScope, sql`${leadsTable.stage} NOT IN ('won', 'lost')`, notDeleted(leadsTable.deletedAt))),
-    // leads: + notDeleted(leads.deletedAt)
-    db
-      .select({ wonValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)` })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "won"), notDeleted(leadsTable.deletedAt))),
-    // leads: + notDeleted(leads.deletedAt)
-    db
-      .select({ lostValue: sql<string>`COALESCE(SUM(${leadsTable.value}), 0)` })
-      .from(leadsTable)
-      .where(and(leadScope, eq(leadsTable.stage, "lost"), notDeleted(leadsTable.deletedAt))),
+      .where(and(leadScope, notDeleted(leadsTable.deletedAt)))
+      .groupBy(leadsTable.currency),
     // leads: + notDeleted(leads.deletedAt)
     db
       .select({ wonCount: count() })
@@ -341,9 +352,7 @@ export async function mobileDashboardData(user: AuthUser, startOfToday: Date, to
     followUpsDue,
     meetingsScheduled,
     proposalsSent,
-    pipelineRow,
-    wonRow,
-    lostRow,
+    valueRows,
     wonCount,
     lostCount,
     recentContacts,
@@ -427,6 +436,7 @@ export async function listUsersWithAvatar(user: AuthUser): Promise<ReportUserRow
 export interface EventReportLeadRow {
   stage: string;
   value: string | null;
+  currency: string | null;
   assignedToId: number | null;
 }
 
@@ -441,7 +451,7 @@ export async function eventReportLeads(
   if (dateFrom) leadConds.push(gte(leadsTable.createdAt, new Date(`${dateFrom}T00:00:00.000`)));
   if (dateTo) leadConds.push(lte(leadsTable.createdAt, new Date(`${dateTo}T23:59:59.999`)));
   return await db
-    .select({ stage: leadsTable.stage, value: leadsTable.value, assignedToId: leadsTable.assignedToId })
+    .select({ stage: leadsTable.stage, value: leadsTable.value, currency: leadsTable.currency, assignedToId: leadsTable.assignedToId })
     .from(leadsTable)
     .where(and(...leadConds));
 }
@@ -512,12 +522,13 @@ export async function teamMemberContacts(user: AuthUser, eventId: number, userId
 export interface TeamMemberLeadRow {
   stage: string;
   value: string | null;
+  currency: string | null;
 }
 
 // leads: + notDeleted(leads.deletedAt)
 export async function teamMemberLeads(user: AuthUser, eventId: number, userId: number): Promise<TeamMemberLeadRow[]> {
   return await db
-    .select({ stage: leadsTable.stage, value: leadsTable.value })
+    .select({ stage: leadsTable.stage, value: leadsTable.value, currency: leadsTable.currency })
     .from(leadsTable)
     .where(
       and(
