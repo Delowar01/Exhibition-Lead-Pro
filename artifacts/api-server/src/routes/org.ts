@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { UpdateOrganizationBody } from "@workspace/api-zod";
 import * as org from "../services/org.service.js";
 
 const router = Router();
@@ -15,7 +17,7 @@ router.get("/organization", requirePermission("organization", "view"), async (re
 });
 
 // PATCH /organization
-router.patch("/organization", requirePermission("organization", "edit"), async (req: AuthRequest, res) => {
+router.patch("/organization", requirePermission("organization", "edit"), validateBody(UpdateOrganizationBody), async (req: AuthRequest, res) => {
   res.json(await org.updateMyOrg(req.user!, req.body ?? {}));
 });
 

@@ -2744,6 +2744,20 @@ components:
       properties:
         error:
           type: string
+        requestId:
+          type: string
+          description: Correlates this response with server logs (also returned as the X-Request-Id header).
+        details:
+          type: array
+          description: Per-field validation issues (present on 400 validation failures).
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+            required: [field, message]
       required: [error]
 
     # PHASE 2.5 — AUTH EMAIL FLOWS

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateRoleBody, UpdateRoleBody } from "@workspace/api-zod";
 import * as rbac from "../services/rbac.service.js";
 
 const router = Router();
@@ -21,7 +23,7 @@ router.get("/rbac/roles", requirePermission("roles", "view"), async (req: AuthRe
 });
 
 // POST /rbac/roles
-router.post("/rbac/roles", requirePermission("roles", "create"), async (req: AuthRequest, res) => {
+router.post("/rbac/roles", requirePermission("roles", "create"), validateBody(CreateRoleBody), async (req: AuthRequest, res) => {
   res.status(201).json(await rbac.createRole(req.user!, req.body ?? {}));
 });
 
@@ -31,7 +33,7 @@ router.get("/rbac/roles/:id", requirePermission("roles", "view"), async (req: Au
 });
 
 // PATCH /rbac/roles/:id
-router.patch("/rbac/roles/:id", requirePermission("roles", "edit"), async (req: AuthRequest, res) => {
+router.patch("/rbac/roles/:id", requirePermission("roles", "edit"), validateBody(UpdateRoleBody), async (req: AuthRequest, res) => {
   res.json(await rbac.updateRole(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 

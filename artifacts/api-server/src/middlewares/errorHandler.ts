@@ -15,9 +15,14 @@ export class AppError extends Error {
   }
 }
 
+function requestId(req: Request): string | undefined {
+  const id = (req as Request & { id?: unknown }).id;
+  return id === undefined ? undefined : String(id);
+}
+
 /** JSON 404 for any request that did not match a route. */
-export function notFoundHandler(_req: Request, res: Response): void {
-  res.status(404).json({ error: "Not Found" });
+export function notFoundHandler(req: Request, res: Response): void {
+  res.status(404).json({ error: "Not Found", requestId: requestId(req) });
 }
 
 // Resolve the HTTP status carried by an error. AppError wins; otherwise honor the
@@ -68,5 +73,5 @@ export function errorHandler(
     message = err.message;
   }
 
-  res.status(statusCode).json({ error: message });
+  res.status(statusCode).json({ error: message, requestId: requestId(req) });
 }

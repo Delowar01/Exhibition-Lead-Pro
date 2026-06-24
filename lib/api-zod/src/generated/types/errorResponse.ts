@@ -5,7 +5,12 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ErrorResponseDetailsItem } from './errorResponseDetailsItem';
 
 export interface ErrorResponse {
   error: string;
+  /** Correlates this response with server logs (also returned as the X-Request-Id header). */
+  requestId?: string;
+  /** Per-field validation issues (present on 400 validation failures). */
+  details?: ErrorResponseDetailsItem[];
 }

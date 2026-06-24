@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { UpdateProfileBody } from "@workspace/api-zod";
 import * as profile from "../services/profile.service.js";
 
 const router = Router();
@@ -13,7 +15,7 @@ router.get("/profile", async (req: AuthRequest, res) => {
 });
 
 // PATCH /profile — self-service update (name/phone/avatar/language/timezone).
-router.patch("/profile", async (req: AuthRequest, res) => {
+router.patch("/profile", validateBody(UpdateProfileBody), async (req: AuthRequest, res) => {
   res.json(await profile.updateProfile(req.user!, req.body ?? {}));
 });
 

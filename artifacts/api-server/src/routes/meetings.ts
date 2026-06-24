@@ -4,6 +4,8 @@ import { meetingsTable, contactsTable, usersTable } from "@workspace/db";
 import { eq, and, inArray, desc, type SQL } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateMeetingBody, UpdateMeetingBody } from "@workspace/api-zod";
 import { refAccessible } from "../lib/tenant.js";
 
 const router = Router();
@@ -43,7 +45,7 @@ router.get("/meetings", async (req: AuthRequest, res) => {
 });
 
 // POST /meetings — schedule a meeting for a contact
-router.post("/meetings", async (req: AuthRequest, res) => {
+router.post("/meetings", validateBody(CreateMeetingBody), async (req: AuthRequest, res) => {
   try {
     const { contactId, meetingDate, meetingTime, type, notes, assignedToId } = req.body;
     if (typeof contactId !== "number") { res.status(400).json({ error: "contactId required" }); return; }
@@ -63,7 +65,7 @@ router.post("/meetings", async (req: AuthRequest, res) => {
 });
 
 // PATCH /meetings/:id — action (complete / reschedule / cancel)
-router.patch("/meetings/:id", async (req: AuthRequest, res) => {
+router.patch("/meetings/:id", validateBody(UpdateMeetingBody), async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(meetingsTable).where(eq(meetingsTable.id, id)).limit(1);

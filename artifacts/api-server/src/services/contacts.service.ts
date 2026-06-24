@@ -5,6 +5,7 @@ import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/
 import { notifyUser } from "../lib/push.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
 import type { ContactRow } from "../repositories/contacts.repository.js";
+import { parseListQuery } from "../lib/list-query.js";
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
@@ -45,10 +46,8 @@ export interface ListContactsParams {
 }
 
 export async function listContacts(user: AuthUser, params: ListContactsParams) {
-  const { search, status, temperature, eventId, assignedTo, sort, hasFollowUp, hasMeeting, dateFrom, dateTo, includeDuplicates, page = "1", limit = "20" } = params;
-  const pageNum = Math.max(1, parseInt(page));
-  const limitNum = Math.min(200, parseInt(limit));
-  const offset = (pageNum - 1) * limitNum;
+  const { status, temperature, eventId, assignedTo, hasFollowUp, hasMeeting, dateFrom, dateTo, includeDuplicates } = params;
+  const { search, sort, page: pageNum, limit: limitNum, offset } = parseListQuery(params, { defaultPageSize: 20, maxPageSize: 200 });
 
   const { rows, total } = await contactsRepo.list(user, {
     search,

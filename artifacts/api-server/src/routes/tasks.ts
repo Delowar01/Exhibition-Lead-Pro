@@ -4,6 +4,8 @@ import { tasksTable, contactsTable, usersTable } from "@workspace/db";
 import { eq, and, inArray, desc, type SQL } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateTaskBody, UpdateTaskBody } from "@workspace/api-zod";
 import { refAccessible } from "../lib/tenant.js";
 
 const router = Router();
@@ -58,7 +60,7 @@ router.get("/tasks", async (req: AuthRequest, res) => {
 });
 
 // POST /tasks — create / assign a task
-router.post("/tasks", async (req: AuthRequest, res) => {
+router.post("/tasks", validateBody(CreateTaskBody), async (req: AuthRequest, res) => {
   try {
     const companyId = req.user!.companyId;
     if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
@@ -83,7 +85,7 @@ router.post("/tasks", async (req: AuthRequest, res) => {
 });
 
 // PATCH /tasks/:id
-router.patch("/tasks/:id", async (req: AuthRequest, res) => {
+router.patch("/tasks/:id", validateBody(UpdateTaskBody), async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(tasksTable).where(eq(tasksTable.id, id)).limit(1);

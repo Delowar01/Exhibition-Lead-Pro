@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, requireRole, blockReadOnlyMutations, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateCompanyBody, UpdateCompanyBody } from "@workspace/api-zod";
 import * as companies from "../services/companies.service.js";
 
 const router = Router();
@@ -15,7 +17,7 @@ router.get("/companies", async (req: AuthRequest, res) => {
 });
 
 // POST /companies
-router.post("/companies", async (req: AuthRequest, res) => {
+router.post("/companies", validateBody(CreateCompanyBody), async (req: AuthRequest, res) => {
   res.status(201).json(await companies.createCompany(req.user!, req.body ?? {}));
 });
 
@@ -25,7 +27,7 @@ router.get("/companies/:id", async (req: AuthRequest, res) => {
 });
 
 // PATCH /companies/:id
-router.patch("/companies/:id", async (req: AuthRequest, res) => {
+router.patch("/companies/:id", validateBody(UpdateCompanyBody), async (req: AuthRequest, res) => {
   res.json(await companies.updateCompany(parseInt(String(req.params.id)), req.body ?? {}));
 });
 

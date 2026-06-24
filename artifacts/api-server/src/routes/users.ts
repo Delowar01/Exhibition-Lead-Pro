@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateUserBody, UpdateOwnProfileBody, UpdateUserBody, SetUserRolesBody } from "@workspace/api-zod";
 import * as users from "../services/users.service.js";
 
 const router = Router();
@@ -14,13 +16,13 @@ router.get("/users", requirePermission("team", "view"), async (req: AuthRequest,
 });
 
 // POST /users
-router.post("/users", requirePermission("team", "create"), async (req: AuthRequest, res) => {
+router.post("/users", requirePermission("team", "create"), validateBody(CreateUserBody), async (req: AuthRequest, res) => {
   res.status(201).json(await users.createUser(req.user!, req.body ?? {}));
 });
 
 // PATCH /users/me — authenticated user updates their OWN profile (avatar, name).
 // Registered before /users/:id so the static "me" path is not swallowed by :id.
-router.patch("/users/me", async (req: AuthRequest, res) => {
+router.patch("/users/me", validateBody(UpdateOwnProfileBody), async (req: AuthRequest, res) => {
   res.json(await users.updateMe(req.user!, req.body ?? {}));
 });
 
@@ -30,7 +32,7 @@ router.get("/users/:id", requirePermission("team", "view"), async (req: AuthRequ
 });
 
 // PATCH /users/:id
-router.patch("/users/:id", requirePermission("team", "edit"), async (req: AuthRequest, res) => {
+router.patch("/users/:id", requirePermission("team", "edit"), validateBody(UpdateUserBody), async (req: AuthRequest, res) => {
   res.json(await users.updateUser(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 
@@ -66,7 +68,7 @@ router.get("/users/:id/login-history", requirePermission("team", "view"), async 
 });
 
 // PUT /users/:id/roles — replace the user's assigned custom roles.
-router.put("/users/:id/roles", requirePermission("team", "edit"), async (req: AuthRequest, res) => {
+router.put("/users/:id/roles", requirePermission("team", "edit"), validateBody(SetUserRolesBody), async (req: AuthRequest, res) => {
   const roleIds = Array.isArray(req.body?.roleIds) ? req.body.roleIds : [];
   res.json(await users.setUserRoles(req.user!, parseInt(String(req.params.id)), roleIds));
 });

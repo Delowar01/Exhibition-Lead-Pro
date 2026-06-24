@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateEventBody, UpdateEventBody } from "@workspace/api-zod";
 import * as events from "../services/events.service.js";
 
 const router = Router();
@@ -14,7 +16,7 @@ router.get("/events", async (req: AuthRequest, res) => {
 });
 
 // POST /events
-router.post("/events", requirePermission("events", "create"), async (req: AuthRequest, res) => {
+router.post("/events", requirePermission("events", "create"), validateBody(CreateEventBody), async (req: AuthRequest, res) => {
   res.status(201).json(await events.createEvent(req.user!, req.body ?? {}));
 });
 
@@ -24,7 +26,7 @@ router.get("/events/:id", async (req: AuthRequest, res) => {
 });
 
 // PATCH /events/:id
-router.patch("/events/:id", requirePermission("events", "edit"), async (req: AuthRequest, res) => {
+router.patch("/events/:id", requirePermission("events", "edit"), validateBody(UpdateEventBody), async (req: AuthRequest, res) => {
   res.json(await events.updateEvent(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 

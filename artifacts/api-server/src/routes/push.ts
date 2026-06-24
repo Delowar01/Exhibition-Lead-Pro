@@ -3,12 +3,14 @@ import { db } from "@workspace/db";
 import { deviceTokensTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { validateBody } from "../middlewares/validate.js";
+import { RegisterPushTokenBody, UnregisterPushTokenBody } from "@workspace/api-zod";
 
 const router = Router();
 router.use(requireAuth);
 
 // POST /push/register — upsert an Expo push token for the current user's device.
-router.post("/push/register", async (req: AuthRequest, res) => {
+router.post("/push/register", validateBody(RegisterPushTokenBody), async (req: AuthRequest, res) => {
   try {
     const { token, platform } = req.body as { token?: string; platform?: string };
     if (!token || typeof token !== "string") {
@@ -30,7 +32,7 @@ router.post("/push/register", async (req: AuthRequest, res) => {
 });
 
 // POST /push/unregister — remove a token (e.g. on logout). Scoped to the caller.
-router.post("/push/unregister", async (req: AuthRequest, res) => {
+router.post("/push/unregister", validateBody(UnregisterPushTokenBody), async (req: AuthRequest, res) => {
   try {
     const { token } = req.body as { token?: string };
     if (!token || typeof token !== "string") {

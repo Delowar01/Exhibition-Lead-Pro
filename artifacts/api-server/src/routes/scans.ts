@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateScanBody } from "@workspace/api-zod";
 import { uploadScanImage } from "../lib/imageStorage.js";
 import * as scans from "../services/scans.service.js";
 
@@ -16,7 +18,7 @@ router.get("/scans", async (req: AuthRequest, res) => {
 });
 
 // POST /scans
-router.post("/scans", requirePermission("scans", "create"), async (req: AuthRequest, res) => {
+router.post("/scans", requirePermission("scans", "create"), validateBody(CreateScanBody), async (req: AuthRequest, res) => {
   const { scanId, companyId, imageData, status, body } = await scans.createScan(req.user!, req.body ?? {});
 
   // Upload image to object storage after OCR — best-effort, non-blocking

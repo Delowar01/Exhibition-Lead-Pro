@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, requireWritable, blockReadOnlyMutations, type AuthRequest } from "../middlewares/requireAuth.js";
 import { writeAudit } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { UpgradeSubscriptionBody } from "@workspace/api-zod";
 import * as subscriptions from "../services/subscriptions.service.js";
 
 const router = Router();
@@ -20,7 +22,7 @@ router.get("/subscriptions/plans", async (_req: AuthRequest, res) => {
 });
 
 // POST /subscriptions/upgrade
-router.post("/subscriptions/upgrade", requireWritable, async (req: AuthRequest, res) => {
+router.post("/subscriptions/upgrade", requireWritable, validateBody(UpgradeSubscriptionBody), async (req: AuthRequest, res) => {
   const { sub, companyId, plan } = await subscriptions.upgradeSubscription(req.user!, req.body ?? {});
   await writeAudit(req, { action: "subscription.upgrade", entityType: "subscription", entityId: companyId, metadata: { plan } });
   res.json(sub);

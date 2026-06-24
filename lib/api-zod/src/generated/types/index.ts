@@ -43,6 +43,7 @@ export * from './duplicateGroup';
 export * from './duplicateGroupMatchType';
 export * from './duplicatesResponse';
 export * from './errorResponse';
+export * from './errorResponseDetailsItem';
 export * from './event';
 export * from './eventInput';
 export * from './eventInputStatus';

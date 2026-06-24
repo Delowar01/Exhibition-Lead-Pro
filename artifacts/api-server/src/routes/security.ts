@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { UpdateSecurityPolicyBody } from "@workspace/api-zod";
 import * as security from "../services/security.service.js";
 
 const router = Router();
@@ -15,7 +17,7 @@ router.get("/security/policy", requirePermission("security", "view"), async (req
 });
 
 // PATCH /security/policy
-router.patch("/security/policy", requirePermission("security", "edit"), async (req: AuthRequest, res) => {
+router.patch("/security/policy", requirePermission("security", "edit"), validateBody(UpdateSecurityPolicyBody), async (req: AuthRequest, res) => {
   res.json(await security.updatePolicy(req.user!, req.body ?? {}));
 });
 

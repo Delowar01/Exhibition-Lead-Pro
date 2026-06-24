@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { validateBody } from "../middlewares/validate.js";
+import { UpdateNotificationPreferenceBody } from "@workspace/api-zod";
 import * as notifications from "../services/notifications.service.js";
 
 const router = Router();
@@ -24,7 +26,7 @@ router.get("/notifications/preferences", async (req: AuthRequest, res) => {
 });
 
 // PATCH /notifications/preferences — upsert one category preference.
-router.patch("/notifications/preferences", async (req: AuthRequest, res) => {
+router.patch("/notifications/preferences", validateBody(UpdateNotificationPreferenceBody), async (req: AuthRequest, res) => {
   res.json(await notifications.updatePreference(req.user!, req.body ?? {}));
 });
 

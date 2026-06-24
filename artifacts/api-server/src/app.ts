@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
@@ -30,6 +30,14 @@ app.use(
     },
   }),
 );
+
+// Surface the per-request id (assigned by pino-http) on every response so clients and
+// logs can correlate a failed call to a server log line. Additive — purely a header.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const id = (req as Request & { id?: unknown }).id;
+  if (id !== undefined) res.setHeader("X-Request-Id", String(id));
+  next();
+});
 // Security response headers. CSP and the cross-origin resource/embedder policies
 // are disabled on purpose: this is a JSON + image API consumed cross-origin
 // (open CORS) by the web and mobile clients, so CORP/COEP would block legitimate
@@ -50,11 +58,26 @@ app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
 
 // Rate limiting on the auth surface. The stricter login limiter is mounted on the
 // credential-checking endpoints; a broader limiter covers the rest of /api/auth.
-app.use("/api/auth/login", loginRateLimiter);
-app.use("/api/auth/mfa/verify-login", loginRateLimiter);
-app.use("/api/auth", authRateLimiter);
+// Mounted on both the versioned and legacy auth prefixes so the same protection
+// applies regardless of which base path the client uses.
+app.use(["/api/v1/auth/login", "/api/auth/login"], loginRateLimiter);
+app.use(["/api/v1/auth/mfa/verify-login", "/api/auth/mfa/verify-login"], loginRateLimiter);
+app.use(["/api/v1/auth", "/api/auth"], authRateLimiter);
 
-app.use("/api", router);
+// API versioning. `/api/v1` is the canonical, versioned base path; the legacy `/api`
+// prefix is kept mounted to the SAME router so existing web/mobile clients keep
+// working unchanged (rollback is a client base-path change, not a redeploy). Legacy
+// requests get RFC 8594 deprecation signaling so consumers can migrate to /api/v1.
+app.use("/api/v1", router);
+app.use(
+  "/api",
+  (req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Deprecation", "true");
+    res.setHeader("Link", '</api/v1>; rel="successor-version"');
+    next();
+  },
+  router,
+);
 
 // Unmatched routes -> JSON 404; anything thrown/rejected -> unified handler.
 app.use(notFoundHandler);

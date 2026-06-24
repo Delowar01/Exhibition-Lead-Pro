@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody } from "@workspace/api-zod";
 import * as contacts from "../services/contacts.service.js";
 
 const router = Router();
@@ -14,7 +16,7 @@ router.get("/contacts", async (req: AuthRequest, res) => {
 });
 
 // POST /contacts
-router.post("/contacts", requirePermission("contacts", "create"), async (req: AuthRequest, res) => {
+router.post("/contacts", requirePermission("contacts", "create"), validateBody(CreateContactBody), async (req: AuthRequest, res) => {
   res.status(201).json(await contacts.createContact(req.user!, req.body ?? {}));
 });
 
@@ -29,12 +31,12 @@ router.get("/contacts/duplicates", async (req: AuthRequest, res) => {
 });
 
 // POST /contacts/make-original — promote a linked duplicate to be the original
-router.post("/contacts/make-original", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
+router.post("/contacts/make-original", requirePermission("contacts", "edit"), validateBody(MakeContactOriginalBody), async (req: AuthRequest, res) => {
   res.json(await contacts.makeOriginal(req.user!, req.body ?? {}));
 });
 
 // POST /contacts/merge — consolidate duplicates into a primary contact
-router.post("/contacts/merge", requirePermission("contacts", "delete"), async (req: AuthRequest, res) => {
+router.post("/contacts/merge", requirePermission("contacts", "delete"), validateBody(MergeContactsBody), async (req: AuthRequest, res) => {
   res.json(await contacts.mergeContacts(req.user!, req.body ?? {}));
 });
 
@@ -44,7 +46,7 @@ router.get("/contacts/:id", async (req: AuthRequest, res) => {
 });
 
 // PATCH /contacts/:id
-router.patch("/contacts/:id", requirePermission("contacts", "edit"), async (req: AuthRequest, res) => {
+router.patch("/contacts/:id", requirePermission("contacts", "edit"), validateBody(UpdateContactBody), async (req: AuthRequest, res) => {
   res.json(await contacts.updateContact(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 

@@ -4,6 +4,8 @@ import { followUpsTable, contactsTable, usersTable } from "@workspace/db";
 import { eq, and, inArray, desc, type SQL } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateFollowUpBody, UpdateFollowUpBody } from "@workspace/api-zod";
 import { refAccessible } from "../lib/tenant.js";
 
 const router = Router();
@@ -52,7 +54,7 @@ router.get("/follow-ups", async (req: AuthRequest, res) => {
 });
 
 // POST /follow-ups — schedule a follow-up for a contact
-router.post("/follow-ups", async (req: AuthRequest, res) => {
+router.post("/follow-ups", validateBody(CreateFollowUpBody), async (req: AuthRequest, res) => {
   try {
     const { contactId, scheduledDate, scheduledTime, notes, assignedToId } = req.body;
     if (typeof contactId !== "number") { res.status(400).json({ error: "contactId required" }); return; }
@@ -72,7 +74,7 @@ router.post("/follow-ups", async (req: AuthRequest, res) => {
 });
 
 // PATCH /follow-ups/:id — action (complete / reschedule / cancel)
-router.patch("/follow-ups/:id", async (req: AuthRequest, res) => {
+router.patch("/follow-ups/:id", validateBody(UpdateFollowUpBody), async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(followUpsTable).where(eq(followUpsTable.id, id)).limit(1);

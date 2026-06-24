@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { CreateLeadBody, UpdateLeadBody } from "@workspace/api-zod";
 import * as leads from "../services/leads.service.js";
 
 const router = Router();
@@ -14,7 +16,7 @@ router.get("/leads", async (req: AuthRequest, res) => {
 });
 
 // POST /leads
-router.post("/leads", requirePermission("leads", "create"), async (req: AuthRequest, res) => {
+router.post("/leads", requirePermission("leads", "create"), validateBody(CreateLeadBody), async (req: AuthRequest, res) => {
   const result = await leads.createLead(req.user!, req.body ?? {});
   if (result.conflict) {
     res.status(409).json({ error: "Contact already has an open pipeline opportunity", existingId: result.existingId });
@@ -34,7 +36,7 @@ router.get("/leads/:id", async (req: AuthRequest, res) => {
 });
 
 // PATCH /leads/:id
-router.patch("/leads/:id", requirePermission("leads", "edit"), async (req: AuthRequest, res) => {
+router.patch("/leads/:id", requirePermission("leads", "edit"), validateBody(UpdateLeadBody), async (req: AuthRequest, res) => {
   res.json(await leads.updateLead(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { AcceptInvitationBody, RejectInvitationBody, CreateInvitationBody } from "@workspace/api-zod";
 import * as invitations from "../services/invitations.service.js";
 
 const router = Router();
@@ -14,12 +16,12 @@ router.get("/invitations/token/:token", async (req: AuthRequest, res) => {
 });
 
 // POST /invitations/accept — create the user + assign roles.
-router.post("/invitations/accept", async (req: AuthRequest, res) => {
+router.post("/invitations/accept", validateBody(AcceptInvitationBody), async (req: AuthRequest, res) => {
   res.json(await invitations.acceptInvitation(req.body ?? {}));
 });
 
 // POST /invitations/reject — decline an invitation.
-router.post("/invitations/reject", async (req: AuthRequest, res) => {
+router.post("/invitations/reject", validateBody(RejectInvitationBody), async (req: AuthRequest, res) => {
   res.json(await invitations.rejectInvitation(req.body ?? {}));
 });
 
@@ -33,7 +35,7 @@ router.get("/invitations", async (req: AuthRequest, res) => {
 });
 
 // POST /invitations — create + email an invitation.
-router.post("/invitations", requirePermission("team", "create"), async (req: AuthRequest, res) => {
+router.post("/invitations", requirePermission("team", "create"), validateBody(CreateInvitationBody), async (req: AuthRequest, res) => {
   res.status(201).json(await invitations.createInvitation(req.user!, req.body ?? {}));
 });
 

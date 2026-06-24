@@ -4,6 +4,8 @@ import { db, businessCardsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, blockReadOnlyMutations, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { validateBody } from "../middlewares/validate.js";
+import { UpsertOwnCardBody } from "@workspace/api-zod";
 import { config } from "../config.js";
 
 const router = Router();
@@ -114,7 +116,7 @@ router.get("/cards/me", async (req: AuthRequest, res) => {
 });
 
 // PUT /cards/me — upsert (creates on first save, updates thereafter)
-router.put("/cards/me", async (req: AuthRequest, res) => {
+router.put("/cards/me", validateBody(UpsertOwnCardBody), async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
     const body = req.body ?? {};

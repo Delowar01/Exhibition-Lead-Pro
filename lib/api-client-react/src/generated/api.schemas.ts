@@ -24,8 +24,17 @@ export interface SuccessResponse {
   message?: string;
 }
 
+export type ErrorResponseDetailsItem = {
+  field: string;
+  message: string;
+};
+
 export interface ErrorResponse {
   error: string;
+  /** Correlates this response with server logs (also returned as the X-Request-Id header). */
+  requestId?: string;
+  /** Per-field validation issues (present on 400 validation failures). */
+  details?: ErrorResponseDetailsItem[];
 }
 
 export interface ForgotPasswordInput {
