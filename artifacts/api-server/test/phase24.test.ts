@@ -184,6 +184,19 @@ describe("RBAC — custom roles + effective-permission resolution", () => {
     expect(allowed.status).toBe(201);
   });
 
+  it("denies user-directory reads to a caller without team.view (and allows with it)", async () => {
+    // The employee holds contacts.create (from the prior test) but NOT team.view,
+    // so the user-management read surfaces must be 403 — they expose role/permission
+    // metadata and must not be enumerable by arbitrary tenant users.
+    const empToken = await loginToken({ email: EMP_EMAIL, password: PW });
+    expect((await api("GET", "/users", empToken)).status).toBe(403);
+    expect((await api("GET", `/users/${empId}`, empToken)).status).toBe(403);
+
+    // primary_admin bypasses permission checks and can read the directory.
+    expect((await api("GET", "/users", orgToken)).status).toBe(200);
+    expect((await api("GET", `/users/${empId}`, orgToken)).status).toBe(200);
+  });
+
   it("blocks privilege escalation: a caller cannot grant a role with permissions it does not hold", async () => {
     // An admin who can manage the team (team.edit) but does NOT hold roles.edit
     // must not be able to assign a custom role that grants roles.edit — to itself

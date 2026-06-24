@@ -9,7 +9,7 @@ router.use("/users", blockReadOnlyMutations);
 router.use("/users", auditMutations("team"));
 
 // GET /users
-router.get("/users", async (req: AuthRequest, res) => {
+router.get("/users", requirePermission("team", "view"), async (req: AuthRequest, res) => {
   res.json(await users.listUsers(req.user!, req.query as users.ListUsersParams));
 });
 
@@ -25,7 +25,7 @@ router.patch("/users/me", async (req: AuthRequest, res) => {
 });
 
 // GET /users/:id
-router.get("/users/:id", async (req: AuthRequest, res) => {
+router.get("/users/:id", requirePermission("team", "view"), async (req: AuthRequest, res) => {
   res.json(await users.getUser(req.user!, parseInt(String(req.params.id))));
 });
 
