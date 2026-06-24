@@ -10,6 +10,16 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// Reads a numeric env var with a default + a hard minimum. Falls back to the default
+// on missing/NaN input, then clamps to `min` so a misconfiguration can never produce a
+// stalled queue (concurrency 0) or a NaN interval that silently never fires.
+function numEnv(name: string, def: number, min: number): number {
+  const raw = process.env[name];
+  const n = raw === undefined || raw === "" ? def : Number(raw);
+  if (Number.isNaN(n)) return def;
+  return Math.max(min, n);
+}
+
 function resolvePort(): number {
   const raw = process.env["PORT"];
   if (!raw) {
@@ -136,6 +146,38 @@ export const config = {
     emailVerifyTtlHours: Number(process.env.EMAIL_VERIFY_TTL_HOURS ?? 48),
     // Invitation link lifetime.
     invitationTtlDays: Number(process.env.INVITATION_TTL_DAYS ?? 7),
+  },
+
+  // Background jobs & queue (Phase 2.6). The queue moves slow/flaky work (email +
+  // notification delivery) off the request path and runs recurring maintenance. The
+  // in-process default needs no extra infra; `JOBS_DRIVER` is the single swap point
+  // for a shared broker (Redis/BullMQ) later. `asyncEmail=false` is the rollback
+  // switch: producers fall back to the synchronous 2.5 send path.
+  jobs: {
+    driver: process.env.JOBS_DRIVER ?? "in-process",
+    asyncEmail: process.env.JOBS_ASYNC_EMAIL !== "false",
+    concurrency: numEnv("JOBS_CONCURRENCY", 5, 1),
+    // Email delivery is retried on transient transport errors with exponential backoff.
+    maxAttempts: numEnv("JOBS_MAX_ATTEMPTS", 5, 1),
+    backoffBaseMs: numEnv("JOBS_BACKOFF_BASE_MS", 2_000, 0),
+    backoffMaxMs: numEnv("JOBS_BACKOFF_MAX_MS", 5 * 60 * 1000, 0),
+    // Recurring maintenance cadence + first-run delays (ms). Generous initial delays
+    // keep boot light and avoid interfering with short-lived processes/tests.
+    schedule: {
+      followUpFirstDelayMs: numEnv("JOBS_FOLLOWUP_DELAY_MS", 15_000, 0),
+      followUpIntervalMs: numEnv("JOBS_FOLLOWUP_INTERVAL_MS", 60 * 60 * 1000, 1_000),
+      maintenanceFirstDelayMs: numEnv("JOBS_MAINTENANCE_DELAY_MS", 60_000, 0),
+      maintenanceIntervalMs: numEnv("JOBS_MAINTENANCE_INTERVAL_MS", 6 * 60 * 60 * 1000, 1_000),
+    },
+    retention: {
+      // Delete read notifications older than this many days (0 disables).
+      notificationDays: numEnv("JOBS_NOTIFICATION_RETENTION_DAYS", 90, 0),
+      // Delete revoked/expired sessions older than this many days (0 disables).
+      sessionDays: numEnv("JOBS_SESSION_RETENTION_DAYS", 30, 0),
+      // Audit-log retention is OPT-IN. audit_logs is append-only by design; only a
+      // positive value enables deletion of rows older than that many days.
+      auditDays: numEnv("JOBS_AUDIT_RETENTION_DAYS", 0, 0),
+    },
   },
 
   // Comma-separated list of published domains (Replit). Optional.

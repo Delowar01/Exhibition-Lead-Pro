@@ -14,7 +14,10 @@ function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-async function runOnce(): Promise<void> {
+// Finds contacts whose follow-up is due (or overdue) today and pushes a reminder to
+// the assigned rep. Idempotent per follow-up date via the `followUpNotifiedOn` marker.
+// Registered as a recurring task by the jobs scheduler (Phase 2.6).
+export async function runFollowUpReminders(): Promise<void> {
   const todayStr = localDateStr(new Date());
 
   const due = await db
@@ -94,15 +97,4 @@ async function runOnce(): Promise<void> {
     { contacts: notifiedContactIds.length, reps: notifiedReps },
     "Sent due follow-up notifications",
   );
-}
-
-// Starts the recurring scheduler. Runs shortly after boot, then hourly.
-export function startFollowUpScheduler(): void {
-  const INTERVAL_MS = 60 * 60 * 1000; // hourly
-  const tick = () => {
-    runOnce().catch((err) => logger.error({ err }, "Follow-up scheduler tick failed"));
-  };
-  setTimeout(tick, 15_000);
-  setInterval(tick, INTERVAL_MS);
-  logger.info("Follow-up notification scheduler started");
 }

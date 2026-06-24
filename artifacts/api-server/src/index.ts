@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { startFollowUpScheduler } from "./lib/followup-scheduler";
+import { startWorkers } from "./lib/jobs/handlers";
+import { startScheduler } from "./lib/jobs/scheduler";
 import { config } from "./config.js";
 
 const port = config.port;
@@ -12,5 +13,8 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  startFollowUpScheduler();
+  // Background job queue (async email/notification delivery) + recurring maintenance
+  // scheduler (token/session cleanup, invitation expiry, retention, follow-ups).
+  startWorkers();
+  startScheduler();
 });
