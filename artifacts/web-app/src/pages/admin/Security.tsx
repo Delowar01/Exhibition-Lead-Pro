@@ -4,6 +4,7 @@ import {
   useGetSecurityPolicy,
   useUpdateSecurityPolicy,
   useListSecurityEvents,
+  useGetSecurityAlerts,
   SecurityPolicyInput,
   SecurityEvent,
 } from "@workspace/api-client-react";
@@ -15,8 +16,9 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AuditLogViewer } from "@/components/AuditLogViewer";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldAlert, Save } from "lucide-react";
+import { ShieldAlert, Save, AlertTriangle, Lock, Ban, Globe } from "lucide-react";
 
 type PolicyState = {
   passwordMinLength: number;
@@ -48,6 +50,7 @@ export default function AdminSecurity() {
   const { toast } = useToast();
   const { data: policy, isLoading } = useGetSecurityPolicy();
   const { data: events } = useListSecurityEvents();
+  const { data: alerts } = useGetSecurityAlerts();
   const update = useUpdateSecurityPolicy();
 
   const [state, setState] = React.useState<PolicyState | null>(null);
@@ -102,10 +105,38 @@ export default function AdminSecurity() {
         <h1 className="text-3xl font-bold tracking-tight">Security Center</h1>
       </div>
 
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <AlertCard
+          icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+          label="Failed Logins"
+          value={alerts?.failedLogins ?? 0}
+          sub={alerts ? `last ${alerts.windowHours}h` : undefined}
+        />
+        <AlertCard
+          icon={<Lock className="h-5 w-5 text-red-500" />}
+          label="Lockouts"
+          value={alerts?.lockouts ?? 0}
+          sub="accounts at threshold"
+        />
+        <AlertCard
+          icon={<Ban className="h-5 w-5 text-orange-500" />}
+          label="Policy Blocks"
+          value={alerts?.policyBlocks ?? 0}
+          sub="login attempts denied"
+        />
+        <AlertCard
+          icon={<Globe className="h-5 w-5 text-blue-500" />}
+          label="Distinct IPs (failed)"
+          value={alerts?.distinctFailedIps ?? 0}
+          sub="unique sources"
+        />
+      </div>
+
       <Tabs defaultValue="policy" className="space-y-6">
         <TabsList>
           <TabsTrigger value="policy">Policy</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
+          <TabsTrigger value="audit">Audit Log</TabsTrigger>
         </TabsList>
 
         <TabsContent value="policy" className="space-y-6">
@@ -213,8 +244,27 @@ export default function AdminSecurity() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="audit">
+          <AuditLogViewer />
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function AlertCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: number; sub?: string }) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 pt-6">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary">{icon}</div>
+        <div>
+          <div className="text-2xl font-bold">{value}</div>
+          <div className="text-xs text-muted-foreground">{label}</div>
+          {sub && <div className="text-[10px] text-muted-foreground/70">{sub}</div>}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

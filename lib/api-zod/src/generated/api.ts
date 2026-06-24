@@ -29,6 +29,36 @@ export const ReadinessCheckResponse = zod.object({
 
 
 /**
+ * @summary Operational metrics snapshot (platform owner only)
+ */
+export const GetMetricsResponse = zod.object({
+  "uptimeSeconds": zod.number(),
+  "timestamp": zod.coerce.date(),
+  "requests": zod.object({
+  "total": zod.number(),
+  "errors": zod.number(),
+  "errorRate": zod.number(),
+  "avgLatencyMs": zod.number(),
+  "maxLatencyMs": zod.number(),
+  "byStatusClass": zod.object({
+  "2xx": zod.number(),
+  "3xx": zod.number(),
+  "4xx": zod.number(),
+  "5xx": zod.number()
+})
+}),
+  "jobs": zod.object({
+  "pending": zod.number(),
+  "active": zod.number(),
+  "enqueued": zod.number(),
+  "completed": zod.number(),
+  "failed": zod.number(),
+  "deadLettered": zod.number()
+})
+})
+
+
+/**
  * @summary Login
  */
 export const LoginBody = zod.object({
@@ -3010,6 +3040,64 @@ export const ListSecurityEventsResponse = zod.object({
   "ipAddress": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 }))
+})
+
+
+/**
+ * @summary Search and filter the audit trail
+ */
+export const listAuditLogsQueryPageDefault = 1;
+
+export const ListAuditLogsQueryParams = zod.object({
+  "companyId": zod.coerce.number().optional(),
+  "userId": zod.coerce.number().optional(),
+  "action": zod.coerce.string().optional(),
+  "entityType": zod.coerce.string().optional(),
+  "entityId": zod.coerce.string().optional(),
+  "q": zod.coerce.string().optional(),
+  "startDate": zod.coerce.string().optional(),
+  "endDate": zod.coerce.string().optional(),
+  "page": zod.coerce.number().default(listAuditLogsQueryPageDefault),
+  "pageSize": zod.coerce.number().optional(),
+  "limit": zod.coerce.number().optional()
+})
+
+export const ListAuditLogsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "action": zod.string(),
+  "entityType": zod.string().nullish(),
+  "entityId": zod.string().nullish(),
+  "ipAddress": zod.string().nullish(),
+  "metadata": zod.record(zod.string(), zod.unknown()).nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number()
+})
+
+
+/**
+ * @summary Aggregated security alerts (failed logins, lockouts, policy blocks)
+ */
+export const getSecurityAlertsQueryWindowHoursDefault = 24;
+
+export const GetSecurityAlertsQueryParams = zod.object({
+  "companyId": zod.coerce.number().optional(),
+  "windowHours": zod.coerce.number().default(getSecurityAlertsQueryWindowHoursDefault)
+})
+
+export const GetSecurityAlertsResponse = zod.object({
+  "windowHours": zod.number(),
+  "failedLogins": zod.number(),
+  "lockouts": zod.number(),
+  "policyBlocks": zod.number(),
+  "distinctFailedIps": zod.number(),
+  "generatedAt": zod.coerce.date()
 })
 
 

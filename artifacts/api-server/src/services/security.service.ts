@@ -1,5 +1,6 @@
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
+import { config } from "../config.js";
 import * as securityRepo from "../repositories/security.repository.js";
 import * as authRepo from "../repositories/auth.repository.js";
 
@@ -113,6 +114,28 @@ export async function updatePolicy(user: AuthUser, input: PolicyInput) {
 export async function listEvents(user: AuthUser, limit = 100) {
   const events = await securityRepo.listEvents(user, Math.min(500, Math.max(1, limit)));
   return { events };
+}
+
+// Resolves which companies an alerts query covers. platform_owner sees all tenants by
+// default and may narrow to one via companyId; everyone else is bound to their accessible
+// companies (an out-of-scope companyId is ignored — never widens the view).
+function alertCompanyScope(user: AuthUser, companyId?: number): number[] | undefined {
+  if (user.role === "platform_owner") {
+    return companyId != null ? [companyId] : undefined;
+  }
+  if (companyId != null && user.accessibleCompanies.includes(companyId)) return [companyId];
+  return user.accessibleCompanies;
+}
+
+export async function getAlerts(user: AuthUser, windowHours = 24, companyId?: number) {
+  const wh = Math.min(720, Math.max(1, Number.isFinite(windowHours) ? windowHours : 24));
+  const since = new Date(Date.now() - wh * 3_600_000);
+  const result = await securityRepo.getSecurityAlerts({
+    companyIds: alertCompanyScope(user, companyId),
+    since,
+    threshold: config.security.maxFailedAttempts,
+  });
+  return { windowHours: wh, ...result, generatedAt: new Date().toISOString() };
 }
 
 // Enforced at login (after password verification) — returns a block reason when

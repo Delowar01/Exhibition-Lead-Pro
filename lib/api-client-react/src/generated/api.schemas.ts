@@ -19,6 +19,38 @@ export interface ReadinessStatus {
   checks: ReadinessStatusChecks;
 }
 
+export type MetricsSnapshotRequestsByStatusClass = {
+  '2xx': number;
+  '3xx': number;
+  '4xx': number;
+  '5xx': number;
+};
+
+export type MetricsSnapshotRequests = {
+  total: number;
+  errors: number;
+  errorRate: number;
+  avgLatencyMs: number;
+  maxLatencyMs: number;
+  byStatusClass: MetricsSnapshotRequestsByStatusClass;
+};
+
+export type MetricsSnapshotJobs = {
+  pending: number;
+  active: number;
+  enqueued: number;
+  completed: number;
+  failed: number;
+  deadLettered: number;
+};
+
+export interface MetricsSnapshot {
+  uptimeSeconds: number;
+  timestamp: string;
+  requests: MetricsSnapshotRequests;
+  jobs: MetricsSnapshotJobs;
+}
+
 export interface SuccessResponse {
   success: boolean;
   message?: string;
@@ -685,6 +717,47 @@ export interface SecurityEvent {
 
 export interface SecurityEventList {
   events: SecurityEvent[];
+}
+
+/**
+ * @nullable
+ */
+export type AuditLogEntryMetadata = { [key: string]: unknown } | null;
+
+export interface AuditLogEntry {
+  id: number;
+  /** @nullable */
+  companyId?: number | null;
+  /** @nullable */
+  userId?: number | null;
+  /** @nullable */
+  userName?: string | null;
+  action: string;
+  /** @nullable */
+  entityType?: string | null;
+  /** @nullable */
+  entityId?: string | null;
+  /** @nullable */
+  ipAddress?: string | null;
+  /** @nullable */
+  metadata?: AuditLogEntryMetadata;
+  createdAt: string;
+}
+
+export interface AuditLogListResponse {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface SecurityAlerts {
+  windowHours: number;
+  failedLogins: number;
+  lockouts: number;
+  policyBlocks: number;
+  distinctFailedIps: number;
+  generatedAt: string;
 }
 
 export type ProfileRole = typeof ProfileRole[keyof typeof ProfileRole];
@@ -2583,5 +2656,24 @@ companyId?: number;
 
 export type ListSecurityEventsParams = {
 limit?: number;
+};
+
+export type ListAuditLogsParams = {
+companyId?: number;
+userId?: number;
+action?: string;
+entityType?: string;
+entityId?: string;
+q?: string;
+startDate?: string;
+endDate?: string;
+page?: number;
+pageSize?: number;
+limit?: number;
+};
+
+export type GetSecurityAlertsParams = {
+companyId?: number;
+windowHours?: number;
 };
 

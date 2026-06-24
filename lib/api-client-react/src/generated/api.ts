@@ -24,6 +24,7 @@ import type {
   AcceptInvitationResult,
   ActivityItem,
   AdminDashboard,
+  AuditLogListResponse,
   AuthResponse,
   BusinessCard,
   BusinessCardInput,
@@ -55,6 +56,7 @@ import type {
   ForgotPasswordInput,
   GetEventReportParams,
   GetOrganizationParams,
+  GetSecurityAlertsParams,
   GetSecurityPolicyParams,
   GetTeamMemberReportParams,
   HealthStatus,
@@ -66,6 +68,7 @@ import type {
   LeadList,
   LeadUpdate,
   LeadsByEventItem,
+  ListAuditLogsParams,
   ListCompaniesParams,
   ListContactsParams,
   ListEventsParams,
@@ -87,6 +90,7 @@ import type {
   MeetingList,
   MeetingUpdate,
   MergeRequest,
+  MetricsSnapshot,
   MfaBackupCodesResponse,
   MfaEnableInput,
   MfaPasswordInput,
@@ -124,6 +128,7 @@ import type {
   Scan,
   ScanInput,
   ScanList,
+  SecurityAlerts,
   SecurityEventList,
   SecurityPolicy,
   SecurityPolicyInput,
@@ -305,6 +310,83 @@ export function useReadinessCheck<TData = Awaited<ReturnType<typeof readinessChe
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getReadinessCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetMetricsUrl = () => {
+
+
+
+
+  return `/api/metrics`
+}
+
+/**
+ * @summary Operational metrics snapshot (platform owner only)
+ */
+export const getMetrics = async ( options?: RequestInit): Promise<MetricsSnapshot> => {
+
+  return customFetch<MetricsSnapshot>(getGetMetricsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMetricsQueryKey = () => {
+    return [
+    `/api/metrics`
+    ] as const;
+    }
+
+
+export const getGetMetricsQueryOptions = <TData = Awaited<ReturnType<typeof getMetrics>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMetricsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMetrics>>> = ({ signal }) => getMetrics({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMetrics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMetricsQueryResult = NonNullable<Awaited<ReturnType<typeof getMetrics>>>
+export type GetMetricsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Operational metrics snapshot (platform owner only)
+ */
+
+export function useGetMetrics<TData = Awaited<ReturnType<typeof getMetrics>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMetricsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -9380,6 +9462,174 @@ export function useListSecurityEvents<TData = Awaited<ReturnType<typeof listSecu
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSecurityEventsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListAuditLogsUrl = (params?: ListAuditLogsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/security/audit?${stringifiedParams}` : `/api/security/audit`
+}
+
+/**
+ * @summary Search and filter the audit trail
+ */
+export const listAuditLogs = async (params?: ListAuditLogsParams, options?: RequestInit): Promise<AuditLogListResponse> => {
+
+  return customFetch<AuditLogListResponse>(getListAuditLogsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAuditLogsQueryKey = (params?: ListAuditLogsParams,) => {
+    return [
+    `/api/security/audit`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAuditLogsQueryOptions = <TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ErrorType<unknown>>(params?: ListAuditLogsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAuditLogsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAuditLogs>>> = ({ signal }) => listAuditLogs(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAuditLogsQueryResult = NonNullable<Awaited<ReturnType<typeof listAuditLogs>>>
+export type ListAuditLogsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Search and filter the audit trail
+ */
+
+export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ErrorType<unknown>>(
+ params?: ListAuditLogsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAuditLogsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetSecurityAlertsUrl = (params?: GetSecurityAlertsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/security/alerts?${stringifiedParams}` : `/api/security/alerts`
+}
+
+/**
+ * @summary Aggregated security alerts (failed logins, lockouts, policy blocks)
+ */
+export const getSecurityAlerts = async (params?: GetSecurityAlertsParams, options?: RequestInit): Promise<SecurityAlerts> => {
+
+  return customFetch<SecurityAlerts>(getGetSecurityAlertsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSecurityAlertsQueryKey = (params?: GetSecurityAlertsParams,) => {
+    return [
+    `/api/security/alerts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSecurityAlertsQueryOptions = <TData = Awaited<ReturnType<typeof getSecurityAlerts>>, TError = ErrorType<unknown>>(params?: GetSecurityAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSecurityAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSecurityAlertsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSecurityAlerts>>> = ({ signal }) => getSecurityAlerts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSecurityAlerts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSecurityAlertsQueryResult = NonNullable<Awaited<ReturnType<typeof getSecurityAlerts>>>
+export type GetSecurityAlertsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Aggregated security alerts (failed logins, lockouts, policy blocks)
+ */
+
+export function useGetSecurityAlerts<TData = Awaited<ReturnType<typeof getSecurityAlerts>>, TError = ErrorType<unknown>>(
+ params?: GetSecurityAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSecurityAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSecurityAlertsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

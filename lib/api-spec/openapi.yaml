@@ -78,6 +78,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReadinessStatus"
 
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags: [health]
+      summary: Operational metrics snapshot (platform owner only)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSnapshot"
+
   # AUTH
   /auth/login:
     post:
@@ -2790,6 +2803,88 @@ paths:
               schema:
                 $ref: "#/components/schemas/SecurityEventList"
 
+  /security/audit:
+    get:
+      operationId: listAuditLogs
+      tags: [security]
+      summary: Search and filter the audit trail
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: entityType
+          in: query
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogListResponse"
+
+  /security/alerts:
+    get:
+      operationId: getSecurityAlerts
+      tags: [security]
+      summary: Aggregated security alerts (failed logins, lockouts, policy blocks)
+      parameters:
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+        - name: windowHours
+          in: query
+          schema:
+            type: integer
+            default: 24
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityAlerts"
+
   # PROFILE (Phase 2.4)
   /profile:
     get:
@@ -2856,6 +2951,58 @@ components:
               type: string
           required: [database, storage]
       required: [status, checks]
+
+    MetricsSnapshot:
+      type: object
+      required: [uptimeSeconds, timestamp, requests, jobs]
+      properties:
+        uptimeSeconds:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        requests:
+          type: object
+          required: [total, errors, errorRate, avgLatencyMs, maxLatencyMs, byStatusClass]
+          properties:
+            total:
+              type: integer
+            errors:
+              type: integer
+            errorRate:
+              type: number
+            avgLatencyMs:
+              type: number
+            maxLatencyMs:
+              type: number
+            byStatusClass:
+              type: object
+              required: ["2xx", "3xx", "4xx", "5xx"]
+              properties:
+                "2xx":
+                  type: integer
+                "3xx":
+                  type: integer
+                "4xx":
+                  type: integer
+                "5xx":
+                  type: integer
+        jobs:
+          type: object
+          required: [pending, active, enqueued, completed, failed, deadLettered]
+          properties:
+            pending:
+              type: integer
+            active:
+              type: integer
+            enqueued:
+              type: integer
+            completed:
+              type: integer
+            failed:
+              type: integer
+            deadLettered:
+              type: integer
 
     SuccessResponse:
       type: object
@@ -3846,6 +3993,66 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SecurityEvent"
+
+    AuditLogEntry:
+      type: object
+      required: [id, action, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: ["integer", "null"]
+        userId:
+          type: ["integer", "null"]
+        userName:
+          type: ["string", "null"]
+        action:
+          type: string
+        entityType:
+          type: ["string", "null"]
+        entityId:
+          type: ["string", "null"]
+        ipAddress:
+          type: ["string", "null"]
+        metadata:
+          type: ["object", "null"]
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditLogListResponse:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    SecurityAlerts:
+      type: object
+      required: [windowHours, failedLogins, lockouts, policyBlocks, distinctFailedIps, generatedAt]
+      properties:
+        windowHours:
+          type: integer
+        failedLogins:
+          type: integer
+        lockouts:
+          type: integer
+        policyBlocks:
+          type: integer
+        distinctFailedIps:
+          type: integer
+        generatedAt:
+          type: string
+          format: date-time
 
     Profile:
       type: object

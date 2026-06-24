@@ -10,12 +10,22 @@ import { config } from "./config.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 import { authRateLimiter, loginRateLimiter } from "./middlewares/rateLimit.js";
 import { bustCacheOnWrite } from "./middlewares/microCache.js";
+import { metricsMiddleware } from "./lib/metrics.js";
+import type { AuthRequest } from "./middlewares/requireAuth.js";
 
 const app: Express = express();
 
 app.use(
   pinoHttp({
     logger,
+    // Enrich every request-completion log with the authenticated principal so logs are
+    // correlatable by user/tenant. requireAuth populates req.user before the response
+    // finishes; customProps is evaluated at log time, so it sees it. Anonymous requests
+    // (pre-auth, public routes) simply add nothing.
+    customProps: (req) => {
+      const user = (req as AuthRequest).user;
+      return user ? { userId: user.id, companyId: user.companyId } : {};
+    },
     serializers: {
       req(req) {
         return {
@@ -62,6 +72,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }) as typeof res.json;
   next();
 });
+
+// Operational metrics: record every request's status + latency. Mounted early so the
+// measured duration spans the full pipeline. Observes only — never alters the response.
+app.use(metricsMiddleware);
+
 // Security response headers. CSP and the cross-origin resource/embedder policies
 // are disabled on purpose: this is a JSON + image API consumed cross-origin
 // (open CORS) by the web and mobile clients, so CORP/COEP would block legitimate
