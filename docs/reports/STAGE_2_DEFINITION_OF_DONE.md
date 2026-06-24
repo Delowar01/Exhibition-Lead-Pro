@@ -54,7 +54,11 @@ verified. It closes technical-debt item **M2** (placeholder readiness probe).
 - Filters: `companyId` (platform), `userId`, `action`, `entityType`, `entityId`, `q` (ILIKE over
   user name / action / entity type), `startDate`, `endDate`, plus `page` / `pageSize`.
 - `endDate` is **inclusive** — a date-only value is extended to end-of-day.
-- Returns `{ items, total, page, pageSize }`; `metadata` carries before/after values where present.
+- Returns `{ items, total, page, pageSize }`. The web viewer exposes controls for org
+  (`companyId`, platform only), user (`userId`), action, entity type, entity id, and date range.
+- **Captured context:** `audit_logs` stores `ipAddress` + a JSON `metadata` blob (no dedicated
+  user-agent/browser/OS or result column). The detail dialog surfaces before/after values when
+  `metadata` carries them (`old`/`new`/`before`/`after`/`changes` aliases), else the raw metadata.
 
 ### 5. Security alerts — `GET /security/alerts`
 - Aggregates, over a `windowHours` window (clamped 1–720): `failedLogins`, `lockouts` (distinct

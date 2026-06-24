@@ -109,6 +109,31 @@ describe("GET /security/audit — searchable, tenant-scoped audit trail", () => 
     }
   });
 
+  it("honors the userId filter", async () => {
+    const seed = await fetch(`${BASE}/security/audit?pageSize=50`, { headers: authHeaders(platformToken) }).then((r) => r.json());
+    const withUser = seed.items.find((e: { userId: number | null }) => e.userId != null);
+    if (!withUser) return; // no attributable rows yet — nothing to assert
+    const res = await fetch(`${BASE}/security/audit?userId=${withUser.userId}&pageSize=50`, { headers: authHeaders(platformToken) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items.length).toBeGreaterThan(0);
+    for (const entry of body.items) {
+      expect(entry.userId).toBe(withUser.userId);
+    }
+  });
+
+  it("honors the entityType filter", async () => {
+    const seed = await fetch(`${BASE}/security/audit?pageSize=50`, { headers: authHeaders(platformToken) }).then((r) => r.json());
+    const withEntity = seed.items.find((e: { entityType: string | null }) => e.entityType != null);
+    if (!withEntity) return;
+    const res = await fetch(`${BASE}/security/audit?entityType=${encodeURIComponent(withEntity.entityType)}&pageSize=50`, { headers: authHeaders(platformToken) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    for (const entry of body.items) {
+      expect(entry.entityType).toBe(withEntity.entityType);
+    }
+  });
+
   it("does not let one tenant's view leak into another's", async () => {
     const [tech, innov] = await Promise.all([
       fetch(`${BASE}/security/audit?pageSize=100`, { headers: authHeaders(techcorpToken) }).then((r) => r.json()),

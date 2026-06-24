@@ -25,11 +25,30 @@ type Filters = {
   q: string;
   action: string;
   entityType: string;
+  entityId: string;
+  userId: string;
+  companyId: string;
   startDate: string;
   endDate: string;
 };
 
-const EMPTY: Filters = { q: "", action: "", entityType: "", startDate: "", endDate: "" };
+const EMPTY: Filters = {
+  q: "",
+  action: "",
+  entityType: "",
+  entityId: "",
+  userId: "",
+  companyId: "",
+  startDate: "",
+  endDate: "",
+};
+
+function toNum(v: string): number | undefined {
+  const s = v.trim();
+  if (s === "") return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 // Tenant-scoped audit-log browser. Backend (GET /security/audit) applies the tenant
 // boundary, so this is safe in both the platform and company-admin portals; the
@@ -44,6 +63,9 @@ export function AuditLogViewer({ showCompany = false }: { showCompany?: boolean 
     q: applied.q || undefined,
     action: applied.action || undefined,
     entityType: applied.entityType || undefined,
+    entityId: applied.entityId || undefined,
+    userId: toNum(applied.userId),
+    companyId: toNum(applied.companyId),
     startDate: applied.startDate || undefined,
     endDate: applied.endDate || undefined,
     page,
@@ -93,6 +115,20 @@ export function AuditLogViewer({ showCompany = false }: { showCompany?: boolean 
               <Label htmlFor="audit-entity">Entity Type</Label>
               <Input id="audit-entity" placeholder="e.g. contact" value={draft.entityType} onChange={(e) => set("entityType", e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="audit-entity-id">Entity ID</Label>
+              <Input id="audit-entity-id" placeholder="e.g. 42" value={draft.entityId} onChange={(e) => set("entityId", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="audit-user-id">User ID</Label>
+              <Input id="audit-user-id" type="number" placeholder="e.g. 7" value={draft.userId} onChange={(e) => set("userId", e.target.value)} />
+            </div>
+            {showCompany && (
+              <div className="space-y-1.5">
+                <Label htmlFor="audit-company-id">Company ID</Label>
+                <Input id="audit-company-id" type="number" placeholder="All companies" value={draft.companyId} onChange={(e) => set("companyId", e.target.value)} />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="audit-from">From</Label>
