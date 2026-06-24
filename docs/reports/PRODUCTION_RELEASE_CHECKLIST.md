@@ -80,6 +80,7 @@ OCR Capture, NFC Capture, AI processing, Export/Import → **code-audited only**
 
 **Critical (blocking):** none open. ✅ (PATCH 500 defect fixed.)
 **High:** remove hardcoded JWT-secret fallback; complete on-device native verification (Phase 3).
+**Pending verification (web E2E):** rerun the browser (UI-harness) E2E of the **login + MFA** challenge once the testing-harness infrastructure is restored — deferred during Phase 2.8 due to a harness outage, not an app defect. MFA is covered at the unit + integration level meanwhile (`artifacts/api-server/test/auth-security.test.ts`); the other three critical web flows (invite→accept, password reset, role assignment) plus login routing passed via the harness. See [`E2E_VERIFICATION.md`](E2E_VERIFICATION.md).
 **Medium:** adopt Zod request validation on writes (prevents empty/junk records).
 **Low / polish:** dashboard skeleton; optional narrowing of cache invalidation scope.
 **Known limitations:** native flows unverifiable in this environment; web token storage is non-encrypted (web is secondary to the mobile target).

@@ -46,7 +46,10 @@ fixtures were removed afterward (see Cleanup).
 The MFA enrollment + login-challenge + verification path (TOTP **and** single-use
 backup codes, code reuse rejection, and disable) is comprehensively covered by the
 **integration suite** (`test/auth-security.test.ts`), which runs against the live
-API and is part of the green pre-merge gate.
+API and is part of the green pre-merge gate. **All MFA functionality has passed
+unit and integration testing** — the only outstanding item is the browser-harness
+acceptance run, which is pending solely because of the harness outage below, not
+because of any application defect.
 
 A browser-level run of the inline `/login` two-factor screen could not be completed:
 the UI testing harness became unavailable during this session — even a trivial
@@ -77,3 +80,12 @@ dedicated teammate test user, the accept-invite-created user, the custom "QA Rev
 E2E" role and its bindings, the seeded + UI-created invitations, MFA enrollment +
 backup codes on the test user, and accumulated `login_attempts` noise. Demo accounts
 were left in their seeded state.
+
+## Follow-up
+
+- **Rerun the full browser (UI-harness) E2E MFA login-challenge flow** once the
+  testing-harness infrastructure is restored, and record the concrete pass evidence
+  here. This is the single deferred acceptance item from Phase 2.8; it is gated on
+  external harness availability, not on any code change. It is also listed in
+  [`PRODUCTION_RELEASE_CHECKLIST.md`](PRODUCTION_RELEASE_CHECKLIST.md) as a
+  pre-production validation step.
