@@ -2200,6 +2200,131 @@ export interface TrendDataPoint {
   label?: string | null;
 }
 
+export interface AnalyticsKpis {
+  scans: number;
+  newContacts: number;
+  newLeads: number;
+  conversionRate: number;
+  pipelineValue: number;
+  wonValue: number;
+  lostValue: number;
+  wonCount: number;
+  lostCount: number;
+  followUpsDueCount: number;
+  followUpsOverdueCount: number;
+  followUpAdherence: number;
+}
+
+export interface AnalyticsDeltas {
+  /** @nullable */
+  scans: number | null;
+  /** @nullable */
+  newContacts: number | null;
+  /** @nullable */
+  newLeads: number | null;
+  /** @nullable */
+  conversionRate: number | null;
+  /** @nullable */
+  pipelineValue: number | null;
+}
+
+export interface AnalyticsTrendPoint {
+  date: string;
+  scans: number;
+  contacts: number;
+  leads: number;
+  /** @nullable */
+  label?: string | null;
+}
+
+export interface AnalyticsFunnelStage {
+  stage: string;
+  label: string;
+  count: number;
+}
+
+export interface AnalyticsSourceItem {
+  source: string;
+  count: number;
+}
+
+export interface AnalyticsPerformer {
+  userId: number;
+  userName: string;
+  /** @nullable */
+  avatarUrl?: string | null;
+  scans: number;
+  leads: number;
+  won: number;
+  pipelineValue: number;
+}
+
+export interface AnalyticsActivityItem {
+  id: string;
+  type: string;
+  title: string;
+  /** @nullable */
+  subtitle?: string | null;
+  at: string;
+}
+
+export interface AnalyticsScope {
+  type: string;
+  /** @nullable */
+  id?: number | null;
+  name: string;
+}
+
+export interface AnalyticsDateRange {
+  from: string;
+  to: string;
+}
+
+export interface ScopedAnalytics {
+  scope: AnalyticsScope;
+  dateRange: AnalyticsDateRange;
+  kpis: AnalyticsKpis;
+  deltas: AnalyticsDeltas;
+  trend: AnalyticsTrendPoint[];
+  funnel: AnalyticsFunnelStage[];
+  sourceMix: AnalyticsSourceItem[];
+  topPerformers: AnalyticsPerformer[];
+  recentActivity: AnalyticsActivityItem[];
+  headcount: number;
+}
+
+export interface AnalyticsScopeDepartment {
+  id: number;
+  name: string;
+  /** @nullable */
+  parentDepartmentId?: number | null;
+}
+
+export interface AnalyticsScopeTeam {
+  id: number;
+  name: string;
+  /** @nullable */
+  departmentId?: number | null;
+}
+
+export interface AnalyticsScopeEmployee {
+  id: number;
+  name: string;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  jobTitle?: string | null;
+}
+
+export interface AnalyticsScopeOptions {
+  canViewCompany: boolean;
+  departments: AnalyticsScopeDepartment[];
+  teams: AnalyticsScopeTeam[];
+  employees: AnalyticsScopeEmployee[];
+}
+
 export interface ActivityItem {
   id: number;
   type: string;
@@ -2817,6 +2942,29 @@ temperature?: string;
 export type GetTeamMemberReportParams = {
 eventId: number;
 userId: number;
+};
+
+export type GetAnalyticsOverviewParams = {
+dateFrom?: string;
+dateTo?: string;
+};
+
+export type GetDepartmentAnalyticsParams = {
+id: number;
+dateFrom?: string;
+dateTo?: string;
+};
+
+export type GetTeamAnalyticsParams = {
+id: number;
+dateFrom?: string;
+dateTo?: string;
+};
+
+export type GetEmployeeAnalyticsParams = {
+id: number;
+dateFrom?: string;
+dateTo?: string;
 };
 
 export type ListFollowUpsParams = {

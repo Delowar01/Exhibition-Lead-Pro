@@ -2716,6 +2716,334 @@ export const GetTeamMemberReportResponse = zod.object({
 
 
 /**
+ * @summary Org scopes (departments/teams/employees) the caller may drill into
+ */
+export const GetAnalyticsScopeOptionsResponse = zod.object({
+  "canViewCompany": zod.boolean(),
+  "departments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "parentDepartmentId": zod.number().nullish()
+})),
+  "teams": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "departmentId": zod.number().nullish()
+})),
+  "employees": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "departmentId": zod.number().nullish(),
+  "teamId": zod.number().nullish(),
+  "jobTitle": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Company-wide executive analytics (whole accessible tenant)
+ */
+export const GetAnalyticsOverviewQueryParams = zod.object({
+  "dateFrom": zod.coerce.string().optional(),
+  "dateTo": zod.coerce.string().optional()
+})
+
+export const GetAnalyticsOverviewResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string(),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "dateRange": zod.object({
+  "from": zod.string(),
+  "to": zod.string()
+}),
+  "kpis": zod.object({
+  "scans": zod.number(),
+  "newContacts": zod.number(),
+  "newLeads": zod.number(),
+  "conversionRate": zod.number(),
+  "pipelineValue": zod.number(),
+  "wonValue": zod.number(),
+  "lostValue": zod.number(),
+  "wonCount": zod.number(),
+  "lostCount": zod.number(),
+  "followUpsDueCount": zod.number(),
+  "followUpsOverdueCount": zod.number(),
+  "followUpAdherence": zod.number()
+}),
+  "deltas": zod.object({
+  "scans": zod.number().nullable(),
+  "newContacts": zod.number().nullable(),
+  "newLeads": zod.number().nullable(),
+  "conversionRate": zod.number().nullable(),
+  "pipelineValue": zod.number().nullable()
+}),
+  "trend": zod.array(zod.object({
+  "date": zod.string(),
+  "scans": zod.number(),
+  "contacts": zod.number(),
+  "leads": zod.number(),
+  "label": zod.string().nullish()
+})),
+  "funnel": zod.array(zod.object({
+  "stage": zod.string(),
+  "label": zod.string(),
+  "count": zod.number()
+})),
+  "sourceMix": zod.array(zod.object({
+  "source": zod.string(),
+  "count": zod.number()
+})),
+  "topPerformers": zod.array(zod.object({
+  "userId": zod.number(),
+  "userName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "scans": zod.number(),
+  "leads": zod.number(),
+  "won": zod.number(),
+  "pipelineValue": zod.number()
+})),
+  "recentActivity": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "subtitle": zod.string().nullish(),
+  "at": zod.string()
+})),
+  "headcount": zod.number()
+})
+
+
+/**
+ * @summary Department-scoped executive analytics (includes descendant departments)
+ */
+export const GetDepartmentAnalyticsQueryParams = zod.object({
+  "id": zod.coerce.number(),
+  "dateFrom": zod.coerce.string().optional(),
+  "dateTo": zod.coerce.string().optional()
+})
+
+export const GetDepartmentAnalyticsResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string(),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "dateRange": zod.object({
+  "from": zod.string(),
+  "to": zod.string()
+}),
+  "kpis": zod.object({
+  "scans": zod.number(),
+  "newContacts": zod.number(),
+  "newLeads": zod.number(),
+  "conversionRate": zod.number(),
+  "pipelineValue": zod.number(),
+  "wonValue": zod.number(),
+  "lostValue": zod.number(),
+  "wonCount": zod.number(),
+  "lostCount": zod.number(),
+  "followUpsDueCount": zod.number(),
+  "followUpsOverdueCount": zod.number(),
+  "followUpAdherence": zod.number()
+}),
+  "deltas": zod.object({
+  "scans": zod.number().nullable(),
+  "newContacts": zod.number().nullable(),
+  "newLeads": zod.number().nullable(),
+  "conversionRate": zod.number().nullable(),
+  "pipelineValue": zod.number().nullable()
+}),
+  "trend": zod.array(zod.object({
+  "date": zod.string(),
+  "scans": zod.number(),
+  "contacts": zod.number(),
+  "leads": zod.number(),
+  "label": zod.string().nullish()
+})),
+  "funnel": zod.array(zod.object({
+  "stage": zod.string(),
+  "label": zod.string(),
+  "count": zod.number()
+})),
+  "sourceMix": zod.array(zod.object({
+  "source": zod.string(),
+  "count": zod.number()
+})),
+  "topPerformers": zod.array(zod.object({
+  "userId": zod.number(),
+  "userName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "scans": zod.number(),
+  "leads": zod.number(),
+  "won": zod.number(),
+  "pipelineValue": zod.number()
+})),
+  "recentActivity": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "subtitle": zod.string().nullish(),
+  "at": zod.string()
+})),
+  "headcount": zod.number()
+})
+
+
+/**
+ * @summary Team-scoped executive analytics
+ */
+export const GetTeamAnalyticsQueryParams = zod.object({
+  "id": zod.coerce.number(),
+  "dateFrom": zod.coerce.string().optional(),
+  "dateTo": zod.coerce.string().optional()
+})
+
+export const GetTeamAnalyticsResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string(),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "dateRange": zod.object({
+  "from": zod.string(),
+  "to": zod.string()
+}),
+  "kpis": zod.object({
+  "scans": zod.number(),
+  "newContacts": zod.number(),
+  "newLeads": zod.number(),
+  "conversionRate": zod.number(),
+  "pipelineValue": zod.number(),
+  "wonValue": zod.number(),
+  "lostValue": zod.number(),
+  "wonCount": zod.number(),
+  "lostCount": zod.number(),
+  "followUpsDueCount": zod.number(),
+  "followUpsOverdueCount": zod.number(),
+  "followUpAdherence": zod.number()
+}),
+  "deltas": zod.object({
+  "scans": zod.number().nullable(),
+  "newContacts": zod.number().nullable(),
+  "newLeads": zod.number().nullable(),
+  "conversionRate": zod.number().nullable(),
+  "pipelineValue": zod.number().nullable()
+}),
+  "trend": zod.array(zod.object({
+  "date": zod.string(),
+  "scans": zod.number(),
+  "contacts": zod.number(),
+  "leads": zod.number(),
+  "label": zod.string().nullish()
+})),
+  "funnel": zod.array(zod.object({
+  "stage": zod.string(),
+  "label": zod.string(),
+  "count": zod.number()
+})),
+  "sourceMix": zod.array(zod.object({
+  "source": zod.string(),
+  "count": zod.number()
+})),
+  "topPerformers": zod.array(zod.object({
+  "userId": zod.number(),
+  "userName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "scans": zod.number(),
+  "leads": zod.number(),
+  "won": zod.number(),
+  "pipelineValue": zod.number()
+})),
+  "recentActivity": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "subtitle": zod.string().nullish(),
+  "at": zod.string()
+})),
+  "headcount": zod.number()
+})
+
+
+/**
+ * @summary Single-employee scoped executive analytics
+ */
+export const GetEmployeeAnalyticsQueryParams = zod.object({
+  "id": zod.coerce.number(),
+  "dateFrom": zod.coerce.string().optional(),
+  "dateTo": zod.coerce.string().optional()
+})
+
+export const GetEmployeeAnalyticsResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string(),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "dateRange": zod.object({
+  "from": zod.string(),
+  "to": zod.string()
+}),
+  "kpis": zod.object({
+  "scans": zod.number(),
+  "newContacts": zod.number(),
+  "newLeads": zod.number(),
+  "conversionRate": zod.number(),
+  "pipelineValue": zod.number(),
+  "wonValue": zod.number(),
+  "lostValue": zod.number(),
+  "wonCount": zod.number(),
+  "lostCount": zod.number(),
+  "followUpsDueCount": zod.number(),
+  "followUpsOverdueCount": zod.number(),
+  "followUpAdherence": zod.number()
+}),
+  "deltas": zod.object({
+  "scans": zod.number().nullable(),
+  "newContacts": zod.number().nullable(),
+  "newLeads": zod.number().nullable(),
+  "conversionRate": zod.number().nullable(),
+  "pipelineValue": zod.number().nullable()
+}),
+  "trend": zod.array(zod.object({
+  "date": zod.string(),
+  "scans": zod.number(),
+  "contacts": zod.number(),
+  "leads": zod.number(),
+  "label": zod.string().nullish()
+})),
+  "funnel": zod.array(zod.object({
+  "stage": zod.string(),
+  "label": zod.string(),
+  "count": zod.number()
+})),
+  "sourceMix": zod.array(zod.object({
+  "source": zod.string(),
+  "count": zod.number()
+})),
+  "topPerformers": zod.array(zod.object({
+  "userId": zod.number(),
+  "userName": zod.string(),
+  "avatarUrl": zod.string().nullish(),
+  "scans": zod.number(),
+  "leads": zod.number(),
+  "won": zod.number(),
+  "pipelineValue": zod.number()
+})),
+  "recentActivity": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "subtitle": zod.string().nullish(),
+  "at": zod.string()
+})),
+  "headcount": zod.number()
+})
+
+
+/**
  * @summary Register an Expo push token for the current user's device
  */
 export const RegisterPushTokenBody = zod.object({

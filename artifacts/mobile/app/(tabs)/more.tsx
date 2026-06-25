@@ -126,6 +126,14 @@ export default function MoreScreen() {
       onPress: () => router.push({ pathname: "/card", params: { mode: "edit" } }),
     },
     {
+      key: "my-numbers",
+      label: t("nav.myNumbers"),
+      sub: t("myNumbers.subtitle"),
+      icon: "trending-up",
+      color: "#10B981",
+      onPress: () => router.push("/my-numbers"),
+    },
+    {
       key: "pipeline",
       label: t("nav.leads"),
       sub: t("leads.subtitle"),

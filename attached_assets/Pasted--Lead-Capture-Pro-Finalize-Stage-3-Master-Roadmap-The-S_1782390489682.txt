@@ -1,0 +1,167 @@
+# Lead Capture Pro – Finalize Stage 3 Master Roadmap
+
+The Stage 3 Master Roadmap has been reviewed and approved in principle.
+
+Before beginning implementation, update the roadmap with the following enhancements so it becomes the official master development plan for the remainder of Stage 3.
+
+## Required Updates
+
+### Phase 3 – Advanced CRM & Lead Lifecycle
+
+Include the following additional modules:
+
+* Customer Timeline
+
+  * Complete interaction history
+  * Business Card
+  * OCR Results
+  * Meetings
+  * Notes
+  * Calls
+  * Emails
+  * Tasks
+  * Follow-ups
+  * Status changes
+  * Activity history
+
+* Document Management
+
+  * Quotations
+  * Contracts
+  * Purchase Orders
+  * Invoices
+  * PDFs
+  * Images
+  * Other attachments
+
+Design these modules with full tenant isolation and proper permissions.
+
+---
+
+### Phase 4 – Workflow Automation
+
+Add:
+
+* Visual Workflow Builder
+
+Support future workflows such as:
+
+IF Lead Created
+→ Assign Sales Team
+→ Create Follow-up
+→ Notify Manager
+→ Send Email
+→ Schedule Reminder
+
+The architecture should support future drag-and-drop workflow design.
+
+---
+
+### Phase 5 – AI Intelligence
+
+Expand AI capabilities by including:
+
+* AI Chat Assistant
+
+Examples:
+
+* Show me today's leads.
+* Find all contacts from Company X.
+* Which sales employee generated the highest conversion?
+* Summarize today's exhibition.
+* Which leads require follow-up today?
+* Generate an executive summary.
+* Find duplicate companies.
+* Show inactive leads.
+
+The AI Assistant must always respect existing RBAC, tenant isolation, and Enterprise Privacy rules.
+
+---
+
+### Phase 8 – Integrations
+
+Split Phase 8 into three independent implementation phases:
+
+#### Phase 8A
+
+Microsoft 365
+
+Google Workspace
+
+Outlook Calendar
+
+Google Calendar
+
+Email Integration
+
+---
+
+#### Phase 8B
+
+CRM Integrations
+
+HubSpot
+
+Salesforce
+
+Zoho CRM
+
+Other CRM platforms
+
+---
+
+#### Phase 8C
+
+Developer Platform
+
+REST API
+
+API Keys
+
+Webhooks
+
+Zapier
+
+Future Marketplace
+
+---
+
+## Development Rules
+
+The previously approved implementation order remains unchanged.
+
+Do not introduce new architectural refactoring.
+
+Continue following:
+
+* Contract-first development
+* Multi-tenant isolation
+* Enterprise Privacy
+* Repository Layer
+* Service Layer
+* Existing authentication
+* Existing authorization
+* Existing API standards
+
+---
+
+## After Updating the Roadmap
+
+Make this the official Stage 3 Master Roadmap.
+
+Then immediately begin implementing:
+
+# Stage 3 – Phase 2
+
+## Executive Dashboard & Analytics
+
+Follow the approved roadmap.
+
+At the completion of Phase 2:
+
+* Run full validation.
+* Run the complete regression test suite.
+* Produce a detailed completion report.
+* Wait for review and approval before starting Phase 3.
+
+Continue this same approval workflow for every remaining phase until Stage 3 is complete.

@@ -24,6 +24,7 @@ import type {
   AcceptInvitationResult,
   ActivityItem,
   AdminDashboard,
+  AnalyticsScopeOptions,
   AuditLogListResponse,
   AuthResponse,
   BusinessCard,
@@ -58,10 +59,14 @@ import type {
   FollowUpUpdate,
   ForceLogoutResult,
   ForgotPasswordInput,
+  GetAnalyticsOverviewParams,
+  GetDepartmentAnalyticsParams,
+  GetEmployeeAnalyticsParams,
   GetEventReportParams,
   GetOrganizationParams,
   GetSecurityAlertsParams,
   GetSecurityPolicyParams,
+  GetTeamAnalyticsParams,
   GetTeamMemberReportParams,
   HealthStatus,
   InvitationListResponse,
@@ -136,6 +141,7 @@ import type {
   Scan,
   ScanInput,
   ScanList,
+  ScopedAnalytics,
   SecurityAlerts,
   SecurityEventList,
   SecurityPolicy,
@@ -8208,6 +8214,419 @@ export function useGetTeamMemberReport<TData = Awaited<ReturnType<typeof getTeam
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTeamMemberReportQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAnalyticsScopeOptionsUrl = () => {
+
+
+
+
+  return `/api/analytics/scope-options`
+}
+
+/**
+ * @summary Org scopes (departments/teams/employees) the caller may drill into
+ */
+export const getAnalyticsScopeOptions = async ( options?: RequestInit): Promise<AnalyticsScopeOptions> => {
+
+  return customFetch<AnalyticsScopeOptions>(getGetAnalyticsScopeOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAnalyticsScopeOptionsQueryKey = () => {
+    return [
+    `/api/analytics/scope-options`
+    ] as const;
+    }
+
+
+export const getGetAnalyticsScopeOptionsQueryOptions = <TData = Awaited<ReturnType<typeof getAnalyticsScopeOptions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnalyticsScopeOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAnalyticsScopeOptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAnalyticsScopeOptions>>> = ({ signal }) => getAnalyticsScopeOptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAnalyticsScopeOptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAnalyticsScopeOptionsQueryResult = NonNullable<Awaited<ReturnType<typeof getAnalyticsScopeOptions>>>
+export type GetAnalyticsScopeOptionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Org scopes (departments/teams/employees) the caller may drill into
+ */
+
+export function useGetAnalyticsScopeOptions<TData = Awaited<ReturnType<typeof getAnalyticsScopeOptions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnalyticsScopeOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAnalyticsScopeOptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAnalyticsOverviewUrl = (params?: GetAnalyticsOverviewParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analytics/overview?${stringifiedParams}` : `/api/analytics/overview`
+}
+
+/**
+ * @summary Company-wide executive analytics (whole accessible tenant)
+ */
+export const getAnalyticsOverview = async (params?: GetAnalyticsOverviewParams, options?: RequestInit): Promise<ScopedAnalytics> => {
+
+  return customFetch<ScopedAnalytics>(getGetAnalyticsOverviewUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAnalyticsOverviewQueryKey = (params?: GetAnalyticsOverviewParams,) => {
+    return [
+    `/api/analytics/overview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAnalyticsOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getAnalyticsOverview>>, TError = ErrorType<unknown>>(params?: GetAnalyticsOverviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnalyticsOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAnalyticsOverviewQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAnalyticsOverview>>> = ({ signal }) => getAnalyticsOverview(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAnalyticsOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAnalyticsOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getAnalyticsOverview>>>
+export type GetAnalyticsOverviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Company-wide executive analytics (whole accessible tenant)
+ */
+
+export function useGetAnalyticsOverview<TData = Awaited<ReturnType<typeof getAnalyticsOverview>>, TError = ErrorType<unknown>>(
+ params?: GetAnalyticsOverviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAnalyticsOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAnalyticsOverviewQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetDepartmentAnalyticsUrl = (params: GetDepartmentAnalyticsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analytics/department?${stringifiedParams}` : `/api/analytics/department`
+}
+
+/**
+ * @summary Department-scoped executive analytics (includes descendant departments)
+ */
+export const getDepartmentAnalytics = async (params: GetDepartmentAnalyticsParams, options?: RequestInit): Promise<ScopedAnalytics> => {
+
+  return customFetch<ScopedAnalytics>(getGetDepartmentAnalyticsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDepartmentAnalyticsQueryKey = (params?: GetDepartmentAnalyticsParams,) => {
+    return [
+    `/api/analytics/department`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetDepartmentAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getDepartmentAnalytics>>, TError = ErrorType<unknown>>(params: GetDepartmentAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDepartmentAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDepartmentAnalyticsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDepartmentAnalytics>>> = ({ signal }) => getDepartmentAnalytics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDepartmentAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDepartmentAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getDepartmentAnalytics>>>
+export type GetDepartmentAnalyticsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Department-scoped executive analytics (includes descendant departments)
+ */
+
+export function useGetDepartmentAnalytics<TData = Awaited<ReturnType<typeof getDepartmentAnalytics>>, TError = ErrorType<unknown>>(
+ params: GetDepartmentAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDepartmentAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDepartmentAnalyticsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetTeamAnalyticsUrl = (params: GetTeamAnalyticsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analytics/team?${stringifiedParams}` : `/api/analytics/team`
+}
+
+/**
+ * @summary Team-scoped executive analytics
+ */
+export const getTeamAnalytics = async (params: GetTeamAnalyticsParams, options?: RequestInit): Promise<ScopedAnalytics> => {
+
+  return customFetch<ScopedAnalytics>(getGetTeamAnalyticsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamAnalyticsQueryKey = (params?: GetTeamAnalyticsParams,) => {
+    return [
+    `/api/analytics/team`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetTeamAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getTeamAnalytics>>, TError = ErrorType<unknown>>(params: GetTeamAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamAnalyticsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamAnalytics>>> = ({ signal }) => getTeamAnalytics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamAnalytics>>>
+export type GetTeamAnalyticsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Team-scoped executive analytics
+ */
+
+export function useGetTeamAnalytics<TData = Awaited<ReturnType<typeof getTeamAnalytics>>, TError = ErrorType<unknown>>(
+ params: GetTeamAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamAnalyticsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetEmployeeAnalyticsUrl = (params: GetEmployeeAnalyticsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analytics/employee?${stringifiedParams}` : `/api/analytics/employee`
+}
+
+/**
+ * @summary Single-employee scoped executive analytics
+ */
+export const getEmployeeAnalytics = async (params: GetEmployeeAnalyticsParams, options?: RequestInit): Promise<ScopedAnalytics> => {
+
+  return customFetch<ScopedAnalytics>(getGetEmployeeAnalyticsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEmployeeAnalyticsQueryKey = (params?: GetEmployeeAnalyticsParams,) => {
+    return [
+    `/api/analytics/employee`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEmployeeAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getEmployeeAnalytics>>, TError = ErrorType<unknown>>(params: GetEmployeeAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmployeeAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEmployeeAnalyticsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmployeeAnalytics>>> = ({ signal }) => getEmployeeAnalytics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmployeeAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEmployeeAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getEmployeeAnalytics>>>
+export type GetEmployeeAnalyticsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Single-employee scoped executive analytics
+ */
+
+export function useGetEmployeeAnalytics<TData = Awaited<ReturnType<typeof getEmployeeAnalytics>>, TError = ErrorType<unknown>>(
+ params: GetEmployeeAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmployeeAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEmployeeAnalyticsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

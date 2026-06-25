@@ -2428,6 +2428,123 @@ paths:
               schema:
                 $ref: "#/components/schemas/TeamMemberReport"
 
+  # EXECUTIVE ANALYTICS (Stage 3 Phase 2) — read-only org-scoped dashboards.
+  /analytics/scope-options:
+    get:
+      operationId: getAnalyticsScopeOptions
+      tags: [analytics]
+      summary: Org scopes (departments/teams/employees) the caller may drill into
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsScopeOptions"
+
+  /analytics/overview:
+    get:
+      operationId: getAnalyticsOverview
+      tags: [analytics]
+      summary: Company-wide executive analytics (whole accessible tenant)
+      parameters:
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScopedAnalytics"
+
+  /analytics/department:
+    get:
+      operationId: getDepartmentAnalytics
+      tags: [analytics]
+      summary: Department-scoped executive analytics (includes descendant departments)
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScopedAnalytics"
+
+  /analytics/team:
+    get:
+      operationId: getTeamAnalytics
+      tags: [analytics]
+      summary: Team-scoped executive analytics
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScopedAnalytics"
+
+  /analytics/employee:
+    get:
+      operationId: getEmployeeAnalytics
+      tags: [analytics]
+      summary: Single-employee scoped executive analytics
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScopedAnalytics"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -6093,6 +6210,256 @@ components:
           type: number
         label:
           type: ["string", "null"]
+
+    AnalyticsKpis:
+      type: object
+      required:
+        [
+          scans,
+          newContacts,
+          newLeads,
+          conversionRate,
+          pipelineValue,
+          wonValue,
+          lostValue,
+          wonCount,
+          lostCount,
+          followUpsDueCount,
+          followUpsOverdueCount,
+          followUpAdherence,
+        ]
+      properties:
+        scans:
+          type: integer
+        newContacts:
+          type: integer
+        newLeads:
+          type: integer
+        conversionRate:
+          type: number
+        pipelineValue:
+          type: number
+        wonValue:
+          type: number
+        lostValue:
+          type: number
+        wonCount:
+          type: integer
+        lostCount:
+          type: integer
+        followUpsDueCount:
+          type: integer
+        followUpsOverdueCount:
+          type: integer
+        followUpAdherence:
+          type: number
+
+    AnalyticsDeltas:
+      type: object
+      required: [scans, newContacts, newLeads, conversionRate, pipelineValue]
+      properties:
+        scans:
+          type: ["number", "null"]
+        newContacts:
+          type: ["number", "null"]
+        newLeads:
+          type: ["number", "null"]
+        conversionRate:
+          type: ["number", "null"]
+        pipelineValue:
+          type: ["number", "null"]
+
+    AnalyticsTrendPoint:
+      type: object
+      required: [date, scans, contacts, leads]
+      properties:
+        date:
+          type: string
+        scans:
+          type: number
+        contacts:
+          type: number
+        leads:
+          type: number
+        label:
+          type: ["string", "null"]
+
+    AnalyticsFunnelStage:
+      type: object
+      required: [stage, label, count]
+      properties:
+        stage:
+          type: string
+        label:
+          type: string
+        count:
+          type: integer
+
+    AnalyticsSourceItem:
+      type: object
+      required: [source, count]
+      properties:
+        source:
+          type: string
+        count:
+          type: integer
+
+    AnalyticsPerformer:
+      type: object
+      required: [userId, userName, scans, leads, won, pipelineValue]
+      properties:
+        userId:
+          type: integer
+        userName:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        scans:
+          type: integer
+        leads:
+          type: integer
+        won:
+          type: integer
+        pipelineValue:
+          type: number
+
+    AnalyticsActivityItem:
+      type: object
+      required: [id, type, title, at]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: ["string", "null"]
+        at:
+          type: string
+
+    AnalyticsScope:
+      type: object
+      required: [type, name]
+      properties:
+        type:
+          type: string
+        id:
+          type: ["integer", "null"]
+        name:
+          type: string
+
+    AnalyticsDateRange:
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+
+    ScopedAnalytics:
+      type: object
+      required:
+        [
+          scope,
+          dateRange,
+          kpis,
+          deltas,
+          trend,
+          funnel,
+          sourceMix,
+          topPerformers,
+          recentActivity,
+          headcount,
+        ]
+      properties:
+        scope:
+          $ref: "#/components/schemas/AnalyticsScope"
+        dateRange:
+          $ref: "#/components/schemas/AnalyticsDateRange"
+        kpis:
+          $ref: "#/components/schemas/AnalyticsKpis"
+        deltas:
+          $ref: "#/components/schemas/AnalyticsDeltas"
+        trend:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsTrendPoint"
+        funnel:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsFunnelStage"
+        sourceMix:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsSourceItem"
+        topPerformers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsPerformer"
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsActivityItem"
+        headcount:
+          type: integer
+
+    AnalyticsScopeDepartment:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        parentDepartmentId:
+          type: ["integer", "null"]
+
+    AnalyticsScopeTeam:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+
+    AnalyticsScopeEmployee:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
+        jobTitle:
+          type: ["string", "null"]
+
+    AnalyticsScopeOptions:
+      type: object
+      required: [canViewCompany, departments, teams, employees]
+      properties:
+        canViewCompany:
+          type: boolean
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsScopeDepartment"
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsScopeTeam"
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsScopeEmployee"
 
     ActivityItem:
       type: object

@@ -35,6 +35,7 @@ import AdminOrganization from "@/pages/admin/Organization";
 import AdminSecurity from "@/pages/admin/Security";
 import AdminProfile from "@/pages/admin/Profile";
 import AdminReports from "@/pages/admin/Reports";
+import AdminAnalytics from "@/pages/admin/Analytics";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
 import AdminScan from "@/pages/admin/Scan";
@@ -230,6 +231,9 @@ function Router() {
       </Route>
       <Route path="/admin/reports">
         {() => <ProtectedRoute component={AdminReports} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/analytics">
+        {() => <ProtectedRoute component={AdminAnalytics} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/subscription">
         {() => <ProtectedRoute component={AdminSubscription} role="admin" layout={AdminLayout} />}
