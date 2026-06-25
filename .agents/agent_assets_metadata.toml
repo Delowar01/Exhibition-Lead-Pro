@@ -131,3 +131,9 @@ id = "ljSRQSuG6S-OgUYKAISk_"
 uri = "file://.local/exports/Stage_3_Phase_1_Report.txt"
 type = "text"
 title = "Stage 3 - Phase 1 Report"
+
+[[outputs]]
+id = "Z4rcYPcDD9Oe49buqjWqT"
+uri = "file://docs/STAGE_3_ROADMAP.md"
+type = "text"
+title = "Card Scanner Pro — Stage 3 Master Roadmap"
