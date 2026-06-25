@@ -5,6 +5,8 @@ import { companiesTable } from "./companies";
 import { contactsTable } from "./contacts";
 import { usersTable } from "./users";
 import { eventsTable } from "./events";
+import { pipelineStagesTable } from "./pipeline_stages";
+import { teamsTable } from "./teams";
 
 export const leadsTable = pgTable("leads", {
   id: serial("id").primaryKey(),
@@ -19,8 +21,12 @@ export const leadsTable = pgTable("leads", {
   priority: text("priority"),
   notes: text("notes"),
   companyName: text("company_name"),
-  assignedToId: integer("assigned_to_id").references(() => usersTable.id, { onDelete: "set null" }),
+  assignedToId: integer("assigned_to_id").references(() => usersTable.id, { onDelete: "set null" }), // lead OWNER
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),
+  // Configurable pipeline stage (additive; legacy text `stage` above is kept in sync for backward compat).
+  stageId: integer("stage_id").references(() => pipelineStagesTable.id, { onDelete: "set null" }),
+  // Team ownership (additive). assignedToId remains the individual owner.
+  teamId: integer("team_id").references(() => teamsTable.id, { onDelete: "set null" }),
   createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -31,6 +37,8 @@ export const leadsTable = pgTable("leads", {
   index("leads_assigned_to_id_idx").on(t.assignedToId),
   index("leads_event_id_idx").on(t.eventId),
   index("leads_company_stage_idx").on(t.companyId, t.stage),
+  index("leads_stage_id_idx").on(t.stageId),
+  index("leads_team_id_idx").on(t.teamId),
 ]);
 
 export const leadHistoryTable = pgTable("lead_history", {
