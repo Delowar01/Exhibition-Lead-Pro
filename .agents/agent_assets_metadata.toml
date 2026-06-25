@@ -137,3 +137,9 @@ id = "Z4rcYPcDD9Oe49buqjWqT"
 uri = "file://docs/STAGE_3_ROADMAP.md"
 type = "text"
 title = "Card Scanner Pro — Stage 3 Master Roadmap"
+
+[[outputs]]
+id = "eoFD1EEXWN2vwQeJAuykx"
+uri = "file://docs/reports/STAGE_3_REPORT.txt"
+type = "text"
+title = "Stage 3 Report — Card Scanner Pro"

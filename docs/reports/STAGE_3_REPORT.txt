@@ -1,0 +1,271 @@
+================================================================================
+CARD SCANNER PRO — STAGE 3 REPORT
+Enterprise SaaS for Business Card Scanning & Lead Management
+================================================================================
+Generated: June 25, 2026
+Stack: pnpm monorepo · Node 24 · Express 5 · PostgreSQL + Drizzle · React 19 +
+       Vite (web) · Expo (mobile) · Contract-first (OpenAPI -> Orval)
+
+This report covers all Stage 3 work completed to date, the results of each
+phase, and the remaining roadmap.
+
+
+================================================================================
+1. EXECUTIVE SUMMARY
+================================================================================
+
+Stage 3 turns the enterprise platform built in Stages 1-2 into a full PRODUCT.
+The mandate for every Stage 3 phase: ship product capabilities additively -- no
+regressions, contract-first, multi-tenant-isolated, with auth/RBAC/privacy
+preserved, and a full typecheck + test gate plus an architect code review before
+each phase is accepted.
+
+COMPLETED & APPROVED IN STAGE 3:
+  - Phase 1 — Organizational Foundation
+  - Phase 2 — Executive Dashboards & Analytics
+
+Both phases passed their full quality gate and an independent architect review,
+each of which caught exactly one real issue that was fixed and covered with a
+regression test before sign-off.
+
+Current test position: full typecheck green across all packages; API test suite
+17 files / 269 tests passing (grew from 250 after Phase 1).
+
+
+================================================================================
+2. STARTING POINT (already in place before Stage 3, do not rebuild)
+================================================================================
+
+  - Enterprise auth + MFA + RBAC
+  - Multi-tenancy (company_id is the tenant boundary; cross-tenant access -> 404)
+  - Enterprise privacy & data governance (Stage 2.11)
+  - Repository + service layers
+  - Background-jobs queue, notifications
+  - Monitoring / observability, API versioning
+  - Role hierarchy: platform_owner > primary_admin > admin > employee
+
+
+================================================================================
+3. PHASE 1 — ORGANIZATIONAL FOUNDATION  (COMPLETE, APPROVED)
+================================================================================
+
+OBJECTIVE
+  Establish the organizational structure that later enterprise modules
+  (dashboards, targets, ownership, analytics) build on.
+
+WHAT SHIPPED
+  1. Departments
+     - New departments table (self-referencing parent for sub-departments,
+       optional head).
+     - Full CRUD + archive/restore (soft-delete). Tenant-scoped; cross-tenant
+       access -> 404. Enriched responses (head name, parent name).
+     - Admin page: /admin/departments
+
+  2. Teams
+     - New teams table (belongs to a department, optional team leader/manager).
+     - Full CRUD + archive/restore + member assignment (live member count).
+     - Admin page: /admin/teams (with a manage-members dialog).
+
+  3. Employee org profiles
+     - users extended (additive, non-breaking): employeeId, jobTitle,
+       employmentStatus (default 'active'), joiningDate, managerId (self-ref
+       reporting manager), departmentId, teamId.
+     - Editable via an "Org Profile" dialog in the team-member edit flow.
+     - Per-company partial-unique on employeeId (where not null).
+
+  4. Employee Directory
+     - GET /users/directory — tenant-scoped; filter (department/team/manager/
+       status/role), sort, paginate; enriched with names.
+     - Admin page: /admin/directory
+
+  5. Org Hierarchy
+     - GET /users/hierarchy — reporting-manager tree (roots + nested reports).
+     - Admin page: /admin/org-hierarchy
+
+ARCHITECTURE & CONVENTIONS
+  - Contract-first (OpenAPI -> Orval hooks + Zod).
+  - tenantScope on every read; cross-tenant -> 404.
+  - FK validation on writes; org-profile FKs validated against the TARGET user's
+    company (not just caller reach).
+  - Path-scoped terminating guards; static sub-paths registered before /:id.
+  - New departments + teams permission modules; org-data reads are view-gated
+    (org/people data is not openly readable). No role/privilege escalation.
+  - PATCH empty-set returns 400 (not 500).
+  - Date-only joiningDate served as YYYY-MM-DD string.
+
+CODE REVIEW OUTCOME (1 critical issue, fixed)
+  - Cross-tenant org-FK assignment (broken access control): org-profile FK
+    validation used a caller-scoped check, letting a platform_owner (or any
+    multi-company caller) bind a user in company A to a manager/department/team
+    in company B. Fixed with a target-company-scoped helper refInCompany(table,
+    cid, id) for managerId/departmentId/teamId. Regression test drives the
+    platform-owner cross-tenant path and asserts 400.
+
+RESULT
+  - Full typecheck: GREEN
+  - API tests: 16 files / 250 tests passing (incl. 22 new org-foundation tests)
+  - Curl smoke (dept/team CRUD, cross-tenant 404, FK 400, archive/restore,
+    member assign, directory, hierarchy): ALL PASS
+
+
+================================================================================
+4. PHASE 2 — EXECUTIVE DASHBOARDS & ANALYTICS  (COMPLETE, APPROVED)
+================================================================================
+
+OBJECTIVE
+  Give every org level (company -> department -> team -> employee) a real-time
+  performance view, built entirely on EXISTING data (leads, contacts, scans,
+  events, activity) plus the Phase 1 org structure. No new tables; read-only
+  aggregations.
+
+WHAT SHIPPED
+  1. Analytics API (5 new GET endpoints)
+     All tenant + org scoped, view-gated via reports:view, served through the
+     analytics micro-cache (30s):
+       - GET /analytics/overview          — company-wide (accessible tenant)
+       - GET /analytics/department?id=    — department-scoped (incl. descendants)
+       - GET /analytics/team?id=          — team-scoped
+       - GET /analytics/employee?id=      — single-employee scoped
+       - GET /analytics/scope-options     — depts/teams/employees the caller may
+                                            drill into (filter dropdowns)
+     The four scoped endpoints return one shared ScopedAnalytics shape: KPIs,
+     period-over-period deltas, gap-filled daily trend, pipeline funnel, source
+     mix, top performers, recent activity, headcount. Date range via
+     ?dateFrom=&dateTo= (YYYY-MM-DD), default last 30 days.
+
+  2. Web Executive Dashboard (/admin/analytics)
+     New page: scope selector (Company/Department/Team/Employee) + date-range
+     filter; KPI cards with delta pills; trend area chart; funnel; source mix;
+     top performers; activity feed. Uses generated React Query hooks. New route +
+     nav item; the existing Dashboard is untouched.
+
+  3. Mobile "My Numbers"
+     New screen reusing /analytics/employee (me) with a team toggle for team
+     leaders. KPI grid with delta pills, funnel, top performers, recent
+     activity. EN + AR i18n parity; degrades gracefully.
+
+ARCHITECTURE & CONVENTIONS
+  - Contract-first. Scoped endpoints use an id QUERY param (not path) to keep one
+    shared response schema and avoid codegen path/query-name collisions.
+  - Tenant isolation: every aggregation uses tenantScope(...); never companyId
+    alone (a null company would yield an unfiltered cross-tenant query).
+  - Scope authorization (in service, on top of the reports:view gate):
+      * primary_admin / admin -> any scope within the tenant.
+      * employee -> own employee scope; own team IFF team.leaderId === self; own
+        department IFF dept.headId === self; company overview -> 403.
+      * platform_owner -> blocked from tenant business analytics.
+      * cross-tenant department/team/employee -> 404.
+  - Cross-currency correctness: lead values grouped by currency in SQL, then each
+    bucket converted to USD via convertCurrency(...) BEFORE summing -- raw mixed
+    currencies are never summed.
+  - Cache: reuses the 30s analytics micro-cache; key includes userId (no
+    cross-user leak); global writeEpoch busts it on any successful write.
+  - Guards & routing: requireAuth + path-scoped requireTenantUser +
+    requirePermission("reports","view") + microCache; static /overview and
+    /scope-options registered before the parametrized routes.
+  - Honest deltas: pipelineValue is a point-in-time snapshot with no historical
+    baseline, so its delta is null (not fabricated).
+
+CODE REVIEW OUTCOME (1 issue, fixed)
+  - topPerformers[].leads mislabeled (analytics correctness): the per-user
+    "leads" metric was populated from a CONTACT count instead of a LEAD count,
+    making the metric semantically wrong and able to mis-rank performers. Fixed
+    by adding a true leadCountsByUser repository query (leads grouped by
+    assignedToId over the window, tenant-scoped, not-deleted) and wiring it in.
+    The analytics test now seeds distinct lead vs contact counts and asserts
+    topPerformers[].leads / .won and the leads-desc ranking.
+
+RESULT
+  - Full typecheck: GREEN
+  - API tests: 17 files / 269 tests passing (incl. the new analytics suite)
+  - New analytics suite covers: permission gate, manager aggregation,
+    cross-currency total, employee scope authorization, team-lead / dept-head
+    access, cross-tenant 404, validation, cache invalidation, top-performer
+    lead counts.
+  - Curl smoke (overview, each scope, scope-options, isolation): ALL PASS
+
+NOTE ON THE TEST GATE (environment, not a code defect)
+  The API test suite runs against the LIVE server, whose in-memory per-IP login
+  limiter caps FAILED logins at 20 per 15-minute window. A single full run stays
+  under the cap and is fully green; two back-to-back full runs against the SAME
+  running server accumulate past the cap and valid logins begin returning 429.
+  The fix is operational: restart the api-server before a fresh full run. All
+  green numbers above were produced on a freshly restarted server.
+
+
+================================================================================
+5. CUMULATIVE RESULTS
+================================================================================
+
+  Quality gate (latest):       Full typecheck GREEN (all packages)
+  API test suite:              17 files / 269 tests passing
+  Test growth across Stage 3:  250 (after Phase 1) -> 269 (after Phase 2)
+  Architect reviews:           2 run, 2 issues found, 2 fixed + regression-tested
+  Schema changes Phase 2:      NONE (read-only aggregations)
+  Backward compatibility:      Preserved (additive endpoints/pages only)
+  Multi-tenant isolation:      Preserved and explicitly tested (cross-tenant 404)
+  Auth / RBAC / privacy:       Preserved (additive permission gating only)
+
+
+================================================================================
+6. NEW / CHANGED SURFACE (Stage 3 to date)
+================================================================================
+
+PHASE 1
+  - DB:   lib/db/src/schema/{departments,teams,users}.ts
+  - Spec: lib/api-spec/openapi.yaml (+ regenerated client/zod)
+  - API:  routes/{departments,teams}.ts; services/{departments,teams}.service.ts;
+          repositories/{departments,teams}.repository.ts; extended routes/users.ts
+          + services/users.service.ts; lib/tenant.ts (refInCompany)
+  - Web:  pages/admin/{Departments,Teams,Directory,OrgHierarchy}.tsx; extended
+          Team.tsx; routes in App.tsx; nav in AdminLayout.tsx
+  - Test: test/org-foundation.test.ts
+
+PHASE 2
+  - Spec: lib/api-spec/openapi.yaml — ScopedAnalytics + AnalyticsScopeOptions
+          schemas + the 5 endpoints (+ regenerated client/zod)
+  - API:  routes/analytics.ts; services/analytics.service.ts;
+          repositories/analytics.repository.ts; mounted in routes/index.ts
+  - Web:  pages/admin/Analytics.tsx; route in App.tsx; nav in AdminLayout.tsx
+  - Mob:  app/my-numbers.tsx; Stack.Screen in app/_layout.tsx; nav entry in
+          app/(tabs)/more.tsx; EN/AR keys in lib/i18n/locales/{en,ar}.json
+  - Test: test/analytics.test.ts
+
+
+================================================================================
+7. REMAINING STAGE 3 ROADMAP (planned, not yet built)
+================================================================================
+
+Sequential backbone (each unlocks the next):
+  Phase 3 — Advanced CRM & Lead Lifecycle
+            Ownership, configurable pipeline/stages, activities timeline, notes,
+            attachments, tags, customer timeline, document management. (High)
+  Phase 4 — Workflow Automation
+            Routing/assignment rules, SLAs, approvals, reminders, escalations;
+            rule engine + form-based builder (drag-and-drop ready). (High)
+  Phase 5 — AI Intelligence
+            AI scoring/insights/summaries/suggestions + an RBAC- and
+            tenant-bounded AI chat assistant over the user's own data. (Med-High)
+  Phase 6 — Reports & Business Intelligence
+            Exportable/schedulable Excel + PDF reports; custom report builder.
+            (Medium; Power for the export engine)
+
+Parallelizable tracks:
+  Phase 7 — Customer Experience & White Label
+            Per-tenant branding, custom domains, themes, localization. (Medium)
+  Phase 8 — Integrations & Open Platform
+            8A Calendar/Email (builds the shared integration framework),
+            8B CRM two-way sync (HubSpot/Salesforce/Zoho),
+            8C Developer Platform (public REST API, keys, webhooks, Zapier).
+  Phase 9 — Enterprise Administration
+            Billing/licensing/seats, security & audit center, SSO, storage
+            analytics. Best last; shares API-key/security work with 8C.
+
+Per-phase loop (unchanged): build additively + contract-first -> restart
+api-server -> full typecheck + test gate green -> architect review -> completion
+report -> WAIT for approval before the next phase.
+
+
+================================================================================
+END OF STAGE 3 REPORT
+================================================================================
