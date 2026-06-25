@@ -284,6 +284,17 @@ export const UserCompanyVisibility = {
   all: 'all',
 } as const;
 
+export type UserEmploymentStatus = typeof UserEmploymentStatus[keyof typeof UserEmploymentStatus];
+
+
+export const UserEmploymentStatus = {
+  active: 'active',
+  probation: 'probation',
+  on_leave: 'on_leave',
+  suspended: 'suspended',
+  offboarded: 'offboarded',
+} as const;
+
 export type UserPermissions = {[key: string]: string[]};
 
 export interface User {
@@ -307,6 +318,25 @@ export interface User {
   isActive?: boolean;
   /** @nullable */
   lastLoginAt?: string | null;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserEmploymentStatus;
+  /** @nullable */
+  joiningDate?: string | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  managerName?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  departmentName?: string | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  teamName?: string | null;
   createdAt: string;
 }
 
@@ -430,6 +460,17 @@ export const UserInputCompanyVisibility = {
   all: 'all',
 } as const;
 
+export type UserInputEmploymentStatus = typeof UserInputEmploymentStatus[keyof typeof UserInputEmploymentStatus];
+
+
+export const UserInputEmploymentStatus = {
+  active: 'active',
+  probation: 'probation',
+  on_leave: 'on_leave',
+  suspended: 'suspended',
+  offboarded: 'offboarded',
+} as const;
+
 export interface UserInput {
   email: string;
   name: string;
@@ -443,6 +484,19 @@ export interface UserInput {
   permissions?: UserInputPermissions;
   contactVisibility?: UserInputContactVisibility;
   companyVisibility?: UserInputCompanyVisibility;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserInputEmploymentStatus;
+  /** @nullable */
+  joiningDate?: string | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
 }
 
 export type UserUpdateRole = typeof UserUpdateRole[keyof typeof UserUpdateRole];
@@ -474,6 +528,17 @@ export const UserUpdateCompanyVisibility = {
   all: 'all',
 } as const;
 
+export type UserUpdateEmploymentStatus = typeof UserUpdateEmploymentStatus[keyof typeof UserUpdateEmploymentStatus];
+
+
+export const UserUpdateEmploymentStatus = {
+  active: 'active',
+  probation: 'probation',
+  on_leave: 'on_leave',
+  suspended: 'suspended',
+  offboarded: 'offboarded',
+} as const;
+
 export interface UserUpdate {
   name?: string;
   /** @nullable */
@@ -483,12 +548,192 @@ export interface UserUpdate {
   permissions?: UserUpdatePermissions;
   contactVisibility?: UserUpdateContactVisibility;
   companyVisibility?: UserUpdateCompanyVisibility;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserUpdateEmploymentStatus;
+  /** @nullable */
+  joiningDate?: string | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
 }
 
 export interface UserSelfUpdate {
   name?: string;
   /** @nullable */
   avatarUrl?: string | null;
+}
+
+export type DepartmentStatus = typeof DepartmentStatus[keyof typeof DepartmentStatus];
+
+
+export const DepartmentStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface Department {
+  id: number;
+  companyId: number;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  headId?: number | null;
+  /** @nullable */
+  headName?: string | null;
+  /** @nullable */
+  parentDepartmentId?: number | null;
+  /** @nullable */
+  parentDepartmentName?: string | null;
+  status: DepartmentStatus;
+  employeeCount?: number;
+  teamCount?: number;
+  createdAt: string;
+}
+
+export interface DepartmentList {
+  departments: Department[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type DepartmentInputStatus = typeof DepartmentInputStatus[keyof typeof DepartmentInputStatus];
+
+
+export const DepartmentInputStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface DepartmentInput {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  headId?: number | null;
+  /** @nullable */
+  parentDepartmentId?: number | null;
+  status?: DepartmentInputStatus;
+}
+
+export type DepartmentUpdateStatus = typeof DepartmentUpdateStatus[keyof typeof DepartmentUpdateStatus];
+
+
+export const DepartmentUpdateStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface DepartmentUpdate {
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  headId?: number | null;
+  /** @nullable */
+  parentDepartmentId?: number | null;
+  status?: DepartmentUpdateStatus;
+}
+
+export type TeamStatus = typeof TeamStatus[keyof typeof TeamStatus];
+
+
+export const TeamStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface Team {
+  id: number;
+  companyId: number;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  departmentName?: string | null;
+  /** @nullable */
+  leaderId?: number | null;
+  /** @nullable */
+  leaderName?: string | null;
+  status: TeamStatus;
+  memberCount?: number;
+  createdAt: string;
+}
+
+export interface TeamList {
+  teams: Team[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type TeamInputStatus = typeof TeamInputStatus[keyof typeof TeamInputStatus];
+
+
+export const TeamInputStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface TeamInput {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  leaderId?: number | null;
+  status?: TeamInputStatus;
+}
+
+export type TeamUpdateStatus = typeof TeamUpdateStatus[keyof typeof TeamUpdateStatus];
+
+
+export const TeamUpdateStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface TeamUpdate {
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  leaderId?: number | null;
+  status?: TeamUpdateStatus;
+}
+
+export interface TeamMembersAssignment {
+  userIds: number[];
+}
+
+export interface OrgHierarchyNode {
+  id: number;
+  name: string;
+  email?: string;
+  role?: string;
+  /** @nullable */
+  jobTitle?: string | null;
+  /** @nullable */
+  departmentName?: string | null;
+  /** @nullable */
+  teamName?: string | null;
+  reports: OrgHierarchyNode[];
+}
+
+export interface OrgHierarchy {
+  roots: OrgHierarchyNode[];
 }
 
 export type UserDetailRole = typeof UserDetailRole[keyof typeof UserDetailRole];
@@ -502,6 +747,17 @@ export const UserDetailRole = {
 } as const;
 
 export type UserDetailPermissions = {[key: string]: string[]};
+
+export type UserDetailEmploymentStatus = typeof UserDetailEmploymentStatus[keyof typeof UserDetailEmploymentStatus];
+
+
+export const UserDetailEmploymentStatus = {
+  active: 'active',
+  probation: 'probation',
+  on_leave: 'on_leave',
+  suspended: 'suspended',
+  offboarded: 'offboarded',
+} as const;
 
 export interface RoleRef {
   id: number;
@@ -529,6 +785,25 @@ export interface UserDetail {
   permissions?: UserDetailPermissions;
   roleIds?: number[];
   roles?: RoleRef[];
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserDetailEmploymentStatus;
+  /** @nullable */
+  joiningDate?: string | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  managerName?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  departmentName?: string | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  teamName?: string | null;
   createdAt: string;
 }
 
@@ -2493,6 +2768,34 @@ limit?: number;
 
 export type ListEventsParams = {
 search?: string;
+page?: number;
+limit?: number;
+};
+
+export type ListDepartmentsParams = {
+search?: string;
+status?: string;
+page?: number;
+limit?: number;
+};
+
+export type ListTeamsParams = {
+search?: string;
+status?: string;
+departmentId?: number;
+page?: number;
+limit?: number;
+};
+
+export type ListEmployeeDirectoryParams = {
+search?: string;
+departmentId?: number;
+teamId?: number;
+managerId?: number;
+employmentStatus?: string;
+role?: string;
+sort?: string;
+order?: string;
 page?: number;
 limit?: number;
 };

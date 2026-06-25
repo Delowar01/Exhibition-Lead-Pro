@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   useListUsers,
   useCreateUser,
+  useUpdateUser,
   useDeleteUser,
   useEnableUser,
   useDisableUser,
@@ -14,6 +15,9 @@ import {
   getGetUserQueryKey,
   useGetUserLoginHistory,
   useListRoles,
+  useListDepartments,
+  useListTeams,
+  useListEmployeeDirectory,
   getListUsersQueryKey,
   getGetUserLoginHistoryQueryKey,
   useListInvitations,
@@ -24,6 +28,8 @@ import {
   User,
   UserInput,
   UserInputRole,
+  UserUpdate,
+  UserUpdateEmploymentStatus,
   Invitation,
   CreateInvitationInput,
   CreateInvitationInputRole,
@@ -50,7 +56,17 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus, MoreHorizontal, Ban, CheckCircle2, LogOut, KeyRound, Trash2, History, Shield, Mail, Send, X } from "lucide-react";
+import { UserPlus, MoreHorizontal, Ban, CheckCircle2, LogOut, KeyRound, Trash2, History, Shield, Mail, Send, X, Briefcase } from "lucide-react";
+
+const NONE = "__none__";
+
+const EMPLOYMENT_STATUSES: { value: UserUpdateEmploymentStatus; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "probation", label: "Probation" },
+  { value: "on_leave", label: "On Leave" },
+  { value: "suspended", label: "Suspended" },
+  { value: "offboarded", label: "Offboarded" },
+];
 
 const ASSIGNABLE_ROLES: { value: UserInputRole; label: string }[] = [
   { value: "primary_admin", label: "Primary Admin" },
@@ -440,6 +456,141 @@ function LoginHistoryDialog({ user, open, onOpenChange }: {
   );
 }
 
+function OrgProfileDialog({ user, open, onOpenChange, onSaved }: {
+  user: User | null; open: boolean; onOpenChange: (o: boolean) => void; onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const update = useUpdateUser();
+  const { data: deptData } = useListDepartments({ status: "active", limit: 100 });
+  const { data: teamData } = useListTeams({ limit: 100 });
+  const { data: dir } = useListEmployeeDirectory({ limit: 200 });
+  const departments = deptData?.departments ?? [];
+  const teams = teamData?.teams ?? [];
+  const managers = (dir?.users ?? []).filter((u) => u.id !== user?.id);
+
+  const [employeeId, setEmployeeId] = React.useState("");
+  const [jobTitle, setJobTitle] = React.useState("");
+  const [employmentStatus, setEmploymentStatus] = React.useState<UserUpdateEmploymentStatus>("active");
+  const [joiningDate, setJoiningDate] = React.useState("");
+  const [managerId, setManagerId] = React.useState<string>(NONE);
+  const [departmentId, setDepartmentId] = React.useState<string>(NONE);
+  const [teamId, setTeamId] = React.useState<string>(NONE);
+
+  const uid = user?.id ?? 0;
+  const { data: detail } = useGetUser(uid, {
+    query: { enabled: open && !!user, queryKey: getGetUserQueryKey(uid) },
+  });
+
+  React.useEffect(() => {
+    if (open && detail) {
+      setEmployeeId(detail.employeeId ?? "");
+      setJobTitle(detail.jobTitle ?? "");
+      setEmploymentStatus((detail.employmentStatus as UserUpdateEmploymentStatus) ?? "active");
+      setJoiningDate(detail.joiningDate ?? "");
+      setManagerId(detail.managerId ? String(detail.managerId) : NONE);
+      setDepartmentId(detail.departmentId ? String(detail.departmentId) : NONE);
+      setTeamId(detail.teamId ? String(detail.teamId) : NONE);
+    }
+  }, [open, detail]);
+
+  const onSubmit = () => {
+    if (!user) return;
+    const data: UserUpdate = {
+      employeeId: employeeId.trim() || null,
+      jobTitle: jobTitle.trim() || null,
+      employmentStatus,
+      joiningDate: joiningDate || null,
+      managerId: managerId === NONE ? null : Number(managerId),
+      departmentId: departmentId === NONE ? null : Number(departmentId),
+      teamId: teamId === NONE ? null : Number(teamId),
+    };
+    update.mutate(
+      { id: user.id, data },
+      {
+        onSuccess: () => { toast({ title: "Org profile updated" }); onOpenChange(false); onSaved(); },
+        onError: () => toast({ variant: "destructive", title: "Failed to update org profile" }),
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Org Profile{user ? ` — ${user.name}` : ""}</DialogTitle>
+          <DialogDescription>Assign employment details, reporting manager, department and team.</DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="op-empid">Employee ID</Label>
+            <Input id="op-empid" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="op-title">Job Title</Label>
+            <Input id="op-title" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Employment Status</Label>
+            <Select value={employmentStatus} onValueChange={(v) => setEmploymentStatus(v as UserUpdateEmploymentStatus)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {EMPLOYMENT_STATUSES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="op-join">Joining Date</Label>
+            <Input id="op-join" type="date" value={joiningDate} onChange={(e) => setJoiningDate(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Reporting Manager</Label>
+            <Select value={managerId} onValueChange={setManagerId}>
+              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None</SelectItem>
+                {managers.map((m) => (
+                  <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Department</Label>
+            <Select value={departmentId} onValueChange={setDepartmentId}>
+              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None</SelectItem>
+                {departments.map((d) => (
+                  <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2 col-span-2">
+            <Label>Team</Label>
+            <Select value={teamId} onValueChange={setTeamId}>
+              <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>None</SelectItem>
+                {teams.map((t) => (
+                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={onSubmit} disabled={update.isPending}>
+            {update.isPending ? "Saving..." : "Save Profile"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminTeam() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -454,6 +605,7 @@ export default function AdminTeam() {
 
   const [rolesUser, setRolesUser] = React.useState<User | null>(null);
   const [historyUser, setHistoryUser] = React.useState<User | null>(null);
+  const [orgUser, setOrgUser] = React.useState<User | null>(null);
   const [deleteUser, setDeleteUser] = React.useState<User | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
@@ -519,6 +671,9 @@ export default function AdminTeam() {
                               <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setOrgUser(member)}>
+                                <Briefcase className="mr-2 h-4 w-4" /> Org Profile
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => setRolesUser(member)}>
                                 <Shield className="mr-2 h-4 w-4" /> Assign Roles
                               </DropdownMenuItem>
@@ -563,6 +718,7 @@ export default function AdminTeam() {
       </Card>
 
       <RolesDialog user={rolesUser} open={!!rolesUser} onOpenChange={(o) => !o && setRolesUser(null)} onSaved={refresh} />
+      <OrgProfileDialog user={orgUser} open={!!orgUser} onOpenChange={(o) => !o && setOrgUser(null)} onSaved={refresh} />
       <LoginHistoryDialog user={historyUser} open={!!historyUser} onOpenChange={(o) => !o && setHistoryUser(null)} />
 
       <AlertDialog open={!!deleteUser} onOpenChange={(o) => !o && setDeleteUser(null)}>

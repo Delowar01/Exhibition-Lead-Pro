@@ -86,6 +86,16 @@ export const LoginResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
@@ -126,6 +136,16 @@ export const GetMeResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -240,6 +260,16 @@ export const MfaVerifyLoginResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
@@ -872,6 +902,16 @@ export const ListUsersResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number(),
@@ -892,7 +932,14 @@ export const CreateUserBody = zod.object({
   "password": zod.string().nullish(),
   "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
-  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional()
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.string().nullish(),
+  "managerId": zod.number().nullish(),
+  "departmentId": zod.number().nullish(),
+  "teamId": zod.number().nullish()
 })
 
 
@@ -920,6 +967,16 @@ export const UpdateOwnProfileResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -949,6 +1006,16 @@ export const GetUserResponse = zod.object({
   "id": zod.number(),
   "name": zod.string()
 })).optional(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.string().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -967,7 +1034,14 @@ export const UpdateUserBody = zod.object({
   "isActive": zod.boolean().optional(),
   "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
   "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
-  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional()
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.string().nullish(),
+  "managerId": zod.number().nullish(),
+  "departmentId": zod.number().nullish(),
+  "teamId": zod.number().nullish()
 })
 
 export const UpdateUserResponse = zod.object({
@@ -986,6 +1060,16 @@ export const UpdateUserResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1787,6 +1871,454 @@ export const GetEventStatsResponse = zod.object({
   "count": zod.number(),
   "label": zod.string().nullish()
 })).optional()
+})
+
+
+/**
+ * @summary List departments
+ */
+export const listDepartmentsQueryPageDefault = 1;
+export const listDepartmentsQueryLimitDefault = 50;
+
+export const ListDepartmentsQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "status": zod.coerce.string().optional(),
+  "page": zod.coerce.number().default(listDepartmentsQueryPageDefault),
+  "limit": zod.coerce.number().default(listDepartmentsQueryLimitDefault)
+})
+
+export const ListDepartmentsResponse = zod.object({
+  "departments": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "headId": zod.number().nullish(),
+  "headName": zod.string().nullish(),
+  "parentDepartmentId": zod.number().nullish(),
+  "parentDepartmentName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "employeeCount": zod.number().optional(),
+  "teamCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary Create department
+ */
+export const createDepartmentBodyStatusDefault = `active`;
+
+export const CreateDepartmentBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "headId": zod.number().nullish(),
+  "parentDepartmentId": zod.number().nullish(),
+  "status": zod.enum(['active', 'archived']).default(createDepartmentBodyStatusDefault)
+})
+
+
+/**
+ * @summary Get department
+ */
+export const GetDepartmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetDepartmentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "headId": zod.number().nullish(),
+  "headName": zod.string().nullish(),
+  "parentDepartmentId": zod.number().nullish(),
+  "parentDepartmentName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "employeeCount": zod.number().optional(),
+  "teamCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update department
+ */
+export const UpdateDepartmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDepartmentBody = zod.object({
+  "name": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "headId": zod.number().nullish(),
+  "parentDepartmentId": zod.number().nullish(),
+  "status": zod.enum(['active', 'archived']).optional()
+})
+
+export const UpdateDepartmentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "headId": zod.number().nullish(),
+  "headName": zod.string().nullish(),
+  "parentDepartmentId": zod.number().nullish(),
+  "parentDepartmentName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "employeeCount": zod.number().optional(),
+  "teamCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete department
+ */
+export const DeleteDepartmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteDepartmentResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Archive department
+ */
+export const ArchiveDepartmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ArchiveDepartmentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "headId": zod.number().nullish(),
+  "headName": zod.string().nullish(),
+  "parentDepartmentId": zod.number().nullish(),
+  "parentDepartmentName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "employeeCount": zod.number().optional(),
+  "teamCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Restore archived department
+ */
+export const RestoreDepartmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RestoreDepartmentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "headId": zod.number().nullish(),
+  "headName": zod.string().nullish(),
+  "parentDepartmentId": zod.number().nullish(),
+  "parentDepartmentName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "employeeCount": zod.number().optional(),
+  "teamCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List teams
+ */
+export const listTeamsQueryPageDefault = 1;
+export const listTeamsQueryLimitDefault = 50;
+
+export const ListTeamsQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "status": zod.coerce.string().optional(),
+  "departmentId": zod.coerce.number().optional(),
+  "page": zod.coerce.number().default(listTeamsQueryPageDefault),
+  "limit": zod.coerce.number().default(listTeamsQueryLimitDefault)
+})
+
+export const ListTeamsResponse = zod.object({
+  "teams": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "leaderId": zod.number().nullish(),
+  "leaderName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "memberCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary Create team
+ */
+export const createTeamBodyStatusDefault = `active`;
+
+export const CreateTeamBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "leaderId": zod.number().nullish(),
+  "status": zod.enum(['active', 'archived']).default(createTeamBodyStatusDefault)
+})
+
+
+/**
+ * @summary Get team
+ */
+export const GetTeamParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTeamResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "leaderId": zod.number().nullish(),
+  "leaderName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "memberCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update team
+ */
+export const UpdateTeamParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTeamBody = zod.object({
+  "name": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "leaderId": zod.number().nullish(),
+  "status": zod.enum(['active', 'archived']).optional()
+})
+
+export const UpdateTeamResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "leaderId": zod.number().nullish(),
+  "leaderName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "memberCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete team
+ */
+export const DeleteTeamParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTeamResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Archive team
+ */
+export const ArchiveTeamParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ArchiveTeamResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "leaderId": zod.number().nullish(),
+  "leaderName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "memberCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Restore archived team
+ */
+export const RestoreTeamParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RestoreTeamResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "leaderId": zod.number().nullish(),
+  "leaderName": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "memberCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List members of a team
+ */
+export const ListTeamMembersParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamMembersResponse = zod.object({
+  "users": zod.array(zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
+  "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary Assign/move users into a team
+ */
+export const AssignTeamMembersParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AssignTeamMembersBody = zod.object({
+  "userIds": zod.array(zod.number())
+})
+
+export const AssignTeamMembersResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Employee directory with org filters
+ */
+export const listEmployeeDirectoryQueryPageDefault = 1;
+export const listEmployeeDirectoryQueryLimitDefault = 25;
+
+export const ListEmployeeDirectoryQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "departmentId": zod.coerce.number().optional(),
+  "teamId": zod.coerce.number().optional(),
+  "managerId": zod.coerce.number().optional(),
+  "employmentStatus": zod.coerce.string().optional(),
+  "role": zod.coerce.string().optional(),
+  "sort": zod.coerce.string().optional(),
+  "order": zod.coerce.string().optional(),
+  "page": zod.coerce.number().default(listEmployeeDirectoryQueryPageDefault),
+  "limit": zod.coerce.number().default(listEmployeeDirectoryQueryLimitDefault)
+})
+
+export const ListEmployeeDirectoryResponse = zod.object({
+  "users": zod.array(zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['platform_owner', 'primary_admin', 'admin', 'employee']),
+  "companyId": zod.number().nullish(),
+  "companyName": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "avatarUrl": zod.string().nullish(),
+  "permissions": zod.record(zod.string(), zod.array(zod.string())).optional(),
+  "contactVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "companyVisibility": zod.enum(['own', 'selected', 'all']).optional(),
+  "accessibleCompanies": zod.array(zod.number()).optional(),
+  "mfaEnabled": zod.boolean().optional(),
+  "isActive": zod.boolean().optional(),
+  "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary Reporting-manager org hierarchy tree
+ */
+export const GetOrgHierarchyResponse = zod.object({
+  "roots": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string().optional(),
+  "role": zod.string().optional(),
+  "jobTitle": zod.string().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamName": zod.string().nullish(),
+  "reports": zod.array(zod.unknown())
+}))
 })
 
 
@@ -2670,6 +3202,16 @@ export const EnableUserResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -2697,6 +3239,16 @@ export const DisableUserResponse = zod.object({
   "mfaEnabled": zod.boolean().optional(),
   "isActive": zod.boolean().optional(),
   "lastLoginAt": zod.coerce.date().nullish(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.coerce.date().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -2775,6 +3327,16 @@ export const SetUserRolesResponse = zod.object({
   "id": zod.number(),
   "name": zod.string()
 })).optional(),
+  "employeeId": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "employmentStatus": zod.enum(['active', 'probation', 'on_leave', 'suspended', 'offboarded']).optional(),
+  "joiningDate": zod.string().nullish(),
+  "managerId": zod.number().nullish(),
+  "managerName": zod.string().nullish(),
+  "departmentId": zod.number().nullish(),
+  "departmentName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 

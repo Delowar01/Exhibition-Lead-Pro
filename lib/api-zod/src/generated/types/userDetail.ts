@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { RoleRef } from './roleRef';
+import type { UserDetailEmploymentStatus } from './userDetailEmploymentStatus';
 import type { UserDetailPermissions } from './userDetailPermissions';
 import type { UserDetailRole } from './userDetailRole';
 
@@ -30,5 +31,24 @@ export interface UserDetail {
   permissions?: UserDetailPermissions;
   roleIds?: number[];
   roles?: RoleRef[];
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserDetailEmploymentStatus;
+  /** @nullable */
+  joiningDate?: string | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  managerName?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  departmentName?: string | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  teamName?: string | null;
   createdAt: Date;
 }

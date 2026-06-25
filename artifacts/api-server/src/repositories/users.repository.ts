@@ -1,5 +1,6 @@
 import { db, usersTable, companiesTable, loginAttemptsTable, trustedDevicesTable } from "@workspace/db";
-import { eq, ilike, count, desc } from "drizzle-orm";
+import { eq, ilike, count, desc, and, ne, inArray, type SQL } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { tenantOnly, notDeleted } from "./base.js";
 
@@ -90,6 +91,81 @@ export async function loginHistory(userId: number, limit: number): Promise<Login
     .where(eq(loginAttemptsTable.userId, userId))
     .orderBy(desc(loginAttemptsTable.createdAt))
     .limit(limit);
+}
+
+// Single user display name (for enrichment of manager/head/leader refs).
+export async function nameById(id: number): Promise<string | null> {
+  const [row] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  return row?.name ?? null;
+}
+
+// Batch name resolution for enrichment.
+export async function userNamesByIds(ids: number[]): Promise<Map<number, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, ids));
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
+export async function companyNamesByIds(ids: number[]): Promise<Map<number, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db.select({ id: companiesTable.id, name: companiesTable.name }).from(companiesTable).where(inArray(companiesTable.id, ids));
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
+// True when another (non-deleted) user in the same company already uses this
+// employeeId. Backs the per-company employeeId uniqueness check before writes.
+export async function employeeIdExists(companyId: number | null, employeeId: string, excludeId?: number): Promise<boolean> {
+  if (companyId == null) return false;
+  const conds = [eq(usersTable.companyId, companyId), eq(usersTable.employeeId, employeeId), notDeleted(usersTable.deletedAt)];
+  if (excludeId != null) conds.push(ne(usersTable.id, excludeId));
+  const [row] = await db.select({ id: usersTable.id }).from(usersTable).where(and(...conds)).limit(1);
+  return !!row;
+}
+
+const DIRECTORY_SORTS: Record<string, PgColumn> = {
+  name: usersTable.name,
+  joiningDate: usersTable.joiningDate,
+  createdAt: usersTable.createdAt,
+  employmentStatus: usersTable.employmentStatus,
+};
+
+// Tenant-scoped employee directory with org filters + sorting. Excludes
+// soft-deleted users. Unknown sort keys fall back to name.
+export async function directory(
+  user: AuthUser,
+  opts: {
+    search?: string;
+    departmentId?: number;
+    teamId?: number;
+    managerId?: number;
+    employmentStatus?: string;
+    role?: string;
+    sort?: string;
+    order?: string;
+    limit: number;
+    offset: number;
+  },
+): Promise<{ rows: UserRow[]; total: number }> {
+  const extra: Array<SQL | undefined> = [notDeleted(usersTable.deletedAt)];
+  if (opts.search) extra.push(ilike(usersTable.name, `%${opts.search}%`));
+  if (opts.departmentId) extra.push(eq(usersTable.departmentId, opts.departmentId));
+  if (opts.teamId) extra.push(eq(usersTable.teamId, opts.teamId));
+  if (opts.managerId) extra.push(eq(usersTable.managerId, opts.managerId));
+  if (opts.employmentStatus) extra.push(eq(usersTable.employmentStatus, opts.employmentStatus));
+  if (opts.role) extra.push(eq(usersTable.role, opts.role));
+  const where = tenantOnly(user, usersTable.companyId, ...extra);
+
+  const [{ total }] = await db.select({ total: count() }).from(usersTable).where(where);
+  const sortCol = DIRECTORY_SORTS[opts.sort ?? "name"] ?? usersTable.name;
+  const orderBy = opts.order === "desc" ? desc(sortCol) : sortCol;
+  const rows = await db.select().from(usersTable).where(where).limit(opts.limit).offset(opts.offset).orderBy(orderBy);
+  return { rows, total };
+}
+
+// All tenant-scoped active users, for building the reporting-manager tree.
+export async function allForHierarchy(user: AuthUser): Promise<UserRow[]> {
+  const where = tenantOnly(user, usersTable.companyId, notDeleted(usersTable.deletedAt));
+  return db.select().from(usersTable).where(where).orderBy(usersTable.name);
 }
 
 export async function trustedDevices(userId: number) {

@@ -26,6 +26,17 @@ router.patch("/users/me", validateBody(UpdateOwnProfileBody), async (req: AuthRe
   res.json(await users.updateMe(req.user!, req.body ?? {}));
 });
 
+// GET /users/directory — tenant-scoped employee directory with org filters.
+// Registered before /users/:id so the static path is not swallowed by :id.
+router.get("/users/directory", requirePermission("team", "view"), async (req: AuthRequest, res) => {
+  res.json(await users.listDirectory(req.user!, req.query as users.DirectoryParams));
+});
+
+// GET /users/hierarchy — reporting-manager org tree.
+router.get("/users/hierarchy", requirePermission("team", "view"), async (req: AuthRequest, res) => {
+  res.json(await users.getOrgHierarchy(req.user!));
+});
+
 // GET /users/:id
 router.get("/users/:id", requirePermission("team", "view"), async (req: AuthRequest, res) => {
   res.json(await users.getUser(req.user!, parseInt(String(req.params.id))));

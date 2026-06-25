@@ -7,6 +7,7 @@
  */
 import type { UserCompanyVisibility } from './userCompanyVisibility';
 import type { UserContactVisibility } from './userContactVisibility';
+import type { UserEmploymentStatus } from './userEmploymentStatus';
 import type { UserPermissions } from './userPermissions';
 import type { UserRole } from './userRole';
 
@@ -31,5 +32,24 @@ export interface User {
   isActive?: boolean;
   /** @nullable */
   lastLoginAt?: Date | null;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserEmploymentStatus;
+  /** @nullable */
+  joiningDate?: Date | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  managerName?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  departmentName?: string | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  teamName?: string | null;
   createdAt: Date;
 }

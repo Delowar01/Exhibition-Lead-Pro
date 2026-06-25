@@ -44,6 +44,10 @@ tags:
     description: Security Center policies and events
   - name: profile
     description: Self-service user profile and activity
+  - name: departments
+    description: Department management (org hierarchy)
+  - name: teams
+    description: Team management (org hierarchy)
 
 paths:
   /healthz:
@@ -1734,6 +1738,416 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EventStats"
+
+  # DEPARTMENTS (Stage 3 Phase 1)
+  /departments:
+    get:
+      operationId: listDepartments
+      tags: [departments]
+      summary: List departments
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentList"
+    post:
+      operationId: createDepartment
+      tags: [departments]
+      summary: Create department
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepartmentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+
+  /departments/{id}:
+    get:
+      operationId: getDepartment
+      tags: [departments]
+      summary: Get department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+    patch:
+      operationId: updateDepartment
+      tags: [departments]
+      summary: Update department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepartmentUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+    delete:
+      operationId: deleteDepartment
+      tags: [departments]
+      summary: Delete department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /departments/{id}/archive:
+    post:
+      operationId: archiveDepartment
+      tags: [departments]
+      summary: Archive department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+
+  /departments/{id}/restore:
+    post:
+      operationId: restoreDepartment
+      tags: [departments]
+      summary: Restore archived department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+
+  # TEAMS (Stage 3 Phase 1)
+  /teams:
+    get:
+      operationId: listTeams
+      tags: [teams]
+      summary: List teams
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: departmentId
+          in: query
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamList"
+    post:
+      operationId: createTeam
+      tags: [teams]
+      summary: Create team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+
+  /teams/{id}:
+    get:
+      operationId: getTeam
+      tags: [teams]
+      summary: Get team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+    patch:
+      operationId: updateTeam
+      tags: [teams]
+      summary: Update team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+    delete:
+      operationId: deleteTeam
+      tags: [teams]
+      summary: Delete team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /teams/{id}/archive:
+    post:
+      operationId: archiveTeam
+      tags: [teams]
+      summary: Archive team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+
+  /teams/{id}/restore:
+    post:
+      operationId: restoreTeam
+      tags: [teams]
+      summary: Restore archived team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+
+  /teams/{id}/members:
+    get:
+      operationId: listTeamMembers
+      tags: [teams]
+      summary: List members of a team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+    post:
+      operationId: assignTeamMembers
+      tags: [teams]
+      summary: Assign/move users into a team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamMembersAssignment"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # EMPLOYEE DIRECTORY & ORG HIERARCHY (Stage 3 Phase 1)
+  /users/directory:
+    get:
+      operationId: listEmployeeDirectory
+      tags: [users]
+      summary: Employee directory with org filters
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: departmentId
+          in: query
+          schema:
+            type: integer
+        - name: teamId
+          in: query
+          schema:
+            type: integer
+        - name: managerId
+          in: query
+          schema:
+            type: integer
+        - name: employmentStatus
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: order
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+
+  /users/hierarchy:
+    get:
+      operationId: getOrgHierarchy
+      tags: [users]
+      summary: Reporting-manager org hierarchy tree
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgHierarchy"
 
   # SCANS
   /scans:
@@ -3544,6 +3958,28 @@ components:
         lastLoginAt:
           type: ["string", "null"]
           format: date-time
+        employeeId:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        employmentStatus:
+          type: string
+          enum: [active, probation, on_leave, suspended, offboarded]
+        joiningDate:
+          type: ["string", "null"]
+          format: date
+        managerId:
+          type: ["integer", "null"]
+        managerName:
+          type: ["string", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        departmentName:
+          type: ["string", "null"]
+        teamId:
+          type: ["integer", "null"]
+        teamName:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time
@@ -3593,6 +4029,21 @@ components:
         companyVisibility:
           type: string
           enum: [own, selected, all]
+        employeeId:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        employmentStatus:
+          type: string
+          enum: [active, probation, on_leave, suspended, offboarded]
+        joiningDate:
+          type: ["string", "null"]
+        managerId:
+          type: ["integer", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
 
     UserUpdate:
       type: object
@@ -3618,6 +4069,21 @@ components:
         companyVisibility:
           type: string
           enum: [own, selected, all]
+        employeeId:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        employmentStatus:
+          type: string
+          enum: [active, probation, on_leave, suspended, offboarded]
+        joiningDate:
+          type: ["string", "null"]
+        managerId:
+          type: ["integer", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
 
     UserSelfUpdate:
       type: object
@@ -3626,6 +4092,202 @@ components:
           type: string
         avatarUrl:
           type: ["string", "null"]
+
+    # ---- ORGANIZATION (Stage 3 Phase 1): departments, teams, hierarchy ----
+    Department:
+      type: object
+      required: [id, companyId, name, status, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        headId:
+          type: ["integer", "null"]
+        headName:
+          type: ["string", "null"]
+        parentDepartmentId:
+          type: ["integer", "null"]
+        parentDepartmentName:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+        employeeCount:
+          type: integer
+        teamCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    DepartmentList:
+      type: object
+      required: [departments, total, page, limit]
+      properties:
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Department"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    DepartmentInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        headId:
+          type: ["integer", "null"]
+        parentDepartmentId:
+          type: ["integer", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+          default: active
+
+    DepartmentUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        headId:
+          type: ["integer", "null"]
+        parentDepartmentId:
+          type: ["integer", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+
+    Team:
+      type: object
+      required: [id, companyId, name, status, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        departmentName:
+          type: ["string", "null"]
+        leaderId:
+          type: ["integer", "null"]
+        leaderName:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+        memberCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    TeamList:
+      type: object
+      required: [teams, total, page, limit]
+      properties:
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/Team"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    TeamInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        leaderId:
+          type: ["integer", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+          default: active
+
+    TeamUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        leaderId:
+          type: ["integer", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+
+    TeamMembersAssignment:
+      type: object
+      required: [userIds]
+      properties:
+        userIds:
+          type: array
+          items:
+            type: integer
+
+    OrgHierarchyNode:
+      type: object
+      required: [id, name, reports]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        jobTitle:
+          type: ["string", "null"]
+        departmentName:
+          type: ["string", "null"]
+        teamName:
+          type: ["string", "null"]
+        reports:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrgHierarchyNode"
+
+    OrgHierarchy:
+      type: object
+      required: [roots]
+      properties:
+        roots:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrgHierarchyNode"
 
     # USER LIFECYCLE / RBAC / ORG / SECURITY / PROFILE (Phase 2.4)
     UserDetail:
@@ -3669,6 +4331,27 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RoleRef"
+        employeeId:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        employmentStatus:
+          type: string
+          enum: [active, probation, on_leave, suspended, offboarded]
+        joiningDate:
+          type: ["string", "null"]
+        managerId:
+          type: ["integer", "null"]
+        managerName:
+          type: ["string", "null"]
+        departmentId:
+          type: ["integer", "null"]
+        departmentName:
+          type: ["string", "null"]
+        teamId:
+          type: ["integer", "null"]
+        teamName:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time

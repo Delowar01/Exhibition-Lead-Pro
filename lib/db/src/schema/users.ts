@@ -1,4 +1,5 @@
-import { pgTable, serial, text, boolean, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, integer, jsonb, timestamp, date, uniqueIndex, index, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -36,12 +37,34 @@ export const usersTable = pgTable("users", {
   // Profile preferences (Phase 2.4).
   language: text("language").notNull().default("en"),
   timezone: text("timezone"),
+  // ---- Organizational profile (Stage 3 Phase 1). All ADDITIVE & nullable so
+  // existing users are unaffected; these power departments/teams, the employee
+  // directory, the reporting-manager hierarchy, and future perf/analytics modules.
+  // Human-facing employee identifier, unique per company (partial unique index below).
+  employeeId: text("employee_id"),
+  // Job title / designation, e.g. "Sales Manager".
+  jobTitle: text("job_title"),
+  // Employment lifecycle status — distinct from `isActive` (account enabled) and
+  // company subscription status. Informational in Phase 1 (does not gate login).
+  employmentStatus: text("employment_status").notNull().default("active"), // active, probation, on_leave, suspended, offboarded
+  joiningDate: date("joining_date"),
+  // Reporting manager — a user in the same tenant (self-reference).
+  managerId: integer("manager_id").references((): AnyPgColumn => usersTable.id, { onDelete: "set null" }),
+  departmentId: integer("department_id"),
+  teamId: integer("team_id"),
   // Soft-delete (Phase 2.4 — deferred here from 2.3). Null = active. Login + auth
   // user-load must exclude soft-deleted users.
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  index("users_company_id_idx").on(t.companyId),
+  index("users_department_id_idx").on(t.departmentId),
+  index("users_team_id_idx").on(t.teamId),
+  index("users_manager_id_idx").on(t.managerId),
+  // employeeId is unique within a company, but only when set (existing rows are null).
+  uniqueIndex("users_company_employee_id_idx").on(t.companyId, t.employeeId).where(sql`${t.employeeId} IS NOT NULL`),
+]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, createdAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;

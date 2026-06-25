@@ -7,6 +7,7 @@
  */
 import type { UserInputCompanyVisibility } from './userInputCompanyVisibility';
 import type { UserInputContactVisibility } from './userInputContactVisibility';
+import type { UserInputEmploymentStatus } from './userInputEmploymentStatus';
 import type { UserInputPermissions } from './userInputPermissions';
 import type { UserInputRole } from './userInputRole';
 
@@ -23,4 +24,17 @@ export interface UserInput {
   permissions?: UserInputPermissions;
   contactVisibility?: UserInputContactVisibility;
   companyVisibility?: UserInputCompanyVisibility;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserInputEmploymentStatus;
+  /** @nullable */
+  joiningDate?: string | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
 }

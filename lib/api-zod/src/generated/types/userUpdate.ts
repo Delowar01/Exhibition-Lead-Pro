@@ -7,6 +7,7 @@
  */
 import type { UserUpdateCompanyVisibility } from './userUpdateCompanyVisibility';
 import type { UserUpdateContactVisibility } from './userUpdateContactVisibility';
+import type { UserUpdateEmploymentStatus } from './userUpdateEmploymentStatus';
 import type { UserUpdatePermissions } from './userUpdatePermissions';
 import type { UserUpdateRole } from './userUpdateRole';
 
@@ -19,4 +20,17 @@ export interface UserUpdate {
   permissions?: UserUpdatePermissions;
   contactVisibility?: UserUpdateContactVisibility;
   companyVisibility?: UserUpdateCompanyVisibility;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  employmentStatus?: UserUpdateEmploymentStatus;
+  /** @nullable */
+  joiningDate?: string | null;
+  /** @nullable */
+  managerId?: number | null;
+  /** @nullable */
+  departmentId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
 }
