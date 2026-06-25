@@ -1,0 +1,887 @@
+TAGE 3 — Enterprise Company Administration & Employee Management
+Objective
+Build a complete enterprise Company Administration Portal that enables each organization to manage its own employees, departments, teams, events, permissions, policies, and operational settings independently while maintaining strict tenant isolation.
+Everything must be production-ready.
+No placeholders.
+No demo data.
+No temporary implementations.
+
+PART 1 — Company Dashboard
+Create a premium executive dashboard showing real-time organization metrics.
+Dashboard widgets:
+
+
+Total Employees
+
+
+Active Employees
+
+
+Inactive Employees
+
+
+Total Leads
+
+
+Leads Today
+
+
+Leads This Month
+
+
+Events
+
+
+Active Events
+
+
+AI OCR Usage
+
+
+API Usage
+
+
+Storage Usage
+
+
+Subscription Status
+
+
+Team Performance
+
+
+Daily Activity
+
+
+Weekly Activity
+
+
+Monthly Activity
+
+
+Charts:
+
+
+Leads Trend
+
+
+Employee Performance
+
+
+Event Performance
+
+
+AI Usage
+
+
+Device Distribution
+
+
+Login Activity
+
+
+Support:
+
+
+Custom Date Range
+
+
+Export Dashboard
+
+
+Refresh
+
+
+Saved Dashboard Views
+
+
+
+PART 2 — Department Management
+Create department administration.
+Each department includes:
+
+
+Department Name
+
+
+Description
+
+
+Department Head
+
+
+Parent Department
+
+
+Status
+
+
+Employee Count
+
+
+Functions:
+
+
+Create
+
+
+Edit
+
+
+Archive
+
+
+Restore
+
+
+Delete
+
+
+Search
+
+
+Filter
+
+
+Bulk Actions
+
+
+
+PART 3 — Team Management
+Implement organizational team hierarchy.
+Each team contains:
+
+
+Team Name
+
+
+Team Leader
+
+
+Members
+
+
+Department
+
+
+Performance Score
+
+
+Status
+
+
+Support:
+
+
+Create Teams
+
+
+Move Members
+
+
+Transfer Team Leader
+
+
+Merge Teams
+
+
+Archive Teams
+
+
+
+PART 4 — Employee Management
+Complete employee lifecycle.
+Employee Profile:
+
+
+Name
+
+
+Employee ID
+
+
+Email
+
+
+Phone
+
+
+Department
+
+
+Team
+
+
+Designation
+
+
+Manager
+
+
+Employment Status
+
+
+Joining Date
+
+
+Last Login
+
+
+Assigned Events
+
+
+Device Information
+
+
+Activity Summary
+
+
+Actions:
+
+
+Add Employee
+
+
+Edit Employee
+
+
+Disable
+
+
+Enable
+
+
+Suspend
+
+
+Delete
+
+
+Reset Password
+
+
+Force Logout
+
+
+Reassign Manager
+
+
+Transfer Department
+
+
+Transfer Team
+
+
+Bulk Operations:
+
+
+CSV Import
+
+
+Excel Import
+
+
+Bulk Update
+
+
+Bulk Delete
+
+
+Bulk Invitations
+
+
+
+PART 5 — Employee Performance
+Create employee analytics.
+Metrics:
+
+
+Cards Scanned
+
+
+Leads Created
+
+
+OCR Success Rate
+
+
+AI Usage
+
+
+Active Days
+
+
+Average Processing Time
+
+
+Follow-ups Completed
+
+
+Meetings Logged
+
+
+Conversion Rate
+
+
+Manager Views:
+
+
+Daily
+
+
+Weekly
+
+
+Monthly
+
+
+Quarterly
+
+
+Yearly
+
+
+Leaderboard:
+
+
+Top Employees
+
+
+Top Teams
+
+
+Top Departments
+
+
+
+PART 6 — Employee Activity Timeline
+Maintain complete activity history.
+Track:
+
+
+Login
+
+
+Logout
+
+
+Card Scan
+
+
+QR Scan
+
+
+Manual Entry
+
+
+Lead Edit
+
+
+Lead Delete
+
+
+Lead Export
+
+
+Notes Added
+
+
+Follow-up Created
+
+
+Event Joined
+
+
+Event Closed
+
+
+GPS Check-ins
+
+
+Device Changes
+
+
+Support:
+
+
+Timeline View
+
+
+Filters
+
+
+Search
+
+
+Export
+
+
+
+PART 7 — Event Administration
+Organization can manage its own events.
+Features:
+
+
+Create Event
+
+
+Edit Event
+
+
+Archive Event
+
+
+Clone Event
+
+
+Delete Event
+
+
+Event Details:
+
+
+Event Name
+
+
+Location
+
+
+Country
+
+
+Organizer
+
+
+Start Date
+
+
+End Date
+
+
+Assigned Employees
+
+
+Lead Target
+
+
+Status
+
+
+Statistics:
+
+
+Total Leads
+
+
+Daily Leads
+
+
+Employee Performance
+
+
+AI Usage
+
+
+Completion Rate
+
+
+
+PART 8 — Employee Assignment Center
+Assign employees to:
+
+
+Events
+
+
+Departments
+
+
+Teams
+
+
+Managers
+
+
+Support:
+
+
+Drag-and-Drop Assignment
+
+
+Bulk Assignment
+
+
+Assignment History
+
+
+Availability Check
+
+
+Conflict Detection
+
+
+
+PART 9 — Company Settings
+Organization-level settings.
+General:
+
+
+Company Logo
+
+
+Company Information
+
+
+Branding
+
+
+Language
+
+
+Timezone
+
+
+Currency
+
+
+Operational:
+
+
+Working Days
+
+
+Business Hours
+
+
+Holiday Calendar
+
+
+Default Country
+
+
+Date Format
+
+
+Number Format
+
+
+Lead Policies:
+
+
+Required Fields
+
+
+Duplicate Rules
+
+
+Auto Assignment
+
+
+Lead Ownership
+
+
+Lead Retention
+
+
+
+PART 10 — Storage & Usage Monitoring
+Display organization usage.
+Track:
+
+
+Database Storage
+
+
+Images
+
+
+OCR Queue
+
+
+AI Tokens
+
+
+API Requests
+
+
+Active Users
+
+
+Device Count
+
+
+Exports
+
+
+Visual indicators:
+
+
+Progress Bars
+
+
+Quota Warnings
+
+
+Forecast Usage
+
+
+
+PART 11 — Company Notification Center
+Organization notifications.
+Categories:
+
+
+Employee
+
+
+Events
+
+
+Leads
+
+
+Subscription
+
+
+AI Usage
+
+
+Security
+
+
+Billing
+
+
+Features:
+
+
+Read
+
+
+Archive
+
+
+Delete
+
+
+Notification Preferences
+
+
+
+PART 12 — Approval Workflows
+Create configurable approval engine.
+Support approval for:
+
+
+Employee Creation
+
+
+Employee Deletion
+
+
+Team Changes
+
+
+Department Changes
+
+
+Event Creation
+
+
+Lead Export
+
+
+Bulk Import
+
+
+Data Deletion
+
+
+Workflow:
+Submitted
+↓
+Pending Approval
+↓
+Approved / Rejected
+↓
+Audit Log
+
+PART 13 — Company Reports
+Generate reports.
+Employee Reports
+Department Reports
+Team Reports
+Lead Reports
+Event Reports
+AI Usage Reports
+Activity Reports
+Login Reports
+Exports:
+
+
+PDF
+
+
+Excel
+
+
+CSV
+
+
+Support:
+
+
+Scheduled Reports
+
+
+Email Reports
+
+
+Saved Templates
+
+
+
+PART 14 — Enterprise UI
+Create premium interfaces for:
+
+
+Company Dashboard
+
+
+Departments
+
+
+Teams
+
+
+Employees
+
+
+Employee Profile
+
+
+Performance
+
+
+Events
+
+
+Assignment Center
+
+
+Reports
+
+
+Approval Center
+
+
+Company Settings
+
+
+Storage Dashboard
+
+
+Requirements:
+Responsive
+Dark Mode
+Accessibility (WCAG AA)
+Loading Skeletons
+Search Everywhere
+Advanced Filters
+Bulk Actions
+Confirmation Dialogs
+Empty States
+Keyboard Navigation
+
+PART 15 — APIs
+Create production-grade REST APIs.
+Support:
+Pagination
+Filtering
+Sorting
+Searching
+Bulk Operations
+Validation
+OpenAPI Documentation
+Versioning
+Consistent Error Responses
+
+PART 16 — Database
+Add production-ready schema for:
+Departments
+Teams
+Managers
+Assignments
+Employee Metrics
+Activity Timeline
+Approvals
+Reports
+Usage Statistics
+Storage
+Company Settings
+Performance Metrics
+Indexes must be optimized for large enterprise datasets.
+
+PART 17 — Testing
+Add automated tests for:
+Employee Lifecycle
+Department Management
+Team Management
+Assignments
+Approval Workflows
+Reports
+Performance Calculations
+Storage Monitoring
+Company Settings
+Bulk Operations
+API Validation
+Permission Enforcement
+
+PART 18 — Definition of Done
+Stage 3 is complete only when:
+
+
+Company Admin Portal is fully operational.
+
+
+Departments, teams, and employees are fully manageable.
+
+
+Performance analytics are accurate and real-time.
+
+
+Event administration is complete.
+
+
+Assignment Center supports bulk and drag-and-drop operations.
+
+
+Company settings are configurable.
+
+
+Storage and usage monitoring are functional.
+
+
+Approval workflows operate correctly.
+
+
+Reports generate and export successfully.
+
+
+REST APIs are documented and validated.
+
+
+Database schema and indexes are production-ready.
+
+
+Automated tests pass successfully.
+
+
+No placeholder data or unfinished functionality remains.
+
+
+Expected Deliverables:
+
+
+A complete enterprise Company Administration Portal with department, team, employee, event, reporting, approval, and analytics capabilities that integrates seamlessly with the Lead Capture Pro Mobile App and Platform Owner Portal.
+
