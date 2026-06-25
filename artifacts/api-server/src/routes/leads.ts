@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateLeadBody, UpdateLeadBody } from "@workspace/api-zod";
@@ -7,6 +7,7 @@ import * as leads from "../services/leads.service.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/leads", requireTenantUser);
 router.use("/leads", blockReadOnlyMutations);
 router.use("/leads", auditMutations("leads"));
 

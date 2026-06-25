@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateScanBody } from "@workspace/api-zod";
@@ -8,6 +8,7 @@ import * as scans from "../services/scans.service.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/scans", requireTenantUser);
 router.use("/scans", blockReadOnlyMutations);
 router.use("/scans", auditMutations("scans"));
 

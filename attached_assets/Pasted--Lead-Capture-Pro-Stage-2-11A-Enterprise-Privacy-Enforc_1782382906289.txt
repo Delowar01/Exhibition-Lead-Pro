@@ -1,0 +1,111 @@
+# Lead Capture Pro – Stage 2.11A
+
+# Enterprise Privacy Enforcement (Critical)
+
+## Objective
+
+Implement the Critical and High severity findings from the approved Enterprise Privacy & Data Governance Audit.
+
+The goal is to remove the legacy "Super Admin" architecture and replace it with a true Enterprise SaaS Privacy Model where Platform Owner manages the platform but cannot access customer CRM data.
+
+This phase focuses ONLY on security enforcement.
+
+No UI redesign.
+
+No database redesign.
+
+No new features.
+
+No regressions.
+
+---
+
+# Scope
+
+Implement only the following audit findings:
+
+* GAP-01
+* GAP-02
+* GAP-03
+
+Do not work on Medium or Low findings yet.
+
+---
+
+# Requirements
+
+## 1. Platform Owner Protection
+
+Implement a dedicated authorization layer (for example, requireTenantUser() or a cleaner equivalent).
+
+Platform Owner must receive HTTP 403 when attempting to access customer business data.
+
+This protection must exist at the API layer.
+
+UI hiding alone is NOT acceptable.
+
+---
+
+## 2. Protect Customer Business APIs
+
+Protect every customer-data endpoint including:
+
+* Contacts
+* Leads
+* Events
+* Scans
+* Business Card Images
+* Reports
+* CRM Analytics
+* AI Enrichment
+* Customer Attachments
+* Customer Exports
+
+Verify direct REST API calls are also blocked.
+
+---
+
+## 3. Reports Authorization
+
+Review every reports endpoint.
+
+Ensure:
+
+* Platform Owner cannot access customer reports.
+* Company Admin retains access.
+* Company Employee follows RBAC.
+* Existing customer functionality remains unchanged.
+
+---
+
+## 4. Business Card Images
+
+Completely block Platform Owner access to business card image downloads.
+
+---
+
+## Testing
+
+Add regression tests proving Platform Owner receives HTTP 403 for all protected endpoints.
+
+Verify:
+
+* Company Admin still works.
+* Company Employee still works.
+* Tenant isolation remains intact.
+* Existing tests remain green.
+
+---
+
+## Deliverables
+
+Provide:
+
+* APIs protected
+* Middleware added
+* Tests added
+* Security improvements
+* Files modified
+* Final validation summary
+
+No regressions.

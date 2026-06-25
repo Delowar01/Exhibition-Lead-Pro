@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody } from "@workspace/api-zod";
@@ -7,6 +7,7 @@ import * as contacts from "../services/contacts.service.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/contacts", requireTenantUser);
 router.use("/contacts", blockReadOnlyMutations);
 router.use("/contacts", auditMutations("contacts"));
 

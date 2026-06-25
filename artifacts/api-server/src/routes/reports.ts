@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { requireAuth, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, type AuthRequest } from "../middlewares/requireAuth.js";
 import { microCache } from "../middlewares/microCache.js";
 import * as reports from "../services/reports.service.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/reports", requireTenantUser);
 
 // 30s TTL micro-cache for the expensive read-only analytics aggregations. Any
 // successful write bumps the global write epoch (bustCacheOnWrite), so these are

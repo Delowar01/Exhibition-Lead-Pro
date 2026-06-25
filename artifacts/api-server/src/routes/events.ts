@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateEventBody, UpdateEventBody } from "@workspace/api-zod";
@@ -7,6 +7,7 @@ import * as events from "../services/events.service.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/events", requireTenantUser);
 router.use("/events", blockReadOnlyMutations);
 router.use("/events", auditMutations("events"));
 

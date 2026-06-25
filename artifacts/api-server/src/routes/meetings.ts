@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { meetingsTable, contactsTable, usersTable } from "@workspace/db";
 import { eq, and, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
-import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateMeetingBody, UpdateMeetingBody } from "@workspace/api-zod";
@@ -11,6 +11,7 @@ import { parseListQuery } from "../lib/list-query.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/meetings", requireTenantUser);
 router.use("/meetings", blockReadOnlyMutations);
 router.use("/meetings", auditMutations("meetings"));
 

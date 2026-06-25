@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { followUpsTable, contactsTable, usersTable } from "@workspace/db";
 import { eq, and, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
-import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateFollowUpBody, UpdateFollowUpBody } from "@workspace/api-zod";
@@ -19,6 +19,7 @@ const FOLLOW_UP_SORT: Record<string, AnyColumn> = {
   status: followUpsTable.status,
 };
 router.use(requireAuth);
+router.use("/follow-ups", requireTenantUser);
 router.use("/follow-ups", blockReadOnlyMutations);
 router.use("/follow-ups", auditMutations("follow_ups"));
 

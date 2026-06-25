@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { tasksTable, contactsTable, usersTable } from "@workspace/db";
 import { eq, and, or, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
-import { requireAuth, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateTaskBody, UpdateTaskBody } from "@workspace/api-zod";
@@ -11,6 +11,7 @@ import { parseListQuery } from "../lib/list-query.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use("/tasks", requireTenantUser);
 router.use("/tasks", blockReadOnlyMutations);
 router.use("/tasks", auditMutations("tasks"));
 

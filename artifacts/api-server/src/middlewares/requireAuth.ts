@@ -204,6 +204,27 @@ export function requireRole(...roles: string[]) {
   };
 }
 
+// Tenant-data firewall (Enterprise Privacy Model, Stage 2.11A): blocks the platform
+// operator (platform_owner) from customer CRM/business-data endpoints. Platform Owner
+// (Elite Marcom) manages the platform but must NOT have routine access to customer
+// business data. This is the API-layer enforcement — UI hiding alone is insufficient.
+//
+// IMPORTANT: this is a TERMINATING guard. Sub-routers are mounted path-less on one
+// shared parent (routes/index.ts), so a path-less `router.use(requireTenantUser)`
+// would 403 EVERY request flowing through the parent (including platform routes).
+// Always path-scope it to the module base, e.g. `router.use("/contacts", requireTenantUser)`.
+export function requireTenantUser(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (req.user.role === "platform_owner") {
+    res.status(403).json({ error: "Platform operators cannot access customer business data" });
+    return;
+  }
+  next();
+}
+
 // platform_owner and primary_admin have full access within their scope; admin/employee
 // are constrained by their explicit permission matrix (module -> [actions]).
 export function requirePermission(module: string, action: string) {
