@@ -463,7 +463,7 @@ changes were required; every fix reuses existing middleware (`requireTenantUser`
 | GAP-02 (reports reachable by platform_owner) | High | ✅ Fixed (2.11A + 2.11B) | `requireTenantUser` blocks platform_owner; `requirePermission("reports","view")` gates company users |
 | GAP-03 (cross-tenant write/delete) | High | ✅ Fixed (Stage 2.11A) | covered by `requireTenantUser` on mutating customer routers |
 | GAP-04 (platform_owner sees login/IP/device forensics) | Medium | ✅ Fixed (Stage 2.11B) | `requireTenantUser` on `GET /users/:id/login-history`; operational user mgmt retained |
-| GAP-05 (company user w/ denied perms reads full analytics) | Medium | ✅ Fixed (Stage 2.11B) | `requirePermission("reports","view")` on the reports router (R2) |
+| GAP-05 (company user w/ denied perms reads full analytics) | Medium | ✅ Fixed (Stage 2.11B) | `requirePermission("reports","view")` on the reports router (R2). Reports policy: platform_owner blocked; primary_admin bypass; `admin` keeps `reports:view` by default (seed + one-time backfill of existing admins, revocable via Role & Permission Management); `employee` has no reports access unless explicitly granted |
 | GAP-06 (follow-up scheduler global cross-tenant sweep) | Low | ✅ Fixed (Stage 2.11B) | explicit `companyId IS NOT NULL` guard + strict `(companyId, assignedToId)` grouping (R4) |
 | GAP-07 (platform_owner can trigger AI on customer data) | Medium | ✅ Fixed (Stage 2.11A) | every AI trigger (OCR via `POST /scans`, scoring via `POST /contacts`, enrichment via `POST /contacts/:id/enrich`) routes through routers already blocked by `requireTenantUser`; verified by tests |
 

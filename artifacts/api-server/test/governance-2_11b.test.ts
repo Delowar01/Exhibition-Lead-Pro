@@ -41,12 +41,16 @@ async function post(path: string, token: string, body: unknown = {}) {
 let platform: Session;
 let tech: Session;
 
-// Two throwaway techcorp employees: one WITHOUT reports permission, one WITH reports:view.
-// Created by cloning the techcorp admin's password hash so the shared demo password works.
+// Throwaway techcorp users exercising the four-role reports policy (Stage 2.11B / GAP-05):
+//   admin (default reports:view) → access; employee (default, no reports) → blocked;
+//   employee explicitly granted reports:view → access. Created by cloning the techcorp
+//   admin's password hash so the shared demo password works.
 const NO_REPORTS_EMAIL = `gov-noreports-${Date.now()}@techcorp.test`;
 const WITH_REPORTS_EMAIL = `gov-withreports-${Date.now()}@techcorp.test`;
+const ADMIN_EMAIL = `gov-admin-${Date.now()}@techcorp.test`;
 let noReportsToken = "";
 let withReportsToken = "";
+let adminToken = "";
 const createdUserIds: number[] = [];
 
 // Report endpoints that return 200 without query params (used for positive checks).
@@ -61,20 +65,26 @@ const REPORTS_NOPARAM = [
 // All report endpoints (permission gate fires before the handler, so params are irrelevant).
 const REPORTS_ALL = [...REPORTS_NOPARAM, "/reports/event", "/reports/team-member"];
 
-async function makeEmployee(email: string, companyId: number, permissions: Record<string, string[]>, hash: string) {
-  const [emp] = await db
+async function makeUser(
+  email: string,
+  role: "admin" | "employee",
+  companyId: number,
+  permissions: Record<string, string[]>,
+  hash: string,
+) {
+  const [u] = await db
     .insert(usersTable)
     .values({
       email,
       passwordHash: hash,
-      name: "Governance Test Employee",
-      role: "employee",
+      name: `Governance Test ${role}`,
+      role,
       companyId,
       permissions,
       isActive: true,
     })
     .returning();
-  createdUserIds.push(emp.id);
+  createdUserIds.push(u.id);
   const s = await login({ email, password: TECHCORP.password });
   return s.token;
 }
@@ -94,8 +104,10 @@ beforeAll(async () => {
   const [admin] = await db.select().from(usersTable).where(eq(usersTable.email, TECHCORP.email));
   if (!admin) throw new Error("techcorp admin not found in DB");
 
-  noReportsToken = await makeEmployee(NO_REPORTS_EMAIL, admin.companyId!, { contacts: ["view"] }, admin.passwordHash);
-  withReportsToken = await makeEmployee(WITH_REPORTS_EMAIL, admin.companyId!, { reports: ["view"] }, admin.passwordHash);
+  noReportsToken = await makeUser(NO_REPORTS_EMAIL, "employee", admin.companyId!, { contacts: ["view"] }, admin.passwordHash);
+  withReportsToken = await makeUser(WITH_REPORTS_EMAIL, "employee", admin.companyId!, { reports: ["view"] }, admin.passwordHash);
+  // Mid-tier admin with the default policy grant (reports:view) — must retain report access.
+  adminToken = await makeUser(ADMIN_EMAIL, "admin", admin.companyId!, { contacts: ["view"], reports: ["view"] }, admin.passwordHash);
 });
 
 afterAll(async () => {
@@ -130,6 +142,11 @@ describe("GAP-05 — reports gated by reports.view permission", () => {
 
   it.each(REPORTS_NOPARAM)("employee WITH reports:view gets 200 on GET %s", async (path) => {
     const res = await get(path, withReportsToken);
+    expect(res.status).toBe(200);
+  });
+
+  it.each(REPORTS_NOPARAM)("mid-tier admin (default reports:view) gets 200 on GET %s", async (path) => {
+    const res = await get(path, adminToken);
     expect(res.status).toBe(200);
   });
 

@@ -341,11 +341,16 @@ async function main() {
     companyVisibility: "own" as const,
     permissions: {} as Record<string, string[]>,
   };
+  // Reports policy (Stage 2.11B / GAP-05): the mid-tier `admin` role keeps reports:view by
+  // default to preserve existing customer workflows; a primary_admin may revoke it later via
+  // Role & Permission Management. `employee` has NO reports access by default — it must be
+  // explicitly granted. (platform_owner is blocked from reports entirely; primary_admin bypasses.)
   const adminPerms: Record<string, string[]> = {
     contacts: ["view", "create", "edit", "delete"],
     leads: ["view", "edit"],
     tasks: ["view", "create", "edit"],
     events: ["view"],
+    reports: ["view"],
   };
   const empPerms: Record<string, string[]> = {
     contacts: ["view", "create", "edit"],
