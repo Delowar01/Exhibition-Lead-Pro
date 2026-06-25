@@ -164,8 +164,11 @@ describe("Stage 2.11A — company admin retains full access (no regression)", ()
   });
 });
 
-describe("Stage 2.11A — company employee retains read access (RBAC unchanged)", () => {
-  it.each(["/contacts", "/reports/admin-dashboard", "/follow-ups", "/meetings", "/tasks"])(
+describe("Stage 2.11A — company employee retains read access (open tenant-scoped reads)", () => {
+  // Reports are intentionally excluded here: Stage 2.11B gates /reports behind the
+  // reports.view permission (GAP-05), which this employee does not hold. The remaining
+  // reads stay open + tenant-scoped, so the privacy firewall did not regress them.
+  it.each(["/contacts", "/follow-ups", "/meetings", "/tasks"])(
     "GET %s returns 200 for company employee",
     async (path) => {
       const res = await get(path, employeeToken);

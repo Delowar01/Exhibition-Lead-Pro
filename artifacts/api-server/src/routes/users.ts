@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateUserBody, UpdateOwnProfileBody, UpdateUserBody, SetUserRolesBody } from "@workspace/api-zod";
@@ -62,7 +62,13 @@ router.post("/users/:id/reset-password", requirePermission("team", "edit"), asyn
 });
 
 // GET /users/:id/login-history
-router.get("/users/:id/login-history", requirePermission("team", "view"), async (req: AuthRequest, res) => {
+// GAP-04 (Enterprise Privacy): login history exposes IPs / device / browser / timestamps.
+// requireTenantUser blocks the platform operator (platform_owner) from this forensic PII
+// while company admins keep tenant-scoped access (findById is tenant-scoped → 404 cross-tenant).
+// Operational user management (enable/disable/reset-password/force-logout) is intentionally
+// left available to platform_owner. A future audited "support access" flow (audit R5) would
+// re-grant this deliberately and time-bounded.
+router.get("/users/:id/login-history", requireTenantUser, requirePermission("team", "view"), async (req: AuthRequest, res) => {
   const limit = req.query.limit ? parseInt(String(req.query.limit)) : 50;
   res.json(await users.loginHistory(req.user!, parseInt(String(req.params.id)), limit));
 });

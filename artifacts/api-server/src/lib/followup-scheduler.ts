@@ -23,6 +23,7 @@ export async function runFollowUpReminders(): Promise<void> {
   const due = await db
     .select({
       id: contactsTable.id,
+      companyId: contactsTable.companyId,
       fullName: contactsTable.fullName,
       firstName: contactsTable.firstName,
       lastName: contactsTable.lastName,
@@ -33,6 +34,11 @@ export async function runFollowUpReminders(): Promise<void> {
     .from(contactsTable)
     .where(
       and(
+        // GAP-06 (Enterprise Privacy): explicit tenant boundary. This is a global sweep
+        // across all companies, so we require a non-null tenant on every row. Combined with
+        // the (companyId, assignedToId) grouping below, any future per-tenant logic added
+        // here is structurally prevented from mixing records across tenants.
+        isNotNull(contactsTable.companyId),
         isNotNull(contactsTable.followUpDate),
         lte(contactsTable.followUpDate, todayStr),
         isNotNull(contactsTable.assignedToId),
@@ -47,17 +53,21 @@ export async function runFollowUpReminders(): Promise<void> {
 
   if (due.length === 0) return;
 
-  // One notification per rep, summarising their due follow-ups.
-  const byUser = new Map<number, typeof due>();
+  // One notification per rep, summarising their due follow-ups. Grouped strictly within
+  // a (companyId, assignedToId) tenant boundary (GAP-06) — companyId is guaranteed non-null
+  // by the query above, so every group belongs to exactly one tenant.
+  const byCompanyUser = new Map<string, typeof due>();
   for (const c of due) {
-    const arr = byUser.get(c.assignedToId!) ?? [];
+    const key = `${c.companyId}:${c.assignedToId}`;
+    const arr = byCompanyUser.get(key) ?? [];
     arr.push(c);
-    byUser.set(c.assignedToId!, arr);
+    byCompanyUser.set(key, arr);
   }
 
   const notifiedContactIds: number[] = [];
   let notifiedReps = 0;
-  for (const [userId, contacts] of byUser) {
+  for (const [, contacts] of byCompanyUser) {
+    const userId = contacts[0].assignedToId!;
     const first = contacts[0];
     const name =
       first.fullName ||

@@ -1,11 +1,17 @@
 import { Router } from "express";
-import { requireAuth, requireTenantUser, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { microCache } from "../middlewares/microCache.js";
 import * as reports from "../services/reports.service.js";
 
 const router = Router();
 router.use(requireAuth);
 router.use("/reports", requireTenantUser);
+// GAP-05 (Enterprise Privacy): gate ALL reports behind the reports.view permission.
+// platform_owner is already rejected by requireTenantUser above; primary_admin bypasses
+// requirePermission; admin/employee must hold reports:view. This closes the gap where a
+// company user with denied permissions could still read full CRM analytics. Path-scoped
+// because this is a terminating guard on the shared path-less parent router.
+router.use("/reports", requirePermission("reports", "view"));
 
 // 30s TTL micro-cache for the expensive read-only analytics aggregations. Any
 // successful write bumps the global write epoch (bustCacheOnWrite), so these are

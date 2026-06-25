@@ -448,3 +448,40 @@ mechanism (Phase 3) for the rare cases where customer-data debugging is legitima
 *Report location: `docs/reports/ENTERPRISE_PRIVACY_AUDIT.md`*
 *All findings are derived from static code inspection of the live codebase. No penetration
 testing or runtime exploitation was performed.*
+
+---
+
+## 8. Remediation Status (post-audit)
+
+All API-layer findings have been remediated across two stages. No schema, contract, or UI
+changes were required; every fix reuses existing middleware (`requireTenantUser`,
+`requirePermission`) and is covered by regression tests.
+
+| Gap | Severity | Status | Fix |
+|---|---|---|---|
+| GAP-01 (platform_owner reaches customer CRM endpoints) | Critical | ✅ Fixed (Stage 2.11A) | `requireTenantUser` path-scoped on contacts/leads/events/scans/reports/follow-ups/meetings/tasks |
+| GAP-02 (reports reachable by platform_owner) | High | ✅ Fixed (2.11A + 2.11B) | `requireTenantUser` blocks platform_owner; `requirePermission("reports","view")` gates company users |
+| GAP-03 (cross-tenant write/delete) | High | ✅ Fixed (Stage 2.11A) | covered by `requireTenantUser` on mutating customer routers |
+| GAP-04 (platform_owner sees login/IP/device forensics) | Medium | ✅ Fixed (Stage 2.11B) | `requireTenantUser` on `GET /users/:id/login-history`; operational user mgmt retained |
+| GAP-05 (company user w/ denied perms reads full analytics) | Medium | ✅ Fixed (Stage 2.11B) | `requirePermission("reports","view")` on the reports router (R2) |
+| GAP-06 (follow-up scheduler global cross-tenant sweep) | Low | ✅ Fixed (Stage 2.11B) | explicit `companyId IS NOT NULL` guard + strict `(companyId, assignedToId)` grouping (R4) |
+| GAP-07 (platform_owner can trigger AI on customer data) | Medium | ✅ Fixed (Stage 2.11A) | every AI trigger (OCR via `POST /scans`, scoring via `POST /contacts`, enrichment via `POST /contacts/:id/enrich`) routes through routers already blocked by `requireTenantUser`; verified by tests |
+
+**AI protection summary (GAP-07):** the three AI entry points are `extractCardData` (card OCR,
+invoked from `POST /scans`), `scoreLead` (lead scoring, invoked from `POST /contacts`), and
+`enrichContact` (industry/seniority/talking-points, invoked from `POST /contacts/:id/enrich`).
+All three live on the contacts/scans routers, which carry router-level `requireTenantUser`.
+A `platform_owner` token therefore receives HTTP 403 before any AI model is called — confirmed
+by `test/governance-2_11b.test.ts`. No standalone AI route exists. A future, deliberately-audited
+"support access" flow (recommendation R5 / Phase 3 break-glass) would be the only sanctioned way
+to re-enable platform-side AI on customer data.
+
+**Recommendations status:** R2 (reports permission) and R4 (scheduler tenant boundary)
+implemented. R3 (platform_owner exclusion from login-history) implemented via the minimal
+`requireTenantUser` option. R5 (break-glass support access) remains an intentional future design
+item (Phase 3) — not required for the Standard Enterprise SaaS Privacy Model to pass.
+
+**Revised verdict:** with Stages 2.11A + 2.11B merged, the platform satisfies the Standard
+Enterprise SaaS Privacy Model — Elite Marcom can fully operate the platform without routine
+access to customer business data. The only remaining recommendation is the formal break-glass
+mechanism for the rare, audited cases where customer-data debugging is genuinely required.
