@@ -119,3 +119,9 @@ id = "Qt2Vogg35mCvllf3U0n1k"
 uri = "file://docs/reports/ENTERPRISE_PRIVACY_AUDIT.md"
 type = "text"
 title = "Enterprise Privacy & Data Governance Audit"
+
+[[outputs]]
+id = "8gIGb1Nqrshlr3fI3C5JT"
+uri = "file://.local/exports/Stage_2.11_Enterprise_Privacy_Report.txt"
+type = "text"
+title = "Stage 2.11 Enterprise Privacy Report (A → C)"
