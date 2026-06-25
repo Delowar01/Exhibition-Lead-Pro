@@ -125,3 +125,9 @@ id = "8gIGb1Nqrshlr3fI3C5JT"
 uri = "file://.local/exports/Stage_2.11_Enterprise_Privacy_Report.txt"
 type = "text"
 title = "Stage 2.11 Enterprise Privacy Report (A → C)"
+
+[[outputs]]
+id = "ljSRQSuG6S-OgUYKAISk_"
+uri = "file://.local/exports/Stage_3_Phase_1_Report.txt"
+type = "text"
+title = "Stage 3 - Phase 1 Report"
