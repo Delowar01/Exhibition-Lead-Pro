@@ -1,0 +1,184 @@
+# Lead Capture Pro – Master Project Context
+
+This chat is part of the Lead Capture Pro enterprise SaaS project.
+
+The project is divided into three coordinated ChatGPT conversations:
+
+### Chat 1 – Lead Capture Pro Mobile App
+
+Purpose:
+
+* Mobile application development
+* OCR
+* NFC
+* QR & Barcode scanning
+* Business Card scanning
+* Offline synchronization
+* Mobile UI/UX
+* Android & iOS
+* AI mobile features
+
+---
+
+### Chat 2 – Lead Capture Pro Admin Dashboard
+
+Purpose:
+
+* Admin Portal
+* Company Management
+* CRM
+* Reports
+* Analytics
+* User Management
+* Billing
+* Subscription
+* White-label
+* AI Dashboard
+* Integrations
+
+---
+
+### Chat 3 – QA / Architecture / Code Review
+
+Purpose:
+
+* Review every Replit implementation
+* Architecture review
+* Security review
+* Performance review
+* Regression review
+* Enterprise roadmap
+* Replit implementation strategy
+
+This chat should always follow the architectural decisions made in the QA chat.
+
+---
+
+# Current Project Status
+
+Stage 1 – Foundation
+✅ Completed
+
+Stage 2 – Enterprise Architecture
+✅ Completed
+
+Stage 2 included:
+
+* Service Layer
+* Repository Layer
+* RBAC
+* MFA
+* Background Jobs
+* Notifications
+* API Versioning
+* Monitoring
+* Testing
+* Performance
+* Security Hardening
+
+---
+
+# Current Priority
+
+The next architectural work is:
+
+## Stage 2.11 – Enterprise Privacy & Data Governance
+
+This stage has NOT yet been implemented.
+
+It will be implemented in three phases.
+
+---
+
+## Stage 2.11A
+
+Enterprise Privacy Enforcement
+
+Objectives:
+
+* Remove legacy Super Admin behavior.
+* Prevent Platform Owner (Elite Marcom) from accessing customer CRM/business data.
+* Protect customer APIs.
+* Protect reports.
+* Protect business card images.
+* Preserve all customer functionality.
+
+---
+
+## Stage 2.11B
+
+Enterprise Governance Hardening
+
+Objectives:
+
+* Improve Platform Owner operational permissions.
+* Harden report authorization.
+* Improve scheduler isolation.
+* Protect AI endpoints.
+* Improve governance.
+
+---
+
+## Stage 2.11C
+
+Enterprise Validation & Compliance
+
+Objectives:
+
+* Full security validation.
+* Regression testing.
+* Enterprise compliance review.
+* Privacy certification.
+* Final PASS/FAIL assessment.
+
+---
+
+# Development Rule
+
+Until Stage 2.11 is fully completed and approved:
+
+* Do NOT introduce architectural changes that conflict with Stage 2.11.
+* Do NOT bypass tenant isolation.
+* Do NOT redesign authentication.
+* Do NOT redesign authorization.
+* Do NOT redesign repositories.
+* Do NOT redesign services.
+* Preserve all APIs.
+* Preserve all database contracts.
+* Preserve all mobile compatibility.
+
+If any requested feature would conflict with Stage 2.11, complete Stage 2.11 first.
+
+---
+
+# Replit Agent Preference
+
+Always recommend the appropriate Replit Agent mode.
+
+Power:
+
+* Architecture
+* Security
+* Backend
+* Multi-tenancy
+* Authentication
+* Privacy
+* Database
+* Infrastructure
+
+Economy:
+
+* Medium features
+* CRUD
+* UI modules
+* Reports
+
+Lite:
+
+* Small fixes
+* Styling
+* Documentation
+
+---
+
+All future recommendations in this chat should align with this project status and roadmap.
