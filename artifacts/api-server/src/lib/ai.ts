@@ -1,25 +1,39 @@
-import { ai } from "@workspace/integrations-gemini-ai";
 import { logger } from "./logger.js";
 import { config } from "../config.js";
+import { getProvider } from "../ai/providers/index.js";
+import { runAi, extractJson, isTimeoutError, redactError } from "../ai/runner.js";
+import { estimateCostMicroUsd } from "../ai/pricing.js";
+import {
+  PROMPTS,
+  buildExtractionPrompt,
+  SCORING_PROMPT,
+  ENRICHMENT_PROMPT,
+  ASSIGNEE_PROMPT,
+} from "../ai/prompts.js";
+import type { AiFeature, AiPart, AiRequest } from "../ai/types.js";
+import * as aiService from "../services/ai.service.js";
 
-const MODEL = config.ai.model;
+// Feature-level AI functions (OCR extraction, lead scoring, enrichment, assignee
+// recommendation). Since Stage 5.0 these route through the provider-agnostic
+// abstraction (src/ai/): a shared runner applies timeout + retry + JSON validation,
+// and every call is recorded to the ai_invocations ledger with token usage, estimated
+// cost, latency, status, and prompt version. An optional `ctx` (companyId + userId)
+// wires each call to its tenant so usage is attributed AND the per-tenant enabled/
+// feature-flag/budget gates are enforced (a no-op for tenants at default settings, so
+// existing behavior is preserved exactly).
+
+export type { AppLanguage } from "../ai/prompts.js";
+import type { AppLanguage } from "../ai/prompts.js";
+
 const EXTRACTION_TIMEOUT_MS = config.ai.extractionTimeoutMs;
 const SCORING_TIMEOUT_MS = config.ai.scoringTimeoutMs;
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
+// Tenant/user context threaded from the calling service so invocations are attributed
+// and the per-tenant AI gates apply. Omit for system/back-compat calls (no enforcement,
+// ledger row recorded with a null company).
+export interface AiContext {
+  companyId?: number | null;
+  userId?: number | null;
 }
 
 export interface ExtractedCardOriginal {
@@ -49,8 +63,6 @@ export interface ExtractedCardData {
   /** Raw OCR values exactly as printed — never translated/overwritten. */
   original: ExtractedCardOriginal;
 }
-
-export type AppLanguage = "en" | "ar";
 
 export interface CardExtractionResult {
   fields: ExtractedCardData;
@@ -103,20 +115,6 @@ function parseImage(imageData: string): { data: string; mimeType: string } {
   return { mimeType: "image/jpeg", data: imageData.trim() };
 }
 
-function extractJson(text: string): unknown {
-  const trimmed = text.trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start !== -1 && end > start) {
-      return JSON.parse(trimmed.slice(start, end + 1));
-    }
-    throw new Error("AI response was not valid JSON");
-  }
-}
-
 function str(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const t = value.trim();
@@ -127,44 +125,6 @@ function clampScore(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-function translationRules(appLanguage: AppLanguage): string {
-  if (appLanguage === "ar") {
-    return `The app's active language is ARABIC. Apply these rules to the DISPLAY values:
-- Keep any value written in Arabic EXACTLY as printed — do NOT translate or transliterate Arabic into English.
-- Keep any value written in English / Latin script EXACTLY as printed — do NOT translate English into Arabic.
-- Translate values written in ANY OTHER language (e.g. French, Spanish, Chinese, Russian) into English.`;
-  }
-  return `The app's active language is ENGLISH. Apply these rules to the DISPLAY values:
-- Translate EVERY non-English value into English. Transliterate personal names into Latin script; translate job titles, company names, and addresses into their natural English form.
-- Keep values that are already English EXACTLY as printed.
-- Leave emails, websites, LinkedIn URLs, and phone numbers as-is (never translate these).`;
-}
-
-function buildExtractionPrompt(appLanguage: AppLanguage): string {
-  return `You are an OCR and data-extraction engine for contact sources captured at trade exhibitions — business cards, event badges, AND email signatures or screenshots of contact blocks (including GCC events, so they frequently contain Arabic alongside English).
-
-Read the image and extract the contact's details. The image may be a business card, an event badge, or a photo/screenshot of an email signature — extract the person's contact details regardless of layout or which of these formats it is.
-
-${translationRules(appLanguage)}
-
-Return ONLY a JSON object with exactly these keys:
-- "firstName": given name (display value, per the rules above), or null
-- "lastName": family name (display value, per the rules above), or null
-- "arabicName": the full name in Arabic script if present on the card, otherwise null
-- "jobTitle": role/title (display value), or null
-- "company": organization name (display value), or null
-- "email": email address, or null
-- "mobile": primary phone/mobile in international format if possible, or null
-- "website": website domain/URL, or null
-- "linkedin": LinkedIn URL or handle, or null
-- "address": physical address (display value), or null
-- "original": an object holding the SAME keys (firstName, lastName, arabicName, jobTitle, company, email, mobile, website, linkedin, address) with the text EXACTLY as printed on the card — NO translation, NO transliteration, verbatim original script. Use null for any field not present.
-- "confidence": integer 0-100 — your confidence that the extraction is accurate and the image was a readable contact source (business card, badge, or email signature)
-- "rawText": all raw text you read from the card, as a single string
-
-Use null (not empty string) for any field not present. Do not invent data. The "original" object must always reflect exactly what is printed, regardless of the display translation rules.`;
 }
 
 function readOriginal(value: unknown): ExtractedCardOriginal {
@@ -183,43 +143,104 @@ function readOriginal(value: unknown): ExtractedCardOriginal {
   };
 }
 
+// Central execution seam for all JSON-returning AI features: enforces the per-tenant
+// gates (when ctx has a company), runs the provider call through the shared runner,
+// parses JSON, and records the invocation to the ledger (fire-and-forget; never blocks
+// or fails the result path). Enforcement errors are thrown BEFORE any provider call and
+// are not recorded as failed invocations.
+async function callJson(opts: {
+  feature: AiFeature;
+  parts: AiPart[];
+  timeoutMs: number;
+  ctx?: AiContext;
+  confidenceOf?: (parsed: Record<string, unknown>) => number | null;
+}): Promise<Record<string, unknown>> {
+  const prompt = PROMPTS[opts.feature];
+
+  // Provider/model resolution: a tenant's effective ai_settings (validated on write to
+  // an available provider + non-empty model) win when there is company context; system
+  // calls with no tenant fall back to the platform default. This keeps runtime execution
+  // consistent with what GET /ai/settings and GET /ai/health report. resolveSettings and
+  // ensureAiAllowed share the same in-process cache, so this is not an extra DB read.
+  let providerName: string = config.ai.provider;
+  let model: string = config.ai.model;
+  if (opts.ctx?.companyId != null) {
+    await aiService.ensureAiAllowed(opts.ctx.companyId, opts.feature);
+    const settings = await aiService.resolveSettings(opts.ctx.companyId);
+    providerName = settings.provider;
+    model = settings.model;
+  }
+  const provider = getProvider(providerName);
+
+  const req: AiRequest = {
+    model,
+    parts: opts.parts,
+    responseFormat: "json",
+    maxOutputTokens: config.ai.maxOutputTokens,
+    // gemini-2.5-flash runs "thinking" ON by default (5-15s latency); 0 disables it —
+    // a pure speedup for OCR/structured extraction with no measurable quality loss.
+    thinkingBudget: config.ai.thinkingBudget,
+    timeoutMs: opts.timeoutMs,
+  };
+
+  const start = Date.now();
+  try {
+    const result = await runAi(provider, req, {
+      retries: config.ai.maxRetries,
+      backoffMs: config.ai.retryBackoffMs,
+    });
+    const latencyMs = Date.now() - start;
+    const parsed = extractJson(result.text) as Record<string, unknown>;
+    void aiService.recordInvocation({
+      ctx: opts.ctx,
+      feature: opts.feature,
+      provider: provider.name,
+      model: result.model,
+      promptKey: prompt.key,
+      promptVersion: prompt.version,
+      status: "success",
+      usage: result.usage,
+      costMicroUsd: estimateCostMicroUsd(result.model, result.usage.inputTokens, result.usage.outputTokens),
+      latencyMs,
+      confidence: opts.confidenceOf ? opts.confidenceOf(parsed) : null,
+    });
+    return parsed;
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    void aiService.recordInvocation({
+      ctx: opts.ctx,
+      feature: opts.feature,
+      provider: provider.name,
+      model,
+      promptKey: prompt.key,
+      promptVersion: prompt.version,
+      status: isTimeoutError(err) ? "timeout" : "error",
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      costMicroUsd: 0,
+      latencyMs,
+      errorMessage: redactError(err),
+    });
+    throw err;
+  }
+}
+
 export async function extractCardData(
   imageData: string,
   appLanguage: AppLanguage = "en",
+  ctx?: AiContext,
 ): Promise<CardExtractionResult> {
   const { data, mimeType } = parseImage(imageData);
   if (!data || data.length < 100 || !/^image\//.test(mimeType)) {
     throw new Error("imageData is not a valid image payload");
   }
 
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: buildExtractionPrompt(appLanguage) },
-            { inlineData: { mimeType, data } },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        maxOutputTokens: config.ai.maxOutputTokens,
-        // gemini-2.5-flash runs "thinking" ON by default, adding 5-15s of latency
-        // before the first output token. OCR + structured extraction is not a
-        // heavy-reasoning task, so disabling thinking is a pure speedup with no
-        // measurable quality loss — the single biggest lever for the scan latency.
-        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
-      },
-    }),
-    EXTRACTION_TIMEOUT_MS,
-    "card extraction",
-  );
-
-  const text = response.text ?? "";
-  const parsed = extractJson(text) as Record<string, unknown>;
+  const parsed = await callJson({
+    feature: "card_extraction",
+    parts: [{ text: buildExtractionPrompt(appLanguage) }, { inlineData: { mimeType, data } }],
+    timeoutMs: EXTRACTION_TIMEOUT_MS,
+    ctx,
+    confidenceOf: (p) => clampScore(p.confidence),
+  });
 
   const display = {
     firstName: str(parsed.firstName),
@@ -260,20 +281,10 @@ export async function extractCardData(
   };
 }
 
-const SCORING_PROMPT = `You are a B2B lead-qualification expert for companies capturing leads at trade exhibitions. Score the lead's sales potential based on the data provided.
-
-Consider: seniority of the job title (decision-makers score higher), how complete and reachable the contact details are (direct email/mobile is stronger), and how relevant the company appears as a potential buyer.
-
-Return ONLY a JSON object with exactly these keys:
-- "score": integer 0-100 (overall lead quality)
-- "temperature": one of "hot" (70-100, strong decision-maker / high intent), "warm" (40-69, promising but needs nurturing), "cold" (0-39, low potential or incomplete)
-- "reasoning": one concise sentence (max ~20 words) explaining the score
-
-Be decisive and realistic. Do not invent facts beyond what is given.`;
-
 export async function scoreLead(
   input: LeadScoreInput,
   eventName?: string | null,
+  ctx?: AiContext,
 ): Promise<LeadScoreResult> {
   const lines = [
     `Name: ${[input.firstName, input.lastName].filter(Boolean).join(" ") || "(unknown)"}`,
@@ -288,28 +299,13 @@ export async function scoreLead(
     `Notes: ${input.notes ?? "(none)"}`,
   ].join("\n");
 
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${SCORING_PROMPT}\n\nLead:\n${lines}` }],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        maxOutputTokens: config.ai.maxOutputTokens,
-        // Disable default "thinking" latency (see extractCardData for rationale).
-        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
-      },
-    }),
-    SCORING_TIMEOUT_MS,
-    "lead scoring",
-  );
-
-  const text = response.text ?? "";
-  const parsed = extractJson(text) as Record<string, unknown>;
+  const parsed = await callJson({
+    feature: "lead_scoring",
+    parts: [{ text: `${SCORING_PROMPT}\n\nLead:\n${lines}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+    confidenceOf: (p) => clampScore(p.score),
+  });
 
   const score = clampScore(parsed.score);
   let temperature = str(parsed.temperature)?.toLowerCase();
@@ -343,17 +339,7 @@ export interface EnrichmentResult {
   talkingPoints: string[];
 }
 
-const ENRICHMENT_PROMPT = `You are a B2B sales-intelligence assistant. Given the contact details captured from a business card at a trade exhibition, infer useful sales context. Reason only from the data provided plus general knowledge about the named company or industry — do NOT fabricate specific private facts (revenue, headcount, personal details).
-
-Return ONLY a JSON object with exactly these keys:
-- "industry": the most likely industry/sector of the contact's company (e.g. "Oil & Gas", "Fintech", "Construction"), or null if unclear
-- "seniority": the seniority level implied by the job title, one of "C-Level", "VP", "Director", "Manager", "Individual Contributor", or null if unclear
-- "summary": a concise 1-2 sentence professional summary of who this contact is and why they may matter as a lead
-- "talkingPoints": an array of 2-4 short, specific conversation starters or follow-up angles a salesperson could use with this contact
-
-Keep it realistic and grounded. Use null where you genuinely cannot infer.`;
-
-export async function enrichContact(input: EnrichmentInput): Promise<EnrichmentResult> {
+export async function enrichContact(input: EnrichmentInput, ctx?: AiContext): Promise<EnrichmentResult> {
   const lines = [
     `Name: ${[input.firstName, input.lastName].filter(Boolean).join(" ") || "(unknown)"}`,
     `Job title: ${input.jobTitle ?? "(unknown)"}`,
@@ -365,33 +351,17 @@ export async function enrichContact(input: EnrichmentInput): Promise<EnrichmentR
     `Notes: ${input.notes ?? "(none)"}`,
   ].join("\n");
 
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${ENRICHMENT_PROMPT}\n\nContact:\n${lines}` }],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        maxOutputTokens: config.ai.maxOutputTokens,
-        // Disable default "thinking" latency (see extractCardData for rationale).
-        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
-      },
-    }),
-    SCORING_TIMEOUT_MS,
-    "contact enrichment",
-  );
-
-  const text = response.text ?? "";
-  const parsed = extractJson(text) as Record<string, unknown>;
+  const parsed = await callJson({
+    feature: "contact_enrichment",
+    parts: [{ text: `${ENRICHMENT_PROMPT}\n\nContact:\n${lines}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+  });
 
   const seniorityRaw = str(parsed.seniority);
   const allowedSeniority = ["C-Level", "VP", "Director", "Manager", "Individual Contributor"];
-  const seniority = seniorityRaw && allowedSeniority.some(s => s.toLowerCase() === seniorityRaw.toLowerCase())
-    ? allowedSeniority.find(s => s.toLowerCase() === seniorityRaw.toLowerCase())!
+  const seniority = seniorityRaw && allowedSeniority.some((s) => s.toLowerCase() === seniorityRaw.toLowerCase())
+    ? allowedSeniority.find((s) => s.toLowerCase() === seniorityRaw.toLowerCase())!
     : null;
 
   const talkingPoints = Array.isArray(parsed.talkingPoints)
@@ -428,14 +398,6 @@ export interface AssigneeRecommendation {
   reasoning: string;
 }
 
-const ASSIGNEE_PROMPT = `You are a sales operations assistant that routes an incoming lead to the best-fit sales rep. Choose exactly ONE candidate to own the lead.
-
-Weigh: current workload (prefer reps with fewer open leads so work stays balanced), and fit between the rep's job title/seniority and the lead's value and seniority (senior/high-value leads suit senior reps). Keep the team balanced overall.
-
-Return ONLY a JSON object with exactly these keys:
-- "userId": the integer id of the chosen candidate (MUST be one of the provided candidate ids)
-- "reasoning": one concise sentence (max ~20 words) explaining the choice`;
-
 // AI-recommended lead owner. Given the lead and a list of candidate reps (with
 // their current open-lead load), returns the chosen candidate id + reasoning.
 // Callers must validate the returned userId against their candidate list and fall
@@ -443,6 +405,7 @@ Return ONLY a JSON object with exactly these keys:
 export async function recommendAssignee(
   lead: AssigneeRecommendationInput,
   candidates: AssigneeCandidate[],
+  ctx?: AiContext,
 ): Promise<AssigneeRecommendation> {
   const leadLines = [
     `Contact: ${lead.contactName ?? "(unknown)"}`,
@@ -457,27 +420,13 @@ export async function recommendAssignee(
     .map((c) => `- id ${c.id}: ${c.name}${c.jobTitle ? ` (${c.jobTitle})` : ""} — ${c.openLeads} open leads`)
     .join("\n");
 
-  const response = await withTimeout(
-    ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${ASSIGNEE_PROMPT}\n\nLead:\n${leadLines}\n\nCandidates:\n${candLines}` }],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        maxOutputTokens: config.ai.maxOutputTokens,
-        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
-      },
-    }),
-    SCORING_TIMEOUT_MS,
-    "assignee recommendation",
-  );
+  const parsed = await callJson({
+    feature: "assignee_recommendation",
+    parts: [{ text: `${ASSIGNEE_PROMPT}\n\nLead:\n${leadLines}\n\nCandidates:\n${candLines}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+  });
 
-  const text = response.text ?? "";
-  const parsed = extractJson(text) as Record<string, unknown>;
   const idNum = typeof parsed.userId === "number" ? parsed.userId : Number(parsed.userId);
   const userId = Number.isFinite(idNum) ? Math.round(idNum) : candidates[0].id;
   return { userId, reasoning: str(parsed.reasoning) ?? "" };
@@ -486,3 +435,6 @@ export async function recommendAssignee(
 export function logAiError(context: string, err: unknown): void {
   logger.error({ err, context }, "AI request failed");
 }
+
+// Retained for back-compat with any importer that referenced the empty-fields shape.
+export { EMPTY_FIELDS };

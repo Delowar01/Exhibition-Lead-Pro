@@ -4312,6 +4312,185 @@ export const GetEmployeeAnalyticsResponse = zod.object({
 
 
 /**
+ * @summary Get the tenant's effective AI settings (defaults when unset)
+ */
+export const GetAiSettingsResponse = zod.object({
+  "companyId": zod.number(),
+  "provider": zod.string(),
+  "model": zod.string(),
+  "enabled": zod.boolean(),
+  "featureFlags": zod.object({
+  "card_extraction": zod.boolean(),
+  "lead_scoring": zod.boolean(),
+  "contact_enrichment": zod.boolean(),
+  "assignee_recommendation": zod.boolean()
+}),
+  "monthlyTokenBudget": zod.number().nullish(),
+  "monthlyCostBudgetUsd": zod.number().nullish(),
+  "hasCustomSettings": zod.boolean(),
+  "availableProviders": zod.array(zod.string()),
+  "updatedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Update the tenant's AI settings (primary_admin only)
+ */
+export const UpdateAiSettingsBody = zod.object({
+  "enabled": zod.boolean().optional(),
+  "provider": zod.string().optional(),
+  "model": zod.string().optional(),
+  "featureFlags": zod.object({
+  "card_extraction": zod.boolean().optional(),
+  "lead_scoring": zod.boolean().optional(),
+  "contact_enrichment": zod.boolean().optional(),
+  "assignee_recommendation": zod.boolean().optional()
+}).optional(),
+  "monthlyTokenBudget": zod.number().nullish(),
+  "monthlyCostBudgetUsd": zod.number().nullish()
+}).describe('Partial update of the tenant\'s AI settings. Any omitted field is left unchanged. Null clears a budget (unlimited).')
+
+export const UpdateAiSettingsResponse = zod.object({
+  "companyId": zod.number(),
+  "provider": zod.string(),
+  "model": zod.string(),
+  "enabled": zod.boolean(),
+  "featureFlags": zod.object({
+  "card_extraction": zod.boolean(),
+  "lead_scoring": zod.boolean(),
+  "contact_enrichment": zod.boolean(),
+  "assignee_recommendation": zod.boolean()
+}),
+  "monthlyTokenBudget": zod.number().nullish(),
+  "monthlyCostBudgetUsd": zod.number().nullish(),
+  "hasCustomSettings": zod.boolean(),
+  "availableProviders": zod.array(zod.string()),
+  "updatedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary AI usage & estimated cost for the tenant over a date range
+ */
+export const GetAiUsageQueryParams = zod.object({
+  "from": zod.coerce.string().optional(),
+  "to": zod.coerce.string().optional()
+})
+
+export const GetAiUsageResponse = zod.object({
+  "from": zod.string(),
+  "to": zod.string(),
+  "totals": zod.object({
+  "requests": zod.number(),
+  "success": zod.number(),
+  "errors": zod.number(),
+  "failureRate": zod.number(),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}),
+  "byFeature": zod.array(zod.object({
+  "requests": zod.number(),
+  "success": zod.number(),
+  "errors": zod.number(),
+  "failureRate": zod.number(),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "feature": zod.string()
+}))),
+  "recent": zod.array(zod.object({
+  "id": zod.number(),
+  "feature": zod.string(),
+  "status": zod.string(),
+  "model": zod.string(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "latencyMs": zod.number(),
+  "confidence": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary AI provider configuration & recent reliability for the tenant
+ */
+export const GetAiHealthResponse = zod.object({
+  "provider": zod.string(),
+  "model": zod.string(),
+  "configured": zod.boolean(),
+  "status": zod.string(),
+  "pricingAvailable": zod.boolean(),
+  "last24h": zod.object({
+  "requests": zod.number(),
+  "errors": zod.number(),
+  "failureRate": zod.number(),
+  "avgLatencyMs": zod.number()
+}),
+  "checkedAt": zod.string()
+})
+
+
+/**
+ * @summary Platform-wide AI usage & cost across all tenants (platform_owner only)
+ */
+export const GetAiPlatformUsageQueryParams = zod.object({
+  "from": zod.coerce.string().optional(),
+  "to": zod.coerce.string().optional()
+})
+
+export const GetAiPlatformUsageResponse = zod.object({
+  "from": zod.string(),
+  "to": zod.string(),
+  "totals": zod.object({
+  "requests": zod.number(),
+  "success": zod.number(),
+  "errors": zod.number(),
+  "failureRate": zod.number(),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}),
+  "byFeature": zod.array(zod.object({
+  "requests": zod.number(),
+  "success": zod.number(),
+  "errors": zod.number(),
+  "failureRate": zod.number(),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "feature": zod.string()
+}))),
+  "byCompany": zod.array(zod.object({
+  "requests": zod.number(),
+  "success": zod.number(),
+  "errors": zod.number(),
+  "failureRate": zod.number(),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "companyId": zod.number().nullable(),
+  "companyName": zod.string().nullable()
+})))
+})
+
+
+/**
  * @summary Register an Expo push token for the current user's device
  */
 export const RegisterPushTokenBody = zod.object({

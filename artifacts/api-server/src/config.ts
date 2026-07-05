@@ -97,12 +97,35 @@ export const config = {
   },
 
   ai: {
+    // Active AI provider (Stage 5.0). Gemini is the sole active provider; the
+    // abstraction layer (src/ai/) supports adding more without touching callers.
+    provider: process.env.AI_PROVIDER ?? "gemini",
     model: "gemini-2.5-flash",
     extractionTimeoutMs: 30_000,
     scoringTimeoutMs: 20_000,
     maxOutputTokens: 8192,
     // gemini-2.5-flash runs "thinking" on by default; 0 disables it for speed.
     thinkingBudget: 0,
+    // Shared retry policy for the AI runner. Default 0 preserves the historical
+    // single-attempt behavior + latency exactly; raise to opt into transient-error
+    // retries. Backoff is multiplied by the attempt number.
+    maxRetries: numEnv("AI_MAX_RETRIES", 0, 0),
+    retryBackoffMs: numEnv("AI_RETRY_BACKOFF_MS", 500, 0),
+    // Health-probe timeout for provider reachability checks.
+    healthTimeoutMs: numEnv("AI_HEALTH_TIMEOUT_MS", 8_000, 100),
+    // Per-tenant AI settings are cached in-process for this long to keep the hot
+    // scan/score path from re-reading the row on every call. Short TTL so an admin
+    // toggle takes effect quickly.
+    settingsCacheTtlMs: numEnv("AI_SETTINGS_CACHE_TTL_MS", 60_000, 0),
+    // ESTIMATED provider prices in micro-USD (1e-6 USD) per 1,000 tokens, used for
+    // cost VISIBILITY only (never billing). Override via env if prices change; an
+    // unknown model resolves to 0 cost (reported as "estimate unavailable").
+    pricing: {
+      "gemini-2.5-flash": {
+        inputPer1kMicroUsd: numEnv("AI_PRICE_FLASH_INPUT_PER1K_MICROUSD", 300, 0),
+        outputPer1kMicroUsd: numEnv("AI_PRICE_FLASH_OUTPUT_PER1K_MICROUSD", 2_500, 0),
+      },
+    } as Record<string, { inputPer1kMicroUsd: number; outputPer1kMicroUsd: number }>,
   },
 
   objectStorage: {

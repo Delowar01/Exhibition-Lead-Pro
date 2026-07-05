@@ -25,6 +25,10 @@ import type {
   ActivityItem,
   AddDocumentVersionInput,
   AdminDashboard,
+  AiHealthResponse,
+  AiPlatformUsageResponse,
+  AiSettingsResponse,
+  AiUsageResponse,
   AnalyticsScopeOptions,
   AssignLeadInput,
   AssigneeRecommendation,
@@ -93,6 +97,8 @@ import type {
   FollowUpUpdate,
   ForceLogoutResult,
   ForgotPasswordInput,
+  GetAiPlatformUsageParams,
+  GetAiUsageParams,
   GetAnalyticsOverviewParams,
   GetDepartmentAnalyticsParams,
   GetEmployeeAnalyticsParams,
@@ -252,6 +258,7 @@ import type {
   UndoMergeResponse,
   UnifiedDashboard,
   UnreadCountResponse,
+  UpdateAiSettings,
   UpdateNotificationPreferenceInput,
   User,
   UserDetail,
@@ -12172,6 +12179,399 @@ export function useGetEmployeeAnalytics<TData = Awaited<ReturnType<typeof getEmp
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetEmployeeAnalyticsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiSettingsUrl = () => {
+
+
+
+
+  return `/api/ai/settings`
+}
+
+/**
+ * @summary Get the tenant's effective AI settings (defaults when unset)
+ */
+export const getAiSettings = async ( options?: RequestInit): Promise<AiSettingsResponse> => {
+
+  return customFetch<AiSettingsResponse>(getGetAiSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiSettingsQueryKey = () => {
+    return [
+    `/api/ai/settings`
+    ] as const;
+    }
+
+
+export const getGetAiSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getAiSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiSettings>>> = ({ signal }) => getAiSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getAiSettings>>>
+export type GetAiSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the tenant's effective AI settings (defaults when unset)
+ */
+
+export function useGetAiSettings<TData = Awaited<ReturnType<typeof getAiSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateAiSettingsUrl = () => {
+
+
+
+
+  return `/api/ai/settings`
+}
+
+/**
+ * @summary Update the tenant's AI settings (primary_admin only)
+ */
+export const updateAiSettings = async (updateAiSettings: UpdateAiSettings, options?: RequestInit): Promise<AiSettingsResponse> => {
+
+  return customFetch<AiSettingsResponse>(getUpdateAiSettingsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateAiSettings,)
+  }
+);}
+
+
+
+
+export const getUpdateAiSettingsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAiSettings>>, TError,{data: BodyType<UpdateAiSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAiSettings>>, TError,{data: BodyType<UpdateAiSettings>}, TContext> => {
+
+const mutationKey = ['updateAiSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAiSettings>>, {data: BodyType<UpdateAiSettings>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAiSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAiSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateAiSettings>>>
+    export type UpdateAiSettingsMutationBody = BodyType<UpdateAiSettings>
+    export type UpdateAiSettingsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the tenant's AI settings (primary_admin only)
+ */
+export const useUpdateAiSettings = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAiSettings>>, TError,{data: BodyType<UpdateAiSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAiSettings>>,
+        TError,
+        {data: BodyType<UpdateAiSettings>},
+        TContext
+      > => {
+      return useMutation(getUpdateAiSettingsMutationOptions(options));
+    }
+
+export const getGetAiUsageUrl = (params?: GetAiUsageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/usage?${stringifiedParams}` : `/api/ai/usage`
+}
+
+/**
+ * @summary AI usage & estimated cost for the tenant over a date range
+ */
+export const getAiUsage = async (params?: GetAiUsageParams, options?: RequestInit): Promise<AiUsageResponse> => {
+
+  return customFetch<AiUsageResponse>(getGetAiUsageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiUsageQueryKey = (params?: GetAiUsageParams,) => {
+    return [
+    `/api/ai/usage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiUsageQueryOptions = <TData = Awaited<ReturnType<typeof getAiUsage>>, TError = ErrorType<unknown>>(params?: GetAiUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiUsageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiUsage>>> = ({ signal }) => getAiUsage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiUsage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getAiUsage>>>
+export type GetAiUsageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary AI usage & estimated cost for the tenant over a date range
+ */
+
+export function useGetAiUsage<TData = Awaited<ReturnType<typeof getAiUsage>>, TError = ErrorType<unknown>>(
+ params?: GetAiUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiUsageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiHealthUrl = () => {
+
+
+
+
+  return `/api/ai/health`
+}
+
+/**
+ * @summary AI provider configuration & recent reliability for the tenant
+ */
+export const getAiHealth = async ( options?: RequestInit): Promise<AiHealthResponse> => {
+
+  return customFetch<AiHealthResponse>(getGetAiHealthUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiHealthQueryKey = () => {
+    return [
+    `/api/ai/health`
+    ] as const;
+    }
+
+
+export const getGetAiHealthQueryOptions = <TData = Awaited<ReturnType<typeof getAiHealth>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiHealthQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiHealth>>> = ({ signal }) => getAiHealth({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiHealth>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiHealthQueryResult = NonNullable<Awaited<ReturnType<typeof getAiHealth>>>
+export type GetAiHealthQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary AI provider configuration & recent reliability for the tenant
+ */
+
+export function useGetAiHealth<TData = Awaited<ReturnType<typeof getAiHealth>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiHealthQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiPlatformUsageUrl = (params?: GetAiPlatformUsageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/platform/usage?${stringifiedParams}` : `/api/ai/platform/usage`
+}
+
+/**
+ * @summary Platform-wide AI usage & cost across all tenants (platform_owner only)
+ */
+export const getAiPlatformUsage = async (params?: GetAiPlatformUsageParams, options?: RequestInit): Promise<AiPlatformUsageResponse> => {
+
+  return customFetch<AiPlatformUsageResponse>(getGetAiPlatformUsageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiPlatformUsageQueryKey = (params?: GetAiPlatformUsageParams,) => {
+    return [
+    `/api/ai/platform/usage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiPlatformUsageQueryOptions = <TData = Awaited<ReturnType<typeof getAiPlatformUsage>>, TError = ErrorType<unknown>>(params?: GetAiPlatformUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiPlatformUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiPlatformUsageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiPlatformUsage>>> = ({ signal }) => getAiPlatformUsage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiPlatformUsage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiPlatformUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getAiPlatformUsage>>>
+export type GetAiPlatformUsageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Platform-wide AI usage & cost across all tenants (platform_owner only)
+ */
+
+export function useGetAiPlatformUsage<TData = Awaited<ReturnType<typeof getAiPlatformUsage>>, TError = ErrorType<unknown>>(
+ params?: GetAiPlatformUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiPlatformUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiPlatformUsageQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

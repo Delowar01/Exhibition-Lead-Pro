@@ -2920,6 +2920,112 @@ export interface ScopedAnalytics {
   headcount: number;
 }
 
+export interface AiFeatureFlags {
+  card_extraction: boolean;
+  lead_scoring: boolean;
+  contact_enrichment: boolean;
+  assignee_recommendation: boolean;
+}
+
+export interface AiSettingsResponse {
+  companyId: number;
+  provider: string;
+  model: string;
+  enabled: boolean;
+  featureFlags: AiFeatureFlags;
+  monthlyTokenBudget?: number | null;
+  monthlyCostBudgetUsd?: number | null;
+  hasCustomSettings: boolean;
+  availableProviders: string[];
+  updatedAt?: string | null;
+}
+
+export type UpdateAiSettingsFeatureFlags = {
+  card_extraction?: boolean;
+  lead_scoring?: boolean;
+  contact_enrichment?: boolean;
+  assignee_recommendation?: boolean;
+};
+
+/**
+ * Partial update of the tenant's AI settings. Any omitted field is left unchanged. Null clears a budget (unlimited).
+ */
+export interface UpdateAiSettings {
+  enabled?: boolean;
+  provider?: string;
+  model?: string;
+  featureFlags?: UpdateAiSettingsFeatureFlags;
+  monthlyTokenBudget?: number | null;
+  monthlyCostBudgetUsd?: number | null;
+}
+
+export interface AiUsageAgg {
+  requests: number;
+  success: number;
+  errors: number;
+  failureRate: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  avgLatencyMs: number;
+}
+
+export type AiFeatureUsage = AiUsageAgg & {
+  feature: string;
+};
+
+export type AiCompanyUsage = AiUsageAgg & ({
+  companyId: number | null;
+  companyName: string | null;
+});
+
+export interface AiRecentInvocation {
+  id: number;
+  feature: string;
+  status: string;
+  model: string;
+  totalTokens: number;
+  costUsd: number;
+  latencyMs: number;
+  confidence?: number | null;
+  userId?: number | null;
+  createdAt: string;
+}
+
+export interface AiUsageResponse {
+  from: string;
+  to: string;
+  totals: AiUsageAgg;
+  byFeature: AiFeatureUsage[];
+  recent: AiRecentInvocation[];
+}
+
+export interface AiPlatformUsageResponse {
+  from: string;
+  to: string;
+  totals: AiUsageAgg;
+  byFeature: AiFeatureUsage[];
+  byCompany: AiCompanyUsage[];
+}
+
+export interface AiHealthLast24h {
+  requests: number;
+  errors: number;
+  failureRate: number;
+  avgLatencyMs: number;
+}
+
+export interface AiHealthResponse {
+  provider: string;
+  model: string;
+  configured: boolean;
+  status: string;
+  pricingAvailable: boolean;
+  last24h: AiHealthLast24h;
+  checkedAt: string;
+}
+
 export interface DashboardLeadKpis {
   total: number;
   today: number;
@@ -4390,6 +4496,16 @@ export type GetEmployeeAnalyticsParams = {
 id: number;
 dateFrom?: string;
 dateTo?: string;
+};
+
+export type GetAiUsageParams = {
+from?: string;
+to?: string;
+};
+
+export type GetAiPlatformUsageParams = {
+from?: string;
+to?: string;
 };
 
 export type ListFollowUpsParams = {

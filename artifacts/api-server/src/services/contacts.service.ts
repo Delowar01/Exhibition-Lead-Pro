@@ -185,6 +185,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
         const score = await scoreLead(
           { firstName: finalContact.firstName, lastName: finalContact.lastName, jobTitle: finalContact.jobTitle, contactCompany: finalContact.contactCompany, email: finalContact.email, mobile: finalContact.mobile, website: finalContact.website, linkedin: finalContact.linkedin, country: finalContact.country, notes: finalContact.notes },
           eventName,
+          { companyId: finalContact.companyId, userId: ownerId },
         );
         const isHot = score.temperature === "hot";
         // Re-target the still-existing, still-original row. If the contact was
@@ -795,12 +796,16 @@ export async function enrichContact(user: AuthUser, id: number) {
 
   let result;
   try {
-    result = await aiEnrichContact({
-      firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle,
-      contactCompany: c.contactCompany, email: c.email, website: c.website,
-      linkedin: c.linkedin, country: c.country, notes: c.notes,
-    });
+    result = await aiEnrichContact(
+      {
+        firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle,
+        contactCompany: c.contactCompany, email: c.email, website: c.website,
+        linkedin: c.linkedin, country: c.country, notes: c.notes,
+      },
+      { companyId: c.companyId, userId: user.id },
+    );
   } catch (aiErr) {
+    if (aiErr instanceof AppError) throw aiErr;
     logAiError("contact-enrichment", aiErr);
     throw new AppError(502, "AI enrichment is temporarily unavailable. Please try again.");
   }

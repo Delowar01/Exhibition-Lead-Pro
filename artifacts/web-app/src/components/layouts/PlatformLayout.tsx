@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Building2, Users, CreditCard, BarChart3, Activity, Settings, LayoutDashboard, LogOut } from "lucide-react";
+import { Building2, Users, CreditCard, BarChart3, Activity, Settings, LayoutDashboard, LogOut, Sparkles } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
 
@@ -23,6 +23,7 @@ export function PlatformLayout({ children }: { children: React.ReactNode }) {
     { name: "Users", href: "/platform/users", icon: Users },
     { name: "Subscriptions", href: "/platform/subscriptions", icon: CreditCard },
     { name: "Analytics", href: "/platform/analytics", icon: BarChart3 },
+    { name: "AI Intelligence", href: "/platform/ai", icon: Sparkles },
     { name: "Activity", href: "/platform/activity", icon: Activity },
     { name: "Settings", href: "/platform/settings", icon: Settings },
   ];

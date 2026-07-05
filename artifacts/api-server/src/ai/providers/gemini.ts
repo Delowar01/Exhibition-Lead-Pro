@@ -1,0 +1,55 @@
+import { ai } from "@workspace/integrations-gemini-ai";
+import type { AiProvider, AiRequest, AiResult, AiUsage } from "../types.js";
+import { withTimeout } from "../runner.js";
+
+// Gemini adapter — wraps @workspace/integrations-gemini-ai (Google GenAI SDK routed
+// through the Replit AI integration proxy). This is the sole active provider in Stage
+// 5.0; it maps the provider-agnostic AiRequest onto the Gemini `generateContent` shape
+// and normalizes token usage back out.
+
+interface UsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
+function readUsage(meta: UsageMetadata | undefined): AiUsage {
+  const inputTokens = meta?.promptTokenCount ?? 0;
+  const outputTokens = meta?.candidatesTokenCount ?? 0;
+  const totalTokens = meta?.totalTokenCount ?? inputTokens + outputTokens;
+  return { inputTokens, outputTokens, totalTokens };
+}
+
+export const geminiProvider: AiProvider = {
+  name: "gemini",
+
+  isConfigured(): boolean {
+    return Boolean(
+      process.env.AI_INTEGRATIONS_GEMINI_API_KEY && process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+    );
+  },
+
+  async generate(req: AiRequest): Promise<AiResult> {
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: req.model,
+        contents: [{ role: "user", parts: req.parts }],
+        config: {
+          ...(req.responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
+          ...(req.maxOutputTokens ? { maxOutputTokens: req.maxOutputTokens } : {}),
+          ...(req.thinkingBudget !== undefined
+            ? { thinkingConfig: { thinkingBudget: req.thinkingBudget } }
+            : {}),
+        },
+      }),
+      req.timeoutMs,
+      `gemini ${req.model}`,
+    );
+
+    return {
+      text: response.text ?? "",
+      usage: readUsage(response.usageMetadata as UsageMetadata | undefined),
+      model: req.model,
+    };
+  },
+};

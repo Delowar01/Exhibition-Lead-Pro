@@ -54,6 +54,8 @@ tags:
     description: Organization-defined custom fields for leads/contacts
   - name: territories
     description: Sales territory definitions
+  - name: ai
+    description: AI platform settings, usage & cost visibility, and provider health
 
 paths:
   /healthz:
@@ -3533,6 +3535,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ScopedAnalytics"
+
+  # AI PLATFORM (Stage 5.0)
+  /ai/settings:
+    get:
+      operationId: getAiSettings
+      tags: [ai]
+      summary: Get the tenant's effective AI settings (defaults when unset)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiSettingsResponse"
+    patch:
+      operationId: updateAiSettings
+      tags: [ai]
+      summary: Update the tenant's AI settings (primary_admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAiSettings"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiSettingsResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/usage:
+    get:
+      operationId: getAiUsage
+      tags: [ai]
+      summary: AI usage & estimated cost for the tenant over a date range
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiUsageResponse"
+
+  /ai/health:
+    get:
+      operationId: getAiHealth
+      tags: [ai]
+      summary: AI provider configuration & recent reliability for the tenant
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiHealthResponse"
+
+  /ai/platform/usage:
+    get:
+      operationId: getAiPlatformUsage
+      tags: [ai]
+      summary: Platform-wide AI usage & cost across all tenants (platform_owner only)
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiPlatformUsageResponse"
 
   # PUSH NOTIFICATIONS
   /push/register:
@@ -8914,6 +9010,239 @@ components:
             $ref: "#/components/schemas/AnalyticsActivityItem"
         headcount:
           type: integer
+
+    AiFeatureFlags:
+      type: object
+      required: [card_extraction, lead_scoring, contact_enrichment, assignee_recommendation]
+      properties:
+        card_extraction:
+          type: boolean
+        lead_scoring:
+          type: boolean
+        contact_enrichment:
+          type: boolean
+        assignee_recommendation:
+          type: boolean
+
+    AiSettingsResponse:
+      type: object
+      required:
+        [
+          companyId,
+          provider,
+          model,
+          enabled,
+          featureFlags,
+          hasCustomSettings,
+          availableProviders,
+        ]
+      properties:
+        companyId:
+          type: integer
+        provider:
+          type: string
+        model:
+          type: string
+        enabled:
+          type: boolean
+        featureFlags:
+          $ref: "#/components/schemas/AiFeatureFlags"
+        monthlyTokenBudget:
+          type: integer
+          nullable: true
+        monthlyCostBudgetUsd:
+          type: number
+          nullable: true
+        hasCustomSettings:
+          type: boolean
+        availableProviders:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          nullable: true
+
+    UpdateAiSettings:
+      type: object
+      description: Partial update of the tenant's AI settings. Any omitted field is left unchanged. Null clears a budget (unlimited).
+      properties:
+        enabled:
+          type: boolean
+        provider:
+          type: string
+        model:
+          type: string
+        featureFlags:
+          type: object
+          properties:
+            card_extraction:
+              type: boolean
+            lead_scoring:
+              type: boolean
+            contact_enrichment:
+              type: boolean
+            assignee_recommendation:
+              type: boolean
+        monthlyTokenBudget:
+          type: integer
+          nullable: true
+        monthlyCostBudgetUsd:
+          type: number
+          nullable: true
+
+    AiUsageAgg:
+      type: object
+      required:
+        [
+          requests,
+          success,
+          errors,
+          failureRate,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          costUsd,
+          avgLatencyMs,
+        ]
+      properties:
+        requests:
+          type: integer
+        success:
+          type: integer
+        errors:
+          type: integer
+        failureRate:
+          type: number
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        totalTokens:
+          type: integer
+        costUsd:
+          type: number
+        avgLatencyMs:
+          type: integer
+
+    AiFeatureUsage:
+      allOf:
+        - $ref: "#/components/schemas/AiUsageAgg"
+        - type: object
+          required: [feature]
+          properties:
+            feature:
+              type: string
+
+    AiCompanyUsage:
+      allOf:
+        - $ref: "#/components/schemas/AiUsageAgg"
+        - type: object
+          required: [companyId, companyName]
+          properties:
+            companyId:
+              type: integer
+              nullable: true
+            companyName:
+              type: string
+              nullable: true
+
+    AiRecentInvocation:
+      type: object
+      required: [id, feature, status, model, totalTokens, costUsd, latencyMs, createdAt]
+      properties:
+        id:
+          type: integer
+        feature:
+          type: string
+        status:
+          type: string
+        model:
+          type: string
+        totalTokens:
+          type: integer
+        costUsd:
+          type: number
+        latencyMs:
+          type: integer
+        confidence:
+          type: integer
+          nullable: true
+        userId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+
+    AiUsageResponse:
+      type: object
+      required: [from, to, totals, byFeature, recent]
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        totals:
+          $ref: "#/components/schemas/AiUsageAgg"
+        byFeature:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiFeatureUsage"
+        recent:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiRecentInvocation"
+
+    AiPlatformUsageResponse:
+      type: object
+      required: [from, to, totals, byFeature, byCompany]
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        totals:
+          $ref: "#/components/schemas/AiUsageAgg"
+        byFeature:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiFeatureUsage"
+        byCompany:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCompanyUsage"
+
+    AiHealthLast24h:
+      type: object
+      required: [requests, errors, failureRate, avgLatencyMs]
+      properties:
+        requests:
+          type: integer
+        errors:
+          type: integer
+        failureRate:
+          type: number
+        avgLatencyMs:
+          type: integer
+
+    AiHealthResponse:
+      type: object
+      required: [provider, model, configured, status, pricingAvailable, last24h, checkedAt]
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        configured:
+          type: boolean
+        status:
+          type: string
+        pricingAvailable:
+          type: boolean
+        last24h:
+          $ref: "#/components/schemas/AiHealthLast24h"
+        checkedAt:
+          type: string
 
     DashboardLeadKpis:
       type: object

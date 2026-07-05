@@ -46,12 +46,15 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   let ocrResult: Awaited<ReturnType<typeof extractCardData>> | null = null;
   let ocrErr: unknown = null;
   try {
-    ocrResult = await extractCardData(imageData, lang);
+    ocrResult = await extractCardData(imageData, lang, { companyId, userId: user.id });
   } catch (err) {
     ocrErr = err;
   }
 
   if (ocrErr !== null) {
+    // Enforcement rejections (AI disabled / budget exhausted) surface with their real
+    // status instead of being masked as a generic "could not read the card" 502.
+    if (ocrErr instanceof AppError) throw ocrErr;
     logAiError("scan-ocr", ocrErr);
     const failed = await scansRepo.update(scan.id, { status: "failed" });
     return {
@@ -132,8 +135,9 @@ export async function reprocessScan(user: AuthUser, id: number, body: { appLangu
 
   let ocr: Awaited<ReturnType<typeof extractCardData>>;
   try {
-    ocr = await extractCardData(base64, lang);
+    ocr = await extractCardData(base64, lang, { companyId: user.companyId, userId: user.id });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     logAiError("scan-reprocess", err);
     await scansRepo.update(id, { status: "failed" });
     throw new AppError(502, "Could not re-read the card. Please try again or replace the image.");
@@ -175,8 +179,9 @@ export async function replaceScanImage(user: AuthUser, id: number, body: { image
 
   let ocr: Awaited<ReturnType<typeof extractCardData>>;
   try {
-    ocr = await extractCardData(body.imageData, lang);
+    ocr = await extractCardData(body.imageData, lang, { companyId: user.companyId, userId: user.id });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     logAiError("scan-replace-ocr", err);
     await scansRepo.update(id, { status: "failed" });
     throw new AppError(502, "Image replaced, but the card could not be read. Try Reprocess OCR.");
@@ -207,18 +212,23 @@ export async function scoreScan(user: AuthUser, id: number) {
   const fields = JSON.parse(scan.extractedData) as ExtractedCardData;
 
   try {
-    const result = await scoreLead({
-      firstName: fields.firstName,
-      lastName: fields.lastName,
-      jobTitle: fields.jobTitle,
-      contactCompany: fields.company,
-      email: fields.email,
-      mobile: fields.mobile,
-      website: fields.website,
-      linkedin: fields.linkedin,
-    });
+    const result = await scoreLead(
+      {
+        firstName: fields.firstName,
+        lastName: fields.lastName,
+        jobTitle: fields.jobTitle,
+        contactCompany: fields.company,
+        email: fields.email,
+        mobile: fields.mobile,
+        website: fields.website,
+        linkedin: fields.linkedin,
+      },
+      undefined,
+      { companyId: user.companyId, userId: user.id },
+    );
     return { score: result.score, temperature: result.temperature, reasoning: result.reasoning };
   } catch (err) {
+    if (err instanceof AppError) throw err;
     logAiError("scan-score", err);
     throw new AppError(502, "AI scoring is temporarily unavailable. Please try again.");
   }

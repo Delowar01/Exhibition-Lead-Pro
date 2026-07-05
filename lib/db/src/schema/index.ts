@@ -43,3 +43,5 @@ export * from "./export_runs";
 export * from "./assignment_cursors";
 export * from "./saved_searches";
 export * from "./recent_searches";
+export * from "./ai_settings";
+export * from "./ai_invocations";

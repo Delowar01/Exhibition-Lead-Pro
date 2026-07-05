@@ -15,6 +15,7 @@ import PlatformSubscriptions from "@/pages/platform/Subscriptions";
 import PlatformAnalytics from "@/pages/platform/Analytics";
 import PlatformActivity from "@/pages/platform/Activity";
 import PlatformSettings from "@/pages/platform/Settings";
+import PlatformAiIntelligence from "@/pages/platform/AiIntelligence";
 
 import AdminDashboard from "@/pages/admin/Dashboard";
 import AdminContacts from "@/pages/admin/Contacts";
@@ -38,6 +39,7 @@ import AdminSecurity from "@/pages/admin/Security";
 import AdminProfile from "@/pages/admin/Profile";
 import AdminReports from "@/pages/admin/Reports";
 import AdminAnalytics from "@/pages/admin/Analytics";
+import AdminAiSettings from "@/pages/admin/AiSettings";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
 import AdminScan from "@/pages/admin/Scan";
@@ -173,6 +175,9 @@ function Router() {
       <Route path="/platform/activity">
         {() => <ProtectedRoute component={PlatformActivity} role="platform" layout={PlatformLayout} />}
       </Route>
+      <Route path="/platform/ai">
+        {() => <ProtectedRoute component={PlatformAiIntelligence} role="platform" layout={PlatformLayout} />}
+      </Route>
       <Route path="/platform/settings">
         {() => <ProtectedRoute component={PlatformSettings} role="platform" layout={PlatformLayout} />}
       </Route>
@@ -243,6 +248,9 @@ function Router() {
       </Route>
       <Route path="/admin/analytics">
         {() => <ProtectedRoute component={AdminAnalytics} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/ai">
+        {() => <ProtectedRoute component={AdminAiSettings} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/subscription">
         {() => <ProtectedRoute component={AdminSubscription} role="admin" layout={AdminLayout} />}
