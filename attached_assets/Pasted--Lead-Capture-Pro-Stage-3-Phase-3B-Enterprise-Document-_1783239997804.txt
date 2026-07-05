@@ -1,0 +1,299 @@
+# Lead Capture Pro
+# Stage 3 – Phase 3B
+# Enterprise Document Management
+
+Objective
+
+Complete Stage 3 by implementing the Enterprise Document Management module.
+
+This is the remaining increment of Phase 3.
+
+The CRM Lifecycle Backbone (Phase 3A) is already complete and approved.
+
+This phase must complete the CRM foundation before Workflow Automation begins.
+
+This implementation must remain fully additive.
+
+No regressions.
+
+No breaking API changes.
+
+No breaking database changes unless absolutely necessary.
+
+Preserve:
+
+- Enterprise Privacy
+- Multi-tenancy
+- RBAC
+- Repository Layer
+- Service Layer
+- Contract-first architecture
+- Mobile compatibility
+- Existing CRM functionality
+
+--------------------------------------------------
+Documents should become first-class objects.
+--------------------------------------------------
+
+The system should support attaching documents to multiple entity types.
+
+Supported entities:
+
+• Company
+• Contact
+• Lead
+• Opportunity
+• Event
+
+Each document must remain tenant-scoped.
+
+--------------------------------------------------
+Supported document categories
+--------------------------------------------------
+
+Company
+
+- Company Profile
+- Trade License
+- VAT Registration
+- Certificates
+- Contracts
+- Other Files
+
+Lead
+
+- Quotations
+- Proposals
+- BOQs
+- Drawings
+- Images
+- Presentations
+- PDFs
+- Other Files
+
+Contact
+
+- Business Cards
+- ID
+- Passport
+- Attachments
+- Emails
+
+Opportunity
+
+- Purchase Orders
+- Contracts
+- Invoices
+- Delivery Notes
+- Signed Agreements
+
+Event
+
+- Floor Plans
+- Marketing Files
+- Visitor Lists
+- Designs
+- Images
+- PDFs
+
+--------------------------------------------------
+Document Features
+--------------------------------------------------
+
+Implement:
+
+- Upload
+- Download
+- Preview
+- Rename
+- Move
+- Delete
+- Restore
+- Metadata
+- Search
+- Filters
+- Categories
+- Upload Date
+- Uploaded By
+- File Size
+- File Type
+
+--------------------------------------------------
+Version Management
+--------------------------------------------------
+
+Support document versions.
+
+Example:
+
+Quotation V1
+
+↓
+
+Quotation V2
+
+↓
+
+Quotation Final
+
+↓
+
+Signed Copy
+
+Never overwrite previous versions.
+
+--------------------------------------------------
+Permissions
+--------------------------------------------------
+
+Honor Enterprise Privacy.
+
+Platform Owner
+
+NO access.
+
+Primary Admin
+
+Full control.
+
+Admin
+
+Permission-based.
+
+Employee
+
+Permission-based.
+
+All document APIs must enforce:
+
+- Authentication
+- Tenant isolation
+- RBAC
+- Entity ownership
+
+--------------------------------------------------
+Storage
+--------------------------------------------------
+
+Use enterprise storage architecture.
+
+Store:
+
+Metadata
+
+↓
+
+PostgreSQL
+
+Files
+
+↓
+
+Object Storage
+
+Do NOT store large binary files inside PostgreSQL.
+
+Support:
+
+- Signed URLs
+- Secure download
+- MIME validation
+- File size validation
+
+Design storage to support future cloud providers.
+
+--------------------------------------------------
+User Interface
+--------------------------------------------------
+
+Web
+
+Create a professional Document Manager.
+
+Features:
+
+- Folder View
+- List View
+- Search
+- Filters
+- Preview
+- Drag & Drop Upload
+- Version History
+
+--------------------------------------------------
+Mobile
+
+Support:
+
+- Upload
+- View
+- Download
+- Preview
+- Camera Upload
+- Gallery Upload
+
+Maintain EN/AR parity.
+
+--------------------------------------------------
+API
+
+Follow contract-first development.
+
+Update:
+
+OpenAPI
+
+↓
+
+Orval
+
+↓
+
+Generated Clients
+
+↓
+
+Backend
+
+↓
+
+Frontend
+
+--------------------------------------------------
+Testing
+--------------------------------------------------
+
+Add automated tests for:
+
+- Upload
+- Download
+- Delete
+- Versioning
+- Permissions
+- Tenant isolation
+- Search
+- Metadata
+
+Run:
+
+- Full typecheck
+- Complete regression suite
+
+No regressions.
+
+--------------------------------------------------
+Deliverables
+
+Provide:
+
+- Architecture summary
+- APIs added
+- Database changes
+- Storage architecture
+- Mobile implementation
+- Web implementation
+- Tests added
+- Files modified
+- Validation report
+
+Wait for review before starting Phase 4.
