@@ -5,10 +5,12 @@ import * as leadsRepo from "../repositories/leads.repository.js";
 import * as pipelineRepo from "../repositories/pipeline_stages.repository.js";
 import * as tagsRepo from "../repositories/tags.repository.js";
 import * as activitiesRepo from "../repositories/lead_activities.repository.js";
+import * as territoriesRepo from "../repositories/territories.repository.js";
 import { ensureStages } from "./pipeline.service.js";
 import * as customFields from "./custom_fields.service.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { convertCurrency } from "../lib/currency.js";
+import { recommendAssignee as aiRecommendAssignee, logAiError } from "../lib/ai.js";
 
 const PIPELINE_STAGES = ["prospect", "qualified", "proposal_sent", "negotiation", "won", "lost"];
 
@@ -351,56 +353,225 @@ export async function deleteLead(user: AuthUser, id: number) {
   return { success: true, message: "Lead deleted" };
 }
 
+export const ASSIGN_STRATEGIES = ["manual", "round_robin", "load_balanced", "availability", "territory", "ai"] as const;
+export type AssignStrategy = (typeof ASSIGN_STRATEGIES)[number];
+
 export interface AssignLeadInput {
   assignedToId?: number | null;
   teamId?: number | null;
+  strategy?: AssignStrategy;
+}
+
+// Build the assignedToId lead-history row for an owner change (or [] if unchanged).
+function assignHistory(existing: leadsRepo.LeadRow, newAssigneeId: number | null, userId: number): HistoryInsert[] {
+  if (newAssigneeId === existing.assignedToId) return [];
+  return [{ leadId: existing.id, changedBy: userId, fieldName: "assignedToId", oldValue: existing.assignedToId != null ? String(existing.assignedToId) : null, newValue: newAssigneeId != null ? String(newAssigneeId) : null }];
+}
+
+// Resolve the lead's contact attributes (country/industry/etc.) against the
+// tenant's territories (ordered by sortOrder). A territory matches when EVERY
+// non-empty criteria dimension it declares includes the lead's value (OR within a
+// dimension, AND across dimensions). Returns the first matching territory or null.
+async function resolveTerritory(user: AuthUser, contactAttrs: { country?: string | null; industry?: string | null } | null): Promise<{ assignedToId: number | null; teamId: number | null; name: string } | null> {
+  if (!contactAttrs) return null;
+  const { rows } = await territoriesRepo.list(user);
+  const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
+  const country = norm(contactAttrs.country);
+  const industry = norm(contactAttrs.industry);
+  for (const t of rows) {
+    let criteria: { countries?: string[]; regions?: string[]; industries?: string[]; cities?: string[] } = {};
+    try { criteria = t.matchCriteria ? JSON.parse(t.matchCriteria) : {}; } catch { criteria = {}; }
+    const dims: Array<{ values: string[]; test: boolean }> = [];
+    if (Array.isArray(criteria.countries) && criteria.countries.length > 0) dims.push({ values: criteria.countries.map(norm), test: !!country && criteria.countries.map(norm).includes(country) });
+    if (Array.isArray(criteria.industries) && criteria.industries.length > 0) dims.push({ values: criteria.industries.map(norm), test: !!industry && criteria.industries.map(norm).includes(industry) });
+    // regions/cities have no matching contact attribute yet — a territory that
+    // declares ONLY those dimensions can never match and is skipped.
+    if (dims.length === 0) continue;
+    if (dims.every((d) => d.test)) return { assignedToId: t.assignedToId ?? null, teamId: t.teamId ?? null, name: t.name };
+  }
+  return null;
+}
+
+// Resolve the owner id for a rule-based strategy (everything except manual +
+// round_robin, which are handled inline in assignLead). Returns the chosen id and
+// the team the lead should be bound to, plus a human-readable reason.
+async function resolveStrategyAssignee(
+  user: AuthUser,
+  existing: leadsRepo.LeadRow,
+  strategy: AssignStrategy,
+  teamId: number | null,
+): Promise<{ assigneeId: number; teamId: number | null; reason: string }> {
+  const companyId = existing.companyId;
+  if (strategy === "load_balanced" || strategy === "availability") {
+    if (teamId == null) throw new AppError(400, "A team is required for this assignment strategy");
+    const assigneeId = strategy === "availability"
+      ? await leadsRepo.availableLeastLoadedMember(companyId, teamId)
+      : await leadsRepo.leastLoadedTeamMember(companyId, teamId);
+    if (!assigneeId) throw new AppError(400, strategy === "availability" ? "No available team members" : "No active team members available");
+    return { assigneeId, teamId, reason: strategy === "availability" ? "Assigned to least-loaded available member" : "Assigned to least-loaded team member" };
+  }
+  if (strategy === "territory") {
+    const contactAttrs = existing.contactId ? await leadsRepo.contactForAssignment(existing.contactId) : null;
+    const match = await resolveTerritory(user, contactAttrs);
+    if (!match) throw new AppError(400, "No matching territory for this lead");
+    let assigneeId = match.assignedToId ?? null;
+    const targetTeam = match.teamId ?? teamId;
+    if (assigneeId == null) {
+      if (targetTeam == null) throw new AppError(400, "Matching territory has no owner or team");
+      assigneeId = (await leadsRepo.leastLoadedTeamMember(companyId, targetTeam)) ?? null;
+      if (assigneeId == null) throw new AppError(400, "Matching territory's team has no active members");
+    }
+    return { assigneeId, teamId: targetTeam, reason: `Territory match: ${match.name}` };
+  }
+  // ai
+  const candidates = await leadsRepo.assignmentCandidates(companyId, teamId);
+  if (candidates.length === 0) throw new AppError(400, "No candidate members for AI recommendation");
+  const contact = existing.contactId ? await leadsRepo.contactForAssignment(existing.contactId) : null;
+  let assigneeId = candidates.reduce((best, c) => (c.openLeads < best.openLeads ? c : best), candidates[0]).id;
+  let reason = "Assigned to least-loaded member";
+  try {
+    const rec = await aiRecommendAssignee(
+      {
+        contactName: contact?.fullName ?? [contact?.firstName, contact?.lastName].filter(Boolean).join(" ") ?? null,
+        contactCompany: contact?.contactCompany ?? existing.companyName ?? null,
+        jobTitle: contact?.jobTitle ?? null,
+        industry: contact?.industry ?? null,
+        country: contact?.country ?? null,
+        value: existing.value ? parseFloat(existing.value) : null,
+        notes: existing.notes ?? null,
+      },
+      candidates,
+    );
+    if (candidates.some((c) => c.id === rec.userId)) {
+      assigneeId = rec.userId;
+      reason = rec.reasoning || "AI-recommended owner";
+    }
+  } catch (err) {
+    logAiError("assignee-recommendation", err);
+  }
+  return { assigneeId, teamId, reason };
 }
 
 export async function assignLead(user: AuthUser, id: number, input: AssignLeadInput) {
   const existing = await leadsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Lead not found");
-  const { assignedToId, teamId } = input;
-  if (assignedToId != null && !(await refInCompany("users", existing.companyId, assignedToId))) throw new AppError(400, "Invalid assignedToId");
-  if (teamId != null && !(await refInCompany("teams", existing.companyId, teamId))) throw new AppError(400, "Invalid teamId");
+  const strategy: AssignStrategy = input.strategy ?? "manual";
 
-  const updateData: Record<string, unknown> = {};
-  if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
-  if (teamId !== undefined) updateData.teamId = teamId;
-  if (Object.keys(updateData).length === 0) throw new AppError(400, "No valid fields to update");
+  // Validate an explicitly-provided team once, up front (used by every strategy).
+  if (input.teamId != null && !(await refInCompany("teams", existing.companyId, input.teamId))) throw new AppError(400, "Invalid teamId");
 
-  const assigneeChanged = assignedToId !== undefined && assignedToId !== existing.assignedToId;
-  const historyRows: HistoryInsert[] = [];
-  if (assigneeChanged) {
-    historyRows.push({ leadId: id, changedBy: user.id, fieldName: "assignedToId", oldValue: existing.assignedToId != null ? String(existing.assignedToId) : null, newValue: assignedToId != null ? String(assignedToId) : null });
+  // ── Manual: caller supplies the exact owner/team.
+  if (strategy === "manual") {
+    const { assignedToId, teamId } = input;
+    if (assignedToId != null && !(await refInCompany("users", existing.companyId, assignedToId))) throw new AppError(400, "Invalid assignedToId");
+    const updateData: Record<string, unknown> = {};
+    if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
+    if (teamId !== undefined) updateData.teamId = teamId;
+    if (Object.keys(updateData).length === 0) throw new AppError(400, "No valid fields to update");
+    const historyRows = assignedToId !== undefined ? assignHistory(existing, assignedToId ?? null, user.id) : [];
+    const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows);
+    if (!lead) throw new AppError(404, "Lead not found");
+    if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", "Owner assigned", { from: existing.assignedToId, to: assignedToId ?? null });
+    return await enrichLead(lead, true);
   }
 
+  const teamId = input.teamId ?? existing.teamId ?? null;
+
+  // ── Round-robin: race-safe, atomic in a single locked transaction.
+  if (strategy === "round_robin") {
+    if (teamId == null) throw new AppError(400, "A team is required for round-robin assignment");
+    const result = await leadsRepo.assignByRoundRobin(existing.companyId, teamId, id, (assigneeId) => assignHistory(existing, assigneeId, user.id));
+    if (!result) throw new AppError(400, "No active team members available for round-robin");
+    if (result.assigneeId !== existing.assignedToId) {
+      await emitSystemActivity(result.lead, user.id, "assignment", "Round-robin assigned", { from: existing.assignedToId, to: result.assigneeId });
+    }
+    return await enrichLead(result.lead, true);
+  }
+
+  // ── Load-balanced / availability / territory / AI.
+  const { assigneeId, teamId: resolvedTeamId, reason } = await resolveStrategyAssignee(user, existing, strategy, teamId);
+  const updateData: Record<string, unknown> = { assignedToId: assigneeId };
+  if (resolvedTeamId !== existing.teamId) updateData.teamId = resolvedTeamId;
+  const historyRows = assignHistory(existing, assigneeId, user.id);
   const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows);
   if (!lead) throw new AppError(404, "Lead not found");
-  if (assigneeChanged) {
-    await emitSystemActivity(lead, user.id, "assignment", "Owner assigned", { from: existing.assignedToId, to: assignedToId ?? null });
-  }
+  if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", reason, { from: existing.assignedToId, to: assigneeId, strategy });
   return await enrichLead(lead, true);
 }
 
+// Legacy endpoint: least-loaded auto-assign within the lead's existing team.
 export async function autoAssignLead(user: AuthUser, id: number) {
   const existing = await leadsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Lead not found");
   if (!existing.teamId) throw new AppError(400, "Assign the lead to a team before auto-assigning");
-  const assigneeId = await leadsRepo.leastLoadedTeamMember(existing.companyId, existing.teamId);
-  if (!assigneeId) throw new AppError(400, "No active team members available for auto-assignment");
+  return assignLead(user, id, { strategy: "load_balanced", teamId: existing.teamId });
+}
 
-  const assigneeChanged = assigneeId !== existing.assignedToId;
-  const historyRows: HistoryInsert[] = [];
-  if (assigneeChanged) {
-    historyRows.push({ leadId: id, changedBy: user.id, fieldName: "assignedToId", oldValue: existing.assignedToId != null ? String(existing.assignedToId) : null, newValue: String(assigneeId) });
-  }
+export interface BulkAssignInput {
+  leadIds?: number[];
+  strategy?: AssignStrategy;
+  assignedToId?: number | null;
+  teamId?: number | null;
+}
 
-  const lead = await leadsRepo.updateWithHistory(id, { assignedToId: assigneeId } as Partial<leadsRepo.LeadRow>, historyRows);
-  if (!lead) throw new AppError(404, "Lead not found");
-  if (assigneeChanged) {
-    await emitSystemActivity(lead, user.id, "assignment", "Auto-assigned to least-loaded team member", { from: existing.assignedToId, to: assigneeId });
+// Bulk assignment: apply the chosen strategy to many leads. Each lead is assigned
+// independently (so round-robin still rotates and per-lead failures don't abort
+// the batch); the response reports per-lead success/failure.
+export async function bulkAssign(user: AuthUser, input: BulkAssignInput) {
+  const ids = [...new Set(input.leadIds ?? [])].filter((n) => Number.isInteger(n));
+  if (ids.length === 0) throw new AppError(400, "leadIds must be a non-empty array");
+  if (ids.length > 200) throw new AppError(400, "Cannot assign more than 200 leads at once");
+  const strategy: AssignStrategy = input.strategy ?? "manual";
+
+  const results: Array<{ leadId: number; success: boolean; assignedToId: number | null; error: string | null }> = [];
+  for (const leadId of ids) {
+    try {
+      const lead = await assignLead(user, leadId, { strategy, assignedToId: input.assignedToId, teamId: input.teamId });
+      results.push({ leadId, success: true, assignedToId: lead.assignedToId ?? null, error: null });
+    } catch (err) {
+      results.push({ leadId, success: false, assignedToId: null, error: err instanceof AppError ? err.message : "Assignment failed" });
+    }
   }
-  return await enrichLead(lead, true);
+  const assigned = results.filter((r) => r.success).length;
+  return { results, assigned, failed: results.length - assigned };
+}
+
+// AI assignment recommendation PREVIEW (does not mutate the lead). Returns the
+// recommended owner + reasoning + the candidate load list so the UI can show why.
+export async function recommendAssignee(user: AuthUser, id: number, input: { teamId?: number | null }) {
+  const existing = await leadsRepo.findById(user, id);
+  if (!existing) throw new AppError(404, "Lead not found");
+  const teamId = input.teamId ?? existing.teamId ?? null;
+  if (teamId != null && !(await refInCompany("teams", existing.companyId, teamId))) throw new AppError(400, "Invalid teamId");
+  const candidates = await leadsRepo.assignmentCandidates(existing.companyId, teamId);
+  if (candidates.length === 0) throw new AppError(400, "No candidate members for AI recommendation");
+  const contact = existing.contactId ? await leadsRepo.contactForAssignment(existing.contactId) : null;
+  let chosen = candidates.reduce((best, c) => (c.openLeads < best.openLeads ? c : best), candidates[0]);
+  let reasoning = "Least-loaded member";
+  try {
+    const rec = await aiRecommendAssignee(
+      {
+        contactName: contact?.fullName ?? [contact?.firstName, contact?.lastName].filter(Boolean).join(" ") ?? null,
+        contactCompany: contact?.contactCompany ?? existing.companyName ?? null,
+        jobTitle: contact?.jobTitle ?? null,
+        industry: contact?.industry ?? null,
+        country: contact?.country ?? null,
+        value: existing.value ? parseFloat(existing.value) : null,
+        notes: existing.notes ?? null,
+      },
+      candidates,
+    );
+    const match = candidates.find((c) => c.id === rec.userId);
+    if (match) { chosen = match; reasoning = rec.reasoning || "AI-recommended owner"; }
+  } catch (err) {
+    logAiError("assignee-recommendation", err);
+  }
+  return {
+    assignedToId: chosen.id,
+    assignedToName: chosen.name,
+    reasoning,
+    candidates: candidates.map((c) => ({ id: c.id, name: c.name, jobTitle: c.jobTitle, openLeads: c.openLeads })),
+  };
 }
 
 // ── Lead tags

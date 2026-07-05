@@ -406,6 +406,83 @@ export async function enrichContact(input: EnrichmentInput): Promise<EnrichmentR
   };
 }
 
+export interface AssigneeCandidate {
+  id: number;
+  name: string;
+  jobTitle?: string | null;
+  openLeads: number;
+}
+
+export interface AssigneeRecommendationInput {
+  contactName?: string | null;
+  contactCompany?: string | null;
+  jobTitle?: string | null;
+  industry?: string | null;
+  country?: string | null;
+  value?: number | null;
+  notes?: string | null;
+}
+
+export interface AssigneeRecommendation {
+  userId: number;
+  reasoning: string;
+}
+
+const ASSIGNEE_PROMPT = `You are a sales operations assistant that routes an incoming lead to the best-fit sales rep. Choose exactly ONE candidate to own the lead.
+
+Weigh: current workload (prefer reps with fewer open leads so work stays balanced), and fit between the rep's job title/seniority and the lead's value and seniority (senior/high-value leads suit senior reps). Keep the team balanced overall.
+
+Return ONLY a JSON object with exactly these keys:
+- "userId": the integer id of the chosen candidate (MUST be one of the provided candidate ids)
+- "reasoning": one concise sentence (max ~20 words) explaining the choice`;
+
+// AI-recommended lead owner. Given the lead and a list of candidate reps (with
+// their current open-lead load), returns the chosen candidate id + reasoning.
+// Callers must validate the returned userId against their candidate list and fall
+// back to a deterministic rule (e.g. least-loaded) if the AI call fails.
+export async function recommendAssignee(
+  lead: AssigneeRecommendationInput,
+  candidates: AssigneeCandidate[],
+): Promise<AssigneeRecommendation> {
+  const leadLines = [
+    `Contact: ${lead.contactName ?? "(unknown)"}`,
+    `Company: ${lead.contactCompany ?? "(unknown)"}`,
+    `Job title: ${lead.jobTitle ?? "(unknown)"}`,
+    `Industry: ${lead.industry ?? "(unknown)"}`,
+    `Country: ${lead.country ?? "(unknown)"}`,
+    `Deal value: ${lead.value != null ? lead.value : "(unknown)"}`,
+    `Notes: ${lead.notes ?? "(none)"}`,
+  ].join("\n");
+  const candLines = candidates
+    .map((c) => `- id ${c.id}: ${c.name}${c.jobTitle ? ` (${c.jobTitle})` : ""} — ${c.openLeads} open leads`)
+    .join("\n");
+
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `${ASSIGNEE_PROMPT}\n\nLead:\n${leadLines}\n\nCandidates:\n${candLines}` }],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        maxOutputTokens: config.ai.maxOutputTokens,
+        thinkingConfig: { thinkingBudget: config.ai.thinkingBudget },
+      },
+    }),
+    SCORING_TIMEOUT_MS,
+    "assignee recommendation",
+  );
+
+  const text = response.text ?? "";
+  const parsed = extractJson(text) as Record<string, unknown>;
+  const idNum = typeof parsed.userId === "number" ? parsed.userId : Number(parsed.userId);
+  const userId = Number.isFinite(idNum) ? Math.round(idNum) : candidates[0].id;
+  return { userId, reasoning: str(parsed.reasoning) ?? "" };
+}
+
 export function logAiError(context: string, err: unknown): void {
   logger.error({ err, context }, "AI request failed");
 }

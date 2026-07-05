@@ -3,7 +3,9 @@ import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
+   Alert,
    FlatList,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -13,10 +15,16 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   type Lead,
+  BulkAssignInputStrategy,
+  getGetLeadPipelineQueryKey,
   useGetLeadPipeline,
+  useBulkAssignLeads,
+  useListTeams,
+  useListUsers,
 } from "@workspace/api-client-react";
 
 import {
@@ -40,6 +48,15 @@ import { convertCurrency, formatCurrency } from "@/lib/currency";
 
 const ALL_STAGE = "all";
 
+const BULK_STRATEGIES: BulkAssignInputStrategy[] = [
+  BulkAssignInputStrategy.round_robin,
+  BulkAssignInputStrategy.load_balanced,
+  BulkAssignInputStrategy.availability,
+  BulkAssignInputStrategy.territory,
+  BulkAssignInputStrategy.ai,
+  BulkAssignInputStrategy.manual,
+];
+
 type ColorTokens = ReturnType<typeof useColors>;
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
@@ -52,6 +69,9 @@ const LeadRow = React.memo(function LeadRow({
   t,
   currencyCode,
   onPress,
+  onLongPress,
+  selectionMode,
+  selected,
 }: {
   item: Lead;
   colors: ColorTokens;
@@ -60,17 +80,42 @@ const LeadRow = React.memo(function LeadRow({
   t: TFn;
   currencyCode: string;
   onPress: (id: number) => void;
+  onLongPress: (id: number) => void;
+  selectionMode: boolean;
+  selected: boolean;
 }) {
   const color = LEAD_STAGE_COLORS[item.stage] ?? colors.primary;
   return (
     <Pressable
       onPress={() => onPress(item.id)}
+      onLongPress={() => onLongPress(item.id)}
+      delayLongPress={250}
       style={({ pressed }) => [
         styles.leadCard,
-        { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row", opacity: pressed ? 0.75 : 1 },
+        {
+          backgroundColor: selected ? colors.primary + "14" : colors.card,
+          borderColor: selected ? colors.primary : colors.border,
+          borderRadius: colors.radius + 4,
+          flexDirection: isRTL ? "row-reverse" : "row",
+          opacity: pressed ? 0.75 : 1,
+        },
       ]}
     >
-      <Avatar name={item.contactName ?? "?"} color={color} size={40} />
+      {selectionMode ? (
+        <View
+          style={[
+            styles.checkbox,
+            {
+              borderColor: selected ? colors.primary : colors.border,
+              backgroundColor: selected ? colors.primary : "transparent",
+            },
+          ]}
+        >
+          {selected ? <Feather name="check" size={14} color="#FFFFFF" /> : null}
+        </View>
+      ) : (
+        <Avatar name={item.contactName ?? "?"} color={color} size={40} />
+      )}
       <View style={{ flex: 1 }}>
         <Text numberOfLines={1} style={[styles.leadName, { color: colors.foreground, textAlign }]}>
           {item.contactName ?? t("common.unnamedLead")}
@@ -84,7 +129,7 @@ const LeadRow = React.memo(function LeadRow({
           {formatCurrency(Number(item.value), item.currency ?? currencyCode)}
         </Text>
       ) : null}
-      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      {!selectionMode ? <Feather name="chevron-right" size={16} color={colors.mutedForeground} /> : null}
     </Pressable>
   );
 });
@@ -114,7 +159,79 @@ export default function LeadsScreen() {
   const { user } = useAuth();
   const showExport = canExport(user);
 
+  const queryClient = useQueryClient();
   const query = useGetLeadPipeline();
+
+  // Bulk assignment
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [bulkStrategy, setBulkStrategy] = useState<BulkAssignInputStrategy>(BulkAssignInputStrategy.round_robin);
+  const [bulkOwnerId, setBulkOwnerId] = useState<number | null>(null);
+  const [bulkTeamId, setBulkTeamId] = useState<number | null>(null);
+  const bulkAssign = useBulkAssignLeads();
+  const bulkUsersQuery = useListUsers({ limit: 200 }, { query: { enabled: assignModalVisible, queryKey: ["/api/users", "bulk-assign"] } });
+  const bulkTeamsQuery = useListTeams(undefined, { query: { enabled: assignModalVisible, queryKey: ["/api/teams", "bulk-assign"] } });
+  const bulkUsers = bulkUsersQuery.data?.users ?? [];
+  const bulkTeams = bulkTeamsQuery.data?.teams ?? [];
+  const bulkTeamRequired =
+    bulkStrategy === "load_balanced" || bulkStrategy === "availability" || bulkStrategy === "round_robin";
+
+  const exitSelection = React.useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const enterSelection = React.useCallback((id: number) => {
+    if (Platform.OS !== "web") Haptics.selectionAsync();
+    setSelectionMode(true);
+    setSelectedIds(new Set([id]));
+  }, []);
+
+  const toggleSelect = React.useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  function submitBulkAssign() {
+    const leadIds = Array.from(selectedIds);
+    if (leadIds.length === 0) return;
+    if (bulkStrategy === "manual" && bulkOwnerId == null) {
+      Alert.alert(t("leads.bulkAssign.pickOwner"));
+      return;
+    }
+    if (bulkTeamRequired && bulkTeamId == null) {
+      Alert.alert(t("leads.bulkAssign.pickTeam"));
+      return;
+    }
+    bulkAssign.mutate(
+      {
+        data: {
+          leadIds,
+          strategy: bulkStrategy,
+          assignedToId: bulkStrategy === "manual" ? bulkOwnerId : undefined,
+          // Manual with no team chosen must NOT send teamId — the server treats
+          // an explicit teamId (incl. null) as a set, silently clearing each
+          // lead's existing team binding. Omit it instead.
+          teamId: bulkTeamId != null ? bulkTeamId : bulkStrategy === "manual" ? undefined : null,
+        },
+      },
+      {
+        onSuccess: (res) => {
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          queryClient.invalidateQueries({ queryKey: getGetLeadPipelineQueryKey() });
+          setAssignModalVisible(false);
+          exitSelection();
+          Alert.alert(t("leads.bulkAssign.done", { assigned: res.assigned, failed: res.failed }));
+        },
+        onError: (e: any) => Alert.alert(t("leads.bulkAssign.failed"), e?.message || undefined),
+      }
+    );
+  }
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -177,10 +294,14 @@ export default function LeadsScreen() {
 
   const onLeadPress = React.useCallback(
     (id: number) => {
+      if (selectionMode) {
+        toggleSelect(id);
+        return;
+      }
       if (Platform.OS !== "web") Haptics.selectionAsync();
       router.push(`/pipeline/${id}`);
     },
-    [router],
+    [router, selectionMode, toggleSelect],
   );
   const renderLead = React.useCallback(
     ({ item }: { item: Lead }) => (
@@ -192,9 +313,12 @@ export default function LeadsScreen() {
         t={t}
         currencyCode={currencyCode}
         onPress={onLeadPress}
+        onLongPress={enterSelection}
+        selectionMode={selectionMode}
+        selected={selectedIds.has(item.id)}
       />
     ),
-    [colors, isRTL, textAlign, t, currencyCode, onLeadPress],
+    [colors, isRTL, textAlign, t, currencyCode, onLeadPress, enterSelection, selectionMode, selectedIds],
   );
 
   const activeColor =
@@ -341,21 +465,158 @@ export default function LeadsScreen() {
             }
           />
 
-          {/* FAB */}
-          <Pressable
-            onPress={() => {
-              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push("/pipeline/form");
-            }}
-            style={({ pressed }) => [
-              styles.fab,
-              { backgroundColor: colors.primary, bottom: insets.bottom + 24, opacity: pressed ? 0.85 : 1 },
-            ]}
-          >
-            <Feather name="plus" size={26} color="#FFFFFF" />
-          </Pressable>
+          {selectionMode ? (
+            /* Bulk action bar */
+            <View
+              style={[
+                styles.bulkBar,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  paddingBottom: insets.bottom + 12,
+                  flexDirection: isRTL ? "row-reverse" : "row",
+                },
+              ]}
+            >
+              <Pressable onPress={exitSelection} hitSlop={8} style={styles.bulkCancel}>
+                <Feather name="x" size={20} color={colors.foreground} />
+              </Pressable>
+              <Text style={[styles.bulkCount, { color: colors.foreground, flex: 1, textAlign }]}>
+                {t("leads.bulkAssign.selectedCount", { count: selectedIds.size })}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  if (selectedIds.size === 0) return;
+                  setBulkOwnerId(null);
+                  setBulkTeamId(null);
+                  setAssignModalVisible(true);
+                }}
+                disabled={selectedIds.size === 0}
+                style={({ pressed }) => [
+                  styles.bulkAssignBtn,
+                  { backgroundColor: colors.primary, borderRadius: colors.radius + 2, opacity: selectedIds.size === 0 ? 0.4 : pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Feather name="user-check" size={16} color="#FFFFFF" />
+                <Text style={styles.bulkAssignText}>{t("leads.bulkAssign.assign")}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            /* FAB */
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push("/pipeline/form");
+              }}
+              style={({ pressed }) => [
+                styles.fab,
+                { backgroundColor: colors.primary, bottom: insets.bottom + 24, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Feather name="plus" size={26} color="#FFFFFF" />
+            </Pressable>
+          )}
         </>
       )}
+
+      {/* Bulk-assign modal */}
+      <Modal visible={assignModalVisible} animationType="slide" transparent onRequestClose={() => setAssignModalVisible(false)}>
+        <Pressable style={modalStyles.backdrop} onPress={() => setAssignModalVisible(false)} />
+        <View style={[modalStyles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20, maxHeight: "85%" }]}>
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <Text style={[modalStyles.title, { color: colors.foreground }]}>
+              {t("leads.bulkAssign.title", { count: selectedIds.size })}
+            </Text>
+            <Pressable onPress={() => setAssignModalVisible(false)} hitSlop={10}>
+              <Feather name="x" size={22} color={colors.foreground} />
+            </Pressable>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+            <Text style={[modalStyles.label, { color: colors.mutedForeground, textAlign }]}>{t("leads.bulkAssign.strategy").toUpperCase()}</Text>
+            <View style={[modalStyles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {BULK_STRATEGIES.map((st) => {
+                const active = bulkStrategy === st;
+                return (
+                  <Pressable
+                    key={st}
+                    onPress={() => setBulkStrategy(st)}
+                    style={[
+                      modalStyles.chip,
+                      { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "1A" : colors.background },
+                    ]}
+                  >
+                    <Text style={[modalStyles.chipText, { color: active ? colors.primary : colors.mutedForeground }]}>
+                      {t(`leads.bulkAssign.strategies.${st}`)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {bulkStrategy === "manual" ? (
+              <>
+                <Text style={[modalStyles.label, { color: colors.mutedForeground, textAlign, marginTop: 14 }]}>{t("leads.bulkAssign.owner").toUpperCase()}</Text>
+                <View style={[modalStyles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                  {bulkUsers.map((u) => {
+                    const active = bulkOwnerId === u.id;
+                    return (
+                      <Pressable
+                        key={u.id}
+                        onPress={() => setBulkOwnerId(u.id)}
+                        style={[
+                          modalStyles.chip,
+                          { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "1A" : colors.background },
+                        ]}
+                      >
+                        <Text style={[modalStyles.chipText, { color: active ? colors.primary : colors.mutedForeground }]}>{u.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+
+            {bulkStrategy !== "manual" && bulkStrategy !== "ai" ? (
+              <>
+                <Text style={[modalStyles.label, { color: colors.mutedForeground, textAlign, marginTop: 14 }]}>
+                  {t("leads.bulkAssign.team")}
+                  {bulkTeamRequired ? " *" : ""}
+                </Text>
+                <View style={[modalStyles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                  {bulkTeams.map((tm) => {
+                    const active = bulkTeamId === tm.id;
+                    return (
+                      <Pressable
+                        key={tm.id}
+                        onPress={() => setBulkTeamId(tm.id)}
+                        style={[
+                          modalStyles.chip,
+                          { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "1A" : colors.background },
+                        ]}
+                      >
+                        <Text style={[modalStyles.chipText, { color: active ? colors.primary : colors.mutedForeground }]}>{tm.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+
+            <Pressable
+              onPress={submitBulkAssign}
+              disabled={bulkAssign.isPending}
+              style={({ pressed }) => [
+                modalStyles.submit,
+                { backgroundColor: colors.primary, borderRadius: colors.radius + 4, opacity: bulkAssign.isPending ? 0.5 : pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Feather name="user-check" size={18} color="#FFFFFF" />
+              <Text style={modalStyles.submitText}>{t("leads.bulkAssign.assign")}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
 
       <ExportSheet
         visible={exportOpen}
@@ -478,5 +739,100 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 8,
     elevation: 8,
+  },
+  checkbox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bulkBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  bulkCancel: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bulkCount: {
+    fontSize: 15,
+    fontFamily: FONT.semibold,
+  },
+  bulkAssignBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  bulkAssignText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: FONT.semibold,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  sheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+  },
+  title: {
+    fontSize: 18,
+    fontFamily: FONT.bold,
+  },
+  label: {
+    fontSize: 11,
+    fontFamily: FONT.semibold,
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  chipWrap: {
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 13,
+    fontFamily: FONT.medium,
+  },
+  submit: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 52,
+    marginTop: 20,
+  },
+  submitText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontFamily: FONT.semibold,
   },
 });

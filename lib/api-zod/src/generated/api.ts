@@ -1348,8 +1348,10 @@ export const GetContactStatsResponse = zod.object({
  */
 export const GetContactDuplicatesResponse = zod.object({
   "groups": zod.array(zod.object({
-  "matchType": zod.enum(['email', 'phone', 'name', 'linked']),
+  "matchType": zod.enum(['email', 'phone', 'name', 'linked', 'linkedin', 'website', 'name-similarity']),
   "matchValue": zod.string(),
+  "reasons": zod.array(zod.string()).describe('Human-readable explanations for why these contacts are grouped'),
+  "score": zod.number().describe('Confidence score (0-100) that the group is a true duplicate set'),
   "contacts": zod.array(zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
@@ -1400,7 +1402,8 @@ export const GetContactDuplicatesResponse = zod.object({
  */
 export const MergeContactsBody = zod.object({
   "primaryId": zod.number(),
-  "duplicateIds": zod.array(zod.number())
+  "duplicateIds": zod.array(zod.number()),
+  "fieldValues": zod.record(zod.string(), zod.unknown()).optional().describe('Optional per-field winning values chosen in the merge UI; override the automatic backfill.')
 })
 
 export const MergeContactsResponse = zod.object({
@@ -2228,7 +2231,8 @@ export const AssignLeadParams = zod.object({
 
 export const AssignLeadBody = zod.object({
   "assignedToId": zod.number().nullish(),
-  "teamId": zod.number().nullish()
+  "teamId": zod.number().nullish(),
+  "strategy": zod.enum(['manual', 'round_robin', 'load_balanced', 'availability', 'territory', 'ai']).optional().describe('Assignment rule to apply. Defaults to manual.')
 })
 
 export const AssignLeadResponse = zod.object({
@@ -2276,6 +2280,52 @@ export const AssignLeadResponse = zod.object({
   "newValue": zod.string().nullish(),
   "changedAt": zod.coerce.date()
 })).optional()
+})
+
+
+/**
+ * @summary Assign many leads at once using a chosen strategy
+ */
+export const BulkAssignLeadsBody = zod.object({
+  "leadIds": zod.array(zod.number()),
+  "strategy": zod.enum(['manual', 'round_robin', 'load_balanced', 'availability', 'territory', 'ai']).optional(),
+  "assignedToId": zod.number().nullish(),
+  "teamId": zod.number().nullish()
+})
+
+export const BulkAssignLeadsResponse = zod.object({
+  "assigned": zod.number(),
+  "failed": zod.number(),
+  "results": zod.array(zod.object({
+  "leadId": zod.number(),
+  "success": zod.boolean(),
+  "assignedToId": zod.number().nullable(),
+  "error": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary Preview an AI-recommended owner for a lead (does not mutate)
+ */
+export const RecommendLeadAssigneeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RecommendLeadAssigneeBody = zod.object({
+  "teamId": zod.number().nullish()
+})
+
+export const RecommendLeadAssigneeResponse = zod.object({
+  "assignedToId": zod.number(),
+  "assignedToName": zod.string().nullable(),
+  "reasoning": zod.string(),
+  "candidates": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "jobTitle": zod.string().nullish(),
+  "openLeads": zod.number()
+}))
 })
 
 
@@ -5685,6 +5735,19 @@ export const ListMergeHistoryResponse = zod.object({
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number()
+})
+
+
+/**
+ * @summary Reverse a recorded contact merge (restores merged-away contacts and their child records)
+ */
+export const UndoContactMergeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UndoContactMergeResponse = zod.object({
+  "success": zod.boolean(),
+  "restoredIds": zod.array(zod.number())
 })
 
 

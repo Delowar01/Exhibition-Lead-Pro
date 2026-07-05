@@ -14,4 +14,7 @@ export const DuplicateGroupMatchType = {
   phone: 'phone',
   name: 'name',
   linked: 'linked',
+  linkedin: 'linkedin',
+  website: 'website',
+  'name-similarity': 'name-similarity',
 } as const;

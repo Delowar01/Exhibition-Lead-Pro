@@ -2063,6 +2063,50 @@ paths:
               schema:
                 $ref: "#/components/schemas/Lead"
 
+  /leads/bulk-assign:
+    post:
+      operationId: bulkAssignLeads
+      tags: [leads]
+      summary: Assign many leads at once using a chosen strategy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkAssignInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkAssignResult"
+
+  /leads/{id}/recommend-assignee:
+    post:
+      operationId: recommendLeadAssignee
+      tags: [leads]
+      summary: Preview an AI-recommended owner for a lead (does not mutate)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecommendAssigneeInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssigneeRecommendation"
+
   /leads/{id}/auto-assign:
     post:
       operationId: autoAssignLead
@@ -4700,6 +4744,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/MergeHistoryList"
 
+  /contacts/merge-history/{id}/undo:
+    post:
+      operationId: undoContactMerge
+      tags: [contacts]
+      summary: Reverse a recorded contact merge (restores merged-away contacts and their child records)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UndoMergeResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -6497,13 +6560,21 @@ components:
 
     DuplicateGroup:
       type: object
-      required: [matchType, matchValue, contacts]
+      required: [matchType, matchValue, reasons, score, contacts]
       properties:
         matchType:
           type: string
-          enum: [email, phone, name, linked]
+          enum: [email, phone, name, linked, linkedin, website, name-similarity]
         matchValue:
           type: string
+        reasons:
+          type: array
+          description: Human-readable explanations for why these contacts are grouped
+          items:
+            type: string
+        score:
+          type: integer
+          description: Confidence score (0-100) that the group is a true duplicate set
         contacts:
           type: array
           items:
@@ -6525,6 +6596,21 @@ components:
         primaryId:
           type: integer
         duplicateIds:
+          type: array
+          items:
+            type: integer
+        fieldValues:
+          type: object
+          additionalProperties: true
+          description: Optional per-field winning values chosen in the merge UI; override the automatic backfill.
+
+    UndoMergeResponse:
+      type: object
+      required: [success, restoredIds]
+      properties:
+        success:
+          type: boolean
+        restoredIds:
           type: array
           items:
             type: integer
@@ -6987,6 +7073,83 @@ components:
       properties:
         assignedToId:
           type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
+        strategy:
+          type: string
+          enum: [manual, round_robin, load_balanced, availability, territory, ai]
+          description: Assignment rule to apply. Defaults to manual.
+
+    BulkAssignInput:
+      type: object
+      required: [leadIds]
+      properties:
+        leadIds:
+          type: array
+          items:
+            type: integer
+        strategy:
+          type: string
+          enum: [manual, round_robin, load_balanced, availability, territory, ai]
+        assignedToId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
+
+    BulkAssignResult:
+      type: object
+      required: [results, assigned, failed]
+      properties:
+        assigned:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            required: [leadId, success, assignedToId, error]
+            properties:
+              leadId:
+                type: integer
+              success:
+                type: boolean
+              assignedToId:
+                type: ["integer", "null"]
+              error:
+                type: ["string", "null"]
+
+    AssignmentCandidate:
+      type: object
+      required: [id, name, openLeads]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        jobTitle:
+          type: ["string", "null"]
+        openLeads:
+          type: integer
+
+    AssigneeRecommendation:
+      type: object
+      required: [assignedToId, assignedToName, reasoning, candidates]
+      properties:
+        assignedToId:
+          type: integer
+        assignedToName:
+          type: ["string", "null"]
+        reasoning:
+          type: string
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignmentCandidate"
+
+    RecommendAssigneeInput:
+      type: object
+      properties:
         teamId:
           type: ["integer", "null"]
 

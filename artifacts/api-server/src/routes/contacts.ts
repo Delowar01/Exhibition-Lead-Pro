@@ -47,6 +47,11 @@ router.get("/contacts/merge-history", async (req: AuthRequest, res) => {
   res.json(await contacts.mergeHistory(req.user!, req.query as contacts.MergeHistoryParams));
 });
 
+// POST /contacts/merge-history/:id/undo — reverse a recorded merge (static path before /:id)
+router.post("/contacts/merge-history/:id/undo", requirePermission("contacts", "delete"), async (req: AuthRequest, res) => {
+  res.json(await contacts.undoMerge(req.user!, parseInt(String(req.params.id))));
+});
+
 // GET /contacts/:id/custom-fields — custom field values for a contact
 router.get("/contacts/:id/custom-fields", async (req: AuthRequest, res) => {
   res.json(await contacts.getContactCustomFields(req.user!, parseInt(String(req.params.id))));

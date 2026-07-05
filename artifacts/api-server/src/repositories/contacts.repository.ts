@@ -5,6 +5,8 @@ import {
   eventsTable,
   scansTable,
   leadsTable,
+  leadNotesTable,
+  leadActivitiesTable,
   tasksTable,
   meetingsTable,
   followUpsTable,
@@ -180,28 +182,96 @@ export async function makeOriginalSwap(duplicateId: number, groupOriginalId: num
   });
 }
 
-// Merge: reassign FK-bearing scans/leads to the primary, update the primary,
-// record the formal merge-history row, clean up the duplicates' custom-field
-// values, then hard-delete the duplicates — all in ONE transaction so nothing is
-// orphaned and the audit row is written atomically with the merge.
+// Per-dup child-row ids captured at merge time, keyed by child table then by the
+// stringified duplicate contactId → the row ids that were reassigned. Persisted
+// in the merge snapshot so undo can re-point EXACTLY those rows back.
+export type MergeChildRefs = Record<string, Record<string, number[]>>;
+export type CustomFieldValueRow = typeof customFieldValuesTable.$inferSelect;
+
+function groupByContact(rows: Array<{ id: number; contactId: number | null }>): Record<string, number[]> {
+  const m: Record<string, number[]> = {};
+  for (const r of rows) if (r.contactId != null) (m[String(r.contactId)] ??= []).push(r.id);
+  return m;
+}
+
+// Merge: reassign EVERY FK-bearing child (scans, leads, lead_notes, tasks,
+// lead_activities, follow_ups, meetings, contact_status_history) from the
+// duplicates to the primary, update the primary, capture a full pre-merge
+// snapshot (primary + dup rows + per-dup child ids + dup custom-field values),
+// record the formal merge-history row, delete the duplicates' custom-field values
+// (preserved in the snapshot for undo), then hard-delete the duplicates — all in
+// ONE transaction so nothing is orphaned and undo can fully reverse it.
 export async function mergeTransaction(
   primaryId: number,
   dupIds: number[],
   updates: Partial<typeof contactsTable.$inferInsert>,
-  history: typeof mergeHistoryTable.$inferInsert,
+  buildHistory: (snap: { childRefs: MergeChildRefs; customFieldValues: CustomFieldValueRow[] }) => typeof mergeHistoryTable.$inferInsert,
 ): Promise<ContactRow> {
   return db.transaction(async (tx) => {
+    // 1. Capture which child rows belong to which dup (for exact undo re-pointing).
+    const childRefs: MergeChildRefs = {
+      scans: groupByContact(await tx.select({ id: scansTable.id, contactId: scansTable.contactId }).from(scansTable).where(inArray(scansTable.contactId, dupIds))),
+      leads: groupByContact(await tx.select({ id: leadsTable.id, contactId: leadsTable.contactId }).from(leadsTable).where(inArray(leadsTable.contactId, dupIds))),
+      leadNotes: groupByContact(await tx.select({ id: leadNotesTable.id, contactId: leadNotesTable.contactId }).from(leadNotesTable).where(inArray(leadNotesTable.contactId, dupIds))),
+      tasks: groupByContact(await tx.select({ id: tasksTable.id, contactId: tasksTable.contactId }).from(tasksTable).where(inArray(tasksTable.contactId, dupIds))),
+      leadActivities: groupByContact(await tx.select({ id: leadActivitiesTable.id, contactId: leadActivitiesTable.contactId }).from(leadActivitiesTable).where(inArray(leadActivitiesTable.contactId, dupIds))),
+      followUps: groupByContact(await tx.select({ id: followUpsTable.id, contactId: followUpsTable.contactId }).from(followUpsTable).where(inArray(followUpsTable.contactId, dupIds))),
+      meetings: groupByContact(await tx.select({ id: meetingsTable.id, contactId: meetingsTable.contactId }).from(meetingsTable).where(inArray(meetingsTable.contactId, dupIds))),
+      contactStatusHistory: groupByContact(await tx.select({ id: contactStatusHistoryTable.id, contactId: contactStatusHistoryTable.contactId }).from(contactStatusHistoryTable).where(inArray(contactStatusHistoryTable.contactId, dupIds))),
+    };
+    // 2. Capture dup custom-field values (about to be deleted) for undo.
+    const customFieldValues = await tx.select().from(customFieldValuesTable).where(and(eq(customFieldValuesTable.entityType, "contact"), inArray(customFieldValuesTable.entityId, dupIds)));
+
+    // 3. Reassign all children to the primary.
     await tx.update(scansTable).set({ contactId: primaryId }).where(inArray(scansTable.contactId, dupIds));
     await tx.update(leadsTable).set({ contactId: primaryId }).where(inArray(leadsTable.contactId, dupIds));
+    await tx.update(leadNotesTable).set({ contactId: primaryId }).where(inArray(leadNotesTable.contactId, dupIds));
+    await tx.update(tasksTable).set({ contactId: primaryId }).where(inArray(tasksTable.contactId, dupIds));
+    await tx.update(leadActivitiesTable).set({ contactId: primaryId }).where(inArray(leadActivitiesTable.contactId, dupIds));
+    await tx.update(followUpsTable).set({ contactId: primaryId }).where(inArray(followUpsTable.contactId, dupIds));
+    await tx.update(meetingsTable).set({ contactId: primaryId }).where(inArray(meetingsTable.contactId, dupIds));
+    await tx.update(contactStatusHistoryTable).set({ contactId: primaryId }).where(inArray(contactStatusHistoryTable.contactId, dupIds));
+
+    // 4. Update the primary, delete dup CF values, record history, delete dups.
     const [updated] = await tx.update(contactsTable).set(updates).where(eq(contactsTable.id, primaryId)).returning();
-    // Drop the merged-away contacts' custom-field values (their owner rows are
-    // about to be hard-deleted; values have no soft-delete to preserve).
-    await tx
-      .delete(customFieldValuesTable)
-      .where(and(eq(customFieldValuesTable.entityType, "contact"), inArray(customFieldValuesTable.entityId, dupIds)));
-    await tx.insert(mergeHistoryTable).values(history);
+    await tx.delete(customFieldValuesTable).where(and(eq(customFieldValuesTable.entityType, "contact"), inArray(customFieldValuesTable.entityId, dupIds)));
+    await tx.insert(mergeHistoryTable).values(buildHistory({ childRefs, customFieldValues }));
     await tx.delete(contactsTable).where(inArray(contactsTable.id, dupIds));
     return updated;
+  });
+}
+
+// Undo a merge: re-insert the deleted duplicate rows (with their original ids),
+// re-point every captured child row back to its original dup, restore the
+// primary's pre-merge field values, re-insert the dups' custom-field values, and
+// stamp the merge-history row as undone — all in ONE transaction.
+export async function undoMergeTransaction(opts: {
+  historyId: number;
+  primaryId: number;
+  primaryRestore: Partial<typeof contactsTable.$inferInsert>;
+  duplicates: Array<typeof contactsTable.$inferInsert & { id: number }>;
+  childRefs: MergeChildRefs;
+  customFieldValues: Array<typeof customFieldValuesTable.$inferInsert>;
+  undoneById: number;
+}): Promise<void> {
+  const repoint = async (refs: Record<string, number[]> | undefined, update: (dupId: number, ids: number[]) => Promise<unknown>) => {
+    for (const [dupId, ids] of Object.entries(refs ?? {})) {
+      if (ids.length > 0) await update(Number(dupId), ids);
+    }
+  };
+  await db.transaction(async (tx) => {
+    if (opts.duplicates.length > 0) await tx.insert(contactsTable).values(opts.duplicates);
+    await repoint(opts.childRefs.scans, (dupId, ids) => tx.update(scansTable).set({ contactId: dupId }).where(inArray(scansTable.id, ids)));
+    await repoint(opts.childRefs.leads, (dupId, ids) => tx.update(leadsTable).set({ contactId: dupId }).where(inArray(leadsTable.id, ids)));
+    await repoint(opts.childRefs.leadNotes, (dupId, ids) => tx.update(leadNotesTable).set({ contactId: dupId }).where(inArray(leadNotesTable.id, ids)));
+    await repoint(opts.childRefs.tasks, (dupId, ids) => tx.update(tasksTable).set({ contactId: dupId }).where(inArray(tasksTable.id, ids)));
+    await repoint(opts.childRefs.leadActivities, (dupId, ids) => tx.update(leadActivitiesTable).set({ contactId: dupId }).where(inArray(leadActivitiesTable.id, ids)));
+    await repoint(opts.childRefs.followUps, (dupId, ids) => tx.update(followUpsTable).set({ contactId: dupId }).where(inArray(followUpsTable.id, ids)));
+    await repoint(opts.childRefs.meetings, (dupId, ids) => tx.update(meetingsTable).set({ contactId: dupId }).where(inArray(meetingsTable.id, ids)));
+    await repoint(opts.childRefs.contactStatusHistory, (dupId, ids) => tx.update(contactStatusHistoryTable).set({ contactId: dupId }).where(inArray(contactStatusHistoryTable.id, ids)));
+    if (Object.keys(opts.primaryRestore).length > 0) await tx.update(contactsTable).set(opts.primaryRestore).where(eq(contactsTable.id, opts.primaryId));
+    if (opts.customFieldValues.length > 0) await tx.insert(customFieldValuesTable).values(opts.customFieldValues);
+    await tx.update(mergeHistoryTable).set({ undoneAt: new Date(), undoneById: opts.undoneById }).where(eq(mergeHistoryTable.id, opts.historyId));
   });
 }
 

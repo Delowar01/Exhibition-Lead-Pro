@@ -5,13 +5,13 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { AssignLeadInputStrategy } from './assignLeadInputStrategy';
+import type { BulkAssignInputStrategy } from './bulkAssignInputStrategy';
 
-export interface AssignLeadInput {
+export interface BulkAssignInput {
+  leadIds: number[];
+  strategy?: BulkAssignInputStrategy;
   /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
   teamId?: number | null;
-  /** Assignment rule to apply. Defaults to manual. */
-  strategy?: AssignLeadInputStrategy;
 }

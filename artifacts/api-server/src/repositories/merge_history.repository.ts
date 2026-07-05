@@ -41,6 +41,13 @@ export async function insert(
   return row;
 }
 
+// Tenant-scoped single fetch — used by undo to load the snapshot for reversal.
+export async function findById(user: AuthUser, id: number): Promise<MergeHistoryRow | undefined> {
+  const where = tenantOnly(user, mergeHistoryTable.companyId, eq(mergeHistoryTable.id, id));
+  const [row] = await db.select().from(mergeHistoryTable).where(where).limit(1);
+  return row;
+}
+
 export async function usersByIds(ids: number[]) {
   if (ids.length === 0) return [];
   return db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, ids));

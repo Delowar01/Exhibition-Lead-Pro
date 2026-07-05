@@ -221,6 +221,39 @@ function normName(c: ContactRow): string | null {
   if (!name || !company) return null;
   return `${name}|${company}`;
 }
+// Person name only (no company) — for similarity clustering.
+function normPersonName(c: ContactRow): string | null {
+  const name = (c.fullName ?? [c.firstName, c.lastName].filter(Boolean).join(" ")).trim().toLowerCase().replace(/\s+/g, " ");
+  return name.length > 0 ? name : null;
+}
+function normCompany(c: ContactRow): string | null {
+  const company = (c.contactCompany ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  return company.length > 0 ? company : null;
+}
+// Normalize a URL/handle for equality: drop scheme, leading www., trailing slash.
+function normUrl(v: string | null): string | null {
+  if (!v) return null;
+  const t = v.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+  return t.length > 0 ? t : null;
+}
+// Normalized Levenshtein similarity ratio in [0,1] (1 = identical).
+function nameSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  const m = a.length, n = b.length;
+  if (m === 0 || n === 0) return 0;
+  const prev = new Array<number>(n + 1);
+  const cur = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= n; j++) prev[j] = cur[j];
+  }
+  return 1 - prev[n] / Math.max(m, n);
+}
 
 // Finds the first ORIGINAL contact (duplicateOfId IS NULL) in the same company
 // that matches by email, phone, or name+company. Returns null if no match.
@@ -305,8 +338,47 @@ export async function buildContactDupeMatcher(companyId: number) {
   return { match, remember: index };
 }
 
+// Explainable-signal weights (max confidence contributed by each shared signal).
+const DUP_SIGNAL_WEIGHTS = { email: 100, phone: 95, linkedin: 95, nameCompany: 85, website: 70, nameOnly: 55 } as const;
+const NAME_SIM_THRESHOLD = 0.85; // fuzzy same-company name clustering cutoff
+
+// Inspect a formed group and explain WHY its members are considered duplicates,
+// returning human-readable reasons + a 0-100 confidence score. Only signals ALL
+// members share count; multiple shared signals add a small boost.
+function explainGroup(members: ContactRow[]): { reasons: string[]; score: number } {
+  const reasons: string[] = [];
+  let score = 0;
+  const shared = (extract: (c: ContactRow) => string | null): string | null => {
+    const first = extract(members[0]);
+    if (!first) return null;
+    return members.every((m) => extract(m) === first) ? first : null;
+  };
+  const email = shared((c) => normEmail(c.email));
+  if (email) { reasons.push(`Same email (${email})`); score = Math.max(score, DUP_SIGNAL_WEIGHTS.email); }
+  const phone = shared((c) => normPhone(c.mobile) ?? normPhone(c.officePhone));
+  if (phone) { reasons.push(`Same phone (${phone})`); score = Math.max(score, DUP_SIGNAL_WEIGHTS.phone); }
+  const linkedin = shared((c) => normUrl(c.linkedin));
+  if (linkedin) { reasons.push("Same LinkedIn profile"); score = Math.max(score, DUP_SIGNAL_WEIGHTS.linkedin); }
+  const name = shared(normPersonName);
+  const company = shared(normCompany);
+  if (name && company) { reasons.push(`Same name & company (${name} @ ${company})`); score = Math.max(score, DUP_SIGNAL_WEIGHTS.nameCompany); }
+  else if (name) { reasons.push(`Same name (${name})`); score = Math.max(score, DUP_SIGNAL_WEIGHTS.nameOnly); }
+  const website = shared((c) => normUrl(c.website));
+  if (website) { reasons.push(`Same website (${website})`); score = Math.max(score, DUP_SIGNAL_WEIGHTS.website); }
+  if (reasons.length > 1) score = Math.min(100, score + 5);
+  return { reasons, score };
+}
+
+export interface DuplicateGroup {
+  matchType: string;
+  matchValue: string;
+  reasons: string[];
+  score: number;
+  contacts: ReturnType<typeof formatContact>[];
+}
+
 export async function listDuplicates(user: AuthUser) {
-  const allGroups: { matchType: string; matchValue: string; contacts: ReturnType<typeof formatContact>[] }[] = [];
+  const allGroups: DuplicateGroup[] = [];
 
   // ── 1. Linked groups — auto-detected duplicates (duplicateOfId IS NOT NULL)
   // These are definite duplicates stored at scan time; show original + duplicates.
@@ -326,10 +398,14 @@ export async function listDuplicates(user: AuthUser) {
     for (const [origId, dups] of byOriginal) {
       const orig = origMap.get(origId);
       if (!orig) continue;
+      const members = [orig, ...dups];
+      const { reasons } = explainGroup(members);
       allGroups.push({
         matchType: "linked",
         matchValue: (orig.fullName ?? [orig.firstName, orig.lastName].filter(Boolean).join(" ")) || `Contact #${origId}`,
-        contacts: [orig, ...dups].map((m) => formatContact(m)),
+        reasons: reasons.length > 0 ? reasons : ["Auto-linked as a duplicate at scan time"],
+        score: 100,
+        contacts: members.map((m) => formatContact(m)),
       });
     }
   }
@@ -349,23 +425,67 @@ export async function listDuplicates(user: AuthUser) {
     return map;
   };
 
-  const sources: { matchType: "email" | "phone" | "name"; map: Map<string, ContactRow[]> }[] = [
+  const sources: { matchType: string; map: Map<string, ContactRow[]> }[] = [
     { matchType: "email", map: byKey((c) => normEmail(c.email)) },
     { matchType: "phone", map: byKey((c) => normPhone(c.mobile) ?? normPhone(c.officePhone)) },
+    { matchType: "linkedin", map: byKey((c) => normUrl(c.linkedin)) },
+    { matchType: "website", map: byKey((c) => normUrl(c.website)) },
     { matchType: "name", map: byKey(normName) },
   ];
 
   const seen = new Set<string>();
+  const idKeyOf = (members: ContactRow[]) => members.map((m) => m.id).sort((a, b) => a - b).join(",");
   for (const { matchType, map } of sources) {
     for (const [key, members] of map) {
       if (members.length < 2) continue;
-      const idKey = members.map((m) => m.id).sort((a, b) => a - b).join(",");
+      const idKey = idKeyOf(members);
       if (seen.has(idKey)) continue;
       seen.add(idKey);
-      allGroups.push({ matchType, matchValue: key, contacts: members.map((m) => formatContact(m)) });
+      const { reasons, score } = explainGroup(members);
+      allGroups.push({ matchType, matchValue: key, reasons, score, contacts: members.map((m) => formatContact(m)) });
     }
   }
 
+  // ── 3. Fuzzy name-similarity within the SAME company (typos, ordering, initials).
+  // Union-find over unlinked contacts bucketed by normalized company.
+  const byCompany = new Map<string, ContactRow[]>();
+  for (const c of rows) {
+    const comp = normCompany(c);
+    const nm = normPersonName(c);
+    if (!comp || !nm) continue;
+    (byCompany.get(comp) ?? byCompany.set(comp, []).get(comp)!).push(c);
+  }
+  for (const [, bucket] of byCompany) {
+    if (bucket.length < 2) continue;
+    const parent = bucket.map((_, i) => i);
+    const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    const union = (a: number, b: number) => { parent[find(a)] = find(b); };
+    for (let i = 0; i < bucket.length; i++) {
+      for (let j = i + 1; j < bucket.length; j++) {
+        const a = normPersonName(bucket[i])!, b = normPersonName(bucket[j])!;
+        if (a !== b && nameSimilarity(a, b) >= NAME_SIM_THRESHOLD) union(i, j);
+      }
+    }
+    const clusters = new Map<number, ContactRow[]>();
+    for (let i = 0; i < bucket.length; i++) (clusters.get(find(i)) ?? clusters.set(find(i), []).get(find(i))!).push(bucket[i]);
+    for (const [, members] of clusters) {
+      if (members.length < 2) continue;
+      const idKey = idKeyOf(members);
+      if (seen.has(idKey)) continue;
+      seen.add(idKey);
+      const names = members.map((m) => normPersonName(m)!);
+      const best = Math.max(...names.slice(1).map((n) => nameSimilarity(names[0], n)));
+      allGroups.push({
+        matchType: "name-similarity",
+        matchValue: normCompany(members[0])!,
+        reasons: [`Similar names at the same company (${Math.round(best * 100)}% match)`],
+        score: Math.round(60 + best * 20),
+        contacts: members.map((m) => formatContact(m)),
+      });
+    }
+  }
+
+  allGroups.sort((a, b) => b.score - a.score);
   return { groups: allGroups };
 }
 
@@ -412,7 +532,12 @@ export async function makeOriginal(user: AuthUser, body: { duplicateId?: number;
   return { success: true, message: "Contact promoted to original" };
 }
 
-export async function mergeContacts(user: AuthUser, body: { primaryId?: number; duplicateIds?: number[] }) {
+const MERGE_OVERRIDABLE_FIELDS = new Set<string>(MERGE_BACKFILL_FIELDS);
+
+export async function mergeContacts(
+  user: AuthUser,
+  body: { primaryId?: number; duplicateIds?: number[]; fieldValues?: Record<string, unknown> },
+) {
   const { primaryId, duplicateIds } = body;
   if (typeof primaryId !== "number" || !Array.isArray(duplicateIds) || duplicateIds.length === 0) {
     throw new AppError(400, "primaryId and a non-empty duplicateIds array are required");
@@ -436,28 +561,110 @@ export async function mergeContacts(user: AuthUser, body: { primaryId?: number; 
       if (!isEmpty(d[field])) { updates[field] = d[field]; break; }
     }
   }
+  // Explicit per-field winning values override the backfill heuristic (the user
+  // resolved a conflict in the merge UI). Only allow the known backfill fields.
+  for (const [field, value] of Object.entries(body.fieldValues ?? {})) {
+    if (MERGE_OVERRIDABLE_FIELDS.has(field)) updates[field] = value;
+  }
   const tagSet = new Set<string>(parseTags(primary.tags));
   for (const d of dups) for (const t of parseTags(d.tags)) tagSet.add(t);
   updates.tags = JSON.stringify([...tagSet]);
   updates.updatedAt = new Date();
 
   // Formal merge-history: capture WHO, the surviving/merged ids, the applied
-  // field choices, and a pre-merge snapshot (primary + dups) so a later phase can
-  // offer undo. Written INSIDE the merge transaction (see mergeTransaction).
-  const history = {
-    companyId: primary.companyId,
-    entityType: "contact",
+  // field choices, and a pre-merge snapshot (primary + dups + per-dup child ids +
+  // dup custom-field values) so undo can fully reverse the merge. Written INSIDE
+  // the merge transaction (see mergeTransaction), which supplies the child refs.
+  const merged = await contactsRepo.mergeTransaction(
     primaryId,
-    mergedIds: JSON.stringify(dupIds),
-    fieldChoices: JSON.stringify(updates),
-    snapshot: JSON.stringify({ primary, duplicates: dups }),
-    performedById: user.id,
-  };
-
-  const merged = await contactsRepo.mergeTransaction(primaryId, dupIds, updates as Partial<ContactRow>, history);
+    dupIds,
+    updates as Partial<ContactRow>,
+    ({ childRefs, customFieldValues }) => ({
+      companyId: primary.companyId,
+      entityType: "contact",
+      primaryId,
+      mergedIds: JSON.stringify(dupIds),
+      fieldChoices: JSON.stringify(updates),
+      snapshot: JSON.stringify({ primary, duplicates: dups, childRefs, customFieldValues }),
+      performedById: user.id,
+    }),
+  );
 
   const { eventName, assignedToName } = await namesFor(merged);
   return formatContact(merged, eventName, assignedToName);
+}
+
+// Undo a previously-recorded contact merge: re-create the merged-away duplicates,
+// re-point every child row back, restore the primary's pre-merge field values, and
+// re-insert the dups' custom-field values — all transactionally. Idempotency-
+// guarded: a history row can only be undone once.
+const CONTACT_DATE_FIELDS = ["enrichedAt", "hotNotifiedAt", "createdAt", "updatedAt", "deletedAt"] as const;
+
+function reviveDates<T extends Record<string, unknown>>(row: T, fields: readonly string[]): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const f of fields) {
+    const v = out[f];
+    if (typeof v === "string") out[f] = new Date(v);
+  }
+  return out as T;
+}
+
+export async function undoMerge(user: AuthUser, historyId: number) {
+  if (!Number.isInteger(historyId)) throw new AppError(400, "A valid merge-history id is required");
+  const history = await mergeHistoryRepo.findById(user, historyId);
+  if (!history) throw new AppError(404, "Merge-history record not found");
+  if (history.undoneAt) throw new AppError(400, "This merge has already been undone");
+
+  let snapshot: {
+    primary?: Record<string, unknown>;
+    duplicates?: Array<Record<string, unknown>>;
+    childRefs?: Record<string, Record<string, number[]>>;
+    customFieldValues?: Array<Record<string, unknown>>;
+  };
+  try {
+    snapshot = history.snapshot ? JSON.parse(history.snapshot) : {};
+  } catch {
+    throw new AppError(400, "This merge cannot be undone (snapshot is unreadable)");
+  }
+  if (!snapshot.primary || !Array.isArray(snapshot.duplicates) || snapshot.duplicates.length === 0) {
+    throw new AppError(400, "This merge cannot be undone (snapshot predates undo support)");
+  }
+
+  // Restore the primary's pre-merge values for exactly the fields the merge changed
+  // (the fieldChoices keys), plus a fresh updatedAt.
+  let fieldChoices: Record<string, unknown> = {};
+  try {
+    fieldChoices = history.fieldChoices ? JSON.parse(history.fieldChoices) : {};
+  } catch {
+    throw new AppError(400, "This merge cannot be undone (field choices are unreadable)");
+  }
+  const primaryRestore: Record<string, unknown> = {};
+  for (const key of Object.keys(fieldChoices)) {
+    if (key === "updatedAt") continue;
+    primaryRestore[key] = snapshot.primary[key] ?? null;
+  }
+  primaryRestore.updatedAt = new Date();
+
+  const duplicates = snapshot.duplicates.map((d) => reviveDates(d, CONTACT_DATE_FIELDS)) as Array<
+    Parameters<typeof contactsRepo.undoMergeTransaction>[0]["duplicates"][number]
+  >;
+  const customFieldValues = (snapshot.customFieldValues ?? []).map((v) => {
+    const revived = reviveDates(v, ["createdAt", "updatedAt"]);
+    delete (revived as Record<string, unknown>).id; // let the id re-generate; unique(def,entity) still holds
+    return revived;
+  }) as Array<Parameters<typeof contactsRepo.undoMergeTransaction>[0]["customFieldValues"][number]>;
+
+  await contactsRepo.undoMergeTransaction({
+    historyId,
+    primaryId: history.primaryId,
+    primaryRestore,
+    duplicates,
+    childRefs: snapshot.childRefs ?? {},
+    customFieldValues,
+    undoneById: user.id,
+  });
+
+  return { success: true, restoredIds: duplicates.map((d) => d.id) };
 }
 
 export interface MergeHistoryParams {

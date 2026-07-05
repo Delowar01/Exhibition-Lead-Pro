@@ -5,8 +5,11 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { MergeRequestFieldValues } from './mergeRequestFieldValues';
 
 export interface MergeRequest {
   primaryId: number;
   duplicateIds: number[];
+  /** Optional per-field winning values chosen in the merge UI; override the automatic backfill. */
+  fieldValues?: MergeRequestFieldValues;
 }

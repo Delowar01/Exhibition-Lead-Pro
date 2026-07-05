@@ -40,3 +40,4 @@ export * from "./territories";
 export * from "./merge_history";
 export * from "./export_schedules";
 export * from "./export_runs";
+export * from "./assignment_cursors";

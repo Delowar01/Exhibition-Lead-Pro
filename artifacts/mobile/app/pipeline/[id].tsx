@@ -29,6 +29,8 @@ import {
   type TimelineEntry,
   LeadActivityInputType,
   LeadUpdateStage,
+  AssignLeadInputStrategy,
+  type AssigneeRecommendation,
   useAttachLeadTag,
   useCreateLeadActivity,
   useCreateLeadNote,
@@ -39,6 +41,10 @@ import {
   useListLeadNotes,
   useListLeadTags,
   useListTags,
+  useListTeams,
+  useListUsers,
+  useAssignLead,
+  useRecommendLeadAssignee,
   useUpdateLead,
 } from "@workspace/api-client-react";
 
@@ -113,6 +119,15 @@ const TIMELINE_KIND_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
 };
 
 const ACTIVITY_TYPES = ["call", "email", "meeting", "message", "note", "other"] as const;
+
+const ASSIGN_STRATEGIES: AssignLeadInputStrategy[] = [
+  AssignLeadInputStrategy.manual,
+  AssignLeadInputStrategy.round_robin,
+  AssignLeadInputStrategy.load_balanced,
+  AssignLeadInputStrategy.availability,
+  AssignLeadInputStrategy.territory,
+  AssignLeadInputStrategy.ai,
+];
 
 const ACTIVITY_TYPE_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
   call: "phone",
@@ -234,6 +249,78 @@ export default function PipelineDetailScreen() {
   const [activityType, setActivityType] = useState<string>("call");
   const [activitySubject, setActivitySubject] = useState("");
   const [activityBody, setActivityBody] = useState("");
+
+  // Assignment modal (rule-based + AI recommend)
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [assignStrategy, setAssignStrategy] = useState<AssignLeadInputStrategy>(AssignLeadInputStrategy.manual);
+  const [assignOwnerId, setAssignOwnerId] = useState<number | null>(null);
+  const [assignTeamId, setAssignTeamId] = useState<number | null>(null);
+  const [recommendation, setRecommendation] = useState<AssigneeRecommendation | null>(null);
+  const assignUsersQuery = useListUsers({ limit: 200 }, { query: { enabled: assignModalVisible, queryKey: ["/api/users", "assign"] } });
+  const assignTeamsQuery = useListTeams(undefined, { query: { enabled: assignModalVisible, queryKey: ["/api/teams", "assign"] } });
+  const assignUsers = assignUsersQuery.data?.users ?? [];
+  const assignTeams = assignTeamsQuery.data?.teams ?? [];
+  const assignTeamRequired = assignStrategy === "load_balanced" || assignStrategy === "availability";
+  const assignLead = useAssignLead();
+  const recommendAssignee = useRecommendLeadAssignee();
+
+  function submitAssignment() {
+    if (!lead) return;
+    if (assignStrategy === "manual" && assignOwnerId == null) {
+      Alert.alert(t("pipeline.assign.pickOwner"));
+      return;
+    }
+    if (assignTeamRequired && assignTeamId == null && lead.teamId == null) {
+      Alert.alert(t("pipeline.assign.pickTeam"));
+      return;
+    }
+    assignLead.mutate(
+      {
+        id: lead.id,
+        data: {
+          strategy: assignStrategy,
+          assignedToId: assignStrategy === "manual" ? assignOwnerId : undefined,
+          teamId: assignTeamId ?? lead.teamId ?? null,
+        },
+      },
+      {
+        onSuccess: () => {
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(leadId) });
+          setAssignModalVisible(false);
+          setRecommendation(null);
+        },
+        onError: (e: any) => Alert.alert(t("pipeline.assign.failed"), e?.message || undefined),
+      }
+    );
+  }
+
+  function fetchRecommendation() {
+    if (!lead) return;
+    recommendAssignee.mutate(
+      { id: lead.id, data: { teamId: assignTeamId ?? lead.teamId ?? null } },
+      {
+        onSuccess: (data) => setRecommendation(data),
+        onError: (e: any) => Alert.alert(t("pipeline.assign.noRecommendation"), e?.message || undefined),
+      }
+    );
+  }
+
+  function applyRecommendation() {
+    if (!lead || !recommendation) return;
+    assignLead.mutate(
+      { id: lead.id, data: { strategy: "manual", assignedToId: recommendation.assignedToId, teamId: assignTeamId ?? lead.teamId ?? null } },
+      {
+        onSuccess: () => {
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(leadId) });
+          setAssignModalVisible(false);
+          setRecommendation(null);
+        },
+        onError: (e: any) => Alert.alert(t("pipeline.assign.failed"), e?.message || undefined),
+      }
+    );
+  }
 
   // Tag picker modal
   const [tagModalVisible, setTagModalVisible] = useState(false);
@@ -417,7 +504,25 @@ export default function PipelineDetailScreen() {
           </View>
 
           {/* Details */}
-          <Section title={t("contacts.sectionDetails")}>
+          <Section
+            title={t("contacts.sectionDetails")}
+            action={
+              <Pressable
+                onPress={() => {
+                  setAssignStrategy(AssignLeadInputStrategy.manual);
+                  setAssignOwnerId(lead.assignedToId ?? null);
+                  setAssignTeamId(lead.teamId ?? null);
+                  setRecommendation(null);
+                  setAssignModalVisible(true);
+                }}
+                hitSlop={8}
+                style={({ pressed }) => [styles.sectionAction, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Feather name="user-plus" size={13} color={colors.primary} />
+                <Text style={[styles.sectionActionText, { color: colors.primary }]}>{t("pipeline.assign.button")}</Text>
+              </Pressable>
+            }
+          >
             {lead.contactName ? (
               <View style={[styles.infoRow, { marginBottom: 4 }]}>
                 <Avatar name={lead.contactName} size={28} color={colors.primary} />
@@ -723,6 +828,162 @@ export default function PipelineDetailScreen() {
           )}
         </View>
       </Modal>
+
+      {/* Assignment modal */}
+      <Modal visible={assignModalVisible} animationType="slide" transparent onRequestClose={() => setAssignModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setAssignModalVisible(false)} />
+        <View style={[styles.modalSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20, maxHeight: "85%" }]}>
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>{t("pipeline.assign.title")}</Text>
+            <Pressable onPress={() => setAssignModalVisible(false)} hitSlop={10}>
+              <Feather name="x" size={22} color={colors.foreground} />
+            </Pressable>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+            <Text style={[styles.label, { color: colors.mutedForeground, textAlign }]}>{t("pipeline.assign.strategy").toUpperCase()}</Text>
+            <View style={[styles.typeWrap, { flexDirection: isRTL ? "row-reverse" : "row", flexWrap: "wrap" }]}>
+              {ASSIGN_STRATEGIES.map((st) => {
+                const active = assignStrategy === st;
+                return (
+                  <Pressable
+                    key={st}
+                    onPress={() => {
+                      setAssignStrategy(st);
+                      setRecommendation(null);
+                    }}
+                    style={[
+                      styles.typeChip,
+                      { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "1A" : colors.background, flexDirection: isRTL ? "row-reverse" : "row" },
+                    ]}
+                  >
+                    <Text style={[styles.typeChipText, { color: active ? colors.primary : colors.mutedForeground }]}>
+                      {t(`pipeline.assign.strategies.${st}`)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {assignStrategy === "manual" ? (
+              <>
+                <Text style={[styles.label, { color: colors.mutedForeground, textAlign, marginTop: 14 }]}>{t("pipeline.assign.owner").toUpperCase()}</Text>
+                <View style={[styles.typeWrap, { flexDirection: isRTL ? "row-reverse" : "row", flexWrap: "wrap" }]}>
+                  {assignUsers.map((u) => {
+                    const active = assignOwnerId === u.id;
+                    return (
+                      <Pressable
+                        key={u.id}
+                        onPress={() => setAssignOwnerId(u.id)}
+                        style={[
+                          styles.typeChip,
+                          { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "1A" : colors.background },
+                        ]}
+                      >
+                        <Text style={[styles.typeChipText, { color: active ? colors.primary : colors.mutedForeground }]}>{u.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+
+            {assignStrategy !== "manual" && assignStrategy !== "ai" ? (
+              <>
+                <Text style={[styles.label, { color: colors.mutedForeground, textAlign, marginTop: 14 }]}>
+                  {t("pipeline.assign.team")}
+                  {assignTeamRequired ? " *" : ""}
+                </Text>
+                <View style={[styles.typeWrap, { flexDirection: isRTL ? "row-reverse" : "row", flexWrap: "wrap" }]}>
+                  <Pressable
+                    onPress={() => setAssignTeamId(null)}
+                    style={[
+                      styles.typeChip,
+                      { borderColor: assignTeamId == null ? colors.primary : colors.border, backgroundColor: assignTeamId == null ? colors.primary + "1A" : colors.background },
+                    ]}
+                  >
+                    <Text style={[styles.typeChipText, { color: assignTeamId == null ? colors.primary : colors.mutedForeground }]}>{t("pipeline.assign.noTeam")}</Text>
+                  </Pressable>
+                  {assignTeams.map((tm) => {
+                    const active = assignTeamId === tm.id;
+                    return (
+                      <Pressable
+                        key={tm.id}
+                        onPress={() => setAssignTeamId(tm.id)}
+                        style={[
+                          styles.typeChip,
+                          { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "1A" : colors.background },
+                        ]}
+                      >
+                        <Text style={[styles.typeChipText, { color: active ? colors.primary : colors.mutedForeground }]}>{tm.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+
+            {/* AI recommendation */}
+            <View style={[styles.recBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
+              <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 6 }}>
+                  <Feather name="zap" size={14} color={colors.primary} />
+                  <Text style={[styles.recTitle, { color: colors.foreground }]}>{t("pipeline.assign.recommend")}</Text>
+                </View>
+                <Pressable
+                  onPress={fetchRecommendation}
+                  disabled={recommendAssignee.isPending}
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.sectionAction, { borderColor: colors.primary, opacity: recommendAssignee.isPending ? 0.5 : pressed ? 0.6 : 1 }]}
+                >
+                  <Text style={[styles.sectionActionText, { color: colors.primary }]}>
+                    {recommendAssignee.isPending ? t("pipeline.assign.recommending") : t("pipeline.assign.recommend")}
+                  </Text>
+                </Pressable>
+              </View>
+              {recommendation ? (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={[styles.recName, { color: colors.foreground, textAlign }]}>{recommendation.assignedToName}</Text>
+                  {recommendation.reasoning ? (
+                    <Text style={[styles.recReason, { color: colors.mutedForeground, textAlign }]}>{recommendation.reasoning}</Text>
+                  ) : null}
+                  {recommendation.candidates && recommendation.candidates.length > 0 ? (
+                    <View style={{ marginTop: 6 }}>
+                      <Text style={[styles.label, { color: colors.mutedForeground, textAlign }]}>{t("pipeline.assign.candidates").toUpperCase()}</Text>
+                      {recommendation.candidates.map((c) => (
+                        <View key={c.id} style={{ flexDirection: isRTL ? "row-reverse" : "row", justifyContent: "space-between", paddingVertical: 3 }}>
+                          <Text style={[styles.recReason, { color: colors.foreground }]}>{c.name}{c.jobTitle ? ` · ${c.jobTitle}` : ""}</Text>
+                          <Text style={[styles.recReason, { color: colors.mutedForeground }]}>{t("pipeline.assign.openLeads", { count: c.openLeads })}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  <Pressable
+                    onPress={applyRecommendation}
+                    disabled={assignLead.isPending}
+                    style={({ pressed }) => [styles.submitBtn, { backgroundColor: colors.primary, borderRadius: colors.radius + 4, marginTop: 10, opacity: assignLead.isPending ? 0.5 : pressed ? 0.85 : 1 }]}
+                  >
+                    <Feather name="check" size={16} color={colors.primaryForeground} />
+                    <Text style={[styles.submitBtnText, { color: colors.primaryForeground }]}>{t("pipeline.assign.applyRecommendation")}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+
+            <Pressable
+              onPress={submitAssignment}
+              disabled={assignLead.isPending}
+              style={({ pressed }) => [
+                styles.submitBtn,
+                { backgroundColor: colors.primary, borderRadius: colors.radius + 4, marginTop: 16, opacity: assignLead.isPending ? 0.5 : pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Feather name="user-check" size={18} color={colors.primaryForeground} />
+              <Text style={[styles.submitBtnText, { color: colors.primaryForeground }]}>{t("pipeline.assign.apply")}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -964,5 +1225,37 @@ const styles = StyleSheet.create({
   submitBtnText: {
     fontSize: 16,
     fontFamily: FONT.semibold,
+  },
+  sectionAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  sectionActionText: {
+    fontSize: 12,
+    fontFamily: FONT.semibold,
+  },
+  recBox: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  recTitle: {
+    fontSize: 13,
+    fontFamily: FONT.semibold,
+  },
+  recName: {
+    fontSize: 15,
+    fontFamily: FONT.semibold,
+  },
+  recReason: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    marginTop: 2,
   },
 });

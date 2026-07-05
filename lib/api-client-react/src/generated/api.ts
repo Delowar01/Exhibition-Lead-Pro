@@ -27,9 +27,12 @@ import type {
   AdminDashboard,
   AnalyticsScopeOptions,
   AssignLeadInput,
+  AssigneeRecommendation,
   AttachLeadTagInput,
   AuditLogListResponse,
   AuthResponse,
+  BulkAssignInput,
+  BulkAssignResult,
   BusinessCard,
   BusinessCardInput,
   ChangePasswordInput,
@@ -176,6 +179,7 @@ import type {
   PushTokenInput,
   PushTokenUnregisterInput,
   ReadinessStatus,
+  RecommendAssigneeInput,
   RefreshInput,
   RefreshResponse,
   RegisterInput,
@@ -222,6 +226,7 @@ import type {
   TerritoryUpdate,
   TimelineList,
   TrendDataPoint,
+  UndoMergeResponse,
   UnreadCountResponse,
   UpdateNotificationPreferenceInput,
   User,
@@ -6932,6 +6937,149 @@ export const useAssignLead = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAssignLeadMutationOptions(options));
+    }
+
+export const getBulkAssignLeadsUrl = () => {
+
+
+
+
+  return `/api/leads/bulk-assign`
+}
+
+/**
+ * @summary Assign many leads at once using a chosen strategy
+ */
+export const bulkAssignLeads = async (bulkAssignInput: BulkAssignInput, options?: RequestInit): Promise<BulkAssignResult> => {
+
+  return customFetch<BulkAssignResult>(getBulkAssignLeadsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bulkAssignInput,)
+  }
+);}
+
+
+
+
+export const getBulkAssignLeadsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkAssignLeads>>, TError,{data: BodyType<BulkAssignInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkAssignLeads>>, TError,{data: BodyType<BulkAssignInput>}, TContext> => {
+
+const mutationKey = ['bulkAssignLeads'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkAssignLeads>>, {data: BodyType<BulkAssignInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  bulkAssignLeads(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkAssignLeadsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkAssignLeads>>>
+    export type BulkAssignLeadsMutationBody = BodyType<BulkAssignInput>
+    export type BulkAssignLeadsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Assign many leads at once using a chosen strategy
+ */
+export const useBulkAssignLeads = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkAssignLeads>>, TError,{data: BodyType<BulkAssignInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkAssignLeads>>,
+        TError,
+        {data: BodyType<BulkAssignInput>},
+        TContext
+      > => {
+      return useMutation(getBulkAssignLeadsMutationOptions(options));
+    }
+
+export const getRecommendLeadAssigneeUrl = (id: number,) => {
+
+
+
+
+  return `/api/leads/${id}/recommend-assignee`
+}
+
+/**
+ * @summary Preview an AI-recommended owner for a lead (does not mutate)
+ */
+export const recommendLeadAssignee = async (id: number,
+    recommendAssigneeInput?: RecommendAssigneeInput, options?: RequestInit): Promise<AssigneeRecommendation> => {
+
+  return customFetch<AssigneeRecommendation>(getRecommendLeadAssigneeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      recommendAssigneeInput,)
+  }
+);}
+
+
+
+
+export const getRecommendLeadAssigneeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recommendLeadAssignee>>, TError,{id: number;data?: BodyType<RecommendAssigneeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recommendLeadAssignee>>, TError,{id: number;data?: BodyType<RecommendAssigneeInput>}, TContext> => {
+
+const mutationKey = ['recommendLeadAssignee'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recommendLeadAssignee>>, {id: number;data?: BodyType<RecommendAssigneeInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  recommendLeadAssignee(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecommendLeadAssigneeMutationResult = NonNullable<Awaited<ReturnType<typeof recommendLeadAssignee>>>
+    export type RecommendLeadAssigneeMutationBody = BodyType<RecommendAssigneeInput> | undefined
+    export type RecommendLeadAssigneeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Preview an AI-recommended owner for a lead (does not mutate)
+ */
+export const useRecommendLeadAssignee = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recommendLeadAssignee>>, TError,{id: number;data?: BodyType<RecommendAssigneeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recommendLeadAssignee>>,
+        TError,
+        {id: number;data?: BodyType<RecommendAssigneeInput>},
+        TContext
+      > => {
+      return useMutation(getRecommendLeadAssigneeMutationOptions(options));
     }
 
 export const getAutoAssignLeadUrl = (id: number,) => {
@@ -16258,4 +16406,74 @@ export function useListMergeHistory<TData = Awaited<ReturnType<typeof listMergeH
 
 
 
+
+export const getUndoContactMergeUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/merge-history/${id}/undo`
+}
+
+/**
+ * @summary Reverse a recorded contact merge (restores merged-away contacts and their child records)
+ */
+export const undoContactMerge = async (id: number, options?: RequestInit): Promise<UndoMergeResponse> => {
+
+  return customFetch<UndoMergeResponse>(getUndoContactMergeUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getUndoContactMergeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof undoContactMerge>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof undoContactMerge>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['undoContactMerge'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof undoContactMerge>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  undoContactMerge(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UndoContactMergeMutationResult = NonNullable<Awaited<ReturnType<typeof undoContactMerge>>>
+
+    export type UndoContactMergeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Reverse a recorded contact merge (restores merged-away contacts and their child records)
+ */
+export const useUndoContactMerge = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof undoContactMerge>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof undoContactMerge>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getUndoContactMergeMutationOptions(options));
+    }
 

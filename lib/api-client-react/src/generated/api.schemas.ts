@@ -1469,11 +1469,18 @@ export const DuplicateGroupMatchType = {
   phone: 'phone',
   name: 'name',
   linked: 'linked',
+  linkedin: 'linkedin',
+  website: 'website',
+  'name-similarity': 'name-similarity',
 } as const;
 
 export interface DuplicateGroup {
   matchType: DuplicateGroupMatchType;
   matchValue: string;
+  /** Human-readable explanations for why these contacts are grouped */
+  reasons: string[];
+  /** Confidence score (0-100) that the group is a true duplicate set */
+  score: number;
   contacts: Contact[];
 }
 
@@ -1481,9 +1488,21 @@ export interface DuplicatesResponse {
   groups: DuplicateGroup[];
 }
 
+/**
+ * Optional per-field winning values chosen in the merge UI; override the automatic backfill.
+ */
+export type MergeRequestFieldValues = { [key: string]: unknown };
+
 export interface MergeRequest {
   primaryId: number;
   duplicateIds: number[];
+  /** Optional per-field winning values chosen in the merge UI; override the automatic backfill. */
+  fieldValues?: MergeRequestFieldValues;
+}
+
+export interface UndoMergeResponse {
+  success: boolean;
+  restoredIds: number[];
 }
 
 export interface MakeOriginalRequest {
@@ -1889,9 +1908,83 @@ export interface LeadNoteUpdate {
   isPinned?: boolean;
 }
 
+/**
+ * Assignment rule to apply. Defaults to manual.
+ */
+export type AssignLeadInputStrategy = typeof AssignLeadInputStrategy[keyof typeof AssignLeadInputStrategy];
+
+
+export const AssignLeadInputStrategy = {
+  manual: 'manual',
+  round_robin: 'round_robin',
+  load_balanced: 'load_balanced',
+  availability: 'availability',
+  territory: 'territory',
+  ai: 'ai',
+} as const;
+
 export interface AssignLeadInput {
   /** @nullable */
   assignedToId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** Assignment rule to apply. Defaults to manual. */
+  strategy?: AssignLeadInputStrategy;
+}
+
+export type BulkAssignInputStrategy = typeof BulkAssignInputStrategy[keyof typeof BulkAssignInputStrategy];
+
+
+export const BulkAssignInputStrategy = {
+  manual: 'manual',
+  round_robin: 'round_robin',
+  load_balanced: 'load_balanced',
+  availability: 'availability',
+  territory: 'territory',
+  ai: 'ai',
+} as const;
+
+export interface BulkAssignInput {
+  leadIds: number[];
+  strategy?: BulkAssignInputStrategy;
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
+}
+
+export type BulkAssignResultResultsItem = {
+  leadId: number;
+  success: boolean;
+  /** @nullable */
+  assignedToId: number | null;
+  /** @nullable */
+  error: string | null;
+};
+
+export interface BulkAssignResult {
+  assigned: number;
+  failed: number;
+  results: BulkAssignResultResultsItem[];
+}
+
+export interface AssignmentCandidate {
+  id: number;
+  name: string;
+  /** @nullable */
+  jobTitle?: string | null;
+  openLeads: number;
+}
+
+export interface AssigneeRecommendation {
+  assignedToId: number;
+  /** @nullable */
+  assignedToName: string | null;
+  reasoning: string;
+  candidates: AssignmentCandidate[];
+}
+
+export interface RecommendAssigneeInput {
   /** @nullable */
   teamId?: number | null;
 }

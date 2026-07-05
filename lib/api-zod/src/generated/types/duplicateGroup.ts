@@ -11,5 +11,9 @@ import type { DuplicateGroupMatchType } from './duplicateGroupMatchType';
 export interface DuplicateGroup {
   matchType: DuplicateGroupMatchType;
   matchValue: string;
+  /** Human-readable explanations for why these contacts are grouped */
+  reasons: string[];
+  /** Confidence score (0-100) that the group is a true duplicate set */
+  score: number;
   contacts: Contact[];
 }

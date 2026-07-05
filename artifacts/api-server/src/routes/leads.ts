@@ -11,6 +11,8 @@ import {
   UpdateLeadNoteBody,
   AttachLeadTagBody,
   AssignLeadBody,
+  BulkAssignLeadsBody,
+  RecommendLeadAssigneeBody,
   SetLeadCustomFieldsBody,
 } from "@workspace/api-zod";
 import * as leads from "../services/leads.service.js";
@@ -48,6 +50,11 @@ router.post("/leads", requirePermission("leads", "create"), validateBody(CreateL
 // GET /leads/pipeline
 router.get("/leads/pipeline", async (req: AuthRequest, res) => {
   res.json(await leads.getPipeline(req.user!));
+});
+
+// POST /leads/bulk-assign — assign many leads at once (static path before /:id)
+router.post("/leads/bulk-assign", requirePermission("leads", "edit"), validateBody(BulkAssignLeadsBody), async (req: AuthRequest, res) => {
+  res.json(await leads.bulkAssign(req.user!, req.body ?? {}));
 });
 
 // ── Lead activities (timeline events)
@@ -108,6 +115,9 @@ router.post("/leads/:id/assign", requirePermission("leads", "edit"), validateBod
 });
 router.post("/leads/:id/auto-assign", requirePermission("leads", "edit"), async (req: AuthRequest, res) => {
   res.json(await leads.autoAssignLead(req.user!, parseInt(String(req.params.id))));
+});
+router.post("/leads/:id/recommend-assignee", requirePermission("leads", "edit"), validateBody(RecommendLeadAssigneeBody), async (req: AuthRequest, res) => {
+  res.json(await leads.recommendAssignee(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 
 // GET /leads/:id

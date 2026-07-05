@@ -2,22 +2,45 @@ import React, { useState } from "react";
 import {
   useGetLeadPipeline,
   useUpdateLead,
+  useBulkAssignLeads,
   useListPipelineStages,
+  useListUsers,
+  useListTeams,
   getGetLeadPipelineQueryKey,
+  BulkAssignInputStrategy,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Building2, Calendar as CalendarIcon, GripVertical, Download, Upload } from "lucide-react";
+import { Building2, Calendar as CalendarIcon, GripVertical, Download, Upload, CheckSquare, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ExportDialog } from "@/components/import-export/ExportDialog";
 import { ImportWizard } from "@/components/import-export/ImportWizard";
 import { useImportExportPermissions } from "@/components/import-export/usePermissions";
+
+const BULK_STRATEGY_LABELS: Record<BulkAssignInputStrategy, string> = {
+  manual: "Manual (pick owner)",
+  round_robin: "Round-robin",
+  load_balanced: "Load-balanced",
+  availability: "Availability",
+  territory: "Territory",
+  ai: "AI recommendation",
+};
 
 export default function AdminLeads() {
   const { data: pipeline, isLoading } = useGetLeadPipeline();
   const { data: stagesData, isLoading: stagesLoading } = useListPipelineStages();
   const updateLead = useUpdateLead();
+  const bulkAssign = useBulkAssignLeads();
+  const { data: usersData } = useListUsers({ limit: 200 });
+  const { data: teamsData } = useListTeams();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { canExport, canImportLeads } = useImportExportPermissions();
@@ -26,6 +49,70 @@ export default function AdminLeads() {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkStrategy, setBulkStrategy] = useState<BulkAssignInputStrategy>(BulkAssignInputStrategy.round_robin);
+  const [bulkOwner, setBulkOwner] = useState<string>("");
+  const [bulkTeam, setBulkTeam] = useState<string>("");
+
+  const users = usersData?.users ?? [];
+  const teams = teamsData?.teams ?? [];
+  const teamRequired = ["round_robin", "load_balanced", "availability"].includes(bulkStrategy);
+
+  const toggleSelected = (leadId: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(leadId)) next.delete(leadId);
+      else next.add(leadId);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setBulkOwner("");
+    setBulkTeam("");
+  };
+
+  const handleBulkAssign = () => {
+    const leadIds = [...selectedIds];
+    if (leadIds.length === 0) return;
+    if (bulkStrategy === "manual" && !bulkOwner) {
+      toast({ title: "Pick an owner", description: "Manual assignment needs a target owner.", variant: "destructive" });
+      return;
+    }
+    if (teamRequired && !bulkTeam) {
+      toast({ title: "Pick a team", description: "This strategy requires a team.", variant: "destructive" });
+      return;
+    }
+    bulkAssign.mutate(
+      {
+        data: {
+          leadIds,
+          strategy: bulkStrategy,
+          assignedToId: bulkStrategy === "manual" && bulkOwner ? parseInt(bulkOwner, 10) : null,
+          // Manual assignment with no team chosen must NOT send teamId — the
+          // server treats an explicit teamId (incl. null) as a set, which would
+          // silently clear each lead's existing team binding. Omit it instead.
+          teamId: bulkTeam ? parseInt(bulkTeam, 10) : bulkStrategy === "manual" ? undefined : null,
+        },
+      },
+      {
+        onSuccess: (res) => {
+          queryClient.invalidateQueries({ queryKey: getGetLeadPipelineQueryKey() });
+          toast({
+            title: `Assigned ${res.assigned} lead(s)`,
+            description: res.failed > 0 ? `${res.failed} could not be assigned.` : undefined,
+            variant: res.failed > 0 ? "destructive" : undefined,
+          });
+          exitSelectMode();
+        },
+        onError: () => toast({ title: "Bulk assign failed", variant: "destructive" }),
+      }
+    );
+  };
 
   const handleDragStart = (e: React.DragEvent, leadId: number) => {
     e.dataTransfer.setData("leadId", leadId.toString());
@@ -109,6 +196,17 @@ export default function AdminLeads() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {selectMode ? (
+            <Button variant="outline" onClick={exitSelectMode}>
+              <X className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => setSelectMode(true)}>
+              <CheckSquare className="mr-2 h-4 w-4" />
+              Select
+            </Button>
+          )}
           {canImportLeads && (
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="mr-2 h-4 w-4" />
@@ -123,6 +221,60 @@ export default function AdminLeads() {
           )}
         </div>
       </div>
+
+      {selectMode && (
+        <div className="flex-shrink-0 flex items-center gap-3 flex-wrap rounded-xl border border-primary/30 bg-primary/5 p-3">
+          <span className="text-sm font-semibold whitespace-nowrap">
+            {selectedIds.size} selected
+          </span>
+          <Select value={bulkStrategy} onValueChange={(v) => setBulkStrategy(v as BulkAssignInputStrategy)}>
+            <SelectTrigger className="w-[200px] bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.values(BulkAssignInputStrategy).map((s) => (
+                <SelectItem key={s} value={s}>
+                  {BULK_STRATEGY_LABELS[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {bulkStrategy === "manual" && (
+            <Select value={bulkOwner} onValueChange={setBulkOwner}>
+              <SelectTrigger className="w-[180px] bg-background">
+                <SelectValue placeholder="Owner" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id.toString()}>
+                    {u.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {bulkStrategy !== "manual" && (
+            <Select value={bulkTeam} onValueChange={setBulkTeam}>
+              <SelectTrigger className="w-[180px] bg-background">
+                <SelectValue placeholder={teamRequired ? "Team (required)" : "Team (optional)"} />
+              </SelectTrigger>
+              <SelectContent>
+                {teams.map((t) => (
+                  <SelectItem key={t.id} value={t.id.toString()}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button
+            onClick={handleBulkAssign}
+            disabled={selectedIds.size === 0 || bulkAssign.isPending}
+          >
+            {bulkAssign.isPending ? "Assigning..." : `Assign ${selectedIds.size || ""}`.trim()}
+          </Button>
+        </div>
+      )}
 
       {stages.length === 0 ? (
         <div className="flex-1 flex items-center justify-center border-2 border-dashed border-border/50 rounded-xl text-muted-foreground text-sm">
@@ -202,25 +354,46 @@ export default function AdminLeads() {
                     const isDragging = draggedLeadId === lead.id;
                     const displayName = lead.contactName || lead.title || "Unnamed Lead";
 
+                    const isSelected = selectedIds.has(lead.id);
+
                     return (
                       <div
                         key={lead.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, lead.id)}
+                        draggable={!selectMode}
+                        onDragStart={(e) => !selectMode && handleDragStart(e, lead.id)}
                         onDragEnd={handleDragEnd}
-                        className={`bg-card p-3.5 rounded-lg shadow-sm border border-border cursor-grab active:cursor-grabbing hover:border-primary/50 hover:shadow-md transition-all group ${
-                          isDragging ? "opacity-40 scale-95 shadow-none" : "opacity-100"
-                        } ${isWon ? "border-l-4 border-l-green-500" : ""}`}
+                        onClick={() => selectMode && toggleSelected(lead.id)}
+                        className={`bg-card p-3.5 rounded-lg shadow-sm border transition-all group ${
+                          selectMode
+                            ? `cursor-pointer ${isSelected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/50"}`
+                            : "border-border cursor-grab active:cursor-grabbing hover:border-primary/50 hover:shadow-md"
+                        } ${isDragging ? "opacity-40 scale-95 shadow-none" : "opacity-100"} ${
+                          isWon ? "border-l-4 border-l-green-500" : ""
+                        }`}
                       >
                         <div className="flex justify-between items-start mb-2 gap-2">
                           <div className="flex gap-2 items-start">
-                            <GripVertical className="h-4 w-4 text-muted-foreground/30 mt-0.5 -ml-1 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                            <Link
-                              href={`/admin/leads/${lead.id}`}
-                              className="font-medium text-sm hover:text-primary transition-colors leading-tight line-clamp-2"
-                            >
-                              {displayName}
-                            </Link>
+                            {selectMode ? (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelected(lead.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="mt-0.5 accent-primary flex-shrink-0"
+                              />
+                            ) : (
+                              <GripVertical className="h-4 w-4 text-muted-foreground/30 mt-0.5 -ml-1 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                            )}
+                            {selectMode ? (
+                              <span className="font-medium text-sm leading-tight line-clamp-2">{displayName}</span>
+                            ) : (
+                              <Link
+                                href={`/admin/leads/${lead.id}`}
+                                className="font-medium text-sm hover:text-primary transition-colors leading-tight line-clamp-2"
+                              >
+                                {displayName}
+                              </Link>
+                            )}
                           </div>
                           {lead.priority && (
                             <div

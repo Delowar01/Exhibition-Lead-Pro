@@ -20,7 +20,11 @@ import {
   useListTags,
   useAssignLead,
   useAutoAssignLead,
+  useRecommendLeadAssignee,
   useListUsers,
+  useListTeams,
+  AssignLeadInputStrategy,
+  type AssigneeRecommendation,
   getGetLeadQueryKey,
   getGetContactQueryKey,
   getGetLeadPipelineQueryKey,
@@ -1126,11 +1130,26 @@ function AssignmentCard({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: usersData } = useListUsers({ limit: 200 });
+  const { data: teamsData } = useListTeams();
   const assignLead = useAssignLead();
-  const autoAssign = useAutoAssignLead();
+  const recommend = useRecommendLeadAssignee();
   const [owner, setOwner] = useState<string>(lead.assignedToId ? lead.assignedToId.toString() : "");
+  const [strategy, setStrategy] = useState<AssignLeadInputStrategy>(AssignLeadInputStrategy.manual);
+  const [teamId, setTeamId] = useState<string>(lead.teamId ? lead.teamId.toString() : "");
+  const [rec, setRec] = useState<AssigneeRecommendation | null>(null);
 
   const users = usersData?.users ?? [];
+  const teams = teamsData?.teams ?? [];
+  const teamRequired = strategy === "load_balanced" || strategy === "availability";
+
+  const STRATEGY_LABELS: Record<AssignLeadInputStrategy, string> = {
+    manual: "Manual (pick owner)",
+    round_robin: "Round-robin",
+    load_balanced: "Load-balanced",
+    availability: "Availability",
+    territory: "Territory",
+    ai: "AI recommendation",
+  };
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(leadId) });
@@ -1139,7 +1158,7 @@ function AssignmentCard({
     setOwner(val);
     const assignedToId = val ? parseInt(val, 10) : null;
     assignLead.mutate(
-      { id: leadId, data: { assignedToId, teamId: lead.teamId ?? null } },
+      { id: leadId, data: { assignedToId, teamId: lead.teamId ?? null, strategy: "manual" } },
       {
         onSuccess: () => {
           invalidate();
@@ -1150,15 +1169,54 @@ function AssignmentCard({
     );
   };
 
-  const handleAutoAssign = () => {
-    autoAssign.mutate(
-      { id: leadId },
+  const handleStrategyAssign = () => {
+    const parsedTeam = teamId ? parseInt(teamId, 10) : (lead.teamId ?? null);
+    assignLead.mutate(
+      { id: leadId, data: { strategy, teamId: parsedTeam } },
       {
         onSuccess: () => {
           invalidate();
-          toast({ title: "Lead auto-assigned" });
+          setRec(null);
+          toast({ title: `Assigned via ${STRATEGY_LABELS[strategy].toLowerCase()}` });
         },
-        onError: () => toast({ title: "Could not auto-assign", variant: "destructive" }),
+        onError: (e: any) =>
+          toast({
+            title: "Could not assign",
+            description: e?.message || "Check the strategy requirements (a team may be required).",
+            variant: "destructive",
+          }),
+      }
+    );
+  };
+
+  const handleRecommend = () => {
+    const parsedTeam = teamId ? parseInt(teamId, 10) : (lead.teamId ?? null);
+    recommend.mutate(
+      { id: leadId, data: { teamId: parsedTeam } },
+      {
+        onSuccess: (data) => setRec(data),
+        onError: (e: any) =>
+          toast({
+            title: "No recommendation",
+            description: e?.message || "Could not compute a recommendation.",
+            variant: "destructive",
+          }),
+      }
+    );
+  };
+
+  const applyRecommendation = () => {
+    if (!rec) return;
+    setOwner(rec.assignedToId.toString());
+    assignLead.mutate(
+      { id: leadId, data: { assignedToId: rec.assignedToId, teamId: teamId ? parseInt(teamId, 10) : (lead.teamId ?? null), strategy: "manual" } },
+      {
+        onSuccess: () => {
+          invalidate();
+          setRec(null);
+          toast({ title: "Recommendation applied" });
+        },
+        onError: () => toast({ title: "Could not assign", variant: "destructive" }),
       }
     );
   };
@@ -1186,18 +1244,81 @@ function AssignmentCard({
             </SelectContent>
           </Select>
         </div>
+
+        <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
+          <p className="text-sm font-semibold flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-primary" /> Auto-assign by rule
+          </p>
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Strategy</p>
+            <Select value={strategy} onValueChange={(v) => { setStrategy(v as AssignLeadInputStrategy); setRec(null); }}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(AssignLeadInputStrategy).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STRATEGY_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {strategy !== "manual" && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">
+                Team {teamRequired && <span className="text-destructive">*</span>}
+              </p>
+              <Select value={teamId} onValueChange={setTeamId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={lead.teamName || "Lead's current team"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams.map((t) => (
+                    <SelectItem key={t.id} value={t.id.toString()}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="flex gap-2">
+            {strategy === "ai" ? (
+              <Button variant="outline" className="flex-1" onClick={handleRecommend} disabled={recommend.isPending}>
+                {recommend.isPending ? "Analyzing..." : "Preview recommendation"}
+              </Button>
+            ) : (
+              <Button className="flex-1" onClick={handleStrategyAssign} disabled={assignLead.isPending || (teamRequired && !teamId && !lead.teamId)}>
+                {assignLead.isPending ? "Assigning..." : "Apply strategy"}
+              </Button>
+            )}
+          </div>
+          {strategy === "ai" && rec && (
+            <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-2">
+              <p className="text-sm font-semibold">Recommended: {rec.assignedToName || `User #${rec.assignedToId}`}</p>
+              <p className="text-xs text-muted-foreground">{rec.reasoning}</p>
+              {rec.candidates.length > 0 && (
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  {rec.candidates.map((c) => (
+                    <div key={c.id} className="flex justify-between">
+                      <span>{c.name}</span>
+                      <span>{c.openLeads} open</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button size="sm" className="w-full" onClick={applyRecommendation} disabled={assignLead.isPending}>
+                Assign to {rec.assignedToName || "recommended owner"}
+              </Button>
+            </div>
+          )}
+        </div>
+
         <div>
           <p className="text-sm font-medium text-muted-foreground mb-1">Team</p>
           <p className="text-sm font-medium">{lead.teamName || "No team"}</p>
         </div>
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={handleAutoAssign}
-          disabled={autoAssign.isPending}
-        >
-          Auto-assign
-        </Button>
       </CardContent>
     </Card>
   );
