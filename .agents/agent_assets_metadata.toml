@@ -149,3 +149,9 @@ id = "eiCddXXd245qvzA2kfLi_"
 uri = "file://docs/reports/phase-3-status-report.md"
 type = "text"
 title = "Phase 3 Status Report"
+
+[[outputs]]
+id = "EsHp-8jI4rY10ZteNTgP5"
+uri = "file://docs/reports/STAGE_4_REPORT.md"
+type = "text"
+title = "Stage 4 — Completion Report"
