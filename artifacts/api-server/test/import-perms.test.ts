@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, like } from "drizzle-orm";
-import { db, companiesTable, usersTable, loginAttemptsTable, contactsTable, customFieldDefinitionsTable } from "@workspace/db";
+import { db, companiesTable, usersTable, loginAttemptsTable, contactsTable, customFieldDefinitionsTable, leadsTable } from "@workspace/db";
 
 // Stage 4B — Import & Export Center: access-control regression coverage.
 // The whole import flow (preview / validate / commit) is gated on the target
@@ -91,6 +91,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(loginAttemptsTable).where(like(loginAttemptsTable.email, `%@${ORG_DOMAIN}`));
+  await db.delete(leadsTable).where(eq(leadsTable.companyId, companyId));
   await db.delete(contactsTable).where(eq(contactsTable.companyId, companyId));
   await db.delete(customFieldDefinitionsTable).where(eq(customFieldDefinitionsTable.companyId, companyId));
   await db.delete(usersTable).where(like(usersTable.email, `%@${ORG_DOMAIN}`));
@@ -169,5 +170,83 @@ describe("Import commit is atomic across base rows + custom-field writes", () =>
     // Rollback assertion: the base contact was NOT persisted.
     const rows = await db.select().from(contactsTable).where(eq(contactsTable.email, uniqueEmail));
     expect(rows.length).toBe(0);
+  });
+});
+
+describe("Lead import cannot bypass the single-active-lead-per-contact invariant", () => {
+  it("skips a lead row whose contact already has an active lead, even when skipDuplicates=false", async () => {
+    // The single-active-lead-per-contact invariant is enforced by
+    // leads.service#createLead (409 on conflict). Bulk import must honor the SAME
+    // rule: a lead row whose contact already has an active lead is a HARD conflict
+    // that is never inserted — unlike a soft contact duplicate, it is skipped even
+    // when skipDuplicates=false, so import can't create a second active lead.
+    const email = `lead-conflict-${SUFFIX}@sample.test`;
+
+    const createContact = await api("POST", "/contacts", adminToken, {
+      firstName: "Lead",
+      lastName: "Conflict",
+      email,
+    });
+    expect(createContact.status).toBe(201);
+    const contactId = (await createContact.json()).id as number;
+
+    const createLead = await api("POST", "/leads", adminToken, {
+      contactId,
+      title: "Existing Opportunity",
+    });
+    expect(createLead.status).toBe(201);
+
+    // Import a second lead row pointing at the SAME contact, with skipDuplicates
+    // explicitly false — the row must still be skipped, not inserted.
+    const file = Buffer.from(`title,contactEmail\nSecond Opportunity,${email}\n`).toString("base64");
+    const commit = await api("POST", "/imports/commit", adminToken, {
+      entityType: "lead",
+      file,
+      mapping: { title: "title", contactEmail: "contactEmail" },
+      skipDuplicates: false,
+    });
+    expect(commit.status).toBe(200);
+    const result = await commit.json();
+    expect(result.imported).toBe(0);
+    expect(result.skippedDuplicates).toBe(1);
+
+    // DB invariant: still exactly one lead for the contact (no second one created).
+    const leads = await db.select().from(leadsTable).where(eq(leadsTable.contactId, contactId));
+    expect(leads.length).toBe(1);
+  });
+
+  it("does NOT drop legitimate rows: a lost lead plus an open lead for the same contact both import", async () => {
+    // The hard-conflict rule is stage-aware — it mirrors activeLeadIdForContact,
+    // which only counts non-lost leads. A "lost" row creates no active lead, so it
+    // must neither be skipped nor block a later open row for the same contact.
+    const email = `lead-mixedstage-${SUFFIX}@sample.test`;
+
+    const createContact = await api("POST", "/contacts", adminToken, {
+      firstName: "Mixed",
+      lastName: "Stage",
+      email,
+    });
+    expect(createContact.status).toBe(201);
+    const contactId = (await createContact.json()).id as number;
+
+    // Two rows for the SAME (leadless) contact: one lost, one open. Both are valid.
+    const file = Buffer.from(
+      `title,contactEmail,stage\nLost Deal,${email},lost\nOpen Deal,${email},prospect\n`,
+    ).toString("base64");
+    const commit = await api("POST", "/imports/commit", adminToken, {
+      entityType: "lead",
+      file,
+      mapping: { title: "title", contactEmail: "contactEmail", stage: "stage" },
+      skipDuplicates: false,
+    });
+    expect(commit.status).toBe(200);
+    const result = await commit.json();
+    expect(result.imported).toBe(2);
+    expect(result.skippedDuplicates).toBe(0);
+
+    const leads = await db.select().from(leadsTable).where(eq(leadsTable.contactId, contactId));
+    expect(leads.length).toBe(2);
+    expect(leads.filter((l) => l.stage === "lost").length).toBe(1);
+    expect(leads.filter((l) => l.stage !== "lost").length).toBe(1);
   });
 });

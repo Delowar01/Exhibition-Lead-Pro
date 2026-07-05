@@ -139,6 +139,12 @@ interface BuiltRow {
   errors: string[];
   duplicateOfExistingId: number | null;
   duplicateReason: string | null;
+  // A hard integrity conflict that must NEVER be inserted, regardless of
+  // skipDuplicates. Unlike a contact "duplicate" (which can be legitimately linked
+  // to its original when skipDuplicates=false), a lead whose contact already has an
+  // active lead would violate the single-active-lead-per-contact invariant enforced
+  // by leads.service#createLead.
+  hardConflict: boolean;
 }
 
 interface BuildContext {
@@ -246,6 +252,7 @@ async function buildRows(ctx: BuildContext): Promise<{ built: BuiltRow[]; unmapp
 
     let duplicateOfExistingId: number | null = null;
     let duplicateReason: string | null = null;
+    let hardConflict = false;
 
     if (ctx.entityType === "contact") {
       const hasIdentity = ["firstName", "lastName", "email", "mobile", "officePhone"].some((k) => record[k]);
@@ -273,16 +280,24 @@ async function buildRows(ctx: BuildContext): Promise<{ built: BuiltRow[]; unmapp
       const email = record.contactEmail ? record.contactEmail.trim().toLowerCase() : null;
       const cid = email ? leadContactByEmail.get(email) ?? null : null;
       if (cid != null) {
-        if (leadContactsWithActive.has(cid) || seenActiveLeadContacts.has(cid)) {
-          duplicateReason = "contact already has an active lead";
-          duplicateOfExistingId = cid;
-        } else {
-          seenActiveLeadContacts.add(cid);
+        // "Active" must mean exactly what leadsRepo.activeLeadIdForContact enforces
+        // (non-lost). Normalize this row's stage the SAME way commitLeads does — a
+        // "lost" row creates no active lead, so it neither conflicts with an existing
+        // active lead nor blocks a later row for the same contact.
+        const stageText = (record.stage ?? "prospect").trim().toLowerCase() || "prospect";
+        if (stageText !== "lost") {
+          if (leadContactsWithActive.has(cid) || seenActiveLeadContacts.has(cid)) {
+            duplicateReason = "contact already has an active lead";
+            duplicateOfExistingId = cid;
+            hardConflict = true;
+          } else {
+            seenActiveLeadContacts.add(cid);
+          }
         }
       }
     }
 
-    built.push({ index: i + 1, record, customValues, errors, duplicateOfExistingId, duplicateReason });
+    built.push({ index: i + 1, record, customValues, errors, duplicateOfExistingId, duplicateReason, hardConflict });
   });
 
   return { built, unmappedRequiredCustom };
@@ -346,9 +361,17 @@ export async function commit(
   }
 
   const errorRows = built.filter((b) => b.errors.length > 0).length;
-  // Rows we will actually insert: no per-row errors, and (if skipDuplicates) not a duplicate.
-  const toInsert = built.filter((b) => b.errors.length === 0 && (!skipDuplicates || !b.duplicateReason));
-  const skippedDuplicates = built.filter((b) => b.errors.length === 0 && b.duplicateReason && skipDuplicates).length;
+  // Rows we will actually insert: no per-row errors, never a hard integrity conflict
+  // (e.g. a lead whose contact already has an active lead), and — when skipDuplicates —
+  // not a soft duplicate. A hard conflict is skipped even when skipDuplicates=false so
+  // bulk import can never bypass the single-active-lead-per-contact invariant.
+  const toInsert = built.filter(
+    (b) => b.errors.length === 0 && !b.hardConflict && (!skipDuplicates || !b.duplicateReason),
+  );
+  const insertSet = new Set(toInsert);
+  const skippedDuplicates = built.filter(
+    (b) => b.errors.length === 0 && b.duplicateReason && !insertSet.has(b),
+  ).length;
 
   if (toInsert.length === 0) {
     return { imported: 0, skippedDuplicates, skippedErrors: errorRows, totalRows: built.length };

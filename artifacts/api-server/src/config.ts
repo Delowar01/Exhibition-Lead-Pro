@@ -76,9 +76,16 @@ export const config = {
     maxFailedAttempts: Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5),
     lockoutWindowMinutes: Number(process.env.LOGIN_LOCKOUT_WINDOW_MIN ?? 15),
     lockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MIN ?? 15),
-    // express-rate-limit window/ceiling for the /api/auth surface.
+    // express-rate-limit window/ceiling for the /api/auth surface. This is an
+    // IP-wide ceiling that counts EVERY auth request (incl. successful logins), so
+    // the integration test suite — which performs hundreds of logins against the
+    // shared dev server in one run — trips the default 100 and returns spurious
+    // 429s. The real credential-abuse guards (per-account DB lockout +
+    // loginRateLimiter, failures-only) are unaffected, so we lift this ceiling
+    // OUTSIDE production while keeping the hardened default when NODE_ENV=production.
+    // An explicit AUTH_RATE_MAX env always wins.
     rateLimitWindowMs: Number(process.env.AUTH_RATE_WINDOW_MS ?? 15 * 60 * 1000),
-    rateLimitMax: Number(process.env.AUTH_RATE_MAX ?? 100),
+    rateLimitMax: Number(process.env.AUTH_RATE_MAX ?? (nodeEnv === "production" ? 100 : 100_000)),
     loginRateLimitMax: Number(process.env.LOGIN_RATE_MAX ?? 20),
     // Minimum password length; complexity is enforced in validatePassword.
     minPasswordLength: Number(process.env.MIN_PASSWORD_LENGTH ?? 8),
