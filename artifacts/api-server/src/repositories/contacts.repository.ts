@@ -9,6 +9,8 @@ import {
   meetingsTable,
   followUpsTable,
   contactStatusHistoryTable,
+  mergeHistoryTable,
+  customFieldValuesTable,
 } from "@workspace/db";
 import { eq, ne, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
@@ -161,13 +163,26 @@ export async function makeOriginalSwap(duplicateId: number, groupOriginalId: num
   });
 }
 
-// Merge: reassign FK-bearing scans/leads to the primary, update the primary, then
-// hard-delete the duplicates (FKs already reassigned, so nothing is orphaned).
-export async function mergeTransaction(primaryId: number, dupIds: number[], updates: Partial<typeof contactsTable.$inferInsert>): Promise<ContactRow> {
+// Merge: reassign FK-bearing scans/leads to the primary, update the primary,
+// record the formal merge-history row, clean up the duplicates' custom-field
+// values, then hard-delete the duplicates — all in ONE transaction so nothing is
+// orphaned and the audit row is written atomically with the merge.
+export async function mergeTransaction(
+  primaryId: number,
+  dupIds: number[],
+  updates: Partial<typeof contactsTable.$inferInsert>,
+  history: typeof mergeHistoryTable.$inferInsert,
+): Promise<ContactRow> {
   return db.transaction(async (tx) => {
     await tx.update(scansTable).set({ contactId: primaryId }).where(inArray(scansTable.contactId, dupIds));
     await tx.update(leadsTable).set({ contactId: primaryId }).where(inArray(leadsTable.contactId, dupIds));
     const [updated] = await tx.update(contactsTable).set(updates).where(eq(contactsTable.id, primaryId)).returning();
+    // Drop the merged-away contacts' custom-field values (their owner rows are
+    // about to be hard-deleted; values have no soft-delete to preserve).
+    await tx
+      .delete(customFieldValuesTable)
+      .where(and(eq(customFieldValuesTable.entityType, "contact"), inArray(customFieldValuesTable.entityId, dupIds)));
+    await tx.insert(mergeHistoryTable).values(history);
     await tx.delete(contactsTable).where(inArray(contactsTable.id, dupIds));
     return updated;
   });

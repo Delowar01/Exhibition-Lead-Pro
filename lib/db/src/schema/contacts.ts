@@ -26,8 +26,9 @@ export const contactsTable = pgTable("contacts", {
   duplicateOfId: integer("duplicate_of_id"), // when set, this contact is a duplicate of another and hidden from the main list
   linkedin: text("linkedin"),
   notes: text("notes"),
+  source: text("source"), // acquisition source (e.g. event, referral, website, import)
   tags: text("tags").default("[]"), // JSON array stored as text
-  status: text("status").notNull().default("new"), // new, qualified, interested, proposal_sent, won, lost
+  status: text("status").notNull().default("new"), // new, contacted, qualified, interested, proposal_sent, won, lost, archived
   leadScore: integer("lead_score"), // 0-100 AI lead qualification score
   leadTemperature: text("lead_temperature"), // hot, warm, cold
   aiReasoning: text("ai_reasoning"), // short AI explanation of the score

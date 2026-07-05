@@ -1133,8 +1133,9 @@ export const ListContactsResponse = zod.object({
   "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -1180,8 +1181,9 @@ export const CreateContactBody = zod.object({
   "gpsAccuracy": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']).default(createContactBodyStatusDefault),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']).default(createContactBodyStatusDefault),
   "followUpDate": zod.string().nullish(),
   "followUpTime": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -1218,8 +1220,9 @@ export const GetContactResponse = zod.object({
   "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -1259,8 +1262,9 @@ export const UpdateContactBody = zod.object({
   "address": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']).optional(),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']).optional(),
   "statusComment": zod.string().nullish().describe('Optional note logged with a status change'),
   "followUpDate": zod.string().nullish(),
   "followUpTime": zod.string().nullish(),
@@ -1289,8 +1293,9 @@ export const UpdateContactResponse = zod.object({
   "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -1366,8 +1371,9 @@ export const GetContactDuplicatesResponse = zod.object({
   "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -1418,8 +1424,9 @@ export const MergeContactsResponse = zod.object({
   "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -1481,8 +1488,9 @@ export const EnrichContactResponse = zod.object({
   "duplicateOfId": zod.number().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "tags": zod.array(zod.string()).optional(),
-  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent']),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
   "leadScore": zod.number().nullish(),
   "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
   "aiReasoning": zod.string().nullish(),
@@ -1525,7 +1533,8 @@ export const ListLeadsResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -1574,7 +1583,8 @@ export const createLeadBodyStageDefault = `prospect`;
 
 export const CreateLeadBody = zod.object({
   "contactId": zod.number().nullish(),
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']).default(createLeadBodyStageDefault),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']).default(createLeadBodyStageDefault),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -1604,7 +1614,8 @@ export const GetLeadResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -1652,7 +1663,8 @@ export const UpdateLeadParams = zod.object({
 })
 
 export const UpdateLeadBody = zod.object({
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']).optional(),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']).optional(),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -1674,7 +1686,8 @@ export const UpdateLeadResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -1740,7 +1753,8 @@ export const GetLeadPipelineResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -2224,7 +2238,8 @@ export const AssignLeadResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -2278,7 +2293,8 @@ export const AutoAssignLeadResponse = zod.object({
   "contactName": zod.string().nullish(),
   "contactEmail": zod.string().nullish(),
   "contactCompany": zod.string().nullish(),
-  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']),
+  "source": zod.string().nullish(),
   "title": zod.string().nullish(),
   "value": zod.number().nullish(),
   "currency": zod.string().nullish(),
@@ -5033,6 +5049,432 @@ export const GetDocumentVersionDownloadUrlResponse = zod.object({
   "url": zod.string(),
   "fileName": zod.string(),
   "mimeType": zod.string()
+})
+
+
+/**
+ * @summary List custom field definitions
+ */
+export const ListCustomFieldDefinitionsQueryParams = zod.object({
+  "entityType": zod.enum(['lead', 'contact']).optional()
+})
+
+export const ListCustomFieldDefinitionsResponse = zod.object({
+  "definitions": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['lead', 'contact']),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "options": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})).optional(),
+  "required": zod.boolean(),
+  "defaultValue": zod.string().nullish(),
+  "validation": zod.union([zod.object({
+  "min": zod.number().nullish(),
+  "max": zod.number().nullish(),
+  "minLength": zod.number().nullish(),
+  "maxLength": zod.number().nullish(),
+  "pattern": zod.string().nullish()
+}),zod.null()]).optional(),
+  "visibilityCondition": zod.union([zod.object({
+  "fieldKey": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'in', 'not_empty']),
+  "value": zod.string().nullable()
+}),zod.null()]).optional(),
+  "sortOrder": zod.number(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Create a custom field definition
+ */
+export const createCustomFieldDefinitionBodyRequiredDefault = false;
+
+export const CreateCustomFieldDefinitionBody = zod.object({
+  "entityType": zod.enum(['lead', 'contact']),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "options": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})).optional(),
+  "required": zod.boolean().default(createCustomFieldDefinitionBodyRequiredDefault),
+  "defaultValue": zod.string().nullish(),
+  "validation": zod.union([zod.object({
+  "min": zod.number().nullish(),
+  "max": zod.number().nullish(),
+  "minLength": zod.number().nullish(),
+  "maxLength": zod.number().nullish(),
+  "pattern": zod.string().nullish()
+}),zod.null()]).optional(),
+  "visibilityCondition": zod.union([zod.object({
+  "fieldKey": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'in', 'not_empty']),
+  "value": zod.string().nullable()
+}),zod.null()]).optional(),
+  "sortOrder": zod.number().nullish()
+})
+
+
+/**
+ * @summary Get a custom field definition
+ */
+export const GetCustomFieldDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetCustomFieldDefinitionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['lead', 'contact']),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "options": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})).optional(),
+  "required": zod.boolean(),
+  "defaultValue": zod.string().nullish(),
+  "validation": zod.union([zod.object({
+  "min": zod.number().nullish(),
+  "max": zod.number().nullish(),
+  "minLength": zod.number().nullish(),
+  "maxLength": zod.number().nullish(),
+  "pattern": zod.string().nullish()
+}),zod.null()]).optional(),
+  "visibilityCondition": zod.union([zod.object({
+  "fieldKey": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'in', 'not_empty']),
+  "value": zod.string().nullable()
+}),zod.null()]).optional(),
+  "sortOrder": zod.number(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Update a custom field definition
+ */
+export const UpdateCustomFieldDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateCustomFieldDefinitionBody = zod.object({
+  "label": zod.string().nullish(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']).optional(),
+  "options": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})).optional(),
+  "required": zod.boolean().optional(),
+  "defaultValue": zod.string().nullish(),
+  "validation": zod.union([zod.object({
+  "min": zod.number().nullish(),
+  "max": zod.number().nullish(),
+  "minLength": zod.number().nullish(),
+  "maxLength": zod.number().nullish(),
+  "pattern": zod.string().nullish()
+}),zod.null()]).optional(),
+  "visibilityCondition": zod.union([zod.object({
+  "fieldKey": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'in', 'not_empty']),
+  "value": zod.string().nullable()
+}),zod.null()]).optional(),
+  "sortOrder": zod.number().nullish()
+})
+
+export const UpdateCustomFieldDefinitionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['lead', 'contact']),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "options": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string()
+})).optional(),
+  "required": zod.boolean(),
+  "defaultValue": zod.string().nullish(),
+  "validation": zod.union([zod.object({
+  "min": zod.number().nullish(),
+  "max": zod.number().nullish(),
+  "minLength": zod.number().nullish(),
+  "maxLength": zod.number().nullish(),
+  "pattern": zod.string().nullish()
+}),zod.null()]).optional(),
+  "visibilityCondition": zod.union([zod.object({
+  "fieldKey": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'in', 'not_empty']),
+  "value": zod.string().nullable()
+}),zod.null()]).optional(),
+  "sortOrder": zod.number(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Soft-delete a custom field definition
+ */
+export const DeleteCustomFieldDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteCustomFieldDefinitionResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Get custom field values for a contact
+ */
+export const GetContactCustomFieldsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetContactCustomFieldsResponse = zod.object({
+  "values": zod.array(zod.object({
+  "definitionId": zod.number(),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "value": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary Set custom field values for a contact
+ */
+export const SetContactCustomFieldsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetContactCustomFieldsBody = zod.object({
+  "values": zod.array(zod.object({
+  "definitionId": zod.number(),
+  "value": zod.string().nullish()
+}))
+})
+
+export const SetContactCustomFieldsResponse = zod.object({
+  "values": zod.array(zod.object({
+  "definitionId": zod.number(),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "value": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary Get custom field values for a lead
+ */
+export const GetLeadCustomFieldsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetLeadCustomFieldsResponse = zod.object({
+  "values": zod.array(zod.object({
+  "definitionId": zod.number(),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "value": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary Set custom field values for a lead
+ */
+export const SetLeadCustomFieldsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetLeadCustomFieldsBody = zod.object({
+  "values": zod.array(zod.object({
+  "definitionId": zod.number(),
+  "value": zod.string().nullish()
+}))
+})
+
+export const SetLeadCustomFieldsResponse = zod.object({
+  "values": zod.array(zod.object({
+  "definitionId": zod.number(),
+  "fieldKey": zod.string(),
+  "label": zod.string(),
+  "fieldType": zod.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'radio', 'url', 'email', 'phone', 'currency']),
+  "value": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary List sales territories
+ */
+export const ListTerritoriesResponse = zod.object({
+  "territories": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "matchCriteria": zod.union([zod.object({
+  "countries": zod.array(zod.string()).optional(),
+  "regions": zod.array(zod.string()).optional(),
+  "industries": zod.array(zod.string()).optional(),
+  "cities": zod.array(zod.string()).optional()
+}),zod.null()]).optional(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "sortOrder": zod.number(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Create a sales territory
+ */
+export const CreateTerritoryBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "matchCriteria": zod.union([zod.object({
+  "countries": zod.array(zod.string()).optional(),
+  "regions": zod.array(zod.string()).optional(),
+  "industries": zod.array(zod.string()).optional(),
+  "cities": zod.array(zod.string()).optional()
+}),zod.null()]).optional(),
+  "assignedToId": zod.number().nullish(),
+  "teamId": zod.number().nullish(),
+  "sortOrder": zod.number().nullish()
+})
+
+
+/**
+ * @summary Get a sales territory
+ */
+export const GetTerritoryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetTerritoryResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "matchCriteria": zod.union([zod.object({
+  "countries": zod.array(zod.string()).optional(),
+  "regions": zod.array(zod.string()).optional(),
+  "industries": zod.array(zod.string()).optional(),
+  "cities": zod.array(zod.string()).optional()
+}),zod.null()]).optional(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "sortOrder": zod.number(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Update a sales territory
+ */
+export const UpdateTerritoryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTerritoryBody = zod.object({
+  "name": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "matchCriteria": zod.union([zod.object({
+  "countries": zod.array(zod.string()).optional(),
+  "regions": zod.array(zod.string()).optional(),
+  "industries": zod.array(zod.string()).optional(),
+  "cities": zod.array(zod.string()).optional()
+}),zod.null()]).optional(),
+  "assignedToId": zod.number().nullish(),
+  "teamId": zod.number().nullish(),
+  "sortOrder": zod.number().nullish()
+})
+
+export const UpdateTerritoryResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "matchCriteria": zod.union([zod.object({
+  "countries": zod.array(zod.string()).optional(),
+  "regions": zod.array(zod.string()).optional(),
+  "industries": zod.array(zod.string()).optional(),
+  "cities": zod.array(zod.string()).optional()
+}),zod.null()]).optional(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "sortOrder": zod.number(),
+  "createdById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Soft-delete a sales territory
+ */
+export const DeleteTerritoryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTerritoryResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List contact merge-history records
+ */
+export const ListMergeHistoryResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string(),
+  "primaryId": zod.number(),
+  "mergedIds": zod.array(zod.number()),
+  "fieldChoices": zod.record(zod.string(), zod.unknown()).nullish(),
+  "performedById": zod.number().nullish(),
+  "performedByName": zod.string().nullish(),
+  "undoneAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number()
 })
 
 

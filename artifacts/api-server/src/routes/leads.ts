@@ -11,6 +11,7 @@ import {
   UpdateLeadNoteBody,
   AttachLeadTagBody,
   AssignLeadBody,
+  SetLeadCustomFieldsBody,
 } from "@workspace/api-zod";
 import * as leads from "../services/leads.service.js";
 import * as activities from "../services/lead_activities.service.js";
@@ -86,6 +87,14 @@ router.post("/leads/:id/tags", requirePermission("leads", "edit"), validateBody(
 });
 router.delete("/leads/:id/tags/:tagId", requirePermission("leads", "edit"), async (req: AuthRequest, res) => {
   res.json(await leads.detachLeadTag(req.user!, parseInt(String(req.params.id)), parseInt(String(req.params.tagId))));
+});
+
+// ── Lead custom-field values
+router.get("/leads/:id/custom-fields", async (req: AuthRequest, res) => {
+  res.json(await leads.getLeadCustomFields(req.user!, parseInt(String(req.params.id))));
+});
+router.put("/leads/:id/custom-fields", requirePermission("leads", "edit"), validateBody(SetLeadCustomFieldsBody), async (req: AuthRequest, res) => {
+  res.json(await leads.setLeadCustomFields(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 
 // ── Lead timeline (aggregated activities + notes)

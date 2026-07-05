@@ -27,6 +27,8 @@ import profileRouter from "./profile.js";
 import invitationsRouter from "./invitations.js";
 import notificationsRouter from "./notifications.js";
 import documentsRouter from "./documents.js";
+import customFieldsRouter from "./custom_fields.js";
+import territoriesRouter from "./territories.js";
 
 const router: IRouter = Router();
 
@@ -43,6 +45,8 @@ router.use(cardsRouter);
 router.use(invitationsRouter);
 router.use(notificationsRouter);
 router.use(documentsRouter);
+router.use(customFieldsRouter);
+router.use(territoriesRouter);
 router.use(companiesRouter);
 router.use(usersRouter);
 router.use(rbacRouter);

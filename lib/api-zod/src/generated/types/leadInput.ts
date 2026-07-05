@@ -12,6 +12,8 @@ export interface LeadInput {
   contactId?: number | null;
   stage?: LeadInputStage;
   /** @nullable */
+  source?: string | null;
+  /** @nullable */
   title?: string | null;
   /** @nullable */
   value?: number | null;

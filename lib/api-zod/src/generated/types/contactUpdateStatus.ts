@@ -19,4 +19,5 @@ export const ContactUpdateStatus = {
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
+  archived: 'archived',
 } as const;

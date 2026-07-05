@@ -50,6 +50,10 @@ tags:
     description: Team management (org hierarchy)
   - name: documents
     description: Enterprise document management (attach files to company/contact/lead/event)
+  - name: custom-fields
+    description: Organization-defined custom fields for leads/contacts
+  - name: territories
+    description: Sales territory definitions
 
 paths:
   /healthz:
@@ -4216,6 +4220,287 @@ paths:
               schema:
                 $ref: "#/components/schemas/DocumentDownloadResponse"
 
+  /custom-fields:
+    get:
+      operationId: listCustomFieldDefinitions
+      tags: [custom-fields]
+      summary: List custom field definitions
+      parameters:
+        - name: entityType
+          in: query
+          schema:
+            type: string
+            enum: [lead, contact]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldDefinitionList"
+    post:
+      operationId: createCustomFieldDefinition
+      tags: [custom-fields]
+      summary: Create a custom field definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomFieldDefinitionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldDefinition"
+
+  /custom-fields/{id}:
+    get:
+      operationId: getCustomFieldDefinition
+      tags: [custom-fields]
+      summary: Get a custom field definition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldDefinition"
+    patch:
+      operationId: updateCustomFieldDefinition
+      tags: [custom-fields]
+      summary: Update a custom field definition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomFieldDefinitionUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldDefinition"
+    delete:
+      operationId: deleteCustomFieldDefinition
+      tags: [custom-fields]
+      summary: Soft-delete a custom field definition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /contacts/{id}/custom-fields:
+    get:
+      operationId: getContactCustomFields
+      tags: [custom-fields]
+      summary: Get custom field values for a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldValueList"
+    put:
+      operationId: setContactCustomFields
+      tags: [custom-fields]
+      summary: Set custom field values for a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCustomFieldValuesInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldValueList"
+
+  /leads/{id}/custom-fields:
+    get:
+      operationId: getLeadCustomFields
+      tags: [custom-fields]
+      summary: Get custom field values for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldValueList"
+    put:
+      operationId: setLeadCustomFields
+      tags: [custom-fields]
+      summary: Set custom field values for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCustomFieldValuesInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomFieldValueList"
+
+  /territories:
+    get:
+      operationId: listTerritories
+      tags: [territories]
+      summary: List sales territories
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerritoryList"
+    post:
+      operationId: createTerritory
+      tags: [territories]
+      summary: Create a sales territory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerritoryInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Territory"
+
+  /territories/{id}:
+    get:
+      operationId: getTerritory
+      tags: [territories]
+      summary: Get a sales territory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Territory"
+    patch:
+      operationId: updateTerritory
+      tags: [territories]
+      summary: Update a sales territory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerritoryUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Territory"
+    delete:
+      operationId: deleteTerritory
+      tags: [territories]
+      summary: Soft-delete a sales territory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /contacts/merge-history:
+    get:
+      operationId: listMergeHistory
+      tags: [contacts]
+      summary: List contact merge-history records
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeHistoryList"
+
 components:
   schemas:
     HealthStatus:
@@ -5829,13 +6114,15 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+        source:
+          type: ["string", "null"]
         tags:
           type: array
           items:
             type: string
         status:
           type: string
-          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent]
+          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent, archived]
         leadScore:
           type: ["integer", "null"]
         leadTemperature:
@@ -5925,13 +6212,15 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+        source:
+          type: ["string", "null"]
         tags:
           type: array
           items:
             type: string
         status:
           type: string
-          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent]
+          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent, archived]
           default: new
         followUpDate:
           type: ["string", "null"]
@@ -5971,13 +6260,15 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+        source:
+          type: ["string", "null"]
         tags:
           type: array
           items:
             type: string
         status:
           type: string
-          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent]
+          enum: [new, contacted, quotation_sent, negotiation, won, lost, qualified, interested, proposal_sent, archived]
         statusComment:
           type: ["string", "null"]
           description: Optional note logged with a status change
@@ -6069,7 +6360,9 @@ components:
           type: ["string", "null"]
         stage:
           type: string
-          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled]
+          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled, archived]
+        source:
+          type: ["string", "null"]
         title:
           type: ["string", "null"]
         value:
@@ -6135,8 +6428,10 @@ components:
           type: ["integer", "null"]
         stage:
           type: string
-          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled]
+          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled, archived]
           default: prospect
+        source:
+          type: ["string", "null"]
         title:
           type: ["string", "null"]
         value:
@@ -6167,7 +6462,9 @@ components:
       properties:
         stage:
           type: string
-          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled]
+          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled, archived]
+        source:
+          type: ["string", "null"]
         title:
           type: ["string", "null"]
         value:
@@ -8234,3 +8531,345 @@ components:
           type: array
           items:
             type: string
+
+    # CUSTOM FIELDS
+    CustomFieldDefinition:
+      type: object
+      required: [id, companyId, entityType, fieldKey, label, fieldType, required, sortOrder, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        entityType:
+          type: string
+          enum: [lead, contact]
+        fieldKey:
+          type: string
+        label:
+          type: string
+        fieldType:
+          type: string
+          enum: [text, number, date, dropdown, checkbox, radio, url, email, phone, currency]
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldOption"
+        required:
+          type: boolean
+        defaultValue:
+          type: ["string", "null"]
+        validation:
+          oneOf:
+            - $ref: "#/components/schemas/CustomFieldValidation"
+            - type: "null"
+        visibilityCondition:
+          oneOf:
+            - $ref: "#/components/schemas/CustomFieldVisibility"
+            - type: "null"
+        sortOrder:
+          type: integer
+        createdById:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    CustomFieldOption:
+      type: object
+      required: [label, value]
+      properties:
+        label:
+          type: string
+        value:
+          type: string
+
+    CustomFieldValidation:
+      type: object
+      properties:
+        min:
+          type: ["number", "null"]
+        max:
+          type: ["number", "null"]
+        minLength:
+          type: ["integer", "null"]
+        maxLength:
+          type: ["integer", "null"]
+        pattern:
+          type: ["string", "null"]
+
+    CustomFieldVisibility:
+      type: object
+      required: [fieldKey, operator, value]
+      properties:
+        fieldKey:
+          type: string
+        operator:
+          type: string
+          enum: [equals, not_equals, in, not_empty]
+        value:
+          type: ["string", "null"]
+
+    CustomFieldDefinitionList:
+      type: object
+      required: [definitions, total]
+      properties:
+        definitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldDefinition"
+        total:
+          type: integer
+
+    CustomFieldDefinitionInput:
+      type: object
+      required: [entityType, fieldKey, label, fieldType]
+      properties:
+        entityType:
+          type: string
+          enum: [lead, contact]
+        fieldKey:
+          type: string
+        label:
+          type: string
+        fieldType:
+          type: string
+          enum: [text, number, date, dropdown, checkbox, radio, url, email, phone, currency]
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldOption"
+        required:
+          type: boolean
+          default: false
+        defaultValue:
+          type: ["string", "null"]
+        validation:
+          oneOf:
+            - $ref: "#/components/schemas/CustomFieldValidation"
+            - type: "null"
+        visibilityCondition:
+          oneOf:
+            - $ref: "#/components/schemas/CustomFieldVisibility"
+            - type: "null"
+        sortOrder:
+          type: ["integer", "null"]
+
+    CustomFieldDefinitionUpdate:
+      type: object
+      properties:
+        label:
+          type: ["string", "null"]
+        fieldType:
+          type: string
+          enum: [text, number, date, dropdown, checkbox, radio, url, email, phone, currency]
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldOption"
+        required:
+          type: boolean
+        defaultValue:
+          type: ["string", "null"]
+        validation:
+          oneOf:
+            - $ref: "#/components/schemas/CustomFieldValidation"
+            - type: "null"
+        visibilityCondition:
+          oneOf:
+            - $ref: "#/components/schemas/CustomFieldVisibility"
+            - type: "null"
+        sortOrder:
+          type: ["integer", "null"]
+
+    CustomFieldValue:
+      type: object
+      required: [definitionId, fieldKey, label, fieldType, value]
+      properties:
+        definitionId:
+          type: integer
+        fieldKey:
+          type: string
+        label:
+          type: string
+        fieldType:
+          type: string
+          enum: [text, number, date, dropdown, checkbox, radio, url, email, phone, currency]
+        value:
+          type: ["string", "null"]
+
+    CustomFieldValueList:
+      type: object
+      required: [values]
+      properties:
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomFieldValue"
+
+    SetCustomFieldValuesInput:
+      type: object
+      required: [values]
+      properties:
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetCustomFieldValueItem"
+
+    SetCustomFieldValueItem:
+      type: object
+      required: [definitionId]
+      properties:
+        definitionId:
+          type: integer
+        value:
+          type: ["string", "null"]
+
+    # TERRITORIES
+    Territory:
+      type: object
+      required: [id, companyId, name, sortOrder, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        matchCriteria:
+          oneOf:
+            - $ref: "#/components/schemas/TerritoryMatchCriteria"
+            - type: "null"
+        assignedToId:
+          type: ["integer", "null"]
+        assignedToName:
+          type: ["string", "null"]
+        teamId:
+          type: ["integer", "null"]
+        teamName:
+          type: ["string", "null"]
+        sortOrder:
+          type: integer
+        createdById:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    TerritoryMatchCriteria:
+      type: object
+      properties:
+        countries:
+          type: array
+          items:
+            type: string
+        regions:
+          type: array
+          items:
+            type: string
+        industries:
+          type: array
+          items:
+            type: string
+        cities:
+          type: array
+          items:
+            type: string
+
+    TerritoryList:
+      type: object
+      required: [territories, total]
+      properties:
+        territories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Territory"
+        total:
+          type: integer
+
+    TerritoryInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        matchCriteria:
+          oneOf:
+            - $ref: "#/components/schemas/TerritoryMatchCriteria"
+            - type: "null"
+        assignedToId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
+        sortOrder:
+          type: ["integer", "null"]
+
+    TerritoryUpdate:
+      type: object
+      properties:
+        name:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        matchCriteria:
+          oneOf:
+            - $ref: "#/components/schemas/TerritoryMatchCriteria"
+            - type: "null"
+        assignedToId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
+        sortOrder:
+          type: ["integer", "null"]
+
+    # MERGE HISTORY
+    MergeHistoryEntry:
+      type: object
+      required: [id, companyId, entityType, primaryId, mergedIds, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        entityType:
+          type: string
+        primaryId:
+          type: integer
+        mergedIds:
+          type: array
+          items:
+            type: integer
+        fieldChoices:
+          type: ["object", "null"]
+          additionalProperties: true
+        performedById:
+          type: ["integer", "null"]
+        performedByName:
+          type: ["string", "null"]
+        undoneAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    MergeHistoryList:
+      type: object
+      required: [entries, total]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeHistoryEntry"
+        total:
+          type: integer

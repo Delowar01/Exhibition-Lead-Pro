@@ -1225,6 +1225,7 @@ export const ContactStatus = {
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
+  archived: 'archived',
 } as const;
 
 /**
@@ -1278,6 +1279,8 @@ export interface Contact {
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  source?: string | null;
   tags?: string[];
   status: ContactStatus;
   /** @nullable */
@@ -1332,6 +1335,7 @@ export const ContactInputStatus = {
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
+  archived: 'archived',
 } as const;
 
 export interface ContactInput {
@@ -1367,6 +1371,8 @@ export interface ContactInput {
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  source?: string | null;
   tags?: string[];
   status?: ContactInputStatus;
   /** @nullable */
@@ -1394,6 +1400,7 @@ export const ContactUpdateStatus = {
   qualified: 'qualified',
   interested: 'interested',
   proposal_sent: 'proposal_sent',
+  archived: 'archived',
 } as const;
 
 export interface ContactUpdate {
@@ -1421,6 +1428,8 @@ export interface ContactUpdate {
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  source?: string | null;
   tags?: string[];
   status?: ContactUpdateStatus;
   /**
@@ -1497,6 +1506,7 @@ export const LeadStage = {
   new: 'new',
   contacted: 'contacted',
   meeting_scheduled: 'meeting_scheduled',
+  archived: 'archived',
 } as const;
 
 /**
@@ -1550,6 +1560,8 @@ export interface Lead {
   /** @nullable */
   contactCompany?: string | null;
   stage: LeadStage;
+  /** @nullable */
+  source?: string | null;
   /** @nullable */
   title?: string | null;
   /** @nullable */
@@ -1607,12 +1619,15 @@ export const LeadInputStage = {
   new: 'new',
   contacted: 'contacted',
   meeting_scheduled: 'meeting_scheduled',
+  archived: 'archived',
 } as const;
 
 export interface LeadInput {
   /** @nullable */
   contactId?: number | null;
   stage?: LeadInputStage;
+  /** @nullable */
+  source?: string | null;
   /** @nullable */
   title?: string | null;
   /** @nullable */
@@ -1652,10 +1667,13 @@ export const LeadUpdateStage = {
   new: 'new',
   contacted: 'contacted',
   meeting_scheduled: 'meeting_scheduled',
+  archived: 'archived',
 } as const;
 
 export interface LeadUpdate {
   stage?: LeadUpdateStage;
+  /** @nullable */
+  source?: string | null;
   /** @nullable */
   title?: string | null;
   /** @nullable */
@@ -3189,6 +3207,288 @@ export interface DocumentCategoryCatalog {
   event: string[];
 }
 
+export type CustomFieldDefinitionEntityType = typeof CustomFieldDefinitionEntityType[keyof typeof CustomFieldDefinitionEntityType];
+
+
+export const CustomFieldDefinitionEntityType = {
+  lead: 'lead',
+  contact: 'contact',
+} as const;
+
+export type CustomFieldDefinitionFieldType = typeof CustomFieldDefinitionFieldType[keyof typeof CustomFieldDefinitionFieldType];
+
+
+export const CustomFieldDefinitionFieldType = {
+  text: 'text',
+  number: 'number',
+  date: 'date',
+  dropdown: 'dropdown',
+  checkbox: 'checkbox',
+  radio: 'radio',
+  url: 'url',
+  email: 'email',
+  phone: 'phone',
+  currency: 'currency',
+} as const;
+
+export interface CustomFieldOption {
+  label: string;
+  value: string;
+}
+
+export interface CustomFieldValidation {
+  /** @nullable */
+  min?: number | null;
+  /** @nullable */
+  max?: number | null;
+  /** @nullable */
+  minLength?: number | null;
+  /** @nullable */
+  maxLength?: number | null;
+  /** @nullable */
+  pattern?: string | null;
+}
+
+export type CustomFieldVisibilityOperator = typeof CustomFieldVisibilityOperator[keyof typeof CustomFieldVisibilityOperator];
+
+
+export const CustomFieldVisibilityOperator = {
+  equals: 'equals',
+  not_equals: 'not_equals',
+  in: 'in',
+  not_empty: 'not_empty',
+} as const;
+
+export interface CustomFieldVisibility {
+  fieldKey: string;
+  operator: CustomFieldVisibilityOperator;
+  /** @nullable */
+  value: string | null;
+}
+
+export interface CustomFieldDefinition {
+  id: number;
+  companyId: number;
+  entityType: CustomFieldDefinitionEntityType;
+  fieldKey: string;
+  label: string;
+  fieldType: CustomFieldDefinitionFieldType;
+  options?: CustomFieldOption[];
+  required: boolean;
+  /** @nullable */
+  defaultValue?: string | null;
+  validation?: CustomFieldValidation | null;
+  visibilityCondition?: CustomFieldVisibility | null;
+  sortOrder: number;
+  /** @nullable */
+  createdById?: number | null;
+  createdAt: string;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export interface CustomFieldDefinitionList {
+  definitions: CustomFieldDefinition[];
+  total: number;
+}
+
+export type CustomFieldDefinitionInputEntityType = typeof CustomFieldDefinitionInputEntityType[keyof typeof CustomFieldDefinitionInputEntityType];
+
+
+export const CustomFieldDefinitionInputEntityType = {
+  lead: 'lead',
+  contact: 'contact',
+} as const;
+
+export type CustomFieldDefinitionInputFieldType = typeof CustomFieldDefinitionInputFieldType[keyof typeof CustomFieldDefinitionInputFieldType];
+
+
+export const CustomFieldDefinitionInputFieldType = {
+  text: 'text',
+  number: 'number',
+  date: 'date',
+  dropdown: 'dropdown',
+  checkbox: 'checkbox',
+  radio: 'radio',
+  url: 'url',
+  email: 'email',
+  phone: 'phone',
+  currency: 'currency',
+} as const;
+
+export interface CustomFieldDefinitionInput {
+  entityType: CustomFieldDefinitionInputEntityType;
+  fieldKey: string;
+  label: string;
+  fieldType: CustomFieldDefinitionInputFieldType;
+  options?: CustomFieldOption[];
+  required?: boolean;
+  /** @nullable */
+  defaultValue?: string | null;
+  validation?: CustomFieldValidation | null;
+  visibilityCondition?: CustomFieldVisibility | null;
+  /** @nullable */
+  sortOrder?: number | null;
+}
+
+export type CustomFieldDefinitionUpdateFieldType = typeof CustomFieldDefinitionUpdateFieldType[keyof typeof CustomFieldDefinitionUpdateFieldType];
+
+
+export const CustomFieldDefinitionUpdateFieldType = {
+  text: 'text',
+  number: 'number',
+  date: 'date',
+  dropdown: 'dropdown',
+  checkbox: 'checkbox',
+  radio: 'radio',
+  url: 'url',
+  email: 'email',
+  phone: 'phone',
+  currency: 'currency',
+} as const;
+
+export interface CustomFieldDefinitionUpdate {
+  /** @nullable */
+  label?: string | null;
+  fieldType?: CustomFieldDefinitionUpdateFieldType;
+  options?: CustomFieldOption[];
+  required?: boolean;
+  /** @nullable */
+  defaultValue?: string | null;
+  validation?: CustomFieldValidation | null;
+  visibilityCondition?: CustomFieldVisibility | null;
+  /** @nullable */
+  sortOrder?: number | null;
+}
+
+export type CustomFieldValueFieldType = typeof CustomFieldValueFieldType[keyof typeof CustomFieldValueFieldType];
+
+
+export const CustomFieldValueFieldType = {
+  text: 'text',
+  number: 'number',
+  date: 'date',
+  dropdown: 'dropdown',
+  checkbox: 'checkbox',
+  radio: 'radio',
+  url: 'url',
+  email: 'email',
+  phone: 'phone',
+  currency: 'currency',
+} as const;
+
+export interface CustomFieldValue {
+  definitionId: number;
+  fieldKey: string;
+  label: string;
+  fieldType: CustomFieldValueFieldType;
+  /** @nullable */
+  value: string | null;
+}
+
+export interface CustomFieldValueList {
+  values: CustomFieldValue[];
+}
+
+export interface SetCustomFieldValueItem {
+  definitionId: number;
+  /** @nullable */
+  value?: string | null;
+}
+
+export interface SetCustomFieldValuesInput {
+  values: SetCustomFieldValueItem[];
+}
+
+export interface TerritoryMatchCriteria {
+  countries?: string[];
+  regions?: string[];
+  industries?: string[];
+  cities?: string[];
+}
+
+export interface Territory {
+  id: number;
+  companyId: number;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  matchCriteria?: TerritoryMatchCriteria | null;
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  assignedToName?: string | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  teamName?: string | null;
+  sortOrder: number;
+  /** @nullable */
+  createdById?: number | null;
+  createdAt: string;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export interface TerritoryList {
+  territories: Territory[];
+  total: number;
+}
+
+export interface TerritoryInput {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  matchCriteria?: TerritoryMatchCriteria | null;
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  sortOrder?: number | null;
+}
+
+export interface TerritoryUpdate {
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  description?: string | null;
+  matchCriteria?: TerritoryMatchCriteria | null;
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  sortOrder?: number | null;
+}
+
+/**
+ * @nullable
+ */
+export type MergeHistoryEntryFieldChoices = { [key: string]: unknown } | null;
+
+export interface MergeHistoryEntry {
+  id: number;
+  companyId: number;
+  entityType: string;
+  primaryId: number;
+  mergedIds: number[];
+  /** @nullable */
+  fieldChoices?: MergeHistoryEntryFieldChoices;
+  /** @nullable */
+  performedById?: number | null;
+  /** @nullable */
+  performedByName?: string | null;
+  /** @nullable */
+  undoneAt?: string | null;
+  createdAt: string;
+}
+
+export interface MergeHistoryList {
+  entries: MergeHistoryEntry[];
+  total: number;
+}
+
 export type ListInvitationsParams = {
 companyId?: number;
 page?: number;
@@ -3568,5 +3868,17 @@ export const ListDocumentsEntityType = {
   contact: 'contact',
   lead: 'lead',
   event: 'event',
+} as const;
+
+export type ListCustomFieldDefinitionsParams = {
+entityType?: ListCustomFieldDefinitionsEntityType;
+};
+
+export type ListCustomFieldDefinitionsEntityType = typeof ListCustomFieldDefinitionsEntityType[keyof typeof ListCustomFieldDefinitionsEntityType];
+
+
+export const ListCustomFieldDefinitionsEntityType = {
+  lead: 'lead',
+  contact: 'contact',
 } as const;
 

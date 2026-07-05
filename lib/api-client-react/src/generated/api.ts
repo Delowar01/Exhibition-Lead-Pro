@@ -44,6 +44,11 @@ import type {
   ContactStatusHistoryList,
   ContactUpdate,
   CreateInvitationInput,
+  CustomFieldDefinition,
+  CustomFieldDefinitionInput,
+  CustomFieldDefinitionList,
+  CustomFieldDefinitionUpdate,
+  CustomFieldValueList,
   Department,
   DepartmentInput,
   DepartmentList,
@@ -100,6 +105,7 @@ import type {
   ListAuditLogsParams,
   ListCompaniesParams,
   ListContactsParams,
+  ListCustomFieldDefinitionsParams,
   ListDepartmentsParams,
   ListDocumentsParams,
   ListEmployeeDirectoryParams,
@@ -122,6 +128,7 @@ import type {
   MeetingInput,
   MeetingList,
   MeetingUpdate,
+  MergeHistoryList,
   MergeRequest,
   MetricsSnapshot,
   MfaBackupCodesResponse,
@@ -173,6 +180,7 @@ import type {
   SecurityPolicy,
   SecurityPolicyInput,
   SessionList,
+  SetCustomFieldValuesInput,
   SetUserRolesInput,
   Subscription,
   SubscriptionUpgradeInput,
@@ -193,6 +201,10 @@ import type {
   TeamPerformanceItem,
   TeamUpdate,
   TerminateSessionsResponse,
+  Territory,
+  TerritoryInput,
+  TerritoryList,
+  TerritoryUpdate,
   TimelineList,
   TrendDataPoint,
   UnreadCountResponse,
@@ -14306,6 +14318,1122 @@ export function useGetDocumentVersionDownloadUrl<TData = Awaited<ReturnType<type
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDocumentVersionDownloadUrlQueryOptions(id,versionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListCustomFieldDefinitionsUrl = (params?: ListCustomFieldDefinitionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/custom-fields?${stringifiedParams}` : `/api/custom-fields`
+}
+
+/**
+ * @summary List custom field definitions
+ */
+export const listCustomFieldDefinitions = async (params?: ListCustomFieldDefinitionsParams, options?: RequestInit): Promise<CustomFieldDefinitionList> => {
+
+  return customFetch<CustomFieldDefinitionList>(getListCustomFieldDefinitionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCustomFieldDefinitionsQueryKey = (params?: ListCustomFieldDefinitionsParams,) => {
+    return [
+    `/api/custom-fields`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCustomFieldDefinitionsQueryOptions = <TData = Awaited<ReturnType<typeof listCustomFieldDefinitions>>, TError = ErrorType<unknown>>(params?: ListCustomFieldDefinitionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomFieldDefinitions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCustomFieldDefinitionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCustomFieldDefinitions>>> = ({ signal }) => listCustomFieldDefinitions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCustomFieldDefinitions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCustomFieldDefinitionsQueryResult = NonNullable<Awaited<ReturnType<typeof listCustomFieldDefinitions>>>
+export type ListCustomFieldDefinitionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List custom field definitions
+ */
+
+export function useListCustomFieldDefinitions<TData = Awaited<ReturnType<typeof listCustomFieldDefinitions>>, TError = ErrorType<unknown>>(
+ params?: ListCustomFieldDefinitionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomFieldDefinitions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCustomFieldDefinitionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateCustomFieldDefinitionUrl = () => {
+
+
+
+
+  return `/api/custom-fields`
+}
+
+/**
+ * @summary Create a custom field definition
+ */
+export const createCustomFieldDefinition = async (customFieldDefinitionInput: CustomFieldDefinitionInput, options?: RequestInit): Promise<CustomFieldDefinition> => {
+
+  return customFetch<CustomFieldDefinition>(getCreateCustomFieldDefinitionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      customFieldDefinitionInput,)
+  }
+);}
+
+
+
+
+export const getCreateCustomFieldDefinitionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomFieldDefinition>>, TError,{data: BodyType<CustomFieldDefinitionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCustomFieldDefinition>>, TError,{data: BodyType<CustomFieldDefinitionInput>}, TContext> => {
+
+const mutationKey = ['createCustomFieldDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCustomFieldDefinition>>, {data: BodyType<CustomFieldDefinitionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCustomFieldDefinition(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCustomFieldDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof createCustomFieldDefinition>>>
+    export type CreateCustomFieldDefinitionMutationBody = BodyType<CustomFieldDefinitionInput>
+    export type CreateCustomFieldDefinitionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a custom field definition
+ */
+export const useCreateCustomFieldDefinition = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomFieldDefinition>>, TError,{data: BodyType<CustomFieldDefinitionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCustomFieldDefinition>>,
+        TError,
+        {data: BodyType<CustomFieldDefinitionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCustomFieldDefinitionMutationOptions(options));
+    }
+
+export const getGetCustomFieldDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/custom-fields/${id}`
+}
+
+/**
+ * @summary Get a custom field definition
+ */
+export const getCustomFieldDefinition = async (id: number, options?: RequestInit): Promise<CustomFieldDefinition> => {
+
+  return customFetch<CustomFieldDefinition>(getGetCustomFieldDefinitionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCustomFieldDefinitionQueryKey = (id: number,) => {
+    return [
+    `/api/custom-fields/${id}`
+    ] as const;
+    }
+
+
+export const getGetCustomFieldDefinitionQueryOptions = <TData = Awaited<ReturnType<typeof getCustomFieldDefinition>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomFieldDefinition>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomFieldDefinitionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomFieldDefinition>>> = ({ signal }) => getCustomFieldDefinition(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomFieldDefinition>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCustomFieldDefinitionQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomFieldDefinition>>>
+export type GetCustomFieldDefinitionQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a custom field definition
+ */
+
+export function useGetCustomFieldDefinition<TData = Awaited<ReturnType<typeof getCustomFieldDefinition>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomFieldDefinition>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCustomFieldDefinitionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateCustomFieldDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/custom-fields/${id}`
+}
+
+/**
+ * @summary Update a custom field definition
+ */
+export const updateCustomFieldDefinition = async (id: number,
+    customFieldDefinitionUpdate: CustomFieldDefinitionUpdate, options?: RequestInit): Promise<CustomFieldDefinition> => {
+
+  return customFetch<CustomFieldDefinition>(getUpdateCustomFieldDefinitionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      customFieldDefinitionUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateCustomFieldDefinitionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCustomFieldDefinition>>, TError,{id: number;data: BodyType<CustomFieldDefinitionUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCustomFieldDefinition>>, TError,{id: number;data: BodyType<CustomFieldDefinitionUpdate>}, TContext> => {
+
+const mutationKey = ['updateCustomFieldDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCustomFieldDefinition>>, {id: number;data: BodyType<CustomFieldDefinitionUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCustomFieldDefinition(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCustomFieldDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof updateCustomFieldDefinition>>>
+    export type UpdateCustomFieldDefinitionMutationBody = BodyType<CustomFieldDefinitionUpdate>
+    export type UpdateCustomFieldDefinitionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a custom field definition
+ */
+export const useUpdateCustomFieldDefinition = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCustomFieldDefinition>>, TError,{id: number;data: BodyType<CustomFieldDefinitionUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCustomFieldDefinition>>,
+        TError,
+        {id: number;data: BodyType<CustomFieldDefinitionUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCustomFieldDefinitionMutationOptions(options));
+    }
+
+export const getDeleteCustomFieldDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/custom-fields/${id}`
+}
+
+/**
+ * @summary Soft-delete a custom field definition
+ */
+export const deleteCustomFieldDefinition = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteCustomFieldDefinitionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCustomFieldDefinitionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCustomFieldDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCustomFieldDefinition>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteCustomFieldDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCustomFieldDefinition>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteCustomFieldDefinition(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCustomFieldDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCustomFieldDefinition>>>
+
+    export type DeleteCustomFieldDefinitionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Soft-delete a custom field definition
+ */
+export const useDeleteCustomFieldDefinition = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCustomFieldDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCustomFieldDefinition>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteCustomFieldDefinitionMutationOptions(options));
+    }
+
+export const getGetContactCustomFieldsUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/custom-fields`
+}
+
+/**
+ * @summary Get custom field values for a contact
+ */
+export const getContactCustomFields = async (id: number, options?: RequestInit): Promise<CustomFieldValueList> => {
+
+  return customFetch<CustomFieldValueList>(getGetContactCustomFieldsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetContactCustomFieldsQueryKey = (id: number,) => {
+    return [
+    `/api/contacts/${id}/custom-fields`
+    ] as const;
+    }
+
+
+export const getGetContactCustomFieldsQueryOptions = <TData = Awaited<ReturnType<typeof getContactCustomFields>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getContactCustomFields>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetContactCustomFieldsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getContactCustomFields>>> = ({ signal }) => getContactCustomFields(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getContactCustomFields>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetContactCustomFieldsQueryResult = NonNullable<Awaited<ReturnType<typeof getContactCustomFields>>>
+export type GetContactCustomFieldsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get custom field values for a contact
+ */
+
+export function useGetContactCustomFields<TData = Awaited<ReturnType<typeof getContactCustomFields>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getContactCustomFields>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetContactCustomFieldsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetContactCustomFieldsUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/custom-fields`
+}
+
+/**
+ * @summary Set custom field values for a contact
+ */
+export const setContactCustomFields = async (id: number,
+    setCustomFieldValuesInput: SetCustomFieldValuesInput, options?: RequestInit): Promise<CustomFieldValueList> => {
+
+  return customFetch<CustomFieldValueList>(getSetContactCustomFieldsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setCustomFieldValuesInput,)
+  }
+);}
+
+
+
+
+export const getSetContactCustomFieldsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setContactCustomFields>>, TError,{id: number;data: BodyType<SetCustomFieldValuesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setContactCustomFields>>, TError,{id: number;data: BodyType<SetCustomFieldValuesInput>}, TContext> => {
+
+const mutationKey = ['setContactCustomFields'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setContactCustomFields>>, {id: number;data: BodyType<SetCustomFieldValuesInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setContactCustomFields(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetContactCustomFieldsMutationResult = NonNullable<Awaited<ReturnType<typeof setContactCustomFields>>>
+    export type SetContactCustomFieldsMutationBody = BodyType<SetCustomFieldValuesInput>
+    export type SetContactCustomFieldsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set custom field values for a contact
+ */
+export const useSetContactCustomFields = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setContactCustomFields>>, TError,{id: number;data: BodyType<SetCustomFieldValuesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setContactCustomFields>>,
+        TError,
+        {id: number;data: BodyType<SetCustomFieldValuesInput>},
+        TContext
+      > => {
+      return useMutation(getSetContactCustomFieldsMutationOptions(options));
+    }
+
+export const getGetLeadCustomFieldsUrl = (id: number,) => {
+
+
+
+
+  return `/api/leads/${id}/custom-fields`
+}
+
+/**
+ * @summary Get custom field values for a lead
+ */
+export const getLeadCustomFields = async (id: number, options?: RequestInit): Promise<CustomFieldValueList> => {
+
+  return customFetch<CustomFieldValueList>(getGetLeadCustomFieldsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLeadCustomFieldsQueryKey = (id: number,) => {
+    return [
+    `/api/leads/${id}/custom-fields`
+    ] as const;
+    }
+
+
+export const getGetLeadCustomFieldsQueryOptions = <TData = Awaited<ReturnType<typeof getLeadCustomFields>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadCustomFields>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLeadCustomFieldsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLeadCustomFields>>> = ({ signal }) => getLeadCustomFields(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLeadCustomFields>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLeadCustomFieldsQueryResult = NonNullable<Awaited<ReturnType<typeof getLeadCustomFields>>>
+export type GetLeadCustomFieldsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get custom field values for a lead
+ */
+
+export function useGetLeadCustomFields<TData = Awaited<ReturnType<typeof getLeadCustomFields>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadCustomFields>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLeadCustomFieldsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetLeadCustomFieldsUrl = (id: number,) => {
+
+
+
+
+  return `/api/leads/${id}/custom-fields`
+}
+
+/**
+ * @summary Set custom field values for a lead
+ */
+export const setLeadCustomFields = async (id: number,
+    setCustomFieldValuesInput: SetCustomFieldValuesInput, options?: RequestInit): Promise<CustomFieldValueList> => {
+
+  return customFetch<CustomFieldValueList>(getSetLeadCustomFieldsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setCustomFieldValuesInput,)
+  }
+);}
+
+
+
+
+export const getSetLeadCustomFieldsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeadCustomFields>>, TError,{id: number;data: BodyType<SetCustomFieldValuesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setLeadCustomFields>>, TError,{id: number;data: BodyType<SetCustomFieldValuesInput>}, TContext> => {
+
+const mutationKey = ['setLeadCustomFields'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setLeadCustomFields>>, {id: number;data: BodyType<SetCustomFieldValuesInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setLeadCustomFields(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetLeadCustomFieldsMutationResult = NonNullable<Awaited<ReturnType<typeof setLeadCustomFields>>>
+    export type SetLeadCustomFieldsMutationBody = BodyType<SetCustomFieldValuesInput>
+    export type SetLeadCustomFieldsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set custom field values for a lead
+ */
+export const useSetLeadCustomFields = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLeadCustomFields>>, TError,{id: number;data: BodyType<SetCustomFieldValuesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setLeadCustomFields>>,
+        TError,
+        {id: number;data: BodyType<SetCustomFieldValuesInput>},
+        TContext
+      > => {
+      return useMutation(getSetLeadCustomFieldsMutationOptions(options));
+    }
+
+export const getListTerritoriesUrl = () => {
+
+
+
+
+  return `/api/territories`
+}
+
+/**
+ * @summary List sales territories
+ */
+export const listTerritories = async ( options?: RequestInit): Promise<TerritoryList> => {
+
+  return customFetch<TerritoryList>(getListTerritoriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTerritoriesQueryKey = () => {
+    return [
+    `/api/territories`
+    ] as const;
+    }
+
+
+export const getListTerritoriesQueryOptions = <TData = Awaited<ReturnType<typeof listTerritories>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTerritories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTerritoriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTerritories>>> = ({ signal }) => listTerritories({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTerritories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTerritoriesQueryResult = NonNullable<Awaited<ReturnType<typeof listTerritories>>>
+export type ListTerritoriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List sales territories
+ */
+
+export function useListTerritories<TData = Awaited<ReturnType<typeof listTerritories>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTerritories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTerritoriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateTerritoryUrl = () => {
+
+
+
+
+  return `/api/territories`
+}
+
+/**
+ * @summary Create a sales territory
+ */
+export const createTerritory = async (territoryInput: TerritoryInput, options?: RequestInit): Promise<Territory> => {
+
+  return customFetch<Territory>(getCreateTerritoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      territoryInput,)
+  }
+);}
+
+
+
+
+export const getCreateTerritoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTerritory>>, TError,{data: BodyType<TerritoryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTerritory>>, TError,{data: BodyType<TerritoryInput>}, TContext> => {
+
+const mutationKey = ['createTerritory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTerritory>>, {data: BodyType<TerritoryInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTerritory(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTerritoryMutationResult = NonNullable<Awaited<ReturnType<typeof createTerritory>>>
+    export type CreateTerritoryMutationBody = BodyType<TerritoryInput>
+    export type CreateTerritoryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a sales territory
+ */
+export const useCreateTerritory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTerritory>>, TError,{data: BodyType<TerritoryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTerritory>>,
+        TError,
+        {data: BodyType<TerritoryInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTerritoryMutationOptions(options));
+    }
+
+export const getGetTerritoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/territories/${id}`
+}
+
+/**
+ * @summary Get a sales territory
+ */
+export const getTerritory = async (id: number, options?: RequestInit): Promise<Territory> => {
+
+  return customFetch<Territory>(getGetTerritoryUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTerritoryQueryKey = (id: number,) => {
+    return [
+    `/api/territories/${id}`
+    ] as const;
+    }
+
+
+export const getGetTerritoryQueryOptions = <TData = Awaited<ReturnType<typeof getTerritory>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTerritory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTerritoryQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTerritory>>> = ({ signal }) => getTerritory(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTerritory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTerritoryQueryResult = NonNullable<Awaited<ReturnType<typeof getTerritory>>>
+export type GetTerritoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a sales territory
+ */
+
+export function useGetTerritory<TData = Awaited<ReturnType<typeof getTerritory>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTerritory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTerritoryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateTerritoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/territories/${id}`
+}
+
+/**
+ * @summary Update a sales territory
+ */
+export const updateTerritory = async (id: number,
+    territoryUpdate: TerritoryUpdate, options?: RequestInit): Promise<Territory> => {
+
+  return customFetch<Territory>(getUpdateTerritoryUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      territoryUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateTerritoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTerritory>>, TError,{id: number;data: BodyType<TerritoryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTerritory>>, TError,{id: number;data: BodyType<TerritoryUpdate>}, TContext> => {
+
+const mutationKey = ['updateTerritory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTerritory>>, {id: number;data: BodyType<TerritoryUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateTerritory(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTerritoryMutationResult = NonNullable<Awaited<ReturnType<typeof updateTerritory>>>
+    export type UpdateTerritoryMutationBody = BodyType<TerritoryUpdate>
+    export type UpdateTerritoryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a sales territory
+ */
+export const useUpdateTerritory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTerritory>>, TError,{id: number;data: BodyType<TerritoryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTerritory>>,
+        TError,
+        {id: number;data: BodyType<TerritoryUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateTerritoryMutationOptions(options));
+    }
+
+export const getDeleteTerritoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/territories/${id}`
+}
+
+/**
+ * @summary Soft-delete a sales territory
+ */
+export const deleteTerritory = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteTerritoryUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTerritoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTerritory>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTerritory>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteTerritory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTerritory>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteTerritory(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTerritoryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTerritory>>>
+
+    export type DeleteTerritoryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Soft-delete a sales territory
+ */
+export const useDeleteTerritory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTerritory>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTerritory>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTerritoryMutationOptions(options));
+    }
+
+export const getListMergeHistoryUrl = () => {
+
+
+
+
+  return `/api/contacts/merge-history`
+}
+
+/**
+ * @summary List contact merge-history records
+ */
+export const listMergeHistory = async ( options?: RequestInit): Promise<MergeHistoryList> => {
+
+  return customFetch<MergeHistoryList>(getListMergeHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMergeHistoryQueryKey = () => {
+    return [
+    `/api/contacts/merge-history`
+    ] as const;
+    }
+
+
+export const getListMergeHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listMergeHistory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMergeHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMergeHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMergeHistory>>> = ({ signal }) => listMergeHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMergeHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMergeHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listMergeHistory>>>
+export type ListMergeHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List contact merge-history records
+ */
+
+export function useListMergeHistory<TData = Awaited<ReturnType<typeof listMergeHistory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMergeHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMergeHistoryQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

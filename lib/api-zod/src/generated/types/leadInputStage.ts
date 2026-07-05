@@ -19,4 +19,5 @@ export const LeadInputStage = {
   new: 'new',
   contacted: 'contacted',
   meeting_scheduled: 'meeting_scheduled',
+  archived: 'archived',
 } as const;

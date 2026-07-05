@@ -35,3 +35,6 @@ export * from "./invitations";
 export * from "./notifications";
 export * from "./notification_preferences";
 export * from "./documents";
+export * from "./custom_fields";
+export * from "./territories";
+export * from "./merge_history";

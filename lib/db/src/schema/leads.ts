@@ -13,6 +13,7 @@ export const leadsTable = pgTable("leads", {
   companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
   contactId: integer("contact_id").references(() => contactsTable.id, { onDelete: "set null" }),
   stage: text("stage").notNull().default("prospect"),
+  source: text("source"), // acquisition source (e.g. event, referral, website, import)
   title: text("title"),
   value: numeric("value", { precision: 12, scale: 2 }),
   currency: varchar("currency", { length: 3 }).default("USD"),

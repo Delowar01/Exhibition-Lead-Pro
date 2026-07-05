@@ -6,6 +6,7 @@ import * as pipelineRepo from "../repositories/pipeline_stages.repository.js";
 import * as tagsRepo from "../repositories/tags.repository.js";
 import * as activitiesRepo from "../repositories/lead_activities.repository.js";
 import { ensureStages } from "./pipeline.service.js";
+import * as customFields from "./custom_fields.service.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { convertCurrency } from "../lib/currency.js";
 
@@ -173,6 +174,7 @@ export interface LeadInput {
   eventId?: number | null;
   stageId?: number | null;
   teamId?: number | null;
+  source?: string | null;
 }
 
 export type CreateLeadResult =
@@ -182,7 +184,7 @@ export type CreateLeadResult =
 export async function createLead(user: AuthUser, input: LeadInput): Promise<CreateLeadResult> {
   const companyId = user.companyId;
   if (!companyId) throw new AppError(400, "No company context");
-  const { contactId, stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId } = input;
+  const { contactId, stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId, source } = input;
 
   if (contactId != null && !(await refAccessible(user, "contacts", contactId))) throw new AppError(400, "Invalid contactId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
@@ -228,6 +230,7 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
     companyName: companyName ?? null,
     assignedToId: assignedToId ?? null,
     eventId: eventId ?? null,
+    source: source ?? null,
     createdById: user.id,
   });
   await emitSystemActivity(lead, user.id, "created", "Lead created", { stage: stageText });
@@ -266,7 +269,7 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
   const existing = await leadsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Lead not found");
 
-  const { stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId } = input;
+  const { stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId, source } = input;
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (stageId != null && !(await refInCompany("pipelineStages", existing.companyId, stageId))) throw new AppError(400, "Invalid stageId");
@@ -284,6 +287,7 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
   if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
   if (eventId !== undefined) updateData.eventId = eventId;
   if (teamId !== undefined) updateData.teamId = teamId;
+  if (source !== undefined) updateData.source = source;
 
   // Stage sync: the configurable `stageId` and the legacy text `stage` are kept
   // consistent. A provided stageId wins and drives the text; a bare stage text
@@ -422,4 +426,18 @@ export async function detachLeadTag(user: AuthUser, leadId: number, tagId: numbe
   if (!lead) throw new AppError(404, "Lead not found");
   await tagsRepo.detach(leadId, tagId);
   return { tags: fmtTags(await tagsRepo.tagsForLead(leadId)) };
+}
+
+// ── Custom-field values (delegates validation/persistence to custom_fields service) ──
+
+export async function getLeadCustomFields(user: AuthUser, id: number) {
+  const lead = await leadsRepo.findById(user, id);
+  if (!lead) throw new AppError(404, "Lead not found");
+  return customFields.getValues(user, "lead", lead.companyId, id);
+}
+
+export async function setLeadCustomFields(user: AuthUser, id: number, body: { values?: Array<{ definitionId?: unknown; value?: unknown }> }) {
+  const lead = await leadsRepo.findById(user, id);
+  if (!lead) throw new AppError(404, "Lead not found");
+  return customFields.setValues(user, "lead", lead.companyId, id, body);
 }

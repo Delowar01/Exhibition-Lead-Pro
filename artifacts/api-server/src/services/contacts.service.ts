@@ -5,6 +5,8 @@ import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/
 import { notifyUser } from "../lib/push.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
 import type { ContactRow } from "../repositories/contacts.repository.js";
+import * as mergeHistoryRepo from "../repositories/merge_history.repository.js";
+import * as customFields from "./custom_fields.service.js";
 import { parseListQuery } from "../lib/list-query.js";
 
 function parseTags(tags: string | null): string[] {
@@ -111,12 +113,13 @@ export interface CreateContactInput {
   eventId?: number | null;
   assignedToId?: number | null;
   cardImageUrl?: string | null;
+  source?: string | null;
 }
 
 export async function createContact(user: AuthUser, input: CreateContactInput) {
   const companyId = user.companyId ?? null;
   if (!companyId) throw new AppError(400, "No company context");
-  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, cardImageUrl } = input;
+  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, cardImageUrl, source } = input;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
@@ -127,7 +130,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   // are filled in asynchronously; the mobile client refetches and shows them
   // within a second or two. Blocking the response on the Gemini call was the
   // single biggest avoidable latency in the save path.
-  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null });
+  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null });
   // Record the initial lead status in the append-only history.
   void contactsRepo.insertStatusHistory({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: user.id }).catch(() => {});
 
@@ -388,10 +391,66 @@ export async function mergeContacts(user: AuthUser, body: { primaryId?: number; 
   updates.tags = JSON.stringify([...tagSet]);
   updates.updatedAt = new Date();
 
-  const merged = await contactsRepo.mergeTransaction(primaryId, dupIds, updates as Partial<ContactRow>);
+  // Formal merge-history: capture WHO, the surviving/merged ids, the applied
+  // field choices, and a pre-merge snapshot (primary + dups) so a later phase can
+  // offer undo. Written INSIDE the merge transaction (see mergeTransaction).
+  const history = {
+    companyId: primary.companyId,
+    entityType: "contact",
+    primaryId,
+    mergedIds: JSON.stringify(dupIds),
+    fieldChoices: JSON.stringify(updates),
+    snapshot: JSON.stringify({ primary, duplicates: dups }),
+    performedById: user.id,
+  };
+
+  const merged = await contactsRepo.mergeTransaction(primaryId, dupIds, updates as Partial<ContactRow>, history);
 
   const { eventName, assignedToName } = await namesFor(merged);
   return formatContact(merged, eventName, assignedToName);
+}
+
+export interface MergeHistoryParams {
+  page?: string;
+  limit?: string;
+}
+
+// Formal contact merge-history audit trail (tenant-scoped, newest first).
+export async function mergeHistory(user: AuthUser, params: MergeHistoryParams) {
+  const { page: pageNum, limit: limitNum, offset } = parseListQuery(params, { defaultPageSize: 50, maxPageSize: 200 });
+  const { rows, total } = await mergeHistoryRepo.list(user, { entityType: "contact", limit: limitNum, offset });
+  const performerIds = [...new Set(rows.map((r) => r.performedById).filter((v): v is number => v != null))];
+  const users = await mergeHistoryRepo.usersByIds(performerIds);
+  const nameById = new Map(users.map((u) => [u.id, u.name]));
+  const parseIds = (raw: string): number[] => { try { return JSON.parse(raw); } catch { return []; } };
+  const parseObj = (raw: string | null): Record<string, unknown> | null => { if (!raw) return null; try { return JSON.parse(raw); } catch { return null; } };
+  const entries = rows.map((r) => ({
+    id: r.id,
+    companyId: r.companyId,
+    entityType: r.entityType,
+    primaryId: r.primaryId,
+    mergedIds: parseIds(r.mergedIds),
+    fieldChoices: parseObj(r.fieldChoices),
+    performedById: r.performedById ?? null,
+    performedByName: r.performedById != null ? (nameById.get(r.performedById) ?? null) : null,
+    undoneAt: r.undoneAt ? r.undoneAt.toISOString() : null,
+    createdAt: r.createdAt.toISOString(),
+  }));
+  return { entries, total, page: pageNum, limit: limitNum };
+}
+
+// ── Custom-field values (delegates validation/persistence to custom_fields service) ──
+
+export async function getContactCustomFields(user: AuthUser, id: number) {
+  const c = await contactsRepo.findById(user, id);
+  if (!c) throw new AppError(404, "Contact not found");
+  return customFields.getValues(user, "contact", c.companyId, id);
+}
+
+export async function setContactCustomFields(user: AuthUser, id: number, body: { values?: Array<{ definitionId?: unknown; value?: unknown }> }) {
+  const c = await contactsRepo.findById(user, id);
+  if (!c) throw new AppError(404, "Contact not found");
+  return customFields.setValues(user, "contact", c.companyId, id, body);
 }
 
 export async function getContact(user: AuthUser, id: number) {
@@ -421,16 +480,17 @@ export interface UpdateContactInput {
   followUpTime?: string | null;
   eventId?: number | null;
   assignedToId?: number | null;
+  source?: string | null;
 }
 
 export async function updateContact(user: AuthUser, id: number, body: UpdateContactInput) {
   const existing = await contactsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Contact not found");
-  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId } = body;
+  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId, source } = body;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   const fullName = firstName !== undefined || lastName !== undefined ? [firstName, lastName].filter(Boolean).join(" ") || null : undefined;
-  const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId };
+  const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId, source };
   if (fullName !== undefined) updateData.fullName = fullName;
   if (tags !== undefined) updateData.tags = JSON.stringify(tags);
   // Remove undefined

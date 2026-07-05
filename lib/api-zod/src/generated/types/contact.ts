@@ -47,6 +47,8 @@ export interface Contact {
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  source?: string | null;
   tags?: string[];
   status: ContactStatus;
   /** @nullable */

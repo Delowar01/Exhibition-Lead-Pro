@@ -32,6 +32,8 @@ export interface ContactUpdate {
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  source?: string | null;
   tags?: string[];
   status?: ContactUpdateStatus;
   /**

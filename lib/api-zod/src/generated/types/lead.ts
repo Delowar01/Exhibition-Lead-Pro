@@ -23,6 +23,8 @@ export interface Lead {
   contactCompany?: string | null;
   stage: LeadStage;
   /** @nullable */
+  source?: string | null;
+  /** @nullable */
   title?: string | null;
   /** @nullable */
   value?: number | null;

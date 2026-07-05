@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
-import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody } from "@workspace/api-zod";
+import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody, SetContactCustomFieldsBody } from "@workspace/api-zod";
 import * as contacts from "../services/contacts.service.js";
 import * as timeline from "../services/timeline.service.js";
 
@@ -40,6 +40,21 @@ router.post("/contacts/make-original", requirePermission("contacts", "edit"), va
 // POST /contacts/merge — consolidate duplicates into a primary contact
 router.post("/contacts/merge", requirePermission("contacts", "delete"), validateBody(MergeContactsBody), async (req: AuthRequest, res) => {
   res.json(await contacts.mergeContacts(req.user!, req.body ?? {}));
+});
+
+// GET /contacts/merge-history — formal merge audit trail (static path before /:id)
+router.get("/contacts/merge-history", async (req: AuthRequest, res) => {
+  res.json(await contacts.mergeHistory(req.user!, req.query as contacts.MergeHistoryParams));
+});
+
+// GET /contacts/:id/custom-fields — custom field values for a contact
+router.get("/contacts/:id/custom-fields", async (req: AuthRequest, res) => {
+  res.json(await contacts.getContactCustomFields(req.user!, parseInt(String(req.params.id))));
+});
+
+// PUT /contacts/:id/custom-fields — set custom field values (reuses contacts:edit)
+router.put("/contacts/:id/custom-fields", requirePermission("contacts", "edit"), validateBody(SetContactCustomFieldsBody), async (req: AuthRequest, res) => {
+  res.json(await contacts.setContactCustomFields(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 
 // GET /contacts/:id
