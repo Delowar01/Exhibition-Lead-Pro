@@ -43,6 +43,7 @@ import AdminSettings from "@/pages/admin/Settings";
 import AdminScan from "@/pages/admin/Scan";
 import AdminSessions from "@/pages/admin/Sessions";
 import AdminNotifications from "@/pages/admin/Notifications";
+import AdminDocuments from "@/pages/admin/Documents";
 import PublicCard from "@/pages/PublicCard";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -257,6 +258,9 @@ function Router() {
       </Route>
       <Route path="/admin/notifications">
         {() => <ProtectedRoute component={AdminNotifications} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/documents">
+        {() => <ProtectedRoute component={AdminDocuments} role="admin" layout={AdminLayout} />}
       </Route>
 
       <Route component={NotFound} />

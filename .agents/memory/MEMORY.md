@@ -28,3 +28,4 @@
 - [Observability & monitoring](observability-monitoring.md) — readyz storage degrades (200) not gates (503); metrics per-process; login_attempts tenant-scoped via user_id; audit/alerts filters narrow-only.
 - [Analytics micro-cache + write-epoch](analytics-microcache.md) — expensive report GETs cached ~30s; invalidation is one global writeEpoch bumped on any successful non-GET; key includes userId to stop cross-user leak. Don't add per-tenant invalidation.
 - [Analytics top-performer per-user metrics](analytics-top-performers.md) — each per-user column must come from its OWN entity query; reusing a sibling count (contacts as "leads") typechecks + passes shallow tests but silently mislabels/mis-ranks.
+- [Document version-number concurrency](document-version-concurrency.md) — max+1 append races; a bare retry-on-unique loop re-collides (no backoff). Serialize per-parent with pg_advisory_xact_lock + keep the unique index as backstop.

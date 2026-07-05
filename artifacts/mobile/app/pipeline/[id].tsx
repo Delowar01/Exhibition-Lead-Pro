@@ -52,6 +52,7 @@ import {
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
+import { DocumentsSection } from "@/components/DocumentsSection";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
@@ -600,6 +601,11 @@ export default function PipelineDetailScreen() {
               })
             )}
           </Section>
+
+          {/* Documents */}
+          <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 }]}>
+            <DocumentsSection entityType="lead" entityId={leadId} />
+          </View>
         </ScrollView>
       )}
 

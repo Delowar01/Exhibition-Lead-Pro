@@ -68,6 +68,7 @@ import {
   MEETING_TYPE_ICONS,
   prettyLabel,
 } from "@/components/ui";
+import { DocumentsSection } from "@/components/DocumentsSection";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
@@ -823,6 +824,23 @@ export default function ContactDetailScreen() {
               </View>
             </Section>
           ) : null}
+
+          {/* Documents */}
+          <View style={{ marginTop: 24 }}>
+            <View
+              style={[
+                styles.sectionBody,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  borderRadius: colors.radius + 4,
+                  padding: 16,
+                },
+              ]}
+            >
+              <DocumentsSection entityType="contact" entityId={contact.id} />
+            </View>
+          </View>
         </ScrollView>
       )}
 

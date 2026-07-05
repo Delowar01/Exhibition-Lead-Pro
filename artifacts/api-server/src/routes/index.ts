@@ -26,6 +26,7 @@ import securityRouter from "./security.js";
 import profileRouter from "./profile.js";
 import invitationsRouter from "./invitations.js";
 import notificationsRouter from "./notifications.js";
+import documentsRouter from "./documents.js";
 
 const router: IRouter = Router();
 
@@ -41,6 +42,7 @@ router.use(cardsRouter);
 // guards are path-scoped to /invitations, so this does not leak onto other modules.
 router.use(invitationsRouter);
 router.use(notificationsRouter);
+router.use(documentsRouter);
 router.use(companiesRouter);
 router.use(usersRouter);
 router.use(rbacRouter);

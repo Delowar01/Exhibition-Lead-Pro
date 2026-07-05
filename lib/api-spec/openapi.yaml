@@ -48,6 +48,8 @@ tags:
     description: Department management (org hierarchy)
   - name: teams
     description: Team management (org hierarchy)
+  - name: documents
+    description: Enterprise document management (attach files to company/contact/lead/event)
 
 paths:
   /healthz:
@@ -3939,6 +3941,281 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProfileActivity"
 
+  # ─── PHASE 3B: ENTERPRISE DOCUMENT MANAGEMENT ───
+  /documents/categories:
+    get:
+      operationId: getDocumentCategories
+      tags: [documents]
+      summary: Category catalog per entity type
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentCategoryCatalog"
+
+  /documents/upload-url:
+    post:
+      operationId: requestDocumentUploadUrl
+      tags: [documents]
+      summary: Request a presigned upload URL for a document file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentUploadUrlInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentUploadUrlResponse"
+
+  /documents:
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      summary: List documents with filters and search
+      parameters:
+        - name: entityType
+          in: query
+          schema:
+            type: string
+            enum: [company, contact, lead, event]
+        - name: entityId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: mimeType
+          in: query
+          schema:
+            type: string
+        - name: uploadedBy
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: includeDeleted
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentList"
+    post:
+      operationId: createDocument
+      tags: [documents]
+      summary: Create a document (with its first version)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+
+  /documents/{id}:
+    get:
+      operationId: getDocument
+      tags: [documents]
+      summary: Get a document with its version history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+    patch:
+      operationId: updateDocument
+      tags: [documents]
+      summary: Rename, move, or recategorize a document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+    delete:
+      operationId: deleteDocument
+      tags: [documents]
+      summary: Soft-delete a document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /documents/{id}/restore:
+    post:
+      operationId: restoreDocument
+      tags: [documents]
+      summary: Restore a soft-deleted document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+
+  /documents/{id}/versions:
+    get:
+      operationId: listDocumentVersions
+      tags: [documents]
+      summary: List a document's versions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentVersionList"
+    post:
+      operationId: addDocumentVersion
+      tags: [documents]
+      summary: Add a new version to a document (never overwrites)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddDocumentVersionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+
+  /documents/{id}/download:
+    get:
+      operationId: getDocumentDownloadUrl
+      tags: [documents]
+      summary: Get a signed download/preview URL for a document's current version
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDownloadResponse"
+
+  /documents/{id}/versions/{versionId}/download:
+    get:
+      operationId: getDocumentVersionDownloadUrl
+      tags: [documents]
+      summary: Get a signed download/preview URL for a specific document version
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDownloadResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -7753,3 +8030,207 @@ components:
           type: string
         publicUrl:
           type: ["string", "null"]
+
+    # ─── PHASE 3B: DOCUMENTS ───
+    DocumentVersion:
+      type: object
+      required: [id, documentId, versionNumber, objectPath, fileName, fileSize, mimeType, uploadedAt]
+      properties:
+        id:
+          type: integer
+        documentId:
+          type: integer
+        versionNumber:
+          type: integer
+        label:
+          type: ["string", "null"]
+        objectPath:
+          type: string
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        uploadedById:
+          type: ["integer", "null"]
+        uploadedByName:
+          type: ["string", "null"]
+        uploadedAt:
+          type: string
+          format: date-time
+
+    DocumentVersionList:
+      type: object
+      required: [versions]
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentVersion"
+
+    Document:
+      type: object
+      required: [id, companyId, entityType, entityId, name, category, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        entityType:
+          type: string
+          enum: [company, contact, lead, event]
+        entityId:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+        description:
+          type: ["string", "null"]
+        currentVersionId:
+          type: ["integer", "null"]
+        createdById:
+          type: ["integer", "null"]
+        createdByName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+        deletedAt:
+          type: ["string", "null"]
+          format: date-time
+        entityName:
+          type: ["string", "null"]
+        versionCount:
+          type: ["integer", "null"]
+        currentVersion:
+          oneOf:
+            - $ref: "#/components/schemas/DocumentVersion"
+            - type: "null"
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentVersion"
+
+    DocumentList:
+      type: object
+      required: [documents, total]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Document"
+        total:
+          type: integer
+
+    DocumentInput:
+      type: object
+      required: [entityType, entityId, category, objectPath, fileName, fileSize, mimeType]
+      properties:
+        entityType:
+          type: string
+          enum: [company, contact, lead, event]
+        entityId:
+          type: integer
+        category:
+          type: string
+        name:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        objectPath:
+          type: string
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        label:
+          type: ["string", "null"]
+
+    DocumentUpdate:
+      type: object
+      properties:
+        name:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        entityType:
+          type: string
+          enum: [company, contact, lead, event]
+        entityId:
+          type: ["integer", "null"]
+
+    AddDocumentVersionInput:
+      type: object
+      required: [objectPath, fileName, fileSize, mimeType]
+      properties:
+        objectPath:
+          type: string
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        label:
+          type: ["string", "null"]
+
+    DocumentUploadUrlInput:
+      type: object
+      required: [fileName, contentType, size]
+      properties:
+        fileName:
+          type: string
+        contentType:
+          type: string
+        size:
+          type: integer
+
+    DocumentUploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+
+    DocumentDownloadResponse:
+      type: object
+      required: [url, fileName, mimeType]
+      properties:
+        url:
+          type: string
+        fileName:
+          type: string
+        mimeType:
+          type: string
+
+    DocumentCategoryCatalog:
+      type: object
+      required: [company, contact, lead, event]
+      properties:
+        company:
+          type: array
+          items:
+            type: string
+        contact:
+          type: array
+          items:
+            type: string
+        lead:
+          type: array
+          items:
+            type: string
+        event:
+          type: array
+          items:
+            type: string

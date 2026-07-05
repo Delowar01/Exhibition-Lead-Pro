@@ -129,6 +129,20 @@ export class ObjectStorageService {
     });
   }
 
+  // Sign a short-lived GET URL for a stored object (identified by its normalized
+  // `/objects/...` path). Used for document download/preview: our own auth,
+  // tenant, and permission checks gate the request BEFORE a URL is minted, so the
+  // signed URL itself is a short-lived capability (no per-object ACL needed).
+  async getObjectEntityDownloadURL(objectPath: string, ttlSec: number = 300): Promise<string> {
+    const file = await this.getObjectEntityFile(objectPath);
+    return signObjectURL({
+      bucketName: file.bucket.name,
+      objectName: file.name,
+      method: "GET",
+      ttlSec,
+    });
+  }
+
   async getObjectEntityFile(objectPath: string): Promise<File> {
     if (!objectPath.startsWith("/objects/")) {
       throw new ObjectNotFoundError();

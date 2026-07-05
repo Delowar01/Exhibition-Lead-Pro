@@ -10,6 +10,7 @@
 export const PERMISSION_CATALOG: Record<string, { label: string; actions: string[] }> = {
   contacts: { label: "Contacts", actions: ["view", "create", "edit", "delete", "export"] },
   leads: { label: "Leads", actions: ["view", "create", "edit", "delete"] },
+  documents: { label: "Documents", actions: ["view", "create", "edit", "delete"] },
   events: { label: "Events", actions: ["view", "create", "edit", "delete"] },
   scans: { label: "Scans", actions: ["view", "create", "delete"] },
   reports: { label: "Reports", actions: ["view"] },

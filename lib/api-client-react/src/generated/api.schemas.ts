@@ -3044,6 +3044,151 @@ export interface PublicBusinessCard {
   publicUrl?: string | null;
 }
 
+export interface DocumentVersion {
+  id: number;
+  documentId: number;
+  versionNumber: number;
+  /** @nullable */
+  label?: string | null;
+  objectPath: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  /** @nullable */
+  uploadedById?: number | null;
+  /** @nullable */
+  uploadedByName?: string | null;
+  uploadedAt: string;
+}
+
+export interface DocumentVersionList {
+  versions: DocumentVersion[];
+}
+
+export type DocumentEntityType = typeof DocumentEntityType[keyof typeof DocumentEntityType];
+
+
+export const DocumentEntityType = {
+  company: 'company',
+  contact: 'contact',
+  lead: 'lead',
+  event: 'event',
+} as const;
+
+export interface Document {
+  id: number;
+  companyId: number;
+  entityType: DocumentEntityType;
+  entityId: number;
+  name: string;
+  category: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  currentVersionId?: number | null;
+  /** @nullable */
+  createdById?: number | null;
+  /** @nullable */
+  createdByName?: string | null;
+  createdAt: string;
+  /** @nullable */
+  updatedAt?: string | null;
+  /** @nullable */
+  deletedAt?: string | null;
+  /** @nullable */
+  entityName?: string | null;
+  /** @nullable */
+  versionCount?: number | null;
+  currentVersion?: DocumentVersion | null;
+  versions?: DocumentVersion[];
+}
+
+export interface DocumentList {
+  documents: Document[];
+  total: number;
+}
+
+export type DocumentInputEntityType = typeof DocumentInputEntityType[keyof typeof DocumentInputEntityType];
+
+
+export const DocumentInputEntityType = {
+  company: 'company',
+  contact: 'contact',
+  lead: 'lead',
+  event: 'event',
+} as const;
+
+export interface DocumentInput {
+  entityType: DocumentInputEntityType;
+  entityId: number;
+  category: string;
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  description?: string | null;
+  objectPath: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  /** @nullable */
+  label?: string | null;
+}
+
+export type DocumentUpdateEntityType = typeof DocumentUpdateEntityType[keyof typeof DocumentUpdateEntityType];
+
+
+export const DocumentUpdateEntityType = {
+  company: 'company',
+  contact: 'contact',
+  lead: 'lead',
+  event: 'event',
+} as const;
+
+export interface DocumentUpdate {
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  description?: string | null;
+  entityType?: DocumentUpdateEntityType;
+  /** @nullable */
+  entityId?: number | null;
+}
+
+export interface AddDocumentVersionInput {
+  objectPath: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  /** @nullable */
+  label?: string | null;
+}
+
+export interface DocumentUploadUrlInput {
+  fileName: string;
+  contentType: string;
+  size: number;
+}
+
+export interface DocumentUploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+}
+
+export interface DocumentDownloadResponse {
+  url: string;
+  fileName: string;
+  mimeType: string;
+}
+
+export interface DocumentCategoryCatalog {
+  company: string[];
+  contact: string[];
+  lead: string[];
+  event: string[];
+}
+
 export type ListInvitationsParams = {
 companyId?: number;
 page?: number;
@@ -3394,4 +3539,34 @@ export type GetSecurityAlertsParams = {
 companyId?: number;
 windowHours?: number;
 };
+
+export type ListDocumentsParams = {
+entityType?: ListDocumentsEntityType;
+/**
+ * @nullable
+ */
+entityId?: number | null;
+category?: string;
+mimeType?: string;
+/**
+ * @nullable
+ */
+uploadedBy?: number | null;
+q?: string;
+from?: string;
+to?: string;
+includeDeleted?: boolean;
+page?: number;
+limit?: number;
+};
+
+export type ListDocumentsEntityType = typeof ListDocumentsEntityType[keyof typeof ListDocumentsEntityType];
+
+
+export const ListDocumentsEntityType = {
+  company: 'company',
+  contact: 'contact',
+  lead: 'lead',
+  event: 'event',
+} as const;
 

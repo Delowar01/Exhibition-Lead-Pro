@@ -4678,3 +4678,361 @@ export const GetProfileActivityResponse = zod.object({
 })
 
 
+/**
+ * @summary Category catalog per entity type
+ */
+export const GetDocumentCategoriesResponse = zod.object({
+  "company": zod.array(zod.string()),
+  "contact": zod.array(zod.string()),
+  "lead": zod.array(zod.string()),
+  "event": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Request a presigned upload URL for a document file
+ */
+export const RequestDocumentUploadUrlBody = zod.object({
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "size": zod.number()
+})
+
+export const RequestDocumentUploadUrlResponse = zod.object({
+  "uploadURL": zod.string(),
+  "objectPath": zod.string()
+})
+
+
+/**
+ * @summary List documents with filters and search
+ */
+export const listDocumentsQueryIncludeDeletedDefault = false;
+export const listDocumentsQueryPageDefault = 1;
+export const listDocumentsQueryLimitDefault = 100;
+
+export const ListDocumentsQueryParams = zod.object({
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']).optional(),
+  "entityId": zod.coerce.number().nullish(),
+  "category": zod.coerce.string().optional(),
+  "mimeType": zod.coerce.string().optional(),
+  "uploadedBy": zod.coerce.number().nullish(),
+  "q": zod.coerce.string().optional(),
+  "from": zod.coerce.string().optional(),
+  "to": zod.coerce.string().optional(),
+  "includeDeleted": zod.coerce.boolean().default(listDocumentsQueryIncludeDeletedDefault),
+  "page": zod.coerce.number().default(listDocumentsQueryPageDefault),
+  "limit": zod.coerce.number().default(listDocumentsQueryLimitDefault)
+})
+
+export const ListDocumentsResponse = zod.object({
+  "documents": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']),
+  "entityId": zod.number(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "description": zod.string().nullish(),
+  "currentVersionId": zod.number().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish(),
+  "deletedAt": zod.coerce.date().nullish(),
+  "entityName": zod.string().nullish(),
+  "versionCount": zod.number().nullish(),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+}),zod.null()]).optional(),
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+})).optional()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Create a document (with its first version)
+ */
+export const CreateDocumentBody = zod.object({
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']),
+  "entityId": zod.number(),
+  "category": zod.string(),
+  "name": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "label": zod.string().nullish()
+})
+
+
+/**
+ * @summary Get a document with its version history
+ */
+export const GetDocumentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetDocumentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']),
+  "entityId": zod.number(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "description": zod.string().nullish(),
+  "currentVersionId": zod.number().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish(),
+  "deletedAt": zod.coerce.date().nullish(),
+  "entityName": zod.string().nullish(),
+  "versionCount": zod.number().nullish(),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+}),zod.null()]).optional(),
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+})).optional()
+})
+
+
+/**
+ * @summary Rename, move, or recategorize a document
+ */
+export const UpdateDocumentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateDocumentBody = zod.object({
+  "name": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']).optional(),
+  "entityId": zod.number().nullish()
+})
+
+export const UpdateDocumentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']),
+  "entityId": zod.number(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "description": zod.string().nullish(),
+  "currentVersionId": zod.number().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish(),
+  "deletedAt": zod.coerce.date().nullish(),
+  "entityName": zod.string().nullish(),
+  "versionCount": zod.number().nullish(),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+}),zod.null()]).optional(),
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+})).optional()
+})
+
+
+/**
+ * @summary Soft-delete a document
+ */
+export const DeleteDocumentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteDocumentResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Restore a soft-deleted document
+ */
+export const RestoreDocumentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RestoreDocumentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']),
+  "entityId": zod.number(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "description": zod.string().nullish(),
+  "currentVersionId": zod.number().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish(),
+  "deletedAt": zod.coerce.date().nullish(),
+  "entityName": zod.string().nullish(),
+  "versionCount": zod.number().nullish(),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+}),zod.null()]).optional(),
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+})).optional()
+})
+
+
+/**
+ * @summary List a document's versions
+ */
+export const ListDocumentVersionsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListDocumentVersionsResponse = zod.object({
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Add a new version to a document (never overwrites)
+ */
+export const AddDocumentVersionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AddDocumentVersionBody = zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "label": zod.string().nullish()
+})
+
+
+/**
+ * @summary Get a signed download/preview URL for a document's current version
+ */
+export const GetDocumentDownloadUrlParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetDocumentDownloadUrlResponse = zod.object({
+  "url": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string()
+})
+
+
+/**
+ * @summary Get a signed download/preview URL for a specific document version
+ */
+export const GetDocumentVersionDownloadUrlParams = zod.object({
+  "id": zod.coerce.number(),
+  "versionId": zod.coerce.number()
+})
+
+export const GetDocumentVersionDownloadUrlResponse = zod.object({
+  "url": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string()
+})
+
+

@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart, Columns3, Tags } from "lucide-react";
+import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart, Columns3, Tags, FolderOpen } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
 
@@ -10,6 +10,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const logoutMutation = useLogout();
   const { data: unreadData } = useGetUnreadCount({ query: { refetchInterval: 60000, queryKey: getGetUnreadCountQueryKey() } });
   const unreadCount = unreadData?.count ?? 0;
+
+  const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
+  const docPerms = (user?.permissions?.documents as string[] | undefined) ?? [];
+  const canViewDocuments = isFullAccess || docPerms.includes("view");
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
@@ -27,6 +31,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { name: "Pipeline Settings", href: "/admin/pipeline-settings", icon: Columns3 },
     { name: "Tags", href: "/admin/tags", icon: Tags },
     { name: "Events", href: "/admin/events", icon: Calendar },
+    ...(canViewDocuments ? [{ name: "Documents", href: "/admin/documents", icon: FolderOpen }] : []),
     { name: "Scan Card", href: "/admin/scan", icon: Camera },
     { name: "Notifications", href: "/admin/notifications", icon: Bell },
     { name: "Team", href: "/admin/team", icon: Users },

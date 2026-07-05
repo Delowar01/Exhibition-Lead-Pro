@@ -34,3 +34,4 @@ export * from "./verification_tokens";
 export * from "./invitations";
 export * from "./notifications";
 export * from "./notification_preferences";
+export * from "./documents";

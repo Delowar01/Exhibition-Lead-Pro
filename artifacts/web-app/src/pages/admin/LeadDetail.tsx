@@ -37,6 +37,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import DocumentsPanel from "@/components/DocumentsPanel";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -315,6 +316,12 @@ export default function AdminLeadDetail() {
               >
                 Tasks
               </TabsTrigger>
+              <TabsTrigger
+                value="documents"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+              >
+                Documents
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6 mt-0">
@@ -409,6 +416,9 @@ export default function AdminLeadDetail() {
                   No tasks. Task management is not available for leads yet.
                 </CardContent>
               </Card>
+            </TabsContent>
+            <TabsContent value="documents">
+              <DocumentsPanel entityType="lead" entityId={id} />
             </TabsContent>
           </Tabs>
         </div>
