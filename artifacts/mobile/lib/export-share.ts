@@ -2,6 +2,8 @@ import { Platform } from "react-native";
 
 import { createExport, type ExportCreateInput } from "@workspace/api-client-react";
 
+import { cleanFilters } from "./export-filters";
+
 export type ExportEntityType = "contact" | "lead";
 export type ExportFormat = "csv" | "excel" | "json";
 
@@ -11,15 +13,6 @@ const MIME: Record<ExportFormat, string> = {
   excel: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   json: "application/json",
 };
-
-function cleanFilters(filters: Record<string, string | number | undefined | null>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(filters)) {
-    if (v == null || v === "" || v === "all") continue;
-    out[k] = String(v);
-  }
-  return out;
-}
 
 export interface ExportResult {
   rowCount: number;

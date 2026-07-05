@@ -780,7 +780,11 @@ export default function LeadsScreen() {
         visible={exportOpen}
         onClose={() => setExportOpen(false)}
         entityType="lead"
-        filters={{}}
+        // The pipeline board has no free-form filter UI; the only active scoping
+        // context is the deep-link stage focus (highlightStage). Forward it as the
+        // server-supported `stage` filter so an export honors the stage the user
+        // arrived focused on; when there's no focus, export the full pipeline.
+        filters={{ stage: highlightStage ?? undefined }}
       />
     </View>
   );
