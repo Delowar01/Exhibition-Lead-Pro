@@ -24,6 +24,12 @@ attribute. Everything is tenant-scoped, permission-gated, and contract-first.
     delegates to `custom_fields.service` with the resolved `companyId` and a fixed
     `entityType`. Values are validated against their definition and upserted (or cleared on
     null) in one transaction; duplicate `definitionId`s are rejected.
+  - **Required-field enforcement:** `setValues` enforces required fields across the merged
+    (existing + payload + default) state — an explicit null on a required field 400s, and a
+    required field left unsatisfied after the merge 400s. **Default values** are validated at
+    definition create/update against the field's effective type/options/validation (invalid
+    defaults rejected early; a stored default is re-validated when the field type changes) and
+    auto-applied on first-time set when no explicit value is provided.
 
 ### 2. Territories
 - New `territories` table with `assignedToId` (user) and `teamId` owners.

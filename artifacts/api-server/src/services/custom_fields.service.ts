@@ -161,6 +161,7 @@ export async function createDefinition(user: AuthUser, body: Record<string, unkn
   const options = normalizeOptions(fieldType, body.options);
   const validation = normalizeValidation(body.validation);
   const visibilityCondition = normalizeVisibility(body.visibilityCondition);
+  const defaultValue = normalizeDefault(fieldType, validation, options ?? [], body.defaultValue);
 
   const conflict = await repo.findKeyConflict(companyId, entityType, fieldKey);
   if (conflict !== undefined) throw new AppError(409, `A field with key "${fieldKey}" already exists for ${entityType}`);
@@ -173,7 +174,7 @@ export async function createDefinition(user: AuthUser, body: Record<string, unkn
     fieldType,
     options: options ? JSON.stringify(options) : null,
     required: body.required === true,
-    defaultValue: typeof body.defaultValue === "string" ? body.defaultValue : null,
+    defaultValue,
     validation: validation ? JSON.stringify(validation) : null,
     visibilityCondition: visibilityCondition ? JSON.stringify(visibilityCondition) : null,
     sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : 0,
@@ -194,20 +195,39 @@ export async function updateDefinition(user: AuthUser, id: number, body: Record<
   const updateData: Record<string, unknown> = {};
   if (body.label !== undefined) updateData.label = assertLabel(body.label);
   if (body.fieldType !== undefined) updateData.fieldType = fieldType;
+
+  // Resolve the EFFECTIVE options/validation (new value if provided, else the
+  // stored one) so a defaultValue — new or pre-existing — can be re-validated
+  // against the field's final shape after this update.
+  let effectiveOptions: FieldOption[] = parseJson<FieldOption[]>(existing.options) ?? [];
+  let effectiveValidation: FieldValidation | null = parseJson<FieldValidation>(existing.validation);
   if (body.options !== undefined) {
     const options = normalizeOptions(fieldType, body.options);
     updateData.options = options ? JSON.stringify(options) : null;
+    effectiveOptions = options ?? [];
   } else if (body.fieldType !== undefined && OPTION_TYPES.has(fieldType)) {
     // Switching TO an option type without providing options: the existing
     // options must already be valid, otherwise reject.
     const current = parseJson<FieldOption[]>(existing.options);
     if (!current || current.length === 0) throw new AppError(400, `${fieldType} fields require a non-empty options array`);
+    effectiveOptions = current;
   }
   if (body.required !== undefined) updateData.required = body.required === true;
-  if (body.defaultValue !== undefined) updateData.defaultValue = typeof body.defaultValue === "string" ? body.defaultValue : null;
   if (body.validation !== undefined) {
     const validation = normalizeValidation(body.validation);
     updateData.validation = validation ? JSON.stringify(validation) : null;
+    effectiveValidation = validation;
+  }
+  // Validate defaultValue against the effective type/options/validation. Also
+  // re-validate a STORED default whenever the shape that constrains it changes —
+  // fieldType, options, OR validation — because a default valid under the old
+  // shape (e.g. dropdown option "A", or a 3-char text) can become invalid under
+  // the new one (options ["B"], or minLength 5). normalizeDefault throws 400 on
+  // an now-invalid default so we never leave an inconsistent default behind.
+  if (body.defaultValue !== undefined) {
+    updateData.defaultValue = normalizeDefault(fieldType, effectiveValidation, effectiveOptions, body.defaultValue);
+  } else if ((body.fieldType !== undefined || body.options !== undefined || body.validation !== undefined) && existing.defaultValue) {
+    updateData.defaultValue = normalizeDefault(fieldType, effectiveValidation, effectiveOptions, existing.defaultValue);
   }
   if (body.visibilityCondition !== undefined) {
     const visibility = normalizeVisibility(body.visibilityCondition);
@@ -235,67 +255,91 @@ export async function deleteDefinition(user: AuthUser, id: number) {
 
 // ── Value validation per type ────────────────────────────────────────────────
 
-function validateValue(def: CustomFieldDefinitionRow, raw: string | null): string | null {
-  if (raw == null || raw === "") {
-    if (def.required) throw new AppError(400, `${def.label} is required`);
-    return null;
-  }
-  const fieldType = def.fieldType as FieldType;
-  const validation = parseJson<FieldValidation>(def.validation);
-
+// Validate a NON-EMPTY raw value against the field TYPE + rules (no required
+// check). Returns the normalized value. Shared by stored-value validation and
+// definition defaultValue validation.
+function validateTypedValue(
+  fieldType: FieldType,
+  validation: FieldValidation | null,
+  options: FieldOption[],
+  label: string,
+  raw: string,
+): string {
   switch (fieldType) {
     case "number":
     case "currency": {
       const n = Number(raw);
-      if (Number.isNaN(n)) throw new AppError(400, `${def.label} must be a number`);
-      if (validation?.min != null && n < validation.min) throw new AppError(400, `${def.label} must be >= ${validation.min}`);
-      if (validation?.max != null && n > validation.max) throw new AppError(400, `${def.label} must be <= ${validation.max}`);
+      if (Number.isNaN(n)) throw new AppError(400, `${label} must be a number`);
+      if (validation?.min != null && n < validation.min) throw new AppError(400, `${label} must be >= ${validation.min}`);
+      if (validation?.max != null && n > validation.max) throw new AppError(400, `${label} must be <= ${validation.max}`);
       return String(n);
     }
     case "date": {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new AppError(400, `${def.label} must be a date (YYYY-MM-DD)`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new AppError(400, `${label} must be a date (YYYY-MM-DD)`);
       const d = new Date(`${raw}T00:00:00Z`);
-      if (Number.isNaN(d.getTime())) throw new AppError(400, `${def.label} is not a valid date`);
+      if (Number.isNaN(d.getTime())) throw new AppError(400, `${label} is not a valid date`);
       return raw;
     }
     case "checkbox": {
-      if (raw !== "true" && raw !== "false") throw new AppError(400, `${def.label} must be true or false`);
+      if (raw !== "true" && raw !== "false") throw new AppError(400, `${label} must be true or false`);
       return raw;
     }
     case "dropdown":
     case "radio": {
-      const options = parseJson<FieldOption[]>(def.options) ?? [];
-      if (!options.some((o) => o.value === raw)) throw new AppError(400, `${def.label} must be one of the defined options`);
+      if (!options.some((o) => o.value === raw)) throw new AppError(400, `${label} must be one of the defined options`);
       return raw;
     }
     case "email": {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) throw new AppError(400, `${def.label} must be a valid email`);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) throw new AppError(400, `${label} must be a valid email`);
       return raw;
     }
     case "url": {
-      try { new URL(raw); } catch { throw new AppError(400, `${def.label} must be a valid URL`); }
+      try { new URL(raw); } catch { throw new AppError(400, `${label} must be a valid URL`); }
       return raw;
     }
     case "phone": {
-      if (raw.replace(/\D/g, "").length < 7) throw new AppError(400, `${def.label} must be a valid phone number`);
+      if (raw.replace(/\D/g, "").length < 7) throw new AppError(400, `${label} must be a valid phone number`);
       return raw;
     }
     case "text":
     default: {
       if (validation?.minLength != null && raw.length < validation.minLength) {
-        throw new AppError(400, `${def.label} must be at least ${validation.minLength} characters`);
+        throw new AppError(400, `${label} must be at least ${validation.minLength} characters`);
       }
       if (validation?.maxLength != null && raw.length > validation.maxLength) {
-        throw new AppError(400, `${def.label} must be at most ${validation.maxLength} characters`);
+        throw new AppError(400, `${label} must be at most ${validation.maxLength} characters`);
       }
       if (validation?.pattern) {
-        let re: RegExp;
-        try { re = new RegExp(validation.pattern); } catch { return raw; }
-        if (!re.test(raw)) throw new AppError(400, `${def.label} does not match the required format`);
+        const re = new RegExp(validation.pattern);
+        if (!re.test(raw)) throw new AppError(400, `${label} does not match the required format`);
       }
       return raw;
     }
   }
+}
+
+function validateValue(def: CustomFieldDefinitionRow, raw: string | null): string | null {
+  if (raw == null || raw === "") {
+    if (def.required) throw new AppError(400, `${def.label} is required`);
+    return null;
+  }
+  const validation = parseJson<FieldValidation>(def.validation);
+  const options = parseJson<FieldOption[]>(def.options) ?? [];
+  return validateTypedValue(def.fieldType as FieldType, validation, options, def.label, raw);
+}
+
+// Validate/normalize a definition's defaultValue against its (effective) type +
+// rules. An empty/absent default is stored as null; a non-empty default must be
+// a VALID value for the field type (e.g. a dropdown default must be a real
+// option, a number default must parse) so invalid defaults are rejected early.
+function normalizeDefault(
+  fieldType: FieldType,
+  validation: FieldValidation | null,
+  options: FieldOption[],
+  raw: unknown,
+): string | null {
+  if (typeof raw !== "string" || raw === "") return null;
+  return validateTypedValue(fieldType, validation, options, "defaultValue", raw);
 }
 
 function formatValue(def: CustomFieldDefinitionRow, value: string | null) {
@@ -343,9 +387,24 @@ export async function setValues(
     resolved.push({ def, value: validateValue(def, rawValue) });
   }
 
-  // Enforce required fields that were omitted entirely from the payload only when
-  // a value does not already exist — omitting a field leaves its current value
-  // untouched, so we do not clear or re-require unspecified fields here.
+  // For every definition NOT explicitly provided in this payload, look at what is
+  // already stored so we can (a) auto-apply a configured default on first set and
+  // (b) enforce required fields across the merged (existing + payload + default)
+  // state. A field the caller explicitly sends as null is a deliberate clear and
+  // is handled above (validateValue 400s if that field is required).
+  const existingRows = await repo.valuesForEntity(companyId, entityType, entityId);
+  const existingByDefId = new Map(existingRows.map((r) => [r.definition.id, r.value.value]));
+  for (const def of defs) {
+    if (seen.has(def.id)) continue;
+    const existing = existingByDefId.get(def.id) ?? null;
+    if (existing != null && existing !== "") continue; // already satisfied; leave untouched
+    if (def.defaultValue != null && def.defaultValue !== "") {
+      // First-time set with no explicit value: persist the (already-validated) default.
+      resolved.push({ def, value: validateValue(def, def.defaultValue) });
+    } else if (def.required) {
+      throw new AppError(400, `${def.label} is required`);
+    }
+  }
 
   await repo.upsertValuesTransaction(companyId, entityType, entityId, resolved);
   return getValues(user, entityType, companyId, entityId);
