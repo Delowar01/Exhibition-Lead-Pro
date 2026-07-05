@@ -11,7 +11,7 @@ The full `@workspace/api-server` `test` suite runs sequentially (`fileParallelis
 
 **How to apply:**
 1. `restart_workflow("artifacts/api-server: API Server")`
-2. Verify reset: `curl -s -o /dev/null -w "%{http_code}" -X POST localhost:80/api/auth/login -d '{"email":"admin@techcorp.com","password":"Admin123!"}'` → expect 200 (not 429).
+2. Verify reset: POST a VALID login (use a seeded demo credential from the "Demo credentials" table in `replit.md`) to `localhost:80/api/auth/login` and expect HTTP 200 (not 429). Do not hardcode credentials here.
 3. Run `pnpm --filter @workspace/api-server run test` ONCE.
 
 **Trap:** a `pnpm test` invocation that times out / returns "-1 no output" at the tool layer STILL fully executed the suite server-side and consumed the limiter. Treat it as a run — restart before the next attempt, don't just re-run.

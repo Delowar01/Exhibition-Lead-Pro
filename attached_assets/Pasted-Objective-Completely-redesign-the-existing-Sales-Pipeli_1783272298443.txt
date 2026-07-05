@@ -1,0 +1,416 @@
+Objective
+
+Completely redesign the existing Sales Pipeline into a premium Enterprise Sales Workspace.
+
+This is a UI/UX modernization project.
+
+The backend architecture is already complete and should remain unchanged.
+
+Do NOT redesign business logic.
+
+Do NOT redesign APIs unless absolutely required.
+
+Do NOT change database structure unless necessary.
+
+No regressions.
+
+Continue following:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• Contract-first development
+• Repository Layer
+• Service Layer
+• Existing CRM architecture
+
+--------------------------------------------------
+
+Current Problem
+
+The current pipeline uses a traditional Kanban layout.
+
+Although functional, it does not provide a premium enterprise CRM experience.
+
+It becomes difficult to manage when companies have hundreds or thousands of leads.
+
+The interface also lacks density, productivity, and executive usability.
+
+--------------------------------------------------
+
+Design Goal
+
+Transform the page into an Enterprise Sales Workspace inspired by:
+
+• Salesforce
+• HubSpot
+• Microsoft Dynamics 365
+• Monday CRM
+• Zoho CRM
+• Pipedrive
+
+Use Lead Capture Pro branding.
+
+Primary Colors
+
+Dark Blue
+#151348
+
+Orange
+#E66C25
+
+Maintain consistent spacing, premium typography, soft shadows, rounded cards, modern icons, and clean layouts.
+
+--------------------------------------------------
+
+Workspace Header
+
+Top section should contain:
+
+• Pipeline Selector
+• Search Bar
+• Advanced Filters
+• Saved Views
+• Group By
+• Import
+• Export
+• Bulk Actions
+• New Lead
+
+--------------------------------------------------
+
+KPI Dashboard
+
+Display premium KPI cards:
+
+• Total Pipeline Value
+• Total Deals
+• Won Deals
+• Lost Deals
+• Average Deal Value
+• Win Rate
+• Expected Revenue
+• Closing This Month
+
+Cards should be modern and compact.
+
+--------------------------------------------------
+
+Main Workspace
+
+The default view must be a modern enterprise data table.
+
+Each row represents one Lead.
+
+Columns:
+
+• Contact
+• Company
+• Event
+• Deal Value
+• Pipeline Stage
+• Owner
+• Team
+• Priority
+• AI Score (future ready)
+• Last Activity
+• Next Follow-up
+• Expected Close Date
+• Tags
+• Status
+• Actions
+
+Allow users to:
+
+• Sort
+• Filter
+• Search
+• Pin Columns
+• Resize Columns
+• Hide/Show Columns
+• Save Personal Views
+
+--------------------------------------------------
+
+Pipeline Stage
+
+Do NOT use drag-and-drop as the default interaction.
+
+Instead display Stage as a modern colored dropdown badge.
+
+Examples
+
+Prospect ▼
+
+Qualified ▼
+
+Proposal Sent ▼
+
+Negotiation ▼
+
+Won ▼
+
+Lost ▼
+
+Changing the stage should require only:
+
+Click Stage
+
+↓
+
+Choose New Stage
+
+↓
+
+Automatically Save
+
+No confirmation dialog unless workflow validation requires it.
+
+The same interaction must work on:
+
+Desktop
+
+Tablet
+
+Mobile
+
+--------------------------------------------------
+
+Lead Details
+
+Clicking any row should open a modern right-side drawer.
+
+Display:
+
+• Contact Information
+• Company Information
+• Current Stage
+• Deal Value
+• Expected Close Date
+• Owner
+• Department
+• Team
+• Event
+• Tags
+• Timeline
+• Activities
+• Notes
+• Documents
+• AI Summary (future ready)
+
+Quick Actions:
+
+• Change Stage
+• Edit Lead
+• Add Activity
+• Add Note
+• Schedule Follow-up
+• Email
+• WhatsApp
+• Call
+• Open Full CRM Record
+
+--------------------------------------------------
+
+Row Actions
+
+Every row should contain:
+
+⋮
+
+Menu
+
+View
+
+Edit
+
+Change Stage
+
+Assign Owner
+
+Add Activity
+
+Add Note
+
+Duplicate
+
+Archive
+
+Delete
+
+--------------------------------------------------
+
+Bulk Operations
+
+Support:
+
+• Multi-select
+
+Bulk Change Stage
+
+Bulk Assign Owner
+
+Bulk Add Tags
+
+Bulk Export
+
+Bulk Delete
+
+Bulk Email
+
+Bulk WhatsApp
+
+Bulk Schedule Follow-up
+
+--------------------------------------------------
+
+Advanced Filtering
+
+Support filtering by:
+
+• Stage
+• Owner
+• Department
+• Team
+• Event
+• Company
+• Priority
+• Deal Value
+• Date Range
+• Last Activity
+• Next Follow-up
+• Tags
+
+Allow saving custom filter presets.
+
+--------------------------------------------------
+
+Views
+
+Support multiple workspace views.
+
+Default:
+
+✓ Table View
+
+Optional:
+
+Kanban View
+
+Future Ready:
+
+Calendar View
+
+Forecast View
+
+Map View
+
+Timeline View
+
+Do NOT remove the existing Kanban.
+
+Simply make Table View the default workspace.
+
+--------------------------------------------------
+
+Performance
+
+Optimize for enterprise-scale datasets.
+
+Support:
+
+• Thousands of Leads
+• Virtualized Tables
+• Fast Search
+• Instant Filtering
+• Lazy Loading
+• Pagination
+
+--------------------------------------------------
+
+Mobile Experience
+
+Do NOT use a desktop table.
+
+Instead:
+
+Compact Lead Cards
+
+Tap Card
+
+↓
+
+Lead Details
+
+↓
+
+Change Stage
+
+↓
+
+Activities
+
+↓
+
+Documents
+
+↓
+
+Notes
+
+↓
+
+Timeline
+
+Maintain feature parity with Web.
+
+--------------------------------------------------
+
+Accessibility
+
+Support:
+
+• Keyboard Navigation
+• Screen Readers
+• Focus Indicators
+• Responsive Layouts
+
+--------------------------------------------------
+
+Visual Quality
+
+The page should immediately feel like an enterprise SaaS platform.
+
+Avoid excessive whitespace.
+
+Increase information density while maintaining readability.
+
+Create a workspace where sales managers can comfortably manage hundreds or thousands of leads every day.
+
+--------------------------------------------------
+
+Deliverables
+
+Provide:
+
+• Before vs After screenshots
+
+• Components created
+
+• Files modified
+
+• Mobile screenshots
+
+• Performance improvements
+
+• Validation report
+
+Run:
+
+• Full typecheck
+
+• Complete regression suite
+
+No regressions.
+
+Wait for approval before redesigning additional CRM pages.
