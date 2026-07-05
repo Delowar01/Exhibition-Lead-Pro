@@ -21,9 +21,14 @@ import {
   type Contact,
   getListContactsQueryKey,
   getListEventsQueryKey,
+  getListSavedSearchesQueryKey,
   type ListContactsParams,
+  type SavedSearch,
   useListContacts,
   useListEvents,
+  useListSavedSearches,
+  useCreateSavedSearch,
+  useDeleteSavedSearch,
 } from "@workspace/api-client-react";
 
 import { DateTimeField } from "@/components/DateTimeField";
@@ -138,6 +143,8 @@ const SORT_OPTIONS: { key: ContactSortPref; labelKey: string }[] = [
 ];
 
 const TEMPERATURES = ["hot", "warm", "cold"];
+
+const SAVED_FILTER_ENTITY = "contact-mobile-filter";
 
 function countActiveFilters(f: ContactFilters): number {
   let n = 0;
@@ -546,16 +553,53 @@ function FilterSheet({
   const insets = useSafeAreaInsets();
   const { t, isRTL, textAlign } = useLocale();
   const [draft, setDraft] = useState<ContactFilters>(filters);
+  const [saveName, setSaveName] = useState("");
   const eventsQuery = useListEvents(
     { limit: 100 },
     { query: { enabled: open, queryKey: getListEventsQueryKey({ limit: 100 }) } },
   );
+  const savedQuery = useListSavedSearches(
+    { entityType: SAVED_FILTER_ENTITY, kind: "filter" },
+    {
+      query: {
+        enabled: open,
+        queryKey: getListSavedSearchesQueryKey({ entityType: SAVED_FILTER_ENTITY, kind: "filter" }),
+      },
+    },
+  );
+  const createSaved = useCreateSavedSearch();
+  const deleteSaved = useDeleteSavedSearch();
 
   useEffect(() => {
-    if (open) setDraft(filters);
+    if (open) {
+      setDraft(filters);
+      setSaveName("");
+    }
   }, [open, filters]);
 
   const events = eventsQuery.data?.events ?? [];
+  const savedFilters = savedQuery.data?.savedSearches ?? [];
+
+  function applySaved(s: SavedSearch) {
+    const payload = (s.payload ?? {}) as Partial<ContactFilters>;
+    setDraft({ ...DEFAULT_CONTACT_FILTERS, ...payload });
+  }
+
+  function saveCurrent() {
+    const name = saveName.trim();
+    if (!name || createSaved.isPending) return;
+    createSaved.mutate(
+      {
+        data: {
+          name,
+          kind: "filter",
+          entityType: SAVED_FILTER_ENTITY,
+          payload: draft,
+        },
+      },
+      { onSuccess: () => setSaveName("") },
+    );
+  }
 
   function chip(active: boolean, label: string, onPress: () => void, key: string) {
     return (
@@ -611,6 +655,36 @@ function FilterSheet({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 8 }}
           >
+            {savedFilters.length > 0 ? (
+              <>
+                <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>
+                  {t("contacts.savedFilters")}
+                </Text>
+                <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                  {savedFilters.map((s) => (
+                    <View
+                      key={`sf-${s.id}`}
+                      style={[
+                        styles.savedChip,
+                        { backgroundColor: colors.card, borderColor: colors.border, flexDirection: isRTL ? "row-reverse" : "row" },
+                      ]}
+                    >
+                      <Pressable onPress={() => applySaved(s)} hitSlop={6}>
+                        <Text style={[styles.chipText, { color: colors.foreground }]}>{s.name}</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => deleteSaved.mutate({ id: s.id })}
+                        hitSlop={8}
+                        disabled={deleteSaved.isPending}
+                      >
+                        <Feather name="x" size={13} color={colors.mutedForeground} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
             <Text style={[styles.fLabel, { color: colors.mutedForeground, textAlign }]}>{t("contacts.sortLabel")}</Text>
             <View style={[styles.chipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
               {SORT_OPTIONS.map((s) =>
@@ -692,6 +766,29 @@ function FilterSheet({
               onChange={(d) => setDraft({ ...draft, dateTo: d })}
             />
           </ScrollView>
+
+          <View style={[styles.saveRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <TextInput
+              style={[
+                styles.saveInput,
+                { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, textAlign },
+              ]}
+              placeholder={t("contacts.savedFilterNamePlaceholder")}
+              placeholderTextColor={colors.mutedForeground}
+              value={saveName}
+              onChangeText={setSaveName}
+            />
+            <Pressable
+              onPress={saveCurrent}
+              disabled={!saveName.trim() || createSaved.isPending}
+              style={[
+                styles.saveBtn,
+                { borderColor: colors.primary, opacity: !saveName.trim() || createSaved.isPending ? 0.5 : 1 },
+              ]}
+            >
+              <Text style={[styles.saveBtnText, { color: colors.primary }]}>{t("common.save")}</Text>
+            </Pressable>
+          </View>
 
           <Pressable
             onPress={() => onApply(draft)}
@@ -830,6 +927,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: { fontSize: 13.5, fontFamily: FONT.medium },
+  savedChip: {
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  saveRow: {
+    alignItems: "center",
+    gap: 8,
+    marginTop: 14,
+  },
+  saveInput: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontFamily: FONT.regular,
+  },
+  saveBtn: {
+    height: 44,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveBtnText: { fontSize: 14, fontFamily: FONT.semibold },
   applyBtn: {
     marginTop: 14,
     height: 52,

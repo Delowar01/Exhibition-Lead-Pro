@@ -421,7 +421,9 @@
     "followUpPlaceholder": "What to follow up on",
     "dateTime": "Date & time",
     "notesOptional": "NOTES (OPTIONAL)",
-    "typeLabel": "TYPE"
+    "typeLabel": "TYPE",
+    "savedFilters": "Saved Filters",
+    "savedFilterNamePlaceholder": "Name this filter…"
   },
   "leads": {
     "title": "Pipeline",

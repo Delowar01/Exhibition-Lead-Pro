@@ -421,7 +421,9 @@
     "followUpPlaceholder": "موضوع المتابعة",
     "dateTime": "التاريخ والوقت",
     "notesOptional": "ملاحظات (اختياري)",
-    "typeLabel": "النوع"
+    "typeLabel": "النوع",
+    "savedFilters": "المرشحات المحفوظة",
+    "savedFilterNamePlaceholder": "سمّ هذا المرشح…"
   },
   "leads": {
     "title": "مسار العملاء",

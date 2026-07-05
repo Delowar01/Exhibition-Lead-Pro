@@ -16,6 +16,7 @@ function selectWithUser() {
       userId: leadNotesTable.userId,
       userName: usersTable.name,
       body: leadNotesTable.body,
+      mentions: leadNotesTable.mentions,
       isPinned: leadNotesTable.isPinned,
       createdAt: leadNotesTable.createdAt,
       updatedAt: leadNotesTable.updatedAt,
@@ -50,8 +51,8 @@ export async function insert(values: typeof leadNotesTable.$inferInsert, tx?: Ex
   return row;
 }
 
-export async function updateRow(id: number, data: Partial<typeof leadNotesTable.$inferInsert>): Promise<void> {
-  await db.update(leadNotesTable).set({ ...data, updatedAt: new Date() }).where(eq(leadNotesTable.id, id));
+export async function updateRow(id: number, data: Partial<typeof leadNotesTable.$inferInsert>, tx?: Executor): Promise<void> {
+  await exec(tx).update(leadNotesTable).set({ ...data, updatedAt: new Date() }).where(eq(leadNotesTable.id, id));
 }
 
 export async function softDelete(id: number): Promise<void> {

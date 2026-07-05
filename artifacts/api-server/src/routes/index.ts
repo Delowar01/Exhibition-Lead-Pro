@@ -31,6 +31,7 @@ import customFieldsRouter from "./custom_fields.js";
 import territoriesRouter from "./territories.js";
 import importsRouter from "./imports.js";
 import exportsRouter from "./exports.js";
+import searchRouter from "./search.js";
 
 const router: IRouter = Router();
 
@@ -58,6 +59,7 @@ router.use(orgRouter);
 router.use(securityRouter);
 router.use(profileRouter);
 router.use(contactsRouter);
+router.use(searchRouter);
 router.use(leadsRouter);
 router.use(pipelineRouter);
 router.use(tagsRouter);

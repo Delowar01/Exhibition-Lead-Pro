@@ -9,6 +9,8 @@ import {
   UpdateLeadActivityBody,
   CreateLeadNoteBody,
   UpdateLeadNoteBody,
+  CreateLeadNoteCommentBody,
+  UpdateLeadNoteCommentBody,
   AttachLeadTagBody,
   AssignLeadBody,
   BulkAssignLeadsBody,
@@ -19,6 +21,7 @@ import {
 import * as leads from "../services/leads.service.js";
 import * as activities from "../services/lead_activities.service.js";
 import * as notes from "../services/lead_notes.service.js";
+import * as noteComments from "../services/lead_note_comments.service.js";
 import * as timeline from "../services/timeline.service.js";
 import * as comms from "../services/communications.service.js";
 
@@ -28,7 +31,7 @@ router.use(requireAuth);
 // top-level paths on this router (their :id routes are addressed directly), so
 // they each need their own guard chain — a path-less `router.use` would leak
 // onto every request flowing through the shared parent router.
-for (const base of ["/leads", "/activities", "/notes"]) {
+for (const base of ["/leads", "/activities", "/notes", "/note-comments"]) {
   router.use(base, requireTenantUser);
   router.use(base, blockReadOnlyMutations);
   router.use(base, auditMutations("leads"));
@@ -85,6 +88,25 @@ router.patch("/notes/:id", requirePermission("leads", "edit"), validateBody(Upda
 });
 router.delete("/notes/:id", requirePermission("leads", "delete"), async (req: AuthRequest, res) => {
   res.json(await notes.deleteNote(req.user!, parseInt(String(req.params.id))));
+});
+
+// ── Note edit history (append-only) — read-only
+router.get("/notes/:id/history", async (req: AuthRequest, res) => {
+  res.json(await notes.listHistory(req.user!, parseInt(String(req.params.id))));
+});
+
+// ── Threaded internal comments on a note
+router.get("/notes/:id/comments", async (req: AuthRequest, res) => {
+  res.json(await noteComments.listComments(req.user!, parseInt(String(req.params.id))));
+});
+router.post("/notes/:id/comments", requirePermission("leads", "edit"), validateBody(CreateLeadNoteCommentBody), async (req: AuthRequest, res) => {
+  res.status(201).json(await noteComments.createComment(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
+});
+router.patch("/note-comments/:id", requirePermission("leads", "edit"), validateBody(UpdateLeadNoteCommentBody), async (req: AuthRequest, res) => {
+  res.json(await noteComments.updateComment(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
+});
+router.delete("/note-comments/:id", requirePermission("leads", "edit"), async (req: AuthRequest, res) => {
+  res.json(await noteComments.deleteComment(req.user!, parseInt(String(req.params.id))));
 });
 
 // ── Lead tags

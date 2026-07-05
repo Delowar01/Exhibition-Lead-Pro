@@ -2020,6 +2020,248 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
 
+  /notes/{id}/history:
+    get:
+      operationId: listLeadNoteHistory
+      tags: [leads]
+      summary: List a note's append-only edit history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNoteHistoryList"
+
+  /notes/{id}/comments:
+    get:
+      operationId: listLeadNoteComments
+      tags: [leads]
+      summary: List threaded comments on a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNoteCommentList"
+    post:
+      operationId: createLeadNoteComment
+      tags: [leads]
+      summary: Add a comment to a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadNoteCommentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNoteComment"
+
+  /note-comments/{id}:
+    patch:
+      operationId: updateLeadNoteComment
+      tags: [leads]
+      summary: Edit a comment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadNoteCommentUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNoteComment"
+    delete:
+      operationId: deleteLeadNoteComment
+      tags: [leads]
+      summary: Delete a comment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /search/contacts:
+    post:
+      operationId: searchContacts
+      tags: [search]
+      summary: Advanced multi-condition contact search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchContactsInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchContactsResult"
+
+  /saved-searches:
+    get:
+      operationId: listSavedSearches
+      tags: [search]
+      summary: List the caller's saved filters and views
+      parameters:
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [filter, view]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedSearchList"
+    post:
+      operationId: createSavedSearch
+      tags: [search]
+      summary: Save a filter or view
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedSearchInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedSearch"
+
+  /saved-searches/{id}:
+    patch:
+      operationId: updateSavedSearch
+      tags: [search]
+      summary: Rename or update a saved search
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedSearchUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedSearch"
+    delete:
+      operationId: deleteSavedSearch
+      tags: [search]
+      summary: Delete a saved search
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /recent-searches:
+    get:
+      operationId: listRecentSearches
+      tags: [search]
+      summary: List the caller's recent searches
+      parameters:
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecentSearchList"
+    delete:
+      operationId: clearRecentSearches
+      tags: [search]
+      summary: Clear the caller's recent searches
+      parameters:
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
   /leads/{id}/tags:
     get:
       operationId: listLeadTags
@@ -7216,6 +7458,10 @@ components:
           type: ["string", "null"]
         body:
           type: string
+        mentions:
+          type: array
+          items:
+            type: integer
         isPinned:
           type: boolean
         createdAt:
@@ -7251,6 +7497,210 @@ components:
           type: string
         isPinned:
           type: boolean
+
+    LeadNoteHistory:
+      type: object
+      required: [id, noteId, body, createdAt]
+      properties:
+        id:
+          type: integer
+        noteId:
+          type: integer
+        body:
+          type: string
+        mentions:
+          type: array
+          items:
+            type: integer
+        editedById:
+          type: ["integer", "null"]
+        editedByName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    LeadNoteHistoryList:
+      type: object
+      required: [history]
+      properties:
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadNoteHistory"
+
+    LeadNoteComment:
+      type: object
+      required: [id, companyId, noteId, body, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        noteId:
+          type: integer
+        userId:
+          type: ["integer", "null"]
+        userName:
+          type: ["string", "null"]
+        body:
+          type: string
+        mentions:
+          type: array
+          items:
+            type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    LeadNoteCommentList:
+      type: object
+      required: [comments]
+      properties:
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadNoteComment"
+
+    LeadNoteCommentInput:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+
+    LeadNoteCommentUpdate:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+
+    SearchCondition:
+      type: object
+      required: [field, operator]
+      properties:
+        field:
+          type: string
+          enum: [name, company, email, phone, industry, country, tags, notes, event, employee]
+        operator:
+          type: string
+          enum: [contains, notContains, equals, notEquals, startsWith, endsWith, isEmpty, isNotEmpty]
+        value:
+          type: ["string", "number", "null"]
+
+    SearchContactsInput:
+      type: object
+      required: [conditions]
+      properties:
+        combinator:
+          type: string
+          enum: [AND, OR]
+          default: AND
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchCondition"
+        sort:
+          type: ["string", "null"]
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    SearchContactsResult:
+      type: object
+      required: [contacts, total, page, limit]
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Contact"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    SavedSearch:
+      type: object
+      required: [id, entityType, kind, name, payload, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        entityType:
+          type: string
+        kind:
+          type: string
+          enum: [filter, view]
+        name:
+          type: string
+        payload: {}
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SavedSearchList:
+      type: object
+      required: [savedSearches]
+      properties:
+        savedSearches:
+          type: array
+          items:
+            $ref: "#/components/schemas/SavedSearch"
+
+    SavedSearchInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [filter, view]
+          default: filter
+        entityType:
+          type: string
+          default: contacts
+        payload: {}
+
+    SavedSearchUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        payload: {}
+
+    RecentSearch:
+      type: object
+      required: [id, entityType, label, payload, createdAt]
+      properties:
+        id:
+          type: integer
+        entityType:
+          type: string
+        label:
+          type: string
+        payload: {}
+        createdAt:
+          type: string
+          format: date-time
+
+    RecentSearchList:
+      type: object
+      required: [recentSearches]
+      properties:
+        recentSearches:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentSearch"
 
     AssignLeadInput:
       type: object

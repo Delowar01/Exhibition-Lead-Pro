@@ -38,6 +38,7 @@ import type {
   CalendarInviteInput,
   CalendarInviteResult,
   ChangePasswordInput,
+  ClearRecentSearchesParams,
   CommunicationInput,
   CommunicationList,
   Company,
@@ -119,6 +120,11 @@ import type {
   LeadIntelligence,
   LeadList,
   LeadNote,
+  LeadNoteComment,
+  LeadNoteCommentInput,
+  LeadNoteCommentList,
+  LeadNoteCommentUpdate,
+  LeadNoteHistoryList,
   LeadNoteInput,
   LeadNoteList,
   LeadNoteUpdate,
@@ -138,6 +144,8 @@ import type {
   ListLeadsParams,
   ListMeetingsParams,
   ListNotificationsParams,
+  ListRecentSearchesParams,
+  ListSavedSearchesParams,
   ListScansParams,
   ListSecurityEventsParams,
   ListTasksParams,
@@ -184,6 +192,7 @@ import type {
   PushTokenInput,
   PushTokenUnregisterInput,
   ReadinessStatus,
+  RecentSearchList,
   RecommendAssigneeInput,
   RefreshInput,
   RefreshResponse,
@@ -197,10 +206,16 @@ import type {
   RoleInput,
   RoleList,
   RoleUpdate,
+  SavedSearch,
+  SavedSearchInput,
+  SavedSearchList,
+  SavedSearchUpdate,
   Scan,
   ScanInput,
   ScanList,
   ScopedAnalytics,
+  SearchContactsInput,
+  SearchContactsResult,
   SecurityAlerts,
   SecurityEventList,
   SecurityPolicy,
@@ -6795,6 +6810,903 @@ export const useDeleteLeadNote = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteLeadNoteMutationOptions(options));
+    }
+
+export const getListLeadNoteHistoryUrl = (id: number,) => {
+
+
+
+
+  return `/api/notes/${id}/history`
+}
+
+/**
+ * @summary List a note's append-only edit history
+ */
+export const listLeadNoteHistory = async (id: number, options?: RequestInit): Promise<LeadNoteHistoryList> => {
+
+  return customFetch<LeadNoteHistoryList>(getListLeadNoteHistoryUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLeadNoteHistoryQueryKey = (id: number,) => {
+    return [
+    `/api/notes/${id}/history`
+    ] as const;
+    }
+
+
+export const getListLeadNoteHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listLeadNoteHistory>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadNoteHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLeadNoteHistoryQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeadNoteHistory>>> = ({ signal }) => listLeadNoteHistory(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLeadNoteHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLeadNoteHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listLeadNoteHistory>>>
+export type ListLeadNoteHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List a note's append-only edit history
+ */
+
+export function useListLeadNoteHistory<TData = Awaited<ReturnType<typeof listLeadNoteHistory>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadNoteHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLeadNoteHistoryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListLeadNoteCommentsUrl = (id: number,) => {
+
+
+
+
+  return `/api/notes/${id}/comments`
+}
+
+/**
+ * @summary List threaded comments on a note
+ */
+export const listLeadNoteComments = async (id: number, options?: RequestInit): Promise<LeadNoteCommentList> => {
+
+  return customFetch<LeadNoteCommentList>(getListLeadNoteCommentsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLeadNoteCommentsQueryKey = (id: number,) => {
+    return [
+    `/api/notes/${id}/comments`
+    ] as const;
+    }
+
+
+export const getListLeadNoteCommentsQueryOptions = <TData = Awaited<ReturnType<typeof listLeadNoteComments>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadNoteComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLeadNoteCommentsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeadNoteComments>>> = ({ signal }) => listLeadNoteComments(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLeadNoteComments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLeadNoteCommentsQueryResult = NonNullable<Awaited<ReturnType<typeof listLeadNoteComments>>>
+export type ListLeadNoteCommentsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List threaded comments on a note
+ */
+
+export function useListLeadNoteComments<TData = Awaited<ReturnType<typeof listLeadNoteComments>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadNoteComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLeadNoteCommentsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateLeadNoteCommentUrl = (id: number,) => {
+
+
+
+
+  return `/api/notes/${id}/comments`
+}
+
+/**
+ * @summary Add a comment to a note
+ */
+export const createLeadNoteComment = async (id: number,
+    leadNoteCommentInput: LeadNoteCommentInput, options?: RequestInit): Promise<LeadNoteComment> => {
+
+  return customFetch<LeadNoteComment>(getCreateLeadNoteCommentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      leadNoteCommentInput,)
+  }
+);}
+
+
+
+
+export const getCreateLeadNoteCommentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLeadNoteComment>>, TError,{id: number;data: BodyType<LeadNoteCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createLeadNoteComment>>, TError,{id: number;data: BodyType<LeadNoteCommentInput>}, TContext> => {
+
+const mutationKey = ['createLeadNoteComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLeadNoteComment>>, {id: number;data: BodyType<LeadNoteCommentInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createLeadNoteComment(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateLeadNoteCommentMutationResult = NonNullable<Awaited<ReturnType<typeof createLeadNoteComment>>>
+    export type CreateLeadNoteCommentMutationBody = BodyType<LeadNoteCommentInput>
+    export type CreateLeadNoteCommentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add a comment to a note
+ */
+export const useCreateLeadNoteComment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLeadNoteComment>>, TError,{id: number;data: BodyType<LeadNoteCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createLeadNoteComment>>,
+        TError,
+        {id: number;data: BodyType<LeadNoteCommentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateLeadNoteCommentMutationOptions(options));
+    }
+
+export const getUpdateLeadNoteCommentUrl = (id: number,) => {
+
+
+
+
+  return `/api/note-comments/${id}`
+}
+
+/**
+ * @summary Edit a comment
+ */
+export const updateLeadNoteComment = async (id: number,
+    leadNoteCommentUpdate: LeadNoteCommentUpdate, options?: RequestInit): Promise<LeadNoteComment> => {
+
+  return customFetch<LeadNoteComment>(getUpdateLeadNoteCommentUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      leadNoteCommentUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateLeadNoteCommentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLeadNoteComment>>, TError,{id: number;data: BodyType<LeadNoteCommentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateLeadNoteComment>>, TError,{id: number;data: BodyType<LeadNoteCommentUpdate>}, TContext> => {
+
+const mutationKey = ['updateLeadNoteComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateLeadNoteComment>>, {id: number;data: BodyType<LeadNoteCommentUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateLeadNoteComment(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateLeadNoteCommentMutationResult = NonNullable<Awaited<ReturnType<typeof updateLeadNoteComment>>>
+    export type UpdateLeadNoteCommentMutationBody = BodyType<LeadNoteCommentUpdate>
+    export type UpdateLeadNoteCommentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Edit a comment
+ */
+export const useUpdateLeadNoteComment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateLeadNoteComment>>, TError,{id: number;data: BodyType<LeadNoteCommentUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateLeadNoteComment>>,
+        TError,
+        {id: number;data: BodyType<LeadNoteCommentUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateLeadNoteCommentMutationOptions(options));
+    }
+
+export const getDeleteLeadNoteCommentUrl = (id: number,) => {
+
+
+
+
+  return `/api/note-comments/${id}`
+}
+
+/**
+ * @summary Delete a comment
+ */
+export const deleteLeadNoteComment = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteLeadNoteCommentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteLeadNoteCommentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLeadNoteComment>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteLeadNoteComment>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteLeadNoteComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteLeadNoteComment>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteLeadNoteComment(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteLeadNoteCommentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteLeadNoteComment>>>
+
+    export type DeleteLeadNoteCommentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a comment
+ */
+export const useDeleteLeadNoteComment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLeadNoteComment>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteLeadNoteComment>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteLeadNoteCommentMutationOptions(options));
+    }
+
+export const getSearchContactsUrl = () => {
+
+
+
+
+  return `/api/search/contacts`
+}
+
+/**
+ * @summary Advanced multi-condition contact search
+ */
+export const searchContacts = async (searchContactsInput: SearchContactsInput, options?: RequestInit): Promise<SearchContactsResult> => {
+
+  return customFetch<SearchContactsResult>(getSearchContactsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      searchContactsInput,)
+  }
+);}
+
+
+
+
+export const getSearchContactsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof searchContacts>>, TError,{data: BodyType<SearchContactsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof searchContacts>>, TError,{data: BodyType<SearchContactsInput>}, TContext> => {
+
+const mutationKey = ['searchContacts'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof searchContacts>>, {data: BodyType<SearchContactsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  searchContacts(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SearchContactsMutationResult = NonNullable<Awaited<ReturnType<typeof searchContacts>>>
+    export type SearchContactsMutationBody = BodyType<SearchContactsInput>
+    export type SearchContactsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Advanced multi-condition contact search
+ */
+export const useSearchContacts = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof searchContacts>>, TError,{data: BodyType<SearchContactsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof searchContacts>>,
+        TError,
+        {data: BodyType<SearchContactsInput>},
+        TContext
+      > => {
+      return useMutation(getSearchContactsMutationOptions(options));
+    }
+
+export const getListSavedSearchesUrl = (params?: ListSavedSearchesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/saved-searches?${stringifiedParams}` : `/api/saved-searches`
+}
+
+/**
+ * @summary List the caller's saved filters and views
+ */
+export const listSavedSearches = async (params?: ListSavedSearchesParams, options?: RequestInit): Promise<SavedSearchList> => {
+
+  return customFetch<SavedSearchList>(getListSavedSearchesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSavedSearchesQueryKey = (params?: ListSavedSearchesParams,) => {
+    return [
+    `/api/saved-searches`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSavedSearchesQueryOptions = <TData = Awaited<ReturnType<typeof listSavedSearches>>, TError = ErrorType<unknown>>(params?: ListSavedSearchesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSavedSearchesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSavedSearches>>> = ({ signal }) => listSavedSearches(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSavedSearches>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSavedSearchesQueryResult = NonNullable<Awaited<ReturnType<typeof listSavedSearches>>>
+export type ListSavedSearchesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the caller's saved filters and views
+ */
+
+export function useListSavedSearches<TData = Awaited<ReturnType<typeof listSavedSearches>>, TError = ErrorType<unknown>>(
+ params?: ListSavedSearchesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSavedSearchesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateSavedSearchUrl = () => {
+
+
+
+
+  return `/api/saved-searches`
+}
+
+/**
+ * @summary Save a filter or view
+ */
+export const createSavedSearch = async (savedSearchInput: SavedSearchInput, options?: RequestInit): Promise<SavedSearch> => {
+
+  return customFetch<SavedSearch>(getCreateSavedSearchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      savedSearchInput,)
+  }
+);}
+
+
+
+
+export const getCreateSavedSearchMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSavedSearch>>, TError,{data: BodyType<SavedSearchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSavedSearch>>, TError,{data: BodyType<SavedSearchInput>}, TContext> => {
+
+const mutationKey = ['createSavedSearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSavedSearch>>, {data: BodyType<SavedSearchInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSavedSearch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSavedSearchMutationResult = NonNullable<Awaited<ReturnType<typeof createSavedSearch>>>
+    export type CreateSavedSearchMutationBody = BodyType<SavedSearchInput>
+    export type CreateSavedSearchMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save a filter or view
+ */
+export const useCreateSavedSearch = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSavedSearch>>, TError,{data: BodyType<SavedSearchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSavedSearch>>,
+        TError,
+        {data: BodyType<SavedSearchInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSavedSearchMutationOptions(options));
+    }
+
+export const getUpdateSavedSearchUrl = (id: number,) => {
+
+
+
+
+  return `/api/saved-searches/${id}`
+}
+
+/**
+ * @summary Rename or update a saved search
+ */
+export const updateSavedSearch = async (id: number,
+    savedSearchUpdate: SavedSearchUpdate, options?: RequestInit): Promise<SavedSearch> => {
+
+  return customFetch<SavedSearch>(getUpdateSavedSearchUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      savedSearchUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateSavedSearchMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSavedSearch>>, TError,{id: number;data: BodyType<SavedSearchUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSavedSearch>>, TError,{id: number;data: BodyType<SavedSearchUpdate>}, TContext> => {
+
+const mutationKey = ['updateSavedSearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSavedSearch>>, {id: number;data: BodyType<SavedSearchUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSavedSearch(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSavedSearchMutationResult = NonNullable<Awaited<ReturnType<typeof updateSavedSearch>>>
+    export type UpdateSavedSearchMutationBody = BodyType<SavedSearchUpdate>
+    export type UpdateSavedSearchMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Rename or update a saved search
+ */
+export const useUpdateSavedSearch = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSavedSearch>>, TError,{id: number;data: BodyType<SavedSearchUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSavedSearch>>,
+        TError,
+        {id: number;data: BodyType<SavedSearchUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSavedSearchMutationOptions(options));
+    }
+
+export const getDeleteSavedSearchUrl = (id: number,) => {
+
+
+
+
+  return `/api/saved-searches/${id}`
+}
+
+/**
+ * @summary Delete a saved search
+ */
+export const deleteSavedSearch = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteSavedSearchUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteSavedSearchMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSavedSearch>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSavedSearch>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteSavedSearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSavedSearch>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSavedSearch(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSavedSearchMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSavedSearch>>>
+
+    export type DeleteSavedSearchMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a saved search
+ */
+export const useDeleteSavedSearch = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSavedSearch>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSavedSearch>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteSavedSearchMutationOptions(options));
+    }
+
+export const getListRecentSearchesUrl = (params?: ListRecentSearchesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/recent-searches?${stringifiedParams}` : `/api/recent-searches`
+}
+
+/**
+ * @summary List the caller's recent searches
+ */
+export const listRecentSearches = async (params?: ListRecentSearchesParams, options?: RequestInit): Promise<RecentSearchList> => {
+
+  return customFetch<RecentSearchList>(getListRecentSearchesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRecentSearchesQueryKey = (params?: ListRecentSearchesParams,) => {
+    return [
+    `/api/recent-searches`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListRecentSearchesQueryOptions = <TData = Awaited<ReturnType<typeof listRecentSearches>>, TError = ErrorType<unknown>>(params?: ListRecentSearchesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRecentSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRecentSearchesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRecentSearches>>> = ({ signal }) => listRecentSearches(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRecentSearches>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRecentSearchesQueryResult = NonNullable<Awaited<ReturnType<typeof listRecentSearches>>>
+export type ListRecentSearchesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the caller's recent searches
+ */
+
+export function useListRecentSearches<TData = Awaited<ReturnType<typeof listRecentSearches>>, TError = ErrorType<unknown>>(
+ params?: ListRecentSearchesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRecentSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRecentSearchesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getClearRecentSearchesUrl = (params?: ClearRecentSearchesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/recent-searches?${stringifiedParams}` : `/api/recent-searches`
+}
+
+/**
+ * @summary Clear the caller's recent searches
+ */
+export const clearRecentSearches = async (params?: ClearRecentSearchesParams, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getClearRecentSearchesUrl(params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearRecentSearchesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearRecentSearches>>, TError,{params?: ClearRecentSearchesParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearRecentSearches>>, TError,{params?: ClearRecentSearchesParams}, TContext> => {
+
+const mutationKey = ['clearRecentSearches'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearRecentSearches>>, {params?: ClearRecentSearchesParams}> = (props) => {
+          const {params} = props ?? {};
+
+          return  clearRecentSearches(params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearRecentSearchesMutationResult = NonNullable<Awaited<ReturnType<typeof clearRecentSearches>>>
+
+    export type ClearRecentSearchesMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the caller's recent searches
+ */
+export const useClearRecentSearches = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearRecentSearches>>, TError,{params?: ClearRecentSearchesParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearRecentSearches>>,
+        TError,
+        {params?: ClearRecentSearchesParams},
+        TContext
+      > => {
+      return useMutation(getClearRecentSearchesMutationOptions(options));
     }
 
 export const getListLeadTagsUrl = (id: number,) => {

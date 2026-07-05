@@ -1,5 +1,14 @@
 import React, { useState } from "react";
-import { useListContacts, ContactStatus } from "@workspace/api-client-react";
+import {
+  useListContacts,
+  getListContactsQueryKey,
+  ContactStatus,
+  type Contact as ContactType,
+  type SearchContactsInput,
+  type SearchContactsResult,
+} from "@workspace/api-client-react";
+import { AdvancedSearchDialog } from "@/components/search/AdvancedSearch";
+import { SlidersHorizontal, X as XIcon } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -24,13 +33,33 @@ export default function AdminContacts() {
   const [status, setStatus] = useState<string>("all");
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedResult, setAdvancedResult] = useState<SearchContactsResult | null>(null);
+  const [advancedInput, setAdvancedInput] = useState<SearchContactsInput | null>(null);
+  const [advancedSummary, setAdvancedSummary] = useState("");
   const { canExport, canImportContacts } = useImportExportPermissions();
 
-  const { data, isLoading } = useListContacts({
+  const advancedActive = advancedResult !== null;
+
+  const listParams = {
     search: search || undefined,
     status: status !== "all" ? status : undefined,
     limit: 50,
+  };
+  const { data: listData, isLoading: listLoading } = useListContacts(listParams, {
+    query: { enabled: !advancedActive, queryKey: getListContactsQueryKey(listParams) },
   });
+
+  const data: { contacts: ContactType[]; total?: number } | undefined = advancedActive
+    ? { contacts: advancedResult.contacts, total: advancedResult.total }
+    : listData;
+  const isLoading = advancedActive ? false : listLoading;
+
+  const clearAdvanced = () => {
+    setAdvancedResult(null);
+    setAdvancedInput(null);
+    setAdvancedSummary("");
+  };
 
   const exportFilters = { search, status };
 
@@ -85,7 +114,11 @@ export default function AdminContacts() {
               />
             </div>
             <div className="flex items-center gap-2 w-full md:w-auto">
-              <Select value={status} onValueChange={setStatus}>
+              <Button variant="outline" onClick={() => setAdvancedOpen(true)}>
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Advanced
+              </Button>
+              <Select value={status} onValueChange={setStatus} disabled={advancedActive}>
                 <SelectTrigger className="w-[160px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -98,6 +131,19 @@ export default function AdminContacts() {
               </Select>
             </div>
           </div>
+          {advancedActive && (
+            <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-sm">
+              <SlidersHorizontal className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <span className="text-muted-foreground">Advanced search:</span>
+              <span className="font-medium truncate">{advancedSummary}</span>
+              <Badge variant="secondary" className="ml-auto flex-shrink-0">
+                {data?.total ?? 0} results
+              </Badge>
+              <Button variant="ghost" size="sm" className="h-7 flex-shrink-0" onClick={clearAdvanced}>
+                <XIcon className="h-3.5 w-3.5 mr-1" /> Clear
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <div className="rounded-md border overflow-hidden">
@@ -193,6 +239,17 @@ export default function AdminContacts() {
           </div>
         </CardContent>
       </Card>
+
+      <AdvancedSearchDialog
+        open={advancedOpen}
+        onOpenChange={setAdvancedOpen}
+        initialInput={advancedInput}
+        onApplied={(result, input, summary) => {
+          setAdvancedResult(result);
+          setAdvancedInput(input);
+          setAdvancedSummary(summary);
+        }}
+      />
 
       <ExportDialog
         open={exportOpen}

@@ -89,6 +89,24 @@ export async function listContacts(user: AuthUser, params: ListContactsParams) {
   return { contacts: enriched, total, page: pageNum, limit: limitNum };
 }
 
+// Batch-enriches a set of contact rows into the standard list shape (tags parsed,
+// event + assignee names resolved). Shared with advanced search so both surfaces
+// return an identical contact payload.
+export async function enrichContactRows(rows: ContactRow[]): Promise<ReturnType<typeof formatContact>[]> {
+  const eventIds = [...new Set(rows.map((c) => c.eventId).filter((v): v is number => v != null))];
+  const userIds = [...new Set(rows.map((c) => c.assignedToId).filter((v): v is number => v != null))];
+  const [events, users] = await Promise.all([contactsRepo.eventNamesByIds(eventIds), contactsRepo.usersByIds(userIds)]);
+  const eventNameById = new Map(events.map((e) => [e.id, e.name]));
+  const userNameById = new Map(users.map((u) => [u.id, u.name]));
+  return rows.map((c) =>
+    formatContact(
+      c,
+      c.eventId != null ? eventNameById.get(c.eventId) : null,
+      c.assignedToId != null ? userNameById.get(c.assignedToId) : null,
+    ),
+  );
+}
+
 export interface CreateContactInput {
   firstName?: string | null;
   lastName?: string | null;

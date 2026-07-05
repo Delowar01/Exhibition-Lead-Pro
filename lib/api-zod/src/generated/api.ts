@@ -2134,6 +2134,7 @@ export const ListLeadNotesResponse = zod.object({
   "userId": zod.number().nullish(),
   "userName": zod.string().nullish(),
   "body": zod.string(),
+  "mentions": zod.array(zod.number()).optional(),
   "isPinned": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date().nullish()
@@ -2176,6 +2177,7 @@ export const UpdateLeadNoteResponse = zod.object({
   "userId": zod.number().nullish(),
   "userName": zod.string().nullish(),
   "body": zod.string(),
+  "mentions": zod.array(zod.number()).optional(),
   "isPinned": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date().nullish()
@@ -2190,6 +2192,264 @@ export const DeleteLeadNoteParams = zod.object({
 })
 
 export const DeleteLeadNoteResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List a note's append-only edit history
+ */
+export const ListLeadNoteHistoryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListLeadNoteHistoryResponse = zod.object({
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "noteId": zod.number(),
+  "body": zod.string(),
+  "mentions": zod.array(zod.number()).optional(),
+  "editedById": zod.number().nullish(),
+  "editedByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary List threaded comments on a note
+ */
+export const ListLeadNoteCommentsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListLeadNoteCommentsResponse = zod.object({
+  "comments": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "noteId": zod.number(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "body": zod.string(),
+  "mentions": zod.array(zod.number()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Add a comment to a note
+ */
+export const CreateLeadNoteCommentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CreateLeadNoteCommentBody = zod.object({
+  "body": zod.string()
+})
+
+
+/**
+ * @summary Edit a comment
+ */
+export const UpdateLeadNoteCommentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateLeadNoteCommentBody = zod.object({
+  "body": zod.string()
+})
+
+export const UpdateLeadNoteCommentResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "noteId": zod.number(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "body": zod.string(),
+  "mentions": zod.array(zod.number()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Delete a comment
+ */
+export const DeleteLeadNoteCommentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteLeadNoteCommentResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Advanced multi-condition contact search
+ */
+export const searchContactsBodyCombinatorDefault = `AND`;
+
+export const SearchContactsBody = zod.object({
+  "combinator": zod.enum(['AND', 'OR']).default(searchContactsBodyCombinatorDefault),
+  "conditions": zod.array(zod.object({
+  "field": zod.enum(['name', 'company', 'email', 'phone', 'industry', 'country', 'tags', 'notes', 'event', 'employee']),
+  "operator": zod.enum(['contains', 'notContains', 'equals', 'notEquals', 'startsWith', 'endsWith', 'isEmpty', 'isNotEmpty']),
+  "value": zod.union([zod.string(),zod.number()]).nullish()
+})),
+  "sort": zod.string().nullish(),
+  "page": zod.number().optional(),
+  "limit": zod.number().optional()
+})
+
+export const SearchContactsResponse = zod.object({
+  "contacts": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
+  "linkedin": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
+  "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
+  "cardImageUrl": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary List the caller's saved filters and views
+ */
+export const ListSavedSearchesQueryParams = zod.object({
+  "entityType": zod.coerce.string().optional(),
+  "kind": zod.enum(['filter', 'view']).optional()
+})
+
+export const ListSavedSearchesResponse = zod.object({
+  "savedSearches": zod.array(zod.object({
+  "id": zod.number(),
+  "entityType": zod.string(),
+  "kind": zod.enum(['filter', 'view']),
+  "name": zod.string(),
+  "payload": zod.unknown(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Save a filter or view
+ */
+export const createSavedSearchBodyKindDefault = `filter`;
+export const createSavedSearchBodyEntityTypeDefault = `contacts`;
+
+export const CreateSavedSearchBody = zod.object({
+  "name": zod.string(),
+  "kind": zod.enum(['filter', 'view']).default(createSavedSearchBodyKindDefault),
+  "entityType": zod.string().default(createSavedSearchBodyEntityTypeDefault),
+  "payload": zod.unknown().optional()
+})
+
+
+/**
+ * @summary Rename or update a saved search
+ */
+export const UpdateSavedSearchParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateSavedSearchBody = zod.object({
+  "name": zod.string().optional(),
+  "payload": zod.unknown().optional()
+})
+
+export const UpdateSavedSearchResponse = zod.object({
+  "id": zod.number(),
+  "entityType": zod.string(),
+  "kind": zod.enum(['filter', 'view']),
+  "name": zod.string(),
+  "payload": zod.unknown(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a saved search
+ */
+export const DeleteSavedSearchParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteSavedSearchResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List the caller's recent searches
+ */
+export const ListRecentSearchesQueryParams = zod.object({
+  "entityType": zod.coerce.string().optional()
+})
+
+export const ListRecentSearchesResponse = zod.object({
+  "recentSearches": zod.array(zod.object({
+  "id": zod.number(),
+  "entityType": zod.string(),
+  "label": zod.string(),
+  "payload": zod.unknown(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Clear the caller's recent searches
+ */
+export const ClearRecentSearchesQueryParams = zod.object({
+  "entityType": zod.coerce.string().optional()
+})
+
+export const ClearRecentSearchesResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string().optional()
 })

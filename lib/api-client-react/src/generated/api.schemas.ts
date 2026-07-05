@@ -1888,6 +1888,7 @@ export interface LeadNote {
   /** @nullable */
   userName?: string | null;
   body: string;
+  mentions?: number[];
   isPinned?: boolean;
   createdAt: string;
   /** @nullable */
@@ -1906,6 +1907,164 @@ export interface LeadNoteInput {
 export interface LeadNoteUpdate {
   body?: string;
   isPinned?: boolean;
+}
+
+export interface LeadNoteHistory {
+  id: number;
+  noteId: number;
+  body: string;
+  mentions?: number[];
+  /** @nullable */
+  editedById?: number | null;
+  /** @nullable */
+  editedByName?: string | null;
+  createdAt: string;
+}
+
+export interface LeadNoteHistoryList {
+  history: LeadNoteHistory[];
+}
+
+export interface LeadNoteComment {
+  id: number;
+  companyId: number;
+  noteId: number;
+  /** @nullable */
+  userId?: number | null;
+  /** @nullable */
+  userName?: string | null;
+  body: string;
+  mentions?: number[];
+  createdAt: string;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export interface LeadNoteCommentList {
+  comments: LeadNoteComment[];
+}
+
+export interface LeadNoteCommentInput {
+  body: string;
+}
+
+export interface LeadNoteCommentUpdate {
+  body: string;
+}
+
+export type SearchConditionField = typeof SearchConditionField[keyof typeof SearchConditionField];
+
+
+export const SearchConditionField = {
+  name: 'name',
+  company: 'company',
+  email: 'email',
+  phone: 'phone',
+  industry: 'industry',
+  country: 'country',
+  tags: 'tags',
+  notes: 'notes',
+  event: 'event',
+  employee: 'employee',
+} as const;
+
+export type SearchConditionOperator = typeof SearchConditionOperator[keyof typeof SearchConditionOperator];
+
+
+export const SearchConditionOperator = {
+  contains: 'contains',
+  notContains: 'notContains',
+  equals: 'equals',
+  notEquals: 'notEquals',
+  startsWith: 'startsWith',
+  endsWith: 'endsWith',
+  isEmpty: 'isEmpty',
+  isNotEmpty: 'isNotEmpty',
+} as const;
+
+export interface SearchCondition {
+  field: SearchConditionField;
+  operator: SearchConditionOperator;
+  /** @nullable */
+  value?: string | number | null;
+}
+
+export type SearchContactsInputCombinator = typeof SearchContactsInputCombinator[keyof typeof SearchContactsInputCombinator];
+
+
+export const SearchContactsInputCombinator = {
+  AND: 'AND',
+  OR: 'OR',
+} as const;
+
+export interface SearchContactsInput {
+  combinator?: SearchContactsInputCombinator;
+  conditions: SearchCondition[];
+  /** @nullable */
+  sort?: string | null;
+  page?: number;
+  limit?: number;
+}
+
+export interface SearchContactsResult {
+  contacts: Contact[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type SavedSearchKind = typeof SavedSearchKind[keyof typeof SavedSearchKind];
+
+
+export const SavedSearchKind = {
+  filter: 'filter',
+  view: 'view',
+} as const;
+
+export interface SavedSearch {
+  id: number;
+  entityType: string;
+  kind: SavedSearchKind;
+  name: string;
+  payload: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedSearchList {
+  savedSearches: SavedSearch[];
+}
+
+export type SavedSearchInputKind = typeof SavedSearchInputKind[keyof typeof SavedSearchInputKind];
+
+
+export const SavedSearchInputKind = {
+  filter: 'filter',
+  view: 'view',
+} as const;
+
+export interface SavedSearchInput {
+  name: string;
+  kind?: SavedSearchInputKind;
+  entityType?: string;
+  payload?: unknown;
+}
+
+export interface SavedSearchUpdate {
+  name?: string;
+  payload?: unknown;
+}
+
+export interface RecentSearch {
+  id: number;
+  entityType: string;
+  label: string;
+  payload: unknown;
+  createdAt: string;
+}
+
+export interface RecentSearchList {
+  recentSearches: RecentSearch[];
 }
 
 /**
@@ -4074,6 +4233,27 @@ eventId?: number | null;
 contactId?: number | null;
 page?: number;
 limit?: number;
+};
+
+export type ListSavedSearchesParams = {
+entityType?: string;
+kind?: ListSavedSearchesKind;
+};
+
+export type ListSavedSearchesKind = typeof ListSavedSearchesKind[keyof typeof ListSavedSearchesKind];
+
+
+export const ListSavedSearchesKind = {
+  filter: 'filter',
+  view: 'view',
+} as const;
+
+export type ListRecentSearchesParams = {
+entityType?: string;
+};
+
+export type ClearRecentSearchesParams = {
+entityType?: string;
 };
 
 export type ListEventsParams = {

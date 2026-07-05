@@ -15,6 +15,7 @@ export const CATEGORIES = [
   "subscription",
   "events",
   "user_mgmt",
+  "mentions",
 ] as const;
 export type NotificationCategory = (typeof CATEGORIES)[number];
 

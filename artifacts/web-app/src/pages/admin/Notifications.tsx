@@ -25,6 +25,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   subscription: "Subscription",
   events: "Events",
   user_mgmt: "Team & Users",
+  mentions: "Mentions",
 };
 
 function categoryLabel(category: string): string {

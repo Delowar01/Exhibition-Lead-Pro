@@ -106,6 +106,18 @@ export async function userNamesByIds(ids: number[]): Promise<Map<number, string>
   return new Map(rows.map((r) => [r.id, r.name]));
 }
 
+// Given a candidate set of user ids, returns only those that are ACTIVE,
+// non-deleted members of the given company. Backs @mention validation so a
+// mention can never resolve to a user outside the note's tenant.
+export async function activeIdsInCompany(companyId: number, ids: number[]): Promise<number[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(and(eq(usersTable.companyId, companyId), eq(usersTable.isActive, true), notDeleted(usersTable.deletedAt), inArray(usersTable.id, ids)));
+  return rows.map((r) => r.id);
+}
+
 export async function companyNamesByIds(ids: number[]): Promise<Map<number, string>> {
   if (ids.length === 0) return new Map();
   const rows = await db.select({ id: companiesTable.id, name: companiesTable.name }).from(companiesTable).where(inArray(companiesTable.id, ids));

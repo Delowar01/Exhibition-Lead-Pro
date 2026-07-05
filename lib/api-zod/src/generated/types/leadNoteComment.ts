@@ -6,19 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LeadNote {
+export interface LeadNoteComment {
   id: number;
   companyId: number;
-  leadId: number;
-  /** @nullable */
-  contactId?: number | null;
+  noteId: number;
   /** @nullable */
   userId?: number | null;
   /** @nullable */
   userName?: string | null;
   body: string;
   mentions?: number[];
-  isPinned?: boolean;
   createdAt: Date;
   /** @nullable */
   updatedAt?: Date | null;

@@ -23,6 +23,7 @@ import {
   getGetContactQueryKey,
   getGetLeadQueryKey,
   getListLeadNotesQueryKey,
+  getListUsersQueryKey,
   type Lead,
   type LeadNote,
   type LeadNoteList,
@@ -62,6 +63,7 @@ import {
 } from "@/components/ui";
 import { CommunicationHub } from "@/components/CommunicationHub";
 import { DocumentsSection } from "@/components/DocumentsSection";
+import { MentionText } from "@/components/MentionText";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatGregorian } from "@/lib/date";
@@ -223,6 +225,31 @@ export default function PipelineDetailScreen() {
   // global MutationCache invalidation reconcile with the server row. Roll back on
   // error. Mirrors the stage-change optimistic pattern above.
   const [noteText, setNoteText] = useState("");
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const mentionUsersQuery = useListUsers(
+    { limit: 200 },
+    { query: { enabled: leadId > 0, queryKey: getListUsersQueryKey({ limit: 200 }) } },
+  );
+  const mentionUsers = (mentionUsersQuery.data?.users ?? []).filter((u) => u.isActive !== false);
+  const mentionMatches =
+    mentionQuery === null
+      ? []
+      : mentionUsers
+          .filter((u) => u.name.toLowerCase().includes(mentionQuery.toLowerCase()))
+          .slice(0, 6);
+
+  function onNoteTextChange(text: string) {
+    setNoteText(text);
+    const m = text.match(/@([\p{L}\p{N}]{0,30})$/u);
+    setMentionQuery(m ? m[1] : null);
+  }
+
+  function pickMention(u: { id: number; name: string }) {
+    const next = noteText.replace(/@([\p{L}\p{N}]{0,30})$/u, `@[${u.name}](${u.id}) `);
+    setNoteText(next);
+    setMentionQuery(null);
+  }
+
   const createNote = useCreateLeadNote({
     mutation: {
       onMutate: async (vars) => {
@@ -383,6 +410,7 @@ export default function PipelineDetailScreen() {
     if (!body || createNote.isPending) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
     setNoteText("");
+    setMentionQuery(null);
     createNote.mutate({ id: lead.id, data: { body } });
   }
 
@@ -629,13 +657,34 @@ export default function PipelineDetailScreen() {
 
           {/* Notes */}
           <Section title={t("pipeline.notesSection.title")}>
+            {mentionMatches.length > 0 ? (
+              <View style={[styles.mentionBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {mentionMatches.map((u) => (
+                  <Pressable
+                    key={u.id}
+                    onPress={() => pickMention(u)}
+                    style={({ pressed }) => [
+                      styles.mentionRow,
+                      { flexDirection: isRTL ? "row-reverse" : "row", opacity: pressed ? 0.6 : 1 },
+                    ]}
+                  >
+                    <View style={[styles.mentionAvatar, { backgroundColor: colors.primary }]}>
+                      <Text style={{ color: colors.primaryForeground, fontSize: 11, fontFamily: FONT.semibold }}>
+                        {u.name.charAt(0)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.mentionName, { color: colors.foreground, textAlign }]}>{u.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
             <View style={[styles.noteInputRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
               <TextInput
                 style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, textAlign }]}
                 placeholder={t("pipeline.notesSection.placeholder")}
                 placeholderTextColor={colors.mutedForeground}
                 value={noteText}
-                onChangeText={setNoteText}
+                onChangeText={onNoteTextChange}
                 multiline
               />
               <Pressable
@@ -660,7 +709,12 @@ export default function PipelineDetailScreen() {
                   key={note.id}
                   style={[styles.noteRow, idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
                 >
-                  <Text style={[styles.noteBody, { color: colors.foreground, textAlign }]}>{note.body}</Text>
+                  <MentionText
+                    body={note.body}
+                    color={colors.foreground}
+                    mentionColor={colors.primary}
+                    style={[styles.noteBody, { textAlign }]}
+                  />
                   <Text style={[styles.noteMeta, { color: colors.mutedForeground, textAlign }]}>
                     {note.userName ? `${note.userName} · ` : ""}
                     {formatTimelineDate(note.createdAt)}
@@ -1111,6 +1165,30 @@ const styles = StyleSheet.create({
     fontFamily: FONT.medium,
   },
   // Notes
+  mentionBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    marginBottom: 8,
+    overflow: "hidden",
+  },
+  mentionRow: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  mentionAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mentionName: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FONT.medium,
+  },
   noteInputRow: {
     alignItems: "flex-end",
     gap: 8,
