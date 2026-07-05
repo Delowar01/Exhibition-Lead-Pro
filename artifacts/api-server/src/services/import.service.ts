@@ -1,8 +1,10 @@
 import * as XLSX from "xlsx";
+import { db } from "@workspace/db";
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
+import * as customFieldsRepo from "../repositories/custom_fields.repository.js";
 import * as pipelineRepo from "../repositories/pipeline_stages.repository.js";
 import * as subscriptionsRepo from "../repositories/subscriptions.repository.js";
 import { buildContactDupeMatcher } from "./contacts.service.js";
@@ -225,6 +227,23 @@ async function buildRows(ctx: BuildContext): Promise<{ built: BuiltRow[]; unmapp
       else record[fk] = res.value;
     }
 
+    // Resolve the row's FINAL custom-field state (parity with custom_fields.service
+    // setValues): apply configured defaults for unset fields and enforce required
+    // custom fields per row. Doing this here means commit inserts a complete,
+    // fully-validated set inside its transaction — no out-of-band writes. A required
+    // custom field that is mapped but empty for this row becomes a row error (the
+    // row is skipped); the unmapped-required case is handled at batch level above.
+    const providedCustomIds = new Set(customValues.map((c) => c.definitionId));
+    for (const cdef of ctx.customDefs) {
+      if (providedCustomIds.has(cdef.id)) continue;
+      if (cdef.defaultValue != null && cdef.defaultValue !== "") {
+        const dres = customFields.validateImportValue(cdef, cdef.defaultValue);
+        if (dres.ok && dres.value != null) customValues.push({ definitionId: cdef.id, value: dres.value });
+      } else if (cdef.required && mappedFieldKeys.has(customFieldKey(cdef.id))) {
+        errors.push(`${cdef.label} is required`);
+      }
+    }
+
     let duplicateOfExistingId: number | null = null;
     let duplicateReason: string | null = null;
 
@@ -394,21 +413,22 @@ async function commitContacts(user: AuthUser, companyId: number, toInsert: Built
     };
   });
 
-  const inserted = await contactsRepo.bulkInsert(values);
-
-  // Custom-field values are applied per row after the atomic insert (each is its
-  // own transaction). Values were already validated in buildRows.
-  for (let i = 0; i < inserted.length; i++) {
-    const cvs = toInsert[i].customValues;
-    if (cvs.length > 0) {
-      try {
-        await customFields.setValues(user, "contact", companyId, inserted[i].id, { values: cvs });
-      } catch {
-        // Non-fatal: the contact is created; a custom-field write failure should
-        // not roll back the whole import (values were pre-validated).
-      }
-    }
-  }
+  // Atomic: base contacts + their (already-resolved, already-validated) custom-field
+  // values commit together or not at all. A failure on ANY custom-field write rolls
+  // back the whole batch — no partial imports (contact created but fields missing).
+  await db.transaction(async (tx) => {
+    const inserted = await contactsRepo.bulkInsert(values, tx);
+    const cfEntries = inserted.flatMap((row, i) =>
+      toInsert[i].customValues.map((cv) => ({
+        companyId,
+        definitionId: cv.definitionId,
+        entityType: "contact",
+        entityId: row.id,
+        value: cv.value,
+      })),
+    );
+    await customFieldsRepo.bulkInsertValues(cfEntries, tx);
+  });
 }
 
 async function commitLeads(
@@ -464,15 +484,19 @@ async function commitLeads(
     customPerRow.push(b.customValues);
   }
 
-  const inserted = await leadsRepo.bulkInsert(values);
-  for (let i = 0; i < inserted.length; i++) {
-    const cvs = customPerRow[i];
-    if (cvs.length > 0) {
-      try {
-        await customFields.setValues(user, "lead", companyId, inserted[i].id, { values: cvs });
-      } catch {
-        // Non-fatal (see commitContacts).
-      }
-    }
-  }
+  // Atomic: base leads + their resolved custom-field values commit together or not
+  // at all (see commitContacts). A custom-field write failure rolls back the batch.
+  await db.transaction(async (tx) => {
+    const inserted = await leadsRepo.bulkInsert(values, tx);
+    const cfEntries = inserted.flatMap((row, i) =>
+      customPerRow[i].map((cv) => ({
+        companyId,
+        definitionId: cv.definitionId,
+        entityType: "lead",
+        entityId: row.id,
+        value: cv.value,
+      })),
+    );
+    await customFieldsRepo.bulkInsertValues(cfEntries, tx);
+  });
 }

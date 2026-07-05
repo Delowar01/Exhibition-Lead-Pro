@@ -14,7 +14,7 @@ import {
 } from "@workspace/db";
 import { eq, ne, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
-import { activeScope, notDeleted } from "./base.js";
+import { activeScope, notDeleted, type Executor } from "./base.js";
 
 export type ContactRow = typeof contactsTable.$inferSelect;
 
@@ -93,17 +93,18 @@ export async function insert(values: typeof contactsTable.$inferInsert): Promise
 // Bulk import: insert many contacts atomically (whole batch commits or none).
 // Chunked to keep a single INSERT's parameter count well under Postgres' 65535
 // bound param limit. Returns rows in input order.
-export async function bulkInsert(rows: (typeof contactsTable.$inferInsert)[]): Promise<ContactRow[]> {
+export async function bulkInsert(rows: (typeof contactsTable.$inferInsert)[], tx?: Executor): Promise<ContactRow[]> {
   if (rows.length === 0) return [];
-  return db.transaction(async (tx) => {
+  const run = async (e: Executor): Promise<ContactRow[]> => {
     const out: ContactRow[] = [];
     const CHUNK = 500;
     for (let i = 0; i < rows.length; i += CHUNK) {
-      const inserted = await tx.insert(contactsTable).values(rows.slice(i, i + CHUNK)).returning();
+      const inserted = await e.insert(contactsTable).values(rows.slice(i, i + CHUNK)).returning();
       out.push(...inserted);
     }
     return out;
-  });
+  };
+  return tx ? run(tx) : db.transaction(run);
 }
 
 export async function insertStatusHistory(values: typeof contactStatusHistoryTable.$inferInsert): Promise<void> {

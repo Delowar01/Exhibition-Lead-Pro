@@ -120,17 +120,18 @@ export async function insert(values: typeof leadsTable.$inferInsert): Promise<Le
 
 // Bulk import: insert many leads atomically (whole batch commits or none).
 // Chunked to stay under Postgres' bound-parameter limit. Returns rows in order.
-export async function bulkInsert(rows: (typeof leadsTable.$inferInsert)[]): Promise<LeadRow[]> {
+export async function bulkInsert(rows: (typeof leadsTable.$inferInsert)[], tx?: Executor): Promise<LeadRow[]> {
   if (rows.length === 0) return [];
-  return db.transaction(async (tx) => {
+  const run = async (e: Executor): Promise<LeadRow[]> => {
     const out: LeadRow[] = [];
     const CHUNK = 500;
     for (let i = 0; i < rows.length; i += CHUNK) {
-      const inserted = await tx.insert(leadsTable).values(rows.slice(i, i + CHUNK)).returning();
+      const inserted = await e.insert(leadsTable).values(rows.slice(i, i + CHUNK)).returning();
       out.push(...inserted);
     }
     return out;
-  });
+  };
+  return tx ? run(tx) : db.transaction(run);
 }
 
 // Bulk import: resolve existing contacts by normalized email within a company.

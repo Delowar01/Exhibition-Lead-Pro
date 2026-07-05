@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, like } from "drizzle-orm";
-import { db, companiesTable, usersTable, loginAttemptsTable } from "@workspace/db";
+import { db, companiesTable, usersTable, loginAttemptsTable, contactsTable, customFieldDefinitionsTable } from "@workspace/db";
 
 // Stage 4B — Import & Export Center: access-control regression coverage.
 // The whole import flow (preview / validate / commit) is gated on the target
@@ -91,6 +91,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(loginAttemptsTable).where(like(loginAttemptsTable.email, `%@${ORG_DOMAIN}`));
+  await db.delete(contactsTable).where(eq(contactsTable.companyId, companyId));
+  await db.delete(customFieldDefinitionsTable).where(eq(customFieldDefinitionsTable.companyId, companyId));
   await db.delete(usersTable).where(like(usersTable.email, `%@${ORG_DOMAIN}`));
   await db.delete(companiesTable).where(eq(companiesTable.id, companyId));
 });
@@ -133,5 +135,39 @@ describe("Export is reports:view gated", () => {
   it("403s an employee without reports:view", async () => {
     const res = await api("POST", "/exports", employeeToken, { entityType: "contact", format: "csv" });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("Import commit is atomic across base rows + custom-field writes", () => {
+  it("rolls back the whole batch (no partial contact) when a custom-field write fails", async () => {
+    // Create a contact custom field, then submit a mapping where TWO columns point
+    // at the SAME custom field. Commit resolves two values with the same
+    // (definitionId, entityId) → the second insert violates the def/entity unique
+    // index → the transaction must abort, leaving NO contact behind.
+    const created = await api("POST", "/custom-fields", adminToken, {
+      entityType: "contact",
+      fieldKey: `rollback_probe_${SUFFIX}`,
+      label: "Rollback Probe",
+      fieldType: "text",
+    });
+    expect(created.status).toBe(201);
+    const defId = (await created.json()).id as number;
+
+    const uniqueEmail = `atomic-rollback-${SUFFIX}@sample.test`;
+    const file = Buffer.from(
+      `name,email,c1,c2\nAtomic Rollback,${uniqueEmail},alpha,beta\n`,
+    ).toString("base64");
+
+    const commit = await api("POST", "/imports/commit", adminToken, {
+      entityType: "contact",
+      file,
+      mapping: { name: "name", email: "email", c1: `cf:${defId}`, c2: `cf:${defId}` },
+    });
+    // The duplicate custom-field write must surface as a failure, not a success.
+    expect(commit.ok).toBe(false);
+
+    // Rollback assertion: the base contact was NOT persisted.
+    const rows = await db.select().from(contactsTable).where(eq(contactsTable.email, uniqueEmail));
+    expect(rows.length).toBe(0);
   });
 });

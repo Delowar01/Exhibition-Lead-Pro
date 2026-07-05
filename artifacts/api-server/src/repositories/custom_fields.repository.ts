@@ -248,6 +248,23 @@ export async function upsertValuesTransaction(
   });
 }
 
+// Bulk import: insert many pre-validated custom-field values in one pass. Accepts
+// an executor so the caller can run it inside the same transaction as the base
+// entity inserts (import commit atomicity). These are always fresh entities, so a
+// plain insert (no upsert) is correct. Chunked to stay under Postgres' bound-
+// parameter limit. No-op for an empty list.
+export async function bulkInsertValues(
+  entries: Array<{ companyId: number; definitionId: number; entityType: string; entityId: number; value: string }>,
+  tx?: Executor,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const e = exec(tx);
+  const CHUNK = 500;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    await e.insert(customFieldValuesTable).values(entries.slice(i, i + CHUNK));
+  }
+}
+
 // Delete all values for a set of entities (used when the owning entity is deleted
 // or merged away). No-op for an empty id list.
 export async function deleteValuesForEntities(
