@@ -14,11 +14,13 @@ import {
   BulkAssignLeadsBody,
   RecommendLeadAssigneeBody,
   SetLeadCustomFieldsBody,
+  LogLeadCommunicationBody,
 } from "@workspace/api-zod";
 import * as leads from "../services/leads.service.js";
 import * as activities from "../services/lead_activities.service.js";
 import * as notes from "../services/lead_notes.service.js";
 import * as timeline from "../services/timeline.service.js";
+import * as comms from "../services/communications.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -107,6 +109,14 @@ router.put("/leads/:id/custom-fields", requirePermission("leads", "edit"), valid
 // ── Lead timeline (aggregated activities + notes)
 router.get("/leads/:id/timeline", async (req: AuthRequest, res) => {
   res.json(await timeline.leadTimeline(req.user!, parseInt(String(req.params.id))));
+});
+
+// ── Lead communications (email/phone/whatsapp/calendar quick actions)
+router.get("/leads/:id/communications", async (req: AuthRequest, res) => {
+  res.json(await comms.listLeadCommunications(req.user!, parseInt(String(req.params.id))));
+});
+router.post("/leads/:id/communications", requirePermission("leads", "edit"), validateBody(LogLeadCommunicationBody), async (req: AuthRequest, res) => {
+  res.status(201).json(await comms.logLeadCommunication(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 
 // ── Lead assignment

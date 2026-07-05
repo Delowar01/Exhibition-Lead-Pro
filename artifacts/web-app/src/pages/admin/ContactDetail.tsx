@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, CalendarClock, AlertCircle, Trash2, Sparkles, Flame, Snowflake, Thermometer, Globe, Linkedin, MapPin, MessageSquare, Factory, Award } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
+import { CommunicationHub } from "@/components/CommunicationHub";
 
 const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; bar: string; icon: React.ReactNode }> = {
   hot: { label: "Hot", badge: "bg-red-100 text-red-700 border-red-200", bar: "bg-red-500", icon: <Flame className="h-4 w-4" /> },
@@ -279,6 +280,14 @@ export default function AdminContactDetail() {
               )}
             </CardContent>
           </Card>
+
+          <CommunicationHub
+            entity="contact"
+            id={contactId}
+            email={contact.email}
+            phone={contact.mobile}
+            displayName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+          />
 
           <Card>
             <CardHeader className="pb-3 bg-secondary/20">

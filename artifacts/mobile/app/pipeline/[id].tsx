@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
+  getGetContactQueryKey,
   getGetLeadQueryKey,
   getListLeadNotesQueryKey,
   type Lead,
@@ -36,6 +37,7 @@ import {
   useCreateLeadNote,
   useDeleteLead,
   useDetachLeadTag,
+  useGetContact,
   useGetLead,
   useGetLeadTimeline,
   useListLeadNotes,
@@ -58,6 +60,7 @@ import {
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
+import { CommunicationHub } from "@/components/CommunicationHub";
 import { DocumentsSection } from "@/components/DocumentsSection";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
@@ -182,6 +185,10 @@ export default function PipelineDetailScreen() {
 
   const queryClient = useQueryClient();
   const query = useGetLead(leadId, { query: { enabled: leadId > 0, queryKey: getGetLeadQueryKey(leadId) } });
+  const leadContactId = query.data?.contactId ?? 0;
+  const contactQuery = useGetContact(leadContactId, {
+    query: { enabled: leadContactId > 0, queryKey: getGetContactQueryKey(leadContactId) },
+  });
   const timelineQuery = useGetLeadTimeline(leadId, { query: { enabled: leadId > 0, queryKey: ["/api/leads", leadId, "timeline"] } });
   const notesQuery = useListLeadNotes(leadId, { query: { enabled: leadId > 0, queryKey: getListLeadNotesQueryKey(leadId) } });
   const tagsQuery = useListLeadTags(leadId, { query: { enabled: leadId > 0, queryKey: ["/api/leads", leadId, "tags"] } });
@@ -545,6 +552,14 @@ export default function PipelineDetailScreen() {
             />
             {lead.notes ? <InfoRow icon="file-text" label={t("pipeline.notes")} value={lead.notes} /> : null}
           </Section>
+
+          <CommunicationHub
+            entity="lead"
+            id={leadId}
+            email={contactQuery.data?.email ?? lead.contactEmail}
+            phone={contactQuery.data?.mobile ?? contactQuery.data?.officePhone}
+            displayName={lead.contactName ?? lead.title}
+          />
 
           {/* Actions */}
           {!isWonOrLost ? (

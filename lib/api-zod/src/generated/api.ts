@@ -1464,6 +1464,66 @@ export const MakeContactOriginalResponse = zod.object({
 
 
 /**
+ * @summary List logged communications for a contact
+ */
+export const ListContactCommunicationsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListContactCommunicationsResponse = zod.object({
+  "communications": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "type": zod.string(),
+  "source": zod.enum(['manual', 'system']),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "outcome": zod.string().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Log a communication (email/phone/whatsapp/calendar) for a contact
+ */
+export const LogContactCommunicationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const LogContactCommunicationBody = zod.object({
+  "channel": zod.enum(['email', 'phone', 'whatsapp', 'calendar']).describe('Communication channel. Maps to an activity type (email→email, phone→call, whatsapp→message, calendar→meeting).'),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "occurredAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Generate an ICS calendar invite for a contact and log it as a communication
+ */
+export const CreateContactCalendarInviteParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createContactCalendarInviteBodyDurationMinutesDefault = 30;
+
+export const CreateContactCalendarInviteBody = zod.object({
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "startAt": zod.coerce.date(),
+  "durationMinutes": zod.number().default(createContactCalendarInviteBodyDurationMinutesDefault)
+})
+
+
+/**
  * @summary Run AI enrichment on a contact (industry, seniority, summary, talking points)
  */
 export const EnrichContactParams = zod.object({
@@ -2194,6 +2254,48 @@ export const DetachLeadTagResponse = zod.object({
   "category": zod.string().nullish(),
   "createdAt": zod.coerce.date().optional()
 }))
+})
+
+
+/**
+ * @summary List logged communications for a lead
+ */
+export const ListLeadCommunicationsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListLeadCommunicationsResponse = zod.object({
+  "communications": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "type": zod.string(),
+  "source": zod.enum(['manual', 'system']),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "outcome": zod.string().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Log a communication (email/phone/whatsapp/calendar) for a lead
+ */
+export const LogLeadCommunicationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const LogLeadCommunicationBody = zod.object({
+  "channel": zod.enum(['email', 'phone', 'whatsapp', 'calendar']).describe('Communication channel. Maps to an activity type (email→email, phone→call, whatsapp→message, calendar→meeting).'),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "occurredAt": zod.coerce.date().nullish()
 })
 
 
@@ -3119,6 +3221,123 @@ export const GetScanResponse = zod.object({
  */
 export const GetScanImageParams = zod.object({
   "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary Re-run OCR extraction on the stored card image
+ */
+export const ReprocessScanParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const reprocessScanBodyAppLanguageDefault = `en`;
+
+export const ReprocessScanBody = zod.object({
+  "appLanguage": zod.enum(['en', 'ar']).default(reprocessScanBodyAppLanguageDefault).describe('Active app language driving OCR translation (same semantics as ScanInput.appLanguage).')
+})
+
+export const ReprocessScanResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "userId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "imageUrl": zod.string().nullish().describe('API URL path for streaming the stored card image, e.g. \/api\/scans\/{id}\/image. Null if the image was not stored.'),
+  "status": zod.enum(['pending', 'processing', 'completed', 'failed']),
+  "extractedData": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "original": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish()
+}).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
+}).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
+  "confidence": zod.number().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Replace the stored card image and re-run OCR extraction
+ */
+export const ReplaceScanImageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const replaceScanImageBodyAppLanguageDefault = `en`;
+
+export const ReplaceScanImageBody = zod.object({
+  "imageData": zod.string().describe('Base64-encoded replacement image'),
+  "appLanguage": zod.enum(['en', 'ar']).default(replaceScanImageBodyAppLanguageDefault)
+})
+
+export const ReplaceScanImageResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "userId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "imageUrl": zod.string().nullish().describe('API URL path for streaming the stored card image, e.g. \/api\/scans\/{id}\/image. Null if the image was not stored.'),
+  "status": zod.enum(['pending', 'processing', 'completed', 'failed']),
+  "extractedData": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "original": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish()
+}).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
+}).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
+  "confidence": zod.number().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Run AI lead scoring on the scan's extracted data (preview, not persisted)
+ */
+export const ScoreScanParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ScoreScanResponse = zod.object({
+  "score": zod.number(),
+  "temperature": zod.enum(['hot', 'warm', 'cold']),
+  "reasoning": zod.string()
 })
 
 

@@ -37,6 +37,7 @@ import {
   type LeadActivity,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { CommunicationHub } from "@/components/CommunicationHub";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -428,6 +429,14 @@ export default function AdminLeadDetail() {
         </div>
 
         <div className="space-y-6">
+          <CommunicationHub
+            entity="lead"
+            id={id}
+            email={email}
+            phone={phone}
+            displayName={lead.contactName || lead.title || null}
+          />
+
           {hasAiData && (
             <Card className="shadow-sm border-primary/20 bg-gradient-to-b from-primary/5 to-background">
               <CardHeader className="pb-3 border-b border-primary/10">

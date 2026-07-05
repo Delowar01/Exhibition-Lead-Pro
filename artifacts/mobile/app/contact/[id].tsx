@@ -47,6 +47,7 @@ import {
   useListUsers,
   useUpdateContact,
 } from "@workspace/api-client-react";
+import { CommunicationHub } from "@/components/CommunicationHub";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import {
@@ -570,6 +571,14 @@ export default function ContactDetailScreen() {
             <QuickAction icon="mail" label={t("contacts.sendEmail")} disabled={!contact.email} onPress={handleEmail} />
             <QuickAction icon="globe" label={t("contacts.openWebsite")} disabled={!contact.website} onPress={handleWebsite} />
           </View>
+
+          <CommunicationHub
+            entity="contact"
+            id={contactId}
+            email={contact.email}
+            phone={contact.mobile}
+            displayName={contactName(contact, t("contacts.newContact"))}
+          />
 
           {/* Lead intelligence */}
           {contact.leadTemperature || typeof contact.leadScore === "number" ? (

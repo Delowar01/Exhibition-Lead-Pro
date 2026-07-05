@@ -35,7 +35,11 @@ import type {
   BulkAssignResult,
   BusinessCard,
   BusinessCardInput,
+  CalendarInviteInput,
+  CalendarInviteResult,
   ChangePasswordInput,
+  CommunicationInput,
+  CommunicationList,
   Company,
   CompanyInput,
   CompanyList,
@@ -118,6 +122,7 @@ import type {
   LeadNoteInput,
   LeadNoteList,
   LeadNoteUpdate,
+  LeadScorePreview,
   LeadUpdate,
   LeadsByEventItem,
   ListAuditLogsParams,
@@ -184,6 +189,8 @@ import type {
   RefreshResponse,
   RegisterInput,
   RejectInvitationInput,
+  ReplaceScanImageInput,
+  ReprocessScanInput,
   ResendVerificationResult,
   ResetPasswordInput,
   Role,
@@ -4815,6 +4822,227 @@ export const useMakeContactOriginal = <TError = ErrorType<ErrorResponse>,
       return useMutation(getMakeContactOriginalMutationOptions(options));
     }
 
+export const getListContactCommunicationsUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/communications`
+}
+
+/**
+ * @summary List logged communications for a contact
+ */
+export const listContactCommunications = async (id: number, options?: RequestInit): Promise<CommunicationList> => {
+
+  return customFetch<CommunicationList>(getListContactCommunicationsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListContactCommunicationsQueryKey = (id: number,) => {
+    return [
+    `/api/contacts/${id}/communications`
+    ] as const;
+    }
+
+
+export const getListContactCommunicationsQueryOptions = <TData = Awaited<ReturnType<typeof listContactCommunications>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactCommunications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListContactCommunicationsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listContactCommunications>>> = ({ signal }) => listContactCommunications(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listContactCommunications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListContactCommunicationsQueryResult = NonNullable<Awaited<ReturnType<typeof listContactCommunications>>>
+export type ListContactCommunicationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List logged communications for a contact
+ */
+
+export function useListContactCommunications<TData = Awaited<ReturnType<typeof listContactCommunications>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactCommunications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListContactCommunicationsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getLogContactCommunicationUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/communications`
+}
+
+/**
+ * @summary Log a communication (email/phone/whatsapp/calendar) for a contact
+ */
+export const logContactCommunication = async (id: number,
+    communicationInput: CommunicationInput, options?: RequestInit): Promise<LeadActivity> => {
+
+  return customFetch<LeadActivity>(getLogContactCommunicationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      communicationInput,)
+  }
+);}
+
+
+
+
+export const getLogContactCommunicationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logContactCommunication>>, TError,{id: number;data: BodyType<CommunicationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof logContactCommunication>>, TError,{id: number;data: BodyType<CommunicationInput>}, TContext> => {
+
+const mutationKey = ['logContactCommunication'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logContactCommunication>>, {id: number;data: BodyType<CommunicationInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  logContactCommunication(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogContactCommunicationMutationResult = NonNullable<Awaited<ReturnType<typeof logContactCommunication>>>
+    export type LogContactCommunicationMutationBody = BodyType<CommunicationInput>
+    export type LogContactCommunicationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Log a communication (email/phone/whatsapp/calendar) for a contact
+ */
+export const useLogContactCommunication = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logContactCommunication>>, TError,{id: number;data: BodyType<CommunicationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof logContactCommunication>>,
+        TError,
+        {id: number;data: BodyType<CommunicationInput>},
+        TContext
+      > => {
+      return useMutation(getLogContactCommunicationMutationOptions(options));
+    }
+
+export const getCreateContactCalendarInviteUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/calendar-invite`
+}
+
+/**
+ * @summary Generate an ICS calendar invite for a contact and log it as a communication
+ */
+export const createContactCalendarInvite = async (id: number,
+    calendarInviteInput: CalendarInviteInput, options?: RequestInit): Promise<CalendarInviteResult> => {
+
+  return customFetch<CalendarInviteResult>(getCreateContactCalendarInviteUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      calendarInviteInput,)
+  }
+);}
+
+
+
+
+export const getCreateContactCalendarInviteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContactCalendarInvite>>, TError,{id: number;data: BodyType<CalendarInviteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createContactCalendarInvite>>, TError,{id: number;data: BodyType<CalendarInviteInput>}, TContext> => {
+
+const mutationKey = ['createContactCalendarInvite'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createContactCalendarInvite>>, {id: number;data: BodyType<CalendarInviteInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createContactCalendarInvite(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateContactCalendarInviteMutationResult = NonNullable<Awaited<ReturnType<typeof createContactCalendarInvite>>>
+    export type CreateContactCalendarInviteMutationBody = BodyType<CalendarInviteInput>
+    export type CreateContactCalendarInviteMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Generate an ICS calendar invite for a contact and log it as a communication
+ */
+export const useCreateContactCalendarInvite = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContactCalendarInvite>>, TError,{id: number;data: BodyType<CalendarInviteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createContactCalendarInvite>>,
+        TError,
+        {id: number;data: BodyType<CalendarInviteInput>},
+        TContext
+      > => {
+      return useMutation(getCreateContactCalendarInviteMutationOptions(options));
+    }
+
 export const getEnrichContactUrl = (id: number,) => {
 
 
@@ -6788,6 +7016,155 @@ export const useDetachLeadTag = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDetachLeadTagMutationOptions(options));
+    }
+
+export const getListLeadCommunicationsUrl = (id: number,) => {
+
+
+
+
+  return `/api/leads/${id}/communications`
+}
+
+/**
+ * @summary List logged communications for a lead
+ */
+export const listLeadCommunications = async (id: number, options?: RequestInit): Promise<CommunicationList> => {
+
+  return customFetch<CommunicationList>(getListLeadCommunicationsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLeadCommunicationsQueryKey = (id: number,) => {
+    return [
+    `/api/leads/${id}/communications`
+    ] as const;
+    }
+
+
+export const getListLeadCommunicationsQueryOptions = <TData = Awaited<ReturnType<typeof listLeadCommunications>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadCommunications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLeadCommunicationsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeadCommunications>>> = ({ signal }) => listLeadCommunications(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLeadCommunications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLeadCommunicationsQueryResult = NonNullable<Awaited<ReturnType<typeof listLeadCommunications>>>
+export type ListLeadCommunicationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List logged communications for a lead
+ */
+
+export function useListLeadCommunications<TData = Awaited<ReturnType<typeof listLeadCommunications>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadCommunications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLeadCommunicationsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getLogLeadCommunicationUrl = (id: number,) => {
+
+
+
+
+  return `/api/leads/${id}/communications`
+}
+
+/**
+ * @summary Log a communication (email/phone/whatsapp/calendar) for a lead
+ */
+export const logLeadCommunication = async (id: number,
+    communicationInput: CommunicationInput, options?: RequestInit): Promise<LeadActivity> => {
+
+  return customFetch<LeadActivity>(getLogLeadCommunicationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      communicationInput,)
+  }
+);}
+
+
+
+
+export const getLogLeadCommunicationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logLeadCommunication>>, TError,{id: number;data: BodyType<CommunicationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof logLeadCommunication>>, TError,{id: number;data: BodyType<CommunicationInput>}, TContext> => {
+
+const mutationKey = ['logLeadCommunication'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logLeadCommunication>>, {id: number;data: BodyType<CommunicationInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  logLeadCommunication(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogLeadCommunicationMutationResult = NonNullable<Awaited<ReturnType<typeof logLeadCommunication>>>
+    export type LogLeadCommunicationMutationBody = BodyType<CommunicationInput>
+    export type LogLeadCommunicationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Log a communication (email/phone/whatsapp/calendar) for a lead
+ */
+export const useLogLeadCommunication = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logLeadCommunication>>, TError,{id: number;data: BodyType<CommunicationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof logLeadCommunication>>,
+        TError,
+        {id: number;data: BodyType<CommunicationInput>},
+        TContext
+      > => {
+      return useMutation(getLogLeadCommunicationMutationOptions(options));
     }
 
 export const getGetLeadTimelineUrl = (id: number,) => {
@@ -9326,6 +9703,220 @@ export function useGetScanImage<TData = Awaited<ReturnType<typeof getScanImage>>
 
 
 
+
+export const getReprocessScanUrl = (id: number,) => {
+
+
+
+
+  return `/api/scans/${id}/reprocess`
+}
+
+/**
+ * @summary Re-run OCR extraction on the stored card image
+ */
+export const reprocessScan = async (id: number,
+    reprocessScanInput?: ReprocessScanInput, options?: RequestInit): Promise<Scan> => {
+
+  return customFetch<Scan>(getReprocessScanUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reprocessScanInput,)
+  }
+);}
+
+
+
+
+export const getReprocessScanMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reprocessScan>>, TError,{id: number;data?: BodyType<ReprocessScanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reprocessScan>>, TError,{id: number;data?: BodyType<ReprocessScanInput>}, TContext> => {
+
+const mutationKey = ['reprocessScan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reprocessScan>>, {id: number;data?: BodyType<ReprocessScanInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reprocessScan(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReprocessScanMutationResult = NonNullable<Awaited<ReturnType<typeof reprocessScan>>>
+    export type ReprocessScanMutationBody = BodyType<ReprocessScanInput> | undefined
+    export type ReprocessScanMutationError = ErrorType<void>
+
+    /**
+ * @summary Re-run OCR extraction on the stored card image
+ */
+export const useReprocessScan = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reprocessScan>>, TError,{id: number;data?: BodyType<ReprocessScanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reprocessScan>>,
+        TError,
+        {id: number;data?: BodyType<ReprocessScanInput>},
+        TContext
+      > => {
+      return useMutation(getReprocessScanMutationOptions(options));
+    }
+
+export const getReplaceScanImageUrl = (id: number,) => {
+
+
+
+
+  return `/api/scans/${id}/replace-image`
+}
+
+/**
+ * @summary Replace the stored card image and re-run OCR extraction
+ */
+export const replaceScanImage = async (id: number,
+    replaceScanImageInput: ReplaceScanImageInput, options?: RequestInit): Promise<Scan> => {
+
+  return customFetch<Scan>(getReplaceScanImageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      replaceScanImageInput,)
+  }
+);}
+
+
+
+
+export const getReplaceScanImageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceScanImage>>, TError,{id: number;data: BodyType<ReplaceScanImageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceScanImage>>, TError,{id: number;data: BodyType<ReplaceScanImageInput>}, TContext> => {
+
+const mutationKey = ['replaceScanImage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceScanImage>>, {id: number;data: BodyType<ReplaceScanImageInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  replaceScanImage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceScanImageMutationResult = NonNullable<Awaited<ReturnType<typeof replaceScanImage>>>
+    export type ReplaceScanImageMutationBody = BodyType<ReplaceScanImageInput>
+    export type ReplaceScanImageMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace the stored card image and re-run OCR extraction
+ */
+export const useReplaceScanImage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceScanImage>>, TError,{id: number;data: BodyType<ReplaceScanImageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof replaceScanImage>>,
+        TError,
+        {id: number;data: BodyType<ReplaceScanImageInput>},
+        TContext
+      > => {
+      return useMutation(getReplaceScanImageMutationOptions(options));
+    }
+
+export const getScoreScanUrl = (id: number,) => {
+
+
+
+
+  return `/api/scans/${id}/score`
+}
+
+/**
+ * @summary Run AI lead scoring on the scan's extracted data (preview, not persisted)
+ */
+export const scoreScan = async (id: number, options?: RequestInit): Promise<LeadScorePreview> => {
+
+  return customFetch<LeadScorePreview>(getScoreScanUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getScoreScanMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof scoreScan>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof scoreScan>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['scoreScan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof scoreScan>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  scoreScan(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ScoreScanMutationResult = NonNullable<Awaited<ReturnType<typeof scoreScan>>>
+
+    export type ScoreScanMutationError = ErrorType<void>
+
+    /**
+ * @summary Run AI lead scoring on the scan's extracted data (preview, not persisted)
+ */
+export const useScoreScan = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof scoreScan>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof scoreScan>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getScoreScanMutationOptions(options));
+    }
 
 export const getGetCurrentSubscriptionUrl = () => {
 

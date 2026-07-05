@@ -50,3 +50,17 @@ export async function streamScanImage(
   if (!exists) throw new Error("Image not found");
   return { stream: file.createReadStream(), contentType: "image/jpeg" };
 }
+
+/**
+ * Download a previously uploaded scan image from GCS and return it as a base64
+ * string (used to re-run OCR on the stored image). Throws if the object does
+ * not exist.
+ */
+export async function loadScanImageBase64(objectName: string): Promise<string> {
+  const bucket = objectStorageClient.bucket(getBucketId());
+  const file = bucket.file(objectName);
+  const [exists] = await file.exists();
+  if (!exists) throw new Error("Image not found");
+  const [buffer] = await file.download();
+  return buffer.toString("base64");
+}

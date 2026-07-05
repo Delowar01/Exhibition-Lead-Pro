@@ -1472,6 +1472,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /contacts/{id}/communications:
+    get:
+      operationId: listContactCommunications
+      tags: [contacts]
+      summary: List logged communications for a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationList"
+    post:
+      operationId: logContactCommunication
+      tags: [contacts]
+      summary: Log a communication (email/phone/whatsapp/calendar) for a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunicationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadActivity"
+
+  /contacts/{id}/calendar-invite:
+    post:
+      operationId: createContactCalendarInvite
+      tags: [contacts]
+      summary: Generate an ICS calendar invite for a contact and log it as a communication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalendarInviteInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarInviteResult"
+
   /contacts/{id}/enrich:
     post:
       operationId: enrichContact
@@ -2018,6 +2085,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TagList"
+
+  /leads/{id}/communications:
+    get:
+      operationId: listLeadCommunications
+      tags: [leads]
+      summary: List logged communications for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunicationList"
+    post:
+      operationId: logLeadCommunication
+      tags: [leads]
+      summary: Log a communication (email/phone/whatsapp/calendar) for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommunicationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadActivity"
 
   /leads/{id}/timeline:
     get:
@@ -2761,6 +2870,81 @@ paths:
                 format: binary
         "404":
           description: Scan or image not found
+
+  /scans/{id}/reprocess:
+    post:
+      operationId: reprocessScan
+      tags: [scans]
+      summary: Re-run OCR extraction on the stored card image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReprocessScanInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+        "502":
+          description: OCR could not read the card
+
+  /scans/{id}/replace-image:
+    post:
+      operationId: replaceScanImage
+      tags: [scans]
+      summary: Replace the stored card image and re-run OCR extraction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceScanImageInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+        "502":
+          description: Could not store image or read the card
+
+  /scans/{id}/score:
+    post:
+      operationId: scoreScan
+      tags: [scans]
+      summary: Run AI lead scoring on the scan's extracted data (preview, not persisted)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadScorePreview"
+        "502":
+          description: AI scoring temporarily unavailable
 
   # SUBSCRIPTIONS
   /subscriptions/current:
@@ -7395,6 +7579,93 @@ components:
           type: ["number", "null"]
         gpsAccuracy:
           type: ["number", "null"]
+
+    ReprocessScanInput:
+      type: object
+      properties:
+        appLanguage:
+          type: string
+          enum: [en, ar]
+          default: en
+          description: Active app language driving OCR translation (same semantics as ScanInput.appLanguage).
+
+    ReplaceScanImageInput:
+      type: object
+      required: [imageData]
+      properties:
+        imageData:
+          type: string
+          description: Base64-encoded replacement image
+        appLanguage:
+          type: string
+          enum: [en, ar]
+          default: en
+
+    LeadScorePreview:
+      type: object
+      required: [score, temperature, reasoning]
+      properties:
+        score:
+          type: integer
+        temperature:
+          type: string
+          enum: [hot, warm, cold]
+        reasoning:
+          type: string
+
+    CommunicationInput:
+      type: object
+      required: [channel]
+      properties:
+        channel:
+          type: string
+          enum: [email, phone, whatsapp, calendar]
+          description: Communication channel. Maps to an activity type (email→email, phone→call, whatsapp→message, calendar→meeting).
+        subject:
+          type: ["string", "null"]
+        body:
+          type: ["string", "null"]
+        occurredAt:
+          type: ["string", "null"]
+          format: date-time
+
+    CommunicationList:
+      type: object
+      required: [communications]
+      properties:
+        communications:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadActivity"
+
+    CalendarInviteInput:
+      type: object
+      required: [title, startAt]
+      properties:
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        startAt:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+          default: 30
+
+    CalendarInviteResult:
+      type: object
+      required: [ics, filename, communication]
+      properties:
+        ics:
+          type: string
+          description: The generated iCalendar (.ics) file contents.
+        filename:
+          type: string
+        communication:
+          $ref: "#/components/schemas/LeadActivity"
 
     ExtractedCardData:
       type: object

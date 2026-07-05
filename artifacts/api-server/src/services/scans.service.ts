@@ -1,7 +1,7 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import { type AuthUser } from "../middlewares/requireAuth.js";
-import { extractCardData, logAiError } from "../lib/ai.js";
-import { streamScanImage } from "../lib/imageStorage.js";
+import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "../lib/ai.js";
+import { streamScanImage, loadScanImageBase64, uploadScanImage } from "../lib/imageStorage.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
 
@@ -110,4 +110,116 @@ export async function getScan(user: AuthUser, id: number) {
     extractedData: scan.extractedData ? JSON.parse(scan.extractedData) : null,
     imageUrl: scanImageApiUrl(scan.id, scan.imageUrl !== null),
   };
+}
+
+/**
+ * Re-run OCR extraction on the scan's already-stored image. Honest failure:
+ * a 400 when no image is stored, a 404 when the stored image is gone, and a
+ * 502 when the AI OCR call fails (the scan is marked failed).
+ */
+export async function reprocessScan(user: AuthUser, id: number, body: { appLanguage?: string }) {
+  const scan = await scansRepo.findById(user, id);
+  if (!scan) throw new AppError(404, "Scan not found");
+  if (!scan.imageUrl) throw new AppError(400, "No stored image to reprocess. Replace the image first.");
+  const lang = body.appLanguage === "ar" ? "ar" : "en";
+
+  let base64: string;
+  try {
+    base64 = await loadScanImageBase64(scan.imageUrl);
+  } catch {
+    throw new AppError(404, "Stored image is unavailable. Replace the image and try again.");
+  }
+
+  let ocr: Awaited<ReturnType<typeof extractCardData>>;
+  try {
+    ocr = await extractCardData(base64, lang);
+  } catch (err) {
+    logAiError("scan-reprocess", err);
+    await scansRepo.update(id, { status: "failed" });
+    throw new AppError(502, "Could not re-read the card. Please try again or replace the image.");
+  }
+
+  const updated = await scansRepo.update(id, {
+    status: "completed",
+    extractedData: JSON.stringify(ocr.fields),
+    rawOcr: ocr.rawOcr,
+    confidence: ocr.confidence,
+  });
+  return {
+    ...updated,
+    extractedData: ocr.fields,
+    imageUrl: scanImageApiUrl(id, true),
+  };
+}
+
+/**
+ * Replace the stored card image and re-run OCR. The upload happens first so a
+ * storage failure is surfaced honestly (502) before we touch the record; OCR
+ * failure marks the scan failed but keeps the newly-stored image so the user
+ * can Reprocess.
+ */
+export async function replaceScanImage(user: AuthUser, id: number, body: { imageData?: string; appLanguage?: string }) {
+  const scan = await scansRepo.findById(user, id);
+  if (!scan) throw new AppError(404, "Scan not found");
+  if (!body.imageData) throw new AppError(400, "imageData required");
+  const lang = body.appLanguage === "ar" ? "ar" : "en";
+
+  let objectKey: string;
+  try {
+    objectKey = await uploadScanImage(id, scan.companyId, body.imageData);
+  } catch (err) {
+    logAiError("scan-replace-upload", err);
+    throw new AppError(502, "Could not store the replacement image. Please try again.");
+  }
+  await scansRepo.setImageUrl(id, objectKey);
+
+  let ocr: Awaited<ReturnType<typeof extractCardData>>;
+  try {
+    ocr = await extractCardData(body.imageData, lang);
+  } catch (err) {
+    logAiError("scan-replace-ocr", err);
+    await scansRepo.update(id, { status: "failed" });
+    throw new AppError(502, "Image replaced, but the card could not be read. Try Reprocess OCR.");
+  }
+
+  const updated = await scansRepo.update(id, {
+    status: "completed",
+    extractedData: JSON.stringify(ocr.fields),
+    rawOcr: ocr.rawOcr,
+    confidence: ocr.confidence,
+  });
+  return {
+    ...updated,
+    extractedData: ocr.fields,
+    imageUrl: scanImageApiUrl(id, true),
+  };
+}
+
+/**
+ * Run AI lead scoring on the scan's already-extracted fields. This is a
+ * grounded preview (not persisted to a contact — the scan may not have one
+ * yet). 400 if there is nothing to score; 502 if the AI call fails.
+ */
+export async function scoreScan(user: AuthUser, id: number) {
+  const scan = await scansRepo.findById(user, id);
+  if (!scan) throw new AppError(404, "Scan not found");
+  if (!scan.extractedData) throw new AppError(400, "No extracted data to score. Reprocess OCR first.");
+  const fields = JSON.parse(scan.extractedData) as ExtractedCardData;
+
+  try {
+    const result = await scoreLead({
+      firstName: fields.firstName,
+      lastName: fields.lastName,
+      jobTitle: fields.jobTitle,
+      contactCompany: fields.company,
+      email: fields.email,
+      mobile: fields.mobile,
+      website: fields.website,
+      linkedin: fields.linkedin,
+    });
+    return { score: result.score, temperature: result.temperature, reasoning: result.reasoning };
+  } catch (err) {
+    logAiError("scan-score", err);
+    throw new AppError(502, "AI scoring is temporarily unavailable. Please try again.");
+  }
 }

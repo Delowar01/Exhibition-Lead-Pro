@@ -2259,6 +2259,96 @@ export interface ScanInput {
   gpsAccuracy?: number | null;
 }
 
+/**
+ * Active app language driving OCR translation (same semantics as ScanInput.appLanguage).
+ */
+export type ReprocessScanInputAppLanguage = typeof ReprocessScanInputAppLanguage[keyof typeof ReprocessScanInputAppLanguage];
+
+
+export const ReprocessScanInputAppLanguage = {
+  en: 'en',
+  ar: 'ar',
+} as const;
+
+export interface ReprocessScanInput {
+  /** Active app language driving OCR translation (same semantics as ScanInput.appLanguage). */
+  appLanguage?: ReprocessScanInputAppLanguage;
+}
+
+export type ReplaceScanImageInputAppLanguage = typeof ReplaceScanImageInputAppLanguage[keyof typeof ReplaceScanImageInputAppLanguage];
+
+
+export const ReplaceScanImageInputAppLanguage = {
+  en: 'en',
+  ar: 'ar',
+} as const;
+
+export interface ReplaceScanImageInput {
+  /** Base64-encoded replacement image */
+  imageData: string;
+  appLanguage?: ReplaceScanImageInputAppLanguage;
+}
+
+export type LeadScorePreviewTemperature = typeof LeadScorePreviewTemperature[keyof typeof LeadScorePreviewTemperature];
+
+
+export const LeadScorePreviewTemperature = {
+  hot: 'hot',
+  warm: 'warm',
+  cold: 'cold',
+} as const;
+
+export interface LeadScorePreview {
+  score: number;
+  temperature: LeadScorePreviewTemperature;
+  reasoning: string;
+}
+
+/**
+ * Communication channel. Maps to an activity type (email→email, phone→call, whatsapp→message, calendar→meeting).
+ */
+export type CommunicationInputChannel = typeof CommunicationInputChannel[keyof typeof CommunicationInputChannel];
+
+
+export const CommunicationInputChannel = {
+  email: 'email',
+  phone: 'phone',
+  whatsapp: 'whatsapp',
+  calendar: 'calendar',
+} as const;
+
+export interface CommunicationInput {
+  /** Communication channel. Maps to an activity type (email→email, phone→call, whatsapp→message, calendar→meeting). */
+  channel: CommunicationInputChannel;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  body?: string | null;
+  /** @nullable */
+  occurredAt?: string | null;
+}
+
+export interface CommunicationList {
+  communications: LeadActivity[];
+}
+
+export interface CalendarInviteInput {
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  location?: string | null;
+  startAt: string;
+  durationMinutes?: number;
+}
+
+export interface CalendarInviteResult {
+  /** The generated iCalendar (.ics) file contents. */
+  ics: string;
+  filename: string;
+  communication: LeadActivity;
+}
+
 export type SubscriptionPlan = typeof SubscriptionPlan[keyof typeof SubscriptionPlan];
 
 

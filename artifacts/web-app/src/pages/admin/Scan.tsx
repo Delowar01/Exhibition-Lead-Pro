@@ -1,11 +1,40 @@
 import React, { useState, useRef } from "react";
-import { useCreateScan, useCreateContact } from "@workspace/api-client-react";
+import {
+  useCreateScan,
+  useCreateContact,
+  useReprocessScan,
+  useReplaceScanImage,
+  useScoreScan,
+} from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Camera, RefreshCw, Save, Check, User, Building2, Mail, Phone, Briefcase, Globe, Linkedin, MapPin, Languages, Upload } from "lucide-react";
+import {
+  Camera,
+  RefreshCw,
+  Save,
+  Check,
+  User,
+  Building2,
+  Mail,
+  Phone,
+  Briefcase,
+  Globe,
+  Linkedin,
+  MapPin,
+  Languages,
+  Upload,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  Sparkles,
+  Image as ImageIcon,
+  Loader2,
+  Flame,
+  FileText,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 
@@ -22,17 +51,81 @@ interface ScannedFields {
   address: string;
 }
 
+interface LeadScorePreview {
+  score: number;
+  temperature: "hot" | "warm" | "cold";
+  reasoning: string;
+}
+
+const emptyFields = (): ScannedFields => ({
+  firstName: "",
+  lastName: "",
+  arabicName: "",
+  jobTitle: "",
+  contactCompany: "",
+  email: "",
+  mobile: "",
+  website: "",
+  linkedin: "",
+  address: "",
+});
+
+function fieldsFromExtracted(ex: {
+  firstName?: string | null;
+  lastName?: string | null;
+  arabicName?: string | null;
+  jobTitle?: string | null;
+  company?: string | null;
+  email?: string | null;
+  mobile?: string | null;
+  website?: string | null;
+  linkedin?: string | null;
+  address?: string | null;
+}): ScannedFields {
+  return {
+    firstName: ex.firstName ?? "",
+    lastName: ex.lastName ?? "",
+    arabicName: ex.arabicName ?? "",
+    jobTitle: ex.jobTitle ?? "",
+    contactCompany: ex.company ?? "",
+    email: ex.email ?? "",
+    mobile: ex.mobile ?? "",
+    website: ex.website ?? "",
+    linkedin: ex.linkedin ?? "",
+    address: ex.address ?? "",
+  };
+}
+
+const TEMP_STYLES: Record<string, string> = {
+  hot: "bg-red-100 text-red-700 border-red-200",
+  warm: "bg-amber-100 text-amber-700 border-amber-200",
+  cold: "bg-sky-100 text-sky-700 border-sky-200",
+};
+
 export default function AdminScan() {
   const [scanning, setScanning] = useState(false);
   const [scannedData, setScannedData] = useState<ScannedFields | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
   const [cardImage, setCardImage] = useState<string | null>(null);
+  const [scanId, setScanId] = useState<number | null>(null);
+  const [scale, setScale] = useState(1);
+  const [rotation, setRotation] = useState(0);
+  const [leadScore, setLeadScore] = useState<LeadScorePreview | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
   const createScan = useCreateScan();
   const createContact = useCreateContact();
+  const reprocessScan = useReprocessScan();
+  const replaceScanImage = useReplaceScanImage();
+  const scoreScan = useScoreScan();
+
+  const resetView = () => {
+    setScale(1);
+    setRotation(0);
+  };
 
   const handleCaptureClick = () => {
     fileInputRef.current?.click();
@@ -49,6 +142,9 @@ export default function AdminScan() {
       setCardImage(imageData);
       setScannedData(null);
       setConfidence(null);
+      setScanId(null);
+      setLeadScore(null);
+      resetView();
       setScanning(true);
 
       createScan.mutate(
@@ -56,29 +152,20 @@ export default function AdminScan() {
         {
           onSuccess: (res) => {
             setScanning(false);
+            setScanId(res.id);
             const ex = res.extractedData;
             if (res.status !== "completed" || !ex) {
-              setCardImage(null);
               toast({
                 variant: "destructive",
                 title: "Could not read the card",
-                description: "No details were extracted. Please retake the photo with better lighting.",
+                description:
+                  "No details were extracted. Use Reprocess OCR or replace the image below.",
               });
+              setScannedData(emptyFields());
               return;
             }
             setConfidence(res.confidence ?? null);
-            setScannedData({
-              firstName: ex.firstName ?? "",
-              lastName: ex.lastName ?? "",
-              arabicName: ex.arabicName ?? "",
-              jobTitle: ex.jobTitle ?? "",
-              contactCompany: ex.company ?? "",
-              email: ex.email ?? "",
-              mobile: ex.mobile ?? "",
-              website: ex.website ?? "",
-              linkedin: ex.linkedin ?? "",
-              address: ex.address ?? "",
-            });
+            setScannedData(fieldsFromExtracted(ex));
             toast({
               title: "Card scanned successfully",
               description: "Review the extracted data and save as a contact.",
@@ -106,6 +193,92 @@ export default function AdminScan() {
     setScannedData(null);
     setConfidence(null);
     setCardImage(null);
+    setScanId(null);
+    setLeadScore(null);
+    resetView();
+  };
+
+  const handleReprocess = () => {
+    if (!scanId) return;
+    setLeadScore(null);
+    reprocessScan.mutate(
+      { id: scanId, data: { appLanguage: "en" } },
+      {
+        onSuccess: (res) => {
+          const ex = res.extractedData;
+          setConfidence(res.confidence ?? null);
+          setScannedData(ex ? fieldsFromExtracted(ex) : emptyFields());
+          toast({ title: "OCR re-run", description: "Fields updated from the stored image." });
+        },
+        onError: () => {
+          toast({
+            variant: "destructive",
+            title: "Could not reprocess",
+            description: "The card could not be re-read. Try replacing the image.",
+          });
+        },
+      }
+    );
+  };
+
+  const handleScore = () => {
+    if (!scanId) return;
+    scoreScan.mutate(
+      { id: scanId },
+      {
+        onSuccess: (res) => {
+          setLeadScore(res);
+          toast({ title: "AI lead score ready", description: `Score ${res.score}/100 — ${res.temperature}.` });
+        },
+        onError: () => {
+          toast({
+            variant: "destructive",
+            title: "Scoring unavailable",
+            description: "AI scoring is temporarily unavailable. Please try again.",
+          });
+        },
+      }
+    );
+  };
+
+  const handleReplaceClick = () => {
+    replaceInputRef.current?.click();
+  };
+
+  const handleReplaceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !scanId) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imageData = reader.result as string;
+      setLeadScore(null);
+      replaceScanImage.mutate(
+        { id: scanId, data: { imageData, appLanguage: "en" } },
+        {
+          onSuccess: (res) => {
+            setCardImage(imageData);
+            resetView();
+            const ex = res.extractedData;
+            setConfidence(res.confidence ?? null);
+            setScannedData(ex ? fieldsFromExtracted(ex) : emptyFields());
+            toast({ title: "Image replaced", description: "New image stored and re-read." });
+          },
+          onError: () => {
+            toast({
+              variant: "destructive",
+              title: "Could not replace image",
+              description: "The image could not be stored or re-read. Please try again.",
+            });
+          },
+        }
+      );
+    };
+    reader.onerror = () => {
+      toast({ variant: "destructive", title: "Could not read file", description: "Please try a different image." });
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSaveContact = () => {
@@ -132,6 +305,9 @@ export default function AdminScan() {
     );
   };
 
+  const reviewReady = scanId !== null && !scanning;
+  const busy = reprocessScan.isPending || replaceScanImage.isPending || scoreScan.isPending;
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <input
@@ -142,6 +318,14 @@ export default function AdminScan() {
         className="hidden"
         onChange={handleFileChange}
       />
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleReplaceFileChange}
+      />
 
       <div className="flex items-center justify-between">
         <div>
@@ -151,13 +335,18 @@ export default function AdminScan() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-8 items-start">
-        {/* Left Side: Camera/Scanner Area */}
+        {/* Left Side: Camera/Scanner + OCR Review Center */}
         <div className="space-y-4">
           <div className="relative aspect-[4/3] bg-black rounded-xl overflow-hidden shadow-xl border border-border/50 flex flex-col items-center justify-center group">
 
-            {/* Captured image preview */}
+            {/* Captured image preview (zoom + rotate) */}
             {cardImage && (
-              <img src={cardImage} alt="Captured card" className="absolute inset-0 w-full h-full object-contain z-0" />
+              <img
+                src={cardImage}
+                alt="Captured card"
+                className="absolute inset-0 w-full h-full object-contain z-0 transition-transform duration-150"
+                style={{ transform: `scale(${scale}) rotate(${rotation}deg)` }}
+              />
             )}
 
             {/* Corner brackets for the scanner UI */}
@@ -169,6 +358,42 @@ export default function AdminScan() {
             {/* Animated scan line */}
             {scanning && (
               <div className="absolute top-0 left-0 right-0 h-1 bg-primary z-20 shadow-[0_0_15px_rgba(255,107,0,0.8)] animate-[scan_2s_ease-in-out_infinite]" />
+            )}
+
+            {/* Zoom / rotate controls */}
+            {cardImage && !scanning && (
+              <div className="absolute bottom-3 right-3 z-20 flex gap-1.5 bg-black/50 backdrop-blur-sm rounded-lg p-1">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-white hover:bg-white/20"
+                  onClick={() => setScale((s) => Math.min(3, +(s + 0.25).toFixed(2)))}
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-white hover:bg-white/20"
+                  onClick={() => setScale((s) => Math.max(1, +(s - 0.25).toFixed(2)))}
+                  aria-label="Zoom out"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-white hover:bg-white/20"
+                  onClick={() => setRotation((r) => (r + 90) % 360)}
+                  aria-label="Rotate"
+                >
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+              </div>
             )}
 
             {scanning ? (
@@ -203,6 +428,63 @@ export default function AdminScan() {
               </Button>
             )}
           </div>
+
+          {/* OCR Review Center actions — operate on the stored scan */}
+          {reviewReady && (
+            <Card className="border-border/60">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Sparkles className="h-4 w-4 text-primary" /> OCR Review Center
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Re-read the stored image, re-run AI scoring, or replace the photo. All actions run against this saved scan.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button variant="outline" size="sm" onClick={handleReprocess} disabled={busy}>
+                    {reprocessScan.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                    )}
+                    Reprocess
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleScore} disabled={busy}>
+                    {scoreScan.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-1" />
+                    )}
+                    Re-run AI
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleReplaceClick} disabled={busy}>
+                    {replaceScanImage.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <ImageIcon className="h-4 w-4 mr-1" />
+                    )}
+                    Replace
+                  </Button>
+                </div>
+
+                {leadScore && (
+                  <div className="rounded-lg border border-border/60 bg-secondary/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium flex items-center gap-1">
+                        <Flame className="h-4 w-4 text-primary" /> AI Lead Score
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="font-semibold">{leadScore.score}/100</Badge>
+                        <Badge className={`border capitalize ${TEMP_STYLES[leadScore.temperature] ?? ""}`}>
+                          {leadScore.temperature}
+                        </Badge>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{leadScore.reasoning}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Side: Results Area */}
@@ -309,29 +591,5 @@ export default function AdminScan() {
         }
       `}} />
     </div>
-  );
-}
-
-// Simple icon for FileText missing from lucide imports in this file
-function FileText(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" x2="8" y1="13" y2="13" />
-      <line x1="16" x2="8" y1="17" y2="17" />
-      <line x1="10" x2="8" y1="9" y2="9" />
-    </svg>
   );
 }

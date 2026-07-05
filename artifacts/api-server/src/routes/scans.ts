@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
-import { CreateScanBody } from "@workspace/api-zod";
+import { CreateScanBody, ReprocessScanBody, ReplaceScanImageBody } from "@workspace/api-zod";
 import { uploadScanImage } from "../lib/imageStorage.js";
 import * as scans from "../services/scans.service.js";
 
@@ -50,6 +50,24 @@ router.get("/scans/:id", async (req: AuthRequest, res) => {
   const id = parseInt(String(req.params.id));
   const scan = await scans.getScan(req.user!, id);
   res.json(scan);
+});
+
+// POST /scans/:id/reprocess — re-run OCR on the stored image
+router.post("/scans/:id/reprocess", requirePermission("scans", "create"), validateBody(ReprocessScanBody), async (req: AuthRequest, res) => {
+  const id = parseInt(String(req.params.id));
+  res.json(await scans.reprocessScan(req.user!, id, req.body ?? {}));
+});
+
+// POST /scans/:id/replace-image — replace the stored image + re-run OCR
+router.post("/scans/:id/replace-image", requirePermission("scans", "create"), validateBody(ReplaceScanImageBody), async (req: AuthRequest, res) => {
+  const id = parseInt(String(req.params.id));
+  res.json(await scans.replaceScanImage(req.user!, id, req.body ?? {}));
+});
+
+// POST /scans/:id/score — AI lead-score preview over the extracted fields
+router.post("/scans/:id/score", requirePermission("scans", "create"), async (req: AuthRequest, res) => {
+  const id = parseInt(String(req.params.id));
+  res.json(await scans.scoreScan(req.user!, id));
 });
 
 export default router;

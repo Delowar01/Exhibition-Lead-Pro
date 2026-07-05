@@ -2,9 +2,10 @@ import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
-import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody, SetContactCustomFieldsBody } from "@workspace/api-zod";
+import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody, SetContactCustomFieldsBody, LogContactCommunicationBody, CreateContactCalendarInviteBody } from "@workspace/api-zod";
 import * as contacts from "../services/contacts.service.js";
 import * as timeline from "../services/timeline.service.js";
+import * as comms from "../services/communications.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -90,6 +91,21 @@ router.get("/contacts/:id/status-history", async (req: AuthRequest, res) => {
 // GET /contacts/:id/timeline — aggregated activity + note timeline for the contact
 router.get("/contacts/:id/timeline", async (req: AuthRequest, res) => {
   res.json(await timeline.contactTimeline(req.user!, parseInt(String(req.params.id))));
+});
+
+// GET /contacts/:id/communications — logged comms (email/phone/whatsapp/calendar)
+router.get("/contacts/:id/communications", async (req: AuthRequest, res) => {
+  res.json(await comms.listContactCommunications(req.user!, parseInt(String(req.params.id))));
+});
+
+// POST /contacts/:id/communications — log a communication to the timeline
+router.post("/contacts/:id/communications", requirePermission("contacts", "edit"), validateBody(LogContactCommunicationBody), async (req: AuthRequest, res) => {
+  res.status(201).json(await comms.logContactCommunication(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
+});
+
+// POST /contacts/:id/calendar-invite — generate an .ics invite + log a calendar comm
+router.post("/contacts/:id/calendar-invite", requirePermission("contacts", "edit"), validateBody(CreateContactCalendarInviteBody), async (req: AuthRequest, res) => {
+  res.status(201).json(await comms.createContactCalendarInvite(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
 });
 
 export default router;

@@ -34,3 +34,4 @@
 - [Polymorphic custom-field values, no cascade](polymorphic-custom-fields-no-cascade.md) — no FK cascade; any hard-delete/merge of the owner must delete its values in the same txn or they orphan silently.
 - [Manual lead-assign clears teamId](lead-assign-teamid-clearing.md) — manual assign treats explicit teamId (incl null) as a SET; owner-only reassign clients must OMIT teamId, not send null, or team bindings wipe silently.
 - [Round-robin persistent cursor](round-robin-persistent-cursor.md) — true round-robin needs a stored monotonic per-pool counter under advisory lock; count(assigned)%n repeats on reassign and rewinds on delete (lead_history cascades too).
+- [Api-server limiter restart for gate](api-server-limiter-restart.md) — reset the login limiter by restarting the `artifacts/api-server: API Server` workflow (NOT `Project`), then run the suite ONCE; an aborted `pnpm test` still counts as a run.
