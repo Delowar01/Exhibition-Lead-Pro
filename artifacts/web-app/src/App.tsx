@@ -23,6 +23,8 @@ import AdminContactDetail from "@/pages/admin/ContactDetail";
 import AdminDuplicates from "@/pages/admin/Duplicates";
 import AdminLeads from "@/pages/admin/Leads";
 import AdminLeadDetail from "@/pages/admin/LeadDetail";
+import AdminPipelineSettings from "@/pages/admin/PipelineSettings";
+import AdminTags from "@/pages/admin/Tags";
 import AdminEvents from "@/pages/admin/Events";
 import AdminEventDetail from "@/pages/admin/EventDetail";
 import AdminTeam from "@/pages/admin/Team";
@@ -195,6 +197,12 @@ function Router() {
       </Route>
       <Route path="/admin/leads/:id">
         {() => <ProtectedRoute component={AdminLeadDetail} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/pipeline-settings">
+        {() => <ProtectedRoute component={AdminPipelineSettings} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/tags">
+        {() => <ProtectedRoute component={AdminTags} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/events">
         {() => <ProtectedRoute component={AdminEvents} role="admin" layout={AdminLayout} />}

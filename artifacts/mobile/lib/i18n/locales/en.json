@@ -458,6 +458,57 @@
       "by": "by",
       "to": "→"
     },
+    "team": "Team",
+    "noTeam": "No team",
+    "logActivity": "Log Activity",
+    "timeline": {
+      "title": "Activity Timeline",
+      "empty": "No activity yet",
+      "kinds": {
+        "activity": "Activity",
+        "note": "Note",
+        "lead_history": "Update",
+        "contact_status": "Status change",
+        "follow_up": "Follow-up",
+        "meeting": "Meeting",
+        "task": "Task",
+        "scan": "Scan"
+      }
+    },
+    "notesSection": {
+      "title": "Notes",
+      "empty": "No notes yet",
+      "placeholder": "Write a note…",
+      "add": "Add Note",
+      "failed": "Failed to add note"
+    },
+    "tagsSection": {
+      "title": "Tags",
+      "empty": "No tags yet",
+      "add": "Add tag",
+      "select": "Select a tag",
+      "none": "No tags available",
+      "allAttached": "All tags already added",
+      "failed": "Failed to update tags"
+    },
+    "activity": {
+      "title": "Log Activity",
+      "type": "Type",
+      "subject": "Subject",
+      "subjectPlaceholder": "Optional subject",
+      "body": "Details",
+      "bodyPlaceholder": "What happened?",
+      "submit": "Log Activity",
+      "failed": "Failed to log activity",
+      "types": {
+        "call": "Call",
+        "email": "Email",
+        "meeting": "Meeting",
+        "message": "Message",
+        "note": "Note",
+        "other": "Other"
+      }
+    },
     "probability0": "0%",
     "noClosingDate": "No close date",
     "noPriority": "No priority",

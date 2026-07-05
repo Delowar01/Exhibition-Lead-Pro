@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart } from "lucide-react";
+import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart, Columns3, Tags } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
 
@@ -24,6 +24,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { name: "Contacts", href: "/admin/contacts", icon: Contact },
     { name: "Duplicates", href: "/admin/duplicates", icon: CopyCheck },
     { name: "Leads Pipeline", href: "/admin/leads", icon: BarChart2 },
+    { name: "Pipeline Settings", href: "/admin/pipeline-settings", icon: Columns3 },
+    { name: "Tags", href: "/admin/tags", icon: Tags },
     { name: "Events", href: "/admin/events", icon: Calendar },
     { name: "Scan Card", href: "/admin/scan", icon: Camera },
     { name: "Notifications", href: "/admin/notifications", icon: Bell },

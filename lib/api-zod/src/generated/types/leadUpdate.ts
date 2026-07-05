@@ -29,4 +29,8 @@ export interface LeadUpdate {
   assignedToId?: number | null;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  stageId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
 }

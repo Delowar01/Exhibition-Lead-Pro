@@ -1,32 +1,146 @@
-import React from "react";
+import React, { useState } from "react";
 import { useParams, useLocation } from "wouter";
-import { useGetLead, useUpdateLead, LeadStage, getGetLeadQueryKey } from "@workspace/api-client-react";
+import {
+  useGetLead,
+  useUpdateLead,
+  useGetContact,
+  useListPipelineStages,
+  useGetLeadTimeline,
+  useListLeadNotes,
+  useCreateLeadNote,
+  useUpdateLeadNote,
+  useDeleteLeadNote,
+  useListLeadActivities,
+  useCreateLeadActivity,
+  useUpdateLeadActivity,
+  useDeleteLeadActivity,
+  useListLeadTags,
+  useAttachLeadTag,
+  useDetachLeadTag,
+  useListTags,
+  useAssignLead,
+  useAutoAssignLead,
+  useListUsers,
+  getGetLeadQueryKey,
+  getGetContactQueryKey,
+  getGetLeadPipelineQueryKey,
+  getListLeadNotesQueryKey,
+  getListLeadActivitiesQueryKey,
+  getListLeadTagsQueryKey,
+  getGetLeadTimelineQueryKey,
+  LeadActivityInputType,
+  type LeadNote,
+  type LeadActivity,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
-import { 
-  Building2, Mail, Phone, ArrowLeft, MoreHorizontal, Calendar as CalendarIcon, 
-  MapPin, Globe, Linkedin, FileText, CheckCircle2, Clock, Sparkles, Send, CalendarPlus,
-  Contact
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Building2,
+  Mail,
+  Phone,
+  ArrowLeft,
+  Calendar as CalendarIcon,
+  MapPin,
+  Globe,
+  Linkedin,
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  Pin,
+  PinOff,
+  Plus,
+  Pencil,
+  Trash2,
+  X,
+  User as UserIcon,
+  MessageSquare,
+  FileText,
+  History as HistoryIcon,
+  Contact as ContactIcon,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+
+function fmtDate(s?: string | null): string {
+  if (!s) return "";
+  try {
+    return format(parseISO(s), "MMM d, yyyy");
+  } catch {
+    return s;
+  }
+}
+
+function fmtDateTime(s?: string | null): string {
+  if (!s) return "";
+  try {
+    return format(parseISO(s), "MMM d, yyyy h:mm a");
+  } catch {
+    return s;
+  }
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-muted-foreground mb-1">{label}</p>
+      <div className="text-sm font-medium">{children}</div>
+    </div>
+  );
+}
 
 export default function AdminLeadDetail() {
   const params = useParams();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const id = params.id ? parseInt(params.id, 10) : 0;
-  
-  const { data: lead, isLoading } = useGetLead(id, { 
-    query: { enabled: !!id, queryKey: getGetLeadQueryKey(id) } 
+
+  const { data: lead, isLoading } = useGetLead(id, {
+    query: { enabled: !!id, queryKey: getGetLeadQueryKey(id) },
   });
+  const contactId = lead?.contactId ?? 0;
+  const { data: contact } = useGetContact(contactId, {
+    query: { enabled: !!contactId, queryKey: getGetContactQueryKey(contactId) },
+  });
+  const { data: stagesData } = useListPipelineStages();
   const updateLead = useUpdateLead();
+
+  const handleStageChange = (stageKey: string) => {
+    updateLead.mutate(
+      { id, data: { stage: stageKey as any } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(id) });
+          queryClient.invalidateQueries({ queryKey: getGetLeadPipelineQueryKey() });
+          toast({ title: "Lead stage updated" });
+        },
+        onError: () => {
+          toast({ title: "Update failed", variant: "destructive" });
+        },
+      }
+    );
+  };
 
   if (isLoading) {
     return <div className="p-8 flex justify-center">Loading lead details...</div>;
@@ -36,138 +150,212 @@ export default function AdminLeadDetail() {
     return <div className="p-8 flex justify-center">Lead not found</div>;
   }
 
-  const handleStageChange = (newStage: LeadStage) => {
-    updateLead.mutate(
-      { id, data: { stage: newStage } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(id) });
-          toast({ title: "Lead stage updated" });
-        }
-      }
-    );
+  const stages = [...(stagesData?.stages ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
+  const currentIndex = stages.findIndex(
+    (s) => (lead.stageKey ? s.key === lead.stageKey : s.key === lead.stage)
+  );
+  const wonStage = stages.find((s) => s.isWon);
+
+  const email = (lead.contactEmail ?? contact?.email) || null;
+  const phone = (contact?.mobile ?? contact?.officePhone) || null;
+  const jobTitle = contact?.jobTitle || null;
+  const company = (lead.contactCompany ?? lead.companyName) || contact?.contactCompany || null;
+  const industry = contact?.industry || null;
+  const website = contact?.website || null;
+  const linkedin = contact?.linkedin || null;
+  const location = contact?.country || contact?.address || null;
+
+  const hasAiData =
+    (contact?.leadScore ?? null) !== null ||
+    !!contact?.leadTemperature ||
+    !!contact?.aiReasoning ||
+    !!contact?.enrichmentSummary ||
+    (contact?.talkingPoints && contact.talkingPoints.length > 0);
+
+  const priorityBadge = () => {
+    if (lead.priority === "high")
+      return (
+        <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
+          High Priority
+        </Badge>
+      );
+    if (lead.priority === "medium")
+      return (
+        <Badge variant="outline" className="text-yellow-700 border-yellow-200 bg-yellow-50">
+          Medium Priority
+        </Badge>
+      );
+    if (lead.priority === "low")
+      return (
+        <Badge variant="outline" className="text-green-700 border-green-200 bg-green-50">
+          Low Priority
+        </Badge>
+      );
+    return null;
   };
-
-  const formatStage = (stage: string) => stage.replace("_", " ");
-
-  // AI Score Mock Data
-  const scoreData = [
-    { name: 'Profile Fit', value: 25, fill: 'hsl(var(--primary))' },
-    { name: 'Engagement', value: 20, fill: 'hsl(var(--chart-2))' },
-    { name: 'Activity', value: 20, fill: 'hsl(var(--chart-3))' },
-    { name: 'Intent', value: 20, fill: 'hsl(var(--chart-4))' },
-  ];
-  const totalScore = 85;
 
   return (
     <div className="space-y-6 pb-12">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation('/admin/leads')} className="rounded-full">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setLocation("/admin/leads")}
+          className="rounded-full"
+        >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight">{lead.contactName || "Unnamed Lead"}</h1>
-            <Badge className="bg-primary/20 text-primary hover:bg-primary/30 border-none px-2.5 py-0.5 text-sm font-bold">
-              Score: {totalScore}
-            </Badge>
-            <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">High Priority</Badge>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-3xl font-bold tracking-tight">
+              {lead.contactName || lead.title || "Unnamed Lead"}
+            </h1>
+            {lead.stageName && (
+              <Badge className="bg-primary/20 text-primary hover:bg-primary/30 border-none px-2.5 py-0.5 text-sm font-medium">
+                {lead.stageName}
+              </Badge>
+            )}
+            {priorityBadge()}
           </div>
-          <div className="text-muted-foreground mt-1 flex items-center gap-2 text-sm">
-            <Building2 className="h-4 w-4" />
-            <span>{lead.contactCompany || "No Company"}</span>
-            <span className="text-border">•</span>
-            <span>Created {format(new Date(lead.createdAt), 'MMM d, yyyy')}</span>
+          <div className="text-muted-foreground mt-1 flex items-center gap-2 text-sm flex-wrap">
+            {company && (
+              <>
+                <Building2 className="h-4 w-4" />
+                <span>{company}</span>
+                <span className="text-border">•</span>
+              </>
+            )}
+            <span>Created {fmtDate(lead.createdAt)}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="border-green-200 text-green-600 hover:bg-green-50 hover:text-green-700 bg-green-50/50">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-5 w-5">
-              <path d="M12.0001 2.40002C6.69614 2.40002 2.40015 6.69602 2.40015 12C2.40015 14.1085 3.08051 16.0594 4.22591 17.6598L3.10915 21.0543L6.65751 19.9806C8.21203 21.0003 10.0465 21.6 12.0001 21.6C17.3041 21.6 21.6001 17.304 21.6001 12C21.6001 6.69602 17.3041 2.40002 12.0001 2.40002ZM17.433 16.3263C17.1895 17.0142 16.2307 17.5647 15.4674 17.7262C14.9351 17.8385 14.237 17.9255 11.6441 16.8504C8.32422 15.4741 6.1856 12.0838 6.02705 11.8741C5.86851 11.6644 4.70881 10.1256 4.70881 8.53321C4.70881 6.94084 5.51862 6.16629 5.86241 5.81643C6.14371 5.53001 6.61111 5.40578 7.05417 5.40578C7.19502 5.40578 7.32357 5.41217 7.43857 5.41829C7.77708 5.4367 7.94632 5.45869 8.16853 5.99266C8.44372 6.65487 9.11545 8.29749 9.19479 8.46083C9.27413 8.62417 9.38006 8.84577 9.27413 9.05581C9.1682 9.26584 9.06249 9.35926 8.90394 9.54589C8.7454 9.73253 8.59218 9.87834 8.43363 10.0884C8.28564 10.2869 8.12151 10.4965 8.30132 10.8055C8.48113 11.1145 9.1102 12.1466 10.0308 12.9669C11.218 14.0249 12.1906 14.3644 12.5292 14.5043C12.7937 14.6142 13.1112 14.5908 13.3121 14.3694C13.5661 14.0895 13.8833 13.6111 14.2113 13.1444C14.4441 13.8117 14.7397 14.0202 15.0136 14.1132C15.2875 14.2062 16.7419 14.9295 17.0329 15.0694C17.3239 15.2093 17.5143 15.2793 17.5884 15.3959C17.6624 15.5125 17.6624 16.0368 17.433 16.3263Z" fill="currentColor"/>
-            </svg>
-          </Button>
-          <Button variant="outline" size="icon"><Phone className="h-4 w-4" /></Button>
-          <Button variant="outline" size="icon"><Mail className="h-4 w-4" /></Button>
-          <Button variant="outline" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-          <div className="h-8 w-px bg-border mx-1"></div>
-          <Button onClick={() => handleStageChange('won' as any)} className="bg-green-600 hover:bg-green-700 text-white">
-            Mark as Won
-          </Button>
+          {wonStage && !stages[currentIndex]?.isWon && (
+            <Button
+              onClick={() => handleStageChange(wonStage.key)}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              Mark as Won
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Card className="shadow-sm">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg">Pipeline Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between relative">
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-secondary rounded-full -z-10"></div>
-                {Object.values(LeadStage).map((stage, index) => {
-                  const stages = Object.values(LeadStage);
-                  const currentIndex = stages.indexOf(lead.stage as any);
-                  const isPast = index <= currentIndex;
-                  const isCurrent = index === currentIndex;
-                  
-                  return (
-                    <div key={stage} className="flex flex-col items-center gap-2 bg-card px-2">
-                      <button 
-                        onClick={() => handleStageChange(stage as any)}
-                        className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-colors ${
-                          isCurrent ? 'border-primary bg-primary text-primary-foreground' : 
-                          isPast ? 'border-primary bg-primary/20 text-primary' : 
-                          'border-border bg-background text-muted-foreground'
-                        }`}
+          {stages.length > 0 && (
+            <Card className="shadow-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Pipeline Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between relative overflow-x-auto">
+                  <div className="absolute left-0 top-[14px] w-full h-1 bg-secondary rounded-full -z-10"></div>
+                  {stages.map((stage, index) => {
+                    const isPast = currentIndex >= 0 && index <= currentIndex;
+                    const isCurrent = index === currentIndex;
+                    return (
+                      <div
+                        key={stage.id}
+                        className="flex flex-col items-center gap-2 bg-card px-2 min-w-[70px]"
                       >
-                        {isPast && !isCurrent ? <CheckCircle2 className="h-4 w-4" /> : <div className="w-2 h-2 rounded-full bg-current" />}
-                      </button>
-                      <span className={`text-[10px] font-medium uppercase tracking-wider ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}>
-                        {formatStage(stage)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+                        <button
+                          onClick={() => handleStageChange(stage.key)}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors ${
+                            isCurrent
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : isPast
+                              ? "border-primary bg-primary/20 text-primary"
+                              : "border-border bg-background text-muted-foreground"
+                          }`}
+                        >
+                          {isPast && !isCurrent ? (
+                            <CheckCircle2 className="h-4 w-4" />
+                          ) : (
+                            <div className="w-2 h-2 rounded-full bg-current" />
+                          )}
+                        </button>
+                        <span
+                          className={`text-[10px] font-medium uppercase tracking-wider text-center ${
+                            isCurrent ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        >
+                          {stage.name}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Tabs defaultValue="overview" className="w-full">
             <TabsList className="w-full justify-start border-b border-border rounded-none h-auto p-0 bg-transparent mb-6">
-              <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Overview</TabsTrigger>
-              <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Notes</TabsTrigger>
-              <TabsTrigger value="activities" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Activities</TabsTrigger>
-              <TabsTrigger value="tasks" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3">Tasks</TabsTrigger>
+              <TabsTrigger
+                value="overview"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+              >
+                Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="notes"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+              >
+                Notes
+              </TabsTrigger>
+              <TabsTrigger
+                value="activities"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+              >
+                Activities
+              </TabsTrigger>
+              <TabsTrigger
+                value="tasks"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3"
+              >
+                Tasks
+              </TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="overview" className="space-y-6 mt-0">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card className="shadow-sm border-border/50">
                   <CardHeader className="pb-3 bg-secondary/30">
                     <CardTitle className="text-base flex items-center gap-2">
-                      <Contact className="h-4 w-4 text-primary" /> Contact Information
+                      <ContactIcon className="h-4 w-4 text-primary" /> Contact Information
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-4 space-y-4">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">Email</p>
-                      <p className="text-sm font-medium">{lead.contactEmail || "jane.doe@example.com"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">Phone</p>
-                      <p className="text-sm font-medium">+1 (555) 123-4567</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">Job Title</p>
-                      <p className="text-sm font-medium">VP of Operations</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">LinkedIn</p>
-                      <a href="#" className="text-sm font-medium text-blue-600 hover:underline flex items-center gap-1">
-                        <Linkedin className="h-3 w-3" /> linkedin.com/in/janedoe
-                      </a>
-                    </div>
+                    {!email && !phone && !jobTitle && !linkedin && (
+                      <p className="text-sm text-muted-foreground">No contact details available.</p>
+                    )}
+                    {email && (
+                      <InfoRow label="Email">
+                        <a href={`mailto:${email}`} className="text-primary hover:underline">
+                          {email}
+                        </a>
+                      </InfoRow>
+                    )}
+                    {phone && (
+                      <InfoRow label="Phone">
+                        <a href={`tel:${phone}`} className="hover:underline">
+                          {phone}
+                        </a>
+                      </InfoRow>
+                    )}
+                    {jobTitle && <InfoRow label="Job Title">{jobTitle}</InfoRow>}
+                    {linkedin && (
+                      <InfoRow label="LinkedIn">
+                        <a
+                          href={linkedin}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-600 hover:underline flex items-center gap-1"
+                        >
+                          <Linkedin className="h-3 w-3" /> {linkedin}
+                        </a>
+                      </InfoRow>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -178,89 +366,47 @@ export default function AdminLeadDetail() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-4 space-y-4">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">Company</p>
-                      <p className="text-sm font-medium">{lead.contactCompany || "Acme Corp"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">Industry</p>
-                      <p className="text-sm font-medium">Software Development</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">Website</p>
-                      <a href="#" className="text-sm font-medium text-blue-600 hover:underline flex items-center gap-1">
-                        <Globe className="h-3 w-3" /> acmecorp.com
-                      </a>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground mb-1">Location</p>
-                      <p className="text-sm font-medium flex items-center gap-1">
-                        <MapPin className="h-3 w-3 text-muted-foreground" /> San Francisco, CA
-                      </p>
-                    </div>
+                    {!company && !industry && !website && !location && (
+                      <p className="text-sm text-muted-foreground">No company details available.</p>
+                    )}
+                    {company && <InfoRow label="Company">{company}</InfoRow>}
+                    {industry && <InfoRow label="Industry">{industry}</InfoRow>}
+                    {website && (
+                      <InfoRow label="Website">
+                        <a
+                          href={website}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-600 hover:underline flex items-center gap-1"
+                        >
+                          <Globe className="h-3 w-3" /> {website}
+                        </a>
+                      </InfoRow>
+                    )}
+                    {location && (
+                      <InfoRow label="Location">
+                        <span className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-muted-foreground" /> {location}
+                        </span>
+                      </InfoRow>
+                    )}
                   </CardContent>
                 </Card>
               </div>
 
-              <Card className="shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-lg">Lead Timeline</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="relative pl-6 border-l border-border space-y-6">
-                    <div className="relative">
-                      <div className="absolute -left-[31px] bg-primary p-1 rounded-full border-4 border-card">
-                        <Mail className="h-3 w-3 text-primary-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Follow-up email sent</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Today at 10:30 AM</p>
-                        <div className="mt-2 text-sm bg-secondary/50 p-3 rounded-md border border-border">
-                          "Hi Jane, it was great meeting you at the expo. I'd love to schedule a quick call to discuss how we can help Acme Corp..."
-                        </div>
-                      </div>
-                    </div>
-                    <div className="relative">
-                      <div className="absolute -left-[31px] bg-chart-2 p-1 rounded-full border-4 border-card">
-                        <CheckCircle2 className="h-3 w-3 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Stage changed to Proposal Sent</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Yesterday at 4:15 PM</p>
-                      </div>
-                    </div>
-                    <div className="relative">
-                      <div className="absolute -left-[31px] bg-chart-4 p-1 rounded-full border-4 border-card">
-                        <CalendarIcon className="h-3 w-3 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Lead captured via Business Card Scan</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Oct 12, 2023 at Tech Expo SF</p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <TimelineCard leadId={id} />
             </TabsContent>
-            
+
             <TabsContent value="notes">
-              <Card>
-                <CardContent className="p-6 text-center text-muted-foreground">
-                  Notes panel coming soon...
-                </CardContent>
-              </Card>
+              <NotesTab leadId={id} />
             </TabsContent>
             <TabsContent value="activities">
-              <Card>
-                <CardContent className="p-6 text-center text-muted-foreground">
-                  Activities panel coming soon...
-                </CardContent>
-              </Card>
+              <ActivitiesTab leadId={id} />
             </TabsContent>
             <TabsContent value="tasks">
               <Card>
-                <CardContent className="p-6 text-center text-muted-foreground">
-                  Tasks panel coming soon...
+                <CardContent className="p-10 text-center text-muted-foreground text-sm">
+                  No tasks. Task management is not available for leads yet.
                 </CardContent>
               </Card>
             </TabsContent>
@@ -268,145 +414,781 @@ export default function AdminLeadDetail() {
         </div>
 
         <div className="space-y-6">
-          {/* AI Insights Panel */}
-          <Card className="shadow-sm border-primary/20 bg-gradient-to-b from-primary/5 to-background">
-            <CardHeader className="pb-3 border-b border-primary/10">
-              <CardTitle className="text-base flex items-center gap-2 text-primary">
-                <Sparkles className="h-4 w-4" /> AI Insights
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4 space-y-5">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Summary</p>
-                <p className="text-sm leading-relaxed">
-                  High-intent lead. Jane expressed strong interest in our automation tools during the Tech Expo. Her company is actively looking to replace their legacy CRM within Q4.
-                </p>
-              </div>
-              
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Interests</p>
-                <div className="flex flex-wrap gap-1.5">
-                  <Badge variant="secondary" className="bg-white dark:bg-black text-xs font-normal">API Integration</Badge>
-                  <Badge variant="secondary" className="bg-white dark:bg-black text-xs font-normal">Team Collaboration</Badge>
-                  <Badge variant="secondary" className="bg-white dark:bg-black text-xs font-normal">Analytics</Badge>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Pain Points</p>
-                <ul className="text-sm space-y-1">
-                  <li className="flex items-start gap-2">
-                    <div className="w-1 h-1 rounded-full bg-destructive mt-1.5 flex-shrink-0" />
-                    <span>Data silos between sales and marketing</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <div className="w-1 h-1 rounded-full bg-destructive mt-1.5 flex-shrink-0" />
-                    <span>Manual data entry taking too much time</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="bg-white dark:bg-black rounded-lg p-3 border border-primary/20 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Recommended Action</p>
-                <p className="text-sm font-medium">Send case study on API Integrations and schedule a technical demo.</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Lead Score Breakdown */}
-          <Card className="shadow-sm">
-            <CardHeader className="pb-0">
-              <CardTitle className="text-base">Lead Score Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center pb-2">
-              <div className="h-[180px] w-full relative mt-2">
-                <div className="absolute inset-0 flex items-center justify-center flex-col">
-                  <span className="text-4xl font-bold">{totalScore}</span>
-                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-widest mt-1">Excellent</span>
-                </div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={scoreData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={65}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {scoreData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip 
-                      formatter={(value: number) => [`${value} pts`, 'Score']}
-                      contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', fontSize: '12px' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="w-full grid grid-cols-2 gap-x-2 gap-y-3 mt-4">
-                {scoreData.map(item => (
-                  <div key={item.name} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.fill }}></div>
-                    <span className="text-xs font-medium text-muted-foreground flex-1">{item.name}</span>
-                    <span className="text-xs font-bold">{item.value}</span>
+          {hasAiData && (
+            <Card className="shadow-sm border-primary/20 bg-gradient-to-b from-primary/5 to-background">
+              <CardHeader className="pb-3 border-b border-primary/10">
+                <CardTitle className="text-base flex items-center gap-2 text-primary">
+                  <Sparkles className="h-4 w-4" /> Lead Intelligence
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-5">
+                {(contact?.leadScore ?? null) !== null && (
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col">
+                      <span className="text-4xl font-bold">{contact?.leadScore}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-widest">
+                        Lead Score
+                      </span>
+                    </div>
+                    {contact?.leadTemperature && (
+                      <Badge variant="secondary" className="capitalize">
+                        {contact.leadTemperature}
+                      </Badge>
+                    )}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                )}
+                {contact?.enrichmentSummary && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Summary
+                    </p>
+                    <p className="text-sm leading-relaxed">{contact.enrichmentSummary}</p>
+                  </div>
+                )}
+                {contact?.aiReasoning && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Reasoning
+                    </p>
+                    <p className="text-sm leading-relaxed">{contact.aiReasoning}</p>
+                  </div>
+                )}
+                {contact?.talkingPoints && contact.talkingPoints.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Talking Points
+                    </p>
+                    <ul className="text-sm space-y-1">
+                      {contact.talkingPoints.map((point, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <div className="w-1 h-1 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Action Cards */}
+          <AssignmentCard lead={lead} leadId={id} />
+
+          <TagsCard leadId={id} />
+
           <Card className="shadow-sm">
             <CardHeader className="pb-3 border-b border-border mb-3">
-              <CardTitle className="text-base">Quick Actions</CardTitle>
+              <CardTitle className="text-base">Deal Details</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <Button variant="outline" className="w-full justify-start h-auto py-3 px-4 border-border hover:bg-secondary/50 hover:border-primary/50 transition-colors">
-                <Send className="h-4 w-4 mr-3 text-muted-foreground" />
-                <div className="text-left">
-                  <div className="text-sm font-medium">Send Email Template</div>
-                  <div className="text-xs text-muted-foreground">Select from saved templates</div>
-                </div>
-              </Button>
-              <Button variant="outline" className="w-full justify-start h-auto py-3 px-4 border-border hover:bg-secondary/50 hover:border-primary/50 transition-colors">
-                <CalendarPlus className="h-4 w-4 mr-3 text-muted-foreground" />
-                <div className="text-left">
-                  <div className="text-sm font-medium">Schedule Meeting</div>
-                  <div className="text-xs text-muted-foreground">Send calendar booking link</div>
-                </div>
-              </Button>
-              <Button variant="outline" className="w-full justify-start h-auto py-3 px-4 border-border hover:bg-secondary/50 hover:border-primary/50 transition-colors">
-                <FileText className="h-4 w-4 mr-3 text-muted-foreground" />
-                <div className="text-left">
-                  <div className="text-sm font-medium">Generate Proposal</div>
-                  <div className="text-xs text-muted-foreground">Create draft from lead data</div>
-                </div>
-              </Button>
-            </CardContent>
-          </Card>
-          
-          <Card className="shadow-sm">
-            <CardHeader className="pb-3 border-b border-border mb-3">
-              <CardTitle className="text-base flex justify-between items-center">
-                Tags
-                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">Edit</Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary" className="font-normal text-xs bg-blue-100 text-blue-800 hover:bg-blue-100">Enterprise</Badge>
-                <Badge variant="secondary" className="font-normal text-xs bg-purple-100 text-purple-800 hover:bg-purple-100">Q4 Target</Badge>
-                <Badge variant="secondary" className="font-normal text-xs bg-orange-100 text-orange-800 hover:bg-orange-100">Tech Expo</Badge>
-                <Badge variant="secondary" className="font-normal text-xs bg-gray-100 text-gray-800 hover:bg-gray-100">Decision Maker</Badge>
-              </div>
+            <CardContent className="space-y-4">
+              {(lead.value ?? null) !== null && (
+                <InfoRow label="Value">
+                  {(lead.currency ?? "") + " "}
+                  {(lead.value ?? 0).toLocaleString()}
+                </InfoRow>
+              )}
+              {(lead.probability ?? null) !== null && (
+                <InfoRow label="Probability">{lead.probability}%</InfoRow>
+              )}
+              {lead.closingDate && (
+                <InfoRow label="Closing Date">{fmtDate(lead.closingDate)}</InfoRow>
+              )}
+              {lead.eventName && <InfoRow label="Source Event">{lead.eventName}</InfoRow>}
+              {(lead.value ?? null) === null &&
+                (lead.probability ?? null) === null &&
+                !lead.closingDate &&
+                !lead.eventName && (
+                  <p className="text-sm text-muted-foreground">No deal details recorded.</p>
+                )}
             </CardContent>
           </Card>
         </div>
       </div>
     </div>
+  );
+}
+
+function TimelineCard({ leadId }: { leadId: number }) {
+  const { data, isLoading } = useGetLeadTimeline(leadId, {
+    query: { enabled: !!leadId, queryKey: getGetLeadTimelineQueryKey(leadId) },
+  });
+
+  const entries = [...(data?.entries ?? [])].sort(
+    (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
+  );
+
+  const iconFor = (kind: string) => {
+    switch (kind) {
+      case "activity":
+      case "meeting":
+        return <MessageSquare className="h-3 w-3 text-primary-foreground" />;
+      case "note":
+        return <FileText className="h-3 w-3 text-primary-foreground" />;
+      case "scan":
+        return <CalendarIcon className="h-3 w-3 text-primary-foreground" />;
+      case "lead_history":
+      case "contact_status":
+        return <CheckCircle2 className="h-3 w-3 text-primary-foreground" />;
+      default:
+        return <Clock className="h-3 w-3 text-primary-foreground" />;
+    }
+  };
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg">Lead Timeline</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading timeline...</p>
+        ) : entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            No timeline activity yet.
+          </p>
+        ) : (
+          <div className="relative pl-6 border-l border-border space-y-6">
+            {entries.map((entry) => (
+              <div key={entry.id} className="relative">
+                <div className="absolute -left-[31px] bg-primary p-1 rounded-full border-4 border-card">
+                  {iconFor(entry.kind)}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">
+                    {entry.title || entry.type || entry.kind.replace("_", " ")}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {fmtDateTime(entry.occurredAt)}
+                    {entry.actorName ? ` • ${entry.actorName}` : ""}
+                  </p>
+                  {entry.body && (
+                    <div className="mt-2 text-sm bg-secondary/50 p-3 rounded-md border border-border">
+                      {entry.body}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function NotesTab({ leadId }: { leadId: number }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data, isLoading } = useListLeadNotes(leadId, {
+    query: { enabled: !!leadId, queryKey: getListLeadNotesQueryKey(leadId) },
+  });
+  const createNote = useCreateLeadNote();
+  const updateNote = useUpdateLeadNote();
+  const deleteNote = useDeleteLeadNote();
+
+  const [body, setBody] = useState("");
+  const [editing, setEditing] = useState<LeadNote | null>(null);
+  const [editBody, setEditBody] = useState("");
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListLeadNotesQueryKey(leadId) });
+
+  const notes = [...(data?.notes ?? [])].sort((a, b) => {
+    if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const handleAdd = () => {
+    if (!body.trim()) return;
+    createNote.mutate(
+      { id: leadId, data: { body: body.trim() } },
+      {
+        onSuccess: () => {
+          setBody("");
+          invalidate();
+          toast({ title: "Note added" });
+        },
+        onError: () => toast({ title: "Could not add note", variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleTogglePin = (note: LeadNote) => {
+    updateNote.mutate(
+      { id: note.id, data: { isPinned: !note.isPinned } },
+      {
+        onSuccess: invalidate,
+        onError: () => toast({ title: "Could not update note", variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleSaveEdit = () => {
+    if (!editing || !editBody.trim()) return;
+    updateNote.mutate(
+      { id: editing.id, data: { body: editBody.trim() } },
+      {
+        onSuccess: () => {
+          setEditing(null);
+          invalidate();
+          toast({ title: "Note updated" });
+        },
+        onError: () => toast({ title: "Could not update note", variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleDelete = (note: LeadNote) => {
+    deleteNote.mutate(
+      { id: note.id },
+      {
+        onSuccess: () => {
+          invalidate();
+          toast({ title: "Note deleted" });
+        },
+        onError: () => toast({ title: "Could not delete note", variant: "destructive" }),
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <Textarea
+            placeholder="Write a note..."
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={3}
+          />
+          <div className="flex justify-end">
+            <Button onClick={handleAdd} disabled={!body.trim() || createNote.isPending}>
+              <Plus className="h-4 w-4 mr-1" /> Add Note
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading notes...</p>
+      ) : notes.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground text-sm">
+            No notes yet.
+          </CardContent>
+        </Card>
+      ) : (
+        notes.map((note) => (
+          <Card key={note.id} className={note.isPinned ? "border-primary/40" : ""}>
+            <CardContent className="p-4">
+              <div className="flex justify-between items-start gap-2">
+                <p className="text-sm whitespace-pre-wrap flex-1">{note.body}</p>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => handleTogglePin(note)}
+                    title={note.isPinned ? "Unpin" : "Pin"}
+                  >
+                    {note.isPinned ? (
+                      <PinOff className="h-3.5 w-3.5" />
+                    ) : (
+                      <Pin className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      setEditing(note);
+                      setEditBody(note.body);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive"
+                    onClick={() => handleDelete(note)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {note.userName ? `${note.userName} • ` : ""}
+                {fmtDateTime(note.createdAt)}
+                {note.isPinned ? " • Pinned" : ""}
+              </p>
+            </CardContent>
+          </Card>
+        ))
+      )}
+
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Note</DialogTitle>
+          </DialogHeader>
+          <Textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={4} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={!editBody.trim()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+const ACTIVITY_TYPES = Object.values(LeadActivityInputType);
+
+function ActivitiesTab({ leadId }: { leadId: number }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data, isLoading } = useListLeadActivities(leadId, {
+    query: { enabled: !!leadId, queryKey: getListLeadActivitiesQueryKey(leadId) },
+  });
+  const createActivity = useCreateLeadActivity();
+  const updateActivity = useUpdateLeadActivity();
+  const deleteActivity = useDeleteLeadActivity();
+
+  const emptyForm = {
+    type: "call" as (typeof ACTIVITY_TYPES)[number],
+    subject: "",
+    body: "",
+    outcome: "",
+    occurredAt: "",
+  };
+  const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState<LeadActivity | null>(null);
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListLeadActivitiesQueryKey(leadId) });
+
+  const activities = [...(data?.activities ?? [])].sort(
+    (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
+  );
+
+  const buildPayload = (f: typeof emptyForm) => ({
+    type: f.type,
+    subject: f.subject.trim() || null,
+    body: f.body.trim() || null,
+    outcome: f.outcome.trim() || null,
+    occurredAt: f.occurredAt ? new Date(f.occurredAt).toISOString() : null,
+  });
+
+  const handleCreate = () => {
+    createActivity.mutate(
+      { id: leadId, data: buildPayload(form) },
+      {
+        onSuccess: () => {
+          setForm(emptyForm);
+          invalidate();
+          toast({ title: "Activity logged" });
+        },
+        onError: () => toast({ title: "Could not log activity", variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleSaveEdit = () => {
+    if (!editing) return;
+    updateActivity.mutate(
+      { id: editing.id, data: buildPayload(form) },
+      {
+        onSuccess: () => {
+          setEditing(null);
+          setForm(emptyForm);
+          invalidate();
+          toast({ title: "Activity updated" });
+        },
+        onError: () => toast({ title: "Could not update activity", variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleDelete = (activity: LeadActivity) => {
+    deleteActivity.mutate(
+      { id: activity.id },
+      {
+        onSuccess: () => {
+          invalidate();
+          toast({ title: "Activity deleted" });
+        },
+        onError: () => toast({ title: "Could not delete activity", variant: "destructive" }),
+      }
+    );
+  };
+
+  const openEdit = (activity: LeadActivity) => {
+    setEditing(activity);
+    setForm({
+      type: (ACTIVITY_TYPES.includes(activity.type as any)
+        ? (activity.type as (typeof ACTIVITY_TYPES)[number])
+        : "other"),
+      subject: activity.subject ?? "",
+      body: activity.body ?? "",
+      outcome: activity.outcome ?? "",
+      occurredAt: activity.occurredAt
+        ? format(parseISO(activity.occurredAt), "yyyy-MM-dd'T'HH:mm")
+        : "",
+    });
+  };
+
+  const FormFields = (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs">Type</Label>
+          <Select
+            value={form.type}
+            onValueChange={(v) => setForm({ ...form, type: v as (typeof ACTIVITY_TYPES)[number] })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ACTIVITY_TYPES.map((t) => (
+                <SelectItem key={t} value={t} className="capitalize">
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Date &amp; Time</Label>
+          <Input
+            type="datetime-local"
+            value={form.occurredAt}
+            onChange={(e) => setForm({ ...form, occurredAt: e.target.value })}
+          />
+        </div>
+      </div>
+      <div>
+        <Label className="text-xs">Subject</Label>
+        <Input
+          value={form.subject}
+          onChange={(e) => setForm({ ...form, subject: e.target.value })}
+          placeholder="Subject"
+        />
+      </div>
+      <div>
+        <Label className="text-xs">Details</Label>
+        <Textarea
+          value={form.body}
+          onChange={(e) => setForm({ ...form, body: e.target.value })}
+          rows={2}
+          placeholder="Details"
+        />
+      </div>
+      <div>
+        <Label className="text-xs">Outcome</Label>
+        <Input
+          value={form.outcome}
+          onChange={(e) => setForm({ ...form, outcome: e.target.value })}
+          placeholder="Outcome"
+        />
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Log Activity</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {FormFields}
+          <div className="flex justify-end">
+            <Button onClick={handleCreate} disabled={createActivity.isPending}>
+              <Plus className="h-4 w-4 mr-1" /> Log Activity
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading activities...</p>
+      ) : activities.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground text-sm">
+            No activities logged yet.
+          </CardContent>
+        </Card>
+      ) : (
+        activities.map((activity) => (
+          <Card key={activity.id}>
+            <CardContent className="p-4">
+              <div className="flex justify-between items-start gap-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="capitalize text-xs">
+                      {activity.type}
+                    </Badge>
+                    {activity.subject && (
+                      <span className="text-sm font-medium">{activity.subject}</span>
+                    )}
+                  </div>
+                  {activity.body && (
+                    <p className="text-sm mt-2 whitespace-pre-wrap">{activity.body}</p>
+                  )}
+                  {activity.outcome && (
+                    <p className="text-xs mt-2">
+                      <span className="text-muted-foreground">Outcome: </span>
+                      {activity.outcome}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {activity.userName ? `${activity.userName} • ` : ""}
+                    {fmtDateTime(activity.occurredAt)}
+                  </p>
+                </div>
+                {activity.source !== "system" && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => openEdit(activity)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive"
+                      onClick={() => handleDelete(activity)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))
+      )}
+
+      <Dialog
+        open={!!editing}
+        onOpenChange={(o) => {
+          if (!o) {
+            setEditing(null);
+            setForm(emptyForm);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Activity</DialogTitle>
+          </DialogHeader>
+          {FormFields}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditing(null);
+                setForm(emptyForm);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function TagsCard({ leadId }: { leadId: number }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: leadTags } = useListLeadTags(leadId, {
+    query: { enabled: !!leadId, queryKey: getListLeadTagsQueryKey(leadId) },
+  });
+  const { data: allTags } = useListTags();
+  const attachTag = useAttachLeadTag();
+  const detachTag = useDetachLeadTag();
+  const [selectedTag, setSelectedTag] = useState("");
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListLeadTagsQueryKey(leadId) });
+
+  const attached = leadTags?.tags ?? [];
+  const attachedIds = new Set(attached.map((t) => t.id));
+  const available = (allTags?.tags ?? []).filter((t) => !attachedIds.has(t.id));
+
+  const handleAttach = () => {
+    const tagId = parseInt(selectedTag, 10);
+    if (!tagId) return;
+    attachTag.mutate(
+      { id: leadId, data: { tagId } },
+      {
+        onSuccess: () => {
+          setSelectedTag("");
+          invalidate();
+        },
+        onError: () => toast({ title: "Could not attach tag", variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleDetach = (tagId: number) => {
+    detachTag.mutate(
+      { id: leadId, tagId },
+      {
+        onSuccess: invalidate,
+        onError: () => toast({ title: "Could not remove tag", variant: "destructive" }),
+      }
+    );
+  };
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="pb-3 border-b border-border mb-3">
+        <CardTitle className="text-base">Tags</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {attached.length === 0 && (
+            <p className="text-sm text-muted-foreground">No tags attached.</p>
+          )}
+          {attached.map((tag) => (
+            <Badge
+              key={tag.id}
+              variant="secondary"
+              className="font-normal text-xs flex items-center gap-1"
+              style={
+                tag.color
+                  ? { backgroundColor: `${tag.color}20`, color: tag.color }
+                  : undefined
+              }
+            >
+              {tag.name}
+              <button onClick={() => handleDetach(tag.id)} className="hover:opacity-70">
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+        {available.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Select value={selectedTag} onValueChange={setSelectedTag}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Add tag..." />
+              </SelectTrigger>
+              <SelectContent>
+                {available.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id.toString()}>
+                    {tag.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={handleAttach} disabled={!selectedTag}>
+              Add
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AssignmentCard({
+  lead,
+  leadId,
+}: {
+  lead: { assignedToId?: number | null; assignedToName?: string | null; teamId?: number | null; teamName?: string | null };
+  leadId: number;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: usersData } = useListUsers({ limit: 200 });
+  const assignLead = useAssignLead();
+  const autoAssign = useAutoAssignLead();
+  const [owner, setOwner] = useState<string>(lead.assignedToId ? lead.assignedToId.toString() : "");
+
+  const users = usersData?.users ?? [];
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(leadId) });
+
+  const handleAssign = (val: string) => {
+    setOwner(val);
+    const assignedToId = val ? parseInt(val, 10) : null;
+    assignLead.mutate(
+      { id: leadId, data: { assignedToId, teamId: lead.teamId ?? null } },
+      {
+        onSuccess: () => {
+          invalidate();
+          toast({ title: "Lead reassigned" });
+        },
+        onError: () => toast({ title: "Could not reassign", variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleAutoAssign = () => {
+    autoAssign.mutate(
+      { id: leadId },
+      {
+        onSuccess: () => {
+          invalidate();
+          toast({ title: "Lead auto-assigned" });
+        },
+        onError: () => toast({ title: "Could not auto-assign", variant: "destructive" }),
+      }
+    );
+  };
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="pb-3 border-b border-border mb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <UserIcon className="h-4 w-4 text-primary" /> Assignment
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground mb-1">Owner</p>
+          <Select value={owner} onValueChange={handleAssign}>
+            <SelectTrigger>
+              <SelectValue placeholder="Unassigned" />
+            </SelectTrigger>
+            <SelectContent>
+              {users.map((u) => (
+                <SelectItem key={u.id} value={u.id.toString()}>
+                  {u.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-muted-foreground mb-1">Team</p>
+          <p className="text-sm font-medium">{lead.teamName || "No team"}</p>
+        </div>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={handleAutoAssign}
+          disabled={autoAssign.isPending}
+        >
+          Auto-assign
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

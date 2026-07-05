@@ -1,4 +1,4 @@
-import { db, leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable } from "@workspace/db";
+import { db, leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable, pipelineStagesTable, teamsTable } from "@workspace/db";
 import { eq, and, count, ne, desc, inArray } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, notDeleted, type Executor } from "./base.js";
@@ -140,4 +140,59 @@ export async function softDelete(id: number, tx?: Executor): Promise<void> {
   };
   if (tx) return run(tx);
   await db.transaction(run);
+}
+
+// ── Configurable-stage + team enrichment lookups (additive).
+export async function stageInfo(stageId: number) {
+  const [r] = await db
+    .select({ id: pipelineStagesTable.id, name: pipelineStagesTable.name, key: pipelineStagesTable.key })
+    .from(pipelineStagesTable)
+    .where(eq(pipelineStagesTable.id, stageId))
+    .limit(1);
+  return r;
+}
+
+export async function stageInfosByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select({ id: pipelineStagesTable.id, name: pipelineStagesTable.name, key: pipelineStagesTable.key })
+    .from(pipelineStagesTable)
+    .where(inArray(pipelineStagesTable.id, ids));
+}
+
+export async function teamName(teamId: number) {
+  const [r] = await db.select({ name: teamsTable.name }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  return r;
+}
+
+export async function teamNamesByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  return db.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable).where(inArray(teamsTable.id, ids));
+}
+
+// Round-robin-by-load auto-assignment: returns the active, non-deleted member of
+// the given team (in the given company) with the fewest OPEN (non-won/lost) leads.
+export async function leastLoadedTeamMember(companyId: number, teamId: number): Promise<number | undefined> {
+  const members = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(and(eq(usersTable.companyId, companyId), eq(usersTable.teamId, teamId), eq(usersTable.isActive, true), notDeleted(usersTable.deletedAt)));
+  if (members.length === 0) return undefined;
+  const counts = await db
+    .select({ assignedToId: leadsTable.assignedToId, total: count() })
+    .from(leadsTable)
+    .where(and(eq(leadsTable.companyId, companyId), notDeleted(leadsTable.deletedAt), ne(leadsTable.stage, "won"), ne(leadsTable.stage, "lost")))
+    .groupBy(leadsTable.assignedToId);
+  const countById = new Map<number, number>();
+  for (const c of counts) if (c.assignedToId != null) countById.set(c.assignedToId, c.total);
+  let best: number | undefined;
+  let bestCount = Infinity;
+  for (const m of members) {
+    const c = countById.get(m.id) ?? 0;
+    if (c < bestCount) {
+      bestCount = c;
+      best = m.id;
+    }
+  }
+  return best;
 }

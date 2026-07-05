@@ -1538,6 +1538,19 @@ export const ListLeadsResponse = zod.object({
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
+  "stageId": zod.number().nullish(),
+  "stageName": zod.string().nullish(),
+  "stageKey": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})).optional(),
   "createdAt": zod.coerce.date(),
   "history": zod.array(zod.object({
   "id": zod.number(),
@@ -1571,7 +1584,9 @@ export const CreateLeadBody = zod.object({
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
-  "eventId": zod.number().nullish()
+  "eventId": zod.number().nullish(),
+  "stageId": zod.number().nullish(),
+  "teamId": zod.number().nullish()
 })
 
 
@@ -1602,6 +1617,19 @@ export const GetLeadResponse = zod.object({
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
+  "stageId": zod.number().nullish(),
+  "stageName": zod.string().nullish(),
+  "stageKey": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})).optional(),
   "createdAt": zod.coerce.date(),
   "history": zod.array(zod.object({
   "id": zod.number(),
@@ -1634,7 +1662,9 @@ export const UpdateLeadBody = zod.object({
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
-  "eventId": zod.number().nullish()
+  "eventId": zod.number().nullish(),
+  "stageId": zod.number().nullish(),
+  "teamId": zod.number().nullish()
 })
 
 export const UpdateLeadResponse = zod.object({
@@ -1657,6 +1687,19 @@ export const UpdateLeadResponse = zod.object({
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
+  "stageId": zod.number().nullish(),
+  "stageName": zod.string().nullish(),
+  "stageKey": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})).optional(),
   "createdAt": zod.coerce.date(),
   "history": zod.array(zod.object({
   "id": zod.number(),
@@ -1710,6 +1753,19 @@ export const GetLeadPipelineResponse = zod.object({
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
+  "stageId": zod.number().nullish(),
+  "stageName": zod.string().nullish(),
+  "stageKey": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})).optional(),
   "createdAt": zod.coerce.date(),
   "history": zod.array(zod.object({
   "id": zod.number(),
@@ -1726,6 +1782,564 @@ export const GetLeadPipelineResponse = zod.object({
   "value": zod.number()
 })),
   "totalValue": zod.number().optional()
+})
+
+
+/**
+ * @summary List configurable pipeline stages
+ */
+export const ListPipelineStagesResponse = zod.object({
+  "stages": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "key": zod.string(),
+  "sortOrder": zod.number(),
+  "isWon": zod.boolean(),
+  "isLost": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "color": zod.string().nullish(),
+  "leadCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Create a pipeline stage
+ */
+export const createPipelineStageBodyIsWonDefault = false;
+export const createPipelineStageBodyIsLostDefault = false;
+
+export const CreatePipelineStageBody = zod.object({
+  "name": zod.string(),
+  "key": zod.string().nullish(),
+  "color": zod.string().nullish(),
+  "isWon": zod.boolean().default(createPipelineStageBodyIsWonDefault),
+  "isLost": zod.boolean().default(createPipelineStageBodyIsLostDefault),
+  "sortOrder": zod.number().nullish()
+})
+
+
+/**
+ * @summary Reorder pipeline stages
+ */
+export const ReorderPipelineStagesBody = zod.object({
+  "order": zod.array(zod.object({
+  "id": zod.number(),
+  "sortOrder": zod.number()
+}))
+})
+
+export const ReorderPipelineStagesResponse = zod.object({
+  "stages": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "key": zod.string(),
+  "sortOrder": zod.number(),
+  "isWon": zod.boolean(),
+  "isLost": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "color": zod.string().nullish(),
+  "leadCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Update a pipeline stage
+ */
+export const UpdatePipelineStageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdatePipelineStageBody = zod.object({
+  "name": zod.string().optional(),
+  "color": zod.string().nullish(),
+  "isWon": zod.boolean().optional(),
+  "isLost": zod.boolean().optional(),
+  "sortOrder": zod.number().optional()
+})
+
+export const UpdatePipelineStageResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "key": zod.string(),
+  "sortOrder": zod.number(),
+  "isWon": zod.boolean(),
+  "isLost": zod.boolean(),
+  "isDefault": zod.boolean(),
+  "color": zod.string().nullish(),
+  "leadCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Delete a pipeline stage
+ */
+export const DeletePipelineStageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeletePipelineStageResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List tags
+ */
+export const ListTagsResponse = zod.object({
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Create a tag
+ */
+export const CreateTagBody = zod.object({
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish()
+})
+
+
+/**
+ * @summary Update a tag
+ */
+export const UpdateTagParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTagBody = zod.object({
+  "name": zod.string().optional(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish()
+})
+
+export const UpdateTagResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Delete a tag
+ */
+export const DeleteTagParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTagResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List activities for a lead
+ */
+export const ListLeadActivitiesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListLeadActivitiesResponse = zod.object({
+  "activities": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "type": zod.string(),
+  "source": zod.enum(['manual', 'system']),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "outcome": zod.string().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Log an activity on a lead
+ */
+export const CreateLeadActivityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CreateLeadActivityBody = zod.object({
+  "type": zod.enum(['call', 'email', 'meeting', 'message', 'other', 'note']),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "outcome": zod.string().nullish(),
+  "occurredAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Update a logged activity
+ */
+export const UpdateLeadActivityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateLeadActivityBody = zod.object({
+  "type": zod.enum(['call', 'email', 'meeting', 'message', 'other', 'note']).optional(),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "outcome": zod.string().nullish(),
+  "occurredAt": zod.coerce.date().nullish()
+})
+
+export const UpdateLeadActivityResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "type": zod.string(),
+  "source": zod.enum(['manual', 'system']),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "outcome": zod.string().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Delete a logged activity
+ */
+export const DeleteLeadActivityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteLeadActivityResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List notes for a lead
+ */
+export const ListLeadNotesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListLeadNotesResponse = zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "body": zod.string(),
+  "isPinned": zod.boolean().optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Add a note to a lead
+ */
+export const CreateLeadNoteParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createLeadNoteBodyIsPinnedDefault = false;
+
+export const CreateLeadNoteBody = zod.object({
+  "body": zod.string(),
+  "isPinned": zod.boolean().default(createLeadNoteBodyIsPinnedDefault)
+})
+
+
+/**
+ * @summary Update a note
+ */
+export const UpdateLeadNoteParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateLeadNoteBody = zod.object({
+  "body": zod.string().optional(),
+  "isPinned": zod.boolean().optional()
+})
+
+export const UpdateLeadNoteResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "body": zod.string(),
+  "isPinned": zod.boolean().optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Delete a note
+ */
+export const DeleteLeadNoteParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteLeadNoteResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary List tags on a lead
+ */
+export const ListLeadTagsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListLeadTagsResponse = zod.object({
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Attach a tag to a lead
+ */
+export const AttachLeadTagParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AttachLeadTagBody = zod.object({
+  "tagId": zod.number()
+})
+
+export const AttachLeadTagResponse = zod.object({
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Detach a tag from a lead
+ */
+export const DetachLeadTagParams = zod.object({
+  "id": zod.coerce.number(),
+  "tagId": zod.coerce.number()
+})
+
+export const DetachLeadTagResponse = zod.object({
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+}))
+})
+
+
+/**
+ * @summary Unified activity timeline for a lead
+ */
+export const GetLeadTimelineParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetLeadTimelineResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['activity', 'note', 'lead_history', 'contact_status', 'follow_up', 'meeting', 'task', 'scan']),
+  "type": zod.string().nullish(),
+  "source": zod.string().nullish(),
+  "title": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "actorId": zod.number().nullish(),
+  "actorName": zod.string().nullish(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Assign a lead to an owner and/or team
+ */
+export const AssignLeadParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AssignLeadBody = zod.object({
+  "assignedToId": zod.number().nullish(),
+  "teamId": zod.number().nullish()
+})
+
+export const AssignLeadResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "contactName": zod.string().nullish(),
+  "contactEmail": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "title": zod.string().nullish(),
+  "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
+  "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "stageId": zod.number().nullish(),
+  "stageName": zod.string().nullish(),
+  "stageKey": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})).optional(),
+  "createdAt": zod.coerce.date(),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "leadId": zod.number(),
+  "changedBy": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "fieldName": zod.string(),
+  "oldValue": zod.string().nullish(),
+  "newValue": zod.string().nullish(),
+  "changedAt": zod.coerce.date()
+})).optional()
+})
+
+
+/**
+ * @summary Auto-assign a lead to the least-loaded member of its team
+ */
+export const AutoAssignLeadParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AutoAssignLeadResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "contactName": zod.string().nullish(),
+  "contactEmail": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled']),
+  "title": zod.string().nullish(),
+  "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
+  "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "stageId": zod.number().nullish(),
+  "stageName": zod.string().nullish(),
+  "stageKey": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})).optional(),
+  "createdAt": zod.coerce.date(),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "leadId": zod.number(),
+  "changedBy": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "fieldName": zod.string(),
+  "oldValue": zod.string().nullish(),
+  "newValue": zod.string().nullish(),
+  "changedAt": zod.coerce.date()
+})).optional()
+})
+
+
+/**
+ * @summary Unified customer timeline for a contact
+ */
+export const GetContactTimelineParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetContactTimelineResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['activity', 'note', 'lead_history', 'contact_status', 'follow_up', 'meeting', 'task', 'scan']),
+  "type": zod.string().nullish(),
+  "source": zod.string().nullish(),
+  "title": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "actorId": zod.number().nullish(),
+  "actorName": zod.string().nullish(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date()
+}))
 })
 
 

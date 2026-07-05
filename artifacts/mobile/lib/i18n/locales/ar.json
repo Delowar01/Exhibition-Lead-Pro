@@ -458,6 +458,57 @@
       "by": "بواسطة",
       "to": "←"
     },
+    "team": "الفريق",
+    "noTeam": "لا يوجد فريق",
+    "logActivity": "تسجيل نشاط",
+    "timeline": {
+      "title": "سجل النشاطات",
+      "empty": "لا يوجد نشاط بعد",
+      "kinds": {
+        "activity": "نشاط",
+        "note": "ملاحظة",
+        "lead_history": "تحديث",
+        "contact_status": "تغيير الحالة",
+        "follow_up": "متابعة",
+        "meeting": "اجتماع",
+        "task": "مهمة",
+        "scan": "مسح"
+      }
+    },
+    "notesSection": {
+      "title": "الملاحظات",
+      "empty": "لا توجد ملاحظات بعد",
+      "placeholder": "اكتب ملاحظة…",
+      "add": "إضافة ملاحظة",
+      "failed": "فشل إضافة الملاحظة"
+    },
+    "tagsSection": {
+      "title": "الوسوم",
+      "empty": "لا توجد وسوم بعد",
+      "add": "إضافة وسم",
+      "select": "اختر وسماً",
+      "none": "لا توجد وسوم متاحة",
+      "allAttached": "تمت إضافة جميع الوسوم",
+      "failed": "فشل تحديث الوسوم"
+    },
+    "activity": {
+      "title": "تسجيل نشاط",
+      "type": "النوع",
+      "subject": "الموضوع",
+      "subjectPlaceholder": "موضوع اختياري",
+      "body": "التفاصيل",
+      "bodyPlaceholder": "ماذا حدث؟",
+      "submit": "تسجيل النشاط",
+      "failed": "فشل تسجيل النشاط",
+      "types": {
+        "call": "مكالمة",
+        "email": "بريد إلكتروني",
+        "meeting": "اجتماع",
+        "message": "رسالة",
+        "note": "ملاحظة",
+        "other": "أخرى"
+      }
+    },
     "probability0": "0%",
     "noClosingDate": "لا يوجد تاريخ إغلاق",
     "noPriority": "لا أولوية",

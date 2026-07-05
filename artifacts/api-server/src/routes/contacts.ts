@@ -4,6 +4,7 @@ import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody } from "@workspace/api-zod";
 import * as contacts from "../services/contacts.service.js";
+import * as timeline from "../services/timeline.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -64,6 +65,11 @@ router.post("/contacts/:id/enrich", requirePermission("contacts", "edit"), async
 // GET /contacts/:id/status-history — lead status change history
 router.get("/contacts/:id/status-history", async (req: AuthRequest, res) => {
   res.json(await contacts.statusHistory(req.user!, parseInt(String(req.params.id))));
+});
+
+// GET /contacts/:id/timeline — aggregated activity + note timeline for the contact
+router.get("/contacts/:id/timeline", async (req: AuthRequest, res) => {
+  res.json(await timeline.contactTimeline(req.user!, parseInt(String(req.params.id))));
 });
 
 export default router;

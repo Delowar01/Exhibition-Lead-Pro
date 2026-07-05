@@ -1615,6 +1615,486 @@ paths:
               schema:
                 $ref: "#/components/schemas/PipelineView"
 
+  # ─── PHASE 3: CRM BACKBONE ───
+  /pipeline/stages:
+    get:
+      operationId: listPipelineStages
+      tags: [pipeline]
+      summary: List configurable pipeline stages
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineStageConfigList"
+    post:
+      operationId: createPipelineStage
+      tags: [pipeline]
+      summary: Create a pipeline stage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineStageConfigInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineStageConfig"
+
+  /pipeline/stages/reorder:
+    post:
+      operationId: reorderPipelineStages
+      tags: [pipeline]
+      summary: Reorder pipeline stages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineStageReorderInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineStageConfigList"
+
+  /pipeline/stages/{id}:
+    patch:
+      operationId: updatePipelineStage
+      tags: [pipeline]
+      summary: Update a pipeline stage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineStageConfigUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineStageConfig"
+    delete:
+      operationId: deletePipelineStage
+      tags: [pipeline]
+      summary: Delete a pipeline stage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /tags:
+    get:
+      operationId: listTags
+      tags: [tags]
+      summary: List tags
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+    post:
+      operationId: createTag
+      tags: [tags]
+      summary: Create a tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+
+  /tags/{id}:
+    patch:
+      operationId: updateTag
+      tags: [tags]
+      summary: Update a tag
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+    delete:
+      operationId: deleteTag
+      tags: [tags]
+      summary: Delete a tag
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /leads/{id}/activities:
+    get:
+      operationId: listLeadActivities
+      tags: [leads]
+      summary: List activities for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadActivityList"
+    post:
+      operationId: createLeadActivity
+      tags: [leads]
+      summary: Log an activity on a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadActivityInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadActivity"
+
+  /activities/{id}:
+    patch:
+      operationId: updateLeadActivity
+      tags: [leads]
+      summary: Update a logged activity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadActivityUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadActivity"
+    delete:
+      operationId: deleteLeadActivity
+      tags: [leads]
+      summary: Delete a logged activity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /leads/{id}/notes:
+    get:
+      operationId: listLeadNotes
+      tags: [leads]
+      summary: List notes for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNoteList"
+    post:
+      operationId: createLeadNote
+      tags: [leads]
+      summary: Add a note to a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadNoteInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNote"
+
+  /notes/{id}:
+    patch:
+      operationId: updateLeadNote
+      tags: [leads]
+      summary: Update a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadNoteUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNote"
+    delete:
+      operationId: deleteLeadNote
+      tags: [leads]
+      summary: Delete a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /leads/{id}/tags:
+    get:
+      operationId: listLeadTags
+      tags: [leads]
+      summary: List tags on a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+    post:
+      operationId: attachLeadTag
+      tags: [leads]
+      summary: Attach a tag to a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachLeadTagInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+
+  /leads/{id}/tags/{tagId}:
+    delete:
+      operationId: detachLeadTag
+      tags: [leads]
+      summary: Detach a tag from a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tagId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+
+  /leads/{id}/timeline:
+    get:
+      operationId: getLeadTimeline
+      tags: [leads]
+      summary: Unified activity timeline for a lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineList"
+
+  /leads/{id}/assign:
+    post:
+      operationId: assignLead
+      tags: [leads]
+      summary: Assign a lead to an owner and/or team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignLeadInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  /leads/{id}/auto-assign:
+    post:
+      operationId: autoAssignLead
+      tags: [leads]
+      summary: Auto-assign a lead to the least-loaded member of its team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+
+  /contacts/{id}/timeline:
+    get:
+      operationId: getContactTimeline
+      tags: [contacts]
+      summary: Unified customer timeline for a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineList"
+
   # EVENTS
   /events:
     get:
@@ -5338,6 +5818,20 @@ components:
           type: ["integer", "null"]
         eventName:
           type: ["string", "null"]
+        stageId:
+          type: ["integer", "null"]
+        stageName:
+          type: ["string", "null"]
+        stageKey:
+          type: ["string", "null"]
+        teamId:
+          type: ["integer", "null"]
+        teamName:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
         createdAt:
           type: string
           format: date-time
@@ -5386,6 +5880,10 @@ components:
           type: ["integer", "null"]
         eventId:
           type: ["integer", "null"]
+        stageId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
 
     LeadUpdate:
       type: object
@@ -5413,6 +5911,10 @@ components:
           type: ["integer", "null"]
         eventId:
           type: ["integer", "null"]
+        stageId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
 
     LeadHistory:
       type: object
@@ -5435,6 +5937,324 @@ components:
         changedAt:
           type: string
           format: date-time
+
+    PipelineStageConfig:
+      type: object
+      required: [id, companyId, name, key, sortOrder, isWon, isLost, isDefault]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        key:
+          type: string
+        sortOrder:
+          type: integer
+        isWon:
+          type: boolean
+        isLost:
+          type: boolean
+        isDefault:
+          type: boolean
+        color:
+          type: ["string", "null"]
+        leadCount:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    PipelineStageConfigList:
+      type: object
+      required: [stages]
+      properties:
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineStageConfig"
+
+    PipelineStageConfigInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        key:
+          type: ["string", "null"]
+        color:
+          type: ["string", "null"]
+        isWon:
+          type: boolean
+          default: false
+        isLost:
+          type: boolean
+          default: false
+        sortOrder:
+          type: ["integer", "null"]
+
+    PipelineStageConfigUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        color:
+          type: ["string", "null"]
+        isWon:
+          type: boolean
+        isLost:
+          type: boolean
+        sortOrder:
+          type: integer
+
+    PipelineStageReorderInput:
+      type: object
+      required: [order]
+      properties:
+        order:
+          type: array
+          items:
+            type: object
+            required: [id, sortOrder]
+            properties:
+              id:
+                type: integer
+              sortOrder:
+                type: integer
+
+    Tag:
+      type: object
+      required: [id, companyId, name]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        color:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    TagList:
+      type: object
+      required: [tags]
+      properties:
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+
+    TagInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        color:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+
+    TagUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        color:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+
+    AttachLeadTagInput:
+      type: object
+      required: [tagId]
+      properties:
+        tagId:
+          type: integer
+
+    LeadActivity:
+      type: object
+      required: [id, companyId, type, source, occurredAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        leadId:
+          type: ["integer", "null"]
+        contactId:
+          type: ["integer", "null"]
+        userId:
+          type: ["integer", "null"]
+        userName:
+          type: ["string", "null"]
+        type:
+          type: string
+        source:
+          type: string
+          enum: [manual, system]
+        subject:
+          type: ["string", "null"]
+        body:
+          type: ["string", "null"]
+        outcome:
+          type: ["string", "null"]
+        metadata: {}
+        occurredAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    LeadActivityList:
+      type: object
+      required: [activities]
+      properties:
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadActivity"
+
+    LeadActivityInput:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [call, email, meeting, message, other, note]
+        subject:
+          type: ["string", "null"]
+        body:
+          type: ["string", "null"]
+        outcome:
+          type: ["string", "null"]
+        occurredAt:
+          type: ["string", "null"]
+          format: date-time
+
+    LeadActivityUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [call, email, meeting, message, other, note]
+        subject:
+          type: ["string", "null"]
+        body:
+          type: ["string", "null"]
+        outcome:
+          type: ["string", "null"]
+        occurredAt:
+          type: ["string", "null"]
+          format: date-time
+
+    LeadNote:
+      type: object
+      required: [id, companyId, leadId, body, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        leadId:
+          type: integer
+        contactId:
+          type: ["integer", "null"]
+        userId:
+          type: ["integer", "null"]
+        userName:
+          type: ["string", "null"]
+        body:
+          type: string
+        isPinned:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    LeadNoteList:
+      type: object
+      required: [notes]
+      properties:
+        notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadNote"
+
+    LeadNoteInput:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+        isPinned:
+          type: boolean
+          default: false
+
+    LeadNoteUpdate:
+      type: object
+      properties:
+        body:
+          type: string
+        isPinned:
+          type: boolean
+
+    AssignLeadInput:
+      type: object
+      properties:
+        assignedToId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
+
+    TimelineEntry:
+      type: object
+      required: [id, kind, occurredAt]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [activity, note, lead_history, contact_status, follow_up, meeting, task, scan]
+        type:
+          type: ["string", "null"]
+        source:
+          type: ["string", "null"]
+        title:
+          type: ["string", "null"]
+        body:
+          type: ["string", "null"]
+        actorId:
+          type: ["integer", "null"]
+        actorName:
+          type: ["string", "null"]
+        leadId:
+          type: ["integer", "null"]
+        contactId:
+          type: ["integer", "null"]
+        metadata: {}
+        occurredAt:
+          type: string
+          format: date-time
+
+    TimelineList:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineEntry"
 
     PipelineView:
       type: object

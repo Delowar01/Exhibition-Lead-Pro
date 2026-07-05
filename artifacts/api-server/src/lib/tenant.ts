@@ -1,4 +1,4 @@
-import { eventsTable, usersTable, contactsTable, departmentsTable, teamsTable } from "@workspace/db";
+import { eventsTable, usersTable, contactsTable, departmentsTable, teamsTable, pipelineStagesTable, tagsTable, leadsTable } from "@workspace/db";
 import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
 import { findCompanyIdById } from "../repositories/base.js";
 
@@ -10,6 +10,9 @@ const REF_TABLES = {
   contacts: { table: contactsTable, idColumn: contactsTable.id, companyColumn: contactsTable.companyId, deletedAtColumn: contactsTable.deletedAt },
   departments: { table: departmentsTable, idColumn: departmentsTable.id, companyColumn: departmentsTable.companyId, deletedAtColumn: departmentsTable.deletedAt },
   teams: { table: teamsTable, idColumn: teamsTable.id, companyColumn: teamsTable.companyId, deletedAtColumn: teamsTable.deletedAt },
+  pipelineStages: { table: pipelineStagesTable, idColumn: pipelineStagesTable.id, companyColumn: pipelineStagesTable.companyId, deletedAtColumn: pipelineStagesTable.deletedAt },
+  tags: { table: tagsTable, idColumn: tagsTable.id, companyColumn: tagsTable.companyId, deletedAtColumn: tagsTable.deletedAt },
+  leads: { table: leadsTable, idColumn: leadsTable.id, companyColumn: leadsTable.companyId, deletedAtColumn: leadsTable.deletedAt },
 } as const;
 
 // Validates that a referenced foreign-key row (event, user, contact) exists AND

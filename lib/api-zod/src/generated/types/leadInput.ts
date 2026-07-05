@@ -31,4 +31,8 @@ export interface LeadInput {
   assignedToId?: number | null;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  stageId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
 }

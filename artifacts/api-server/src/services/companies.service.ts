@@ -2,6 +2,7 @@ import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as companiesRepo from "../repositories/companies.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
+import { ensureStages } from "./pipeline.service.js";
 
 export interface ListCompaniesParams {
   search?: string;
@@ -62,6 +63,8 @@ export async function createCompany(user: AuthUser, input: CompanyInput) {
     userId: user.id,
     userName: user.email,
   });
+  // Seed the default pipeline stages so the new tenant has a working pipeline immediately.
+  await ensureStages(company.id);
   return { ...company, userCount: 0, contactCount: 0, scanCount: 0 };
 }
 

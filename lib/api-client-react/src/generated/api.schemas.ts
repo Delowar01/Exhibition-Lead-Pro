@@ -1512,6 +1512,17 @@ export const LeadPriority = {
   null: 'null',
 } as const;
 
+export interface Tag {
+  id: number;
+  companyId: number;
+  name: string;
+  /** @nullable */
+  color?: string | null;
+  /** @nullable */
+  category?: string | null;
+  createdAt?: string;
+}
+
 export interface LeadHistory {
   id: number;
   leadId: number;
@@ -1563,6 +1574,17 @@ export interface Lead {
   eventId?: number | null;
   /** @nullable */
   eventName?: string | null;
+  /** @nullable */
+  stageId?: number | null;
+  /** @nullable */
+  stageName?: string | null;
+  /** @nullable */
+  stageKey?: string | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  teamName?: string | null;
+  tags?: Tag[];
   createdAt: string;
   history?: LeadHistory[];
 }
@@ -1611,6 +1633,10 @@ export interface LeadInput {
   assignedToId?: number | null;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  stageId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
 }
 
 export type LeadUpdateStage = typeof LeadUpdateStage[keyof typeof LeadUpdateStage];
@@ -1650,6 +1676,247 @@ export interface LeadUpdate {
   assignedToId?: number | null;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  stageId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
+}
+
+export interface PipelineStageConfig {
+  id: number;
+  companyId: number;
+  name: string;
+  key: string;
+  sortOrder: number;
+  isWon: boolean;
+  isLost: boolean;
+  isDefault: boolean;
+  /** @nullable */
+  color?: string | null;
+  /** @nullable */
+  leadCount?: number | null;
+  createdAt?: string;
+}
+
+export interface PipelineStageConfigList {
+  stages: PipelineStageConfig[];
+}
+
+export interface PipelineStageConfigInput {
+  name: string;
+  /** @nullable */
+  key?: string | null;
+  /** @nullable */
+  color?: string | null;
+  isWon?: boolean;
+  isLost?: boolean;
+  /** @nullable */
+  sortOrder?: number | null;
+}
+
+export interface PipelineStageConfigUpdate {
+  name?: string;
+  /** @nullable */
+  color?: string | null;
+  isWon?: boolean;
+  isLost?: boolean;
+  sortOrder?: number;
+}
+
+export type PipelineStageReorderInputOrderItem = {
+  id: number;
+  sortOrder: number;
+};
+
+export interface PipelineStageReorderInput {
+  order: PipelineStageReorderInputOrderItem[];
+}
+
+export interface TagList {
+  tags: Tag[];
+}
+
+export interface TagInput {
+  name: string;
+  /** @nullable */
+  color?: string | null;
+  /** @nullable */
+  category?: string | null;
+}
+
+export interface TagUpdate {
+  name?: string;
+  /** @nullable */
+  color?: string | null;
+  /** @nullable */
+  category?: string | null;
+}
+
+export interface AttachLeadTagInput {
+  tagId: number;
+}
+
+export type LeadActivitySource = typeof LeadActivitySource[keyof typeof LeadActivitySource];
+
+
+export const LeadActivitySource = {
+  manual: 'manual',
+  system: 'system',
+} as const;
+
+export interface LeadActivity {
+  id: number;
+  companyId: number;
+  /** @nullable */
+  leadId?: number | null;
+  /** @nullable */
+  contactId?: number | null;
+  /** @nullable */
+  userId?: number | null;
+  /** @nullable */
+  userName?: string | null;
+  type: string;
+  source: LeadActivitySource;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  body?: string | null;
+  /** @nullable */
+  outcome?: string | null;
+  metadata?: unknown;
+  occurredAt: string;
+  createdAt?: string;
+}
+
+export interface LeadActivityList {
+  activities: LeadActivity[];
+}
+
+export type LeadActivityInputType = typeof LeadActivityInputType[keyof typeof LeadActivityInputType];
+
+
+export const LeadActivityInputType = {
+  call: 'call',
+  email: 'email',
+  meeting: 'meeting',
+  message: 'message',
+  other: 'other',
+  note: 'note',
+} as const;
+
+export interface LeadActivityInput {
+  type: LeadActivityInputType;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  body?: string | null;
+  /** @nullable */
+  outcome?: string | null;
+  /** @nullable */
+  occurredAt?: string | null;
+}
+
+export type LeadActivityUpdateType = typeof LeadActivityUpdateType[keyof typeof LeadActivityUpdateType];
+
+
+export const LeadActivityUpdateType = {
+  call: 'call',
+  email: 'email',
+  meeting: 'meeting',
+  message: 'message',
+  other: 'other',
+  note: 'note',
+} as const;
+
+export interface LeadActivityUpdate {
+  type?: LeadActivityUpdateType;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  body?: string | null;
+  /** @nullable */
+  outcome?: string | null;
+  /** @nullable */
+  occurredAt?: string | null;
+}
+
+export interface LeadNote {
+  id: number;
+  companyId: number;
+  leadId: number;
+  /** @nullable */
+  contactId?: number | null;
+  /** @nullable */
+  userId?: number | null;
+  /** @nullable */
+  userName?: string | null;
+  body: string;
+  isPinned?: boolean;
+  createdAt: string;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export interface LeadNoteList {
+  notes: LeadNote[];
+}
+
+export interface LeadNoteInput {
+  body: string;
+  isPinned?: boolean;
+}
+
+export interface LeadNoteUpdate {
+  body?: string;
+  isPinned?: boolean;
+}
+
+export interface AssignLeadInput {
+  /** @nullable */
+  assignedToId?: number | null;
+  /** @nullable */
+  teamId?: number | null;
+}
+
+export type TimelineEntryKind = typeof TimelineEntryKind[keyof typeof TimelineEntryKind];
+
+
+export const TimelineEntryKind = {
+  activity: 'activity',
+  note: 'note',
+  lead_history: 'lead_history',
+  contact_status: 'contact_status',
+  follow_up: 'follow_up',
+  meeting: 'meeting',
+  task: 'task',
+  scan: 'scan',
+} as const;
+
+export interface TimelineEntry {
+  id: string;
+  kind: TimelineEntryKind;
+  /** @nullable */
+  type?: string | null;
+  /** @nullable */
+  source?: string | null;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  body?: string | null;
+  /** @nullable */
+  actorId?: number | null;
+  /** @nullable */
+  actorName?: string | null;
+  /** @nullable */
+  leadId?: number | null;
+  /** @nullable */
+  contactId?: number | null;
+  metadata?: unknown;
+  occurredAt: string;
+}
+
+export interface TimelineList {
+  entries: TimelineEntry[];
 }
 
 export interface PipelineStage {

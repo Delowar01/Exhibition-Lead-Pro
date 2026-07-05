@@ -8,6 +8,7 @@
 import type { LeadHistory } from './leadHistory';
 import type { LeadPriority } from './leadPriority';
 import type { LeadStage } from './leadStage';
+import type { Tag } from './tag';
 
 export interface Lead {
   id: number;
@@ -45,6 +46,17 @@ export interface Lead {
   eventId?: number | null;
   /** @nullable */
   eventName?: string | null;
+  /** @nullable */
+  stageId?: number | null;
+  /** @nullable */
+  stageName?: string | null;
+  /** @nullable */
+  stageKey?: string | null;
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  teamName?: string | null;
+  tags?: Tag[];
   createdAt: Date;
   history?: LeadHistory[];
 }
