@@ -8,6 +8,7 @@ import {
   hashBackupCode,
   verifyTotp,
 } from "../src/lib/mfa.js";
+import { neutralizeCell } from "../src/lib/export-generate.js";
 
 // Pure-function unit coverage (no DB, no live API). These lock the input-normalization
 // and crypto/MFA seams that the integration suites exercise only indirectly.
@@ -154,5 +155,26 @@ describe("mfa backup codes + TOTP guard", () => {
     expect(await verifyTotp(secret, "1234567")).toBe(false);
     // A well-formed but (almost certainly) wrong code still resolves to a boolean.
     expect(typeof (await verifyTotp(secret, "000000"))).toBe("boolean");
+  });
+});
+
+describe("neutralizeCell — CSV/Excel formula injection defense", () => {
+  it("prefixes a single quote to cells that begin with a formula trigger", () => {
+    expect(neutralizeCell("=1+1")).toBe("'=1+1");
+    expect(neutralizeCell("+cmd")).toBe("'+cmd");
+    expect(neutralizeCell("-2")).toBe("'-2");
+    expect(neutralizeCell("@SUM(A1)")).toBe("'@SUM(A1)");
+    expect(neutralizeCell("\t=1")).toBe("'\t=1");
+    expect(neutralizeCell("\r=1")).toBe("'\r=1");
+    // The classic exfiltration payload must be neutralized, not executed.
+    expect(neutralizeCell('=HYPERLINK("http://evil","x")')).toBe('\'=HYPERLINK("http://evil","x")');
+  });
+
+  it("leaves ordinary values untouched", () => {
+    expect(neutralizeCell("John Doe")).toBe("John Doe");
+    expect(neutralizeCell("john@example.com")).toBe("john@example.com");
+    expect(neutralizeCell("Acme, Inc. (2 + 2)")).toBe("Acme, Inc. (2 + 2)");
+    expect(neutralizeCell("")).toBe("");
+    expect(neutralizeCell("123")).toBe("123");
   });
 });

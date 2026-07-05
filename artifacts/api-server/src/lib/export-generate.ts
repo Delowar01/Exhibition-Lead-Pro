@@ -58,8 +58,17 @@ export function contentType(format: ExportFormat, encrypted: boolean): string {
   return encrypted ? "application/zip" : BASE_MIME[format];
 }
 
+// CSV/Excel formula injection defense: spreadsheet apps evaluate a cell whose
+// text begins with = + - @ (or a leading tab/CR) as a formula. Since exported
+// values are user-controlled (names, notes, company, etc.), prefix any such
+// value with a single quote so it renders as literal text instead of executing.
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+export function neutralizeCell(v: string): string {
+  return typeof v === "string" && FORMULA_TRIGGER.test(v) ? `'${v}` : v;
+}
+
 function generateSpreadsheet(input: GenerateInput, bookType: "csv" | "xlsx"): Buffer {
-  const aoa = [input.columns, ...input.rows];
+  const aoa = [input.columns, ...input.rows.map((row) => row.map(neutralizeCell))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Export");

@@ -13,8 +13,10 @@ router.use(requireAuth);
 router.use("/imports", requireTenantUser);
 
 // The write module for permission checks depends on the payload's entityType.
-// preview/validate are non-persisting (no create permission needed); commit
-// writes contacts/leads and is gated on that module's create permission.
+// The whole import flow is gated on the target module's create permission: even
+// preview/validate are non-persisting, validate runs duplicate detection that
+// reveals which contacts/leads already exist in the tenant, so all three
+// endpoints require the same create permission as commit.
 function requireImportCreate(req: AuthRequest, res: import("express").Response, next: import("express").NextFunction) {
   const module = req.body?.entityType === "lead" ? "leads" : "contacts";
   return requirePermission(module, "create")(req, res, next);
@@ -23,13 +25,13 @@ function requireImportCreate(req: AuthRequest, res: import("express").Response, 
 // POST /imports/preview — parse an uploaded CSV/Excel file, return its columns,
 // a sample of rows, an auto-mapping to standard + custom fields, and the field
 // catalog. Stateless (nothing persisted).
-router.post("/imports/preview", validateBody(PreviewImportBody), async (req: AuthRequest, res) => {
+router.post("/imports/preview", validateBody(PreviewImportBody), requireImportCreate, async (req: AuthRequest, res) => {
   res.json(await imports.preview(req.user!, req.body ?? {}));
 });
 
 // POST /imports/validate — apply a column→field mapping and return per-row
 // errors + detected duplicates. Stateless (nothing persisted).
-router.post("/imports/validate", validateBody(ValidateImportBody), async (req: AuthRequest, res) => {
+router.post("/imports/validate", validateBody(ValidateImportBody), requireImportCreate, async (req: AuthRequest, res) => {
   res.json(await imports.validate(req.user!, req.body ?? {}));
 });
 
