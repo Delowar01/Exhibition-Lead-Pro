@@ -155,3 +155,9 @@ id = "EsHp-8jI4rY10ZteNTgP5"
 uri = "file://docs/reports/STAGE_4_REPORT.md"
 type = "text"
 title = "Stage 4 — Completion Report"
+
+[[outputs]]
+id = "U6Ces69gsPStp1CPjheR-"
+uri = "file://docs/STAGE_5_AI_ROADMAP.md"
+type = "text"
+title = "Stage 5 — Enterprise AI Master Roadmap"
