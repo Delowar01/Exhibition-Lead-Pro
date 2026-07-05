@@ -27,6 +27,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { DateTimeField } from "@/components/DateTimeField";
+import { ExportSheet } from "@/components/ExportSheet";
 import {
   Avatar,
   Badge,
@@ -39,6 +40,8 @@ import {
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
+import { useAuth } from "@/contexts/AuthContext";
+import { canExport } from "@/lib/export-permissions";
 import {
   DEFAULT_CONTACT_FILTERS,
   type ContactFilters,
@@ -158,6 +161,9 @@ export default function ContactsScreen() {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const { user } = useAuth();
+  const showExport = canExport(user);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300);
@@ -333,9 +339,20 @@ export default function ContactsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20 }}>
-        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
-          {t("contacts.title")}
-        </Text>
+        <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between" }}>
+          <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
+            {t("contacts.title")}
+          </Text>
+          {showExport && (
+            <Pressable
+              onPress={() => setExportOpen(true)}
+              hitSlop={10}
+              style={[styles.headerExportBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="share" size={18} color={colors.foreground} />
+            </Pressable>
+          )}
+        </View>
 
         {/* Dashboard widgets — 2-row 4-column grid */}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7, paddingVertical: 8 }}>
@@ -494,6 +511,20 @@ export default function ContactsScreen() {
         onApply={(f) => {
           setContactFilters(f);
           setSheetOpen(false);
+        }}
+      />
+      <ExportSheet
+        visible={exportOpen}
+        onClose={() => setExportOpen(false)}
+        entityType="contact"
+        filters={{
+          search: debounced || undefined,
+          status: filters.status ?? undefined,
+          temperature: filters.temperature ?? undefined,
+          eventId: filters.eventId ?? undefined,
+          dateFrom: filters.dateFrom ?? undefined,
+          dateTo: filters.dateTo ?? undefined,
+          sort: filters.sort ?? undefined,
         }}
       />
     </View>
@@ -678,6 +709,14 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 30,
     fontFamily: FONT.bold,
+  },
+  headerExportBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   widget: {
     paddingHorizontal: 8,

@@ -100,6 +100,12 @@ async function buildAll() {
       "puppeteer",
       "puppeteer-core",
       "electron",
+      // pdfkit reads sibling .afm font metric files at runtime; archiver +
+      // archiver-zip-encrypted resolve internal modules dynamically. Bundling
+      // them breaks that path traversal — keep them as external direct deps.
+      "pdfkit",
+      "archiver",
+      "archiver-zip-encrypted",
     ],
     sourcemap: "linked",
     plugins: [

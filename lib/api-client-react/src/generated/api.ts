@@ -70,6 +70,15 @@ import type {
   EventReport,
   EventStats,
   EventUpdate,
+  ExportCreateInput,
+  ExportDownloadResponse,
+  ExportRunList,
+  ExportRunWithUrl,
+  ExportSchedule,
+  ExportScheduleDeleteResponse,
+  ExportScheduleInput,
+  ExportScheduleList,
+  ExportScheduleUpdate,
   FollowUp,
   FollowUpInput,
   FollowUpList,
@@ -86,6 +95,12 @@ import type {
   GetTeamAnalyticsParams,
   GetTeamMemberReportParams,
   HealthStatus,
+  ImportCommitInput,
+  ImportCommitResult,
+  ImportPreviewInput,
+  ImportPreviewResult,
+  ImportValidateInput,
+  ImportValidateResult,
   InvitationListResponse,
   InvitationResponse,
   Lead,
@@ -14329,6 +14344,804 @@ export function useGetDocumentVersionDownloadUrl<TData = Awaited<ReturnType<type
 
 
 
+
+export const getPreviewImportUrl = () => {
+
+
+
+
+  return `/api/imports/preview`
+}
+
+/**
+ * @summary Parse an uploaded CSV/Excel file and return columns, a sample, an auto-mapping, and the field catalog
+ */
+export const previewImport = async (importPreviewInput: ImportPreviewInput, options?: RequestInit): Promise<ImportPreviewResult> => {
+
+  return customFetch<ImportPreviewResult>(getPreviewImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      importPreviewInput,)
+  }
+);}
+
+
+
+
+export const getPreviewImportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewImport>>, TError,{data: BodyType<ImportPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewImport>>, TError,{data: BodyType<ImportPreviewInput>}, TContext> => {
+
+const mutationKey = ['previewImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewImport>>, {data: BodyType<ImportPreviewInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewImportMutationResult = NonNullable<Awaited<ReturnType<typeof previewImport>>>
+    export type PreviewImportMutationBody = BodyType<ImportPreviewInput>
+    export type PreviewImportMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Parse an uploaded CSV/Excel file and return columns, a sample, an auto-mapping, and the field catalog
+ */
+export const usePreviewImport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewImport>>, TError,{data: BodyType<ImportPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewImport>>,
+        TError,
+        {data: BodyType<ImportPreviewInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewImportMutationOptions(options));
+    }
+
+export const getValidateImportUrl = () => {
+
+
+
+
+  return `/api/imports/validate`
+}
+
+/**
+ * @summary Apply a column-to-field mapping and return per-row errors and detected duplicates (stateless)
+ */
+export const validateImport = async (importValidateInput: ImportValidateInput, options?: RequestInit): Promise<ImportValidateResult> => {
+
+  return customFetch<ImportValidateResult>(getValidateImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      importValidateInput,)
+  }
+);}
+
+
+
+
+export const getValidateImportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateImport>>, TError,{data: BodyType<ImportValidateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof validateImport>>, TError,{data: BodyType<ImportValidateInput>}, TContext> => {
+
+const mutationKey = ['validateImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof validateImport>>, {data: BodyType<ImportValidateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  validateImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ValidateImportMutationResult = NonNullable<Awaited<ReturnType<typeof validateImport>>>
+    export type ValidateImportMutationBody = BodyType<ImportValidateInput>
+    export type ValidateImportMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Apply a column-to-field mapping and return per-row errors and detected duplicates (stateless)
+ */
+export const useValidateImport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateImport>>, TError,{data: BodyType<ImportValidateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof validateImport>>,
+        TError,
+        {data: BodyType<ImportValidateInput>},
+        TContext
+      > => {
+      return useMutation(getValidateImportMutationOptions(options));
+    }
+
+export const getCommitImportUrl = () => {
+
+
+
+
+  return `/api/imports/commit`
+}
+
+/**
+ * @summary Transactionally bulk-insert the mapped rows
+ */
+export const commitImport = async (importCommitInput: ImportCommitInput, options?: RequestInit): Promise<ImportCommitResult> => {
+
+  return customFetch<ImportCommitResult>(getCommitImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      importCommitInput,)
+  }
+);}
+
+
+
+
+export const getCommitImportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitImport>>, TError,{data: BodyType<ImportCommitInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof commitImport>>, TError,{data: BodyType<ImportCommitInput>}, TContext> => {
+
+const mutationKey = ['commitImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitImport>>, {data: BodyType<ImportCommitInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  commitImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CommitImportMutationResult = NonNullable<Awaited<ReturnType<typeof commitImport>>>
+    export type CommitImportMutationBody = BodyType<ImportCommitInput>
+    export type CommitImportMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Transactionally bulk-insert the mapped rows
+ */
+export const useCommitImport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitImport>>, TError,{data: BodyType<ImportCommitInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof commitImport>>,
+        TError,
+        {data: BodyType<ImportCommitInput>},
+        TContext
+      > => {
+      return useMutation(getCommitImportMutationOptions(options));
+    }
+
+export const getCreateExportUrl = () => {
+
+
+
+
+  return `/api/exports`
+}
+
+/**
+ * @summary Generate an on-demand export and return its run plus a signed download URL
+ */
+export const createExport = async (exportCreateInput: ExportCreateInput, options?: RequestInit): Promise<ExportRunWithUrl> => {
+
+  return customFetch<ExportRunWithUrl>(getCreateExportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      exportCreateInput,)
+  }
+);}
+
+
+
+
+export const getCreateExportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createExport>>, TError,{data: BodyType<ExportCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createExport>>, TError,{data: BodyType<ExportCreateInput>}, TContext> => {
+
+const mutationKey = ['createExport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createExport>>, {data: BodyType<ExportCreateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createExport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateExportMutationResult = NonNullable<Awaited<ReturnType<typeof createExport>>>
+    export type CreateExportMutationBody = BodyType<ExportCreateInput>
+    export type CreateExportMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Generate an on-demand export and return its run plus a signed download URL
+ */
+export const useCreateExport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createExport>>, TError,{data: BodyType<ExportCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createExport>>,
+        TError,
+        {data: BodyType<ExportCreateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateExportMutationOptions(options));
+    }
+
+export const getListExportRunsUrl = () => {
+
+
+
+
+  return `/api/exports/runs`
+}
+
+/**
+ * @summary List past export runs (on-demand and scheduled)
+ */
+export const listExportRuns = async ( options?: RequestInit): Promise<ExportRunList> => {
+
+  return customFetch<ExportRunList>(getListExportRunsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListExportRunsQueryKey = () => {
+    return [
+    `/api/exports/runs`
+    ] as const;
+    }
+
+
+export const getListExportRunsQueryOptions = <TData = Awaited<ReturnType<typeof listExportRuns>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListExportRunsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listExportRuns>>> = ({ signal }) => listExportRuns({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listExportRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListExportRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listExportRuns>>>
+export type ListExportRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List past export runs (on-demand and scheduled)
+ */
+
+export function useListExportRuns<TData = Awaited<ReturnType<typeof listExportRuns>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListExportRunsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetExportRunDownloadUrlUrl = (id: number,) => {
+
+
+
+
+  return `/api/exports/runs/${id}/download`
+}
+
+/**
+ * @summary Get a signed download URL for a completed export run
+ */
+export const getExportRunDownloadUrl = async (id: number, options?: RequestInit): Promise<ExportDownloadResponse> => {
+
+  return customFetch<ExportDownloadResponse>(getGetExportRunDownloadUrlUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetExportRunDownloadUrlQueryKey = (id: number,) => {
+    return [
+    `/api/exports/runs/${id}/download`
+    ] as const;
+    }
+
+
+export const getGetExportRunDownloadUrlQueryOptions = <TData = Awaited<ReturnType<typeof getExportRunDownloadUrl>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getExportRunDownloadUrl>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetExportRunDownloadUrlQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getExportRunDownloadUrl>>> = ({ signal }) => getExportRunDownloadUrl(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getExportRunDownloadUrl>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetExportRunDownloadUrlQueryResult = NonNullable<Awaited<ReturnType<typeof getExportRunDownloadUrl>>>
+export type GetExportRunDownloadUrlQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a signed download URL for a completed export run
+ */
+
+export function useGetExportRunDownloadUrl<TData = Awaited<ReturnType<typeof getExportRunDownloadUrl>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getExportRunDownloadUrl>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetExportRunDownloadUrlQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListExportSchedulesUrl = () => {
+
+
+
+
+  return `/api/exports/schedules`
+}
+
+/**
+ * @summary List export schedules
+ */
+export const listExportSchedules = async ( options?: RequestInit): Promise<ExportScheduleList> => {
+
+  return customFetch<ExportScheduleList>(getListExportSchedulesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListExportSchedulesQueryKey = () => {
+    return [
+    `/api/exports/schedules`
+    ] as const;
+    }
+
+
+export const getListExportSchedulesQueryOptions = <TData = Awaited<ReturnType<typeof listExportSchedules>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportSchedules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListExportSchedulesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listExportSchedules>>> = ({ signal }) => listExportSchedules({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listExportSchedules>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListExportSchedulesQueryResult = NonNullable<Awaited<ReturnType<typeof listExportSchedules>>>
+export type ListExportSchedulesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List export schedules
+ */
+
+export function useListExportSchedules<TData = Awaited<ReturnType<typeof listExportSchedules>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportSchedules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListExportSchedulesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateExportScheduleUrl = () => {
+
+
+
+
+  return `/api/exports/schedules`
+}
+
+/**
+ * @summary Create a recurring export schedule
+ */
+export const createExportSchedule = async (exportScheduleInput: ExportScheduleInput, options?: RequestInit): Promise<ExportSchedule> => {
+
+  return customFetch<ExportSchedule>(getCreateExportScheduleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      exportScheduleInput,)
+  }
+);}
+
+
+
+
+export const getCreateExportScheduleMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createExportSchedule>>, TError,{data: BodyType<ExportScheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createExportSchedule>>, TError,{data: BodyType<ExportScheduleInput>}, TContext> => {
+
+const mutationKey = ['createExportSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createExportSchedule>>, {data: BodyType<ExportScheduleInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createExportSchedule(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateExportScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof createExportSchedule>>>
+    export type CreateExportScheduleMutationBody = BodyType<ExportScheduleInput>
+    export type CreateExportScheduleMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a recurring export schedule
+ */
+export const useCreateExportSchedule = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createExportSchedule>>, TError,{data: BodyType<ExportScheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createExportSchedule>>,
+        TError,
+        {data: BodyType<ExportScheduleInput>},
+        TContext
+      > => {
+      return useMutation(getCreateExportScheduleMutationOptions(options));
+    }
+
+export const getUpdateExportScheduleUrl = (id: number,) => {
+
+
+
+
+  return `/api/exports/schedules/${id}`
+}
+
+/**
+ * @summary Update an export schedule
+ */
+export const updateExportSchedule = async (id: number,
+    exportScheduleUpdate: ExportScheduleUpdate, options?: RequestInit): Promise<ExportSchedule> => {
+
+  return customFetch<ExportSchedule>(getUpdateExportScheduleUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      exportScheduleUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateExportScheduleMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateExportSchedule>>, TError,{id: number;data: BodyType<ExportScheduleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateExportSchedule>>, TError,{id: number;data: BodyType<ExportScheduleUpdate>}, TContext> => {
+
+const mutationKey = ['updateExportSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateExportSchedule>>, {id: number;data: BodyType<ExportScheduleUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateExportSchedule(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateExportScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof updateExportSchedule>>>
+    export type UpdateExportScheduleMutationBody = BodyType<ExportScheduleUpdate>
+    export type UpdateExportScheduleMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update an export schedule
+ */
+export const useUpdateExportSchedule = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateExportSchedule>>, TError,{id: number;data: BodyType<ExportScheduleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateExportSchedule>>,
+        TError,
+        {id: number;data: BodyType<ExportScheduleUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateExportScheduleMutationOptions(options));
+    }
+
+export const getDeleteExportScheduleUrl = (id: number,) => {
+
+
+
+
+  return `/api/exports/schedules/${id}`
+}
+
+/**
+ * @summary Delete an export schedule
+ */
+export const deleteExportSchedule = async (id: number, options?: RequestInit): Promise<ExportScheduleDeleteResponse> => {
+
+  return customFetch<ExportScheduleDeleteResponse>(getDeleteExportScheduleUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteExportScheduleMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteExportSchedule>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteExportSchedule>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteExportSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteExportSchedule>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteExportSchedule(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteExportScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof deleteExportSchedule>>>
+
+    export type DeleteExportScheduleMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete an export schedule
+ */
+export const useDeleteExportSchedule = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteExportSchedule>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteExportSchedule>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteExportScheduleMutationOptions(options));
+    }
+
+export const getRunExportScheduleNowUrl = (id: number,) => {
+
+
+
+
+  return `/api/exports/schedules/${id}/run`
+}
+
+/**
+ * @summary Run an export schedule immediately, producing a new run
+ */
+export const runExportScheduleNow = async (id: number, options?: RequestInit): Promise<ExportRunWithUrl> => {
+
+  return customFetch<ExportRunWithUrl>(getRunExportScheduleNowUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRunExportScheduleNowMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runExportScheduleNow>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runExportScheduleNow>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['runExportScheduleNow'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runExportScheduleNow>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  runExportScheduleNow(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunExportScheduleNowMutationResult = NonNullable<Awaited<ReturnType<typeof runExportScheduleNow>>>
+
+    export type RunExportScheduleNowMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Run an export schedule immediately, producing a new run
+ */
+export const useRunExportScheduleNow = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runExportScheduleNow>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runExportScheduleNow>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRunExportScheduleNowMutationOptions(options));
+    }
 
 export const getListCustomFieldDefinitionsUrl = (params?: ListCustomFieldDefinitionsParams,) => {
   const normalizedParams = new URLSearchParams();

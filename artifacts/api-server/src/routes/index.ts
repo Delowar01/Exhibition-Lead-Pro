@@ -29,6 +29,8 @@ import notificationsRouter from "./notifications.js";
 import documentsRouter from "./documents.js";
 import customFieldsRouter from "./custom_fields.js";
 import territoriesRouter from "./territories.js";
+import importsRouter from "./imports.js";
+import exportsRouter from "./exports.js";
 
 const router: IRouter = Router();
 
@@ -47,6 +49,8 @@ router.use(notificationsRouter);
 router.use(documentsRouter);
 router.use(customFieldsRouter);
 router.use(territoriesRouter);
+router.use(importsRouter);
+router.use(exportsRouter);
 router.use(companiesRouter);
 router.use(usersRouter);
 router.use(rbacRouter);

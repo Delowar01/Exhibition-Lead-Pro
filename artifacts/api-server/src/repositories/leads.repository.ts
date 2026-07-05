@@ -118,6 +118,40 @@ export async function insert(values: typeof leadsTable.$inferInsert): Promise<Le
   return row;
 }
 
+// Bulk import: insert many leads atomically (whole batch commits or none).
+// Chunked to stay under Postgres' bound-parameter limit. Returns rows in order.
+export async function bulkInsert(rows: (typeof leadsTable.$inferInsert)[]): Promise<LeadRow[]> {
+  if (rows.length === 0) return [];
+  return db.transaction(async (tx) => {
+    const out: LeadRow[] = [];
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const inserted = await tx.insert(leadsTable).values(rows.slice(i, i + CHUNK)).returning();
+      out.push(...inserted);
+    }
+    return out;
+  });
+}
+
+// Bulk import: resolve existing contacts by normalized email within a company.
+// Returns a map of lowercased email → contactId for linking imported leads to
+// their contacts. Excludes soft-deleted contacts.
+export async function contactIdsByEmails(companyId: number, emails: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (emails.length === 0) return map;
+  const rows = await db
+    .select({ id: contactsTable.id, email: contactsTable.email })
+    .from(contactsTable)
+    .where(and(eq(contactsTable.companyId, companyId), notDeleted(contactsTable.deletedAt), inArray(contactsTable.email, emails)));
+  for (const r of rows) {
+    if (r.email) {
+      const key = r.email.trim().toLowerCase();
+      if (!map.has(key)) map.set(key, r.id);
+    }
+  }
+  return map;
+}
+
 // Atomic update: write any tracked history rows then update the lead.
 export async function updateWithHistory(
   id: number,

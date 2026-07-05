@@ -255,6 +255,56 @@ async function findOriginalContact(
   return null;
 }
 
+export interface DupeCandidateFields {
+  email?: string | null; mobile?: string | null; officePhone?: string | null;
+  fullName?: string | null; firstName?: string | null; lastName?: string | null;
+  contactCompany?: string | null;
+}
+
+// Bulk-import helper: builds an in-memory duplicate matcher over ALL existing
+// originals in a company ONCE (the per-row findOriginalContact would re-query
+// per row — O(N) DB round-trips for an N-row import). Reuses the exact same
+// email / phone / name+company matching rules as findOriginalContact so import
+// dedupe and scan-time dedupe stay consistent. The returned matcher also folds
+// in rows already matched during this import (via `remember`) so two identical
+// rows in the same file collapse to one. Returns the matching original's id or null.
+export async function buildContactDupeMatcher(companyId: number) {
+  const candidates = await contactsRepo.originalCandidates(companyId, -1);
+  const byEmail = new Map<string, number>();
+  const byPhone = new Map<string, number>();
+  const byName = new Map<string, number>();
+  const index = (id: number, fields: DupeCandidateFields) => {
+    const e = normEmail(fields.email ?? null);
+    if (e && !byEmail.has(e)) byEmail.set(e, id);
+    const m = normPhone(fields.mobile ?? null);
+    if (m && !byPhone.has(m)) byPhone.set(m, id);
+    const o = normPhone(fields.officePhone ?? null);
+    if (o && !byPhone.has(o)) byPhone.set(o, id);
+    const fn = (fields.fullName ?? [fields.firstName, fields.lastName].filter(Boolean).join(" ")) || null;
+    const nc = fn ? fn.trim().toLowerCase().replace(/\s+/g, " ") : null;
+    const comp = fields.contactCompany ? fields.contactCompany.trim().toLowerCase().replace(/\s+/g, " ") : null;
+    const n = nc && comp ? `${nc}|${comp}` : null;
+    if (n && !byName.has(n)) byName.set(n, id);
+  };
+  for (const c of candidates) index(c.id, c);
+
+  const match = (fields: DupeCandidateFields): number | null => {
+    const e = normEmail(fields.email ?? null);
+    if (e && byEmail.has(e)) return byEmail.get(e)!;
+    const m = normPhone(fields.mobile ?? null);
+    if (m && byPhone.has(m)) return byPhone.get(m)!;
+    const o = normPhone(fields.officePhone ?? null);
+    if (o && byPhone.has(o)) return byPhone.get(o)!;
+    const fn = (fields.fullName ?? [fields.firstName, fields.lastName].filter(Boolean).join(" ")) || null;
+    const nc = fn ? fn.trim().toLowerCase().replace(/\s+/g, " ") : null;
+    const comp = fields.contactCompany ? fields.contactCompany.trim().toLowerCase().replace(/\s+/g, " ") : null;
+    const n = nc && comp ? `${nc}|${comp}` : null;
+    if (n && byName.has(n)) return byName.get(n)!;
+    return null;
+  };
+  return { match, remember: index };
+}
+
 export async function listDuplicates(user: AuthUser) {
   const allGroups: { matchType: string; matchValue: string; contacts: ReturnType<typeof formatContact>[] }[] = [];
 

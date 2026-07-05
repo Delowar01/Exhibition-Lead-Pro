@@ -1106,5 +1106,19 @@
     "tooManyAttempts": "محاولات فاشلة كثيرة جدًا",
     "tryAgainIn": "حاول مرة أخرى بعد {{seconds}} ثانية، أو استخدم السمات الحيوية",
     "useBiometrics": "استخدام السمات الحيوية"
+  },
+  "exportShare": {
+    "title": "تصدير",
+    "subtitle": "اختر تنسيقًا لمشاركة {{entity}} المُصفّاة.",
+    "contacts": "جهات الاتصال",
+    "leads": "العملاء المحتملون",
+    "exporting": "جارٍ تجهيز التصدير…",
+    "successTitle": "التصدير جاهز",
+    "successShared": "تمت مشاركة {{count}} {{entity}}.",
+    "successBrowser": "تم فتح {{count}} {{entity}} في المتصفح.",
+    "emptyTitle": "لا يوجد ما يُصدَّر",
+    "emptyBody": "لا توجد {{entity}} مطابقة للمرشحات الحالية.",
+    "errorTitle": "فشل التصدير",
+    "errorBody": "تعذّر إنشاء الملف. حاول مرة أخرى."
   }
 }

@@ -6,9 +6,13 @@ import {
   getGetLeadPipelineQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Building2, Calendar as CalendarIcon, GripVertical } from "lucide-react";
+import { Building2, Calendar as CalendarIcon, GripVertical, Download, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+import { ExportDialog } from "@/components/import-export/ExportDialog";
+import { ImportWizard } from "@/components/import-export/ImportWizard";
+import { useImportExportPermissions } from "@/components/import-export/usePermissions";
 
 export default function AdminLeads() {
   const { data: pipeline, isLoading } = useGetLeadPipeline();
@@ -16,9 +20,12 @@ export default function AdminLeads() {
   const updateLead = useUpdateLead();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { canExport, canImportLeads } = useImportExportPermissions();
 
   const [draggedLeadId, setDraggedLeadId] = useState<number | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const handleDragStart = (e: React.DragEvent, leadId: number) => {
     e.dataTransfer.setData("leadId", leadId.toString());
@@ -100,6 +107,20 @@ export default function AdminLeads() {
               ${(pipeline?.totalValue || 0).toLocaleString()}
             </span>
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {canImportLeads && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+          )}
+          {canExport && (
+            <Button variant="outline" onClick={() => setExportOpen(true)}>
+              <Download className="mr-2 h-4 w-4" />
+              Export
+            </Button>
+          )}
         </div>
       </div>
 
@@ -242,6 +263,9 @@ export default function AdminLeads() {
           })}
         </div>
       )}
+
+      <ExportDialog open={exportOpen} onOpenChange={setExportOpen} entityType="lead" filters={{}} />
+      <ImportWizard open={importOpen} onOpenChange={setImportOpen} entityType="lead" />
     </div>
   );
 }

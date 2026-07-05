@@ -409,3 +409,26 @@ export async function setValues(
   await repo.upsertValuesTransaction(companyId, entityType, entityId, resolved);
   return getValues(user, entityType, companyId, entityId);
 }
+
+// ── Bulk-import helpers ──────────────────────────────────────────────────────
+
+// Expose the active custom-field definitions for an entity type so the import
+// mapper can offer them as mappable columns.
+export async function importDefinitions(companyId: number, entityType: EntityType): Promise<CustomFieldDefinitionRow[]> {
+  return repo.definitionsForEntityType(companyId, entityType);
+}
+
+// Non-throwing wrapper around validateValue for the import validate step: returns
+// the normalized value or a human-readable error (never throws). Reuses the exact
+// same type/rule checks the setValues path enforces.
+export function validateImportValue(
+  def: CustomFieldDefinitionRow,
+  raw: string | null,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  try {
+    return { ok: true, value: validateValue(def, raw) };
+  } catch (e) {
+    if (e instanceof AppError) return { ok: false, error: e.message };
+    return { ok: false, error: "invalid value" };
+  }
+}

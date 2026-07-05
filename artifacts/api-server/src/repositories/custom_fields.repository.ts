@@ -153,6 +153,37 @@ export async function valuesForEntity(
   return rows;
 }
 
+// Batch fetch of raw values for many entities of one type (soft-deleted
+// definitions excluded via the join). Used by the Export Center to attach custom
+// field columns to every exported row without an N+1 query. Returns flat rows;
+// the caller groups by entityId + definitionId.
+export async function valuesForEntities(
+  companyId: number,
+  entityType: string,
+  entityIds: number[],
+): Promise<Array<{ entityId: number; definitionId: number; value: string | null }>> {
+  if (entityIds.length === 0) return [];
+  return db
+    .select({
+      entityId: customFieldValuesTable.entityId,
+      definitionId: customFieldValuesTable.definitionId,
+      value: customFieldValuesTable.value,
+    })
+    .from(customFieldValuesTable)
+    .innerJoin(
+      customFieldDefinitionsTable,
+      eq(customFieldValuesTable.definitionId, customFieldDefinitionsTable.id),
+    )
+    .where(
+      and(
+        eq(customFieldValuesTable.companyId, companyId),
+        eq(customFieldValuesTable.entityType, entityType),
+        inArray(customFieldValuesTable.entityId, entityIds),
+        isNull(customFieldDefinitionsTable.deletedAt),
+      ),
+    );
+}
+
 // Upsert a single value (insert or update on the (definitionId, entityId) unique
 // index). A null value clears the field (delete). Runs on the shared pool or a
 // provided tx so the whole set can be atomic.

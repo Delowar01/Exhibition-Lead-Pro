@@ -3207,6 +3207,296 @@ export interface DocumentCategoryCatalog {
   event: string[];
 }
 
+export type ImportPreviewInputEntityType = typeof ImportPreviewInputEntityType[keyof typeof ImportPreviewInputEntityType];
+
+
+export const ImportPreviewInputEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
+export interface ImportPreviewInput {
+  entityType: ImportPreviewInputEntityType;
+  /** Base64-encoded CSV or Excel file (optionally a data URL) */
+  file: string;
+}
+
+export interface ImportFieldOption {
+  key: string;
+  label: string;
+  type: string;
+  required: boolean;
+  custom: boolean;
+}
+
+export type ImportPreviewResultEntityType = typeof ImportPreviewResultEntityType[keyof typeof ImportPreviewResultEntityType];
+
+
+export const ImportPreviewResultEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
+export type ImportPreviewResultSampleRowsItem = {[key: string]: string};
+
+export type ImportPreviewResultInferredMapping = {[key: string]: string | null};
+
+export interface ImportPreviewResult {
+  entityType: ImportPreviewResultEntityType;
+  columns: string[];
+  rowCount: number;
+  sampleRows: ImportPreviewResultSampleRowsItem[];
+  inferredMapping: ImportPreviewResultInferredMapping;
+  availableFields: ImportFieldOption[];
+}
+
+export type ImportValidateInputEntityType = typeof ImportValidateInputEntityType[keyof typeof ImportValidateInputEntityType];
+
+
+export const ImportValidateInputEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
+export type ImportValidateInputMapping = {[key: string]: string | null};
+
+export interface ImportValidateInput {
+  entityType: ImportValidateInputEntityType;
+  file: string;
+  mapping: ImportValidateInputMapping;
+}
+
+export interface ImportRowError {
+  row: number;
+  errors: string[];
+}
+
+export interface ImportDuplicate {
+  row: number;
+  reason: string;
+}
+
+export interface ImportValidateResult {
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  duplicateRows: number;
+  batchErrors: string[];
+  rowErrors: ImportRowError[];
+  duplicates: ImportDuplicate[];
+}
+
+export type ImportCommitInputEntityType = typeof ImportCommitInputEntityType[keyof typeof ImportCommitInputEntityType];
+
+
+export const ImportCommitInputEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
+export type ImportCommitInputMapping = {[key: string]: string | null};
+
+export interface ImportCommitInput {
+  entityType: ImportCommitInputEntityType;
+  file: string;
+  mapping: ImportCommitInputMapping;
+  skipDuplicates?: boolean;
+}
+
+export interface ImportCommitResult {
+  imported: number;
+  skippedDuplicates: number;
+  skippedErrors: number;
+  totalRows: number;
+}
+
+export type ExportCreateInputEntityType = typeof ExportCreateInputEntityType[keyof typeof ExportCreateInputEntityType];
+
+
+export const ExportCreateInputEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
+export type ExportCreateInputFormat = typeof ExportCreateInputFormat[keyof typeof ExportCreateInputFormat];
+
+
+export const ExportCreateInputFormat = {
+  csv: 'csv',
+  excel: 'excel',
+  pdf: 'pdf',
+  json: 'json',
+} as const;
+
+export type ExportCreateInputFilters = { [key: string]: unknown };
+
+export interface ExportCreateInput {
+  entityType: ExportCreateInputEntityType;
+  format: ExportCreateInputFormat;
+  filters?: ExportCreateInputFilters;
+  passwordProtected?: boolean;
+  /** @nullable */
+  password?: string | null;
+}
+
+export type ExportRunStatus = typeof ExportRunStatus[keyof typeof ExportRunStatus];
+
+
+export const ExportRunStatus = {
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface ExportRun {
+  id: number;
+  companyId: number;
+  /** @nullable */
+  scheduleId?: number | null;
+  entityType: string;
+  format: string;
+  status: ExportRunStatus;
+  /** @nullable */
+  fileName?: string | null;
+  /** @nullable */
+  fileSize?: number | null;
+  /** @nullable */
+  rowCount?: number | null;
+  passwordProtected: boolean;
+  /** @nullable */
+  error?: string | null;
+  createdAt: string;
+}
+
+export type ExportRunWithUrl = ExportRun & ({
+  /** @nullable */
+  downloadUrl?: string | null;
+});
+
+export interface ExportRunList {
+  runs: ExportRun[];
+  total: number;
+}
+
+export interface ExportDownloadResponse {
+  url: string;
+  /** @nullable */
+  fileName: string | null;
+}
+
+export type ExportScheduleFilters = { [key: string]: unknown };
+
+export type ExportScheduleFrequency = typeof ExportScheduleFrequency[keyof typeof ExportScheduleFrequency];
+
+
+export const ExportScheduleFrequency = {
+  daily: 'daily',
+  weekly: 'weekly',
+  monthly: 'monthly',
+} as const;
+
+export interface ExportSchedule {
+  id: number;
+  companyId: number;
+  name: string;
+  entityType: string;
+  format: string;
+  filters?: ExportScheduleFilters;
+  frequency: ExportScheduleFrequency;
+  passwordProtected?: boolean;
+  active: boolean;
+  /** @nullable */
+  lastRunAt?: string | null;
+  nextRunAt: string;
+  createdAt: string;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export interface ExportScheduleList {
+  schedules: ExportSchedule[];
+  total: number;
+}
+
+export type ExportScheduleInputEntityType = typeof ExportScheduleInputEntityType[keyof typeof ExportScheduleInputEntityType];
+
+
+export const ExportScheduleInputEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
+export type ExportScheduleInputFormat = typeof ExportScheduleInputFormat[keyof typeof ExportScheduleInputFormat];
+
+
+export const ExportScheduleInputFormat = {
+  csv: 'csv',
+  excel: 'excel',
+  pdf: 'pdf',
+  json: 'json',
+} as const;
+
+export type ExportScheduleInputFrequency = typeof ExportScheduleInputFrequency[keyof typeof ExportScheduleInputFrequency];
+
+
+export const ExportScheduleInputFrequency = {
+  daily: 'daily',
+  weekly: 'weekly',
+  monthly: 'monthly',
+} as const;
+
+export type ExportScheduleInputFilters = { [key: string]: unknown };
+
+export interface ExportScheduleInput {
+  name: string;
+  entityType: ExportScheduleInputEntityType;
+  format: ExportScheduleInputFormat;
+  frequency: ExportScheduleInputFrequency;
+  filters?: ExportScheduleInputFilters;
+  active?: boolean;
+}
+
+export type ExportScheduleUpdateEntityType = typeof ExportScheduleUpdateEntityType[keyof typeof ExportScheduleUpdateEntityType];
+
+
+export const ExportScheduleUpdateEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
+export type ExportScheduleUpdateFormat = typeof ExportScheduleUpdateFormat[keyof typeof ExportScheduleUpdateFormat];
+
+
+export const ExportScheduleUpdateFormat = {
+  csv: 'csv',
+  excel: 'excel',
+  pdf: 'pdf',
+  json: 'json',
+} as const;
+
+export type ExportScheduleUpdateFrequency = typeof ExportScheduleUpdateFrequency[keyof typeof ExportScheduleUpdateFrequency];
+
+
+export const ExportScheduleUpdateFrequency = {
+  daily: 'daily',
+  weekly: 'weekly',
+  monthly: 'monthly',
+} as const;
+
+export type ExportScheduleUpdateFilters = { [key: string]: unknown };
+
+export interface ExportScheduleUpdate {
+  name?: string;
+  entityType?: ExportScheduleUpdateEntityType;
+  format?: ExportScheduleUpdateFormat;
+  frequency?: ExportScheduleUpdateFrequency;
+  filters?: ExportScheduleUpdateFilters;
+  active?: boolean;
+}
+
+export interface ExportScheduleDeleteResponse {
+  success: boolean;
+}
+
 export type CustomFieldDefinitionEntityType = typeof CustomFieldDefinitionEntityType[keyof typeof CustomFieldDefinitionEntityType];
 
 

@@ -168,6 +168,9 @@ export const config = {
       followUpIntervalMs: numEnv("JOBS_FOLLOWUP_INTERVAL_MS", 60 * 60 * 1000, 1_000),
       maintenanceFirstDelayMs: numEnv("JOBS_MAINTENANCE_DELAY_MS", 60_000, 0),
       maintenanceIntervalMs: numEnv("JOBS_MAINTENANCE_INTERVAL_MS", 6 * 60 * 60 * 1000, 1_000),
+      // Scheduled-export sweep: find due export schedules and produce their files.
+      exportFirstDelayMs: numEnv("JOBS_EXPORT_DELAY_MS", 90_000, 0),
+      exportIntervalMs: numEnv("JOBS_EXPORT_INTERVAL_MS", 15 * 60 * 1000, 1_000),
     },
     retention: {
       // Delete read notifications older than this many days (0 disables).

@@ -90,6 +90,22 @@ export async function insert(values: typeof contactsTable.$inferInsert): Promise
   return row;
 }
 
+// Bulk import: insert many contacts atomically (whole batch commits or none).
+// Chunked to keep a single INSERT's parameter count well under Postgres' 65535
+// bound param limit. Returns rows in input order.
+export async function bulkInsert(rows: (typeof contactsTable.$inferInsert)[]): Promise<ContactRow[]> {
+  if (rows.length === 0) return [];
+  return db.transaction(async (tx) => {
+    const out: ContactRow[] = [];
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const inserted = await tx.insert(contactsTable).values(rows.slice(i, i + CHUNK)).returning();
+      out.push(...inserted);
+    }
+    return out;
+  });
+}
+
 export async function insertStatusHistory(values: typeof contactStatusHistoryTable.$inferInsert): Promise<void> {
   await db.insert(contactStatusHistoryTable).values(values);
 }

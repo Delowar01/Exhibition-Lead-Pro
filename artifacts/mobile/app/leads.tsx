@@ -29,9 +29,12 @@ import {
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
+import { ExportSheet } from "@/components/ExportSheet";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
+import { canExport } from "@/lib/export-permissions";
 import { getCountry } from "@/lib/countries";
 import { convertCurrency, formatCurrency } from "@/lib/currency";
 
@@ -107,6 +110,9 @@ export default function LeadsScreen() {
   // Track whether the active filter came from the dashboard so we can show
   // the filter banner. Cleared when the user manually selects a chip.
   const [fromDashboard, setFromDashboard] = useState<boolean>(isValidStage);
+  const [exportOpen, setExportOpen] = useState(false);
+  const { user } = useAuth();
+  const showExport = canExport(user);
 
   const query = useGetLeadPipeline();
 
@@ -206,6 +212,15 @@ export default function LeadsScreen() {
         >
           <Feather name="chevron-left" size={20} color={colors.foreground} />
         </Pressable>
+        {showExport && (
+          <Pressable
+            onPress={() => setExportOpen(true)}
+            hitSlop={10}
+            style={[styles.exportBtn, { backgroundColor: colors.card, borderColor: colors.border, top: topPad + 12, right: isRTL ? undefined : 20, left: isRTL ? 20 : undefined }]}
+          >
+            <Feather name="share" size={18} color={colors.foreground} />
+          </Pressable>
+        )}
         <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("leads.title")}</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
           {formatCurrency(convertedTotalValue, currencyCode)} {t("leads.openValueSuffix")}
@@ -341,6 +356,13 @@ export default function LeadsScreen() {
           </Pressable>
         </>
       )}
+
+      <ExportSheet
+        visible={exportOpen}
+        onClose={() => setExportOpen(false)}
+        entityType="lead"
+        filters={{ stage: activeStage === ALL_STAGE ? undefined : activeStage }}
+      />
     </View>
   );
 }
@@ -354,6 +376,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
+  },
+  exportBtn: {
+    position: "absolute",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
   },
   heading: {
     fontSize: 30,

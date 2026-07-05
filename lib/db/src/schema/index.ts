@@ -38,3 +38,5 @@ export * from "./documents";
 export * from "./custom_fields";
 export * from "./territories";
 export * from "./merge_history";
+export * from "./export_schedules";
+export * from "./export_runs";

@@ -5053,6 +5053,216 @@ export const GetDocumentVersionDownloadUrlResponse = zod.object({
 
 
 /**
+ * @summary Parse an uploaded CSV/Excel file and return columns, a sample, an auto-mapping, and the field catalog
+ */
+export const PreviewImportBody = zod.object({
+  "entityType": zod.enum(['contact', 'lead']),
+  "file": zod.string().describe('Base64-encoded CSV or Excel file (optionally a data URL)')
+})
+
+export const PreviewImportResponse = zod.object({
+  "entityType": zod.enum(['contact', 'lead']),
+  "columns": zod.array(zod.string()),
+  "rowCount": zod.number(),
+  "sampleRows": zod.array(zod.record(zod.string(), zod.string())),
+  "inferredMapping": zod.record(zod.string(), zod.string().nullable()),
+  "availableFields": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "type": zod.string(),
+  "required": zod.boolean(),
+  "custom": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Apply a column-to-field mapping and return per-row errors and detected duplicates (stateless)
+ */
+export const ValidateImportBody = zod.object({
+  "entityType": zod.enum(['contact', 'lead']),
+  "file": zod.string(),
+  "mapping": zod.record(zod.string(), zod.string().nullable())
+})
+
+export const ValidateImportResponse = zod.object({
+  "totalRows": zod.number(),
+  "validRows": zod.number(),
+  "errorRows": zod.number(),
+  "duplicateRows": zod.number(),
+  "batchErrors": zod.array(zod.string()),
+  "rowErrors": zod.array(zod.object({
+  "row": zod.number(),
+  "errors": zod.array(zod.string())
+})),
+  "duplicates": zod.array(zod.object({
+  "row": zod.number(),
+  "reason": zod.string()
+}))
+})
+
+
+/**
+ * @summary Transactionally bulk-insert the mapped rows
+ */
+export const commitImportBodySkipDuplicatesDefault = true;
+
+export const CommitImportBody = zod.object({
+  "entityType": zod.enum(['contact', 'lead']),
+  "file": zod.string(),
+  "mapping": zod.record(zod.string(), zod.string().nullable()),
+  "skipDuplicates": zod.boolean().default(commitImportBodySkipDuplicatesDefault)
+})
+
+export const CommitImportResponse = zod.object({
+  "imported": zod.number(),
+  "skippedDuplicates": zod.number(),
+  "skippedErrors": zod.number(),
+  "totalRows": zod.number()
+})
+
+
+/**
+ * @summary Generate an on-demand export and return its run plus a signed download URL
+ */
+export const createExportBodyPasswordProtectedDefault = false;
+
+export const CreateExportBody = zod.object({
+  "entityType": zod.enum(['contact', 'lead']),
+  "format": zod.enum(['csv', 'excel', 'pdf', 'json']),
+  "filters": zod.record(zod.string(), zod.unknown()).optional(),
+  "passwordProtected": zod.boolean().default(createExportBodyPasswordProtectedDefault),
+  "password": zod.string().nullish()
+})
+
+
+/**
+ * @summary List past export runs (on-demand and scheduled)
+ */
+export const ListExportRunsResponse = zod.object({
+  "runs": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scheduleId": zod.number().nullish(),
+  "entityType": zod.string(),
+  "format": zod.string(),
+  "status": zod.enum(['completed', 'failed']),
+  "fileName": zod.string().nullish(),
+  "fileSize": zod.number().nullish(),
+  "rowCount": zod.number().nullish(),
+  "passwordProtected": zod.boolean(),
+  "error": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Get a signed download URL for a completed export run
+ */
+export const GetExportRunDownloadUrlParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetExportRunDownloadUrlResponse = zod.object({
+  "url": zod.string(),
+  "fileName": zod.string().nullable()
+})
+
+
+/**
+ * @summary List export schedules
+ */
+export const ListExportSchedulesResponse = zod.object({
+  "schedules": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "entityType": zod.string(),
+  "format": zod.string(),
+  "filters": zod.record(zod.string(), zod.unknown()).optional(),
+  "frequency": zod.enum(['daily', 'weekly', 'monthly']),
+  "passwordProtected": zod.boolean().optional(),
+  "active": zod.boolean(),
+  "lastRunAt": zod.coerce.date().nullish(),
+  "nextRunAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Create a recurring export schedule
+ */
+export const createExportScheduleBodyActiveDefault = true;
+
+export const CreateExportScheduleBody = zod.object({
+  "name": zod.string(),
+  "entityType": zod.enum(['contact', 'lead']),
+  "format": zod.enum(['csv', 'excel', 'pdf', 'json']),
+  "frequency": zod.enum(['daily', 'weekly', 'monthly']),
+  "filters": zod.record(zod.string(), zod.unknown()).optional(),
+  "active": zod.boolean().default(createExportScheduleBodyActiveDefault)
+})
+
+
+/**
+ * @summary Update an export schedule
+ */
+export const UpdateExportScheduleParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateExportScheduleBody = zod.object({
+  "name": zod.string().optional(),
+  "entityType": zod.enum(['contact', 'lead']).optional(),
+  "format": zod.enum(['csv', 'excel', 'pdf', 'json']).optional(),
+  "frequency": zod.enum(['daily', 'weekly', 'monthly']).optional(),
+  "filters": zod.record(zod.string(), zod.unknown()).optional(),
+  "active": zod.boolean().optional()
+})
+
+export const UpdateExportScheduleResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "entityType": zod.string(),
+  "format": zod.string(),
+  "filters": zod.record(zod.string(), zod.unknown()).optional(),
+  "frequency": zod.enum(['daily', 'weekly', 'monthly']),
+  "passwordProtected": zod.boolean().optional(),
+  "active": zod.boolean(),
+  "lastRunAt": zod.coerce.date().nullish(),
+  "nextRunAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Delete an export schedule
+ */
+export const DeleteExportScheduleParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteExportScheduleResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary Run an export schedule immediately, producing a new run
+ */
+export const RunExportScheduleNowParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
  * @summary List custom field definitions
  */
 export const ListCustomFieldDefinitionsQueryParams = zod.object({

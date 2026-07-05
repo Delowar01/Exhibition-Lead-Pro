@@ -4220,6 +4220,205 @@ paths:
               schema:
                 $ref: "#/components/schemas/DocumentDownloadResponse"
 
+  /imports/preview:
+    post:
+      operationId: previewImport
+      tags: [imports]
+      summary: Parse an uploaded CSV/Excel file and return columns, a sample, an auto-mapping, and the field catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportPreviewInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportPreviewResult"
+
+  /imports/validate:
+    post:
+      operationId: validateImport
+      tags: [imports]
+      summary: Apply a column-to-field mapping and return per-row errors and detected duplicates (stateless)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportValidateInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportValidateResult"
+
+  /imports/commit:
+    post:
+      operationId: commitImport
+      tags: [imports]
+      summary: Transactionally bulk-insert the mapped rows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportCommitInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportCommitResult"
+
+  /exports:
+    post:
+      operationId: createExport
+      tags: [exports]
+      summary: Generate an on-demand export and return its run plus a signed download URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportCreateInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportRunWithUrl"
+
+  /exports/runs:
+    get:
+      operationId: listExportRuns
+      tags: [exports]
+      summary: List past export runs (on-demand and scheduled)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportRunList"
+
+  /exports/runs/{id}/download:
+    get:
+      operationId: getExportRunDownloadUrl
+      tags: [exports]
+      summary: Get a signed download URL for a completed export run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportDownloadResponse"
+
+  /exports/schedules:
+    get:
+      operationId: listExportSchedules
+      tags: [exports]
+      summary: List export schedules
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportScheduleList"
+    post:
+      operationId: createExportSchedule
+      tags: [exports]
+      summary: Create a recurring export schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportScheduleInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportSchedule"
+
+  /exports/schedules/{id}:
+    patch:
+      operationId: updateExportSchedule
+      tags: [exports]
+      summary: Update an export schedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportScheduleUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportSchedule"
+    delete:
+      operationId: deleteExportSchedule
+      tags: [exports]
+      summary: Delete an export schedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportScheduleDeleteResponse"
+
+  /exports/schedules/{id}/run:
+    post:
+      operationId: runExportScheduleNow
+      tags: [exports]
+      summary: Run an export schedule immediately, producing a new run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportRunWithUrl"
+
   /custom-fields:
     get:
       operationId: listCustomFieldDefinitions
@@ -8531,6 +8730,325 @@ components:
           type: array
           items:
             type: string
+
+    # IMPORT & EXPORT
+    ImportPreviewInput:
+      type: object
+      required: [entityType, file]
+      properties:
+        entityType:
+          type: string
+          enum: [contact, lead]
+        file:
+          type: string
+          description: Base64-encoded CSV or Excel file (optionally a data URL)
+
+    ImportFieldOption:
+      type: object
+      required: [key, label, type, required, custom]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+        required:
+          type: boolean
+        custom:
+          type: boolean
+
+    ImportPreviewResult:
+      type: object
+      required: [entityType, columns, rowCount, sampleRows, inferredMapping, availableFields]
+      properties:
+        entityType:
+          type: string
+          enum: [contact, lead]
+        columns:
+          type: array
+          items:
+            type: string
+        rowCount:
+          type: integer
+        sampleRows:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: string
+        inferredMapping:
+          type: object
+          additionalProperties:
+            type: ["string", "null"]
+        availableFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportFieldOption"
+
+    ImportValidateInput:
+      type: object
+      required: [entityType, file, mapping]
+      properties:
+        entityType:
+          type: string
+          enum: [contact, lead]
+        file:
+          type: string
+        mapping:
+          type: object
+          additionalProperties:
+            type: ["string", "null"]
+
+    ImportRowError:
+      type: object
+      required: [row, errors]
+      properties:
+        row:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+
+    ImportDuplicate:
+      type: object
+      required: [row, reason]
+      properties:
+        row:
+          type: integer
+        reason:
+          type: string
+
+    ImportValidateResult:
+      type: object
+      required: [totalRows, validRows, errorRows, duplicateRows, batchErrors, rowErrors, duplicates]
+      properties:
+        totalRows:
+          type: integer
+        validRows:
+          type: integer
+        errorRows:
+          type: integer
+        duplicateRows:
+          type: integer
+        batchErrors:
+          type: array
+          items:
+            type: string
+        rowErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportRowError"
+        duplicates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportDuplicate"
+
+    ImportCommitInput:
+      type: object
+      required: [entityType, file, mapping]
+      properties:
+        entityType:
+          type: string
+          enum: [contact, lead]
+        file:
+          type: string
+        mapping:
+          type: object
+          additionalProperties:
+            type: ["string", "null"]
+        skipDuplicates:
+          type: boolean
+          default: true
+
+    ImportCommitResult:
+      type: object
+      required: [imported, skippedDuplicates, skippedErrors, totalRows]
+      properties:
+        imported:
+          type: integer
+        skippedDuplicates:
+          type: integer
+        skippedErrors:
+          type: integer
+        totalRows:
+          type: integer
+
+    ExportCreateInput:
+      type: object
+      required: [entityType, format]
+      properties:
+        entityType:
+          type: string
+          enum: [contact, lead]
+        format:
+          type: string
+          enum: [csv, excel, pdf, json]
+        filters:
+          type: object
+          additionalProperties: true
+        passwordProtected:
+          type: boolean
+          default: false
+        password:
+          type: ["string", "null"]
+
+    ExportRun:
+      type: object
+      required: [id, companyId, entityType, format, status, passwordProtected, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        scheduleId:
+          type: ["integer", "null"]
+        entityType:
+          type: string
+        format:
+          type: string
+        status:
+          type: string
+          enum: [completed, failed]
+        fileName:
+          type: ["string", "null"]
+        fileSize:
+          type: ["integer", "null"]
+        rowCount:
+          type: ["integer", "null"]
+        passwordProtected:
+          type: boolean
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    ExportRunWithUrl:
+      allOf:
+        - $ref: "#/components/schemas/ExportRun"
+        - type: object
+          properties:
+            downloadUrl:
+              type: ["string", "null"]
+
+    ExportRunList:
+      type: object
+      required: [runs, total]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExportRun"
+        total:
+          type: integer
+
+    ExportDownloadResponse:
+      type: object
+      required: [url, fileName]
+      properties:
+        url:
+          type: string
+        fileName:
+          type: ["string", "null"]
+
+    ExportSchedule:
+      type: object
+      required: [id, companyId, name, entityType, format, frequency, active, nextRunAt, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        entityType:
+          type: string
+        format:
+          type: string
+        filters:
+          type: object
+          additionalProperties: true
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly]
+        passwordProtected:
+          type: boolean
+        active:
+          type: boolean
+        lastRunAt:
+          type: ["string", "null"]
+          format: date-time
+        nextRunAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    ExportScheduleList:
+      type: object
+      required: [schedules, total]
+      properties:
+        schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExportSchedule"
+        total:
+          type: integer
+
+    ExportScheduleInput:
+      type: object
+      required: [name, entityType, format, frequency]
+      properties:
+        name:
+          type: string
+        entityType:
+          type: string
+          enum: [contact, lead]
+        format:
+          type: string
+          enum: [csv, excel, pdf, json]
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly]
+        filters:
+          type: object
+          additionalProperties: true
+        active:
+          type: boolean
+          default: true
+
+    ExportScheduleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        entityType:
+          type: string
+          enum: [contact, lead]
+        format:
+          type: string
+          enum: [csv, excel, pdf, json]
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly]
+        filters:
+          type: object
+          additionalProperties: true
+        active:
+          type: boolean
+
+    ExportScheduleDeleteResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
 
     # CUSTOM FIELDS
     CustomFieldDefinition:

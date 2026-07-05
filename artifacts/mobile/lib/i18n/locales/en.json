@@ -1106,5 +1106,19 @@
     "tooManyAttempts": "Too many failed attempts",
     "tryAgainIn": "Try again in {{seconds}}s, or use biometrics",
     "useBiometrics": "Use biometrics"
+  },
+  "exportShare": {
+    "title": "Export",
+    "subtitle": "Choose a format to share your filtered {{entity}}.",
+    "contacts": "contacts",
+    "leads": "leads",
+    "exporting": "Preparing export…",
+    "successTitle": "Export ready",
+    "successShared": "Shared {{count}} {{entity}}.",
+    "successBrowser": "Opened {{count}} {{entity}} in your browser.",
+    "emptyTitle": "Nothing to export",
+    "emptyBody": "No {{entity}} match the current filters.",
+    "errorTitle": "Export failed",
+    "errorBody": "Could not generate the file. Please try again."
   }
 }
