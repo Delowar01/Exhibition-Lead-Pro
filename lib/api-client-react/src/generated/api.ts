@@ -102,6 +102,7 @@ import type {
   GetSecurityPolicyParams,
   GetTeamAnalyticsParams,
   GetTeamMemberReportParams,
+  GetUnifiedDashboardParams,
   HealthStatus,
   ImportCommitInput,
   ImportCommitResult,
@@ -249,6 +250,7 @@ import type {
   TimelineList,
   TrendDataPoint,
   UndoMergeResponse,
+  UnifiedDashboard,
   UnreadCountResponse,
   UpdateNotificationPreferenceInput,
   User,
@@ -11750,6 +11752,90 @@ export function useGetAnalyticsScopeOptions<TData = Awaited<ReturnType<typeof ge
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAnalyticsScopeOptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetUnifiedDashboardUrl = (params?: GetUnifiedDashboardParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/analytics/dashboard?${stringifiedParams}` : `/api/analytics/dashboard`
+}
+
+/**
+ * @summary Unified Lead Dashboard (full KPI + chart set for a scope)
+ */
+export const getUnifiedDashboard = async (params?: GetUnifiedDashboardParams, options?: RequestInit): Promise<UnifiedDashboard> => {
+
+  return customFetch<UnifiedDashboard>(getGetUnifiedDashboardUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUnifiedDashboardQueryKey = (params?: GetUnifiedDashboardParams,) => {
+    return [
+    `/api/analytics/dashboard`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetUnifiedDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getUnifiedDashboard>>, TError = ErrorType<unknown>>(params?: GetUnifiedDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUnifiedDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUnifiedDashboardQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUnifiedDashboard>>> = ({ signal }) => getUnifiedDashboard(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUnifiedDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUnifiedDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getUnifiedDashboard>>>
+export type GetUnifiedDashboardQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Unified Lead Dashboard (full KPI + chart set for a scope)
+ */
+
+export function useGetUnifiedDashboard<TData = Awaited<ReturnType<typeof getUnifiedDashboard>>, TError = ErrorType<unknown>>(
+ params?: GetUnifiedDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUnifiedDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUnifiedDashboardQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -34,6 +34,23 @@ router.get("/analytics/scope-options", analyticsCache, async (req: AuthRequest, 
   res.json(await analytics.getScopeOptions(req.user!));
 });
 
+// GET /analytics/dashboard — Unified Lead Dashboard (superset of the scoped
+// analytics shape). Optional scopeType (company|department|team|employee) + id
+// drill-down; defaults to company overview for managers, own scope otherwise.
+router.get("/analytics/dashboard", analyticsCache, async (req: AuthRequest, res) => {
+  const { dateFrom, dateTo } = dateParams(req);
+  const q = req.query as Record<string, string | undefined>;
+  const idRaw = q.id != null ? parseInt(String(q.id)) : NaN;
+  res.json(
+    await analytics.getDashboard(req.user!, {
+      scopeType: q.scopeType,
+      id: Number.isNaN(idRaw) ? undefined : idRaw,
+      dateFrom,
+      dateTo,
+    }),
+  );
+});
+
 // GET /analytics/overview — company-wide (whole accessible tenant)
 router.get("/analytics/overview", analyticsCache, async (req: AuthRequest, res) => {
   const { dateFrom, dateTo } = dateParams(req);

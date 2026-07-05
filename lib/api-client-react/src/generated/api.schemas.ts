@@ -2920,6 +2920,43 @@ export interface ScopedAnalytics {
   headcount: number;
 }
 
+export interface DashboardLeadKpis {
+  total: number;
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+  new: number;
+  qualified: number;
+  converted: number;
+  lost: number;
+  duplicate: number;
+  aiQueue: number;
+  meetingsScheduled: number;
+  followUpsDue: number;
+  conversionRate: number;
+}
+
+export interface DashboardDistributionItem {
+  label: string;
+  count: number;
+}
+
+export interface DashboardMonthlyPoint {
+  month: string;
+  label: string;
+  leads: number;
+  won: number;
+  contacts: number;
+  scans: number;
+}
+
+export type UnifiedDashboard = ScopedAnalytics & {
+  leadKpis: DashboardLeadKpis;
+  industryDistribution: DashboardDistributionItem[];
+  countryDistribution: DashboardDistributionItem[];
+  monthlyTrend: DashboardMonthlyPoint[];
+};
+
 export interface AnalyticsScopeDepartment {
   id: number;
   name: string;
@@ -4308,6 +4345,29 @@ export type GetTeamMemberReportParams = {
 eventId: number;
 userId: number;
 };
+
+export type GetUnifiedDashboardParams = {
+/**
+ * company | department | team | employee (defaults to company for managers, own scope otherwise)
+ */
+scopeType?: GetUnifiedDashboardScopeType;
+/**
+ * Scope id (required for department/team/employee)
+ */
+id?: number;
+dateFrom?: string;
+dateTo?: string;
+};
+
+export type GetUnifiedDashboardScopeType = typeof GetUnifiedDashboardScopeType[keyof typeof GetUnifiedDashboardScopeType];
+
+
+export const GetUnifiedDashboardScopeType = {
+  company: 'company',
+  department: 'department',
+  team: 'team',
+  employee: 'employee',
+} as const;
 
 export type GetAnalyticsOverviewParams = {
 dateFrom?: string;

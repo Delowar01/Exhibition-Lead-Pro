@@ -3398,6 +3398,39 @@ paths:
               schema:
                 $ref: "#/components/schemas/AnalyticsScopeOptions"
 
+  /analytics/dashboard:
+    get:
+      operationId: getUnifiedDashboard
+      tags: [analytics]
+      summary: Unified Lead Dashboard (full KPI + chart set for a scope)
+      parameters:
+        - name: scopeType
+          in: query
+          description: company | department | team | employee (defaults to company for managers, own scope otherwise)
+          schema:
+            type: string
+            enum: [company, department, team, employee]
+        - name: id
+          in: query
+          description: Scope id (required for department/team/employee)
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnifiedDashboard"
+
   /analytics/overview:
     get:
       operationId: getAnalyticsOverview
@@ -8881,6 +8914,99 @@ components:
             $ref: "#/components/schemas/AnalyticsActivityItem"
         headcount:
           type: integer
+
+    DashboardLeadKpis:
+      type: object
+      required:
+        [
+          total,
+          today,
+          thisWeek,
+          thisMonth,
+          new,
+          qualified,
+          converted,
+          lost,
+          duplicate,
+          aiQueue,
+          meetingsScheduled,
+          followUpsDue,
+          conversionRate,
+        ]
+      properties:
+        total:
+          type: integer
+        today:
+          type: integer
+        thisWeek:
+          type: integer
+        thisMonth:
+          type: integer
+        new:
+          type: integer
+        qualified:
+          type: integer
+        converted:
+          type: integer
+        lost:
+          type: integer
+        duplicate:
+          type: integer
+        aiQueue:
+          type: integer
+        meetingsScheduled:
+          type: integer
+        followUpsDue:
+          type: integer
+        conversionRate:
+          type: integer
+
+    DashboardDistributionItem:
+      type: object
+      required: [label, count]
+      properties:
+        label:
+          type: string
+        count:
+          type: integer
+
+    DashboardMonthlyPoint:
+      type: object
+      required: [month, label, leads, won, contacts, scans]
+      properties:
+        month:
+          type: string
+        label:
+          type: string
+        leads:
+          type: integer
+        won:
+          type: integer
+        contacts:
+          type: integer
+        scans:
+          type: integer
+
+    UnifiedDashboard:
+      allOf:
+        - $ref: "#/components/schemas/ScopedAnalytics"
+        - type: object
+          required: [leadKpis, industryDistribution, countryDistribution, monthlyTrend]
+          properties:
+            leadKpis:
+              $ref: "#/components/schemas/DashboardLeadKpis"
+            industryDistribution:
+              type: array
+              items:
+                $ref: "#/components/schemas/DashboardDistributionItem"
+            countryDistribution:
+              type: array
+              items:
+                $ref: "#/components/schemas/DashboardDistributionItem"
+            monthlyTrend:
+              type: array
+              items:
+                $ref: "#/components/schemas/DashboardMonthlyPoint"
 
     AnalyticsScopeDepartment:
       type: object

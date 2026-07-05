@@ -380,6 +380,141 @@ async function assemble(resolved: ResolvedScope, dateFrom?: string, dateTo?: str
   };
 }
 
+// ---- Unified dashboard assembly (Stage 4F) ----
+//
+// Superset of the executive-analytics shape: reuses `assemble` (KPIs, trend,
+// funnel, source mix, top performers, recent activity) and layers on the extra
+// slices the premium Unified Lead Dashboard needs — full lead KPI grid,
+// industry/country distribution, and a 12-month trend. All from real,
+// tenant-scoped, cross-currency-correct aggregations; no fabricated data.
+
+const DASHBOARD_MONTHS = 12;
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
+
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Resolve the dashboard scope from optional query params, honouring scope
+// privacy. Managers default to the company overview; non-managers who cannot
+// see the company overview default to their own employee scope.
+async function resolveDashboardScope(
+  user: AuthUser,
+  scopeType?: string,
+  id?: number,
+): Promise<ResolvedScope> {
+  if (scopeType === "department" && id != null) return resolveDepartment(user, id);
+  if (scopeType === "team" && id != null) return resolveTeam(user, id);
+  if (scopeType === "employee" && id != null) return resolveEmployee(user, id);
+  if (isManager(user.role)) return resolveOverview(user);
+  return resolveEmployee(user, user.id);
+}
+
+export async function getDashboard(
+  user: AuthUser,
+  opts: { scopeType?: string; id?: number; dateFrom?: string; dateTo?: string } = {},
+) {
+  const resolved = await resolveDashboardScope(user, opts.scopeType, opts.id);
+  const s = resolved.analyticsScope;
+  const base = await assemble(resolved, opts.dateFrom, opts.dateTo);
+
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const weekStart = new Date(todayStart.getTime() - 6 * MS_DAY); // rolling 7-day
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const monthsAgo = new Date(now.getFullYear(), now.getMonth() - (DASHBOARD_MONTHS - 1), 1, 0, 0, 0, 0);
+  const range = resolveRange(opts.dateFrom, opts.dateTo);
+
+  const [
+    leadsToday,
+    leadsThisWeek,
+    leadsThisMonth,
+    industry,
+    country,
+    duplicate,
+    aiQueue,
+    meetings,
+    leadMonths,
+    contactMonths,
+    scanMonths,
+  ] = await Promise.all([
+    repo.countNewLeads(s, todayStart, now),
+    repo.countNewLeads(s, weekStart, now),
+    repo.countNewLeads(s, monthStart, now),
+    repo.contactsByIndustry(s, range.fromDate, range.toDate, 8),
+    repo.contactsByCountry(s, range.fromDate, range.toDate, 8),
+    repo.duplicateContactCount(s, range.fromDate, range.toDate),
+    repo.aiQueueCount(s),
+    repo.scheduledMeetingCount(s),
+    repo.leadsByMonth(s, monthsAgo, now),
+    repo.contactsByMonth(s, monthsAgo, now),
+    repo.scansByMonth(s, monthsAgo, now),
+  ]);
+
+  // Total-lead composition from the current funnel (point-in-time, all-time).
+  const stageCount = (stage: string) => base.funnel.find((f) => f.stage === stage)?.count ?? 0;
+  const totalLeads = base.funnel.reduce((sum, f) => sum + f.count, 0);
+  const qualifiedLeads = stageCount("qualified");
+  const convertedLeads = stageCount("won");
+  const lostLeads = stageCount("lost");
+
+  const leadKpis = {
+    total: totalLeads,
+    today: leadsToday,
+    thisWeek: leadsThisWeek,
+    thisMonth: leadsThisMonth,
+    new: base.kpis.newLeads,
+    qualified: qualifiedLeads,
+    converted: convertedLeads,
+    lost: lostLeads,
+    duplicate,
+    aiQueue,
+    meetingsScheduled: meetings,
+    followUpsDue: base.kpis.followUpsDueCount,
+    conversionRate: base.kpis.conversionRate,
+  };
+
+  // 12-month gap-filled series.
+  const leadM = new Map(leadMonths.map((r) => [r.month, r]));
+  const contactM = new Map(contactMonths.map((r) => [r.month, r.value]));
+  const scanM = new Map(scanMonths.map((r) => [r.month, r.value]));
+  const monthlyTrend: {
+    month: string;
+    label: string;
+    leads: number;
+    won: number;
+    contacts: number;
+    scans: number;
+  }[] = [];
+  for (let i = DASHBOARD_MONTHS - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = monthKey(d);
+    const lm = leadM.get(key);
+    monthlyTrend.push({
+      month: key,
+      label: d.toLocaleDateString("default", { month: "short", year: "2-digit" }),
+      leads: lm?.leads ?? 0,
+      won: lm?.won ?? 0,
+      contacts: contactM.get(key) ?? 0,
+      scans: scanM.get(key) ?? 0,
+    });
+  }
+
+  const industryDistribution = industry.map((r) => ({ label: r.label, count: r.count }));
+  const countryDistribution = country.map((r) => ({ label: r.label, count: r.count }));
+
+  return {
+    ...base,
+    leadKpis,
+    industryDistribution,
+    countryDistribution,
+    monthlyTrend,
+  };
+}
+
 // ---- Public service API ----
 
 export async function getOverview(user: AuthUser, dateFrom?: string, dateTo?: string) {

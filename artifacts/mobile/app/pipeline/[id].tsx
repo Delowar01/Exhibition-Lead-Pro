@@ -112,6 +112,38 @@ function priorityColor(p: string): string {
   return "#3B82F6";
 }
 
+// Parse an ISO / date-only timestamp to a local Date (date-only strings become
+// LOCAL midnight, never UTC — matching formatTimelineDate).
+function parseTimelineDate(iso: string): Date | null {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.exec(iso);
+  if (dateOnly) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const local = new Date(y, m - 1, d);
+    return isNaN(local.getTime()) ? null : local;
+  }
+  const dt = new Date(iso);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+// Bucket a timestamp into a group key (today/yesterday/thisWeek) or a month label
+// for older entries. Week starts Monday to match the web timeline.
+function timelineBucketKey(iso: string): { key: string; label?: string } {
+  const d = parseTimelineDate(iso);
+  if (!d) return { key: "older", label: "" };
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const today = startOfDay(now);
+  const target = startOfDay(d);
+  const dayMs = 86400000;
+  const diffDays = Math.round((today.getTime() - target.getTime()) / dayMs);
+  if (diffDays === 0) return { key: "today" };
+  if (diffDays === 1) return { key: "yesterday" };
+  const mondayOffset = (today.getDay() + 6) % 7;
+  const weekStart = new Date(today.getTime() - mondayOffset * dayMs);
+  if (target.getTime() >= weekStart.getTime()) return { key: "thisWeek" };
+  return { key: "older", label: formatGregorian(d, { month: "long", year: "numeric" }) };
+}
+
 const TIMELINE_KIND_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
   activity: "activity",
   note: "file-text",
@@ -360,7 +392,37 @@ export default function PipelineDetailScreen() {
   const [tagModalVisible, setTagModalVisible] = useState(false);
   const allTagsQuery = useListTags({ query: { enabled: tagModalVisible, queryKey: ["/api/tags"] } });
 
+  const [timelineSearch, setTimelineSearch] = useState("");
+  const [timelineKind, setTimelineKind] = useState<string>("all");
+
   const timelineEntries = timelineQuery.data?.entries ?? [];
+  const timelineKinds = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const e of timelineEntries) set.add(e.kind);
+    return Array.from(set);
+  }, [timelineEntries]);
+  const filteredTimeline = React.useMemo(() => {
+    const q = timelineSearch.trim().toLowerCase();
+    return timelineEntries.filter((e) => {
+      if (timelineKind !== "all" && e.kind !== timelineKind) return false;
+      if (!q) return true;
+      return [e.title, e.body, e.type, e.actorName]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [timelineEntries, timelineKind, timelineSearch]);
+  const timelineGroups = React.useMemo(() => {
+    const out: { key: string; label: string; entries: TimelineEntry[] }[] = [];
+    for (const e of filteredTimeline) {
+      const { key, label } = timelineBucketKey(e.occurredAt);
+      const resolved = label ?? t(`pipeline.timeline.groups.${key}`, { defaultValue: key });
+      const last = out[out.length - 1];
+      if (last && last.label === resolved) last.entries.push(e);
+      else out.push({ key, label: resolved, entries: [e] });
+    }
+    return out;
+  }, [filteredTimeline, t]);
+
   const notes = notesQuery.data?.notes ?? [];
   const leadTags = tagsQuery.data?.tags ?? [];
   const attachedTagIds = new Set(leadTags.map((tg) => tg.id));
@@ -744,35 +806,104 @@ export default function PipelineDetailScreen() {
                 <EmptyState icon="activity" title={t("pipeline.timeline.empty")} />
               </View>
             ) : (
-              timelineEntries.map((entry: TimelineEntry, idx) => {
-                const kindLabel = t(`pipeline.timeline.kinds.${entry.kind}`, { defaultValue: prettyLabel(entry.kind) });
-                const icon = TIMELINE_KIND_ICONS[entry.kind] ?? "activity";
-                const primary = (entry.title ?? "").trim() || kindLabel;
-                return (
-                  <View
-                    key={entry.id}
-                    style={[
-                      styles.historyRow,
-                      { flexDirection: isRTL ? "row-reverse" : "row" },
-                      idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-                    ]}
+              <>
+                <View
+                  style={[
+                    styles.timelineSearchBox,
+                    { backgroundColor: colors.muted, flexDirection: isRTL ? "row-reverse" : "row" },
+                  ]}
+                >
+                  <Feather name="search" size={15} color={colors.mutedForeground} />
+                  <TextInput
+                    value={timelineSearch}
+                    onChangeText={setTimelineSearch}
+                    placeholder={t("pipeline.timeline.search")}
+                    placeholderTextColor={colors.mutedForeground}
+                    style={[styles.timelineSearchInput, { color: colors.foreground, textAlign }]}
+                  />
+                </View>
+                {timelineKinds.length > 1 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+                    style={{ marginBottom: 8 }}
                   >
-                    <View style={[styles.timelineIcon, { backgroundColor: colors.muted }]}>
-                      <Feather name={icon} size={13} color={colors.mutedForeground} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.historyField, { color: colors.foreground, textAlign }]}>{primary}</Text>
-                      {entry.body ? (
-                        <Text style={[styles.timelineBody, { color: colors.mutedForeground, textAlign }]}>{entry.body}</Text>
-                      ) : null}
-                      <Text style={[styles.historyMeta, { color: colors.mutedForeground, textAlign }]}>
-                        {entry.actorName ? `${entry.actorName} · ` : ""}
-                        {formatTimelineDate(entry.occurredAt)}
-                      </Text>
-                    </View>
+                    {["all", ...timelineKinds].map((k) => {
+                      const active = timelineKind === k;
+                      const label =
+                        k === "all"
+                          ? t("pipeline.timeline.filterAll")
+                          : t(`pipeline.timeline.kinds.${k}`, { defaultValue: prettyLabel(k) });
+                      return (
+                        <Pressable
+                          key={k}
+                          onPress={() => setTimelineKind(k)}
+                          style={[
+                            styles.timelineChip,
+                            {
+                              backgroundColor: active ? colors.primary : colors.card,
+                              borderColor: active ? colors.primary : colors.border,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: "600",
+                              color: active ? colors.primaryForeground : colors.mutedForeground,
+                            }}
+                          >
+                            {label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : null}
+                {filteredTimeline.length === 0 ? (
+                  <View style={{ paddingVertical: 16 }}>
+                    <EmptyState icon="search" title={t("pipeline.timeline.noMatch")} />
                   </View>
-                );
-              })
+                ) : (
+                  timelineGroups.map((group) => (
+                    <View key={group.label} style={{ marginBottom: 4 }}>
+                      <Text style={[styles.timelineGroupLabel, { color: colors.mutedForeground, textAlign }]}>
+                        {group.label}
+                      </Text>
+                      {group.entries.map((entry: TimelineEntry, idx) => {
+                        const kindLabel = t(`pipeline.timeline.kinds.${entry.kind}`, { defaultValue: prettyLabel(entry.kind) });
+                        const icon = TIMELINE_KIND_ICONS[entry.kind] ?? "activity";
+                        const primary = (entry.title ?? "").trim() || kindLabel;
+                        return (
+                          <View
+                            key={entry.id}
+                            style={[
+                              styles.historyRow,
+                              { flexDirection: isRTL ? "row-reverse" : "row" },
+                              idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+                            ]}
+                          >
+                            <View style={[styles.timelineIcon, { backgroundColor: colors.muted }]}>
+                              <Feather name={icon} size={13} color={colors.mutedForeground} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.historyField, { color: colors.foreground, textAlign }]}>{primary}</Text>
+                              {entry.body ? (
+                                <Text style={[styles.timelineBody, { color: colors.mutedForeground, textAlign }]}>{entry.body}</Text>
+                              ) : null}
+                              <Text style={[styles.historyMeta, { color: colors.mutedForeground, textAlign }]}>
+                                {entry.actorName ? `${entry.actorName} · ` : ""}
+                                {formatTimelineDate(entry.occurredAt)}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))
+                )}
+              </>
             )}
           </Section>
 
@@ -1253,6 +1384,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: FONT.regular,
     marginTop: 2,
+  },
+  timelineSearchBox: {
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    height: 40,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  timelineSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    paddingVertical: 0,
+  },
+  timelineChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  timelineGroupLabel: {
+    fontSize: 11,
+    fontFamily: FONT.semibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 10,
+    marginBottom: 2,
   },
   // Modal
   modalBackdrop: {

@@ -92,8 +92,9 @@ import {
   FileText,
   History as HistoryIcon,
   Contact as ContactIcon,
+  Search,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, isToday, isYesterday, isThisWeek } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { MentionText } from "@/components/collaboration/MentionText";
@@ -543,31 +544,89 @@ export default function AdminLeadDetail() {
   );
 }
 
+function timelineIconFor(kind: string) {
+  switch (kind) {
+    case "activity":
+    case "meeting":
+      return <MessageSquare className="h-3 w-3 text-primary-foreground" />;
+    case "note":
+      return <FileText className="h-3 w-3 text-primary-foreground" />;
+    case "scan":
+      return <CalendarIcon className="h-3 w-3 text-primary-foreground" />;
+    case "lead_history":
+    case "contact_status":
+      return <CheckCircle2 className="h-3 w-3 text-primary-foreground" />;
+    default:
+      return <Clock className="h-3 w-3 text-primary-foreground" />;
+  }
+}
+
+function prettyKind(kind: string): string {
+  return kind
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Bucket a timestamp into a human date group. Order matters for rendering.
+function timelineBucket(iso: string): string {
+  try {
+    const d = parseISO(iso);
+    if (isToday(d)) return "Today";
+    if (isYesterday(d)) return "Yesterday";
+    if (isThisWeek(d, { weekStartsOn: 1 })) return "Earlier this week";
+    return format(d, "MMMM yyyy");
+  } catch {
+    return "Earlier";
+  }
+}
+
 function TimelineCard({ leadId }: { leadId: number }) {
   const { data, isLoading } = useGetLeadTimeline(leadId, {
     query: { enabled: !!leadId, queryKey: getGetLeadTimelineQueryKey(leadId) },
   });
 
-  const entries = [...(data?.entries ?? [])].sort(
-    (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
+  const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState<string>("all");
+
+  const allEntries = React.useMemo(
+    () =>
+      [...(data?.entries ?? [])].sort(
+        (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime()
+      ),
+    [data]
   );
 
-  const iconFor = (kind: string) => {
-    switch (kind) {
-      case "activity":
-      case "meeting":
-        return <MessageSquare className="h-3 w-3 text-primary-foreground" />;
-      case "note":
-        return <FileText className="h-3 w-3 text-primary-foreground" />;
-      case "scan":
-        return <CalendarIcon className="h-3 w-3 text-primary-foreground" />;
-      case "lead_history":
-      case "contact_status":
-        return <CheckCircle2 className="h-3 w-3 text-primary-foreground" />;
-      default:
-        return <Clock className="h-3 w-3 text-primary-foreground" />;
+  // Distinct kinds present, for the filter chips (only show a filter when there's
+  // more than one kind to choose from).
+  const kinds = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const e of allEntries) set.add(e.kind);
+    return Array.from(set);
+  }, [allEntries]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allEntries.filter((e) => {
+      if (kindFilter !== "all" && e.kind !== kindFilter) return false;
+      if (!q) return true;
+      return [e.title, e.body, e.type, e.actorName, prettyKind(e.kind)]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [allEntries, kindFilter, search]);
+
+  // Group the filtered entries into ordered date buckets (they're already sorted
+  // newest-first, so buckets emerge in chronological order).
+  const groups = React.useMemo(() => {
+    const out: { label: string; entries: typeof filtered }[] = [];
+    for (const e of filtered) {
+      const label = timelineBucket(e.occurredAt);
+      const last = out[out.length - 1];
+      if (last && last.label === label) last.entries.push(e);
+      else out.push({ label, entries: [e] });
     }
-  };
+    return out;
+  }, [filtered]);
 
   return (
     <Card className="shadow-sm">
@@ -577,34 +636,92 @@ function TimelineCard({ leadId }: { leadId: number }) {
       <CardContent>
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading timeline...</p>
-        ) : entries.length === 0 ? (
+        ) : allEntries.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
             No timeline activity yet.
           </p>
         ) : (
-          <div className="relative pl-6 border-l border-border space-y-6">
-            {entries.map((entry) => (
-              <div key={entry.id} className="relative">
-                <div className="absolute -left-[31px] bg-primary p-1 rounded-full border-4 border-card">
-                  {iconFor(entry.kind)}
-                </div>
-                <div>
-                  <p className="text-sm font-medium">
-                    {entry.title || entry.type || entry.kind.replace("_", " ")}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {fmtDateTime(entry.occurredAt)}
-                    {entry.actorName ? ` • ${entry.actorName}` : ""}
-                  </p>
-                  {entry.body && (
-                    <div className="mt-2 text-sm bg-secondary/50 p-3 rounded-md border border-border">
-                      {entry.body}
-                    </div>
-                  )}
-                </div>
+          <>
+            <div className="mb-4 space-y-3">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search timeline"
+                  className="pl-8"
+                />
               </div>
-            ))}
-          </div>
+              {kinds.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setKindFilter("all")}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                      kindFilter === "all"
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    All
+                  </button>
+                  {kinds.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setKindFilter(k)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        kindFilter === k
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {prettyKind(k)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {filtered.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                No timeline entries match your filters.
+              </p>
+            ) : (
+              <div className="space-y-6">
+                {groups.map((group) => (
+                  <div key={group.label}>
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {group.label}
+                    </div>
+                    <div className="relative pl-6 border-l border-border space-y-6">
+                      {group.entries.map((entry) => (
+                        <div key={entry.id} className="relative">
+                          <div className="absolute -left-[31px] bg-primary p-1 rounded-full border-4 border-card">
+                            {timelineIconFor(entry.kind)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">
+                              {entry.title || entry.type || prettyKind(entry.kind)}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {fmtDateTime(entry.occurredAt)}
+                              {entry.actorName ? ` • ${entry.actorName}` : ""}
+                            </p>
+                            {entry.body && (
+                              <div className="mt-2 text-sm bg-secondary/50 p-3 rounded-md border border-border">
+                                {entry.body}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

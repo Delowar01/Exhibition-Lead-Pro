@@ -7,6 +7,7 @@ import {
   departmentsTable,
   teamsTable,
   companiesTable,
+  meetingsTable,
 } from "@workspace/db";
 import { and, eq, count, sql, desc, inArray, gte, lte, isNull, isNotNull, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
@@ -581,6 +582,195 @@ export async function userIdsByTeam(user: AuthUser, teamId: number): Promise<num
     .from(usersTable)
     .where(and(tenantScope(user, usersTable.companyId), isNull(usersTable.deletedAt), eq(usersTable.teamId, teamId)));
   return rows.map((r) => r.id);
+}
+
+// ---- Unified dashboard extras (Stage 4F) ---------------------------------
+//
+// Additional read-only aggregations that back the premium Unified Lead
+// Dashboard. Every query reuses the same double scoping (tenantScope + optional
+// per-user membership filter) and soft-delete / duplicate exclusions as the
+// executive-analytics queries above. No new heavy computation — these are the
+// missing slices (industry / country distribution, monthly series, duplicate /
+// AI-queue / meeting counts) needed to assemble the full dashboard shape.
+
+export interface LabelCountRow {
+  label: string;
+  count: number;
+}
+
+// Contact distribution by AI-enriched industry over a window. NULL/blank
+// industries collapse to "Unknown". Ordered by count desc, top `limit`.
+export async function contactsByIndustry(
+  scope: AnalyticsScope,
+  from: Date,
+  to: Date,
+  limit: number,
+): Promise<LabelCountRow[]> {
+  return await db
+    .select({
+      label: sql<string>`COALESCE(NULLIF(TRIM(${contactsTable.industry}), ''), 'Unknown')`,
+      count: count(),
+    })
+    .from(contactsTable)
+    .where(
+      and(
+        tenantScope(scope.user, contactsTable.companyId),
+        isNull(contactsTable.duplicateOfId),
+        notDeleted(contactsTable.deletedAt),
+        userIdFilter(CONTACT_OWNER, scope.userIds),
+        gte(contactsTable.createdAt, from),
+        lte(contactsTable.createdAt, to),
+      ),
+    )
+    .groupBy(sql`COALESCE(NULLIF(TRIM(${contactsTable.industry}), ''), 'Unknown')`)
+    .orderBy(desc(count()))
+    .limit(limit);
+}
+
+// Contact distribution by country over a window. Same NULL/blank collapse.
+export async function contactsByCountry(
+  scope: AnalyticsScope,
+  from: Date,
+  to: Date,
+  limit: number,
+): Promise<LabelCountRow[]> {
+  return await db
+    .select({
+      label: sql<string>`COALESCE(NULLIF(TRIM(${contactsTable.country}), ''), 'Unknown')`,
+      count: count(),
+    })
+    .from(contactsTable)
+    .where(
+      and(
+        tenantScope(scope.user, contactsTable.companyId),
+        isNull(contactsTable.duplicateOfId),
+        notDeleted(contactsTable.deletedAt),
+        userIdFilter(CONTACT_OWNER, scope.userIds),
+        gte(contactsTable.createdAt, from),
+        lte(contactsTable.createdAt, to),
+      ),
+    )
+    .groupBy(sql`COALESCE(NULLIF(TRIM(${contactsTable.country}), ''), 'Unknown')`)
+    .orderBy(desc(count()))
+    .limit(limit);
+}
+
+// Count of duplicate contacts (duplicateOfId IS NOT NULL) captured in the
+// window — surfaces the dedup workload for the scope.
+export async function duplicateContactCount(scope: AnalyticsScope, from: Date, to: Date): Promise<number> {
+  const [{ c }] = await db
+    .select({ c: count() })
+    .from(contactsTable)
+    .where(
+      and(
+        tenantScope(scope.user, contactsTable.companyId),
+        isNotNull(contactsTable.duplicateOfId),
+        notDeleted(contactsTable.deletedAt),
+        userIdFilter(CONTACT_OWNER, scope.userIds),
+        gte(contactsTable.createdAt, from),
+        lte(contactsTable.createdAt, to),
+      ),
+    );
+  return c;
+}
+
+// AI enrichment queue = active, non-duplicate contacts still missing a lead
+// score (point-in-time). Excludes won/lost. Represents pending AI work.
+export async function aiQueueCount(scope: AnalyticsScope): Promise<number> {
+  const [{ c }] = await db
+    .select({ c: count() })
+    .from(contactsTable)
+    .where(
+      and(
+        tenantScope(scope.user, contactsTable.companyId),
+        isNull(contactsTable.duplicateOfId),
+        notDeleted(contactsTable.deletedAt),
+        userIdFilter(CONTACT_OWNER, scope.userIds),
+        isNull(contactsTable.leadScore),
+        sql`${contactsTable.status} NOT IN ('won', 'lost')`,
+      ),
+    );
+  return c;
+}
+
+// Scheduled meetings for the scope (point-in-time). Scoped by tenant + the
+// meeting's assignedTo owner column. Meetings have no soft-delete column.
+export async function scheduledMeetingCount(scope: AnalyticsScope): Promise<number> {
+  const [{ c }] = await db
+    .select({ c: count() })
+    .from(meetingsTable)
+    .where(
+      and(
+        tenantScope(scope.user, meetingsTable.companyId),
+        userIdFilter(meetingsTable.assignedToId, scope.userIds),
+        eq(meetingsTable.status, "scheduled"),
+      ),
+    );
+  return c;
+}
+
+export interface MonthLeadRow {
+  month: string;
+  leads: number;
+  won: number;
+}
+
+// Leads created per calendar month (YYYY-MM) over a window, with a won filter.
+export async function leadsByMonth(scope: AnalyticsScope, from: Date, to: Date): Promise<MonthLeadRow[]> {
+  return await db
+    .select({
+      month: sql<string>`to_char(${leadsTable.createdAt}, 'YYYY-MM')`,
+      leads: count(),
+      won: sql<number>`COUNT(*) FILTER (WHERE ${leadsTable.stage} = 'won')`.mapWith(Number),
+    })
+    .from(leadsTable)
+    .where(
+      and(
+        tenantScope(scope.user, leadsTable.companyId),
+        notDeleted(leadsTable.deletedAt),
+        userIdFilter(LEAD_OWNER, scope.userIds),
+        gte(leadsTable.createdAt, from),
+        lte(leadsTable.createdAt, to),
+      ),
+    )
+    .groupBy(sql`to_char(${leadsTable.createdAt}, 'YYYY-MM')`);
+}
+
+export interface MonthCountRow {
+  month: string;
+  value: number;
+}
+
+export async function contactsByMonth(scope: AnalyticsScope, from: Date, to: Date): Promise<MonthCountRow[]> {
+  return await db
+    .select({ month: sql<string>`to_char(${contactsTable.createdAt}, 'YYYY-MM')`, value: count() })
+    .from(contactsTable)
+    .where(
+      and(
+        tenantScope(scope.user, contactsTable.companyId),
+        isNull(contactsTable.duplicateOfId),
+        notDeleted(contactsTable.deletedAt),
+        userIdFilter(CONTACT_OWNER, scope.userIds),
+        gte(contactsTable.createdAt, from),
+        lte(contactsTable.createdAt, to),
+      ),
+    )
+    .groupBy(sql`to_char(${contactsTable.createdAt}, 'YYYY-MM')`);
+}
+
+export async function scansByMonth(scope: AnalyticsScope, from: Date, to: Date): Promise<MonthCountRow[]> {
+  return await db
+    .select({ month: sql<string>`to_char(${scansTable.createdAt}, 'YYYY-MM')`, value: count() })
+    .from(scansTable)
+    .where(
+      and(
+        tenantScope(scope.user, scansTable.companyId),
+        userIdFilter(SCAN_OWNER, scope.userIds),
+        gte(scansTable.createdAt, from),
+        lte(scansTable.createdAt, to),
+      ),
+    )
+    .groupBy(sql`to_char(${scansTable.createdAt}, 'YYYY-MM')`);
 }
 
 export async function companyName(user: AuthUser, companyId: number): Promise<string | null> {

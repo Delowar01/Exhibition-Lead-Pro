@@ -473,7 +473,11 @@
     "reasoning": "تحليل الذكاء الاصطناعي",
     "openValueSuffix": "ضمن القيمة المفتوحة",
     "filterActive": "تصفية",
-    "clearFilter": "مسح"
+    "clearFilter": "مسح",
+    "kanbanHint": "اضغط مطولاً على البطاقة لسحبها إلى مرحلة أخرى",
+    "selectLeads": "تحديد",
+    "exitSelect": "تم",
+    "movedTo": "تم النقل إلى {{stage}}"
   },
   "documents": {
     "title": "المستندات",
@@ -617,6 +621,15 @@
     "timeline": {
       "title": "سجل النشاطات",
       "empty": "لا يوجد نشاط بعد",
+      "search": "ابحث في السجل",
+      "filterAll": "الكل",
+      "noMatch": "لا توجد عناصر تطابق عوامل التصفية",
+      "groups": {
+        "today": "اليوم",
+        "yesterday": "أمس",
+        "thisWeek": "في وقت سابق هذا الأسبوع",
+        "older": "أقدم"
+      },
       "kinds": {
         "activity": "نشاط",
         "note": "ملاحظة",

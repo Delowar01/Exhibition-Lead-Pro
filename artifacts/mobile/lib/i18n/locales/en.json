@@ -473,7 +473,11 @@
     "reasoning": "AI reasoning",
     "openValueSuffix": "in open value",
     "filterActive": "Filter",
-    "clearFilter": "Clear"
+    "clearFilter": "Clear",
+    "kanbanHint": "Long-press a card to drag it to another stage",
+    "selectLeads": "Select",
+    "exitSelect": "Done",
+    "movedTo": "Moved to {{stage}}"
   },
   "documents": {
     "title": "Documents",
@@ -617,6 +621,15 @@
     "timeline": {
       "title": "Activity Timeline",
       "empty": "No activity yet",
+      "search": "Search timeline",
+      "filterAll": "All",
+      "noMatch": "No entries match your filters",
+      "groups": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "thisWeek": "Earlier this week",
+        "older": "Older"
+      },
       "kinds": {
         "activity": "Activity",
         "note": "Note",

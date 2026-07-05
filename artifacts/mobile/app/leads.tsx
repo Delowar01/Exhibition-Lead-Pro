@@ -1,10 +1,9 @@
 import { Feather } from "@/components/icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-   Alert,
-   FlatList,
+  Alert,
   Modal,
   Platform,
   Pressable,
@@ -12,19 +11,30 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
   type Lead,
+  type LeadUpdateStage,
+  type PipelineView,
   BulkAssignInputStrategy,
   getGetLeadPipelineQueryKey,
   useGetLeadPipeline,
   useBulkAssignLeads,
   useListTeams,
   useListUsers,
+  useUpdateLead,
 } from "@workspace/api-client-react";
 
 import {
@@ -46,8 +56,6 @@ import { canExport } from "@/lib/export-permissions";
 import { getCountry } from "@/lib/countries";
 import { convertCurrency, formatCurrency } from "@/lib/currency";
 
-const ALL_STAGE = "all";
-
 const BULK_STRATEGIES: BulkAssignInputStrategy[] = [
   BulkAssignInputStrategy.round_robin,
   BulkAssignInputStrategy.load_balanced,
@@ -60,18 +68,30 @@ const BULK_STRATEGIES: BulkAssignInputStrategy[] = [
 type ColorTokens = ReturnType<typeof useColors>;
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
-// Memoized pipeline row — re-renders only when its lead (or theme) changes.
-const LeadRow = React.memo(function LeadRow({
+type ColumnBounds = { stage: string; x: number; width: number };
+
+// A single draggable lead card inside a Kanban column. Long-press lifts the card
+// into a floating overlay (managed by the parent) that follows the finger; on
+// release the parent hit-tests the finger X against the captured column bounds
+// and, if it lands on a different column, persists the stage change optimistically.
+const KanbanCard = React.memo(function KanbanCard({
   item,
   colors,
   isRTL,
   textAlign,
   t,
   currencyCode,
-  onPress,
-  onLongPress,
   selectionMode,
   selected,
+  hidden,
+  dragEnabled,
+  onPress,
+  onLongPressSelect,
+  onDragBegin,
+  onDragStart,
+  onDragUpdate,
+  onDragEnd,
+  onDragFinalize,
 }: {
   item: Lead;
   colors: ColorTokens;
@@ -79,58 +99,93 @@ const LeadRow = React.memo(function LeadRow({
   textAlign: "left" | "right";
   t: TFn;
   currencyCode: string;
-  onPress: (id: number) => void;
-  onLongPress: (id: number) => void;
   selectionMode: boolean;
   selected: boolean;
+  hidden: boolean;
+  dragEnabled: boolean;
+  onPress: (id: number) => void;
+  onLongPressSelect: (id: number) => void;
+  onDragBegin: () => void;
+  onDragStart: (item: Lead, x: number, y: number) => void;
+  onDragUpdate: (x: number, y: number) => void;
+  onDragEnd: (item: Lead, x: number) => void;
+  onDragFinalize: () => void;
 }) {
   const color = LEAD_STAGE_COLORS[item.stage] ?? colors.primary;
+
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(dragEnabled)
+        .activateAfterLongPress(260)
+        .onBegin(() => {
+          runOnJS(onDragBegin)();
+        })
+        .onStart((e) => {
+          runOnJS(onDragStart)(item, e.absoluteX, e.absoluteY);
+        })
+        .onUpdate((e) => {
+          runOnJS(onDragUpdate)(e.absoluteX, e.absoluteY);
+        })
+        .onEnd((e) => {
+          runOnJS(onDragEnd)(item, e.absoluteX);
+        })
+        .onFinalize(() => {
+          runOnJS(onDragFinalize)();
+        }),
+    [dragEnabled, item, onDragBegin, onDragStart, onDragUpdate, onDragEnd, onDragFinalize],
+  );
+
   return (
-    <Pressable
-      onPress={() => onPress(item.id)}
-      onLongPress={() => onLongPress(item.id)}
-      delayLongPress={250}
-      style={({ pressed }) => [
-        styles.leadCard,
-        {
-          backgroundColor: selected ? colors.primary + "14" : colors.card,
-          borderColor: selected ? colors.primary : colors.border,
-          borderRadius: colors.radius + 4,
-          flexDirection: isRTL ? "row-reverse" : "row",
-          opacity: pressed ? 0.75 : 1,
-        },
-      ]}
-    >
-      {selectionMode ? (
-        <View
-          style={[
-            styles.checkbox,
-            {
-              borderColor: selected ? colors.primary : colors.border,
-              backgroundColor: selected ? colors.primary : "transparent",
-            },
-          ]}
-        >
-          {selected ? <Feather name="check" size={14} color="#FFFFFF" /> : null}
+    <GestureDetector gesture={pan}>
+      <Pressable
+        onPress={() => onPress(item.id)}
+        onLongPress={() => {
+          if (selectionMode) onLongPressSelect(item.id);
+        }}
+        delayLongPress={250}
+        style={({ pressed }) => [
+          styles.card,
+          {
+            backgroundColor: selected ? colors.primary + "14" : colors.card,
+            borderColor: selected ? colors.primary : colors.border,
+            borderRadius: colors.radius + 4,
+            opacity: hidden ? 0 : pressed ? 0.85 : 1,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
+          {selectionMode ? (
+            <View
+              style={[
+                styles.checkbox,
+                {
+                  borderColor: selected ? colors.primary : colors.border,
+                  backgroundColor: selected ? colors.primary : "transparent",
+                },
+              ]}
+            >
+              {selected ? <Feather name="check" size={13} color="#FFFFFF" /> : null}
+            </View>
+          ) : (
+            <Avatar name={item.contactName ?? "?"} color={color} size={34} />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text numberOfLines={1} style={[styles.cardName, { color: colors.foreground, textAlign }]}>
+              {item.contactName ?? t("common.unnamedLead")}
+            </Text>
+            <Text numberOfLines={1} style={[styles.cardSub, { color: colors.mutedForeground, textAlign }]}>
+              {item.contactCompany ?? item.contactEmail ?? t("common.noCompany")}
+            </Text>
+          </View>
         </View>
-      ) : (
-        <Avatar name={item.contactName ?? "?"} color={color} size={40} />
-      )}
-      <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={[styles.leadName, { color: colors.foreground, textAlign }]}>
-          {item.contactName ?? t("common.unnamedLead")}
-        </Text>
-        <Text numberOfLines={1} style={[styles.leadSub, { color: colors.mutedForeground, textAlign }]}>
-          {item.contactCompany ?? item.contactEmail ?? t("common.noCompany")}
-        </Text>
-      </View>
-      {item.value != null && Number(item.value) > 0 ? (
-        <Text style={[styles.leadValue, { color: colors.success }]}>
-          {formatCurrency(Number(item.value), item.currency ?? currencyCode)}
-        </Text>
-      ) : null}
-      {!selectionMode ? <Feather name="chevron-right" size={16} color={colors.mutedForeground} /> : null}
-    </Pressable>
+        {item.value != null && Number(item.value) > 0 ? (
+          <Text style={[styles.cardValue, { color: colors.success, textAlign }]}>
+            {formatCurrency(Number(item.value), item.currency ?? currencyCode)}
+          </Text>
+        ) : null}
+      </Pressable>
+    </GestureDetector>
   );
 });
 
@@ -142,19 +197,16 @@ export default function LeadsScreen() {
   const { country } = useSettings();
   const currencyCode = getCountry(country).currencyCode;
   const params = useLocalSearchParams<{ stage?: string }>();
+  const { width: screenW } = useWindowDimensions();
+  const COLUMN_WIDTH = Math.min(300, Math.round(screenW * 0.82));
 
-  // If a stage was passed from the dashboard, use it as the initial filter.
-  // "all" is a virtual stage that shows every opportunity sorted by value.
-  // Guard against unknown deep-link values (fall back to "all") so an invalid
-  // ?stage= param never lands the user on a confusing empty state.
-  const isValidStage =
-    params.stage != null &&
-    (params.stage === ALL_STAGE || (LEAD_STAGE_ORDER as readonly string[]).includes(params.stage));
-  const initialStage = isValidStage ? (params.stage as string) : ALL_STAGE;
-  const [activeStage, setActiveStage] = useState<string>(initialStage);
-  // Track whether the active filter came from the dashboard so we can show
-  // the filter banner. Cleared when the user manually selects a chip.
-  const [fromDashboard, setFromDashboard] = useState<boolean>(isValidStage);
+  // Deep-link focus: if the dashboard passed a valid ?stage=, highlight that column.
+  const focusStage =
+    params.stage != null && (LEAD_STAGE_ORDER as readonly string[]).includes(params.stage)
+      ? (params.stage as string)
+      : null;
+  const [highlightStage, setHighlightStage] = useState<string | null>(focusStage);
+
   const [exportOpen, setExportOpen] = useState(false);
   const { user } = useAuth();
   const showExport = canExport(user);
@@ -162,7 +214,17 @@ export default function LeadsScreen() {
   const queryClient = useQueryClient();
   const query = useGetLeadPipeline();
 
-  // Bulk assignment
+  // ----- Drag-and-drop state -----
+  const [draggingLead, setDraggingLead] = useState<Lead | null>(null);
+  const [hoverStage, setHoverStage] = useState<string | null>(null);
+  const dragX = useSharedValue(0);
+  const dragY = useSharedValue(0);
+  const dragScale = useSharedValue(1);
+  const columnBoundsRef = useRef<ColumnBounds[]>([]);
+  const columnRefs = useRef<Record<string, View | null>>({});
+  const lastHoverRef = useRef<string | null>(null);
+
+  // ----- Bulk assignment -----
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [assignModalVisible, setAssignModalVisible] = useState(false);
@@ -177,18 +239,14 @@ export default function LeadsScreen() {
   const bulkTeamRequired =
     bulkStrategy === "load_balanced" || bulkStrategy === "availability" || bulkStrategy === "round_robin";
 
-  const exitSelection = React.useCallback(() => {
+  const updateLead = useUpdateLead();
+
+  const exitSelection = useCallback(() => {
     setSelectionMode(false);
     setSelectedIds(new Set());
   }, []);
 
-  const enterSelection = React.useCallback((id: number) => {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
-    setSelectionMode(true);
-    setSelectedIds(new Set([id]));
-  }, []);
-
-  const toggleSelect = React.useCallback((id: number) => {
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -197,7 +255,143 @@ export default function LeadsScreen() {
     });
   }, []);
 
-  function submitBulkAssign() {
+  // ----- Derived columns (always the full stage order so empty columns show) -----
+  const { columns, totalOpenValue } = useMemo(() => {
+    const map = new Map<string, Lead[]>();
+    for (const s of query.data?.stages ?? []) map.set(s.stage, s.leads);
+    const cols = LEAD_STAGE_ORDER.map((stage) => {
+      const leads = map.get(stage) ?? [];
+      const value = leads.reduce(
+        (sum, l) => sum + convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", currencyCode),
+        0,
+      );
+      return { stage, leads, count: leads.length, value };
+    });
+    const openTotal = cols
+      .filter((c) => c.stage !== "won" && c.stage !== "lost")
+      .reduce((sum, c) => sum + c.value, 0);
+    return { columns: cols, totalOpenValue: openTotal };
+  }, [query.data, currencyCode]);
+
+  // ----- Column measurement + hit testing -----
+  const measureColumns = useCallback(() => {
+    const bounds: ColumnBounds[] = [];
+    for (const stage of LEAD_STAGE_ORDER) {
+      const node = columnRefs.current[stage];
+      if (node) {
+        node.measureInWindow((x, _y, w) => {
+          bounds.push({ stage, x, width: w });
+        });
+      }
+    }
+    columnBoundsRef.current = bounds;
+  }, []);
+
+  const stageAtX = useCallback((absX: number): string | null => {
+    for (const b of columnBoundsRef.current) {
+      if (absX >= b.x && absX <= b.x + b.width) return b.stage;
+    }
+    return null;
+  }, []);
+
+  // ----- Persist a stage change optimistically -----
+  const moveLead = useCallback(
+    (leadId: number, fromStage: string, toStage: string) => {
+      if (fromStage === toStage) return;
+      const key = getGetLeadPipelineQueryKey();
+      const prev = queryClient.getQueryData<PipelineView>(key);
+      if (prev) {
+        let moved: Lead | undefined;
+        const stripped = prev.stages.map((s) => {
+          if (s.stage !== fromStage) return s;
+          const leads = s.leads.filter((l) => {
+            if (l.id === leadId) {
+              moved = l;
+              return false;
+            }
+            return true;
+          });
+          return { ...s, leads, count: leads.length };
+        });
+        if (moved) {
+          const movedLead: Lead = { ...moved, stage: toStage as Lead["stage"] };
+          const next = stripped.map((s) =>
+            s.stage === toStage
+              ? { ...s, leads: [movedLead, ...s.leads], count: s.leads.length + 1 }
+              : s,
+          );
+          queryClient.setQueryData<PipelineView>(key, { ...prev, stages: next });
+        }
+      }
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      updateLead.mutate(
+        { id: leadId, data: { stage: toStage as LeadUpdateStage } },
+        {
+          onError: () => {
+            if (prev) queryClient.setQueryData(key, prev);
+            Alert.alert(t("pipeline.failedSave"));
+          },
+        },
+      );
+    },
+    [queryClient, updateLead, t],
+  );
+
+  // ----- Drag gesture callbacks (all run on the JS thread) -----
+  const onDragBegin = useCallback(() => {
+    measureColumns();
+  }, [measureColumns]);
+
+  const onDragStart = useCallback(
+    (lead: Lead, x: number, y: number) => {
+      dragX.value = x;
+      dragY.value = y;
+      dragScale.value = withSpring(1.04, { damping: 14, stiffness: 220 });
+      setDraggingLead(lead);
+      lastHoverRef.current = lead.stage;
+      setHoverStage(lead.stage);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    },
+    [dragX, dragY, dragScale],
+  );
+
+  const onDragUpdate = useCallback(
+    (x: number, y: number) => {
+      dragX.value = x;
+      dragY.value = y;
+      const target = stageAtX(x);
+      if (target !== lastHoverRef.current) {
+        lastHoverRef.current = target;
+        setHoverStage(target);
+        if (target && Platform.OS !== "web") Haptics.selectionAsync();
+      }
+    },
+    [dragX, dragY, stageAtX],
+  );
+
+  const onDragEnd = useCallback(
+    (lead: Lead, x: number) => {
+      const target = stageAtX(x);
+      if (target && target !== lead.stage) {
+        moveLead(lead.id, lead.stage, target);
+        Alert.alert(
+          t("leads.movedTo", {
+            stage: t(`leads.stages.${target}`, { defaultValue: prettyLabel(target) }),
+          }),
+        );
+      }
+    },
+    [stageAtX, moveLead, t],
+  );
+
+  const onDragFinalize = useCallback(() => {
+    dragScale.value = 1;
+    setDraggingLead(null);
+    setHoverStage(null);
+    lastHoverRef.current = null;
+  }, [dragScale]);
+
+  const submitBulkAssign = useCallback(() => {
     const leadIds = Array.from(selectedIds);
     if (leadIds.length === 0) return;
     if (bulkStrategy === "manual" && bulkOwnerId == null) {
@@ -214,9 +408,9 @@ export default function LeadsScreen() {
           leadIds,
           strategy: bulkStrategy,
           assignedToId: bulkStrategy === "manual" ? bulkOwnerId : undefined,
-          // Manual with no team chosen must NOT send teamId — the server treats
-          // an explicit teamId (incl. null) as a set, silently clearing each
-          // lead's existing team binding. Omit it instead.
+          // Manual with no team chosen must NOT send teamId — the server treats an
+          // explicit teamId (incl. null) as a set, silently clearing existing team
+          // bindings. Omit it instead.
           teamId: bulkTeamId != null ? bulkTeamId : bulkStrategy === "manual" ? undefined : null,
         },
       },
@@ -229,70 +423,13 @@ export default function LeadsScreen() {
           Alert.alert(t("leads.bulkAssign.done", { assigned: res.assigned, failed: res.failed }));
         },
         onError: (e: any) => Alert.alert(t("leads.bulkAssign.failed"), e?.message || undefined),
-      }
+      },
     );
-  }
+  }, [selectedIds, bulkStrategy, bulkOwnerId, bulkTeamId, bulkTeamRequired, bulkAssign, queryClient, exitSelection, t]);
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
-  const { stages, convertedTotalValue } = useMemo(() => {
-    const map = new Map<string, { count: number; value: number; leads: Lead[] }>();
-    for (const s of query.data?.stages ?? []) {
-      map.set(s.stage, { count: s.count, value: s.value, leads: s.leads });
-    }
-    const stagesArr = LEAD_STAGE_ORDER.map((stage) => ({
-      stage,
-      count: map.get(stage)?.count ?? 0,
-      value: map.get(stage)?.value ?? 0,
-      leads: map.get(stage)?.leads ?? [],
-    }));
-    const converted = (query.data?.stages ?? [])
-      .flatMap((s) => s.leads)
-      .filter((l) => l.stage !== "won" && l.stage !== "lost")
-      .reduce(
-        (sum, l) => sum + convertCurrency(Number(l.value ?? 0), l.currency ?? "USD", currencyCode),
-        0,
-      );
-    return { stages: stagesArr, convertedTotalValue: converted };
-  }, [query.data, currencyCode]);
-
-  // "All" shows every lead across every stage, sorted by value descending.
-  const allLeads = useMemo(
-    () =>
-      stages
-        .flatMap((s) => s.leads)
-        .sort((a, b) => (Number(b.value ?? 0)) - (Number(a.value ?? 0))),
-    [stages],
-  );
-  const totalCount = stages.reduce((sum, s) => sum + s.count, 0);
-
-  const currentLeads =
-    activeStage === ALL_STAGE
-      ? allLeads
-      : (stages.find((s) => s.stage === activeStage)?.leads ?? []);
-
-  const currentCount =
-    activeStage === ALL_STAGE
-      ? totalCount
-      : (stages.find((s) => s.stage === activeStage)?.count ?? 0);
-
-  function selectStage(stage: string) {
-    setActiveStage(stage);
-    setFromDashboard(false); // user manually chose — clear dashboard origin
-  }
-
-  function clearFilter() {
-    setActiveStage(ALL_STAGE);
-    setFromDashboard(false);
-  }
-
-  // Stage chip data: "All" first, then the regular LEAD_STAGE_ORDER stages.
-  const stageChips = useMemo(() => {
-    const allChip = { stage: ALL_STAGE, count: totalCount, value: convertedTotalValue };
-    return [allChip, ...stages];
-  }, [stages, totalCount, convertedTotalValue]);
-
-  const onLeadPress = React.useCallback(
+  const onCardPress = useCallback(
     (id: number) => {
       if (selectionMode) {
         toggleSelect(id);
@@ -303,28 +440,18 @@ export default function LeadsScreen() {
     },
     [router, selectionMode, toggleSelect],
   );
-  const renderLead = React.useCallback(
-    ({ item }: { item: Lead }) => (
-      <LeadRow
-        item={item}
-        colors={colors}
-        isRTL={isRTL}
-        textAlign={textAlign}
-        t={t}
-        currencyCode={currencyCode}
-        onPress={onLeadPress}
-        onLongPress={enterSelection}
-        selectionMode={selectionMode}
-        selected={selectedIds.has(item.id)}
-      />
-    ),
-    [colors, isRTL, textAlign, t, currencyCode, onLeadPress, enterSelection, selectionMode, selectedIds],
-  );
 
-  const activeColor =
-    activeStage === ALL_STAGE ? colors.primary : (LEAD_STAGE_COLORS[activeStage] ?? colors.primary);
+  // Floating drag overlay follows the finger. Positioned in window coordinates
+  // (matching e.absoluteX/Y) via a full-screen, non-interactive container.
+  const overlayStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: dragX.value - COLUMN_WIDTH / 2 },
+      { translateY: dragY.value - 34 },
+      { scale: dragScale.value },
+    ],
+  }));
 
-  const activeStageName = t(`leads.stages.${activeStage}`, { defaultValue: prettyLabel(activeStage) });
+  const dragColor = draggingLead ? LEAD_STAGE_COLORS[draggingLead.stage] ?? colors.primary : colors.primary;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -334,40 +461,37 @@ export default function LeadsScreen() {
           hitSlop={10}
           style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
         >
-          <Feather name="chevron-left" size={20} color={colors.foreground} />
+          <Feather name={isRTL ? "chevron-right" : "chevron-left"} size={20} color={colors.foreground} />
         </Pressable>
-        {showExport && (
+
+        <View style={[styles.headerActions, { top: topPad + 12, right: isRTL ? undefined : 20, left: isRTL ? 20 : undefined, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Pressable
-            onPress={() => setExportOpen(true)}
+            onPress={() => {
+              if (selectionMode) exitSelection();
+              else setSelectionMode(true);
+            }}
             hitSlop={10}
-            style={[styles.exportBtn, { backgroundColor: colors.card, borderColor: colors.border, top: topPad + 12, right: isRTL ? undefined : 20, left: isRTL ? 20 : undefined }]}
+            style={[styles.iconBtn, { backgroundColor: selectionMode ? colors.primary : colors.card, borderColor: selectionMode ? colors.primary : colors.border }]}
           >
-            <Feather name="share" size={18} color={colors.foreground} />
+            <Feather name={selectionMode ? "x" : "check-square"} size={17} color={selectionMode ? "#FFFFFF" : colors.foreground} />
           </Pressable>
-        )}
+          {showExport && (
+            <Pressable
+              onPress={() => setExportOpen(true)}
+              hitSlop={10}
+              style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="share" size={17} color={colors.foreground} />
+            </Pressable>
+          )}
+        </View>
+
         <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("leads.title")}</Text>
         <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
-          {formatCurrency(convertedTotalValue, currencyCode)} {t("leads.openValueSuffix")}
+          {formatCurrency(totalOpenValue, currencyCode)} {t("leads.openValueSuffix")}
         </Text>
-
-        {/* Active filter banner — shown when user arrived from a dashboard KPI */}
-        {fromDashboard && (
-          <View
-            style={[
-              styles.filterBanner,
-              { backgroundColor: activeColor + "18", borderColor: activeColor + "55", flexDirection: isRTL ? "row-reverse" : "row" },
-            ]}
-          >
-            <Feather name="filter" size={13} color={activeColor} />
-            <Text style={[styles.filterBannerText, { color: activeColor }]}>
-              {t("leads.filterActive")}: {activeStageName}
-            </Text>
-            <Pressable onPress={clearFilter} hitSlop={8} style={{ marginLeft: "auto" }}>
-              <Text style={[styles.filterClearText, { color: activeColor }]}>
-                {t("leads.clearFilter")}
-              </Text>
-            </Pressable>
-          </View>
+        {!selectionMode && (
+          <Text style={[styles.hint, { color: colors.mutedForeground, textAlign }]}>{t("leads.kanbanHint")}</Text>
         )}
       </View>
 
@@ -377,96 +501,106 @@ export default function LeadsScreen() {
         <ErrorState onRetry={() => query.refetch()} />
       ) : (
         <>
-          <View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={[styles.stageBar, { flexDirection: isRTL ? "row-reverse" : "row" }]}
-            >
-              {stageChips.map((s) => {
-                const active = s.stage === activeStage;
-                const color = s.stage === ALL_STAGE ? colors.primary : (LEAD_STAGE_COLORS[s.stage] ?? colors.primary);
-                return (
-                  <Pressable
-                    key={s.stage}
-                    onPress={() => selectStage(s.stage)}
-                    style={[
-                      styles.stageChip,
-                      {
-                        backgroundColor: active ? color : colors.card,
-                        borderColor: active ? color : colors.border,
-                        borderRadius: colors.radius + 2,
-                        flexDirection: isRTL ? "row-reverse" : "row",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.stageChipText,
-                        { color: active ? "#FFFFFF" : colors.foreground },
-                      ]}
-                    >
-                      {t(`leads.stages.${s.stage}`, { defaultValue: prettyLabel(s.stage) })}
-                    </Text>
-                    <View
-                      style={[
-                        styles.stageCount,
-                        {
-                          backgroundColor: active
-                            ? "rgba(255,255,255,0.25)"
-                            : colors.muted,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.stageCountText,
-                          { color: active ? "#FFFFFF" : colors.mutedForeground },
-                        ]}
-                      >
-                        {s.count}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-
-          <FlatList
-            data={currentLeads}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={renderLead}
-            removeClippedSubviews
-            initialNumToRender={10}
-            maxToRenderPerBatch={10}
-            windowSize={11}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            scrollEnabled={draggingLead == null}
             contentContainerStyle={{
-              padding: 20,
-              paddingBottom: insets.bottom + 120,
-              gap: 10,
-              flexGrow: 1,
+              paddingHorizontal: 16,
+              paddingTop: 12,
+              paddingBottom: insets.bottom + 100,
+              gap: 12,
+              flexDirection: isRTL ? "row-reverse" : "row",
             }}
-            refreshControl={
-              <RefreshControl
-                refreshing={query.isRefetching}
-                onRefresh={() => query.refetch()}
-                tintColor={colors.primary}
-              />
-            }
-            ListEmptyComponent={
-              <View style={{ paddingTop: 40 }}>
-                <EmptyState
-                  icon="inbox"
-                  title={t("leads.empty")}
-                  subtitle={t("leads.emptyDesc")}
-                />
-              </View>
-            }
-          />
+          >
+            {columns.map((col) => {
+              const color = LEAD_STAGE_COLORS[col.stage] ?? colors.primary;
+              const isHover = hoverStage === col.stage && draggingLead != null && draggingLead.stage !== col.stage;
+              const isHighlight = highlightStage === col.stage;
+              return (
+                <View
+                  key={col.stage}
+                  ref={(node) => {
+                    columnRefs.current[col.stage] = node;
+                  }}
+                  collapsable={false}
+                  style={[
+                    styles.column,
+                    {
+                      width: COLUMN_WIDTH,
+                      backgroundColor: colors.muted + (colors.radius > 0 ? "55" : "55"),
+                      borderRadius: colors.radius + 6,
+                      borderColor: isHover ? color : isHighlight ? color + "88" : "transparent",
+                      borderWidth: isHover || isHighlight ? 2 : 0,
+                    },
+                  ]}
+                >
+                  <View style={[styles.columnHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                    <View style={[styles.columnDot, { backgroundColor: color }]} />
+                    <Text style={[styles.columnTitle, { color: colors.foreground }]} numberOfLines={1}>
+                      {t(`leads.stages.${col.stage}`, { defaultValue: prettyLabel(col.stage) })}
+                    </Text>
+                    <View style={[styles.columnCount, { backgroundColor: colors.card }]}>
+                      <Text style={[styles.columnCountText, { color: colors.mutedForeground }]}>{col.count}</Text>
+                    </View>
+                  </View>
+                  {col.value > 0 ? (
+                    <Text style={[styles.columnValue, { color: colors.mutedForeground, textAlign: isRTL ? "right" : "left" }]}>
+                      {formatCurrency(col.value, currencyCode)}
+                    </Text>
+                  ) : null}
+
+                  <ScrollView
+                    style={{ flex: 1 }}
+                    scrollEnabled={draggingLead == null}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{ gap: 10, paddingVertical: 10, paddingHorizontal: 10, flexGrow: 1 }}
+                    refreshControl={
+                      <RefreshControl
+                        refreshing={query.isRefetching}
+                        onRefresh={() => query.refetch()}
+                        tintColor={colors.primary}
+                      />
+                    }
+                  >
+                    {col.leads.length === 0 ? (
+                      <View style={styles.columnEmpty}>
+                        <Text style={[styles.columnEmptyText, { color: colors.mutedForeground }]}>
+                          {t("leads.empty")}
+                        </Text>
+                      </View>
+                    ) : (
+                      col.leads.map((lead) => (
+                        <KanbanCard
+                          key={lead.id}
+                          item={lead}
+                          colors={colors}
+                          isRTL={isRTL}
+                          textAlign={textAlign}
+                          t={t}
+                          currencyCode={currencyCode}
+                          selectionMode={selectionMode}
+                          selected={selectedIds.has(lead.id)}
+                          hidden={draggingLead?.id === lead.id}
+                          dragEnabled={!selectionMode}
+                          onPress={onCardPress}
+                          onLongPressSelect={toggleSelect}
+                          onDragBegin={onDragBegin}
+                          onDragStart={onDragStart}
+                          onDragUpdate={onDragUpdate}
+                          onDragEnd={onDragEnd}
+                          onDragFinalize={onDragFinalize}
+                        />
+                      ))
+                    )}
+                  </ScrollView>
+                </View>
+              );
+            })}
+          </ScrollView>
 
           {selectionMode ? (
-            /* Bulk action bar */
             <View
               style={[
                 styles.bulkBar,
@@ -502,7 +636,6 @@ export default function LeadsScreen() {
               </Pressable>
             </View>
           ) : (
-            /* FAB */
             <Pressable
               onPress={() => {
                 if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -518,6 +651,31 @@ export default function LeadsScreen() {
           )}
         </>
       )}
+
+      {/* Floating drag overlay */}
+      {draggingLead ? (
+        <Animated.View pointerEvents="none" style={[styles.dragOverlay, { width: COLUMN_WIDTH - 20 }, overlayStyle]}>
+          <View
+            style={[
+              styles.card,
+              styles.dragCard,
+              { backgroundColor: colors.card, borderColor: dragColor, borderRadius: colors.radius + 4 },
+            ]}
+          >
+            <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10 }}>
+              <Avatar name={draggingLead.contactName ?? "?"} color={dragColor} size={34} />
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={[styles.cardName, { color: colors.foreground, textAlign }]}>
+                  {draggingLead.contactName ?? t("common.unnamedLead")}
+                </Text>
+                <Text numberOfLines={1} style={[styles.cardSub, { color: colors.mutedForeground, textAlign }]}>
+                  {draggingLead.contactCompany ?? draggingLead.contactEmail ?? t("common.noCompany")}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+      ) : null}
 
       {/* Bulk-assign modal */}
       <Modal visible={assignModalVisible} animationType="slide" transparent onRequestClose={() => setAssignModalVisible(false)}>
@@ -622,7 +780,7 @@ export default function LeadsScreen() {
         visible={exportOpen}
         onClose={() => setExportOpen(false)}
         entityType="lead"
-        filters={{ stage: activeStage === ALL_STAGE ? undefined : activeStage }}
+        filters={{}}
       />
     </View>
   );
@@ -638,15 +796,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 12,
   },
-  exportBtn: {
+  headerActions: {
     position: "absolute",
+    gap: 8,
+    zIndex: 10,
+  },
+  iconBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
   },
   heading: {
     fontSize: 30,
@@ -657,74 +818,89 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     marginTop: 2,
   },
-  filterBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderRadius: 8,
+  hint: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    marginTop: 6,
   },
-  filterBannerText: {
-    fontSize: 13,
-    fontFamily: FONT.semibold,
+  column: {
+    flex: 1,
+    paddingTop: 12,
+    overflow: "hidden",
   },
-  filterClearText: {
-    fontSize: 13,
-    fontFamily: FONT.medium,
-    textDecorationLine: "underline",
-  },
-  stageBar: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    gap: 9,
-  },
-  stageChip: {
-    flexDirection: "row",
+  columnHeader: {
     alignItems: "center",
     gap: 8,
-    paddingLeft: 14,
-    paddingRight: 8,
-    paddingVertical: 9,
-    borderWidth: 1,
+    paddingHorizontal: 12,
   },
-  stageChipText: {
-    fontSize: 14,
-    fontFamily: FONT.semibold,
+  columnDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
   },
-  stageCount: {
-    minWidth: 22,
+  columnTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: FONT.bold,
+  },
+  columnCount: {
+    minWidth: 24,
     height: 22,
     borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
   },
-  stageCountText: {
+  columnCountText: {
     fontSize: 12,
     fontFamily: FONT.bold,
   },
-  leadCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderWidth: 1,
+  columnValue: {
+    fontSize: 12.5,
+    fontFamily: FONT.semibold,
+    paddingHorizontal: 12,
+    marginTop: 4,
   },
-  leadName: {
-    fontSize: 15.5,
+  columnEmpty: {
+    paddingVertical: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  columnEmptyText: {
+    fontSize: 12.5,
+    fontFamily: FONT.regular,
+  },
+  card: {
+    padding: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  dragCard: {
+    borderWidth: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 12,
+  },
+  cardName: {
+    fontSize: 14.5,
     fontFamily: FONT.semibold,
   },
-  leadSub: {
-    fontSize: 13,
+  cardSub: {
+    fontSize: 12.5,
     fontFamily: FONT.regular,
-    marginTop: 2,
+    marginTop: 1,
   },
-  leadValue: {
-    fontSize: 15,
+  cardValue: {
+    fontSize: 14,
     fontFamily: FONT.bold,
+  },
+  dragOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    zIndex: 1000,
   },
   fab: {
     position: "absolute",
@@ -741,9 +917,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   checkbox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 9,
     borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
@@ -778,7 +954,7 @@ const styles = StyleSheet.create({
   },
   bulkAssignText: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: FONT.semibold,
   },
 });
