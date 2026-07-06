@@ -35,6 +35,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { Avatar, ErrorState, FONT, LoadingState, prettyLabel } from "@/components/ui";
+import { WorkflowSection } from "@/components/WorkflowSection";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatCurrencyFull } from "@/lib/currency";
@@ -202,6 +203,8 @@ export default function CompanyDetailScreen() {
               ))}
             </View>
           ) : null}
+
+          {orgId > 0 ? <WorkflowSection entityType="organization" id={orgId} /> : null}
 
           {/* Tabs */}
           <ScrollView

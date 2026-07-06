@@ -3656,6 +3656,188 @@ export interface AiCopilotBatchListResponse {
   jobs: AiCopilotBatchJob[];
 }
 
+/**
+ * Structured, feature-specific output (shape varies by recommendationType).
+ */
+export type AiWorkflowRecommendationData = { [key: string]: unknown };
+
+export interface AiWorkflowRecommendation {
+  id: number;
+  companyId: number;
+  /** lead | contact | organization */
+  entityType: string;
+  entityId: number;
+  /** next_action | follow_up | owner | department | team | priority | due_date | routing | progression | reminder | task */
+  recommendationType: string;
+  /** Structured, feature-specific output (shape varies by recommendationType). */
+  data: AiWorkflowRecommendationData;
+  /** 0-100 confidence, null when unknown. */
+  confidence?: number | null;
+  reasoning?: string | null;
+  /** ai | deterministic */
+  source: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
+  /** suggested | accepted | dismissed */
+  status: string;
+  generatedAt: string;
+  lastAnalysisAt: string;
+  acceptedById?: number | null;
+  acceptedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiWorkflowListResponse {
+  recommendations: AiWorkflowRecommendation[];
+}
+
+export type AiWorkflowOverviewResponseCounts = {[key: string]: number};
+
+export interface AiWorkflowOverviewResponse {
+  counts: AiWorkflowOverviewResponseCounts;
+  recent: AiWorkflowRecommendation[];
+}
+
+export interface AiWorkflowGenerateRequest {
+  /** en | ar (defaults to en) */
+  language?: string;
+}
+
+export interface WorkflowScope {
+  /** company | department | team | employee */
+  type: string;
+  id?: number | null;
+  name: string;
+}
+
+export interface WorkflowSlaRisk {
+  /** lead | contact | task | follow_up */
+  entityType: string;
+  entityId: number;
+  /** overdue_lead | stalled_stage | aging_opportunity | unanswered_comms | missed_follow_up | unreachable | expiring_task */
+  category: string;
+  /** critical | high | medium | low */
+  riskLevel: string;
+  title: string;
+  detail: string;
+  recommendedAction: string;
+  ageDays: number | null;
+  ownerId: number | null;
+}
+
+export interface WorkflowWorkloadEntry {
+  userId: number;
+  name: string;
+  openLeads: number;
+  overdueItems: number;
+}
+
+export type WorkflowHealthResponseTotals = {[key: string]: number};
+
+export interface WorkflowHealthResponse {
+  scope: WorkflowScope;
+  healthScore: number;
+  /** excellent | good | fair | poor */
+  grade: string;
+  slaCompliance: number;
+  totals: WorkflowHealthResponseTotals;
+  workload: WorkflowWorkloadEntry[];
+  topRisks: WorkflowSlaRisk[];
+  recommendedActions: string[];
+}
+
+export type WorkflowSlaRisksResponseCounts = {[key: string]: number};
+
+export interface WorkflowSlaRisksResponse {
+  scope: WorkflowScope;
+  total: number;
+  counts: WorkflowSlaRisksResponseCounts;
+  risks: WorkflowSlaRisk[];
+}
+
+export interface WorkflowBottleneck {
+  /** stage_bottleneck | team_overload | overdue_backlog | repeated_losses */
+  type: string;
+  /** critical | high | medium | low */
+  severity: string;
+  title: string;
+  detail: string;
+  metric: number;
+  recommendedAction: string;
+}
+
+export interface WorkflowBottlenecksResponse {
+  scope: WorkflowScope;
+  bottlenecks: WorkflowBottleneck[];
+  riskCount: number;
+}
+
+export interface WorkflowSimulateRequest {
+  leadId: number;
+  /** reassign | follow_up | delay */
+  scenario: string;
+  /** Target owner for a reassign scenario (optional). */
+  candidateUserId?: number;
+  /** Number of days to delay for a delay scenario (optional). */
+  delayDays?: number;
+}
+
+export interface WorkflowSimulateOutcome {
+  winProbability: number;
+  /** critical | high | medium | low */
+  riskLevel: string;
+  note: string;
+}
+
+export type WorkflowSimulateResponseDeltas = {
+  winProbability: number;
+};
+
+export interface WorkflowSimulateResponse {
+  leadId: number;
+  scenario: string;
+  baseline: WorkflowSimulateOutcome;
+  predicted: WorkflowSimulateOutcome;
+  deltas: WorkflowSimulateResponseDeltas;
+  explanation: string;
+  assumptions: string[];
+  confidence: number;
+}
+
+export interface AiWorkflowBatchStartRequest {
+  /** lead | contact | organization */
+  entityType: string;
+}
+
+export type AiWorkflowBatchJobErrorsItem = {
+  entityId: number;
+  message: string;
+};
+
+export interface AiWorkflowBatchJob {
+  id: string;
+  companyId: number;
+  requestedById: number;
+  /** lead | contact | organization */
+  entityType: string;
+  /** queued | running | completed | failed */
+  status: string;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  errors: AiWorkflowBatchJobErrorsItem[];
+  startedAt: string;
+  finishedAt?: string | null;
+}
+
+export interface AiWorkflowBatchListResponse {
+  jobs: AiWorkflowBatchJob[];
+}
+
 export interface DashboardLeadKpis {
   total: number;
   today: number;
@@ -5143,6 +5325,34 @@ to?: string;
 export type GetAiPlatformUsageParams = {
 from?: string;
 to?: string;
+};
+
+export type GetAiWorkflowHealthParams = {
+/**
+ * company | department | team | employee
+ */
+scopeType?: string;
+id?: number;
+};
+
+export type GetAiWorkflowSlaRisksParams = {
+/**
+ * company | department | team | employee
+ */
+scopeType?: string;
+id?: number;
+/**
+ * overdue_lead | stalled_stage | aging_opportunity | unanswered_comms | missed_follow_up | unreachable | expiring_task
+ */
+category?: string;
+};
+
+export type GetAiWorkflowBottlenecksParams = {
+/**
+ * company | department | team | employee
+ */
+scopeType?: string;
+id?: number;
 };
 
 export type ListFollowUpsParams = {

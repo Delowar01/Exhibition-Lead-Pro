@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startWorkers } from "./lib/jobs/handlers";
 import { startScheduler } from "./lib/jobs/scheduler";
-import { backfillAiCopilotPermissions } from "./lib/permission-backfill";
+import { backfillAiCopilotPermissions, backfillAiWorkflowPermissions } from "./lib/permission-backfill";
 import { config } from "./config.js";
 
 const port = config.port;
@@ -19,6 +19,10 @@ app.listen(port, (err) => {
   // them out. Never blocks startup — logs and continues on failure.
   backfillAiCopilotPermissions().catch((err) => {
     logger.error({ err }, "ai_copilot permission backfill failed");
+  });
+  // Stage 5F `ai_workflow` permission backfill — same no-lockout guarantee.
+  backfillAiWorkflowPermissions().catch((err) => {
+    logger.error({ err }, "ai_workflow permission backfill failed");
   });
   // Background job queue (async email/notification delivery) + recurring maintenance
   // scheduler (token/session cleanup, invitation expiry, retention, follow-ups).

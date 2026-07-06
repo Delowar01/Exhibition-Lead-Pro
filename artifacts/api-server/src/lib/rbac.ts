@@ -18,6 +18,7 @@ export const PERMISSION_CATALOG: Record<string, { label: string; actions: string
   reports: { label: "Reports", actions: ["view"] },
   ai_insights: { label: "AI Insights", actions: ["view", "generate", "accept"] },
   ai_copilot: { label: "AI Sales Copilot", actions: ["view", "generate", "use"] },
+  ai_workflow: { label: "AI Workflow & Automation", actions: ["view", "generate", "accept"] },
   team: { label: "Team & Users", actions: ["view", "create", "edit", "delete"] },
   departments: { label: "Departments", actions: ["view", "create", "edit", "delete"] },
   teams: { label: "Teams", actions: ["view", "create", "edit", "delete"] },

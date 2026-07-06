@@ -35,3 +35,29 @@ export async function backfillAiCopilotPermissions(): Promise<{ admins: number; 
   }
   return result;
 }
+
+// One-time, idempotent RBAC backfill for the Stage 5F `ai_workflow` permission module.
+// Same rationale + policy as the copilot backfill above: the workflow routes are
+// `requirePermission("ai_workflow", ...)`-gated, so pre-existing admin/employee rows that
+// predate the module would 403 without this. Policy (mirrors the seed): admin =>
+// view/generate/accept (default-on); employee => view ONLY (generate/accept are writes and
+// stay deny-by-default). Only touches rows that do NOT already carry an `ai_workflow` key.
+export async function backfillAiWorkflowPermissions(): Promise<{ admins: number; employees: number }> {
+  const admins = await db
+    .update(usersTable)
+    .set({ permissions: sql`${usersTable.permissions} || '{"ai_workflow":["view","generate","accept"]}'::jsonb` })
+    .where(and(eq(usersTable.role, "admin"), sql`NOT jsonb_exists(${usersTable.permissions}, 'ai_workflow')`))
+    .returning({ id: usersTable.id });
+
+  const employees = await db
+    .update(usersTable)
+    .set({ permissions: sql`${usersTable.permissions} || '{"ai_workflow":["view"]}'::jsonb` })
+    .where(and(eq(usersTable.role, "employee"), sql`NOT jsonb_exists(${usersTable.permissions}, 'ai_workflow')`))
+    .returning({ id: usersTable.id });
+
+  const result = { admins: admins.length, employees: employees.length };
+  if (result.admins || result.employees) {
+    logger.info(result, "Backfilled ai_workflow permissions for pre-existing users");
+  }
+  return result;
+}

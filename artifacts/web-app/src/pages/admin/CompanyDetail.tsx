@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronLeft, Building2, Globe, Phone, Mail, MapPin, Users, Target, DollarSign, Calendar, StickyNote, FileText, Clock } from "lucide-react";
 import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 import { SalesCopilotPanel } from "@/components/SalesCopilotPanel";
+import { WorkflowIntelligencePanel } from "@/components/WorkflowIntelligencePanel";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
@@ -152,6 +153,7 @@ export default function AdminCompanyDetail() {
           </Card>
 
           {Number.isFinite(id) && id > 0 && <SalesCopilotPanel entityType="organization" id={id} />}
+          {Number.isFinite(id) && id > 0 && <WorkflowIntelligencePanel entityType="organization" id={id} />}
           {Number.isFinite(id) && id > 0 && <AiInsightsPanel entityType="organization" id={id} />}
         </div>
 

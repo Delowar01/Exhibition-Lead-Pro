@@ -4406,6 +4406,312 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # ── Stage 5F — Enterprise AI Workflow & Automation Intelligence ──────────────
+  # All read-only advisory intelligence. NEVER assigns/routes/sends/writes the CRM.
+  /ai/workflow/overview:
+    get:
+      operationId: getAiWorkflowOverview
+      tags: [ai]
+      summary: Tenant-wide AI workflow summary (status counts + recent recommendations)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowOverviewResponse"
+
+  /ai/workflow/health:
+    get:
+      operationId: getAiWorkflowHealth
+      tags: [ai]
+      summary: Org-scoped workflow health rollup (score, grade, SLA compliance, workload)
+      parameters:
+        - name: scopeType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: company | department | team | employee
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowHealthResponse"
+
+  /ai/workflow/sla-risks:
+    get:
+      operationId: getAiWorkflowSlaRisks
+      tags: [ai]
+      summary: Org-scoped SLA-risk list (overdue leads, stalled stages, missed follow-ups, etc.)
+      parameters:
+        - name: scopeType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: company | department | team | employee
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: overdue_lead | stalled_stage | aging_opportunity | unanswered_comms | missed_follow_up | unreachable | expiring_task
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowSlaRisksResponse"
+
+  /ai/workflow/bottlenecks:
+    get:
+      operationId: getAiWorkflowBottlenecks
+      tags: [ai]
+      summary: Org-scoped pipeline bottleneck analysis (stage/team/backlog/losses)
+      parameters:
+        - name: scopeType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: company | department | team | employee
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowBottlenecksResponse"
+
+  /ai/workflow/simulate:
+    post:
+      operationId: simulateAiWorkflowScenario
+      tags: [ai]
+      summary: What-if outcome prediction for a lead (reassign/follow_up/delay). Writes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowSimulateRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowSimulateResponse"
+        "400":
+          description: Invalid scenario or lead
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Lead not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/workflow/batch:
+    post:
+      operationId: startAiWorkflowBatch
+      tags: [ai]
+      summary: Start a batch (re)analysis of all records of an entity type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiWorkflowBatchStartRequest"
+      responses:
+        "202":
+          description: Batch accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowBatchJob"
+        "400":
+          description: Invalid entity type or missing company context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: listAiWorkflowBatches
+      tags: [ai]
+      summary: List AI workflow batch jobs visible to the caller's tenant
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowBatchListResponse"
+
+  /ai/workflow/batch/{jobId}:
+    get:
+      operationId: getAiWorkflowBatch
+      tags: [ai]
+      summary: Get the status/progress of one AI workflow batch job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowBatchJob"
+        "404":
+          description: Batch job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/workflow/recommendations/{id}/accept:
+    post:
+      operationId: acceptAiWorkflowRecommendation
+      tags: [ai]
+      summary: Mark a workflow recommendation accepted (audited; does NOT itself mutate the CRM)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowRecommendation"
+        "404":
+          description: Recommendation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/workflow/recommendations/{id}/dismiss:
+    post:
+      operationId: dismissAiWorkflowRecommendation
+      tags: [ai]
+      summary: Dismiss a workflow recommendation (audited review action)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowRecommendation"
+        "404":
+          description: Recommendation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/workflow/{entityType}/{id}/analyze:
+    post:
+      operationId: analyzeAiWorkflowEntity
+      tags: [ai]
+      summary: Compute (or re-compute) all applicable workflow recommendations for a CRM entity
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: lead | contact | organization
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiWorkflowGenerateRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowListResponse"
+        "404":
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/workflow/{entityType}/{id}:
+    get:
+      operationId: getAiWorkflowRecommendations
+      tags: [ai]
+      summary: List stored workflow recommendations for one CRM entity
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: lead | contact | organization
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowListResponse"
+        "404":
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -10836,6 +11142,357 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiCopilotBatchJob"
+
+    # ── Stage 5F — Enterprise AI Workflow & Automation Intelligence ──────────────
+    # Advisory workflow recommendations + org-scoped health/SLA/bottleneck rollups +
+    # what-if simulation. Read-only intelligence: the engine NEVER assigns, routes,
+    # changes a stage, sends, or writes back to the CRM. Every recommendation is a
+    # reviewable draft (suggested → accepted/dismissed) carrying honest provenance.
+    AiWorkflowRecommendation:
+      type: object
+      required:
+        [
+          id,
+          companyId,
+          entityType,
+          entityId,
+          recommendationType,
+          data,
+          source,
+          status,
+          generatedAt,
+          lastAnalysisAt,
+        ]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        entityType:
+          type: string
+          description: lead | contact | organization
+        entityId:
+          type: integer
+        recommendationType:
+          type: string
+          description: next_action | follow_up | owner | department | team | priority | due_date | routing | progression | reminder | task
+        data:
+          type: object
+          additionalProperties: true
+          description: Structured, feature-specific output (shape varies by recommendationType).
+        confidence:
+          type: integer
+          nullable: true
+          description: 0-100 confidence, null when unknown.
+        reasoning:
+          type: string
+          nullable: true
+        source:
+          type: string
+          description: ai | deterministic
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          description: suggested | accepted | dismissed
+        generatedAt:
+          type: string
+        lastAnalysisAt:
+          type: string
+        acceptedById:
+          type: integer
+          nullable: true
+        acceptedAt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    AiWorkflowListResponse:
+      type: object
+      required: [recommendations]
+      properties:
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiWorkflowRecommendation"
+
+    AiWorkflowOverviewResponse:
+      type: object
+      required: [counts, recent]
+      properties:
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        recent:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiWorkflowRecommendation"
+
+    AiWorkflowGenerateRequest:
+      type: object
+      properties:
+        language:
+          type: string
+          description: en | ar (defaults to en)
+
+    WorkflowScope:
+      type: object
+      required: [type, name]
+      properties:
+        type:
+          type: string
+          description: company | department | team | employee
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+
+    WorkflowSlaRisk:
+      type: object
+      required: [entityType, entityId, category, riskLevel, title, detail, recommendedAction, ageDays, ownerId]
+      properties:
+        entityType:
+          type: string
+          description: lead | contact | task | follow_up
+        entityId:
+          type: integer
+        category:
+          type: string
+          description: overdue_lead | stalled_stage | aging_opportunity | unanswered_comms | missed_follow_up | unreachable | expiring_task
+        riskLevel:
+          type: string
+          description: critical | high | medium | low
+        title:
+          type: string
+        detail:
+          type: string
+        recommendedAction:
+          type: string
+        ageDays:
+          type: integer
+          nullable: true
+        ownerId:
+          type: integer
+          nullable: true
+
+    WorkflowWorkloadEntry:
+      type: object
+      required: [userId, name, openLeads, overdueItems]
+      properties:
+        userId:
+          type: integer
+        name:
+          type: string
+        openLeads:
+          type: integer
+        overdueItems:
+          type: integer
+
+    WorkflowHealthResponse:
+      type: object
+      required: [scope, healthScore, grade, slaCompliance, totals, workload, topRisks, recommendedActions]
+      properties:
+        scope:
+          $ref: "#/components/schemas/WorkflowScope"
+        healthScore:
+          type: integer
+        grade:
+          type: string
+          description: excellent | good | fair | poor
+        slaCompliance:
+          type: integer
+        totals:
+          type: object
+          additionalProperties:
+            type: integer
+        workload:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowWorkloadEntry"
+        topRisks:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowSlaRisk"
+        recommendedActions:
+          type: array
+          items:
+            type: string
+
+    WorkflowSlaRisksResponse:
+      type: object
+      required: [scope, total, counts, risks]
+      properties:
+        scope:
+          $ref: "#/components/schemas/WorkflowScope"
+        total:
+          type: integer
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        risks:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowSlaRisk"
+
+    WorkflowBottleneck:
+      type: object
+      required: [type, severity, title, detail, metric, recommendedAction]
+      properties:
+        type:
+          type: string
+          description: stage_bottleneck | team_overload | overdue_backlog | repeated_losses
+        severity:
+          type: string
+          description: critical | high | medium | low
+        title:
+          type: string
+        detail:
+          type: string
+        metric:
+          type: number
+        recommendedAction:
+          type: string
+
+    WorkflowBottlenecksResponse:
+      type: object
+      required: [scope, bottlenecks, riskCount]
+      properties:
+        scope:
+          $ref: "#/components/schemas/WorkflowScope"
+        bottlenecks:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowBottleneck"
+        riskCount:
+          type: integer
+
+    WorkflowSimulateRequest:
+      type: object
+      required: [leadId, scenario]
+      properties:
+        leadId:
+          type: integer
+        scenario:
+          type: string
+          description: reassign | follow_up | delay
+        candidateUserId:
+          type: integer
+          description: Target owner for a reassign scenario (optional).
+        delayDays:
+          type: integer
+          description: Number of days to delay for a delay scenario (optional).
+
+    WorkflowSimulateOutcome:
+      type: object
+      required: [winProbability, riskLevel, note]
+      properties:
+        winProbability:
+          type: integer
+        riskLevel:
+          type: string
+          description: critical | high | medium | low
+        note:
+          type: string
+
+    WorkflowSimulateResponse:
+      type: object
+      required: [leadId, scenario, baseline, predicted, deltas, explanation, assumptions, confidence]
+      properties:
+        leadId:
+          type: integer
+        scenario:
+          type: string
+        baseline:
+          $ref: "#/components/schemas/WorkflowSimulateOutcome"
+        predicted:
+          $ref: "#/components/schemas/WorkflowSimulateOutcome"
+        deltas:
+          type: object
+          required: [winProbability]
+          properties:
+            winProbability:
+              type: integer
+        explanation:
+          type: string
+        assumptions:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: integer
+
+    AiWorkflowBatchStartRequest:
+      type: object
+      required: [entityType]
+      properties:
+        entityType:
+          type: string
+          description: lead | contact | organization
+
+    AiWorkflowBatchJob:
+      type: object
+      required: [id, companyId, requestedById, entityType, status, total, processed, succeeded, failed, errors, startedAt]
+      properties:
+        id:
+          type: string
+        companyId:
+          type: integer
+        requestedById:
+          type: integer
+        entityType:
+          type: string
+          description: lead | contact | organization
+        status:
+          type: string
+          description: queued | running | completed | failed
+        total:
+          type: integer
+        processed:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            required: [entityId, message]
+            properties:
+              entityId:
+                type: integer
+              message:
+                type: string
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+
+    AiWorkflowBatchListResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiWorkflowBatchJob"
 
     DashboardLeadKpis:
       type: object

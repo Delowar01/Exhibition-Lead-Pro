@@ -26,7 +26,17 @@ export type AiFeature =
   | "proposal_assistant"
   | "followup_suggestions"
   | "sales_coaching"
-  | "conversation_summary";
+  | "conversation_summary"
+  // Stage 5F — Enterprise AI Workflow Intelligence. Each PHRASES an advisory
+  // recommendation whose core (action/owner/timing/priority) is ALREADY computed
+  // deterministically from CRM data; the LLM never executes or changes the computed
+  // decision. All soft-degrade (deterministic core survives an AI failure) and never
+  // auto-assign/route/progress/create/send.
+  | "workflow_next_action"
+  | "workflow_routing"
+  | "workflow_progression"
+  | "workflow_reminder"
+  | "workflow_task";
 
 export const AI_FEATURES: AiFeature[] = [
   "card_extraction",
@@ -46,6 +56,11 @@ export const AI_FEATURES: AiFeature[] = [
   "followup_suggestions",
   "sales_coaching",
   "conversation_summary",
+  "workflow_next_action",
+  "workflow_routing",
+  "workflow_progression",
+  "workflow_reminder",
+  "workflow_task",
 ];
 
 export interface AiTextPart {

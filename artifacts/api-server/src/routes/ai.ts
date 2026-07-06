@@ -6,6 +6,8 @@ import * as insights from "../services/ai-insights.service.js";
 import * as aiBatch from "../services/ai-batch.service.js";
 import * as copilot from "../services/ai-copilot.service.js";
 import * as copilotBatch from "../services/ai-copilot-batch.service.js";
+import * as workflow from "../services/ai-workflow.service.js";
+import * as workflowBatch from "../services/ai-workflow-batch.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -195,6 +197,94 @@ router.get("/ai/copilot/:entityType/:id", requirePermission("ai_copilot", "view"
   const entityType = copilot.assertEntityType(String(req.params.entityType));
   const id = parseInt(String(req.params.id));
   res.json({ outputs: await copilot.getOutputs(req.user!, entityType, id) });
+});
+
+// ── Stage 5F — Enterprise AI Workflow & Automation Intelligence ────────────────
+//
+// ADVISORY workflow layer: reviewable per-entity recommendations (next action, follow-up,
+// routing/owner, progression, reminder, task, priority, due date), org-scoped health/SLA
+// risk/bottleneck rollups, and what-if simulation. Everything is read-only intelligence —
+// the engine NEVER assigns, routes, changes a stage, sends, or writes back to the CRM; it
+// only persists its own reviewable ai_workflow_recommendations rows. Guards mirror
+// /ai/copilot: tenant-only (platform_owner blocked), cancelled-company read-only respected,
+// every non-GET audited. Permission matrix: view (read), generate (analyze/batch), accept
+// (accept/dismiss a recommendation).
+router.use("/ai/workflow", requireTenantUser);
+router.use("/ai/workflow", blockReadOnlyMutations);
+router.use("/ai/workflow", auditMutations("ai_workflow"));
+
+// GET /ai/workflow/overview — tenant-wide review summary (static path before /:entityType).
+router.get("/ai/workflow/overview", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  res.json(await workflow.getOverview(req.user!));
+});
+
+// Org-scoped read-only rollups (scope selector: scopeType=company|department|team|employee & id).
+router.get("/ai/workflow/health", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  const q = req.query as Record<string, unknown>;
+  res.json(await workflow.getHealth(req.user!, { scopeType: q.scopeType ? String(q.scopeType) : undefined, id: q.id != null ? parseInt(String(q.id)) : undefined }));
+});
+
+router.get("/ai/workflow/sla-risks", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  const q = req.query as Record<string, unknown>;
+  res.json(await workflow.getSlaRisks(req.user!, {
+    scopeType: q.scopeType ? String(q.scopeType) : undefined,
+    id: q.id != null ? parseInt(String(q.id)) : undefined,
+    category: q.category ? String(q.category) : undefined,
+  }));
+});
+
+router.get("/ai/workflow/bottlenecks", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  const q = req.query as Record<string, unknown>;
+  res.json(await workflow.getBottlenecks(req.user!, { scopeType: q.scopeType ? String(q.scopeType) : undefined, id: q.id != null ? parseInt(String(q.id)) : undefined }));
+});
+
+// POST /ai/workflow/simulate — what-if outcome prediction for a lead (writes NOTHING).
+router.post("/ai/workflow/simulate", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  const body = (req.body ?? {}) as { leadId?: unknown; scenario?: unknown; candidateUserId?: unknown; delayDays?: unknown };
+  res.json(await workflow.simulateScenario(req.user!, {
+    leadId: parseInt(String(body.leadId)),
+    scenario: String(body.scenario ?? ""),
+    candidateUserId: body.candidateUserId != null ? parseInt(String(body.candidateUserId)) : undefined,
+    delayDays: body.delayDays != null ? parseInt(String(body.delayDays)) : undefined,
+  }));
+});
+
+// Batch (re)analysis: static "/batch" paths BEFORE /:entityType/:id so "batch" is not an entityType.
+router.post("/ai/workflow/batch", requirePermission("ai_workflow", "generate"), async (req: AuthRequest, res) => {
+  const body = (req.body ?? {}) as { entityType?: unknown };
+  res.status(202).json(await workflowBatch.startBatch(req.user!, String(body.entityType ?? "")));
+});
+
+router.get("/ai/workflow/batch", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  res.json({ jobs: workflowBatch.listBatches(req.user!) });
+});
+
+router.get("/ai/workflow/batch/:jobId", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  res.json(workflowBatch.getBatch(req.user!, String(req.params.jobId)));
+});
+
+// Recommendation review lifecycle: static "/recommendations" paths BEFORE /:entityType/:id.
+router.post("/ai/workflow/recommendations/:id/accept", requirePermission("ai_workflow", "accept"), async (req: AuthRequest, res) => {
+  res.json(await workflow.setRecommendationStatus(req.user!, parseInt(String(req.params.id)), "accepted"));
+});
+
+router.post("/ai/workflow/recommendations/:id/dismiss", requirePermission("ai_workflow", "accept"), async (req: AuthRequest, res) => {
+  res.json(await workflow.setRecommendationStatus(req.user!, parseInt(String(req.params.id)), "dismissed"));
+});
+
+// POST /ai/workflow/:entityType/:id/analyze — (re)compute all applicable recommendations.
+router.post("/ai/workflow/:entityType/:id/analyze", requirePermission("ai_workflow", "generate"), async (req: AuthRequest, res) => {
+  const entityType = workflow.assertEntityType(String(req.params.entityType));
+  const id = parseInt(String(req.params.id));
+  const body = (req.body ?? {}) as { language?: unknown };
+  res.json({ recommendations: await workflow.analyzeEntity(req.user!, entityType, id, { language: body.language === "ar" ? "ar" : "en" }) });
+});
+
+// GET /ai/workflow/:entityType/:id — list stored recommendations for one entity.
+router.get("/ai/workflow/:entityType/:id", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+  const entityType = workflow.assertEntityType(String(req.params.entityType));
+  const id = parseInt(String(req.params.id));
+  res.json({ recommendations: await workflow.listEntityRecommendations(req.user!, entityType, id) });
 });
 
 export default router;

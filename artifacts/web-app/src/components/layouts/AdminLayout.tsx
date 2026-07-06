@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart, Columns3, Tags, FolderOpen, Sparkles, Layers, Bot } from "lucide-react";
+import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart, Columns3, Tags, FolderOpen, Sparkles, Layers, Bot, Workflow } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
 
@@ -45,6 +45,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { name: "Executive Dashboard", href: "/admin/analytics", icon: LineChart },
     { name: "AI Insights", href: "/admin/ai-insights", icon: Sparkles },
     { name: "Sales Copilot", href: "/admin/ai-copilot", icon: Bot },
+    { name: "Workflow Intelligence", href: "/admin/workflow", icon: Workflow },
     { name: "Batch AI", href: "/admin/ai-batch", icon: Layers },
     { name: "AI Intelligence", href: "/admin/ai", icon: Sparkles },
     { name: "Organization", href: "/admin/organization", icon: Building2 },

@@ -14,6 +14,7 @@ import { format, parseISO } from "date-fns";
 import { CommunicationHub } from "@/components/CommunicationHub";
 import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 import { SalesCopilotPanel } from "@/components/SalesCopilotPanel";
+import { WorkflowIntelligencePanel } from "@/components/WorkflowIntelligencePanel";
 
 const ORG_NONE = "__none__";
 
@@ -307,6 +308,8 @@ export default function AdminContactDetail() {
           />
 
           <SalesCopilotPanel entityType="contact" id={contactId} />
+
+          <WorkflowIntelligencePanel entityType="contact" id={contactId} />
 
           <AiInsightsPanel entityType="contact" id={contactId} />
 

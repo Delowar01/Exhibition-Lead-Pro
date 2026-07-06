@@ -22,6 +22,11 @@ import {
   buildFollowupPrompt,
   SALES_COACHING_PROMPT,
   CONVERSATION_SUMMARY_PROMPT,
+  buildWorkflowNextActionPrompt,
+  buildWorkflowRoutingPrompt,
+  buildWorkflowProgressionPrompt,
+  buildWorkflowReminderPrompt,
+  buildWorkflowTaskPrompt,
 } from "../ai/prompts.js";
 import type { AiFeature, AiPart, AiRequest } from "../ai/types.js";
 import * as aiService from "../services/ai.service.js";
@@ -826,6 +831,68 @@ export async function summarizeConversation(context: string, ctx?: AiContext): P
     nextSteps: strArr(p.nextSteps, 3),
     ...meta(p),
   };
+}
+
+// ── Stage 5F — Enterprise AI Workflow Intelligence phrasing runners ───────────
+//
+// Each PHRASES an advisory workflow recommendation whose decision core has ALREADY been
+// computed deterministically by the workflow service and rendered into `context` (which
+// includes the "Computed signals" block). The LLM never changes the computed decision —
+// it only produces grounded wording. Callers treat these as best-effort: on any failure
+// the deterministic core survives (soft-degrade, HTTP 200), and only when the LLM
+// succeeds does the recommendation's provenance flip to source="ai". Same gated callJson
+// seam as every other feature (per-tenant enable/flag/budget gates + ai_invocations).
+
+async function runWorkflow(feature: AiFeature, promptText: string, context: string, ctx?: AiContext): Promise<Record<string, unknown>> {
+  return callJson({
+    feature,
+    parts: [{ text: `${promptText}\n\nCRM data:\n${context}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+    confidenceOf: (p) => clampScore(p.confidence),
+  });
+}
+
+export interface WorkflowNextActionResult extends CopilotMeta {
+  recommendedAction: string | null;
+  rationale: string | null;
+}
+export async function phraseWorkflowNextAction(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<WorkflowNextActionResult> {
+  const p = await runWorkflow("workflow_next_action", buildWorkflowNextActionPrompt(appLanguage), context, ctx);
+  return { recommendedAction: str(p.recommendedAction), rationale: str(p.rationale), ...meta(p) };
+}
+
+export interface WorkflowRoutingResult extends CopilotMeta {
+  recommendation: string | null;
+}
+export async function phraseWorkflowRouting(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<WorkflowRoutingResult> {
+  const p = await runWorkflow("workflow_routing", buildWorkflowRoutingPrompt(appLanguage), context, ctx);
+  return { recommendation: str(p.recommendation), ...meta(p) };
+}
+
+export interface WorkflowProgressionResult extends CopilotMeta {
+  recommendation: string | null;
+}
+export async function phraseWorkflowProgression(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<WorkflowProgressionResult> {
+  const p = await runWorkflow("workflow_progression", buildWorkflowProgressionPrompt(appLanguage), context, ctx);
+  return { recommendation: str(p.recommendation), ...meta(p) };
+}
+
+export interface WorkflowReminderResult extends CopilotMeta {
+  reminderText: string | null;
+}
+export async function phraseWorkflowReminder(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<WorkflowReminderResult> {
+  const p = await runWorkflow("workflow_reminder", buildWorkflowReminderPrompt(appLanguage), context, ctx);
+  return { reminderText: str(p.reminderText), ...meta(p) };
+}
+
+export interface WorkflowTaskResult extends CopilotMeta {
+  taskTitle: string | null;
+  taskDescription: string | null;
+}
+export async function phraseWorkflowTask(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<WorkflowTaskResult> {
+  const p = await runWorkflow("workflow_task", buildWorkflowTaskPrompt(appLanguage), context, ctx);
+  return { taskTitle: str(p.taskTitle), taskDescription: str(p.taskDescription), ...meta(p) };
 }
 
 export function logAiError(context: string, err: unknown): void {

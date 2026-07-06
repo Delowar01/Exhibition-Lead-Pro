@@ -5774,6 +5774,356 @@ export const GetAiCopilotOutputsResponse = zod.object({
 
 
 /**
+ * @summary Tenant-wide AI workflow summary (status counts + recent recommendations)
+ */
+export const GetAiWorkflowOverviewResponse = zod.object({
+  "counts": zod.record(zod.string(), zod.number()),
+  "recent": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "recommendationType": zod.string().describe('next_action | follow_up | owner | department | team | priority | due_date | routing | progression | reminder | task'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by recommendationType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Org-scoped workflow health rollup (score, grade, SLA compliance, workload)
+ */
+export const GetAiWorkflowHealthQueryParams = zod.object({
+  "scopeType": zod.coerce.string().optional().describe('company | department | team | employee'),
+  "id": zod.coerce.number().optional()
+})
+
+export const GetAiWorkflowHealthResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string().describe('company | department | team | employee'),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "healthScore": zod.number(),
+  "grade": zod.string().describe('excellent | good | fair | poor'),
+  "slaCompliance": zod.number(),
+  "totals": zod.record(zod.string(), zod.number()),
+  "workload": zod.array(zod.object({
+  "userId": zod.number(),
+  "name": zod.string(),
+  "openLeads": zod.number(),
+  "overdueItems": zod.number()
+})),
+  "topRisks": zod.array(zod.object({
+  "entityType": zod.string().describe('lead | contact | task | follow_up'),
+  "entityId": zod.number(),
+  "category": zod.string().describe('overdue_lead | stalled_stage | aging_opportunity | unanswered_comms | missed_follow_up | unreachable | expiring_task'),
+  "riskLevel": zod.string().describe('critical | high | medium | low'),
+  "title": zod.string(),
+  "detail": zod.string(),
+  "recommendedAction": zod.string(),
+  "ageDays": zod.number().nullable(),
+  "ownerId": zod.number().nullable()
+})),
+  "recommendedActions": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Org-scoped SLA-risk list (overdue leads, stalled stages, missed follow-ups, etc.)
+ */
+export const GetAiWorkflowSlaRisksQueryParams = zod.object({
+  "scopeType": zod.coerce.string().optional().describe('company | department | team | employee'),
+  "id": zod.coerce.number().optional(),
+  "category": zod.coerce.string().optional().describe('overdue_lead | stalled_stage | aging_opportunity | unanswered_comms | missed_follow_up | unreachable | expiring_task')
+})
+
+export const GetAiWorkflowSlaRisksResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string().describe('company | department | team | employee'),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "total": zod.number(),
+  "counts": zod.record(zod.string(), zod.number()),
+  "risks": zod.array(zod.object({
+  "entityType": zod.string().describe('lead | contact | task | follow_up'),
+  "entityId": zod.number(),
+  "category": zod.string().describe('overdue_lead | stalled_stage | aging_opportunity | unanswered_comms | missed_follow_up | unreachable | expiring_task'),
+  "riskLevel": zod.string().describe('critical | high | medium | low'),
+  "title": zod.string(),
+  "detail": zod.string(),
+  "recommendedAction": zod.string(),
+  "ageDays": zod.number().nullable(),
+  "ownerId": zod.number().nullable()
+}))
+})
+
+
+/**
+ * @summary Org-scoped pipeline bottleneck analysis (stage/team/backlog/losses)
+ */
+export const GetAiWorkflowBottlenecksQueryParams = zod.object({
+  "scopeType": zod.coerce.string().optional().describe('company | department | team | employee'),
+  "id": zod.coerce.number().optional()
+})
+
+export const GetAiWorkflowBottlenecksResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string().describe('company | department | team | employee'),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "bottlenecks": zod.array(zod.object({
+  "type": zod.string().describe('stage_bottleneck | team_overload | overdue_backlog | repeated_losses'),
+  "severity": zod.string().describe('critical | high | medium | low'),
+  "title": zod.string(),
+  "detail": zod.string(),
+  "metric": zod.number(),
+  "recommendedAction": zod.string()
+})),
+  "riskCount": zod.number()
+})
+
+
+/**
+ * @summary What-if outcome prediction for a lead (reassign/follow_up/delay). Writes nothing.
+ */
+export const SimulateAiWorkflowScenarioBody = zod.object({
+  "leadId": zod.number(),
+  "scenario": zod.string().describe('reassign | follow_up | delay'),
+  "candidateUserId": zod.number().optional().describe('Target owner for a reassign scenario (optional).'),
+  "delayDays": zod.number().optional().describe('Number of days to delay for a delay scenario (optional).')
+})
+
+export const SimulateAiWorkflowScenarioResponse = zod.object({
+  "leadId": zod.number(),
+  "scenario": zod.string(),
+  "baseline": zod.object({
+  "winProbability": zod.number(),
+  "riskLevel": zod.string().describe('critical | high | medium | low'),
+  "note": zod.string()
+}),
+  "predicted": zod.object({
+  "winProbability": zod.number(),
+  "riskLevel": zod.string().describe('critical | high | medium | low'),
+  "note": zod.string()
+}),
+  "deltas": zod.object({
+  "winProbability": zod.number()
+}),
+  "explanation": zod.string(),
+  "assumptions": zod.array(zod.string()),
+  "confidence": zod.number()
+})
+
+
+/**
+ * @summary Start a batch (re)analysis of all records of an entity type
+ */
+export const StartAiWorkflowBatchBody = zod.object({
+  "entityType": zod.string().describe('lead | contact | organization')
+})
+
+
+/**
+ * @summary List AI workflow batch jobs visible to the caller's tenant
+ */
+export const ListAiWorkflowBatchesResponse = zod.object({
+  "jobs": zod.array(zod.object({
+  "id": zod.string(),
+  "companyId": zod.number(),
+  "requestedById": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "status": zod.string().describe('queued | running | completed | failed'),
+  "total": zod.number(),
+  "processed": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "errors": zod.array(zod.object({
+  "entityId": zod.number(),
+  "message": zod.string()
+})),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Get the status/progress of one AI workflow batch job
+ */
+export const GetAiWorkflowBatchParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const GetAiWorkflowBatchResponse = zod.object({
+  "id": zod.string(),
+  "companyId": zod.number(),
+  "requestedById": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "status": zod.string().describe('queued | running | completed | failed'),
+  "total": zod.number(),
+  "processed": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "errors": zod.array(zod.object({
+  "entityId": zod.number(),
+  "message": zod.string()
+})),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Mark a workflow recommendation accepted (audited; does NOT itself mutate the CRM)
+ */
+export const AcceptAiWorkflowRecommendationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AcceptAiWorkflowRecommendationResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "recommendationType": zod.string().describe('next_action | follow_up | owner | department | team | priority | due_date | routing | progression | reminder | task'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by recommendationType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Dismiss a workflow recommendation (audited review action)
+ */
+export const DismissAiWorkflowRecommendationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DismissAiWorkflowRecommendationResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "recommendationType": zod.string().describe('next_action | follow_up | owner | department | team | priority | due_date | routing | progression | reminder | task'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by recommendationType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Compute (or re-compute) all applicable workflow recommendations for a CRM entity
+ */
+export const AnalyzeAiWorkflowEntityParams = zod.object({
+  "entityType": zod.coerce.string().describe('lead | contact | organization'),
+  "id": zod.coerce.number()
+})
+
+export const AnalyzeAiWorkflowEntityBody = zod.object({
+  "language": zod.string().optional().describe('en | ar (defaults to en)')
+})
+
+export const AnalyzeAiWorkflowEntityResponse = zod.object({
+  "recommendations": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "recommendationType": zod.string().describe('next_action | follow_up | owner | department | team | priority | due_date | routing | progression | reminder | task'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by recommendationType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary List stored workflow recommendations for one CRM entity
+ */
+export const GetAiWorkflowRecommendationsParams = zod.object({
+  "entityType": zod.coerce.string().describe('lead | contact | organization'),
+  "id": zod.coerce.number()
+})
+
+export const GetAiWorkflowRecommendationsResponse = zod.object({
+  "recommendations": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "recommendationType": zod.string().describe('next_action | follow_up | owner | department | team | priority | due_date | routing | progression | reminder | task'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by recommendationType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
  * @summary Register an Expo push token for the current user's device
  */
 export const RegisterPushTokenBody = zod.object({

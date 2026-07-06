@@ -30,6 +30,13 @@ export const PROMPTS: Record<AiFeature, PromptRef> = {
   followup_suggestions: { key: "followup_suggestions", version: 1 },
   sales_coaching: { key: "sales_coaching", version: 1 },
   conversation_summary: { key: "conversation_summary", version: 1 },
+  // Stage 5F — Enterprise AI Workflow Intelligence (v1). Each PHRASES an advisory
+  // recommendation whose decision core is already computed deterministically.
+  workflow_next_action: { key: "workflow_next_action", version: 1 },
+  workflow_routing: { key: "workflow_routing", version: 1 },
+  workflow_progression: { key: "workflow_progression", version: 1 },
+  workflow_reminder: { key: "workflow_reminder", version: 1 },
+  workflow_task: { key: "workflow_task", version: 1 },
 };
 
 // Shared grounding preamble for every Stage 5A intelligence prompt. Enforces the
@@ -325,3 +332,90 @@ Return ONLY a JSON object with exactly these keys:
 - "confidence": integer 0-100
 - "insufficientData": boolean
 - "reasoning": one concise sentence grounded in the provided fields`;
+
+// ── Stage 5F — Enterprise AI Workflow Intelligence prompts ────────────────────
+//
+// Each PHRASES an advisory workflow recommendation. The DECISION CORE (the action to
+// take, the owner to route to, the timing/priority, the next stage) has ALREADY been
+// computed deterministically from real CRM fields and is passed in as "Computed signals".
+// The LLM must NOT change the computed decision — it only phrases a grounded, helpful
+// explanation (and, where relevant, a short draft) around it. Nothing here executes:
+// no assignment, routing, stage change, task/reminder creation, or sending happens as a
+// result of the output. Every prompt soft-degrades (the caller keeps the deterministic
+// core if the LLM fails) and never invents facts beyond the provided data.
+const WORKFLOW_SAFETY = `WORKFLOW INTELLIGENCE SAFETY RULES:
+- You are PHRASING an advisory recommendation for a human to REVIEW and decide. Nothing you output is executed: no owner is assigned, no lead routed, no pipeline stage changed, no task or reminder created, and nothing is sent as a result of your answer.
+- The recommended action, owner, timing, priority, due date, and next stage have ALREADY been computed deterministically from the CRM data and are provided under "Computed signals". Do NOT change, override, or contradict them — phrase a grounded explanation consistent with them.
+- Ground everything ONLY in the CRM data and computed signals provided. Do NOT invent facts, dates, names, commitments, or private details that are not present.`;
+
+export function buildWorkflowNextActionPrompt(appLanguage: AppLanguage): string {
+  return `You are a B2B sales-operations assistant PHRASING the single best NEXT ACTION for a salesperson on a CRM record. The recommended action has ALREADY been computed deterministically and is provided under "Computed signals".
+
+${WORKFLOW_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "recommendedAction": one concise sentence stating the next action (consistent with the computed signal)
+- "rationale": one short sentence explaining WHY, grounded in the provided fields/signals
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+}
+
+export function buildWorkflowRoutingPrompt(appLanguage: AppLanguage): string {
+  return `You are a sales-operations assistant PHRASING an owner (lead-routing) recommendation. The suggested owner has ALREADY been chosen deterministically from workload, success-rate, territory, and industry signals and is provided under "Computed signals" — do NOT pick a different owner.
+
+${WORKFLOW_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "recommendation": one concise sentence explaining why the suggested owner is a good fit (consistent with the provided signals). Never state the assignment as done — it is a suggestion to review.
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided signals`;
+}
+
+export function buildWorkflowProgressionPrompt(appLanguage: AppLanguage): string {
+  return `You are a B2B pipeline assistant PHRASING an opportunity-PROGRESSION recommendation. The suggested next stage and rationale signals have ALREADY been computed deterministically and are provided under "Computed signals" — do NOT change the suggested stage.
+
+${WORKFLOW_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "recommendation": one concise sentence describing the suggested progression action (consistent with the computed next stage). Never state the stage as changed — it is a suggestion to review.
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided signals`;
+}
+
+export function buildWorkflowReminderPrompt(appLanguage: AppLanguage): string {
+  return `You are a B2B sales assistant PHRASING a smart REMINDER. The reminder's timing and subject have ALREADY been computed deterministically from the CRM data and are provided under "Computed signals" — do NOT change the timing.
+
+${WORKFLOW_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "reminderText": one short, specific reminder sentence grounded in the data (consistent with the computed timing)
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+}
+
+export function buildWorkflowTaskPrompt(appLanguage: AppLanguage): string {
+  return `You are a B2B sales-operations assistant PHRASING a suggested follow-up TASK for a salesperson to review and optionally create. The task's intent and due timing have ALREADY been computed deterministically and are provided under "Computed signals" — do NOT change the due timing.
+
+${WORKFLOW_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "taskTitle": a short, specific task title grounded in the data (consistent with the computed intent)
+- "taskDescription": one short sentence describing what to do, grounded in the data
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+}

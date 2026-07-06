@@ -49,6 +49,7 @@ import {
 } from "@workspace/api-client-react";
 import { CommunicationHub } from "@/components/CommunicationHub";
 import { CopilotSection } from "@/components/CopilotSection";
+import { WorkflowSection } from "@/components/WorkflowSection";
 import { AiInsightsSection } from "@/components/AiInsightsSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -583,6 +584,8 @@ export default function ContactDetailScreen() {
           />
 
           <CopilotSection entityType="contact" id={contactId} />
+
+          <WorkflowSection entityType="contact" id={contactId} />
 
           <AiInsightsSection entityType="contact" id={contactId} />
 

@@ -45,6 +45,13 @@ import type {
   AiPlatformUsageResponse,
   AiSettingsResponse,
   AiUsageResponse,
+  AiWorkflowBatchJob,
+  AiWorkflowBatchListResponse,
+  AiWorkflowBatchStartRequest,
+  AiWorkflowGenerateRequest,
+  AiWorkflowListResponse,
+  AiWorkflowOverviewResponse,
+  AiWorkflowRecommendation,
   AnalyticsScopeOptions,
   AssignLeadInput,
   AssigneeRecommendation,
@@ -123,6 +130,9 @@ import type {
   ForgotPasswordInput,
   GetAiPlatformUsageParams,
   GetAiUsageParams,
+  GetAiWorkflowBottlenecksParams,
+  GetAiWorkflowHealthParams,
+  GetAiWorkflowSlaRisksParams,
   GetAnalyticsOverviewParams,
   GetDepartmentAnalyticsParams,
   GetEmployeeAnalyticsParams,
@@ -291,7 +301,12 @@ import type {
   UserList,
   UserSelfUpdate,
   UserUpdate,
-  VerifyEmailInput
+  VerifyEmailInput,
+  WorkflowBottlenecksResponse,
+  WorkflowHealthResponse,
+  WorkflowSimulateRequest,
+  WorkflowSimulateResponse,
+  WorkflowSlaRisksResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -15144,6 +15159,927 @@ export function useGetAiCopilotOutputs<TData = Awaited<ReturnType<typeof getAiCo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAiCopilotOutputsQueryOptions(entityType,id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiWorkflowOverviewUrl = () => {
+
+
+
+
+  return `/api/ai/workflow/overview`
+}
+
+/**
+ * @summary Tenant-wide AI workflow summary (status counts + recent recommendations)
+ */
+export const getAiWorkflowOverview = async ( options?: RequestInit): Promise<AiWorkflowOverviewResponse> => {
+
+  return customFetch<AiWorkflowOverviewResponse>(getGetAiWorkflowOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiWorkflowOverviewQueryKey = () => {
+    return [
+    `/api/ai/workflow/overview`
+    ] as const;
+    }
+
+
+export const getGetAiWorkflowOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getAiWorkflowOverview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiWorkflowOverviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiWorkflowOverview>>> = ({ signal }) => getAiWorkflowOverview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiWorkflowOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getAiWorkflowOverview>>>
+export type GetAiWorkflowOverviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Tenant-wide AI workflow summary (status counts + recent recommendations)
+ */
+
+export function useGetAiWorkflowOverview<TData = Awaited<ReturnType<typeof getAiWorkflowOverview>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiWorkflowOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiWorkflowHealthUrl = (params?: GetAiWorkflowHealthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/workflow/health?${stringifiedParams}` : `/api/ai/workflow/health`
+}
+
+/**
+ * @summary Org-scoped workflow health rollup (score, grade, SLA compliance, workload)
+ */
+export const getAiWorkflowHealth = async (params?: GetAiWorkflowHealthParams, options?: RequestInit): Promise<WorkflowHealthResponse> => {
+
+  return customFetch<WorkflowHealthResponse>(getGetAiWorkflowHealthUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiWorkflowHealthQueryKey = (params?: GetAiWorkflowHealthParams,) => {
+    return [
+    `/api/ai/workflow/health`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiWorkflowHealthQueryOptions = <TData = Awaited<ReturnType<typeof getAiWorkflowHealth>>, TError = ErrorType<unknown>>(params?: GetAiWorkflowHealthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiWorkflowHealthQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiWorkflowHealth>>> = ({ signal }) => getAiWorkflowHealth(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowHealth>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiWorkflowHealthQueryResult = NonNullable<Awaited<ReturnType<typeof getAiWorkflowHealth>>>
+export type GetAiWorkflowHealthQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Org-scoped workflow health rollup (score, grade, SLA compliance, workload)
+ */
+
+export function useGetAiWorkflowHealth<TData = Awaited<ReturnType<typeof getAiWorkflowHealth>>, TError = ErrorType<unknown>>(
+ params?: GetAiWorkflowHealthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiWorkflowHealthQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiWorkflowSlaRisksUrl = (params?: GetAiWorkflowSlaRisksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/workflow/sla-risks?${stringifiedParams}` : `/api/ai/workflow/sla-risks`
+}
+
+/**
+ * @summary Org-scoped SLA-risk list (overdue leads, stalled stages, missed follow-ups, etc.)
+ */
+export const getAiWorkflowSlaRisks = async (params?: GetAiWorkflowSlaRisksParams, options?: RequestInit): Promise<WorkflowSlaRisksResponse> => {
+
+  return customFetch<WorkflowSlaRisksResponse>(getGetAiWorkflowSlaRisksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiWorkflowSlaRisksQueryKey = (params?: GetAiWorkflowSlaRisksParams,) => {
+    return [
+    `/api/ai/workflow/sla-risks`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiWorkflowSlaRisksQueryOptions = <TData = Awaited<ReturnType<typeof getAiWorkflowSlaRisks>>, TError = ErrorType<unknown>>(params?: GetAiWorkflowSlaRisksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowSlaRisks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiWorkflowSlaRisksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiWorkflowSlaRisks>>> = ({ signal }) => getAiWorkflowSlaRisks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowSlaRisks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiWorkflowSlaRisksQueryResult = NonNullable<Awaited<ReturnType<typeof getAiWorkflowSlaRisks>>>
+export type GetAiWorkflowSlaRisksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Org-scoped SLA-risk list (overdue leads, stalled stages, missed follow-ups, etc.)
+ */
+
+export function useGetAiWorkflowSlaRisks<TData = Awaited<ReturnType<typeof getAiWorkflowSlaRisks>>, TError = ErrorType<unknown>>(
+ params?: GetAiWorkflowSlaRisksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowSlaRisks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiWorkflowSlaRisksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiWorkflowBottlenecksUrl = (params?: GetAiWorkflowBottlenecksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/workflow/bottlenecks?${stringifiedParams}` : `/api/ai/workflow/bottlenecks`
+}
+
+/**
+ * @summary Org-scoped pipeline bottleneck analysis (stage/team/backlog/losses)
+ */
+export const getAiWorkflowBottlenecks = async (params?: GetAiWorkflowBottlenecksParams, options?: RequestInit): Promise<WorkflowBottlenecksResponse> => {
+
+  return customFetch<WorkflowBottlenecksResponse>(getGetAiWorkflowBottlenecksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiWorkflowBottlenecksQueryKey = (params?: GetAiWorkflowBottlenecksParams,) => {
+    return [
+    `/api/ai/workflow/bottlenecks`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiWorkflowBottlenecksQueryOptions = <TData = Awaited<ReturnType<typeof getAiWorkflowBottlenecks>>, TError = ErrorType<unknown>>(params?: GetAiWorkflowBottlenecksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowBottlenecks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiWorkflowBottlenecksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiWorkflowBottlenecks>>> = ({ signal }) => getAiWorkflowBottlenecks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowBottlenecks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiWorkflowBottlenecksQueryResult = NonNullable<Awaited<ReturnType<typeof getAiWorkflowBottlenecks>>>
+export type GetAiWorkflowBottlenecksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Org-scoped pipeline bottleneck analysis (stage/team/backlog/losses)
+ */
+
+export function useGetAiWorkflowBottlenecks<TData = Awaited<ReturnType<typeof getAiWorkflowBottlenecks>>, TError = ErrorType<unknown>>(
+ params?: GetAiWorkflowBottlenecksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowBottlenecks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiWorkflowBottlenecksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSimulateAiWorkflowScenarioUrl = () => {
+
+
+
+
+  return `/api/ai/workflow/simulate`
+}
+
+/**
+ * @summary What-if outcome prediction for a lead (reassign/follow_up/delay). Writes nothing.
+ */
+export const simulateAiWorkflowScenario = async (workflowSimulateRequest: WorkflowSimulateRequest, options?: RequestInit): Promise<WorkflowSimulateResponse> => {
+
+  return customFetch<WorkflowSimulateResponse>(getSimulateAiWorkflowScenarioUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowSimulateRequest,)
+  }
+);}
+
+
+
+
+export const getSimulateAiWorkflowScenarioMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulateAiWorkflowScenario>>, TError,{data: BodyType<WorkflowSimulateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof simulateAiWorkflowScenario>>, TError,{data: BodyType<WorkflowSimulateRequest>}, TContext> => {
+
+const mutationKey = ['simulateAiWorkflowScenario'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof simulateAiWorkflowScenario>>, {data: BodyType<WorkflowSimulateRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  simulateAiWorkflowScenario(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SimulateAiWorkflowScenarioMutationResult = NonNullable<Awaited<ReturnType<typeof simulateAiWorkflowScenario>>>
+    export type SimulateAiWorkflowScenarioMutationBody = BodyType<WorkflowSimulateRequest>
+    export type SimulateAiWorkflowScenarioMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary What-if outcome prediction for a lead (reassign/follow_up/delay). Writes nothing.
+ */
+export const useSimulateAiWorkflowScenario = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulateAiWorkflowScenario>>, TError,{data: BodyType<WorkflowSimulateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof simulateAiWorkflowScenario>>,
+        TError,
+        {data: BodyType<WorkflowSimulateRequest>},
+        TContext
+      > => {
+      return useMutation(getSimulateAiWorkflowScenarioMutationOptions(options));
+    }
+
+export const getStartAiWorkflowBatchUrl = () => {
+
+
+
+
+  return `/api/ai/workflow/batch`
+}
+
+/**
+ * @summary Start a batch (re)analysis of all records of an entity type
+ */
+export const startAiWorkflowBatch = async (aiWorkflowBatchStartRequest: AiWorkflowBatchStartRequest, options?: RequestInit): Promise<AiWorkflowBatchJob> => {
+
+  return customFetch<AiWorkflowBatchJob>(getStartAiWorkflowBatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiWorkflowBatchStartRequest,)
+  }
+);}
+
+
+
+
+export const getStartAiWorkflowBatchMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAiWorkflowBatch>>, TError,{data: BodyType<AiWorkflowBatchStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startAiWorkflowBatch>>, TError,{data: BodyType<AiWorkflowBatchStartRequest>}, TContext> => {
+
+const mutationKey = ['startAiWorkflowBatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startAiWorkflowBatch>>, {data: BodyType<AiWorkflowBatchStartRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startAiWorkflowBatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartAiWorkflowBatchMutationResult = NonNullable<Awaited<ReturnType<typeof startAiWorkflowBatch>>>
+    export type StartAiWorkflowBatchMutationBody = BodyType<AiWorkflowBatchStartRequest>
+    export type StartAiWorkflowBatchMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Start a batch (re)analysis of all records of an entity type
+ */
+export const useStartAiWorkflowBatch = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAiWorkflowBatch>>, TError,{data: BodyType<AiWorkflowBatchStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startAiWorkflowBatch>>,
+        TError,
+        {data: BodyType<AiWorkflowBatchStartRequest>},
+        TContext
+      > => {
+      return useMutation(getStartAiWorkflowBatchMutationOptions(options));
+    }
+
+export const getListAiWorkflowBatchesUrl = () => {
+
+
+
+
+  return `/api/ai/workflow/batch`
+}
+
+/**
+ * @summary List AI workflow batch jobs visible to the caller's tenant
+ */
+export const listAiWorkflowBatches = async ( options?: RequestInit): Promise<AiWorkflowBatchListResponse> => {
+
+  return customFetch<AiWorkflowBatchListResponse>(getListAiWorkflowBatchesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiWorkflowBatchesQueryKey = () => {
+    return [
+    `/api/ai/workflow/batch`
+    ] as const;
+    }
+
+
+export const getListAiWorkflowBatchesQueryOptions = <TData = Awaited<ReturnType<typeof listAiWorkflowBatches>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiWorkflowBatches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiWorkflowBatchesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiWorkflowBatches>>> = ({ signal }) => listAiWorkflowBatches({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiWorkflowBatches>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiWorkflowBatchesQueryResult = NonNullable<Awaited<ReturnType<typeof listAiWorkflowBatches>>>
+export type ListAiWorkflowBatchesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List AI workflow batch jobs visible to the caller's tenant
+ */
+
+export function useListAiWorkflowBatches<TData = Awaited<ReturnType<typeof listAiWorkflowBatches>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiWorkflowBatches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiWorkflowBatchesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiWorkflowBatchUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/ai/workflow/batch/${jobId}`
+}
+
+/**
+ * @summary Get the status/progress of one AI workflow batch job
+ */
+export const getAiWorkflowBatch = async (jobId: string, options?: RequestInit): Promise<AiWorkflowBatchJob> => {
+
+  return customFetch<AiWorkflowBatchJob>(getGetAiWorkflowBatchUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiWorkflowBatchQueryKey = (jobId: string,) => {
+    return [
+    `/api/ai/workflow/batch/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetAiWorkflowBatchQueryOptions = <TData = Awaited<ReturnType<typeof getAiWorkflowBatch>>, TError = ErrorType<ErrorResponse>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiWorkflowBatchQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiWorkflowBatch>>> = ({ signal }) => getAiWorkflowBatch(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(jobId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowBatch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiWorkflowBatchQueryResult = NonNullable<Awaited<ReturnType<typeof getAiWorkflowBatch>>>
+export type GetAiWorkflowBatchQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the status/progress of one AI workflow batch job
+ */
+
+export function useGetAiWorkflowBatch<TData = Awaited<ReturnType<typeof getAiWorkflowBatch>>, TError = ErrorType<ErrorResponse>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiWorkflowBatchQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAcceptAiWorkflowRecommendationUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/workflow/recommendations/${id}/accept`
+}
+
+/**
+ * @summary Mark a workflow recommendation accepted (audited; does NOT itself mutate the CRM)
+ */
+export const acceptAiWorkflowRecommendation = async (id: number, options?: RequestInit): Promise<AiWorkflowRecommendation> => {
+
+  return customFetch<AiWorkflowRecommendation>(getAcceptAiWorkflowRecommendationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAcceptAiWorkflowRecommendationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiWorkflowRecommendation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptAiWorkflowRecommendation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['acceptAiWorkflowRecommendation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptAiWorkflowRecommendation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  acceptAiWorkflowRecommendation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptAiWorkflowRecommendationMutationResult = NonNullable<Awaited<ReturnType<typeof acceptAiWorkflowRecommendation>>>
+
+    export type AcceptAiWorkflowRecommendationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Mark a workflow recommendation accepted (audited; does NOT itself mutate the CRM)
+ */
+export const useAcceptAiWorkflowRecommendation = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiWorkflowRecommendation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptAiWorkflowRecommendation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getAcceptAiWorkflowRecommendationMutationOptions(options));
+    }
+
+export const getDismissAiWorkflowRecommendationUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/workflow/recommendations/${id}/dismiss`
+}
+
+/**
+ * @summary Dismiss a workflow recommendation (audited review action)
+ */
+export const dismissAiWorkflowRecommendation = async (id: number, options?: RequestInit): Promise<AiWorkflowRecommendation> => {
+
+  return customFetch<AiWorkflowRecommendation>(getDismissAiWorkflowRecommendationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDismissAiWorkflowRecommendationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiWorkflowRecommendation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissAiWorkflowRecommendation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['dismissAiWorkflowRecommendation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissAiWorkflowRecommendation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  dismissAiWorkflowRecommendation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissAiWorkflowRecommendationMutationResult = NonNullable<Awaited<ReturnType<typeof dismissAiWorkflowRecommendation>>>
+
+    export type DismissAiWorkflowRecommendationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Dismiss a workflow recommendation (audited review action)
+ */
+export const useDismissAiWorkflowRecommendation = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiWorkflowRecommendation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissAiWorkflowRecommendation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDismissAiWorkflowRecommendationMutationOptions(options));
+    }
+
+export const getAnalyzeAiWorkflowEntityUrl = (entityType: string,
+    id: number,) => {
+
+
+
+
+  return `/api/ai/workflow/${entityType}/${id}/analyze`
+}
+
+/**
+ * @summary Compute (or re-compute) all applicable workflow recommendations for a CRM entity
+ */
+export const analyzeAiWorkflowEntity = async (entityType: string,
+    id: number,
+    aiWorkflowGenerateRequest?: AiWorkflowGenerateRequest, options?: RequestInit): Promise<AiWorkflowListResponse> => {
+
+  return customFetch<AiWorkflowListResponse>(getAnalyzeAiWorkflowEntityUrl(entityType,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiWorkflowGenerateRequest,)
+  }
+);}
+
+
+
+
+export const getAnalyzeAiWorkflowEntityMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeAiWorkflowEntity>>, TError,{entityType: string;id: number;data?: BodyType<AiWorkflowGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeAiWorkflowEntity>>, TError,{entityType: string;id: number;data?: BodyType<AiWorkflowGenerateRequest>}, TContext> => {
+
+const mutationKey = ['analyzeAiWorkflowEntity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeAiWorkflowEntity>>, {entityType: string;id: number;data?: BodyType<AiWorkflowGenerateRequest>}> = (props) => {
+          const {entityType,id,data} = props ?? {};
+
+          return  analyzeAiWorkflowEntity(entityType,id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeAiWorkflowEntityMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeAiWorkflowEntity>>>
+    export type AnalyzeAiWorkflowEntityMutationBody = BodyType<AiWorkflowGenerateRequest> | undefined
+    export type AnalyzeAiWorkflowEntityMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Compute (or re-compute) all applicable workflow recommendations for a CRM entity
+ */
+export const useAnalyzeAiWorkflowEntity = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeAiWorkflowEntity>>, TError,{entityType: string;id: number;data?: BodyType<AiWorkflowGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeAiWorkflowEntity>>,
+        TError,
+        {entityType: string;id: number;data?: BodyType<AiWorkflowGenerateRequest>},
+        TContext
+      > => {
+      return useMutation(getAnalyzeAiWorkflowEntityMutationOptions(options));
+    }
+
+export const getGetAiWorkflowRecommendationsUrl = (entityType: string,
+    id: number,) => {
+
+
+
+
+  return `/api/ai/workflow/${entityType}/${id}`
+}
+
+/**
+ * @summary List stored workflow recommendations for one CRM entity
+ */
+export const getAiWorkflowRecommendations = async (entityType: string,
+    id: number, options?: RequestInit): Promise<AiWorkflowListResponse> => {
+
+  return customFetch<AiWorkflowListResponse>(getGetAiWorkflowRecommendationsUrl(entityType,id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiWorkflowRecommendationsQueryKey = (entityType: string,
+    id: number,) => {
+    return [
+    `/api/ai/workflow/${entityType}/${id}`
+    ] as const;
+    }
+
+
+export const getGetAiWorkflowRecommendationsQueryOptions = <TData = Awaited<ReturnType<typeof getAiWorkflowRecommendations>>, TError = ErrorType<ErrorResponse>>(entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowRecommendations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiWorkflowRecommendationsQueryKey(entityType,id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiWorkflowRecommendations>>> = ({ signal }) => getAiWorkflowRecommendations(entityType,id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(entityType && id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowRecommendations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiWorkflowRecommendationsQueryResult = NonNullable<Awaited<ReturnType<typeof getAiWorkflowRecommendations>>>
+export type GetAiWorkflowRecommendationsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List stored workflow recommendations for one CRM entity
+ */
+
+export function useGetAiWorkflowRecommendations<TData = Awaited<ReturnType<typeof getAiWorkflowRecommendations>>, TError = ErrorType<ErrorResponse>>(
+ entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiWorkflowRecommendations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiWorkflowRecommendationsQueryOptions(entityType,id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

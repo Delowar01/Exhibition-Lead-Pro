@@ -55,6 +55,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DocumentsPanel from "@/components/DocumentsPanel";
 import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 import { SalesCopilotPanel } from "@/components/SalesCopilotPanel";
+import { WorkflowIntelligencePanel } from "@/components/WorkflowIntelligencePanel";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -530,6 +531,8 @@ export default function AdminLeadDetail() {
           )}
 
           <SalesCopilotPanel entityType="lead" id={id} />
+
+          <WorkflowIntelligencePanel entityType="lead" id={id} />
 
           <AiInsightsPanel entityType="lead" id={id} />
 

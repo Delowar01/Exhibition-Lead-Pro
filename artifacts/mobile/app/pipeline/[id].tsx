@@ -62,6 +62,7 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { CopilotSection } from "@/components/CopilotSection";
+import { WorkflowSection } from "@/components/WorkflowSection";
 import { AiInsightsSection } from "@/components/AiInsightsSection";
 import { CommunicationHub } from "@/components/CommunicationHub";
 import { DocumentsSection } from "@/components/DocumentsSection";
@@ -654,6 +655,8 @@ export default function PipelineDetailScreen() {
           />
 
           <CopilotSection entityType="lead" id={leadId} />
+
+          <WorkflowSection entityType="lead" id={leadId} />
 
           <AiInsightsSection entityType="lead" id={leadId} />
 

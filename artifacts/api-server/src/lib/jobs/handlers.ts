@@ -5,6 +5,7 @@ import { getQueue } from "./queue.js";
 import { AI_ANALYZE_ENTITY_JOB, runAiAnalyzeEntityJob, type AiAnalyzeJobPayload } from "../../services/ai-batch.service.js";
 import { AI_COPILOT_GENERATE_JOB, runAiCopilotGenerateJob, type AiCopilotJobPayload } from "../../services/ai-copilot-batch.service.js";
 import { CAPTURE_ANALYZE_JOB, runCaptureAnalyzeJob, type CaptureAnalyzeJobPayload } from "../../services/capture-batch.service.js";
+import { AI_WORKFLOW_ANALYZE_JOB, runAiWorkflowAnalyzeJob, type AiWorkflowJobPayload } from "../../services/ai-workflow-batch.service.js";
 
 // Registers all job handlers on the process queue and starts the workers. Called once
 // at startup (index.ts). Producers (e.g. lib/email) only enqueue; the actual work runs
@@ -43,6 +44,12 @@ export function startWorkers(): void {
   // contract — the handler records per-item failures on the batch job and never throws.
   queue.register<CaptureAnalyzeJobPayload>(CAPTURE_ANALYZE_JOB, async (payload) => {
     await runCaptureAnalyzeJob(payload);
+  });
+
+  // Stage 5F workflow batch analysis: one job per entity. Same soft-failure contract —
+  // the handler records per-entity failures on the batch job and never throws.
+  queue.register<AiWorkflowJobPayload>(AI_WORKFLOW_ANALYZE_JOB, async (payload) => {
+    await runAiWorkflowAnalyzeJob(payload);
   });
 
   queue.start();

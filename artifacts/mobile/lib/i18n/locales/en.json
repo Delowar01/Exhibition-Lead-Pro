@@ -44,6 +44,43 @@
       "summary": "Summary"
     }
   },
+  "workflow": {
+    "title": "Workflow Intelligence",
+    "disclaimer": "Recommendations are reviewable suggestions. Accepting records your approval and never auto-changes the CRM.",
+    "analyze": "Analyze",
+    "analyzing": "Analyzing…",
+    "generating": "Generating…",
+    "empty": "No workflow recommendations yet. Tap Analyze to generate them.",
+    "loading": "Loading recommendations…",
+    "accept": "Accept",
+    "dismiss": "Dismiss",
+    "accepted": "Accepted",
+    "dismissed": "Dismissed",
+    "suggested": "Suggested",
+    "ai": "AI",
+    "ruleBased": "Rule-based",
+    "confidence": "{{value}}% confidence",
+    "confidenceNa": "Confidence n/a",
+    "generatedAt": "Generated {{when}}",
+    "acceptedAt": "Accepted {{when}}",
+    "model": "Model: {{model}}",
+    "promptVersion": "Prompt v{{version}}",
+    "analyzeFailed": "Analysis failed. Please try again.",
+    "actionFailed": "Action failed. Please try again.",
+    "types": {
+      "next_action": "Next action",
+      "follow_up": "Follow-up",
+      "owner": "Suggested owner",
+      "department": "Suggested department",
+      "team": "Suggested team",
+      "priority": "Priority",
+      "due_date": "Due date",
+      "routing": "Smart routing",
+      "progression": "Opportunity progression",
+      "reminder": "Smart reminder",
+      "task": "Task recommendation"
+    }
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
