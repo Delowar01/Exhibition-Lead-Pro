@@ -296,6 +296,35 @@ describe("Review lifecycle (accept / dismiss) — records approval, never auto-w
   });
 });
 
+// The web/mobile "Apply" button does NOT introduce a new write path. It routes the
+// recommended value through the EXISTING manual CRM endpoint (PATCH /leads|/contacts).
+// This proves the handoff contract: accepting a recommendation writes nothing, and the
+// only way the recommended field lands on the record is an explicit manual update.
+describe("Apply handoff — Accept never writes; the recommended value only lands via manual PATCH", () => {
+  it("accept leaves the lead's assignedToId + followUpDate untouched, then a manual PATCH applies the value", async () => {
+    const recs = await analyze(adminToken, "lead", leadId);
+    const recId = recs[0].id as number;
+    const before = await (await api("GET", `/leads/${leadId}`, adminToken)).json();
+
+    // 1) Accepting records approval only — the CRM record is NOT mutated.
+    const acc = await api("POST", `/ai/workflow/recommendations/${recId}/accept`, adminToken);
+    expect(acc.status).toBe(200);
+    const afterAccept = await (await api("GET", `/leads/${leadId}`, adminToken)).json();
+    expect(afterAccept.assignedToId).toBe(before.assignedToId);
+    expect(afterAccept.followUpDate ?? null).toBe(before.followUpDate ?? null);
+
+    // 2) The user-initiated Apply writes through the normal manual endpoint.
+    const target = "2099-12-31";
+    const patch = await api("PATCH", `/leads/${leadId}`, adminToken, { followUpDate: target });
+    expect(patch.status).toBe(200);
+    const afterApply = await (await api("GET", `/leads/${leadId}`, adminToken)).json();
+    expect(afterApply.followUpDate).toBe(target);
+
+    // restore
+    await api("PATCH", `/leads/${leadId}`, adminToken, { followUpDate: before.followUpDate ?? null });
+  });
+});
+
 describe("GET /ai/workflow/overview — tenant-wide review summary", () => {
   it("returns status counts and recent recommendations for the caller's tenant only", async () => {
     await analyze(adminToken, "lead", leadId);

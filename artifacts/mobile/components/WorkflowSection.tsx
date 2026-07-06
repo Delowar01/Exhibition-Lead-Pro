@@ -6,10 +6,14 @@ import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View }
 import {
   getGetAiWorkflowRecommendationsQueryKey,
   getGetAiWorkflowOverviewQueryKey,
+  getGetLeadQueryKey,
+  getGetContactQueryKey,
   useAcceptAiWorkflowRecommendation,
   useAnalyzeAiWorkflowEntity,
   useDismissAiWorkflowRecommendation,
   useGetAiWorkflowRecommendations,
+  useUpdateLead,
+  useUpdateContact,
   type AiWorkflowRecommendation,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,6 +27,25 @@ type EntityType = "lead" | "contact" | "organization";
 interface Props {
   entityType: EntityType;
   id: number;
+}
+
+// Applyable only when the recommendation maps to a field the EXISTING manual
+// update endpoint accepts (LeadUpdate/ContactUpdate: assignedToId, followUpDate).
+// Apply is user-initiated and routes through the normal manual write — the
+// engine never mutates the CRM, and Accept only records approval.
+type ApplyTarget = { field: "assignedToId" | "followUpDate"; value: number | string; summary: string };
+
+function applyTarget(rec: AiWorkflowRecommendation, entityType: EntityType): ApplyTarget | null {
+  if (entityType !== "lead" && entityType !== "contact") return null;
+  const d = (rec.data ?? {}) as Record<string, unknown>;
+  if (rec.recommendationType === "owner" && typeof d.suggestedOwnerId === "number") {
+    const name = typeof d.suggestedOwnerName === "string" ? d.suggestedOwnerName : "";
+    return { field: "assignedToId", value: d.suggestedOwnerId, summary: name };
+  }
+  if ((rec.recommendationType === "follow_up" || rec.recommendationType === "due_date") && typeof d.suggestedDate === "string") {
+    return { field: "followUpDate", value: d.suggestedDate, summary: d.suggestedDate };
+  }
+  return null;
 }
 
 function humanizeKey(key: string): string {
@@ -56,9 +79,12 @@ export function WorkflowSection({ entityType, id }: Props) {
   const analyze = useAnalyzeAiWorkflowEntity();
   const accept = useAcceptAiWorkflowRecommendation();
   const dismiss = useDismissAiWorkflowRecommendation();
+  const updateLead = useUpdateLead();
+  const updateContact = useUpdateContact();
 
   const recommendations = data?.recommendations ?? [];
-  const acting = analyze.isPending || accept.isPending || dismiss.isPending;
+  const acting =
+    analyze.isPending || accept.isPending || dismiss.isPending || updateLead.isPending || updateContact.isPending;
 
   const success = () => {
     if (Platform.OS !== "web") {
@@ -110,6 +136,37 @@ export function WorkflowSection({ entityType, id }: Props) {
     );
   };
 
+  // Apply routes through the EXISTING manual update endpoint (PATCH /leads|/contacts):
+  // user-initiated, writes one recommended field. The engine never does this itself.
+  const applyRec = (rec: AiWorkflowRecommendation) => {
+    const target = applyTarget(rec, entityType);
+    if (!target) return;
+    const body = { [target.field]: target.value } as Record<string, unknown>;
+    const opts = {
+      onSuccess: () => {
+        if (entityType === "lead") queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(id) });
+        else if (entityType === "contact") queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(id) });
+        invalidate();
+        success();
+      },
+      onError: () => Alert.alert(t("workflow.title"), t("workflow.applyFailed")),
+    };
+    if (entityType === "lead") updateLead.mutate({ id, data: body }, opts);
+    else if (entityType === "contact") updateContact.mutate({ id, data: body }, opts);
+  };
+
+  const handleApply = (rec: AiWorkflowRecommendation) => {
+    const target = applyTarget(rec, entityType);
+    if (!target) return;
+    const detail = target.summary
+      ? t(`workflow.applyConfirm.${target.field}`, { value: target.summary })
+      : t("workflow.applyConfirmGeneric");
+    Alert.alert(t("workflow.applyTitle"), detail, [
+      { text: t("workflow.cancel"), style: "cancel" },
+      { text: t("workflow.apply"), onPress: () => applyRec(rec) },
+    ]);
+  };
+
   const typeLabel = (type: string) =>
     t(`workflow.types.${type}`, { defaultValue: humanizeKey(type) });
 
@@ -152,6 +209,7 @@ export function WorkflowSection({ entityType, id }: Props) {
     const recData = (rec.data ?? {}) as Record<string, unknown>;
     const entries = Object.entries(recData).filter(([, v]) => v !== null && v !== undefined);
     const canAct = rec.status === "suggested";
+    const target = rec.status === "dismissed" ? null : applyTarget(rec, entityType);
 
     const confColor =
       rec.confidence == null
@@ -208,24 +266,38 @@ export function WorkflowSection({ entityType, id }: Props) {
           {rec.acceptedAt ? ` · ${t("workflow.acceptedAt", { when: formatTs(rec.acceptedAt) })}` : ""}
         </Text>
 
-        {canAct ? (
+        {canAct || target ? (
           <View style={styles.actions}>
-            <Pressable
-              onPress={() => handleAccept(rec.id)}
-              disabled={acting}
-              style={[styles.actionBtn, { backgroundColor: colors.primary, opacity: acting ? 0.6 : 1 }]}
-            >
-              <Feather name="check" size={14} color={colors.primaryForeground} />
-              <Text style={[styles.actionText, { color: colors.primaryForeground }]}>{t("workflow.accept")}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => handleDismiss(rec.id)}
-              disabled={acting}
-              style={[styles.actionBtn, styles.dismissBtn, { borderColor: colors.border, opacity: acting ? 0.6 : 1 }]}
-            >
-              <Feather name="x" size={14} color={colors.foreground} />
-              <Text style={[styles.actionText, { color: colors.foreground }]}>{t("workflow.dismiss")}</Text>
-            </Pressable>
+            {canAct ? (
+              <>
+                <Pressable
+                  onPress={() => handleAccept(rec.id)}
+                  disabled={acting}
+                  style={[styles.actionBtn, { backgroundColor: colors.primary, opacity: acting ? 0.6 : 1 }]}
+                >
+                  <Feather name="check" size={14} color={colors.primaryForeground} />
+                  <Text style={[styles.actionText, { color: colors.primaryForeground }]}>{t("workflow.accept")}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleDismiss(rec.id)}
+                  disabled={acting}
+                  style={[styles.actionBtn, styles.dismissBtn, { borderColor: colors.border, opacity: acting ? 0.6 : 1 }]}
+                >
+                  <Feather name="x" size={14} color={colors.foreground} />
+                  <Text style={[styles.actionText, { color: colors.foreground }]}>{t("workflow.dismiss")}</Text>
+                </Pressable>
+              </>
+            ) : null}
+            {target ? (
+              <Pressable
+                onPress={() => handleApply(rec)}
+                disabled={acting}
+                style={[styles.actionBtn, styles.applyBtn, { backgroundColor: colors.muted, opacity: acting ? 0.6 : 1 }]}
+              >
+                <Feather name="arrow-up-right" size={14} color={colors.foreground} />
+                <Text style={[styles.actionText, { color: colors.foreground }]}>{t("workflow.apply")}</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -300,6 +372,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", gap: 8, paddingTop: 2 },
   actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14, flex: 1 },
   dismissBtn: { borderWidth: 1, backgroundColor: "transparent" },
+  applyBtn: {},
   actionText: { fontSize: 13, fontFamily: FONT.semibold },
 });
 

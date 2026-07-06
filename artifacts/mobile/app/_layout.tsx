@@ -179,6 +179,7 @@ function RootLayoutNav() {
       <Stack.Screen name="tasks" options={{ headerShown: false }} />
       <Stack.Screen name="duplicates" options={{ headerShown: false }} />
       <Stack.Screen name="my-numbers" options={{ headerShown: false }} />
+      <Stack.Screen name="workflow" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="sync" options={{ headerShown: false }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />

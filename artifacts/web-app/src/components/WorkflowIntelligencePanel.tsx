@@ -4,8 +4,12 @@ import {
   useAnalyzeAiWorkflowEntity,
   useAcceptAiWorkflowRecommendation,
   useDismissAiWorkflowRecommendation,
+  useUpdateLead,
+  useUpdateContact,
   getGetAiWorkflowRecommendationsQueryKey,
   getGetAiWorkflowOverviewQueryKey,
+  getGetLeadQueryKey,
+  getGetContactQueryKey,
   type AiWorkflowRecommendation,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,9 +18,29 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Workflow, Sparkles, Check, X, ShieldCheck, Cpu, Info, Languages } from "lucide-react";
+import { Workflow, Sparkles, Check, X, ShieldCheck, Cpu, Info, Languages, ArrowUpRight } from "lucide-react";
 
 type EntityType = "lead" | "contact" | "organization";
+
+// A recommendation is "applyable" only when it maps to a concrete field the
+// EXISTING manual CRM update endpoint accepts (LeadUpdate/ContactUpdate:
+// assignedToId + followUpDate). Applying is a user-initiated write through the
+// normal manual endpoint — it never happens automatically, and Accept still
+// only records approval without mutating the CRM.
+type ApplyTarget = { field: "assignedToId" | "followUpDate"; value: number | string; summary: string };
+
+function applyTarget(rec: AiWorkflowRecommendation, entityType: EntityType): ApplyTarget | null {
+  if (entityType !== "lead" && entityType !== "contact") return null;
+  const d = (rec.data ?? {}) as Record<string, unknown>;
+  if (rec.recommendationType === "owner" && typeof d.suggestedOwnerId === "number") {
+    const name = typeof d.suggestedOwnerName === "string" ? d.suggestedOwnerName : "suggested owner";
+    return { field: "assignedToId", value: d.suggestedOwnerId, summary: `Assign owner to ${name}` };
+  }
+  if ((rec.recommendationType === "follow_up" || rec.recommendationType === "due_date") && typeof d.suggestedDate === "string") {
+    return { field: "followUpDate", value: d.suggestedDate, summary: `Set follow-up date to ${d.suggestedDate}` };
+  }
+  return null;
+}
 
 const TYPE_LABELS: Record<string, string> = {
   next_action: "Next action",
@@ -100,18 +124,23 @@ function DataValue({ value }: { value: unknown }) {
 
 function RecommendationCard({
   rec,
+  entityType,
   onAccept,
   onDismiss,
+  onApply,
   acting,
 }: {
   rec: AiWorkflowRecommendation;
+  entityType: EntityType;
   onAccept: (id: number) => void;
   onDismiss: (id: number) => void;
+  onApply: (rec: AiWorkflowRecommendation) => void;
   acting: boolean;
 }) {
   const isDeterministic = rec.source === "deterministic";
   const data = (rec.data ?? {}) as Record<string, unknown>;
   const entries = Object.entries(data).filter(([, v]) => v !== null && v !== undefined);
+  const target = rec.status === "dismissed" ? null : applyTarget(rec, entityType);
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
@@ -156,20 +185,36 @@ function RecommendationCard({
         {rec.acceptedAt && <span>Accepted {formatTs(rec.acceptedAt)}</span>}
       </div>
 
-      {rec.status === "suggested" && (
-        <div className="flex items-center gap-2 pt-1">
-          <Button size="sm" onClick={() => onAccept(rec.id)} disabled={acting} className="gap-1">
-            <Check className="h-3.5 w-3.5" /> Accept
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onDismiss(rec.id)}
-            disabled={acting}
-            className="gap-1 text-destructive hover:text-destructive"
-          >
-            <X className="h-3.5 w-3.5" /> Dismiss
-          </Button>
+      {(rec.status === "suggested" || target) && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {rec.status === "suggested" && (
+            <>
+              <Button size="sm" onClick={() => onAccept(rec.id)} disabled={acting} className="gap-1">
+                <Check className="h-3.5 w-3.5" /> Accept
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onDismiss(rec.id)}
+                disabled={acting}
+                className="gap-1 text-destructive hover:text-destructive"
+              >
+                <X className="h-3.5 w-3.5" /> Dismiss
+              </Button>
+            </>
+          )}
+          {target && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onApply(rec)}
+              disabled={acting}
+              className="gap-1"
+              title={`${target.summary} (updates the CRM via the normal manual edit)`}
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" /> Apply
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -188,12 +233,34 @@ export function WorkflowIntelligencePanel({ entityType, id }: { entityType: Enti
   const analyze = useAnalyzeAiWorkflowEntity();
   const accept = useAcceptAiWorkflowRecommendation();
   const dismiss = useDismissAiWorkflowRecommendation();
+  const updateLead = useUpdateLead();
+  const updateContact = useUpdateContact();
 
   const recommendations = data?.recommendations ?? [];
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getGetAiWorkflowRecommendationsQueryKey(entityType, id) });
     queryClient.invalidateQueries({ queryKey: getGetAiWorkflowOverviewQueryKey() });
+  };
+
+  // Apply routes through the EXISTING manual update endpoint (PATCH /leads|/contacts).
+  // It is user-initiated and writes a single recommended field — the recommendation
+  // engine never does this itself.
+  const handleApply = (rec: AiWorkflowRecommendation) => {
+    const target = applyTarget(rec, entityType);
+    if (!target) return;
+    const body = { [target.field]: target.value } as Record<string, unknown>;
+    const opts = {
+      onSuccess: () => {
+        if (entityType === "lead") queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(id) });
+        else if (entityType === "contact") queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(id) });
+        invalidate();
+        toast({ title: "Applied via CRM", description: target.summary });
+      },
+      onError: () => toast({ title: "Could not apply", description: "Please try the manual edit.", variant: "destructive" as const }),
+    };
+    if (entityType === "lead") updateLead.mutate({ id, data: body }, opts);
+    else if (entityType === "contact") updateContact.mutate({ id, data: body }, opts);
   };
 
   const handleAnalyze = () => {
@@ -235,7 +302,7 @@ export function WorkflowIntelligencePanel({ entityType, id }: { entityType: Enti
     );
   };
 
-  const acting = analyze.isPending || accept.isPending || dismiss.isPending;
+  const acting = analyze.isPending || accept.isPending || dismiss.isPending || updateLead.isPending || updateContact.isPending;
 
   return (
     <Card className="shadow-sm border-primary/20">
@@ -279,8 +346,10 @@ export function WorkflowIntelligencePanel({ entityType, id }: { entityType: Enti
               <RecommendationCard
                 key={rec.id}
                 rec={rec}
+                entityType={entityType}
                 onAccept={handleAccept}
                 onDismiss={handleDismiss}
+                onApply={handleApply}
                 acting={acting}
               />
             ))

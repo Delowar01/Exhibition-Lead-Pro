@@ -79,6 +79,15 @@
       "progression": "Opportunity progression",
       "reminder": "Smart reminder",
       "task": "Task recommendation"
+    },
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "applyTitle": "Apply via CRM",
+    "applyFailed": "Could not apply. Please try the manual edit.",
+    "applyConfirmGeneric": "This updates the record through the normal manual edit. Continue?",
+    "applyConfirm": {
+      "assignedToId": "Assign this record to {{value}} via the normal manual edit?",
+      "followUpDate": "Set the follow-up date to {{value}} via the normal manual edit?"
     }
   },
   "common": {
@@ -160,7 +169,8 @@
     "myNumbers": "My Numbers",
     "workspace": "Workspace",
     "sync": "Sync",
-    "companies": "Companies"
+    "companies": "Companies",
+    "workflowIntel": "Workflow Intelligence"
   },
   "companies": {
     "title": "Companies",
@@ -1410,5 +1420,54 @@
     "emptyBody": "No {{entity}} match the current filters.",
     "errorTitle": "Export failed",
     "errorBody": "Could not generate the file. Please try again."
+  },
+  "workflowManager": {
+    "title": "Workflow Intelligence",
+    "subtitle": "Operational health, SLA risks, bottlenecks, and scenario simulation.",
+    "disclaimer": "Read-only intelligence — nothing is written to the CRM automatically.",
+    "healthTitle": "Operational Health",
+    "healthScore": "Health",
+    "slaCompliance": "SLA Compliance",
+    "atRiskItems": "At-Risk Items",
+    "trackedItems": "Tracked Items",
+    "recommendedActions": "Recommended actions",
+    "workload": "Team workload",
+    "workloadDetail": "{{open}} open · {{overdue}} overdue",
+    "risksTitle": "SLA Risk Alerts",
+    "noRisks": "No SLA risks detected.",
+    "bottlenecksTitle": "Workflow Bottlenecks",
+    "noBottlenecks": "No bottlenecks detected.",
+    "ageDays": "{{days}}d",
+    "simTitle": "Scenario Simulation",
+    "simSubtitle": "Preview a predicted outcome — this is a read-only estimate, nothing is written.",
+    "leadId": "Lead ID",
+    "scenario": "Scenario",
+    "delayDays": "Delay (days)",
+    "simFollowUp": "Schedule follow-up",
+    "simReassign": "Reassign owner",
+    "simDelay": "Delay",
+    "simulate": "Simulate",
+    "simulating": "Simulating…",
+    "baseline": "Baseline",
+    "predicted": "Predicted",
+    "winProbability": "Win probability",
+    "riskSuffix": "{{level}} risk",
+    "assumptions": "Assumptions",
+    "estConfidence": "Estimate confidence: {{value}}%",
+    "simError": "Could not simulate — check the lead ID is in your workspace.",
+    "invalidLeadId": "Enter a valid lead ID.",
+    "loading": "Loading…",
+    "grades": {
+      "excellent": "Excellent",
+      "good": "Good",
+      "fair": "Fair",
+      "poor": "Poor"
+    },
+    "levels": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    }
   }
 }

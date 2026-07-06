@@ -134,6 +134,14 @@ export default function MoreScreen() {
       onPress: () => router.push("/my-numbers"),
     },
     {
+      key: "workflow",
+      label: t("nav.workflowIntel"),
+      sub: t("workflowManager.subtitle"),
+      icon: "activity",
+      color: "#F59E0B",
+      onPress: () => router.push("/workflow"),
+    },
+    {
       key: "pipeline",
       label: t("nav.leads"),
       sub: t("leads.subtitle"),
