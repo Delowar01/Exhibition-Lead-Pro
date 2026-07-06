@@ -27,6 +27,8 @@ import {
   buildWorkflowProgressionPrompt,
   buildWorkflowReminderPrompt,
   buildWorkflowTaskPrompt,
+  buildExecutiveSummaryPrompt,
+  buildExecutiveForecastPrompt,
 } from "../ai/prompts.js";
 import type { AiFeature, AiPart, AiRequest } from "../ai/types.js";
 import * as aiService from "../services/ai.service.js";
@@ -893,6 +895,53 @@ export interface WorkflowTaskResult extends CopilotMeta {
 export async function phraseWorkflowTask(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<WorkflowTaskResult> {
   const p = await runWorkflow("workflow_task", buildWorkflowTaskPrompt(appLanguage), context, ctx);
   return { taskTitle: str(p.taskTitle), taskDescription: str(p.taskDescription), ...meta(p) };
+}
+
+// ── Stage 5C — Enterprise AI Executive Intelligence phrasing runners ──────────
+//
+// Each PHRASES an executive briefing whose numeric core (KPIs, health scores, trends,
+// forecasts, alerts) has ALREADY been computed deterministically by the executive service
+// and rendered into `context` under a "Computed signals" block. The LLM never invents or
+// changes numbers. Callers treat these as best-effort: on any failure the deterministic
+// core survives (soft-degrade, HTTP 200) and only a successful call flips provenance to
+// source="ai". Same gated callJson seam (per-tenant enable/flag/budget + ai_invocations).
+
+async function runExecutive(feature: AiFeature, promptText: string, context: string, ctx?: AiContext): Promise<Record<string, unknown>> {
+  return callJson({
+    feature,
+    parts: [{ text: `${promptText}\n\nComputed signals:\n${context}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+    confidenceOf: (p) => clampScore(p.confidence),
+  });
+}
+
+export interface ExecutiveSummaryResult extends CopilotMeta {
+  headline: string | null;
+  narrative: string | null;
+  highlights: string[];
+  risks: string[];
+  recommendations: string[];
+}
+export async function phraseExecutiveSummary(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<ExecutiveSummaryResult> {
+  const p = await runExecutive("executive_summary", buildExecutiveSummaryPrompt(appLanguage), context, ctx);
+  return {
+    headline: str(p.headline),
+    narrative: str(p.narrative),
+    highlights: strArr(p.highlights, 4),
+    risks: strArr(p.risks, 4),
+    recommendations: strArr(p.recommendations, 4),
+    ...meta(p),
+  };
+}
+
+export interface ExecutiveForecastResult extends CopilotMeta {
+  narrative: string | null;
+  watchouts: string[];
+}
+export async function phraseExecutiveForecast(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<ExecutiveForecastResult> {
+  const p = await runExecutive("executive_forecast", buildExecutiveForecastPrompt(appLanguage), context, ctx);
+  return { narrative: str(p.narrative), watchouts: strArr(p.watchouts, 3), ...meta(p) };
 }
 
 export function logAiError(context: string, err: unknown): void {

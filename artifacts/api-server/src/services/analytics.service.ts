@@ -413,6 +413,14 @@ async function resolveDashboardScope(
   return resolveEmployee(user, user.id);
 }
 
+// Exposed for the Stage 5C executive-intelligence service so it reuses the SAME
+// scope-privacy resolution (assertScopeAccess) + AnalyticsScope as the dashboard,
+// rather than re-implementing tenant/org-position authorization.
+export type { ResolvedScope };
+export async function resolveScope(user: AuthUser, scopeType?: string, id?: number): Promise<ResolvedScope> {
+  return resolveDashboardScope(user, scopeType, id);
+}
+
 export async function getDashboard(
   user: AuthUser,
   opts: { scopeType?: string; id?: number; dateFrom?: string; dateTo?: string } = {},

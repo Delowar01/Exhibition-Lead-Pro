@@ -6126,6 +6126,527 @@ export const GetAiWorkflowRecommendationsResponse = zod.object({
 
 
 /**
+ * @summary Read-only executive intelligence rollup (health, trends, forecast, team, alerts)
+ */
+export const GetAiExecutiveDashboardQueryParams = zod.object({
+  "scopeType": zod.coerce.string().optional().describe('company | department | team | employee'),
+  "id": zod.coerce.number().optional(),
+  "dateFrom": zod.coerce.string().optional(),
+  "dateTo": zod.coerce.string().optional()
+})
+
+export const GetAiExecutiveDashboardResponse = zod.object({
+  "scope": zod.object({
+  "type": zod.string().describe('company | department | team | employee'),
+  "id": zod.number().nullish(),
+  "name": zod.string()
+}),
+  "generatedAt": zod.string(),
+  "health": zod.object({
+  "business": zod.object({
+  "score": zod.number().describe('0-100 composite score'),
+  "rating": zod.string().describe('excellent | good | fair | at_risk'),
+  "factors": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "value": zod.number().describe('normalized 0-100 contribution input'),
+  "weight": zod.number().describe('0-1')
+}))
+}),
+  "sales": zod.object({
+  "score": zod.number().describe('0-100 composite score'),
+  "rating": zod.string().describe('excellent | good | fair | at_risk'),
+  "factors": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "value": zod.number().describe('normalized 0-100 contribution input'),
+  "weight": zod.number().describe('0-1')
+}))
+}),
+  "pipeline": zod.object({
+  "score": zod.number().describe('0-100 composite score'),
+  "rating": zod.string().describe('excellent | good | fair | at_risk'),
+  "factors": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "value": zod.number().describe('normalized 0-100 contribution input'),
+  "weight": zod.number().describe('0-1')
+}))
+})
+}),
+  "kpis": zod.record(zod.string(), zod.unknown()).describe('Real, tenant-scoped KPI snapshot (conversion, pipeline, won value, follow-ups, headcount).'),
+  "trends": zod.object({
+  "revenue": zod.object({
+  "direction": zod.string().describe('growth | decline | flat'),
+  "changePct": zod.number().nullable(),
+  "slope": zod.number(),
+  "mean": zod.number(),
+  "seasonality": zod.boolean(),
+  "points": zod.number()
+}),
+  "leads": zod.object({
+  "direction": zod.string().describe('growth | decline | flat'),
+  "changePct": zod.number().nullable(),
+  "slope": zod.number(),
+  "mean": zod.number(),
+  "seasonality": zod.boolean(),
+  "points": zod.number()
+}),
+  "won": zod.object({
+  "direction": zod.string().describe('growth | decline | flat'),
+  "changePct": zod.number().nullable(),
+  "slope": zod.number(),
+  "mean": zod.number(),
+  "seasonality": zod.boolean(),
+  "points": zod.number()
+})
+}),
+  "forecast": zod.object({
+  "expected": zod.number(),
+  "low": zod.number(),
+  "high": zod.number(),
+  "method": zod.string(),
+  "confidence": zod.number(),
+  "historyPoints": zod.number(),
+  "assumptions": zod.array(zod.string())
+}),
+  "teamPerformance": zod.array(zod.object({
+  "userId": zod.number(),
+  "name": zod.string(),
+  "scans": zod.number(),
+  "leads": zod.number(),
+  "won": zod.number(),
+  "pipelineValue": zod.number(),
+  "overdue": zod.number(),
+  "scheduled": zod.number(),
+  "activityScore": zod.number(),
+  "conversionScore": zod.number(),
+  "hygieneScore": zod.number(),
+  "overall": zod.number().describe('0-100 balanced overall performance score'),
+  "smallSample": zod.boolean().describe('true when fewer than a meaningful number of leads — interpret with care'),
+  "explanation": zod.string()
+})),
+  "alerts": zod.array(zod.object({
+  "alertType": zod.string(),
+  "severity": zod.string().describe('info | warning | critical'),
+  "title": zod.string(),
+  "detail": zod.string(),
+  "recommendation": zod.string(),
+  "metric": zod.number().nullable(),
+  "confidence": zod.number()
+})),
+  "revenueSeries": zod.array(zod.object({
+  "month": zod.string(),
+  "value": zod.number()
+}))
+})
+
+
+/**
+ * @summary List persisted executive summaries (most recent first)
+ */
+export const ListAiExecutiveSummariesQueryParams = zod.object({
+  "periodType": zod.coerce.string().optional().describe('daily | weekly | monthly | quarterly'),
+  "limit": zod.coerce.number().optional()
+})
+
+export const ListAiExecutiveSummariesResponse = zod.object({
+  "summaries": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string().describe('company | department | team | employee'),
+  "scopeId": zod.number().describe('0 = company-wide'),
+  "periodType": zod.string().describe('daily | weekly | monthly | quarterly'),
+  "periodKey": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast).'),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Generate + persist an executive summary (deterministic core, best-effort AI phrasing)
+ */
+export const GenerateAiExecutiveSummaryBody = zod.object({
+  "scopeType": zod.string().optional().describe('company | department | team | employee'),
+  "id": zod.number().optional(),
+  "periodType": zod.string().optional().describe('daily | weekly | monthly | quarterly (defaults to weekly)'),
+  "language": zod.string().optional().describe('en | ar (defaults to en)')
+})
+
+export const GenerateAiExecutiveSummaryResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string().describe('company | department | team | employee'),
+  "scopeId": zod.number().describe('0 = company-wide'),
+  "periodType": zod.string().describe('daily | weekly | monthly | quarterly'),
+  "periodKey": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast).'),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Get a single persisted executive summary
+ */
+export const GetAiExecutiveSummaryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAiExecutiveSummaryResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string().describe('company | department | team | employee'),
+  "scopeId": zod.number().describe('0 = company-wide'),
+  "periodType": zod.string().describe('daily | weekly | monthly | quarterly'),
+  "periodKey": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast).'),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Mark an executive summary as accepted (review lifecycle; writes no CRM)
+ */
+export const AcceptAiExecutiveSummaryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AcceptAiExecutiveSummaryResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string().describe('company | department | team | employee'),
+  "scopeId": zod.number().describe('0 = company-wide'),
+  "periodType": zod.string().describe('daily | weekly | monthly | quarterly'),
+  "periodKey": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast).'),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Mark an executive summary as dismissed
+ */
+export const DismissAiExecutiveSummaryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DismissAiExecutiveSummaryResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string().describe('company | department | team | employee'),
+  "scopeId": zod.number().describe('0 = company-wide'),
+  "periodType": zod.string().describe('daily | weekly | monthly | quarterly'),
+  "periodKey": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast).'),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary List persisted executive alerts
+ */
+export const ListAiExecutiveAlertsQueryParams = zod.object({
+  "status": zod.coerce.string().optional().describe('suggested | accepted | dismissed'),
+  "limit": zod.coerce.number().optional()
+})
+
+export const ListAiExecutiveAlertsResponse = zod.object({
+  "alerts": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string(),
+  "scopeId": zod.number(),
+  "alertType": zod.string(),
+  "severity": zod.string().describe('critical | high | medium | low | info'),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Recompute + persist deterministic executive alerts for a scope
+ */
+export const GenerateAiExecutiveAlertsBody = zod.object({
+  "scopeType": zod.string().optional().describe('company | department | team | employee'),
+  "id": zod.number().optional()
+})
+
+export const GenerateAiExecutiveAlertsResponse = zod.object({
+  "alerts": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string(),
+  "scopeId": zod.number(),
+  "alertType": zod.string(),
+  "severity": zod.string().describe('critical | high | medium | low | info'),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Mark an executive alert as accepted (acknowledged)
+ */
+export const AcceptAiExecutiveAlertParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AcceptAiExecutiveAlertResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string(),
+  "scopeId": zod.number(),
+  "alertType": zod.string(),
+  "severity": zod.string().describe('critical | high | medium | low | info'),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Mark an executive alert as dismissed
+ */
+export const DismissAiExecutiveAlertParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DismissAiExecutiveAlertResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string(),
+  "scopeId": zod.number(),
+  "alertType": zod.string(),
+  "severity": zod.string().describe('critical | high | medium | low | info'),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary List persisted executive forecasts
+ */
+export const ListAiExecutiveForecastsQueryParams = zod.object({
+  "forecastType": zod.coerce.string().optional().describe('revenue | pipeline | leads'),
+  "limit": zod.coerce.number().optional()
+})
+
+export const ListAiExecutiveForecastsResponse = zod.object({
+  "forecasts": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string(),
+  "scopeId": zod.number(),
+  "forecastType": zod.string().describe('revenue | pipeline | leads'),
+  "horizon": zod.string(),
+  "method": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Generate + persist an executive forecast (deterministic core, best-effort AI phrasing)
+ */
+export const GenerateAiExecutiveForecastBody = zod.object({
+  "scopeType": zod.string().optional(),
+  "id": zod.number().optional(),
+  "forecastType": zod.string().optional().describe('revenue | pipeline | leads (defaults to revenue)'),
+  "horizon": zod.string().optional().describe('next_period (default)'),
+  "language": zod.string().optional().describe('en | ar (defaults to en)')
+})
+
+export const GenerateAiExecutiveForecastResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "scopeType": zod.string(),
+  "scopeId": zod.number(),
+  "forecastType": zod.string().describe('revenue | pipeline | leads'),
+  "horizon": zod.string(),
+  "method": zod.string(),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "confidence": zod.number().nullish(),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary List generated executive reports (export jobs)
+ */
+export const ListAiExecutiveReportsQueryParams = zod.object({
+  "limit": zod.coerce.number().optional()
+})
+
+export const ListAiExecutiveReportsResponse = zod.object({
+  "reports": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "reportType": zod.string().describe('executive_summary | performance | forecast | full'),
+  "format": zod.string().describe('pdf | xlsx'),
+  "scopeType": zod.string().nullish(),
+  "scopeId": zod.number().nullish(),
+  "status": zod.string().describe('pending | processing | ready | failed'),
+  "downloadUrl": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "data": zod.record(zod.string(), zod.unknown()).nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Start an executive report export job (PDF/Excel). Returns 202 with a pollable job.
+ */
+export const GenerateAiExecutiveReportBody = zod.object({
+  "reportType": zod.string().describe('executive_summary | performance | forecast | full'),
+  "format": zod.string().describe('pdf | xlsx'),
+  "scopeType": zod.string().optional(),
+  "id": zod.number().optional(),
+  "language": zod.string().optional().describe('en | ar (defaults to en)')
+})
+
+
+/**
+ * @summary Poll an executive report export job (status + download URL when ready)
+ */
+export const GetAiExecutiveReportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAiExecutiveReportResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "reportType": zod.string().describe('executive_summary | performance | forecast | full'),
+  "format": zod.string().describe('pdf | xlsx'),
+  "scopeType": zod.string().nullish(),
+  "scopeId": zod.number().nullish(),
+  "status": zod.string().describe('pending | processing | ready | failed'),
+  "downloadUrl": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "data": zod.record(zod.string(), zod.unknown()).nullish(),
+  "generatedAt": zod.string(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
  * @summary Register an Expo push token for the current user's device
  */
 export const RegisterPushTokenBody = zod.object({

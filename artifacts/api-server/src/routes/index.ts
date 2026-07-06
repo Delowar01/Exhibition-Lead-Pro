@@ -34,6 +34,7 @@ import importsRouter from "./imports.js";
 import exportsRouter from "./exports.js";
 import searchRouter from "./search.js";
 import aiRouter from "./ai.js";
+import executiveRouter from "./executive.js";
 
 const router: IRouter = Router();
 
@@ -53,6 +54,7 @@ router.use(documentsRouter);
 router.use(customFieldsRouter);
 router.use(territoriesRouter);
 router.use(aiRouter);
+router.use(executiveRouter);
 router.use(importsRouter);
 router.use(exportsRouter);
 router.use(companiesRouter);

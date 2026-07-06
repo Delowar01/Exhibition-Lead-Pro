@@ -190,6 +190,80 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
 }
 
+// Loads a full AuthUser for a given user id, OUTSIDE the request/response cycle.
+// Background jobs (e.g. executive report export) run after the originating request
+// has ended, so they cannot reuse req.user; they must rebuild a faithful AuthUser
+// to keep tenant-scoped reads correctly isolated (accessibleCompanies, role,
+// effective permissions). Mirrors the field-building in requireAuth. Returns null
+// if the user is missing/deleted/disabled. Does not enforce the subscription
+// lifecycle block (a job's originating request was already authorized).
+export async function loadAuthUserById(userId: number): Promise<AuthUser | null> {
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(and(eq(usersTable.id, userId), isNull(usersTable.deletedAt)))
+    .limit(1);
+  if (!user || !user.isActive) return null;
+
+  let companyStatus: string | null = null;
+  let readOnly = false;
+  if (user.companyId) {
+    const [company] = await db
+      .select({ status: companiesTable.status, trialEndsAt: companiesTable.trialEndsAt })
+      .from(companiesTable)
+      .where(eq(companiesTable.id, user.companyId))
+      .limit(1);
+    if (company) {
+      companyStatus = company.status;
+      const access = evaluateCompanyAccess(company);
+      readOnly = access.blocked ? true : access.readOnly;
+    }
+  }
+
+  const accessRows = await db
+    .select({ companyId: userCompanyAccessTable.companyId })
+    .from(userCompanyAccessTable)
+    .where(eq(userCompanyAccessTable.userId, user.id));
+  const accessibleCompanies = Array.from(
+    new Set([...(user.companyId ? [user.companyId] : []), ...accessRows.map((r) => r.companyId)]),
+  );
+
+  let permissions: PermissionMatrix = user.permissions ?? {};
+  if (user.role !== "platform_owner" && user.role !== "primary_admin") {
+    const grantRows = await db
+      .select({ module: rolePermissionsTable.module, action: rolePermissionsTable.action })
+      .from(userRolesTable)
+      .innerJoin(rolePermissionsTable, eq(userRolesTable.roleId, rolePermissionsTable.roleId))
+      .where(eq(userRolesTable.userId, user.id));
+    if (grantRows.length > 0) {
+      const roleMatrix: PermissionMatrix = {};
+      for (const r of grantRows) {
+        const set = new Set(roleMatrix[r.module] ?? []);
+        set.add(r.action);
+        roleMatrix[r.module] = Array.from(set);
+      }
+      permissions = mergePermissions(permissions, roleMatrix);
+    }
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: normalizeRole(user.role),
+    companyId: user.companyId,
+    permissions,
+    contactVisibility: user.contactVisibility,
+    companyVisibility: user.companyVisibility,
+    selectedUserIds: user.selectedUserIds ?? [],
+    isActive: user.isActive,
+    companyStatus,
+    readOnly,
+    accessibleCompanies,
+    sessionId: null,
+  };
+}
+
 export function requireRole(...roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {

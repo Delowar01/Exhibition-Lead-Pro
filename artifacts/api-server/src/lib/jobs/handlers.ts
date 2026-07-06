@@ -6,6 +6,7 @@ import { AI_ANALYZE_ENTITY_JOB, runAiAnalyzeEntityJob, type AiAnalyzeJobPayload 
 import { AI_COPILOT_GENERATE_JOB, runAiCopilotGenerateJob, type AiCopilotJobPayload } from "../../services/ai-copilot-batch.service.js";
 import { CAPTURE_ANALYZE_JOB, runCaptureAnalyzeJob, type CaptureAnalyzeJobPayload } from "../../services/capture-batch.service.js";
 import { AI_WORKFLOW_ANALYZE_JOB, runAiWorkflowAnalyzeJob, type AiWorkflowJobPayload } from "../../services/ai-workflow-batch.service.js";
+import { EXECUTIVE_REPORT_JOB, runExecutiveReportJob, type ExecutiveReportJobPayload } from "../../services/executive-intelligence.service.js";
 
 // Registers all job handlers on the process queue and starts the workers. Called once
 // at startup (index.ts). Producers (e.g. lib/email) only enqueue; the actual work runs
@@ -50,6 +51,13 @@ export function startWorkers(): void {
   // the handler records per-entity failures on the batch job and never throws.
   queue.register<AiWorkflowJobPayload>(AI_WORKFLOW_ANALYZE_JOB, async (payload) => {
     await runAiWorkflowAnalyzeJob(payload);
+  });
+
+  // Stage 5C executive report export: one job per report. The handler composes real
+  // dashboard data into a PDF/Excel file, uploads it, and flips the row to ready/failed.
+  // It never throws (marks the row failed internally) — maxAttempts is 1 at enqueue.
+  queue.register<ExecutiveReportJobPayload>(EXECUTIVE_REPORT_JOB, async (payload) => {
+    await runExecutiveReportJob(payload);
   });
 
   queue.start();

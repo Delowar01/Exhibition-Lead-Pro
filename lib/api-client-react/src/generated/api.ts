@@ -113,6 +113,19 @@ import type {
   EventReport,
   EventStats,
   EventUpdate,
+  ExecutiveAlert,
+  ExecutiveAlertListResponse,
+  ExecutiveDashboardResponse,
+  ExecutiveForecast,
+  ExecutiveForecastGenerateRequest,
+  ExecutiveForecastListResponse,
+  ExecutiveReport,
+  ExecutiveReportGenerateRequest,
+  ExecutiveReportListResponse,
+  ExecutiveScopeRequest,
+  ExecutiveSummary,
+  ExecutiveSummaryGenerateRequest,
+  ExecutiveSummaryListResponse,
   ExportCreateInput,
   ExportDownloadResponse,
   ExportRunList,
@@ -128,6 +141,7 @@ import type {
   FollowUpUpdate,
   ForceLogoutResult,
   ForgotPasswordInput,
+  GetAiExecutiveDashboardParams,
   GetAiPlatformUsageParams,
   GetAiUsageParams,
   GetAiWorkflowBottlenecksParams,
@@ -172,6 +186,10 @@ import type {
   LeadScorePreview,
   LeadUpdate,
   LeadsByEventItem,
+  ListAiExecutiveAlertsParams,
+  ListAiExecutiveForecastsParams,
+  ListAiExecutiveReportsParams,
+  ListAiExecutiveSummariesParams,
   ListAuditLogsParams,
   ListCompaniesParams,
   ListContactsParams,
@@ -16080,6 +16098,1144 @@ export function useGetAiWorkflowRecommendations<TData = Awaited<ReturnType<typeo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAiWorkflowRecommendationsQueryOptions(entityType,id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiExecutiveDashboardUrl = (params?: GetAiExecutiveDashboardParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/executive/dashboard?${stringifiedParams}` : `/api/ai/executive/dashboard`
+}
+
+/**
+ * @summary Read-only executive intelligence rollup (health, trends, forecast, team, alerts)
+ */
+export const getAiExecutiveDashboard = async (params?: GetAiExecutiveDashboardParams, options?: RequestInit): Promise<ExecutiveDashboardResponse> => {
+
+  return customFetch<ExecutiveDashboardResponse>(getGetAiExecutiveDashboardUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiExecutiveDashboardQueryKey = (params?: GetAiExecutiveDashboardParams,) => {
+    return [
+    `/api/ai/executive/dashboard`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiExecutiveDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getAiExecutiveDashboard>>, TError = ErrorType<unknown>>(params?: GetAiExecutiveDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiExecutiveDashboardQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiExecutiveDashboard>>> = ({ signal }) => getAiExecutiveDashboard(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiExecutiveDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getAiExecutiveDashboard>>>
+export type GetAiExecutiveDashboardQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read-only executive intelligence rollup (health, trends, forecast, team, alerts)
+ */
+
+export function useGetAiExecutiveDashboard<TData = Awaited<ReturnType<typeof getAiExecutiveDashboard>>, TError = ErrorType<unknown>>(
+ params?: GetAiExecutiveDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiExecutiveDashboardQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListAiExecutiveSummariesUrl = (params?: ListAiExecutiveSummariesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/executive/summaries?${stringifiedParams}` : `/api/ai/executive/summaries`
+}
+
+/**
+ * @summary List persisted executive summaries (most recent first)
+ */
+export const listAiExecutiveSummaries = async (params?: ListAiExecutiveSummariesParams, options?: RequestInit): Promise<ExecutiveSummaryListResponse> => {
+
+  return customFetch<ExecutiveSummaryListResponse>(getListAiExecutiveSummariesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiExecutiveSummariesQueryKey = (params?: ListAiExecutiveSummariesParams,) => {
+    return [
+    `/api/ai/executive/summaries`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAiExecutiveSummariesQueryOptions = <TData = Awaited<ReturnType<typeof listAiExecutiveSummaries>>, TError = ErrorType<unknown>>(params?: ListAiExecutiveSummariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveSummaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiExecutiveSummariesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiExecutiveSummaries>>> = ({ signal }) => listAiExecutiveSummaries(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveSummaries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiExecutiveSummariesQueryResult = NonNullable<Awaited<ReturnType<typeof listAiExecutiveSummaries>>>
+export type ListAiExecutiveSummariesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List persisted executive summaries (most recent first)
+ */
+
+export function useListAiExecutiveSummaries<TData = Awaited<ReturnType<typeof listAiExecutiveSummaries>>, TError = ErrorType<unknown>>(
+ params?: ListAiExecutiveSummariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveSummaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiExecutiveSummariesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGenerateAiExecutiveSummaryUrl = () => {
+
+
+
+
+  return `/api/ai/executive/summaries`
+}
+
+/**
+ * @summary Generate + persist an executive summary (deterministic core, best-effort AI phrasing)
+ */
+export const generateAiExecutiveSummary = async (executiveSummaryGenerateRequest?: ExecutiveSummaryGenerateRequest, options?: RequestInit): Promise<ExecutiveSummary> => {
+
+  return customFetch<ExecutiveSummary>(getGenerateAiExecutiveSummaryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      executiveSummaryGenerateRequest,)
+  }
+);}
+
+
+
+
+export const getGenerateAiExecutiveSummaryMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveSummary>>, TError,{data?: BodyType<ExecutiveSummaryGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveSummary>>, TError,{data?: BodyType<ExecutiveSummaryGenerateRequest>}, TContext> => {
+
+const mutationKey = ['generateAiExecutiveSummary'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAiExecutiveSummary>>, {data?: BodyType<ExecutiveSummaryGenerateRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  generateAiExecutiveSummary(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateAiExecutiveSummaryMutationResult = NonNullable<Awaited<ReturnType<typeof generateAiExecutiveSummary>>>
+    export type GenerateAiExecutiveSummaryMutationBody = BodyType<ExecutiveSummaryGenerateRequest> | undefined
+    export type GenerateAiExecutiveSummaryMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Generate + persist an executive summary (deterministic core, best-effort AI phrasing)
+ */
+export const useGenerateAiExecutiveSummary = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveSummary>>, TError,{data?: BodyType<ExecutiveSummaryGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateAiExecutiveSummary>>,
+        TError,
+        {data?: BodyType<ExecutiveSummaryGenerateRequest>},
+        TContext
+      > => {
+      return useMutation(getGenerateAiExecutiveSummaryMutationOptions(options));
+    }
+
+export const getGetAiExecutiveSummaryUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/executive/summaries/${id}`
+}
+
+/**
+ * @summary Get a single persisted executive summary
+ */
+export const getAiExecutiveSummary = async (id: number, options?: RequestInit): Promise<ExecutiveSummary> => {
+
+  return customFetch<ExecutiveSummary>(getGetAiExecutiveSummaryUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiExecutiveSummaryQueryKey = (id: number,) => {
+    return [
+    `/api/ai/executive/summaries/${id}`
+    ] as const;
+    }
+
+
+export const getGetAiExecutiveSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getAiExecutiveSummary>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiExecutiveSummaryQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiExecutiveSummary>>> = ({ signal }) => getAiExecutiveSummary(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiExecutiveSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getAiExecutiveSummary>>>
+export type GetAiExecutiveSummaryQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a single persisted executive summary
+ */
+
+export function useGetAiExecutiveSummary<TData = Awaited<ReturnType<typeof getAiExecutiveSummary>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiExecutiveSummaryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAcceptAiExecutiveSummaryUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/executive/summaries/${id}/accept`
+}
+
+/**
+ * @summary Mark an executive summary as accepted (review lifecycle; writes no CRM)
+ */
+export const acceptAiExecutiveSummary = async (id: number, options?: RequestInit): Promise<ExecutiveSummary> => {
+
+  return customFetch<ExecutiveSummary>(getAcceptAiExecutiveSummaryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAcceptAiExecutiveSummaryMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiExecutiveSummary>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptAiExecutiveSummary>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['acceptAiExecutiveSummary'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptAiExecutiveSummary>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  acceptAiExecutiveSummary(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptAiExecutiveSummaryMutationResult = NonNullable<Awaited<ReturnType<typeof acceptAiExecutiveSummary>>>
+
+    export type AcceptAiExecutiveSummaryMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Mark an executive summary as accepted (review lifecycle; writes no CRM)
+ */
+export const useAcceptAiExecutiveSummary = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiExecutiveSummary>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptAiExecutiveSummary>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getAcceptAiExecutiveSummaryMutationOptions(options));
+    }
+
+export const getDismissAiExecutiveSummaryUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/executive/summaries/${id}/dismiss`
+}
+
+/**
+ * @summary Mark an executive summary as dismissed
+ */
+export const dismissAiExecutiveSummary = async (id: number, options?: RequestInit): Promise<ExecutiveSummary> => {
+
+  return customFetch<ExecutiveSummary>(getDismissAiExecutiveSummaryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDismissAiExecutiveSummaryMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiExecutiveSummary>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissAiExecutiveSummary>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['dismissAiExecutiveSummary'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissAiExecutiveSummary>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  dismissAiExecutiveSummary(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissAiExecutiveSummaryMutationResult = NonNullable<Awaited<ReturnType<typeof dismissAiExecutiveSummary>>>
+
+    export type DismissAiExecutiveSummaryMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Mark an executive summary as dismissed
+ */
+export const useDismissAiExecutiveSummary = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiExecutiveSummary>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissAiExecutiveSummary>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDismissAiExecutiveSummaryMutationOptions(options));
+    }
+
+export const getListAiExecutiveAlertsUrl = (params?: ListAiExecutiveAlertsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/executive/alerts?${stringifiedParams}` : `/api/ai/executive/alerts`
+}
+
+/**
+ * @summary List persisted executive alerts
+ */
+export const listAiExecutiveAlerts = async (params?: ListAiExecutiveAlertsParams, options?: RequestInit): Promise<ExecutiveAlertListResponse> => {
+
+  return customFetch<ExecutiveAlertListResponse>(getListAiExecutiveAlertsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiExecutiveAlertsQueryKey = (params?: ListAiExecutiveAlertsParams,) => {
+    return [
+    `/api/ai/executive/alerts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAiExecutiveAlertsQueryOptions = <TData = Awaited<ReturnType<typeof listAiExecutiveAlerts>>, TError = ErrorType<unknown>>(params?: ListAiExecutiveAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiExecutiveAlertsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiExecutiveAlerts>>> = ({ signal }) => listAiExecutiveAlerts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveAlerts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiExecutiveAlertsQueryResult = NonNullable<Awaited<ReturnType<typeof listAiExecutiveAlerts>>>
+export type ListAiExecutiveAlertsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List persisted executive alerts
+ */
+
+export function useListAiExecutiveAlerts<TData = Awaited<ReturnType<typeof listAiExecutiveAlerts>>, TError = ErrorType<unknown>>(
+ params?: ListAiExecutiveAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiExecutiveAlertsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGenerateAiExecutiveAlertsUrl = () => {
+
+
+
+
+  return `/api/ai/executive/alerts/generate`
+}
+
+/**
+ * @summary Recompute + persist deterministic executive alerts for a scope
+ */
+export const generateAiExecutiveAlerts = async (executiveScopeRequest?: ExecutiveScopeRequest, options?: RequestInit): Promise<ExecutiveAlertListResponse> => {
+
+  return customFetch<ExecutiveAlertListResponse>(getGenerateAiExecutiveAlertsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      executiveScopeRequest,)
+  }
+);}
+
+
+
+
+export const getGenerateAiExecutiveAlertsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveAlerts>>, TError,{data?: BodyType<ExecutiveScopeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveAlerts>>, TError,{data?: BodyType<ExecutiveScopeRequest>}, TContext> => {
+
+const mutationKey = ['generateAiExecutiveAlerts'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAiExecutiveAlerts>>, {data?: BodyType<ExecutiveScopeRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  generateAiExecutiveAlerts(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateAiExecutiveAlertsMutationResult = NonNullable<Awaited<ReturnType<typeof generateAiExecutiveAlerts>>>
+    export type GenerateAiExecutiveAlertsMutationBody = BodyType<ExecutiveScopeRequest> | undefined
+    export type GenerateAiExecutiveAlertsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Recompute + persist deterministic executive alerts for a scope
+ */
+export const useGenerateAiExecutiveAlerts = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveAlerts>>, TError,{data?: BodyType<ExecutiveScopeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateAiExecutiveAlerts>>,
+        TError,
+        {data?: BodyType<ExecutiveScopeRequest>},
+        TContext
+      > => {
+      return useMutation(getGenerateAiExecutiveAlertsMutationOptions(options));
+    }
+
+export const getAcceptAiExecutiveAlertUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/executive/alerts/${id}/accept`
+}
+
+/**
+ * @summary Mark an executive alert as accepted (acknowledged)
+ */
+export const acceptAiExecutiveAlert = async (id: number, options?: RequestInit): Promise<ExecutiveAlert> => {
+
+  return customFetch<ExecutiveAlert>(getAcceptAiExecutiveAlertUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAcceptAiExecutiveAlertMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiExecutiveAlert>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptAiExecutiveAlert>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['acceptAiExecutiveAlert'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptAiExecutiveAlert>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  acceptAiExecutiveAlert(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptAiExecutiveAlertMutationResult = NonNullable<Awaited<ReturnType<typeof acceptAiExecutiveAlert>>>
+
+    export type AcceptAiExecutiveAlertMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Mark an executive alert as accepted (acknowledged)
+ */
+export const useAcceptAiExecutiveAlert = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiExecutiveAlert>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptAiExecutiveAlert>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getAcceptAiExecutiveAlertMutationOptions(options));
+    }
+
+export const getDismissAiExecutiveAlertUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/executive/alerts/${id}/dismiss`
+}
+
+/**
+ * @summary Mark an executive alert as dismissed
+ */
+export const dismissAiExecutiveAlert = async (id: number, options?: RequestInit): Promise<ExecutiveAlert> => {
+
+  return customFetch<ExecutiveAlert>(getDismissAiExecutiveAlertUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDismissAiExecutiveAlertMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiExecutiveAlert>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissAiExecutiveAlert>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['dismissAiExecutiveAlert'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissAiExecutiveAlert>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  dismissAiExecutiveAlert(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissAiExecutiveAlertMutationResult = NonNullable<Awaited<ReturnType<typeof dismissAiExecutiveAlert>>>
+
+    export type DismissAiExecutiveAlertMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Mark an executive alert as dismissed
+ */
+export const useDismissAiExecutiveAlert = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiExecutiveAlert>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissAiExecutiveAlert>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDismissAiExecutiveAlertMutationOptions(options));
+    }
+
+export const getListAiExecutiveForecastsUrl = (params?: ListAiExecutiveForecastsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/executive/forecasts?${stringifiedParams}` : `/api/ai/executive/forecasts`
+}
+
+/**
+ * @summary List persisted executive forecasts
+ */
+export const listAiExecutiveForecasts = async (params?: ListAiExecutiveForecastsParams, options?: RequestInit): Promise<ExecutiveForecastListResponse> => {
+
+  return customFetch<ExecutiveForecastListResponse>(getListAiExecutiveForecastsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiExecutiveForecastsQueryKey = (params?: ListAiExecutiveForecastsParams,) => {
+    return [
+    `/api/ai/executive/forecasts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAiExecutiveForecastsQueryOptions = <TData = Awaited<ReturnType<typeof listAiExecutiveForecasts>>, TError = ErrorType<unknown>>(params?: ListAiExecutiveForecastsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveForecasts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiExecutiveForecastsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiExecutiveForecasts>>> = ({ signal }) => listAiExecutiveForecasts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveForecasts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiExecutiveForecastsQueryResult = NonNullable<Awaited<ReturnType<typeof listAiExecutiveForecasts>>>
+export type ListAiExecutiveForecastsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List persisted executive forecasts
+ */
+
+export function useListAiExecutiveForecasts<TData = Awaited<ReturnType<typeof listAiExecutiveForecasts>>, TError = ErrorType<unknown>>(
+ params?: ListAiExecutiveForecastsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveForecasts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiExecutiveForecastsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGenerateAiExecutiveForecastUrl = () => {
+
+
+
+
+  return `/api/ai/executive/forecasts`
+}
+
+/**
+ * @summary Generate + persist an executive forecast (deterministic core, best-effort AI phrasing)
+ */
+export const generateAiExecutiveForecast = async (executiveForecastGenerateRequest?: ExecutiveForecastGenerateRequest, options?: RequestInit): Promise<ExecutiveForecast> => {
+
+  return customFetch<ExecutiveForecast>(getGenerateAiExecutiveForecastUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      executiveForecastGenerateRequest,)
+  }
+);}
+
+
+
+
+export const getGenerateAiExecutiveForecastMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveForecast>>, TError,{data?: BodyType<ExecutiveForecastGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveForecast>>, TError,{data?: BodyType<ExecutiveForecastGenerateRequest>}, TContext> => {
+
+const mutationKey = ['generateAiExecutiveForecast'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAiExecutiveForecast>>, {data?: BodyType<ExecutiveForecastGenerateRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  generateAiExecutiveForecast(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateAiExecutiveForecastMutationResult = NonNullable<Awaited<ReturnType<typeof generateAiExecutiveForecast>>>
+    export type GenerateAiExecutiveForecastMutationBody = BodyType<ExecutiveForecastGenerateRequest> | undefined
+    export type GenerateAiExecutiveForecastMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Generate + persist an executive forecast (deterministic core, best-effort AI phrasing)
+ */
+export const useGenerateAiExecutiveForecast = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveForecast>>, TError,{data?: BodyType<ExecutiveForecastGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateAiExecutiveForecast>>,
+        TError,
+        {data?: BodyType<ExecutiveForecastGenerateRequest>},
+        TContext
+      > => {
+      return useMutation(getGenerateAiExecutiveForecastMutationOptions(options));
+    }
+
+export const getListAiExecutiveReportsUrl = (params?: ListAiExecutiveReportsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/executive/reports?${stringifiedParams}` : `/api/ai/executive/reports`
+}
+
+/**
+ * @summary List generated executive reports (export jobs)
+ */
+export const listAiExecutiveReports = async (params?: ListAiExecutiveReportsParams, options?: RequestInit): Promise<ExecutiveReportListResponse> => {
+
+  return customFetch<ExecutiveReportListResponse>(getListAiExecutiveReportsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiExecutiveReportsQueryKey = (params?: ListAiExecutiveReportsParams,) => {
+    return [
+    `/api/ai/executive/reports`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAiExecutiveReportsQueryOptions = <TData = Awaited<ReturnType<typeof listAiExecutiveReports>>, TError = ErrorType<unknown>>(params?: ListAiExecutiveReportsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiExecutiveReportsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiExecutiveReports>>> = ({ signal }) => listAiExecutiveReports(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveReports>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiExecutiveReportsQueryResult = NonNullable<Awaited<ReturnType<typeof listAiExecutiveReports>>>
+export type ListAiExecutiveReportsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List generated executive reports (export jobs)
+ */
+
+export function useListAiExecutiveReports<TData = Awaited<ReturnType<typeof listAiExecutiveReports>>, TError = ErrorType<unknown>>(
+ params?: ListAiExecutiveReportsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiExecutiveReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiExecutiveReportsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGenerateAiExecutiveReportUrl = () => {
+
+
+
+
+  return `/api/ai/executive/reports`
+}
+
+/**
+ * @summary Start an executive report export job (PDF/Excel). Returns 202 with a pollable job.
+ */
+export const generateAiExecutiveReport = async (executiveReportGenerateRequest: ExecutiveReportGenerateRequest, options?: RequestInit): Promise<ExecutiveReport> => {
+
+  return customFetch<ExecutiveReport>(getGenerateAiExecutiveReportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      executiveReportGenerateRequest,)
+  }
+);}
+
+
+
+
+export const getGenerateAiExecutiveReportMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveReport>>, TError,{data: BodyType<ExecutiveReportGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveReport>>, TError,{data: BodyType<ExecutiveReportGenerateRequest>}, TContext> => {
+
+const mutationKey = ['generateAiExecutiveReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAiExecutiveReport>>, {data: BodyType<ExecutiveReportGenerateRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  generateAiExecutiveReport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateAiExecutiveReportMutationResult = NonNullable<Awaited<ReturnType<typeof generateAiExecutiveReport>>>
+    export type GenerateAiExecutiveReportMutationBody = BodyType<ExecutiveReportGenerateRequest>
+    export type GenerateAiExecutiveReportMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Start an executive report export job (PDF/Excel). Returns 202 with a pollable job.
+ */
+export const useGenerateAiExecutiveReport = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiExecutiveReport>>, TError,{data: BodyType<ExecutiveReportGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateAiExecutiveReport>>,
+        TError,
+        {data: BodyType<ExecutiveReportGenerateRequest>},
+        TContext
+      > => {
+      return useMutation(getGenerateAiExecutiveReportMutationOptions(options));
+    }
+
+export const getGetAiExecutiveReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/executive/reports/${id}`
+}
+
+/**
+ * @summary Poll an executive report export job (status + download URL when ready)
+ */
+export const getAiExecutiveReport = async (id: number, options?: RequestInit): Promise<ExecutiveReport> => {
+
+  return customFetch<ExecutiveReport>(getGetAiExecutiveReportUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiExecutiveReportQueryKey = (id: number,) => {
+    return [
+    `/api/ai/executive/reports/${id}`
+    ] as const;
+    }
+
+
+export const getGetAiExecutiveReportQueryOptions = <TData = Awaited<ReturnType<typeof getAiExecutiveReport>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiExecutiveReportQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiExecutiveReport>>> = ({ signal }) => getAiExecutiveReport(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiExecutiveReportQueryResult = NonNullable<Awaited<ReturnType<typeof getAiExecutiveReport>>>
+export type GetAiExecutiveReportQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Poll an executive report export job (status + download URL when ready)
+ */
+
+export function useGetAiExecutiveReport<TData = Awaited<ReturnType<typeof getAiExecutiveReport>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiExecutiveReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiExecutiveReportQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -4712,6 +4712,368 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # ENTERPRISE AI EXECUTIVE INTELLIGENCE (Stage 5C)
+  /ai/executive/dashboard:
+    get:
+      operationId: getAiExecutiveDashboard
+      tags: [ai]
+      summary: Read-only executive intelligence rollup (health, trends, forecast, team, alerts)
+      parameters:
+        - name: scopeType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: company | department | team | employee
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveDashboardResponse"
+
+  /ai/executive/summaries:
+    get:
+      operationId: listAiExecutiveSummaries
+      tags: [ai]
+      summary: List persisted executive summaries (most recent first)
+      parameters:
+        - name: periodType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: daily | weekly | monthly | quarterly
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveSummaryListResponse"
+    post:
+      operationId: generateAiExecutiveSummary
+      tags: [ai]
+      summary: Generate + persist an executive summary (deterministic core, best-effort AI phrasing)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutiveSummaryGenerateRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveSummary"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/executive/summaries/{id}:
+    get:
+      operationId: getAiExecutiveSummary
+      tags: [ai]
+      summary: Get a single persisted executive summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveSummary"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/executive/summaries/{id}/accept:
+    post:
+      operationId: acceptAiExecutiveSummary
+      tags: [ai]
+      summary: Mark an executive summary as accepted (review lifecycle; writes no CRM)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveSummary"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/executive/summaries/{id}/dismiss:
+    post:
+      operationId: dismissAiExecutiveSummary
+      tags: [ai]
+      summary: Mark an executive summary as dismissed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveSummary"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/executive/alerts:
+    get:
+      operationId: listAiExecutiveAlerts
+      tags: [ai]
+      summary: List persisted executive alerts
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: suggested | accepted | dismissed
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveAlertListResponse"
+
+  /ai/executive/alerts/generate:
+    post:
+      operationId: generateAiExecutiveAlerts
+      tags: [ai]
+      summary: Recompute + persist deterministic executive alerts for a scope
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutiveScopeRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveAlertListResponse"
+
+  /ai/executive/alerts/{id}/accept:
+    post:
+      operationId: acceptAiExecutiveAlert
+      tags: [ai]
+      summary: Mark an executive alert as accepted (acknowledged)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveAlert"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/executive/alerts/{id}/dismiss:
+    post:
+      operationId: dismissAiExecutiveAlert
+      tags: [ai]
+      summary: Mark an executive alert as dismissed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveAlert"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/executive/forecasts:
+    get:
+      operationId: listAiExecutiveForecasts
+      tags: [ai]
+      summary: List persisted executive forecasts
+      parameters:
+        - name: forecastType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: revenue | pipeline | leads
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveForecastListResponse"
+    post:
+      operationId: generateAiExecutiveForecast
+      tags: [ai]
+      summary: Generate + persist an executive forecast (deterministic core, best-effort AI phrasing)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutiveForecastGenerateRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveForecast"
+
+  /ai/executive/reports:
+    get:
+      operationId: listAiExecutiveReports
+      tags: [ai]
+      summary: List generated executive reports (export jobs)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveReportListResponse"
+    post:
+      operationId: generateAiExecutiveReport
+      tags: [ai]
+      summary: Start an executive report export job (PDF/Excel). Returns 202 with a pollable job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecutiveReportGenerateRequest"
+      responses:
+        "202":
+          description: Accepted (report generation queued)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveReport"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/executive/reports/{id}:
+    get:
+      operationId: getAiExecutiveReport
+      tags: [ai]
+      summary: Poll an executive report export job (status + download URL when ready)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveReport"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -11228,6 +11590,511 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiWorkflowRecommendation"
+
+    # ── Enterprise AI Executive Intelligence (Stage 5C) ──────────────────────
+    ExecutiveScope:
+      type: object
+      required: [type, name]
+      properties:
+        type:
+          type: string
+          description: company | department | team | employee
+        id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+
+    ExecutiveScopeRequest:
+      type: object
+      properties:
+        scopeType:
+          type: string
+          description: company | department | team | employee
+        id:
+          type: integer
+
+    ExecutiveHealthFactor:
+      type: object
+      required: [key, label, value, weight]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        value:
+          type: number
+          description: normalized 0-100 contribution input
+        weight:
+          type: number
+          description: 0-1
+
+    ExecutiveHealthScore:
+      type: object
+      required: [score, rating, factors]
+      properties:
+        score:
+          type: integer
+          description: 0-100 composite score
+        rating:
+          type: string
+          description: excellent | good | fair | at_risk
+        factors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveHealthFactor"
+
+    ExecutiveTrend:
+      type: object
+      required: [direction, changePct, slope, mean, seasonality, points]
+      properties:
+        direction:
+          type: string
+          description: growth | decline | flat
+        changePct:
+          type: number
+          nullable: true
+        slope:
+          type: number
+        mean:
+          type: number
+        seasonality:
+          type: boolean
+        points:
+          type: integer
+
+    ExecutiveForecastCore:
+      type: object
+      required: [expected, low, high, method, confidence, historyPoints, assumptions]
+      properties:
+        expected:
+          type: integer
+        low:
+          type: integer
+        high:
+          type: integer
+        method:
+          type: string
+        confidence:
+          type: integer
+        historyPoints:
+          type: integer
+        assumptions:
+          type: array
+          items:
+            type: string
+
+    ExecutiveTeamMember:
+      type: object
+      required:
+        [
+          userId,
+          name,
+          scans,
+          leads,
+          won,
+          pipelineValue,
+          overdue,
+          scheduled,
+          activityScore,
+          conversionScore,
+          hygieneScore,
+          overall,
+          smallSample,
+          explanation,
+        ]
+      properties:
+        userId:
+          type: integer
+        name:
+          type: string
+        scans:
+          type: integer
+        leads:
+          type: integer
+        won:
+          type: integer
+        pipelineValue:
+          type: integer
+        overdue:
+          type: integer
+        scheduled:
+          type: integer
+        activityScore:
+          type: integer
+        conversionScore:
+          type: integer
+        hygieneScore:
+          type: integer
+        overall:
+          type: integer
+          description: 0-100 balanced overall performance score
+        smallSample:
+          type: boolean
+          description: true when fewer than a meaningful number of leads — interpret with care
+        explanation:
+          type: string
+
+    ExecutiveAlertItem:
+      type: object
+      required: [alertType, severity, title, detail, recommendation, metric, confidence]
+      properties:
+        alertType:
+          type: string
+        severity:
+          type: string
+          description: info | warning | critical
+        title:
+          type: string
+        detail:
+          type: string
+        recommendation:
+          type: string
+        metric:
+          type: number
+          nullable: true
+        confidence:
+          type: integer
+
+    ExecutiveRevenuePoint:
+      type: object
+      required: [month, value]
+      properties:
+        month:
+          type: string
+        value:
+          type: integer
+
+    ExecutiveDashboardResponse:
+      type: object
+      required: [scope, generatedAt, health, kpis, trends, forecast, teamPerformance, alerts, revenueSeries]
+      properties:
+        scope:
+          $ref: "#/components/schemas/ExecutiveScope"
+        generatedAt:
+          type: string
+        health:
+          type: object
+          required: [business, sales, pipeline]
+          properties:
+            business:
+              $ref: "#/components/schemas/ExecutiveHealthScore"
+            sales:
+              $ref: "#/components/schemas/ExecutiveHealthScore"
+            pipeline:
+              $ref: "#/components/schemas/ExecutiveHealthScore"
+        kpis:
+          type: object
+          additionalProperties: true
+          description: Real, tenant-scoped KPI snapshot (conversion, pipeline, won value, follow-ups, headcount).
+        trends:
+          type: object
+          required: [revenue, leads, won]
+          properties:
+            revenue:
+              $ref: "#/components/schemas/ExecutiveTrend"
+            leads:
+              $ref: "#/components/schemas/ExecutiveTrend"
+            won:
+              $ref: "#/components/schemas/ExecutiveTrend"
+        forecast:
+          $ref: "#/components/schemas/ExecutiveForecastCore"
+        teamPerformance:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveTeamMember"
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveAlertItem"
+        revenueSeries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveRevenuePoint"
+
+    ExecutiveSummary:
+      type: object
+      required:
+        [id, companyId, scopeType, scopeId, periodType, periodKey, data, source, status, generatedAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        scopeType:
+          type: string
+          description: company | department | team | employee
+        scopeId:
+          type: integer
+          description: 0 = company-wide
+        periodType:
+          type: string
+          description: daily | weekly | monthly | quarterly
+        periodKey:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+          description: Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast).
+        confidence:
+          type: integer
+          nullable: true
+        reasoning:
+          type: string
+          nullable: true
+        source:
+          type: string
+          description: ai | deterministic
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          description: suggested | accepted | dismissed
+        acceptedById:
+          type: integer
+          nullable: true
+        acceptedAt:
+          type: string
+          nullable: true
+        generatedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ExecutiveSummaryListResponse:
+      type: object
+      required: [summaries]
+      properties:
+        summaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveSummary"
+
+    ExecutiveSummaryGenerateRequest:
+      type: object
+      properties:
+        scopeType:
+          type: string
+          description: company | department | team | employee
+        id:
+          type: integer
+        periodType:
+          type: string
+          description: daily | weekly | monthly | quarterly (defaults to weekly)
+        language:
+          type: string
+          description: en | ar (defaults to en)
+
+    ExecutiveAlert:
+      type: object
+      required: [id, companyId, scopeType, scopeId, alertType, severity, data, source, status, generatedAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        scopeType:
+          type: string
+        scopeId:
+          type: integer
+        alertType:
+          type: string
+        severity:
+          type: string
+          description: critical | high | medium | low | info
+        data:
+          type: object
+          additionalProperties: true
+        confidence:
+          type: integer
+          nullable: true
+        reasoning:
+          type: string
+          nullable: true
+        source:
+          type: string
+          description: ai | deterministic
+        status:
+          type: string
+          description: suggested | accepted | dismissed
+        acceptedById:
+          type: integer
+          nullable: true
+        acceptedAt:
+          type: string
+          nullable: true
+        generatedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ExecutiveAlertListResponse:
+      type: object
+      required: [alerts]
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveAlert"
+
+    ExecutiveForecast:
+      type: object
+      required: [id, companyId, scopeType, scopeId, forecastType, horizon, method, data, source, status, generatedAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        scopeType:
+          type: string
+        scopeId:
+          type: integer
+        forecastType:
+          type: string
+          description: revenue | pipeline | leads
+        horizon:
+          type: string
+        method:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        confidence:
+          type: integer
+          nullable: true
+        reasoning:
+          type: string
+          nullable: true
+        source:
+          type: string
+          description: ai | deterministic
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
+          nullable: true
+        status:
+          type: string
+        generatedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ExecutiveForecastListResponse:
+      type: object
+      required: [forecasts]
+      properties:
+        forecasts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveForecast"
+
+    ExecutiveForecastGenerateRequest:
+      type: object
+      properties:
+        scopeType:
+          type: string
+        id:
+          type: integer
+        forecastType:
+          type: string
+          description: revenue | pipeline | leads (defaults to revenue)
+        horizon:
+          type: string
+          description: next_period (default)
+        language:
+          type: string
+          description: en | ar (defaults to en)
+
+    ExecutiveReport:
+      type: object
+      required: [id, companyId, reportType, format, status, generatedAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        reportType:
+          type: string
+          description: executive_summary | performance | forecast | full
+        format:
+          type: string
+          description: pdf | xlsx
+        scopeType:
+          type: string
+          nullable: true
+        scopeId:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          description: pending | processing | ready | failed
+        downloadUrl:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        data:
+          type: object
+          additionalProperties: true
+          nullable: true
+        generatedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ExecutiveReportListResponse:
+      type: object
+      required: [reports]
+      properties:
+        reports:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutiveReport"
+
+    ExecutiveReportGenerateRequest:
+      type: object
+      required: [reportType, format]
+      properties:
+        reportType:
+          type: string
+          description: executive_summary | performance | forecast | full
+        format:
+          type: string
+          description: pdf | xlsx
+        scopeType:
+          type: string
+        id:
+          type: integer
+        language:
+          type: string
+          description: en | ar (defaults to en)
 
     AiWorkflowOverviewResponse:
       type: object

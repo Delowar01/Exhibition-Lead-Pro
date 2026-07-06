@@ -36,7 +36,13 @@ export type AiFeature =
   | "workflow_routing"
   | "workflow_progression"
   | "workflow_reminder"
-  | "workflow_task";
+  | "workflow_task"
+  // Stage 5C — Enterprise AI Executive Intelligence. Each PHRASES an executive-grade
+  // narrative on top of a deterministic grounded core (health scores, trends, forecasts,
+  // alerts) computed from real CRM aggregates. The LLM never invents numbers and never
+  // executes anything; it soft-degrades to the deterministic core on failure.
+  | "executive_summary"
+  | "executive_forecast";
 
 export const AI_FEATURES: AiFeature[] = [
   "card_extraction",
@@ -61,6 +67,8 @@ export const AI_FEATURES: AiFeature[] = [
   "workflow_progression",
   "workflow_reminder",
   "workflow_task",
+  "executive_summary",
+  "executive_forecast",
 ];
 
 export interface AiTextPart {

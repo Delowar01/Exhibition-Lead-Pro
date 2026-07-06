@@ -202,6 +202,36 @@ export async function followUpStats(
   return { scheduled: row?.scheduled ?? 0, due: row?.due ?? 0, overdue: row?.overdue ?? 0 };
 }
 
+export interface UserFollowUpRow {
+  userId: number | null;
+  scheduled: number;
+  overdue: number;
+}
+
+// Per-user follow-up adherence inputs (point-in-time) — backs the fairness-aware
+// executive team-performance hygiene score. Same active/scheduled/overdue definition
+// as followUpStats, grouped by the contact's owner.
+export async function followUpStatsByUser(scope: AnalyticsScope, todayDateStr: string): Promise<UserFollowUpRow[]> {
+  return await db
+    .select({
+      userId: CONTACT_OWNER,
+      scheduled: count(),
+      overdue: sql<number>`COUNT(*) FILTER (WHERE ${contactsTable.followUpDate} < ${todayDateStr})`.mapWith(Number),
+    })
+    .from(contactsTable)
+    .where(
+      and(
+        tenantScope(scope.user, contactsTable.companyId),
+        isNull(contactsTable.duplicateOfId),
+        notDeleted(contactsTable.deletedAt),
+        userIdFilter(CONTACT_OWNER, scope.userIds),
+        isNotNull(contactsTable.followUpDate),
+        sql`${contactsTable.status} NOT IN ('won', 'lost')`,
+      ),
+    )
+    .groupBy(CONTACT_OWNER);
+}
+
 // ---- Trend (per-day) over a window ---------------------------------------
 
 export interface DayCountRow {
@@ -771,6 +801,35 @@ export async function scansByMonth(scope: AnalyticsScope, from: Date, to: Date):
       ),
     )
     .groupBy(sql`to_char(${scansTable.createdAt}, 'YYYY-MM')`);
+}
+
+export interface MonthCurrencyValueRow {
+  month: string;
+  currency: string | null;
+  wonValue: string;
+}
+
+// Won-lead value per calendar month (YYYY-MM) grouped by currency, over a window.
+// The service converts each currency bucket to the display currency before summing
+// — the monthly revenue series that backs deterministic revenue forecasting.
+export async function wonValueByMonth(scope: AnalyticsScope, from: Date, to: Date): Promise<MonthCurrencyValueRow[]> {
+  return await db
+    .select({
+      month: sql<string>`to_char(${leadsTable.createdAt}, 'YYYY-MM')`,
+      currency: leadsTable.currency,
+      wonValue: sql<string>`COALESCE(SUM(${leadsTable.value}) FILTER (WHERE ${leadsTable.stage} = 'won'), 0)`,
+    })
+    .from(leadsTable)
+    .where(
+      and(
+        tenantScope(scope.user, leadsTable.companyId),
+        notDeleted(leadsTable.deletedAt),
+        userIdFilter(LEAD_OWNER, scope.userIds),
+        gte(leadsTable.createdAt, from),
+        lte(leadsTable.createdAt, to),
+      ),
+    )
+    .groupBy(sql`to_char(${leadsTable.createdAt}, 'YYYY-MM')`, leadsTable.currency);
 }
 
 export async function companyName(user: AuthUser, companyId: number): Promise<string | null> {

@@ -170,7 +170,8 @@
     "workspace": "Workspace",
     "sync": "Sync",
     "companies": "Companies",
-    "workflowIntel": "Workflow Intelligence"
+    "workflowIntel": "Workflow Intelligence",
+    "executiveIntel": "Executive Intelligence"
   },
   "companies": {
     "title": "Companies",
@@ -1472,6 +1473,75 @@
       "high": "High",
       "medium": "Medium",
       "low": "Low"
+    }
+  },
+  "executiveManager": {
+    "title": "Executive Intelligence",
+    "subtitle": "Health, trends, forecasts, alerts, and team performance.",
+    "disclaimer": "AI-assisted, advisory only — nothing is written to the CRM automatically.",
+    "healthTitle": "Business Health",
+    "business": "Business",
+    "sales": "Sales",
+    "pipeline": "Pipeline",
+    "kpisTitle": "Key Metrics",
+    "conversion": "Conversion",
+    "newLeads": "New leads",
+    "wins": "Wins",
+    "wonValue": "Won value",
+    "openPipeline": "Open pipeline",
+    "headcount": "Headcount",
+    "forecastTitle": "Revenue Forecast",
+    "range": "Range",
+    "confidenceLabel": "Confidence",
+    "alertsTitle": "Executive Alerts",
+    "noAlerts": "No active alerts.",
+    "generate": "Generate",
+    "teamTitle": "Team Performance",
+    "noTeam": "No team performance data.",
+    "teamDetail": "{{scans}} scans · {{leads}} leads · {{won}} won",
+    "smallSample": "Small sample — interpret with care.",
+    "overall": "Overall",
+    "summariesTitle": "Executive Summaries",
+    "generateSummary": "Generate summary",
+    "generating": "Generating…",
+    "noSummaries": "No summaries yet — generate one to get started.",
+    "accept": "Accept",
+    "dismiss": "Dismiss",
+    "aiTag": "AI",
+    "deterministicTag": "Deterministic",
+    "reportsTitle": "AI Reports",
+    "generateReport": "Generate report",
+    "queuing": "Queuing…",
+    "noReports": "No reports yet — generate one above.",
+    "download": "Download",
+    "confidence": "{{value}}% conf.",
+    "loading": "Loading…",
+    "periods": {
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "quarterly": "Quarterly"
+    },
+    "reportTypes": {
+      "executive_summary": "Executive summary",
+      "performance": "Team performance",
+      "forecast": "Forecast",
+      "full": "Full report"
+    },
+    "statuses": {
+      "suggested": "Suggested",
+      "accepted": "Accepted",
+      "dismissed": "Dismissed",
+      "pending": "Pending",
+      "processing": "Processing",
+      "ready": "Ready",
+      "failed": "Failed"
+    },
+    "ratings": {
+      "excellent": "Excellent",
+      "good": "Good",
+      "fair": "Fair",
+      "at_risk": "At risk"
     }
   }
 }

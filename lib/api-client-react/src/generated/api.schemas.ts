@@ -3694,6 +3694,274 @@ export interface AiWorkflowListResponse {
   recommendations: AiWorkflowRecommendation[];
 }
 
+export interface ExecutiveScope {
+  /** company | department | team | employee */
+  type: string;
+  id?: number | null;
+  name: string;
+}
+
+export interface ExecutiveScopeRequest {
+  /** company | department | team | employee */
+  scopeType?: string;
+  id?: number;
+}
+
+export interface ExecutiveHealthFactor {
+  key: string;
+  label: string;
+  /** normalized 0-100 contribution input */
+  value: number;
+  /** 0-1 */
+  weight: number;
+}
+
+export interface ExecutiveHealthScore {
+  /** 0-100 composite score */
+  score: number;
+  /** excellent | good | fair | at_risk */
+  rating: string;
+  factors: ExecutiveHealthFactor[];
+}
+
+export interface ExecutiveTrend {
+  /** growth | decline | flat */
+  direction: string;
+  changePct: number | null;
+  slope: number;
+  mean: number;
+  seasonality: boolean;
+  points: number;
+}
+
+export interface ExecutiveForecastCore {
+  expected: number;
+  low: number;
+  high: number;
+  method: string;
+  confidence: number;
+  historyPoints: number;
+  assumptions: string[];
+}
+
+export interface ExecutiveTeamMember {
+  userId: number;
+  name: string;
+  scans: number;
+  leads: number;
+  won: number;
+  pipelineValue: number;
+  overdue: number;
+  scheduled: number;
+  activityScore: number;
+  conversionScore: number;
+  hygieneScore: number;
+  /** 0-100 balanced overall performance score */
+  overall: number;
+  /** true when fewer than a meaningful number of leads — interpret with care */
+  smallSample: boolean;
+  explanation: string;
+}
+
+export interface ExecutiveAlertItem {
+  alertType: string;
+  /** info | warning | critical */
+  severity: string;
+  title: string;
+  detail: string;
+  recommendation: string;
+  metric: number | null;
+  confidence: number;
+}
+
+export interface ExecutiveRevenuePoint {
+  month: string;
+  value: number;
+}
+
+export type ExecutiveDashboardResponseHealth = {
+  business: ExecutiveHealthScore;
+  sales: ExecutiveHealthScore;
+  pipeline: ExecutiveHealthScore;
+};
+
+/**
+ * Real, tenant-scoped KPI snapshot (conversion, pipeline, won value, follow-ups, headcount).
+ */
+export type ExecutiveDashboardResponseKpis = { [key: string]: unknown };
+
+export type ExecutiveDashboardResponseTrends = {
+  revenue: ExecutiveTrend;
+  leads: ExecutiveTrend;
+  won: ExecutiveTrend;
+};
+
+export interface ExecutiveDashboardResponse {
+  scope: ExecutiveScope;
+  generatedAt: string;
+  health: ExecutiveDashboardResponseHealth;
+  /** Real, tenant-scoped KPI snapshot (conversion, pipeline, won value, follow-ups, headcount). */
+  kpis: ExecutiveDashboardResponseKpis;
+  trends: ExecutiveDashboardResponseTrends;
+  forecast: ExecutiveForecastCore;
+  teamPerformance: ExecutiveTeamMember[];
+  alerts: ExecutiveAlertItem[];
+  revenueSeries: ExecutiveRevenuePoint[];
+}
+
+/**
+ * Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast).
+ */
+export type ExecutiveSummaryData = { [key: string]: unknown };
+
+export interface ExecutiveSummary {
+  id: number;
+  companyId: number;
+  /** company | department | team | employee */
+  scopeType: string;
+  /** 0 = company-wide */
+  scopeId: number;
+  /** daily | weekly | monthly | quarterly */
+  periodType: string;
+  periodKey: string;
+  /** Composed summary payload (headline, narrative, highlights, risks, recommendations, health, KPIs, forecast). */
+  data: ExecutiveSummaryData;
+  confidence?: number | null;
+  reasoning?: string | null;
+  /** ai | deterministic */
+  source: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
+  /** suggested | accepted | dismissed */
+  status: string;
+  acceptedById?: number | null;
+  acceptedAt?: string | null;
+  generatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExecutiveSummaryListResponse {
+  summaries: ExecutiveSummary[];
+}
+
+export interface ExecutiveSummaryGenerateRequest {
+  /** company | department | team | employee */
+  scopeType?: string;
+  id?: number;
+  /** daily | weekly | monthly | quarterly (defaults to weekly) */
+  periodType?: string;
+  /** en | ar (defaults to en) */
+  language?: string;
+}
+
+export type ExecutiveAlertData = { [key: string]: unknown };
+
+export interface ExecutiveAlert {
+  id: number;
+  companyId: number;
+  scopeType: string;
+  scopeId: number;
+  alertType: string;
+  /** critical | high | medium | low | info */
+  severity: string;
+  data: ExecutiveAlertData;
+  confidence?: number | null;
+  reasoning?: string | null;
+  /** ai | deterministic */
+  source: string;
+  /** suggested | accepted | dismissed */
+  status: string;
+  acceptedById?: number | null;
+  acceptedAt?: string | null;
+  generatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExecutiveAlertListResponse {
+  alerts: ExecutiveAlert[];
+}
+
+export type ExecutiveForecastData = { [key: string]: unknown };
+
+export interface ExecutiveForecast {
+  id: number;
+  companyId: number;
+  scopeType: string;
+  scopeId: number;
+  /** revenue | pipeline | leads */
+  forecastType: string;
+  horizon: string;
+  method: string;
+  data: ExecutiveForecastData;
+  confidence?: number | null;
+  reasoning?: string | null;
+  /** ai | deterministic */
+  source: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
+  status: string;
+  generatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExecutiveForecastListResponse {
+  forecasts: ExecutiveForecast[];
+}
+
+export interface ExecutiveForecastGenerateRequest {
+  scopeType?: string;
+  id?: number;
+  /** revenue | pipeline | leads (defaults to revenue) */
+  forecastType?: string;
+  /** next_period (default) */
+  horizon?: string;
+  /** en | ar (defaults to en) */
+  language?: string;
+}
+
+export type ExecutiveReportData = { [key: string]: unknown } | null;
+
+export interface ExecutiveReport {
+  id: number;
+  companyId: number;
+  /** executive_summary | performance | forecast | full */
+  reportType: string;
+  /** pdf | xlsx */
+  format: string;
+  scopeType?: string | null;
+  scopeId?: number | null;
+  /** pending | processing | ready | failed */
+  status: string;
+  downloadUrl?: string | null;
+  error?: string | null;
+  data?: ExecutiveReportData;
+  generatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExecutiveReportListResponse {
+  reports: ExecutiveReport[];
+}
+
+export interface ExecutiveReportGenerateRequest {
+  /** executive_summary | performance | forecast | full */
+  reportType: string;
+  /** pdf | xlsx */
+  format: string;
+  scopeType?: string;
+  id?: number;
+  /** en | ar (defaults to en) */
+  language?: string;
+}
+
 export type AiWorkflowOverviewResponseCounts = {[key: string]: number};
 
 export interface AiWorkflowOverviewResponse {
@@ -5355,6 +5623,44 @@ export type GetAiWorkflowBottlenecksParams = {
  */
 scopeType?: string;
 id?: number;
+};
+
+export type GetAiExecutiveDashboardParams = {
+/**
+ * company | department | team | employee
+ */
+scopeType?: string;
+id?: number;
+dateFrom?: string;
+dateTo?: string;
+};
+
+export type ListAiExecutiveSummariesParams = {
+/**
+ * daily | weekly | monthly | quarterly
+ */
+periodType?: string;
+limit?: number;
+};
+
+export type ListAiExecutiveAlertsParams = {
+/**
+ * suggested | accepted | dismissed
+ */
+status?: string;
+limit?: number;
+};
+
+export type ListAiExecutiveForecastsParams = {
+/**
+ * revenue | pipeline | leads
+ */
+forecastType?: string;
+limit?: number;
+};
+
+export type ListAiExecutiveReportsParams = {
+limit?: number;
 };
 
 export type ListFollowUpsParams = {

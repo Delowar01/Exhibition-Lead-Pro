@@ -33,6 +33,10 @@ export default function MoreScreen() {
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
+  const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
+  const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
+  const canViewExecutive = isFullAccess || execPerms.includes("view");
+
   async function applyAvatar(source: AvatarSource) {
     try {
       const uri = await pickAvatar(source);
@@ -141,6 +145,18 @@ export default function MoreScreen() {
       color: "#F59E0B",
       onPress: () => router.push("/workflow"),
     },
+    ...(canViewExecutive
+      ? [
+          {
+            key: "executive",
+            label: t("nav.executiveIntel"),
+            sub: t("executiveManager.subtitle"),
+            icon: "trending-up" as keyof typeof Feather.glyphMap,
+            color: "#6366F1",
+            onPress: () => router.push("/executive"),
+          },
+        ]
+      : []),
     {
       key: "pipeline",
       label: t("nav.leads"),

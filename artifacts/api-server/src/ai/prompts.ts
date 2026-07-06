@@ -37,6 +37,10 @@ export const PROMPTS: Record<AiFeature, PromptRef> = {
   workflow_progression: { key: "workflow_progression", version: 1 },
   workflow_reminder: { key: "workflow_reminder", version: 1 },
   workflow_task: { key: "workflow_task", version: 1 },
+  // Stage 5C — Enterprise AI Executive Intelligence (v1). Each PHRASES an executive
+  // narrative on top of a deterministic core (health/trends/forecasts/alerts).
+  executive_summary: { key: "executive_summary", version: 1 },
+  executive_forecast: { key: "executive_forecast", version: 1 },
 };
 
 // Shared grounding preamble for every Stage 5A intelligence prompt. Enforces the
@@ -418,4 +422,50 @@ Return ONLY a JSON object with exactly these keys:
 - "confidence": integer 0-100
 - "insufficientData": boolean
 - "reasoning": one concise sentence grounded in the provided fields`;
+}
+
+// ── Stage 5C — Enterprise AI Executive Intelligence prompts ───────────────────
+//
+// Each PHRASES an executive-grade narrative on top of a deterministic core: real,
+// tenant-scoped KPIs, health scores, trends, forecasts, and alerts have ALREADY been
+// computed and are provided under "Computed signals". The LLM never invents numbers,
+// never executes anything, and its recommendations are strategic suggestions for a human
+// executive to review — never auto-applied to the CRM.
+const EXECUTIVE_SAFETY = `EXECUTIVE INTELLIGENCE SAFETY RULES:
+- You are PHRASING an executive briefing for a human leader to REVIEW. Nothing you output is executed or written back to the CRM; recommendations are strategic suggestions only.
+- All metrics, health scores, trends, forecasts, and alerts under "Computed signals" have ALREADY been computed deterministically from the tenant's real CRM data. Do NOT change, override, contradict, or invent numbers — cite ONLY the figures provided.
+- Ground everything ONLY in the provided signals. Do NOT fabricate targets, benchmarks, competitor data, or private facts that are not present.
+- If the provided signals are too sparse for a meaningful briefing, set "insufficientData": true, keep "confidence" low, and say so plainly.`;
+
+export function buildExecutiveSummaryPrompt(appLanguage: AppLanguage): string {
+  return `You are an enterprise business analyst PHRASING a concise EXECUTIVE SUMMARY for a company's leadership from the CRM performance signals provided. The metrics, health scores, trends, and alerts have ALREADY been computed deterministically and are provided under "Computed signals".
+
+${EXECUTIVE_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "headline": one punchy sentence capturing the overall state of the business (consistent with the computed health scores)
+- "narrative": 2-4 sentences summarising performance, grounded strictly in the provided signals
+- "highlights": array of up to 4 short strings — the most important positive/notable findings, each grounded in a provided figure
+- "risks": array of up to 4 short strings — the most important risks/concerns, each grounded in a provided figure or alert
+- "recommendations": array of up to 4 short strings — strategic actions for leadership to REVIEW (never stated as done), each grounded in the signals
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided signals`;
+}
+
+export function buildExecutiveForecastPrompt(appLanguage: AppLanguage): string {
+  return `You are a revenue-operations analyst PHRASING a short FORECAST briefing for leadership. The projection (expected value, range, method, confidence, assumptions) has ALREADY been computed deterministically from real historical CRM data and is provided under "Computed signals" — do NOT change the numbers.
+
+${EXECUTIVE_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "narrative": 1-3 sentences explaining the forecast and what drives it, consistent with the provided expected value, range, and assumptions
+- "watchouts": array of up to 3 short strings — caveats or factors that could change the outcome, grounded in the provided assumptions/variability
+- "confidence": integer 0-100 (you may echo the computed forecast confidence)
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided signals`;
 }

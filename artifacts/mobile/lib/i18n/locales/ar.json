@@ -170,7 +170,8 @@
     "workspace": "مساحة العمل",
     "sync": "المزامنة",
     "companies": "الشركات",
-    "workflowIntel": "ذكاء سير العمل"
+    "workflowIntel": "ذكاء سير العمل",
+    "executiveIntel": "الذكاء التنفيذي"
   },
   "companies": {
     "title": "الشركات",
@@ -1472,6 +1473,75 @@
       "high": "مرتفع",
       "medium": "متوسط",
       "low": "منخفض"
+    }
+  },
+  "executiveManager": {
+    "title": "الذكاء التنفيذي",
+    "subtitle": "الصحة والاتجاهات والتوقعات والتنبيهات وأداء الفريق.",
+    "disclaimer": "مساعدة بالذكاء الاصطناعي، للاسترشاد فقط — لا يُكتب أي شيء في نظام إدارة العلاقات تلقائيًا.",
+    "healthTitle": "صحة الأعمال",
+    "business": "الأعمال",
+    "sales": "المبيعات",
+    "pipeline": "مسار العملاء",
+    "kpisTitle": "المؤشرات الرئيسية",
+    "conversion": "التحويل",
+    "newLeads": "عملاء جدد",
+    "wins": "الصفقات المكسوبة",
+    "wonValue": "قيمة المكسوب",
+    "openPipeline": "المسار المفتوح",
+    "headcount": "عدد الموظفين",
+    "forecastTitle": "توقعات الإيرادات",
+    "range": "النطاق",
+    "confidenceLabel": "الثقة",
+    "alertsTitle": "التنبيهات التنفيذية",
+    "noAlerts": "لا توجد تنبيهات نشطة.",
+    "generate": "توليد",
+    "teamTitle": "أداء الفريق",
+    "noTeam": "لا توجد بيانات لأداء الفريق.",
+    "teamDetail": "{{scans}} مسح · {{leads}} عميل · {{won}} مكسوب",
+    "smallSample": "عينة صغيرة — يُفسَّر بحذر.",
+    "overall": "الإجمالي",
+    "summariesTitle": "الملخصات التنفيذية",
+    "generateSummary": "توليد ملخص",
+    "generating": "جارٍ التوليد…",
+    "noSummaries": "لا توجد ملخصات بعد — أنشئ واحدًا للبدء.",
+    "accept": "قبول",
+    "dismiss": "تجاهل",
+    "aiTag": "ذكاء اصطناعي",
+    "deterministicTag": "حتمي",
+    "reportsTitle": "تقارير الذكاء الاصطناعي",
+    "generateReport": "توليد تقرير",
+    "queuing": "جارٍ الإدراج…",
+    "noReports": "لا توجد تقارير بعد — أنشئ واحدًا أعلاه.",
+    "download": "تنزيل",
+    "confidence": "{{value}}٪ ثقة",
+    "loading": "جارٍ التحميل…",
+    "periods": {
+      "daily": "يومي",
+      "weekly": "أسبوعي",
+      "monthly": "شهري",
+      "quarterly": "ربع سنوي"
+    },
+    "reportTypes": {
+      "executive_summary": "ملخص تنفيذي",
+      "performance": "أداء الفريق",
+      "forecast": "التوقعات",
+      "full": "تقرير كامل"
+    },
+    "statuses": {
+      "suggested": "مقترح",
+      "accepted": "مقبول",
+      "dismissed": "متجاهَل",
+      "pending": "قيد الانتظار",
+      "processing": "قيد المعالجة",
+      "ready": "جاهز",
+      "failed": "فشل"
+    },
+    "ratings": {
+      "excellent": "ممتاز",
+      "good": "جيد",
+      "fair": "مقبول",
+      "at_risk": "معرّض للخطر"
     }
   }
 }

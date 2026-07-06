@@ -45,6 +45,7 @@ import AdminAiSettings from "@/pages/admin/AiSettings";
 import AdminAiInsightsReview from "@/pages/admin/AiInsightsReview";
 import AdminSalesCopilot from "@/pages/admin/SalesCopilot";
 import AdminWorkflow from "@/pages/admin/Workflow";
+import AdminExecutiveIntelligence from "@/pages/admin/ExecutiveIntelligence";
 import AdminBatchOperations from "@/pages/admin/BatchOperations";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
@@ -272,6 +273,9 @@ function Router() {
       </Route>
       <Route path="/admin/workflow">
         {() => <ProtectedRoute component={AdminWorkflow} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/executive">
+        {() => <ProtectedRoute component={AdminExecutiveIntelligence} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/ai">
         {() => <ProtectedRoute component={AdminAiSettings} role="admin" layout={AdminLayout} />}
