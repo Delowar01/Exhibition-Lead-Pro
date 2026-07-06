@@ -161,3 +161,9 @@ id = "U6Ces69gsPStp1CPjheR-"
 uri = "file://docs/STAGE_5_AI_ROADMAP.md"
 type = "text"
 title = "Stage 5 — Enterprise AI Master Roadmap"
+
+[[outputs]]
+id = "52aQhN3OABBeAV5ilHRce"
+uri = "file://docs/reports/stage-5.0-ai-platform-foundation.txt"
+type = "text"
+title = "Stage 5.0 Report — AI Platform Foundation"

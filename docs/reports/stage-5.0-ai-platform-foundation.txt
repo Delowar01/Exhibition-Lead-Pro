@@ -1,0 +1,131 @@
+================================================================================
+CARD SCANNER PRO — STAGE 5.0 REPORT
+AI PLATFORM FOUNDATION
+================================================================================
+Date:        July 05, 2026
+Status:      Implemented (additive; no breaking API/DB changes)
+Scope:       Provider-agnostic, multi-tenant AI governance + observability layer
+
+--------------------------------------------------------------------------------
+1. SUMMARY
+--------------------------------------------------------------------------------
+Stage 5.0 replaces direct LLM SDK calls with a managed execution seam. Every AI
+call (OCR, lead scoring, contact enrichment, assignee recommendation) now flows
+through a single provider-agnostic runner that:
+  - resolves the tenant's effective AI configuration,
+  - enforces per-tenant enablement, per-feature flags, and monthly budgets,
+  - records every provider interaction in an append-only ledger, and
+  - exposes usage/health/cost dashboards for admins and platform owners.
+
+The layer is additive: an absent configuration row means platform defaults
+(AI enabled, unlimited budget), so existing tenants keep working unchanged.
+Auth, RBAC, tenant isolation, timeouts, and graceful AI-failure degradation are
+all preserved.
+
+--------------------------------------------------------------------------------
+2. AI CORE ARCHITECTURE  (artifacts/api-server/src/ai/)
+--------------------------------------------------------------------------------
+runner.ts       Orchestrates all AI calls. Mandatory timeouts (withTimeout),
+                retry-with-backoff (runAi), and robust JSON extraction
+                (extractJson) that recovers a JSON block from unstructured
+                model text.
+
+providers/gemini.ts
+                Primary Stage 5.0 adapter. Wraps the Gemini SDK (Google Gemini
+                via the Replit AI proxy) and normalizes token-usage metadata.
+                Provider-agnostic seam allows adding other vendors later.
+
+prompts.ts      Versioned prompt registry. Each feature (card_extraction,
+                lead_scoring, contact_enrichment, assignee_recommendation) has a
+                versioned PromptRef. Bumping a prompt version keeps historical
+                ledger entries attributable to the exact prompt iteration used.
+
+pricing.ts      Maps models (e.g. gemini-2.5-flash) to micro-USD input/output
+                token rates to compute real-time estimated cost per call.
+
+--------------------------------------------------------------------------------
+3. DATABASE SCHEMA  (lib/db/src/schema/)
+--------------------------------------------------------------------------------
+ai_settings (ai_settings.ts) — per-tenant configuration
+  companyId                  (unique — one row per tenant)
+  provider                   AI vendor key
+  model                      default model
+  enabled                    master on/off switch
+  featureFlags               JSONB per-feature toggles
+  monthlyTokenBudget         null = unlimited
+  monthlyCostBudgetMicroUsd  null = unlimited
+  Behavior: an absent row = platform defaults (enabled, unlimited).
+
+ai_invocations (ai_invocations.ts) — append-only usage ledger
+  companyId, userId, feature, provider, model,
+  promptKey, promptVersion,
+  status                     success | error | timeout
+  inputTokens, outputTokens, totalTokens,
+  estimatedCostMicroUsd, latencyMs, confidence, errorMessage
+  Behavior: append-only record of every provider interaction.
+
+--------------------------------------------------------------------------------
+4. FEATURE INTEGRATION  (artifacts/api-server/src/lib/ai.ts)
+--------------------------------------------------------------------------------
+extractCardData, scoreLead, enrichContact, and recommendAssignee all route
+through a central callJson wrapper.
+
+Enforcement: callJson invokes aiService.ensureAiAllowed, which reads the
+tenant's ai_settings and rejects the call if AI is disabled, the feature flag is
+off, or the current-month monthlyTokenBudget / monthlyCostBudgetMicroUsd is
+exceeded.
+
+Attribution: every call carries an AiContext (companyId, userId) so the ledger
+row is wired to the correct tenant and user.
+
+Preserved: existing function signatures, timeout bounds, and graceful
+degradation (e.g. contact creation still degrades to a null lead score on AI
+failure; /scans still surfaces OCR failure explicitly).
+
+--------------------------------------------------------------------------------
+5. API ROUTES & SECURITY  (artifacts/api-server/src/routes/ai.ts)
+--------------------------------------------------------------------------------
+GET   /ai/settings         Effective AI configuration for the caller's tenant.
+PATCH /ai/settings         Update configuration (primary_admin).
+GET   /ai/usage            Aggregated usage metrics for the tenant dashboard.
+GET   /ai/health           Provider configuration + recent (24h) reliability
+                           and latency.
+GET   /ai/platform/usage   Platform-wide aggregate across all tenants.
+
+Guards:
+  requireTenantUser              Tenant routes require a companyId.
+  requireRole("platform_owner")  Platform firewall on /ai/platform/usage.
+  auditMutations("ai")           Setting changes recorded to the audit log.
+  Path-scoped guards + tenant-scoping applied throughout (no router-level leak).
+
+--------------------------------------------------------------------------------
+6. WEB INTERFACE  (artifacts/web-app/src/pages/)
+--------------------------------------------------------------------------------
+admin/AiSettings.tsx  (/admin/ai)
+  Org-admin dashboard: toggle features (OCR, scoring, enrichment, assignee),
+  set monthly spend caps, and monitor per-feature usage totals plus recent
+  invocations.
+
+platform/AiIntelligence.tsx  (/platform/ai)
+  Platform-owner view: total spend, failure rate, and a "Usage by Company"
+  table to spot high-volume tenants.
+
+--------------------------------------------------------------------------------
+7. GUARANTEES / NON-REGRESSIONS
+--------------------------------------------------------------------------------
+  - Additive only — no breaking API or DB changes.
+  - No fabricated data — all metrics derive from the real ai_invocations ledger.
+  - Tenant isolation preserved — every AI read/write is tenant-scoped; the
+    platform aggregate is firewalled behind platform_owner.
+  - AI resilience preserved — timeouts, retries, and graceful degradation intact.
+
+--------------------------------------------------------------------------------
+8. VERIFICATION
+--------------------------------------------------------------------------------
+  - Full workspace typecheck: clean.
+  - api-server integration + unit suite: green.
+  - Mobile unit suite: green.
+
+================================================================================
+END OF REPORT
+================================================================================
