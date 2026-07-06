@@ -36,7 +36,13 @@ function applyTarget(rec: AiWorkflowRecommendation, entityType: EntityType): App
     const name = typeof d.suggestedOwnerName === "string" ? d.suggestedOwnerName : "suggested owner";
     return { field: "assignedToId", value: d.suggestedOwnerId, summary: `Assign owner to ${name}` };
   }
-  if ((rec.recommendationType === "follow_up" || rec.recommendationType === "due_date") && typeof d.suggestedDate === "string") {
+  // followUpDate only exists on CONTACTS (leads have no such column) — never offer
+  // it for a lead or the manual PATCH strips it to an empty update and 400s.
+  if (
+    entityType === "contact" &&
+    (rec.recommendationType === "follow_up" || rec.recommendationType === "due_date") &&
+    typeof d.suggestedDate === "string"
+  ) {
     return { field: "followUpDate", value: d.suggestedDate, summary: `Set follow-up date to ${d.suggestedDate}` };
   }
   return null;

@@ -86,6 +86,7 @@ export default function WorkflowScreen() {
   const [leadId, setLeadId] = useState("");
   const [scenario, setScenario] = useState<"follow_up" | "reassign" | "delay">("follow_up");
   const [delayDays, setDelayDays] = useState("3");
+  const [candidateUserId, setCandidateUserId] = useState<number | null>(null);
   const [simResult, setSimResult] = useState<WorkflowSimulateResponse | null>(null);
   const [simError, setSimError] = useState<string | null>(null);
   const simulate = useSimulateAiWorkflowScenario();
@@ -96,9 +97,19 @@ export default function WorkflowScreen() {
       setSimError(t("workflowManager.invalidLeadId"));
       return;
     }
-    setSimError(null);
-    const body: { leadId: number; scenario: string; delayDays?: number } = { leadId: id, scenario };
+    const body: { leadId: number; scenario: string; delayDays?: number; candidateUserId?: number } = {
+      leadId: id,
+      scenario,
+    };
     if (scenario === "delay") body.delayDays = parseInt(delayDays, 10) || 1;
+    if (scenario === "reassign") {
+      if (!candidateUserId) {
+        setSimError(t("workflowManager.chooseOwner"));
+        return;
+      }
+      body.candidateUserId = candidateUserId;
+    }
+    setSimError(null);
     simulate.mutate(
       { data: body },
       {
@@ -368,6 +379,39 @@ export default function WorkflowScreen() {
             </>
           ) : null}
 
+          {scenario === "reassign" ? (
+            <>
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+                {t("workflowManager.reassignTo")}
+              </Text>
+              {!health || health.workload.length === 0 ? (
+                <Text style={[styles.actionItem, { color: colors.mutedForeground, textAlign }]}>
+                  {t("workflowManager.noOwners")}
+                </Text>
+              ) : (
+                <View style={styles.candidateWrap}>
+                  {health.workload.map((w) => {
+                    const active = candidateUserId === w.userId;
+                    return (
+                      <Pressable
+                        key={w.userId}
+                        onPress={() => setCandidateUserId(w.userId)}
+                        style={[
+                          styles.candidateChip,
+                          { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary : colors.background },
+                        ]}
+                      >
+                        <Text style={{ color: active ? colors.primaryForeground : colors.foreground, fontFamily: FONT.medium, fontSize: 13 }}>
+                          {w.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </>
+          ) : null}
+
           <Pressable
             onPress={runSimulation}
             disabled={simulate.isPending}
@@ -466,6 +510,8 @@ const styles = StyleSheet.create({
   actionsHead: { fontSize: 12, fontFamily: FONT.semibold, marginBottom: 2 },
   actionItem: { fontSize: 13, lineHeight: 19, fontFamily: FONT.regular },
   workloadBox: { gap: 6 },
+  candidateWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  candidateChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   subHead: { fontSize: 11, fontFamily: FONT.semibold, letterSpacing: 0.5, textTransform: "uppercase" },
   workloadRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   workloadName: { fontSize: 14, fontFamily: FONT.medium },

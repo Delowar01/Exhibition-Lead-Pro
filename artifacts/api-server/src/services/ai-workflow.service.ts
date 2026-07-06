@@ -820,6 +820,11 @@ export async function setRecommendationStatus(user: AuthUser, id: number, status
 }
 
 export async function getOverview(user: AuthUser) {
+  // The overview is the COMPANY-WIDE review summary (tenant-wide counts + recent
+  // recommendations). Per the Stage 5F scope-privacy contract, company-wide views
+  // are manager-only — non-managers must use their own scoped rollups instead of
+  // seeing every colleague's recommendations.
+  if (!isManager(user.role)) throw new AppError(403, "The workflow overview is available to managers only");
   const [counts, recent] = await Promise.all([repo.statusCounts(user), repo.recentForCompany(user, 20)]);
   return { counts, recent };
 }

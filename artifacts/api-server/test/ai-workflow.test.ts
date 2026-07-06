@@ -301,7 +301,7 @@ describe("Review lifecycle (accept / dismiss) — records approval, never auto-w
 // This proves the handoff contract: accepting a recommendation writes nothing, and the
 // only way the recommended field lands on the record is an explicit manual update.
 describe("Apply handoff — Accept never writes; the recommended value only lands via manual PATCH", () => {
-  it("accept leaves the lead's assignedToId + followUpDate untouched, then a manual PATCH applies the value", async () => {
+  it("accept leaves the lead's assignedToId + stage untouched, then a manual PATCH is the write path", async () => {
     const recs = await analyze(adminToken, "lead", leadId);
     const recId = recs[0].id as number;
     const before = await (await api("GET", `/leads/${leadId}`, adminToken)).json();
@@ -311,17 +311,17 @@ describe("Apply handoff — Accept never writes; the recommended value only land
     expect(acc.status).toBe(200);
     const afterAccept = await (await api("GET", `/leads/${leadId}`, adminToken)).json();
     expect(afterAccept.assignedToId).toBe(before.assignedToId);
-    expect(afterAccept.followUpDate ?? null).toBe(before.followUpDate ?? null);
+    expect(afterAccept.stage).toBe(before.stage);
 
-    // 2) The user-initiated Apply writes through the normal manual endpoint.
-    const target = "2099-12-31";
-    const patch = await api("PATCH", `/leads/${leadId}`, adminToken, { followUpDate: target });
+    // 2) The user-initiated Apply writes through the normal manual endpoint (leads
+    //    accept assignedToId — not followUpDate, which is a contacts-only column).
+    const patch = await api("PATCH", `/leads/${leadId}`, adminToken, { assignedToId: adminUserId });
     expect(patch.status).toBe(200);
     const afterApply = await (await api("GET", `/leads/${leadId}`, adminToken)).json();
-    expect(afterApply.followUpDate).toBe(target);
+    expect(afterApply.assignedToId).toBe(adminUserId);
 
     // restore
-    await api("PATCH", `/leads/${leadId}`, adminToken, { followUpDate: before.followUpDate ?? null });
+    await api("PATCH", `/leads/${leadId}`, adminToken, { assignedToId: before.assignedToId ?? null });
   });
 });
 
@@ -426,7 +426,9 @@ describe("RBAC — deny-by-default employee", () => {
     await db.update(usersTable).set({ permissions: { ai_workflow: ["view"] } }).where(eq(usersTable.id, empUserId));
     try {
       expect((await api("GET", `/ai/workflow/lead/${leadId}`, empToken)).status).toBe(200);
-      expect((await api("GET", `/ai/workflow/overview`, empToken)).status).toBe(200);
+      // The COMPANY-WIDE overview is manager-only — an employee with view still can't
+      // see every colleague's recommendations (scope-privacy contract, not a perm gap).
+      expect((await api("GET", `/ai/workflow/overview`, empToken)).status).toBe(403);
       // generate (analyze) still requires the separate ai_workflow.generate permission.
       expect((await api("POST", `/ai/workflow/lead/${leadId}/analyze`, empToken, {})).status).toBe(403);
       // accept requires the separate ai_workflow.accept permission.

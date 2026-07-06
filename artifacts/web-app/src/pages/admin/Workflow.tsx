@@ -16,6 +16,7 @@ import {
   type WorkflowSlaRisk,
   type WorkflowBottleneck,
   type WorkflowSimulateResponse,
+  type WorkflowWorkloadEntry,
 } from "@workspace/api-client-react";
 import {
   Workflow,
@@ -100,10 +101,11 @@ function BottleneckRow({ b }: { b: WorkflowBottleneck }) {
   );
 }
 
-function SimulationTool() {
+function SimulationTool({ candidates }: { candidates: WorkflowWorkloadEntry[] }) {
   const [leadId, setLeadId] = React.useState("");
   const [scenario, setScenario] = React.useState("follow_up");
   const [delayDays, setDelayDays] = React.useState("3");
+  const [candidateUserId, setCandidateUserId] = React.useState("");
   const [result, setResult] = React.useState<WorkflowSimulateResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -115,9 +117,20 @@ function SimulationTool() {
       setError("Enter a valid lead ID.");
       return;
     }
-    setError(null);
-    const body: { leadId: number; scenario: string; delayDays?: number } = { leadId: id, scenario };
+    const body: { leadId: number; scenario: string; delayDays?: number; candidateUserId?: number } = {
+      leadId: id,
+      scenario,
+    };
     if (scenario === "delay") body.delayDays = parseInt(delayDays) || 1;
+    if (scenario === "reassign") {
+      const cid = parseInt(candidateUserId);
+      if (!Number.isFinite(cid) || cid <= 0) {
+        setError("Choose an owner to reassign to.");
+        return;
+      }
+      body.candidateUserId = cid;
+    }
+    setError(null);
     simulate.mutate(
       { data: body },
       {
@@ -160,6 +173,23 @@ function SimulationTool() {
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Delay (days)</label>
               <Input value={delayDays} onChange={(e) => setDelayDays(e.target.value)} className="w-[90px]" />
+            </div>
+          )}
+          {scenario === "reassign" && (
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Reassign to</label>
+              <Select value={candidateUserId} onValueChange={setCandidateUserId}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder={candidates.length === 0 ? "No eligible owners" : "Choose owner"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidates.map((c) => (
+                    <SelectItem key={c.userId} value={String(c.userId)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
           <Button size="sm" onClick={run} disabled={simulate.isPending} className="gap-1">
@@ -361,7 +391,7 @@ export default function AdminWorkflow() {
         </Card>
       </div>
 
-      <SimulationTool />
+      <SimulationTool candidates={health?.workload ?? []} />
     </div>
   );
 }
