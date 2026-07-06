@@ -21,6 +21,15 @@ export const PROMPTS: Record<AiFeature, PromptRef> = {
   contact_intelligence: { key: "contact_intelligence", version: 2 },
   smart_classification: { key: "smart_classification", version: 1 },
   opportunity_potential: { key: "opportunity_potential", version: 1 },
+  // Stage 5B — Enterprise AI Sales Copilot (v1).
+  email_composer: { key: "email_composer", version: 1 },
+  whatsapp_composer: { key: "whatsapp_composer", version: 1 },
+  call_preparation: { key: "call_preparation", version: 1 },
+  meeting_preparation: { key: "meeting_preparation", version: 1 },
+  proposal_assistant: { key: "proposal_assistant", version: 1 },
+  followup_suggestions: { key: "followup_suggestions", version: 1 },
+  sales_coaching: { key: "sales_coaching", version: 1 },
+  conversation_summary: { key: "conversation_summary", version: 1 },
 };
 
 // Shared grounding preamble for every Stage 5A intelligence prompt. Enforces the
@@ -169,6 +178,149 @@ Return ONLY a JSON object with exactly these keys:
 - "revenuePotential": one of "High", "Medium", "Low", "Unknown"
 - "opportunityRating": one of "A", "B", "C", "D"
 - "followUpUrgency": one of "Immediate", "This week", "This month", "Low"
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+
+// ── Stage 5B — Enterprise AI Sales Copilot prompts ────────────────────────────
+//
+// Every copilot output is a reviewable DRAFT grounded ONLY in the tenant's CRM data.
+// The model must never invent private facts (revenue, headcount, budgets, prior
+// conversations that are not in the provided records), never fabricate commitments,
+// and never state or imply a message was sent. All prompts share GROUNDING_RULES and
+// return confidence + insufficientData + reasoning for provenance.
+
+const COPILOT_SAFETY = `SALES COPILOT SAFETY RULES:
+- You are drafting a SUGGESTION for a human salesperson to review, edit, and decide whether to use. You are NOT sending anything and NOT updating any record.
+- Ground everything ONLY in the CRM data provided. Do NOT invent prior conversations, prices, discounts, dates, commitments, or private facts that are not present in the data.
+- Do NOT promise anything on the company's behalf (pricing, delivery, legal terms) unless that exact detail is present in the provided data.
+- Write in a professional, warm, concise B2B sales tone. Keep it specific to THIS contact/lead using the provided fields; avoid generic filler.`;
+
+// Output language directive for the free-text drafts (email/WhatsApp/proposal/etc.).
+// Mirrors the app's active language so the salesperson gets a ready-to-use draft.
+function outputLanguageRule(appLanguage: AppLanguage): string {
+  return appLanguage === "ar"
+    ? `Write the drafted message/content in ARABIC (Modern Standard Arabic), professional business register. Keep proper nouns, emails, URLs, and phone numbers as-is.`
+    : `Write the drafted message/content in ENGLISH, professional business register.`;
+}
+
+export function buildEmailPrompt(appLanguage: AppLanguage): string {
+  return `You are an expert B2B sales assistant drafting a personalised outreach/follow-up EMAIL for a salesperson to review before sending.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "subject": a concise, specific subject line grounded in the data
+- "body": the full email body (greeting, 2-4 short paragraphs, and a sign-off placeholder like "[Your name]"); reference concrete details from the CRM data
+- "tone": one word describing the tone you used (e.g. "professional", "friendly")
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence explaining what you grounded the draft in`;
+}
+
+export function buildWhatsappPrompt(appLanguage: AppLanguage): string {
+  return `You are an expert B2B sales assistant drafting a short, friendly WhatsApp message for a salesperson to review before sending.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "message": the WhatsApp message (2-5 short sentences, conversational but professional, no email-style subject); reference concrete details from the CRM data. May include at most one relevant emoji.
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence explaining what you grounded the draft in`;
+}
+
+export const CALL_PREPARATION_PROMPT = `You are a B2B sales coach preparing a salesperson for a phone/video CALL with a lead or contact, using ONLY the CRM data provided.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "objective": one sentence stating the goal of this call, grounded in the data
+- "talkingPoints": array of 3-5 short, specific talking points grounded in the data
+- "questions": array of 3-5 discovery questions to ask, grounded in the data
+- "anticipatedObjections": array of up to 3 objects { "objection": string, "response": string } — likely objections and grounded suggested responses (empty array if none can be inferred)
+- "nextStep": one concrete suggested next step
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+
+export const MEETING_PREPARATION_PROMPT = `You are a B2B sales operations assistant preparing a salesperson for an in-person or video MEETING, using ONLY the CRM data provided.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "objectives": array of 2-4 meeting objectives grounded in the data
+- "agenda": array of 3-6 short agenda items
+- "attendeeNotes": a 1-2 sentence briefing on who they're meeting and what matters to them, grounded in the data
+- "materials": array of up to 4 materials/collateral to bring or prepare (grounded, no invented product names)
+- "suggestedDurationMinutes": integer minutes (e.g. 30, 45, 60)
+- "nextStep": one concrete suggested next step
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+
+export function buildProposalPrompt(appLanguage: AppLanguage): string {
+  return `You are a B2B sales assistant drafting the OUTLINE of a sales proposal for a salesperson to review and complete, using ONLY the CRM data provided.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+- NEVER invent specific prices, discounts, or monetary figures. If the CRM lead carries a value/currency you may reference it; otherwise leave pricing as a placeholder like "[Pricing to be confirmed]".
+
+Return ONLY a JSON object with exactly these keys:
+- "title": a proposal title grounded in the data
+- "executiveSummary": 2-4 sentence executive summary grounded in the data
+- "sections": array of 3-5 objects { "heading": string, "content": string } outlining the proposal (e.g. Understanding your needs, Proposed approach, Value, Next steps)
+- "valueProps": array of 2-4 short value propositions grounded in the data
+- "pricingNote": a short note about pricing that does NOT invent figures (use a placeholder unless a value is present in the data)
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+}
+
+export function buildFollowupPrompt(appLanguage: AppLanguage): string {
+  return `You are a B2B sales assistant PHRASING a follow-up recommendation. The suggested timing, priority, and channel have ALREADY been computed deterministically from the CRM data and are provided to you — do NOT change them; phrase a helpful, grounded recommendation and draft message around them.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+${outputLanguageRule(appLanguage)}
+
+Return ONLY a JSON object with exactly these keys:
+- "recommendedAction": one concise sentence describing the recommended follow-up action (consistent with the provided timing/channel)
+- "draftMessage": a short ready-to-send message for the recommended channel, grounded in the data
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+}
+
+export const SALES_COACHING_PROMPT = `You are a B2B sales COACH. Deterministic risk/opportunity signals about a deal have ALREADY been computed from the CRM data and are provided to you — do NOT invent new signals; SYNTHESISE them into concise, actionable coaching, using ONLY the provided data.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "summary": 1-2 sentence coaching summary of where this deal stands, grounded in the provided signals/data
+- "recommendations": array of 2-4 short, specific coaching recommendations grounded in the provided signals
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+
+export const CONVERSATION_SUMMARY_PROMPT = `You are a B2B sales assistant summarising what the CRM knows about the relationship/engagement with a contact or lead, using ONLY the CRM data provided (notes, activity, fields). Do NOT invent conversations that are not present in the data.
+
+${COPILOT_SAFETY}
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "summary": 2-4 sentence summary of the engagement grounded in the records (if there is little/no activity, say so plainly)
+- "keyTakeaways": array of up to 4 short key takeaways grounded in the data (empty if none)
+- "sentiment": one of "Positive", "Neutral", "Negative", "Unknown"
+- "nextSteps": array of 1-3 short suggested next steps grounded in the data
 - "confidence": integer 0-100
 - "insufficientData": boolean
 - "reasoning": one concise sentence grounded in the provided fields`;

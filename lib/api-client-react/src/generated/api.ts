@@ -29,6 +29,14 @@ import type {
   AiBatchJob,
   AiBatchListResponse,
   AiBatchStartRequest,
+  AiCopilotBatchJob,
+  AiCopilotBatchListResponse,
+  AiCopilotBatchStartRequest,
+  AiCopilotEditRequest,
+  AiCopilotGenerateRequest,
+  AiCopilotOutput,
+  AiCopilotOutputsListResponse,
+  AiCopilotOverviewResponse,
   AiHealthResponse,
   AiInsight,
   AiInsightsListResponse,
@@ -14156,6 +14164,676 @@ export function useGetAiInsightsBatch<TData = Awaited<ReturnType<typeof getAiIns
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAiInsightsBatchQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiCopilotOverviewUrl = () => {
+
+
+
+
+  return `/api/ai/copilot/overview`
+}
+
+/**
+ * @summary Tenant-wide AI Sales Copilot summary (status counts + recent outputs)
+ */
+export const getAiCopilotOverview = async ( options?: RequestInit): Promise<AiCopilotOverviewResponse> => {
+
+  return customFetch<AiCopilotOverviewResponse>(getGetAiCopilotOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiCopilotOverviewQueryKey = () => {
+    return [
+    `/api/ai/copilot/overview`
+    ] as const;
+    }
+
+
+export const getGetAiCopilotOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getAiCopilotOverview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiCopilotOverviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiCopilotOverview>>> = ({ signal }) => getAiCopilotOverview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiCopilotOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getAiCopilotOverview>>>
+export type GetAiCopilotOverviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Tenant-wide AI Sales Copilot summary (status counts + recent outputs)
+ */
+
+export function useGetAiCopilotOverview<TData = Awaited<ReturnType<typeof getAiCopilotOverview>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiCopilotOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getStartAiCopilotBatchUrl = () => {
+
+
+
+
+  return `/api/ai/copilot/batch`
+}
+
+/**
+ * @summary Start a batch generation of one output type across all records of an entity type
+ */
+export const startAiCopilotBatch = async (aiCopilotBatchStartRequest: AiCopilotBatchStartRequest, options?: RequestInit): Promise<AiCopilotBatchJob> => {
+
+  return customFetch<AiCopilotBatchJob>(getStartAiCopilotBatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiCopilotBatchStartRequest,)
+  }
+);}
+
+
+
+
+export const getStartAiCopilotBatchMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAiCopilotBatch>>, TError,{data: BodyType<AiCopilotBatchStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startAiCopilotBatch>>, TError,{data: BodyType<AiCopilotBatchStartRequest>}, TContext> => {
+
+const mutationKey = ['startAiCopilotBatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startAiCopilotBatch>>, {data: BodyType<AiCopilotBatchStartRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startAiCopilotBatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartAiCopilotBatchMutationResult = NonNullable<Awaited<ReturnType<typeof startAiCopilotBatch>>>
+    export type StartAiCopilotBatchMutationBody = BodyType<AiCopilotBatchStartRequest>
+    export type StartAiCopilotBatchMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Start a batch generation of one output type across all records of an entity type
+ */
+export const useStartAiCopilotBatch = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAiCopilotBatch>>, TError,{data: BodyType<AiCopilotBatchStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startAiCopilotBatch>>,
+        TError,
+        {data: BodyType<AiCopilotBatchStartRequest>},
+        TContext
+      > => {
+      return useMutation(getStartAiCopilotBatchMutationOptions(options));
+    }
+
+export const getListAiCopilotBatchesUrl = () => {
+
+
+
+
+  return `/api/ai/copilot/batch`
+}
+
+/**
+ * @summary List AI Copilot batch jobs visible to the caller's tenant
+ */
+export const listAiCopilotBatches = async ( options?: RequestInit): Promise<AiCopilotBatchListResponse> => {
+
+  return customFetch<AiCopilotBatchListResponse>(getListAiCopilotBatchesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiCopilotBatchesQueryKey = () => {
+    return [
+    `/api/ai/copilot/batch`
+    ] as const;
+    }
+
+
+export const getListAiCopilotBatchesQueryOptions = <TData = Awaited<ReturnType<typeof listAiCopilotBatches>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiCopilotBatches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiCopilotBatchesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiCopilotBatches>>> = ({ signal }) => listAiCopilotBatches({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiCopilotBatches>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiCopilotBatchesQueryResult = NonNullable<Awaited<ReturnType<typeof listAiCopilotBatches>>>
+export type ListAiCopilotBatchesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List AI Copilot batch jobs visible to the caller's tenant
+ */
+
+export function useListAiCopilotBatches<TData = Awaited<ReturnType<typeof listAiCopilotBatches>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiCopilotBatches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiCopilotBatchesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiCopilotBatchUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/ai/copilot/batch/${jobId}`
+}
+
+/**
+ * @summary Get the status/progress of one AI Copilot batch job
+ */
+export const getAiCopilotBatch = async (jobId: string, options?: RequestInit): Promise<AiCopilotBatchJob> => {
+
+  return customFetch<AiCopilotBatchJob>(getGetAiCopilotBatchUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiCopilotBatchQueryKey = (jobId: string,) => {
+    return [
+    `/api/ai/copilot/batch/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetAiCopilotBatchQueryOptions = <TData = Awaited<ReturnType<typeof getAiCopilotBatch>>, TError = ErrorType<ErrorResponse>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiCopilotBatchQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiCopilotBatch>>> = ({ signal }) => getAiCopilotBatch(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(jobId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotBatch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiCopilotBatchQueryResult = NonNullable<Awaited<ReturnType<typeof getAiCopilotBatch>>>
+export type GetAiCopilotBatchQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the status/progress of one AI Copilot batch job
+ */
+
+export function useGetAiCopilotBatch<TData = Awaited<ReturnType<typeof getAiCopilotBatch>>, TError = ErrorType<ErrorResponse>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiCopilotBatchQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getEditAiCopilotOutputUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/copilot/outputs/${id}`
+}
+
+/**
+ * @summary Save a human-edited version of a copilot output (does not send/write CRM)
+ */
+export const editAiCopilotOutput = async (id: number,
+    aiCopilotEditRequest: AiCopilotEditRequest, options?: RequestInit): Promise<AiCopilotOutput> => {
+
+  return customFetch<AiCopilotOutput>(getEditAiCopilotOutputUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiCopilotEditRequest,)
+  }
+);}
+
+
+
+
+export const getEditAiCopilotOutputMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editAiCopilotOutput>>, TError,{id: number;data: BodyType<AiCopilotEditRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof editAiCopilotOutput>>, TError,{id: number;data: BodyType<AiCopilotEditRequest>}, TContext> => {
+
+const mutationKey = ['editAiCopilotOutput'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof editAiCopilotOutput>>, {id: number;data: BodyType<AiCopilotEditRequest>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  editAiCopilotOutput(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EditAiCopilotOutputMutationResult = NonNullable<Awaited<ReturnType<typeof editAiCopilotOutput>>>
+    export type EditAiCopilotOutputMutationBody = BodyType<AiCopilotEditRequest>
+    export type EditAiCopilotOutputMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Save a human-edited version of a copilot output (does not send/write CRM)
+ */
+export const useEditAiCopilotOutput = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editAiCopilotOutput>>, TError,{id: number;data: BodyType<AiCopilotEditRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof editAiCopilotOutput>>,
+        TError,
+        {id: number;data: BodyType<AiCopilotEditRequest>},
+        TContext
+      > => {
+      return useMutation(getEditAiCopilotOutputMutationOptions(options));
+    }
+
+export const getUseAiCopilotOutputUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/copilot/outputs/${id}/use`
+}
+
+/**
+ * @summary Record that a user used a copilot output (audited; does not auto-send)
+ */
+export const useAiCopilotOutput = async (id: number, options?: RequestInit): Promise<AiCopilotOutput> => {
+
+  return customFetch<AiCopilotOutput>(getUseAiCopilotOutputUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getUseAiCopilotOutputMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof useAiCopilotOutput>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof useAiCopilotOutput>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['useAiCopilotOutput'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof useAiCopilotOutput>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  useAiCopilotOutput(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UseAiCopilotOutputMutationResult = NonNullable<Awaited<ReturnType<typeof useAiCopilotOutput>>>
+
+    export type UseAiCopilotOutputMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Record that a user used a copilot output (audited; does not auto-send)
+ */
+export const useUseAiCopilotOutput = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof useAiCopilotOutput>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof useAiCopilotOutput>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getUseAiCopilotOutputMutationOptions(options));
+    }
+
+export const getDismissAiCopilotOutputUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/copilot/outputs/${id}/dismiss`
+}
+
+/**
+ * @summary Dismiss a copilot output (audited review action)
+ */
+export const dismissAiCopilotOutput = async (id: number, options?: RequestInit): Promise<AiCopilotOutput> => {
+
+  return customFetch<AiCopilotOutput>(getDismissAiCopilotOutputUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDismissAiCopilotOutputMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiCopilotOutput>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissAiCopilotOutput>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['dismissAiCopilotOutput'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissAiCopilotOutput>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  dismissAiCopilotOutput(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissAiCopilotOutputMutationResult = NonNullable<Awaited<ReturnType<typeof dismissAiCopilotOutput>>>
+
+    export type DismissAiCopilotOutputMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Dismiss a copilot output (audited review action)
+ */
+export const useDismissAiCopilotOutput = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiCopilotOutput>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissAiCopilotOutput>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDismissAiCopilotOutputMutationOptions(options));
+    }
+
+export const getGenerateAiCopilotOutputUrl = (entityType: string,
+    id: number,) => {
+
+
+
+
+  return `/api/ai/copilot/${entityType}/${id}/generate`
+}
+
+/**
+ * @summary Generate (or re-generate) one AI Copilot output for a CRM entity
+ */
+export const generateAiCopilotOutput = async (entityType: string,
+    id: number,
+    aiCopilotGenerateRequest: AiCopilotGenerateRequest, options?: RequestInit): Promise<AiCopilotOutput> => {
+
+  return customFetch<AiCopilotOutput>(getGenerateAiCopilotOutputUrl(entityType,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiCopilotGenerateRequest,)
+  }
+);}
+
+
+
+
+export const getGenerateAiCopilotOutputMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}, TContext> => {
+
+const mutationKey = ['generateAiCopilotOutput'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAiCopilotOutput>>, {entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}> = (props) => {
+          const {entityType,id,data} = props ?? {};
+
+          return  generateAiCopilotOutput(entityType,id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateAiCopilotOutputMutationResult = NonNullable<Awaited<ReturnType<typeof generateAiCopilotOutput>>>
+    export type GenerateAiCopilotOutputMutationBody = BodyType<AiCopilotGenerateRequest>
+    export type GenerateAiCopilotOutputMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Generate (or re-generate) one AI Copilot output for a CRM entity
+ */
+export const useGenerateAiCopilotOutput = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateAiCopilotOutput>>,
+        TError,
+        {entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>},
+        TContext
+      > => {
+      return useMutation(getGenerateAiCopilotOutputMutationOptions(options));
+    }
+
+export const getGetAiCopilotOutputsUrl = (entityType: string,
+    id: number,) => {
+
+
+
+
+  return `/api/ai/copilot/${entityType}/${id}`
+}
+
+/**
+ * @summary List stored AI Copilot outputs for one CRM entity
+ */
+export const getAiCopilotOutputs = async (entityType: string,
+    id: number, options?: RequestInit): Promise<AiCopilotOutputsListResponse> => {
+
+  return customFetch<AiCopilotOutputsListResponse>(getGetAiCopilotOutputsUrl(entityType,id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiCopilotOutputsQueryKey = (entityType: string,
+    id: number,) => {
+    return [
+    `/api/ai/copilot/${entityType}/${id}`
+    ] as const;
+    }
+
+
+export const getGetAiCopilotOutputsQueryOptions = <TData = Awaited<ReturnType<typeof getAiCopilotOutputs>>, TError = ErrorType<ErrorResponse>>(entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotOutputs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiCopilotOutputsQueryKey(entityType,id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiCopilotOutputs>>> = ({ signal }) => getAiCopilotOutputs(entityType,id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(entityType && id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotOutputs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiCopilotOutputsQueryResult = NonNullable<Awaited<ReturnType<typeof getAiCopilotOutputs>>>
+export type GetAiCopilotOutputsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List stored AI Copilot outputs for one CRM entity
+ */
+
+export function useGetAiCopilotOutputs<TData = Awaited<ReturnType<typeof getAiCopilotOutputs>>, TError = ErrorType<ErrorResponse>>(
+ entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotOutputs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiCopilotOutputsQueryOptions(entityType,id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

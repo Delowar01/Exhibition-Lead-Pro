@@ -3,6 +3,7 @@ import { EMAIL_SEND_JOB, deliverEmailViaWorker } from "../email/index.js";
 import type { EmailMessage } from "../email/provider.js";
 import { getQueue } from "./queue.js";
 import { AI_ANALYZE_ENTITY_JOB, runAiAnalyzeEntityJob, type AiAnalyzeJobPayload } from "../../services/ai-batch.service.js";
+import { AI_COPILOT_GENERATE_JOB, runAiCopilotGenerateJob, type AiCopilotJobPayload } from "../../services/ai-copilot-batch.service.js";
 
 // Registers all job handlers on the process queue and starts the workers. Called once
 // at startup (index.ts). Producers (e.g. lib/email) only enqueue; the actual work runs
@@ -29,6 +30,12 @@ export function startWorkers(): void {
   // does not retry or dead-letter (maxAttempts is 1 at enqueue time regardless).
   queue.register<AiAnalyzeJobPayload>(AI_ANALYZE_ENTITY_JOB, async (payload) => {
     await runAiAnalyzeEntityJob(payload);
+  });
+
+  // Stage 5B copilot batch generation: one job per entity for a single output type. Same
+  // soft-failure contract as the insights batch — the handler never throws.
+  queue.register<AiCopilotJobPayload>(AI_COPILOT_GENERATE_JOB, async (payload) => {
+    await runAiCopilotGenerateJob(payload);
   });
 
   queue.start();

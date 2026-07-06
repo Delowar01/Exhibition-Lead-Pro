@@ -3228,6 +3228,109 @@ export interface AiBatchListResponse {
   jobs: AiBatchJob[];
 }
 
+/**
+ * Structured, output-type-specific draft (shape varies by outputType).
+ */
+export type AiCopilotOutputContent = { [key: string]: unknown };
+
+/**
+ * Human-edited version of content (null until edited).
+ */
+export type AiCopilotOutputEditedContent = { [key: string]: unknown } | null;
+
+export interface AiCopilotOutput {
+  id: number;
+  companyId: number;
+  /** lead | contact | organization | business_card */
+  entityType: string;
+  entityId: number;
+  /** email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary */
+  outputType: string;
+  /** Structured, output-type-specific draft (shape varies by outputType). */
+  content: AiCopilotOutputContent;
+  /** Human-edited version of content (null until edited). */
+  editedContent?: AiCopilotOutputEditedContent;
+  /** 0-100 confidence, null when unknown. */
+  confidence?: number | null;
+  reasoning?: string | null;
+  /** ai | deterministic */
+  source: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
+  /** en | ar */
+  language: string;
+  /** generated | edited | used | dismissed */
+  status: string;
+  generatedAt: string;
+  lastGeneratedAt: string;
+  usedById?: number | null;
+  usedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiCopilotOutputsListResponse {
+  outputs: AiCopilotOutput[];
+}
+
+export type AiCopilotOverviewResponseCounts = {[key: string]: number};
+
+export interface AiCopilotOverviewResponse {
+  counts: AiCopilotOverviewResponseCounts;
+  recent: AiCopilotOutput[];
+}
+
+export interface AiCopilotGenerateRequest {
+  /** email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary */
+  outputType: string;
+  /** en | ar (defaults to en) */
+  language?: string;
+  /** Optional extra grounding instructions from the user (never overrides safety rules). */
+  instructions?: string;
+}
+
+export type AiCopilotEditRequestEditedContent = { [key: string]: unknown };
+
+export interface AiCopilotEditRequest {
+  editedContent: AiCopilotEditRequestEditedContent;
+}
+
+export interface AiCopilotBatchStartRequest {
+  /** lead | contact | organization | business_card */
+  entityType: string;
+  /** email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary */
+  outputType: string;
+}
+
+export type AiCopilotBatchJobErrorsItem = {
+  entityId: number;
+  message: string;
+};
+
+export interface AiCopilotBatchJob {
+  id: string;
+  companyId: number;
+  requestedById: number;
+  /** lead | contact | organization | business_card */
+  entityType: string;
+  outputType: string;
+  /** queued | running | completed | failed */
+  status: string;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  errors: AiCopilotBatchJobErrorsItem[];
+  startedAt: string;
+  finishedAt?: string | null;
+}
+
+export interface AiCopilotBatchListResponse {
+  jobs: AiCopilotBatchJob[];
+}
+
 export interface DashboardLeadKpis {
   total: number;
   today: number;

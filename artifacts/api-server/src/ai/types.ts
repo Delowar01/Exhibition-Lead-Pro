@@ -15,7 +15,18 @@ export type AiFeature =
   | "company_intelligence"
   | "contact_intelligence"
   | "smart_classification"
-  | "opportunity_potential";
+  | "opportunity_potential"
+  // Stage 5B — Enterprise AI Sales Copilot. Each is a JSON-returning feature routed
+  // through the same gated runner + ledger; every output is a reviewable draft/brief
+  // grounded ONLY in the tenant's CRM data (never auto-sent, never auto-written).
+  | "email_composer"
+  | "whatsapp_composer"
+  | "call_preparation"
+  | "meeting_preparation"
+  | "proposal_assistant"
+  | "followup_suggestions"
+  | "sales_coaching"
+  | "conversation_summary";
 
 export const AI_FEATURES: AiFeature[] = [
   "card_extraction",
@@ -27,6 +38,14 @@ export const AI_FEATURES: AiFeature[] = [
   "contact_intelligence",
   "smart_classification",
   "opportunity_potential",
+  "email_composer",
+  "whatsapp_composer",
+  "call_preparation",
+  "meeting_preparation",
+  "proposal_assistant",
+  "followup_suggestions",
+  "sales_coaching",
+  "conversation_summary",
 ];
 
 export interface AiTextPart {

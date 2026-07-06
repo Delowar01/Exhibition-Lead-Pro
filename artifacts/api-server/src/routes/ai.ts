@@ -4,6 +4,8 @@ import { auditMutations } from "../lib/audit.js";
 import * as ai from "../services/ai.service.js";
 import * as insights from "../services/ai-insights.service.js";
 import * as aiBatch from "../services/ai-batch.service.js";
+import * as copilot from "../services/ai-copilot.service.js";
+import * as copilotBatch from "../services/ai-copilot-batch.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -100,6 +102,75 @@ router.post("/ai/insights/:id/accept", requirePermission("ai_insights", "accept"
 // POST /ai/insights/:id/dismiss — dismiss a recommendation (audited review action).
 router.post("/ai/insights/:id/dismiss", requirePermission("ai_insights", "accept"), async (req: AuthRequest, res) => {
   res.json(await insights.dismissInsight(req.user!, parseInt(String(req.params.id))));
+});
+
+// ── Stage 5B — Enterprise AI Sales Copilot (reviewable generative drafts) ──────
+//
+// Guards are path-scoped to /ai/copilot (same rationale as /ai/insights): tenant-only
+// (requireTenantUser blocks platform_owner), cancelled-company read-only respected
+// (blockReadOnlyMutations), and every non-GET audited (auditMutations). The copilot
+// NEVER auto-sends or auto-writes CRM — "use" merely records an audited user action on
+// the draft row. Permission matrix: view (read drafts/overview), generate (create/batch),
+// use (mark used / edit / dismiss review actions).
+router.use("/ai/copilot", requireTenantUser);
+router.use("/ai/copilot", blockReadOnlyMutations);
+router.use("/ai/copilot", auditMutations("ai_copilot"));
+
+// GET /ai/copilot/overview — tenant-wide review summary (static path before /:entityType).
+router.get("/ai/copilot/overview", requirePermission("ai_copilot", "view"), async (req: AuthRequest, res) => {
+  res.json(await copilot.getOverview(req.user!));
+});
+
+// Static "/batch" + "/outputs" paths MUST be registered BEFORE /:entityType/:id so those
+// literals are not captured as an entityType.
+router.post("/ai/copilot/batch", requirePermission("ai_copilot", "generate"), async (req: AuthRequest, res) => {
+  const body = (req.body ?? {}) as { entityType?: unknown; outputType?: unknown };
+  const job = await copilotBatch.startBatch(req.user!, String(body.entityType ?? ""), String(body.outputType ?? ""));
+  res.status(202).json(job);
+});
+
+router.get("/ai/copilot/batch", requirePermission("ai_copilot", "view"), async (req: AuthRequest, res) => {
+  res.json({ jobs: copilotBatch.listBatches(req.user!) });
+});
+
+router.get("/ai/copilot/batch/:jobId", requirePermission("ai_copilot", "view"), async (req: AuthRequest, res) => {
+  res.json(copilotBatch.getBatch(req.user!, String(req.params.jobId)));
+});
+
+// PATCH /ai/copilot/outputs/:id — save a human edit of a draft (review action).
+router.patch("/ai/copilot/outputs/:id", requirePermission("ai_copilot", "use"), async (req: AuthRequest, res) => {
+  const body = (req.body ?? {}) as { editedContent?: unknown };
+  if (!body.editedContent || typeof body.editedContent !== "object") {
+    res.status(400).json({ error: "editedContent (object) is required" });
+    return;
+  }
+  res.json(await copilot.editOutput(req.user!, parseInt(String(req.params.id)), body.editedContent as Record<string, unknown>));
+});
+
+// POST /ai/copilot/outputs/:id/use — record an audited "used" action (does not auto-send).
+router.post("/ai/copilot/outputs/:id/use", requirePermission("ai_copilot", "use"), async (req: AuthRequest, res) => {
+  res.json(await copilot.useOutput(req.user!, parseInt(String(req.params.id))));
+});
+
+// POST /ai/copilot/outputs/:id/dismiss — dismiss a draft (review action).
+router.post("/ai/copilot/outputs/:id/dismiss", requirePermission("ai_copilot", "use"), async (req: AuthRequest, res) => {
+  res.json(await copilot.dismissOutput(req.user!, parseInt(String(req.params.id))));
+});
+
+// POST /ai/copilot/:entityType/:id/generate — generate one output for a CRM entity.
+router.post("/ai/copilot/:entityType/:id/generate", requirePermission("ai_copilot", "generate"), async (req: AuthRequest, res) => {
+  const entityType = copilot.assertEntityType(String(req.params.entityType));
+  const id = parseInt(String(req.params.id));
+  const body = (req.body ?? {}) as { outputType?: unknown; language?: unknown; instructions?: unknown };
+  const outputType = copilot.assertOutputType(String(body.outputType ?? ""));
+  res.json(await copilot.generateOutput(req.user!, entityType, id, outputType, { language: body.language, instructions: body.instructions }));
+});
+
+// GET /ai/copilot/:entityType/:id — list stored copilot outputs for one entity.
+router.get("/ai/copilot/:entityType/:id", requirePermission("ai_copilot", "view"), async (req: AuthRequest, res) => {
+  const entityType = copilot.assertEntityType(String(req.params.entityType));
+  const id = parseInt(String(req.params.id));
+  res.json({ outputs: await copilot.getOutputs(req.user!, entityType, id) });
 });
 
 export default router;

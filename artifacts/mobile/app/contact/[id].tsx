@@ -48,6 +48,7 @@ import {
   useUpdateContact,
 } from "@workspace/api-client-react";
 import { CommunicationHub } from "@/components/CommunicationHub";
+import { CopilotSection } from "@/components/CopilotSection";
 import { AiInsightsSection } from "@/components/AiInsightsSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -580,6 +581,8 @@ export default function ContactDetailScreen() {
             phone={contact.mobile}
             displayName={contactName(contact, t("contacts.newContact"))}
           />
+
+          <CopilotSection entityType="contact" id={contactId} />
 
           <AiInsightsSection entityType="contact" id={contactId} />
 

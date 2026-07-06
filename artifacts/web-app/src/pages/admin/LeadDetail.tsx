@@ -54,6 +54,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DocumentsPanel from "@/components/DocumentsPanel";
 import { AiInsightsPanel } from "@/components/AiInsightsPanel";
+import { SalesCopilotPanel } from "@/components/SalesCopilotPanel";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -527,6 +528,8 @@ export default function AdminLeadDetail() {
               </CardContent>
             </Card>
           )}
+
+          <SalesCopilotPanel entityType="lead" id={id} />
 
           <AiInsightsPanel entityType="lead" id={id} />
 

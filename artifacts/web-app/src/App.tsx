@@ -43,6 +43,7 @@ import AdminReports from "@/pages/admin/Reports";
 import AdminAnalytics from "@/pages/admin/Analytics";
 import AdminAiSettings from "@/pages/admin/AiSettings";
 import AdminAiInsightsReview from "@/pages/admin/AiInsightsReview";
+import AdminSalesCopilot from "@/pages/admin/SalesCopilot";
 import AdminBatchOperations from "@/pages/admin/BatchOperations";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
@@ -264,6 +265,9 @@ function Router() {
       </Route>
       <Route path="/admin/ai-insights">
         {() => <ProtectedRoute component={AdminAiInsightsReview} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/ai-copilot">
+        {() => <ProtectedRoute component={AdminSalesCopilot} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/ai">
         {() => <ProtectedRoute component={AdminAiSettings} role="admin" layout={AdminLayout} />}

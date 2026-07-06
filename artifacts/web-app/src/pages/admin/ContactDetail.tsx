@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { CommunicationHub } from "@/components/CommunicationHub";
 import { AiInsightsPanel } from "@/components/AiInsightsPanel";
+import { SalesCopilotPanel } from "@/components/SalesCopilotPanel";
 
 const ORG_NONE = "__none__";
 
@@ -304,6 +305,8 @@ export default function AdminContactDetail() {
             phone={contact.mobile}
             displayName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
           />
+
+          <SalesCopilotPanel entityType="contact" id={contactId} />
 
           <AiInsightsPanel entityType="contact" id={contactId} />
 

@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "expo-camera": "~17.0.10",
+    "expo-clipboard": "~8.0.8",
     "expo-contacts": "~15.0.11",
     "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.10",

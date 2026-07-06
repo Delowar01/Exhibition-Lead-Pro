@@ -47,3 +47,4 @@ export * from "./recent_searches";
 export * from "./ai_settings";
 export * from "./ai_invocations";
 export * from "./ai_insights";
+export * from "./ai_copilot_outputs";

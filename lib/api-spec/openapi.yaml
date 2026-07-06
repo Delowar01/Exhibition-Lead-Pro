@@ -4079,6 +4079,230 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # ── AI SALES COPILOT (Stage 5B) ──────────────────────────────────────────────
+  /ai/copilot/overview:
+    get:
+      operationId: getAiCopilotOverview
+      tags: [ai]
+      summary: Tenant-wide AI Sales Copilot summary (status counts + recent outputs)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotOverviewResponse"
+
+  /ai/copilot/batch:
+    post:
+      operationId: startAiCopilotBatch
+      tags: [ai]
+      summary: Start a batch generation of one output type across all records of an entity type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiCopilotBatchStartRequest"
+      responses:
+        "202":
+          description: Batch accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotBatchJob"
+        "400":
+          description: Invalid entity/output type or missing company context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: listAiCopilotBatches
+      tags: [ai]
+      summary: List AI Copilot batch jobs visible to the caller's tenant
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotBatchListResponse"
+
+  /ai/copilot/batch/{jobId}:
+    get:
+      operationId: getAiCopilotBatch
+      tags: [ai]
+      summary: Get the status/progress of one AI Copilot batch job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotBatchJob"
+        "404":
+          description: Batch job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/copilot/outputs/{id}:
+    patch:
+      operationId: editAiCopilotOutput
+      tags: [ai]
+      summary: Save a human-edited version of a copilot output (does not send/write CRM)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiCopilotEditRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotOutput"
+        "404":
+          description: Output not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/copilot/outputs/{id}/use:
+    post:
+      operationId: useAiCopilotOutput
+      tags: [ai]
+      summary: Record that a user used a copilot output (audited; does not auto-send)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotOutput"
+        "404":
+          description: Output not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/copilot/outputs/{id}/dismiss:
+    post:
+      operationId: dismissAiCopilotOutput
+      tags: [ai]
+      summary: Dismiss a copilot output (audited review action)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotOutput"
+        "404":
+          description: Output not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/copilot/{entityType}/{id}/generate:
+    post:
+      operationId: generateAiCopilotOutput
+      tags: [ai]
+      summary: Generate (or re-generate) one AI Copilot output for a CRM entity
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: lead | contact | organization | business_card
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiCopilotGenerateRequest"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotOutput"
+        "404":
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/copilot/{entityType}/{id}:
+    get:
+      operationId: getAiCopilotOutputs
+      tags: [ai]
+      summary: List stored AI Copilot outputs for one CRM entity
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: lead | contact | organization | business_card
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotOutputsListResponse"
+        "404":
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -9988,6 +10212,193 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiBatchJob"
+
+    AiCopilotOutput:
+      type: object
+      required:
+        [
+          id,
+          companyId,
+          entityType,
+          entityId,
+          outputType,
+          content,
+          source,
+          language,
+          status,
+          generatedAt,
+          lastGeneratedAt,
+        ]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        entityType:
+          type: string
+          description: lead | contact | organization | business_card
+        entityId:
+          type: integer
+        outputType:
+          type: string
+          description: email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary
+        content:
+          type: object
+          additionalProperties: true
+          description: Structured, output-type-specific draft (shape varies by outputType).
+        editedContent:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Human-edited version of content (null until edited).
+        confidence:
+          type: integer
+          nullable: true
+          description: 0-100 confidence, null when unknown.
+        reasoning:
+          type: string
+          nullable: true
+        source:
+          type: string
+          description: ai | deterministic
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
+          nullable: true
+        language:
+          type: string
+          description: en | ar
+        status:
+          type: string
+          description: generated | edited | used | dismissed
+        generatedAt:
+          type: string
+        lastGeneratedAt:
+          type: string
+        usedById:
+          type: integer
+          nullable: true
+        usedAt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    AiCopilotOutputsListResponse:
+      type: object
+      required: [outputs]
+      properties:
+        outputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCopilotOutput"
+
+    AiCopilotOverviewResponse:
+      type: object
+      required: [counts, recent]
+      properties:
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        recent:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCopilotOutput"
+
+    AiCopilotGenerateRequest:
+      type: object
+      required: [outputType]
+      properties:
+        outputType:
+          type: string
+          description: email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary
+        language:
+          type: string
+          description: en | ar (defaults to en)
+        instructions:
+          type: string
+          description: Optional extra grounding instructions from the user (never overrides safety rules).
+
+    AiCopilotEditRequest:
+      type: object
+      required: [editedContent]
+      properties:
+        editedContent:
+          type: object
+          additionalProperties: true
+
+    AiCopilotBatchStartRequest:
+      type: object
+      required: [entityType, outputType]
+      properties:
+        entityType:
+          type: string
+          description: lead | contact | organization | business_card
+        outputType:
+          type: string
+          description: email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary
+
+    AiCopilotBatchJob:
+      type: object
+      required: [id, companyId, requestedById, entityType, outputType, status, total, processed, succeeded, failed, errors, startedAt]
+      properties:
+        id:
+          type: string
+        companyId:
+          type: integer
+        requestedById:
+          type: integer
+        entityType:
+          type: string
+          description: lead | contact | organization | business_card
+        outputType:
+          type: string
+        status:
+          type: string
+          description: queued | running | completed | failed
+        total:
+          type: integer
+        processed:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            required: [entityId, message]
+            properties:
+              entityId:
+                type: integer
+              message:
+                type: string
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+
+    AiCopilotBatchListResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCopilotBatchJob"
 
     DashboardLeadKpis:
       type: object

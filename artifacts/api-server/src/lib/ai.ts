@@ -14,6 +14,14 @@ import {
   CONTACT_INTELLIGENCE_PROMPT,
   SMART_CLASSIFICATION_PROMPT,
   OPPORTUNITY_POTENTIAL_PROMPT,
+  buildEmailPrompt,
+  buildWhatsappPrompt,
+  CALL_PREPARATION_PROMPT,
+  MEETING_PREPARATION_PROMPT,
+  buildProposalPrompt,
+  buildFollowupPrompt,
+  SALES_COACHING_PROMPT,
+  CONVERSATION_SUMMARY_PROMPT,
 } from "../ai/prompts.js";
 import type { AiFeature, AiPart, AiRequest } from "../ai/types.js";
 import * as aiService from "../services/ai.service.js";
@@ -595,6 +603,178 @@ export async function analyzeOpportunity(context: string, ctx?: AiContext): Prom
     confidence: clampScore(p.confidence),
     insufficientData: bool(p.insufficientData),
     reasoning: str(p.reasoning) ?? "",
+  };
+}
+
+// ── Stage 5B — Enterprise AI Sales Copilot generators ─────────────────────────
+//
+// Each generator takes a CRM-data-ONLY `context` string (assembled by the caller from
+// records ALREADY stored in the tenant) and routes through the same gated callJson seam
+// as every other feature — so per-tenant enable/feature-flag/budget gates AND the
+// ai_invocations ledger apply automatically. Every result carries confidence, an
+// insufficientData flag, and grounded reasoning. Callers persist these as REVIEWABLE
+// drafts in ai_copilot_outputs; nothing here is ever auto-sent or auto-written to CRM.
+
+export interface CopilotMeta {
+  confidence: number;
+  insufficientData: boolean;
+  reasoning: string;
+}
+
+async function runCopilot(feature: AiFeature, promptText: string, context: string, ctx?: AiContext): Promise<Record<string, unknown>> {
+  return callJson({
+    feature,
+    parts: [{ text: `${promptText}\n\nCRM data:\n${context}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+    confidenceOf: (p) => clampScore(p.confidence),
+  });
+}
+
+function meta(p: Record<string, unknown>): CopilotMeta {
+  return {
+    confidence: clampScore(p.confidence),
+    insufficientData: bool(p.insufficientData),
+    reasoning: str(p.reasoning) ?? "",
+  };
+}
+
+export interface EmailDraftResult extends CopilotMeta {
+  subject: string | null;
+  body: string | null;
+  tone: string | null;
+}
+export async function composeEmail(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<EmailDraftResult> {
+  const p = await runCopilot("email_composer", buildEmailPrompt(appLanguage), context, ctx);
+  return { subject: str(p.subject), body: str(p.body), tone: str(p.tone), ...meta(p) };
+}
+
+export interface WhatsappDraftResult extends CopilotMeta {
+  message: string | null;
+}
+export async function composeWhatsapp(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<WhatsappDraftResult> {
+  const p = await runCopilot("whatsapp_composer", buildWhatsappPrompt(appLanguage), context, ctx);
+  return { message: str(p.message), ...meta(p) };
+}
+
+export interface CallObjection { objection: string; response: string; }
+export interface CallPrepResult extends CopilotMeta {
+  objective: string | null;
+  talkingPoints: string[];
+  questions: string[];
+  anticipatedObjections: CallObjection[];
+  nextStep: string | null;
+}
+function objectionArr(value: unknown, max: number): CallObjection[] {
+  if (!Array.isArray(value)) return [];
+  const out: CallObjection[] = [];
+  for (const v of value) {
+    const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+    const objection = str(o.objection);
+    const response = str(o.response);
+    if (objection) out.push({ objection, response: response ?? "" });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+export async function prepareCall(context: string, ctx?: AiContext): Promise<CallPrepResult> {
+  const p = await runCopilot("call_preparation", CALL_PREPARATION_PROMPT, context, ctx);
+  return {
+    objective: str(p.objective),
+    talkingPoints: strArr(p.talkingPoints, 5),
+    questions: strArr(p.questions, 5),
+    anticipatedObjections: objectionArr(p.anticipatedObjections, 3),
+    nextStep: str(p.nextStep),
+    ...meta(p),
+  };
+}
+
+export interface MeetingPrepResult extends CopilotMeta {
+  objectives: string[];
+  agenda: string[];
+  attendeeNotes: string | null;
+  materials: string[];
+  suggestedDurationMinutes: number | null;
+  nextStep: string | null;
+}
+export async function prepareMeeting(context: string, ctx?: AiContext): Promise<MeetingPrepResult> {
+  const p = await runCopilot("meeting_preparation", MEETING_PREPARATION_PROMPT, context, ctx);
+  const durRaw = typeof p.suggestedDurationMinutes === "number" ? p.suggestedDurationMinutes : Number(p.suggestedDurationMinutes);
+  return {
+    objectives: strArr(p.objectives, 4),
+    agenda: strArr(p.agenda, 6),
+    attendeeNotes: str(p.attendeeNotes),
+    materials: strArr(p.materials, 4),
+    suggestedDurationMinutes: Number.isFinite(durRaw) && durRaw > 0 ? Math.round(durRaw) : null,
+    nextStep: str(p.nextStep),
+    ...meta(p),
+  };
+}
+
+export interface ProposalSection { heading: string; content: string; }
+export interface ProposalResult extends CopilotMeta {
+  title: string | null;
+  executiveSummary: string | null;
+  sections: ProposalSection[];
+  valueProps: string[];
+  pricingNote: string | null;
+}
+function sectionArr(value: unknown, max: number): ProposalSection[] {
+  if (!Array.isArray(value)) return [];
+  const out: ProposalSection[] = [];
+  for (const v of value) {
+    const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+    const heading = str(o.heading);
+    const content = str(o.content);
+    if (heading || content) out.push({ heading: heading ?? "", content: content ?? "" });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+export async function draftProposal(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<ProposalResult> {
+  const p = await runCopilot("proposal_assistant", buildProposalPrompt(appLanguage), context, ctx);
+  return {
+    title: str(p.title),
+    executiveSummary: str(p.executiveSummary),
+    sections: sectionArr(p.sections, 5),
+    valueProps: strArr(p.valueProps, 4),
+    pricingNote: str(p.pricingNote),
+    ...meta(p),
+  };
+}
+
+export interface FollowupPhrasingResult extends CopilotMeta {
+  recommendedAction: string | null;
+  draftMessage: string | null;
+}
+export async function phraseFollowup(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<FollowupPhrasingResult> {
+  const p = await runCopilot("followup_suggestions", buildFollowupPrompt(appLanguage), context, ctx);
+  return { recommendedAction: str(p.recommendedAction), draftMessage: str(p.draftMessage), ...meta(p) };
+}
+
+export interface CoachingResult extends CopilotMeta {
+  summary: string | null;
+  recommendations: string[];
+}
+export async function coachDeal(context: string, ctx?: AiContext): Promise<CoachingResult> {
+  const p = await runCopilot("sales_coaching", SALES_COACHING_PROMPT, context, ctx);
+  return { summary: str(p.summary), recommendations: strArr(p.recommendations, 4), ...meta(p) };
+}
+
+export interface ConversationSummaryResult extends CopilotMeta {
+  summary: string | null;
+  keyTakeaways: string[];
+  sentiment: "Positive" | "Neutral" | "Negative" | "Unknown";
+  nextSteps: string[];
+}
+export async function summarizeConversation(context: string, ctx?: AiContext): Promise<ConversationSummaryResult> {
+  const p = await runCopilot("conversation_summary", CONVERSATION_SUMMARY_PROMPT, context, ctx);
+  return {
+    summary: str(p.summary),
+    keyTakeaways: strArr(p.keyTakeaways, 4),
+    sentiment: pick(p.sentiment, ["Positive", "Neutral", "Negative", "Unknown"], "Unknown") as ConversationSummaryResult["sentiment"],
+    nextSteps: strArr(p.nextSteps, 3),
+    ...meta(p),
   };
 }
 
