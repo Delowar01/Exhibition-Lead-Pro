@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { db, contactsTable, leadsTable, organizationsTable, scansTable } from "@workspace/db";
-import { and, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
-import { canAccessCompany, tenantScope, type AuthUser } from "../middlewares/requireAuth.js";
+import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
 import { logger } from "../lib/logger.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { analyzeEntity, assertEntityType } from "./ai-insights.service.js";
@@ -74,16 +74,18 @@ function finalize(job: BatchJob): void {
   );
 }
 
-// Tenant-scoped enumeration of the entity ids to analyze. No filter for platform_owner
-// (blocked upstream by requireTenantUser) and inArray(accessibleCompanies) for tenant
-// users — never a raw companyId scope that could span tenants. Business cards (scans)
-// have no soft-delete column, so the deletedAt guard applies only to the CRM tables.
-async function enumerateIds(user: AuthUser, entityType: EntityType): Promise<number[]> {
+// Enumeration is scoped to the SINGLE company the batch is stamped with (the caller's
+// own company), NOT the caller's full accessible set — a batch never spans tenants even
+// for a multi-company caller. platform_owner is blocked upstream by requireTenantUser, and
+// startBatch has already asserted companyId is non-null (so this is never a null/unfiltered
+// scope). Business cards (scans) have no soft-delete column, so the deletedAt guard applies
+// only to the CRM tables.
+async function enumerateIds(companyId: number, entityType: EntityType): Promise<number[]> {
   if (entityType === "business_card") {
     const rows = await db
       .select({ id: scansTable.id })
       .from(scansTable)
-      .where(tenantScope(user, scansTable.companyId))
+      .where(eq(scansTable.companyId, companyId))
       .limit(MAX_ENTITIES);
     return rows.map((r) => r.id);
   }
@@ -91,7 +93,7 @@ async function enumerateIds(user: AuthUser, entityType: EntityType): Promise<num
   const rows = await db
     .select({ id: table.id })
     .from(table)
-    .where(and(tenantScope(user, table.companyId), isNull(table.deletedAt)))
+    .where(and(eq(table.companyId, companyId), isNull(table.deletedAt)))
     .limit(MAX_ENTITIES);
   return rows.map((r) => r.id);
 }
@@ -101,7 +103,7 @@ export async function startBatch(user: AuthUser, entityTypeRaw: string): Promise
   if (user.companyId == null) {
     throw new AppError(400, "A company context is required for batch analysis");
   }
-  const ids = await enumerateIds(user, entityType);
+  const ids = await enumerateIds(user.companyId, entityType);
 
   const job: BatchJob = {
     id: randomUUID(),
