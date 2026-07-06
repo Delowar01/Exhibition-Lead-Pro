@@ -370,6 +370,79 @@ export async function buildContactDupeMatcher(companyId: number) {
   return { match, remember: index };
 }
 
+export interface ContactMatchInput {
+  email?: string | null; mobile?: string | null; officePhone?: string | null;
+  firstName?: string | null; lastName?: string | null; fullName?: string | null;
+  contactCompany?: string | null; website?: string | null; linkedin?: string | null;
+}
+export interface ContactMatch {
+  contactId: number;
+  fullName: string | null;
+  email: string | null;
+  mobile: string | null;
+  contactCompany: string | null;
+  status: string;
+  confidence: number;
+  reasons: string[];
+}
+
+// Read-only recognition for the capture flow: given the fields on a card being
+// captured (NOT yet saved), find EXISTING original contacts in the same tenant that
+// likely refer to the same person, with an explainable confidence + reasons. Reuses
+// the exact same signals as scan-time dedup (email/phone/linkedin/name+company/fuzzy
+// name) so recognition and dedup never disagree. Never writes, never auto-links —
+// this only surfaces candidates for the user to decide on. Tenant-scoped by companyId.
+export async function matchExistingContacts(user: AuthUser, input: ContactMatchInput): Promise<ContactMatch[]> {
+  if (!user.companyId) return [];
+  const candidates = await contactsRepo.originalCandidates(user.companyId, -1);
+
+  const normE = normEmail(input.email ?? null);
+  const normM = normPhone(input.mobile ?? null);
+  const normO = normPhone(input.officePhone ?? null);
+  const normL = normUrl(input.linkedin ?? null);
+  const normW = normUrl(input.website ?? null);
+  const fn = (input.fullName ?? [input.firstName, input.lastName].filter(Boolean).join(" ")) || null;
+  const personName = fn ? fn.trim().toLowerCase().replace(/\s+/g, " ") : null;
+  const comp = input.contactCompany ? input.contactCompany.trim().toLowerCase().replace(/\s+/g, " ") : null;
+  const nameCompanyKey = personName && comp ? `${personName}|${comp}` : null;
+
+  const matches: ContactMatch[] = [];
+  for (const c of candidates) {
+    const reasons: string[] = [];
+    let confidence = 0;
+    const bump = (score: number, reason: string) => { confidence = Math.max(confidence, score); reasons.push(reason); };
+
+    if (normE && normE === normEmail(c.email)) bump(100, "Same email address");
+    const cMobile = normPhone(c.mobile);
+    const cOffice = normPhone(c.officePhone);
+    if ((normM && (normM === cMobile || normM === cOffice)) || (normO && (normO === cMobile || normO === cOffice))) bump(95, "Same phone number");
+    if (normL && normL === normUrl(c.linkedin)) bump(95, "Same LinkedIn profile");
+    if (nameCompanyKey && nameCompanyKey === normName(c)) bump(85, "Same name and company");
+    if (normW && normW === normUrl(c.website)) bump(70, "Same website");
+    // Fuzzy same-company name (typos / ordering) only when we haven't already matched harder.
+    if (confidence < 85 && personName && comp) {
+      const cPerson = normPersonName(c);
+      const cComp = normCompany(c);
+      if (cPerson && cComp === comp && nameSimilarity(personName, cPerson) >= NAME_SIM_THRESHOLD) bump(55, "Similar name at the same company");
+    }
+
+    if (confidence > 0) {
+      matches.push({
+        contactId: c.id,
+        fullName: (c.fullName ?? [c.firstName, c.lastName].filter(Boolean).join(" ")) || null,
+        email: c.email,
+        mobile: c.mobile,
+        contactCompany: c.contactCompany,
+        status: c.status,
+        confidence,
+        reasons,
+      });
+    }
+  }
+  matches.sort((a, b) => b.confidence - a.confidence);
+  return matches.slice(0, 5);
+}
+
 // Explainable-signal weights (max confidence contributed by each shared signal).
 const DUP_SIGNAL_WEIGHTS = { email: 100, phone: 95, linkedin: 95, nameCompany: 85, website: 70, nameOnly: 55 } as const;
 const NAME_SIM_THRESHOLD = 0.85; // fuzzy same-company name clustering cutoff

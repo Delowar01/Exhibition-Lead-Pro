@@ -106,11 +106,14 @@ export function ContactForm({
   submitLabel,
   submitting,
   onSubmit,
+  onChange,
 }: {
   initial: ContactFormValues;
   submitLabel: string;
   submitting?: boolean;
   onSubmit: (values: ContactFormValues) => void;
+  /** Fires on every field change so a parent can react (e.g. live analysis). */
+  onChange?: (values: ContactFormValues) => void;
 }) {
   const colors = useColors();
   const {
@@ -136,8 +139,13 @@ export function ContactForm({
     : orgs;
   const selectedOrg = orgs.find((o) => o.id === values.organizationId);
 
+  function commit(next: ContactFormValues) {
+    setValues(next);
+    onChange?.(next);
+  }
+
   function update(key: keyof ContactFormValues, value: string) {
-    setValues((prev) => ({ ...prev, [key]: value }));
+    commit({ ...values, [key]: value });
   }
 
   function placeholderFor(f: FieldConfig): string {
@@ -232,7 +240,7 @@ export function ContactForm({
           </Text>
           {values.organizationId != null ? (
             <Pressable
-              onPress={() => setValues((prev) => ({ ...prev, organizationId: null }))}
+              onPress={() => commit({ ...values, organizationId: null })}
               hitSlop={10}
             >
               <Feather name="x" size={16} color={colors.mutedForeground} />
@@ -284,7 +292,7 @@ export function ContactForm({
               <Pressable
                 style={[styles.modalRow, { borderBottomColor: colors.border }]}
                 onPress={() => {
-                  setValues((prev) => ({ ...prev, organizationId: null }));
+                  commit({ ...values, organizationId: null });
                   setOrgPickerOpen(false);
                 }}
               >
@@ -306,7 +314,7 @@ export function ContactForm({
                     key={o.id}
                     style={[styles.modalRow, { borderBottomColor: colors.border }]}
                     onPress={() => {
-                      setValues((prev) => ({ ...prev, organizationId: o.id }));
+                      commit({ ...values, organizationId: o.id });
                       setOrgPickerOpen(false);
                     }}
                   >

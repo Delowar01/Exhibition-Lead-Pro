@@ -4,10 +4,57 @@ import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "
 import { streamScanImage, loadScanImageBase64, uploadScanImage } from "../lib/imageStorage.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
+import { analyzeCaptureFields } from "../lib/capture-validation.js";
+
+// Builds the additive OCR-metadata + deterministic-validation columns persisted on a
+// scan after a successful extraction. `captureSource` defaults to "camera" (the only
+// server-side capture path today); QR/vCard/NFC callers pass their own source. The
+// validation summary is computed deterministically from the extracted fields — no AI,
+// no fabrication — and stored so the review UI can show it without re-deriving.
+function ocrPersistFields(
+  ocr: Awaited<ReturnType<typeof extractCardData>>,
+  captureSource = "camera",
+): Record<string, unknown> {
+  const v = analyzeCaptureFields({
+    firstName: ocr.fields.firstName,
+    lastName: ocr.fields.lastName,
+    jobTitle: ocr.fields.jobTitle,
+    company: ocr.fields.company,
+    email: ocr.fields.email,
+    mobile: ocr.fields.mobile,
+    website: ocr.fields.website,
+    linkedin: ocr.fields.linkedin,
+    address: ocr.fields.address,
+  });
+  return {
+    fieldConfidences: JSON.stringify(ocr.fieldConfidences),
+    extractionMethod: ocr.extractionMethod,
+    captureSource,
+    aiModel: ocr.model,
+    promptVersion: ocr.promptVersion,
+    processingTimeMs: ocr.processingTimeMs,
+    validationStatus: JSON.stringify({ validations: v.validations, suggestions: v.suggestions, detectedCountry: v.detectedCountry, detectedDialCode: v.detectedDialCode }),
+  };
+}
 
 /** Return the public-facing API image URL for a scan (or null if not stored). */
 export function scanImageApiUrl(scanId: number, hasImage: boolean): string | null {
   return hasImage ? `/api/scans/${scanId}/image` : null;
+}
+
+function parseJsonSafe(v: string | null | undefined): unknown {
+  if (v == null) return null;
+  try { return JSON.parse(v); } catch { return null; }
+}
+
+// The additive Stage 5E metadata columns are stored as JSON text but exposed as objects
+// in the API contract — parse them for every scan response so clients get structured data.
+function parsedScanMeta(row: { fieldConfidences?: string | null; validationStatus?: string | null; qualityMeta?: string | null } | undefined) {
+  return {
+    fieldConfidences: parseJsonSafe(row?.fieldConfidences),
+    validationStatus: parseJsonSafe(row?.validationStatus),
+    qualityMeta: parseJsonSafe(row?.qualityMeta),
+  };
 }
 
 export async function listScans(user: AuthUser, query: Record<string, string>) {
@@ -16,6 +63,7 @@ export async function listScans(user: AuthUser, query: Record<string, string>) {
   const formatted = scans.map((s) => ({
     ...s,
     extractedData: s.extractedData ? JSON.parse(s.extractedData) : null,
+    ...parsedScanMeta(s),
     imageUrl: scanImageApiUrl(s.id, s.imageUrl !== null),
   }));
   return { scans: formatted, total };
@@ -29,12 +77,15 @@ export interface CreateScanResult {
   body: Record<string, unknown>;
 }
 
-export async function createScan(user: AuthUser, body: { imageData?: string; eventId?: unknown; appLanguage?: string }): Promise<CreateScanResult> {
+export async function createScan(user: AuthUser, body: { imageData?: string; eventId?: unknown; appLanguage?: string; captureSource?: string | null; qualityScore?: number | null; qualityMeta?: unknown }): Promise<CreateScanResult> {
   const companyId = user.companyId;
   if (!companyId) throw new AppError(400, "No company context");
   const { imageData, appLanguage } = body;
   if (!imageData) throw new AppError(400, "imageData required");
   const lang = appLanguage === "ar" ? "ar" : "en";
+  const captureSource = typeof body.captureSource === "string" && body.captureSource.length > 0 ? body.captureSource : "camera";
+  const qualityScore = typeof body.qualityScore === "number" ? body.qualityScore : null;
+  const qualityMeta = body.qualityMeta != null ? JSON.stringify(body.qualityMeta) : null;
 
   // Increment company scans used
   await scansRepo.incrementScansUsed(companyId);
@@ -65,6 +116,7 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
       body: {
         ...failed,
         extractedData: null,
+        ...parsedScanMeta(failed),
         imageUrl: scanImageApiUrl(scan.id, true),
         error: "Could not read the card. Please retake the photo.",
       },
@@ -76,6 +128,9 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
     extractedData: JSON.stringify(ocrResult!.fields),
     rawOcr: ocrResult!.rawOcr,
     confidence: ocrResult!.confidence,
+    ...ocrPersistFields(ocrResult!, captureSource),
+    qualityScore,
+    qualityMeta,
   });
   return {
     scanId: scan.id,
@@ -85,6 +140,7 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
     body: {
       ...updated,
       extractedData: ocrResult!.fields,
+      ...parsedScanMeta(updated),
       imageUrl: scanImageApiUrl(scan.id, true),
     },
   };
@@ -111,6 +167,7 @@ export async function getScan(user: AuthUser, id: number) {
   return {
     ...scan,
     extractedData: scan.extractedData ? JSON.parse(scan.extractedData) : null,
+    ...parsedScanMeta(scan),
     imageUrl: scanImageApiUrl(scan.id, scan.imageUrl !== null),
   };
 }
@@ -148,10 +205,12 @@ export async function reprocessScan(user: AuthUser, id: number, body: { appLangu
     extractedData: JSON.stringify(ocr.fields),
     rawOcr: ocr.rawOcr,
     confidence: ocr.confidence,
+    ...ocrPersistFields(ocr, scan.captureSource ?? "camera"),
   });
   return {
     ...updated,
     extractedData: ocr.fields,
+    ...parsedScanMeta(updated),
     imageUrl: scanImageApiUrl(id, true),
   };
 }
@@ -192,10 +251,12 @@ export async function replaceScanImage(user: AuthUser, id: number, body: { image
     extractedData: JSON.stringify(ocr.fields),
     rawOcr: ocr.rawOcr,
     confidence: ocr.confidence,
+    ...ocrPersistFields(ocr, scan.captureSource ?? "camera"),
   });
   return {
     ...updated,
     extractedData: ocr.fields,
+    ...parsedScanMeta(updated),
     imageUrl: scanImageApiUrl(id, true),
   };
 }

@@ -15,6 +15,16 @@ export const scansTable = pgTable("scans", {
   extractedData: text("extracted_data"), // JSON
   rawOcr: text("raw_ocr"),
   confidence: integer("confidence"), // 0-100 AI extraction confidence
+  // ── Stage 5E Intelligent Capture Engine metadata (all additive + nullable) ──
+  fieldConfidences: text("field_confidences"), // JSON map field->0-100 per-field OCR confidence
+  extractionMethod: text("extraction_method"), // ai_vision | qr | vcard | nfc | manual
+  captureSource: text("capture_source"), // camera | qr | vcard | digital_card | email_signature | nfc | manual
+  aiModel: text("ai_model"), // model that produced the extraction (provenance)
+  promptVersion: integer("prompt_version"), // extraction prompt version (provenance)
+  processingTimeMs: integer("processing_time_ms"), // OCR round-trip latency
+  validationStatus: text("validation_status"), // JSON deterministic validation summary
+  qualityScore: integer("quality_score"), // 0-100 on-device capture-quality heuristic (mobile)
+  qualityMeta: text("quality_meta"), // JSON on-device quality signals (brightness/sharpness/coverage)
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [
   index("scans_company_id_idx").on(t.companyId),

@@ -3,7 +3,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,10 +21,17 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  type CaptureAnalysis,
+  type CaptureFields,
+  type ContactMatch,
   type ExtractedCardData,
   type ExtractedCardOriginal,
+  type FieldValidation,
   getBaseUrl,
   type LeadScorePreview,
+  type OrganizationMatch,
+  type SmartSuggestion,
+  useAnalyzeCapture,
   useCreateContact,
   useReplaceScanImage,
   useReprocessScan,
@@ -112,6 +119,74 @@ export default function ScanReviewScreen() {
   const replaceImage = useReplaceScanImage();
   const [scorePreview, setScorePreview] = useState<LeadScorePreview | null>(null);
   const [formKey, setFormKey] = useState(0);
+
+  // Build the contact-form value object from OCR extraction. Used to seed the
+  // form and to reset it after reprocess/replace.
+  const buildFormValues = useCallback(
+    (e: ExtractedCardData | null): ContactFormValues => {
+      const d = e ?? ({} as ExtractedCardData);
+      return {
+        ...EMPTY_CONTACT,
+        firstName: d.firstName ?? "",
+        lastName: d.lastName ?? "",
+        jobTitle: d.jobTitle ?? "",
+        contactCompany: d.company ?? "",
+        email: d.email ?? "",
+        mobile: d.mobile ?? "",
+        officePhone: d.officePhone ?? "",
+        website: d.website ?? "",
+        linkedin: d.linkedin ?? "",
+        country: d.country ?? "",
+        address: d.address ?? "",
+        notes: d.arabicName ? `${t("scanReview.arabicName")}: ${d.arabicName}` : "",
+      };
+    },
+    [t],
+  );
+
+  // Live source-of-truth for the review form. Kept in sync via ContactForm's
+  // onChange so the intelligence panel can analyze edits and Apply can write back.
+  const [formValues, setFormValues] = useState<ContactFormValues>(() =>
+    buildFormValues(extracted),
+  );
+
+  // Capture Intelligence (Stage 5E): additive, advisory-only analysis of the
+  // captured fields. Never auto-applies, auto-links, or auto-merges.
+  const analyze = useAnalyzeCapture();
+  const analyzeRef = useRef(analyze);
+  analyzeRef.current = analyze;
+  const [analysis, setAnalysis] = useState<CaptureAnalysis | null>(null);
+
+  const runAnalyze = useCallback((values: ContactFormValues) => {
+    const fields = buildCaptureFields(values);
+    if (!hasAnyCaptureField(fields)) {
+      setAnalysis(null);
+      return;
+    }
+    analyzeRef.current.mutate(
+      { data: { fields, includeAi: true } },
+      { onSuccess: (res) => setAnalysis(res) },
+    );
+  }, []);
+
+  // Debounce field edits (~600ms) before re-analyzing.
+  useEffect(() => {
+    const fields = buildCaptureFields(formValues);
+    if (!hasAnyCaptureField(fields)) {
+      setAnalysis(null);
+      return;
+    }
+    const id = setTimeout(() => runAnalyze(formValues), 600);
+    return () => clearTimeout(id);
+  }, [formValues, runAnalyze]);
+
+  // Apply a suggested value into the form (user-initiated only).
+  const applySuggestion = useCallback((field: string, value: string) => {
+    const key = FIELD_TO_FORM[field];
+    if (!key) return;
+    setFormValues((prev) => ({ ...prev, [key]: value }));
+    setFormKey((k) => k + 1);
+  }, []);
   const [imageVersion, setImageVersion] = useState(0);
   const [rotation, setRotation] = useState(0);
 
@@ -150,6 +225,7 @@ export default function ScanReviewScreen() {
       const res = await reprocess.mutateAsync({ id: scanId, data: { appLanguage: ocrLang } });
       if (res.extractedData) {
         setExtracted(res.extractedData);
+        setFormValues(buildFormValues(res.extractedData));
         setFormKey((k) => k + 1);
       }
     } catch {
@@ -193,6 +269,7 @@ export default function ScanReviewScreen() {
       setImageVersion((v) => v + 1);
       if (res.extractedData) {
         setExtracted(res.extractedData);
+        setFormValues(buildFormValues(res.extractedData));
         setFormKey((k) => k + 1);
       }
     } catch {
@@ -201,27 +278,6 @@ export default function ScanReviewScreen() {
   }
 
   const reviewBusy = reprocess.isPending || rerunAi.isPending || replaceImage.isPending;
-
-  const initial = useMemo<ContactFormValues>(() => {
-    const e = extracted ?? ({} as ExtractedCardData);
-    return {
-      ...EMPTY_CONTACT,
-      firstName: e.firstName ?? "",
-      lastName: e.lastName ?? "",
-      jobTitle: e.jobTitle ?? "",
-      contactCompany: e.company ?? "",
-      email: e.email ?? "",
-      mobile: e.mobile ?? "",
-      officePhone: e.officePhone ?? "",
-      website: e.website ?? "",
-      linkedin: e.linkedin ?? "",
-      country: e.country ?? "",
-      address: e.address ?? "",
-      notes: e.arabicName
-        ? `${t("scanReview.arabicName")}: ${e.arabicName}`
-        : "",
-    };
-  }, [extracted, t]);
 
   const confidence = parseNum(params.conf);
   const confidenceTone = useMemo(() => {
@@ -516,16 +572,315 @@ export default function ScanReviewScreen() {
         </View>
       ) : null}
 
+      <CaptureIntelligence
+        analysis={analysis}
+        loading={analyze.isPending}
+        onApply={applySuggestion}
+        onRecheck={() => runAnalyze(formValues)}
+      />
+
       <ContactForm
         key={formKey}
-        initial={initial}
+        initial={formValues}
         submitLabel={
           createContact.isPending ? t("scanReview.saving") : t("scanReview.saveContact")
         }
         submitting={createContact.isPending}
         onSubmit={handleSave}
+        onChange={setFormValues}
       />
     </KeyboardAwareScrollView>
+  );
+}
+
+// Analyze field → contact-form key. `company` maps to the form's contactCompany.
+// Fields with no matching form input (e.g. postalCode) are intentionally absent
+// so their suggestions render without an Apply action.
+const FIELD_TO_FORM: Record<string, keyof ContactFormValues> = {
+  firstName: "firstName",
+  lastName: "lastName",
+  jobTitle: "jobTitle",
+  company: "contactCompany",
+  email: "email",
+  mobile: "mobile",
+  officePhone: "officePhone",
+  website: "website",
+  linkedin: "linkedin",
+  country: "country",
+  address: "address",
+};
+
+/** Map the review form values to the analyze request body (company→company). */
+function buildCaptureFields(v: ContactFormValues): CaptureFields {
+  const clean = (s: string): string | undefined => {
+    const trimmed = s.trim();
+    return trimmed.length ? trimmed : undefined;
+  };
+  return {
+    firstName: clean(v.firstName),
+    lastName: clean(v.lastName),
+    jobTitle: clean(v.jobTitle),
+    company: clean(v.contactCompany),
+    email: clean(v.email),
+    mobile: clean(v.mobile),
+    officePhone: clean(v.officePhone),
+    website: clean(v.website),
+    linkedin: clean(v.linkedin),
+    country: clean(v.country),
+    address: clean(v.address),
+  };
+}
+
+function hasAnyCaptureField(f: CaptureFields): boolean {
+  return Object.values(f).some((v) => v != null && v !== "");
+}
+
+/**
+ * Capture Intelligence panel (Stage 5E). Advisory-only surface: duplicate
+ * warning, existing-contact matches, organization matches, field validation,
+ * and smart suggestions with a user-initiated Apply. Never auto-applies,
+ * auto-links, or auto-merges.
+ */
+function CaptureIntelligence({
+  analysis,
+  loading,
+  onApply,
+  onRecheck,
+}: {
+  analysis: CaptureAnalysis | null;
+  loading: boolean;
+  onApply: (field: string, value: string) => void;
+  onRecheck: () => void;
+}) {
+  const colors = useColors();
+  const router = useRouter();
+  const { t, isRTL, textAlign } = useLocale();
+
+  if (!analysis && !loading) return null;
+
+  const dup = analysis?.duplicateWarning;
+  const contactMatches = analysis?.contactMatches ?? [];
+  const orgMatches = analysis?.organizationMatches ?? [];
+  const validationIssues = (analysis?.validation.validations ?? []).filter(
+    (v) => v.status === "invalid" || v.status === "warning",
+  );
+  const detectedCountry = analysis?.validation.detectedCountry ?? null;
+  const detectedDialCode = analysis?.validation.detectedDialCode ?? null;
+  const suggestions = analysis?.suggestions ?? [];
+  const aiDegraded = analysis?.aiDegraded ?? false;
+
+  const rowDir = isRTL ? "row-reverse" : "row";
+
+  return (
+    <View
+      style={[
+        styles.intelCard,
+        { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 },
+      ]}
+    >
+      <View style={[styles.intelHeader, { flexDirection: rowDir }]}>
+        <Feather name="zap" size={15} color={colors.primary} />
+        <Text style={[styles.intelHeading, { color: colors.foreground, textAlign }]}>
+          {t("captureIntel.title")}
+        </Text>
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <Pressable onPress={onRecheck} hitSlop={8} style={[styles.recheckBtn, { flexDirection: rowDir }]}>
+            <Feather name="refresh-cw" size={13} color={colors.primary} />
+            <Text style={[styles.recheckText, { color: colors.primary }]}>
+              {t("captureIntel.recheck")}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      {aiDegraded ? (
+        <Text style={[styles.intelNote, { color: colors.mutedForeground, textAlign }]}>
+          {t("captureIntel.aiUnavailable")}
+        </Text>
+      ) : null}
+
+      {/* Duplicate warning — advisory only, never auto-merges. */}
+      {dup?.isLikelyDuplicate ? (
+        <View
+          style={[
+            styles.dupBox,
+            { backgroundColor: "#d9770614", borderColor: "#d97706", borderRadius: colors.radius },
+          ]}
+        >
+          <View style={[styles.dupHeaderRow, { flexDirection: rowDir }]}>
+            <Feather name="alert-triangle" size={15} color="#d97706" />
+            <Text style={[styles.dupTitle, { color: "#b45309", textAlign }]}>
+              {t("captureIntel.duplicateTitle")}
+            </Text>
+          </View>
+          {dup.message ? (
+            <Text style={[styles.dupMsg, { color: colors.foreground, textAlign }]}>{dup.message}</Text>
+          ) : null}
+          <Text style={[styles.dupSub, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.duplicateMatch", { confidence: Math.round(dup.topMatchConfidence) })}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Existing contact matches — tappable to the contact detail screen. */}
+      {contactMatches.length > 0 ? (
+        <View style={styles.intelSection}>
+          <Text style={[styles.intelSectionTitle, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.contactMatchesTitle")}
+          </Text>
+          {contactMatches.map((c: ContactMatch) => (
+            <Pressable
+              key={c.contactId}
+              onPress={() => router.push(`/contact/${c.contactId}`)}
+              style={[
+                styles.matchRow,
+                { borderColor: colors.border, borderRadius: colors.radius, flexDirection: rowDir },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.matchName, { color: colors.foreground, textAlign }]} numberOfLines={1}>
+                  {c.fullName || c.email || c.contactCompany || `#${c.contactId}`}
+                </Text>
+                {c.reasons.length > 0 ? (
+                  <Text style={[styles.matchReason, { color: colors.mutedForeground, textAlign }]} numberOfLines={2}>
+                    {c.reasons.join(" · ")}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={[styles.confChip, { backgroundColor: colors.accent }]}>
+                <Text style={[styles.confChipText, { color: colors.primary }]}>
+                  {t("captureIntel.matchConfidence", { confidence: Math.round(c.confidence) })}
+                </Text>
+              </View>
+              <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={16} color={colors.mutedForeground} />
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Organization matches. */}
+      {orgMatches.length > 0 ? (
+        <View style={styles.intelSection}>
+          <Text style={[styles.intelSectionTitle, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.orgMatchesTitle")}
+          </Text>
+          {orgMatches.map((o: OrganizationMatch) => (
+            <Pressable
+              key={o.organizationId}
+              onPress={() => router.push(`/company/${o.organizationId}`)}
+              style={[
+                styles.matchRow,
+                { borderColor: colors.border, borderRadius: colors.radius, flexDirection: rowDir },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.matchName, { color: colors.foreground, textAlign }]} numberOfLines={1}>
+                  {o.name}
+                </Text>
+                <Text style={[styles.matchReason, { color: colors.mutedForeground, textAlign }]} numberOfLines={1}>
+                  {t("captureIntel.orgCounts", { contacts: o.contactCount, leads: o.leadCount })}
+                </Text>
+              </View>
+              <View style={[styles.matchTypePill, { backgroundColor: colors.accent }]}>
+                <Text style={[styles.matchTypeText, { color: colors.primary }]}>
+                  {o.matchType === "exact" ? t("captureIntel.matchExact") : t("captureIntel.matchPartial")}
+                </Text>
+              </View>
+              <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={16} color={colors.mutedForeground} />
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Field validation issues + detected locale. */}
+      {validationIssues.length > 0 || detectedCountry || detectedDialCode ? (
+        <View style={styles.intelSection}>
+          <Text style={[styles.intelSectionTitle, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.validationTitle")}
+          </Text>
+          {detectedCountry || detectedDialCode ? (
+            <Text style={[styles.detectedText, { color: colors.mutedForeground, textAlign }]}>
+              {detectedCountry && detectedDialCode
+                ? t("captureIntel.detected", { country: detectedCountry, dialCode: detectedDialCode })
+                : detectedCountry
+                  ? t("captureIntel.detectedCountry", { country: detectedCountry })
+                  : t("captureIntel.detectedDialCode", { dialCode: detectedDialCode })}
+            </Text>
+          ) : null}
+          {validationIssues.map((v: FieldValidation, i: number) => {
+            const tone = v.status === "invalid" ? colors.destructive : "#d97706";
+            return (
+              <View key={`${v.field}-${i}`} style={[styles.validationRow, { flexDirection: rowDir }]}>
+                <Feather
+                  name={v.status === "invalid" ? "x-circle" : "alert-circle"}
+                  size={14}
+                  color={tone}
+                />
+                <Text style={[styles.validationText, { color: colors.foreground, textAlign }]} numberOfLines={2}>
+                  {v.message ||
+                    (v.status === "invalid"
+                      ? t("captureIntel.statusInvalid")
+                      : t("captureIntel.statusWarning"))}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {/* Smart suggestions — user-initiated Apply only. */}
+      {suggestions.length > 0 ? (
+        <View style={styles.intelSection}>
+          <Text style={[styles.intelSectionTitle, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.suggestionsTitle")}
+          </Text>
+          {suggestions.map((s: SmartSuggestion, i: number) => {
+            const canApply = !!FIELD_TO_FORM[s.field];
+            const isAi = s.source === "ai";
+            return (
+              <View
+                key={`${s.field}-${i}`}
+                style={[
+                  styles.suggestionRow,
+                  { borderColor: colors.border, borderRadius: colors.radius, flexDirection: rowDir },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <View style={[styles.suggestionValueRow, { flexDirection: rowDir }]}>
+                    <Text style={[styles.suggestionValue, { color: colors.foreground, textAlign }]} numberOfLines={1}>
+                      {s.suggested}
+                    </Text>
+                    <View
+                      style={[
+                        styles.provBadge,
+                        { backgroundColor: isAi ? colors.primary + "1A" : colors.accent },
+                      ]}
+                    >
+                      <Text style={[styles.provBadgeText, { color: isAi ? colors.primary : colors.mutedForeground }]}>
+                        {isAi ? t("captureIntel.aiBadge") : t("captureIntel.ruleBadge")}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.suggestionReason, { color: colors.mutedForeground, textAlign }]} numberOfLines={2}>
+                    {s.reason}
+                  </Text>
+                </View>
+                {canApply ? (
+                  <Pressable
+                    onPress={() => onApply(s.field, s.suggested)}
+                    style={[styles.applyBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+                  >
+                    <Text style={styles.applyBtnText}>{t("captureIntel.apply")}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -570,6 +925,156 @@ function ReviewAction({
 }
 
 const styles = StyleSheet.create({
+  intelCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    marginBottom: 16,
+    gap: 12,
+  },
+  intelHeader: {
+    alignItems: "center",
+    gap: 8,
+  },
+  intelHeading: {
+    fontSize: 14,
+    fontFamily: FONT.semibold,
+    flex: 1,
+  },
+  recheckBtn: {
+    alignItems: "center",
+    gap: 4,
+  },
+  recheckText: {
+    fontSize: 12,
+    fontFamily: FONT.semibold,
+  },
+  intelNote: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    marginTop: -4,
+  },
+  dupBox: {
+    borderWidth: 1,
+    padding: 12,
+    gap: 6,
+  },
+  dupHeaderRow: {
+    alignItems: "center",
+    gap: 8,
+  },
+  dupTitle: {
+    fontSize: 13.5,
+    fontFamily: FONT.semibold,
+    flex: 1,
+  },
+  dupMsg: {
+    fontSize: 13,
+    fontFamily: FONT.medium,
+    lineHeight: 18,
+  },
+  dupSub: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+  },
+  intelSection: {
+    gap: 8,
+  },
+  intelSectionTitle: {
+    fontSize: 11.5,
+    fontFamily: FONT.semibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  matchRow: {
+    alignItems: "center",
+    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  matchName: {
+    fontSize: 13.5,
+    fontFamily: FONT.semibold,
+  },
+  matchReason: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    marginTop: 2,
+  },
+  confChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  confChipText: {
+    fontSize: 11,
+    fontFamily: FONT.semibold,
+  },
+  matchTypePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  matchTypeText: {
+    fontSize: 11,
+    fontFamily: FONT.semibold,
+    textTransform: "capitalize",
+  },
+  detectedText: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+  },
+  validationRow: {
+    alignItems: "center",
+    gap: 8,
+  },
+  validationText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontFamily: FONT.regular,
+    lineHeight: 17,
+  },
+  suggestionRow: {
+    alignItems: "center",
+    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  suggestionValueRow: {
+    alignItems: "center",
+    gap: 8,
+  },
+  suggestionValue: {
+    fontSize: 13.5,
+    fontFamily: FONT.semibold,
+    flexShrink: 1,
+  },
+  provBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  provBadgeText: {
+    fontSize: 10,
+    fontFamily: FONT.semibold,
+    letterSpacing: 0.3,
+  },
+  suggestionReason: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  applyBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  applyBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontFamily: FONT.semibold,
+  },
   reviewCard: {
     borderWidth: StyleSheet.hairlineWidth,
     padding: 14,

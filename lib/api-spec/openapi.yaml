@@ -3337,6 +3337,72 @@ paths:
               schema:
                 $ref: "#/components/schemas/Scan"
 
+  /scans/analyze:
+    post:
+      operationId: analyzeCapture
+      tags: [scans]
+      summary: Analyze captured (not-yet-saved) card fields — validation, recognition, and suggestions
+      description: >-
+        Read-only intelligent-capture analysis over the fields on a card being captured.
+        Returns deterministic validation + normalization suggestions, recognition of
+        existing contacts/organizations in the tenant, a duplicate warning, and smart
+        gap-fill suggestions (best-effort AI industry soft-degrades). NEVER writes, links,
+        merges, or auto-applies anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureAnalyzeInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureAnalysis"
+
+  /scans/batch-analyze:
+    post:
+      operationId: startCaptureBatch
+      tags: [scans]
+      summary: Analyze many captured cards at once (async batch)
+      description: >-
+        Enqueues one read-only analysis per submitted item and returns 202 immediately.
+        Poll GET /scans/batch/{jobId} for progress and per-item results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureBatchInput"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureBatchJob"
+
+  /scans/batch/{jobId}:
+    get:
+      operationId: getCaptureBatch
+      tags: [scans]
+      summary: Get capture batch-analysis status + results
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureBatchJob"
+
   /scans/{id}:
     get:
       operationId: getScan
@@ -8953,6 +9019,35 @@ components:
           $ref: "#/components/schemas/ExtractedCardData"
         confidence:
           type: ["integer", "null"]
+        fieldConfidences:
+          type: ["object", "null"]
+          additionalProperties:
+            type: integer
+          description: "Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence)."
+        extractionMethod:
+          type: ["string", "null"]
+          description: "How the data was extracted: ai_vision | qr | vcard | nfc | manual."
+        captureSource:
+          type: ["string", "null"]
+          description: "Where the card came from: camera | qr | vcard | digital_card | email_signature | nfc | manual."
+        aiModel:
+          type: ["string", "null"]
+          description: "Provenance: the model that produced the extraction."
+        promptVersion:
+          type: ["integer", "null"]
+          description: "Provenance: the extraction prompt version."
+        processingTimeMs:
+          type: ["integer", "null"]
+          description: "OCR round-trip latency in milliseconds."
+        validationStatus:
+          type: ["object", "null"]
+          description: "Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation)."
+        qualityScore:
+          type: ["integer", "null"]
+          description: "0-100 on-device capture-quality heuristic (mobile best-effort)."
+        qualityMeta:
+          type: ["object", "null"]
+          description: "On-device quality signals (brightness/sharpness/coverage). Opaque JSON."
         createdAt:
           type: string
           format: date-time
@@ -8991,6 +9086,270 @@ components:
           type: ["number", "null"]
         gpsAccuracy:
           type: ["number", "null"]
+        captureSource:
+          type: ["string", "null"]
+          enum: [camera, qr, vcard, digital_card, email_signature, nfc, manual, null]
+          description: "Where the card came from. Defaults to camera when omitted."
+        qualityScore:
+          type: ["integer", "null"]
+          description: "0-100 on-device capture-quality heuristic (mobile best-effort)."
+        qualityMeta:
+          type: ["object", "null"]
+          description: "On-device quality signals (brightness/sharpness/coverage). Opaque JSON."
+
+    CaptureFields:
+      type: object
+      description: "Captured (not-yet-saved) card fields to analyze. All optional."
+      properties:
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        jobTitle:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        mobile:
+          type: ["string", "null"]
+        officePhone:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        linkedin:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
+
+    CaptureAnalyzeInput:
+      type: object
+      required: [fields]
+      properties:
+        fields:
+          $ref: "#/components/schemas/CaptureFields"
+        includeAi:
+          type: boolean
+          default: true
+          description: "When false, skips the best-effort AI industry classification (pure deterministic)."
+
+    FieldValidation:
+      type: object
+      required: [field, status]
+      properties:
+        field:
+          type: string
+        value:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [valid, invalid, warning, empty]
+        message:
+          type: string
+        dialCode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        e164:
+          type: ["string", "null"]
+
+    NormalizationSuggestion:
+      type: object
+      required: [field, original, suggested, reason]
+      properties:
+        field:
+          type: string
+        original:
+          type: string
+        suggested:
+          type: string
+        reason:
+          type: string
+
+    CaptureValidationResult:
+      type: object
+      required: [validations, suggestions, detectedCountry, detectedDialCode]
+      properties:
+        validations:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldValidation"
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/NormalizationSuggestion"
+        detectedCountry:
+          type: ["string", "null"]
+        detectedDialCode:
+          type: ["string", "null"]
+
+    ContactMatch:
+      type: object
+      required: [contactId, confidence, reasons]
+      properties:
+        contactId:
+          type: integer
+        fullName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        mobile:
+          type: ["string", "null"]
+        contactCompany:
+          type: ["string", "null"]
+        status:
+          type: string
+        confidence:
+          type: integer
+        reasons:
+          type: array
+          items:
+            type: string
+
+    OrganizationMatch:
+      type: object
+      required: [organizationId, name, contactCount, leadCount, matchType]
+      properties:
+        organizationId:
+          type: integer
+        name:
+          type: string
+        industry:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        contactCount:
+          type: integer
+        leadCount:
+          type: integer
+        matchType:
+          type: string
+          enum: [exact, partial]
+
+    SmartSuggestion:
+      type: object
+      required: [field, suggested, reason, source]
+      properties:
+        field:
+          type: string
+        suggested:
+          type: string
+        reason:
+          type: string
+        source:
+          type: string
+          enum: [deterministic, ai]
+        provider:
+          type: ["string", "null"]
+        model:
+          type: ["string", "null"]
+        promptKey:
+          type: ["string", "null"]
+        promptVersion:
+          type: ["integer", "null"]
+
+    CaptureAnalysis:
+      type: object
+      required: [validation, contactMatches, organizationMatches, duplicateWarning, suggestions, aiDegraded]
+      properties:
+        validation:
+          $ref: "#/components/schemas/CaptureValidationResult"
+        contactMatches:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactMatch"
+        organizationMatches:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrganizationMatch"
+        duplicateWarning:
+          type: object
+          required: [isLikelyDuplicate, topMatchConfidence, message]
+          properties:
+            isLikelyDuplicate:
+              type: boolean
+            topMatchConfidence:
+              type: integer
+            message:
+              type: ["string", "null"]
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SmartSuggestion"
+        aiDegraded:
+          type: boolean
+          description: "True when an AI-backed suggestion was attempted but the provider was unavailable/failed. Deterministic results remain valid."
+
+    CaptureBatchItem:
+      type: object
+      required: [key, fields]
+      properties:
+        key:
+          type: string
+          description: "Client-provided identifier echoed back on the matching result."
+        fields:
+          $ref: "#/components/schemas/CaptureFields"
+
+    CaptureBatchInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureBatchItem"
+
+    CaptureBatchJob:
+      type: object
+      required: [id, companyId, requestedById, status, total, processed, succeeded, failed, results, errors, startedAt, finishedAt]
+      properties:
+        id:
+          type: string
+        companyId:
+          type: integer
+        requestedById:
+          type: integer
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        total:
+          type: integer
+        processed:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            required: [key, analysis]
+            properties:
+              key:
+                type: string
+              analysis:
+                $ref: "#/components/schemas/CaptureAnalysis"
+        errors:
+          type: array
+          items:
+            type: object
+            required: [key, message]
+            properties:
+              key:
+                type: string
+              message:
+                type: string
+        startedAt:
+          type: string
+        finishedAt:
+          type: ["string", "null"]
 
     ReprocessScanInput:
       type: object

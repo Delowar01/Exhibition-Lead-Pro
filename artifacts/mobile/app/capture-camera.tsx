@@ -116,6 +116,58 @@ function pickCaptureSize(sizes: string[]): string | undefined {
   return (adequate ?? parsed[parsed.length - 1]).s;
 }
 
+// On-device capture-quality heuristic (Stage 5E). BEST-EFFORT and purely
+// JS/cross-platform: it derives a quality score from the JPEG detail density
+// (bytes per pixel) of the already-captured, resized image. A well-lit, in-focus
+// card produces more high-frequency detail → a larger JPEG; a dark/blurry
+// capture compresses smaller. No native-only APIs are used, so it degrades
+// gracefully on web/Expo Go — if dimensions/payload are unavailable it returns
+// null and the indicator is simply hidden. Advisory only; never blocks capture.
+interface CaptureQuality {
+  score: number;
+  meta: {
+    heuristic: string;
+    bytesPerPixel: number;
+    payloadKb: number;
+    width: number;
+    height: number;
+  };
+}
+
+function computeCaptureQuality(
+  imageData: string,
+  srcW: number,
+  srcH: number,
+  outW: number,
+): CaptureQuality | null {
+  try {
+    if (!imageData.startsWith("data:image")) return null;
+    const commaIdx = imageData.indexOf(",");
+    const b64 = commaIdx >= 0 ? imageData.slice(commaIdx + 1) : "";
+    if (!b64 || !srcW || !srcH || !outW) return null;
+    const bytes = Math.round(b64.length * 0.75);
+    const outH = Math.round(outW * (srcH / srcW));
+    const pixels = outW * outH;
+    if (pixels <= 0) return null;
+    const bpp = bytes / pixels;
+    const LO = 0.12;
+    const HI = 0.55;
+    const score = Math.max(0, Math.min(100, Math.round(((bpp - LO) / (HI - LO)) * 100)));
+    return {
+      score,
+      meta: {
+        heuristic: "jpeg-detail-density",
+        bytesPerPixel: Math.round(bpp * 1000) / 1000,
+        payloadKb: Math.round(bytes / 1024),
+        width: outW,
+        height: outH,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function CaptureCameraScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -142,6 +194,8 @@ export default function CaptureCameraScreen() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [batchCount, setBatchCount] = useState(0);
+  // Transient on-device capture-quality indicator (advisory only).
+  const [lastQuality, setLastQuality] = useState<CaptureQuality | null>(null);
   // Direct lower-res capture (set once the camera is ready). undefined = sensor
   // default until we've queried the device's supported sizes.
   const [pictureSize, setPictureSize] = useState<string | undefined>(undefined);
@@ -283,6 +337,7 @@ export default function CaptureCameraScreen() {
         payloadKb: number;
         tStart: number;
       } | null,
+      quality: CaptureQuality | null,
     ) => {
       const tOcr = Date.now();
       try {
@@ -295,6 +350,8 @@ export default function CaptureCameraScreen() {
             latitude: gps.latitude,
             longitude: gps.longitude,
             gpsAccuracy: gps.gpsAccuracy,
+            qualityScore: quality?.score ?? null,
+            qualityMeta: quality?.meta ?? null,
           },
         });
         const uploadAndOcrMs = Date.now() - tOcr;
@@ -381,6 +438,12 @@ export default function CaptureCameraScreen() {
       scanLog("image captured", { mode, source, captureMs, payloadKb, pictureSize });
       const gps = { ...gpsRef.current };
 
+      // On-device capture-quality heuristic (advisory). Surfaced as a transient
+      // indicator and attached to the scan; never gates the capture.
+      const ct = capturePerfRef.current;
+      const quality = ct ? computeCaptureQuality(imageData, ct.srcW, ct.srcH, ct.outW) : null;
+      setLastQuality(quality);
+
       // #4 Batch — capture image and start background OCR immediately so results
       // are already computed (or partially computed) by the time the user reaches
       // the review screen. This eliminates the sequential OCR wait at review time.
@@ -411,6 +474,8 @@ export default function CaptureCameraScreen() {
                 latitude: gps.latitude,
                 longitude: gps.longitude,
                 gpsAccuracy: gps.gpsAccuracy,
+                qualityScore: quality?.score ?? null,
+                qualityMeta: quality?.meta ?? null,
               },
             });
             const uploadAndOcrMs = Date.now() - tOcr;
@@ -491,6 +556,8 @@ export default function CaptureCameraScreen() {
             latitude: gps.latitude,
             longitude: gps.longitude,
             gpsAccuracy: gps.gpsAccuracy,
+            qualityScore: quality?.score ?? null,
+            qualityMeta: quality?.meta ?? null,
           },
         });
         const uploadAndOcrMs = Date.now() - tOcr;
@@ -549,7 +616,7 @@ export default function CaptureCameraScreen() {
       const rapidPerfTiming = capturePerfRef.current
         ? { ...capturePerfRef.current, payloadKb, tStart }
         : null;
-      void processRapid(imageData, gps, rapidPerfTiming);
+      void processRapid(imageData, gps, rapidPerfTiming, quality);
     } catch (e) {
       scanLog("capture: FAILED", {
         status: e instanceof ApiError ? e.status : undefined,
@@ -631,6 +698,15 @@ export default function CaptureCameraScreen() {
     );
   }
 
+  // Advisory capture-quality band → color + label. good ≥66 / fair ≥40 / poor.
+  const qualityBand = lastQuality
+    ? lastQuality.score >= 66
+      ? { color: "rgba(22,163,74,0.94)", label: t("capture.qualityGood"), icon: "check-circle" as const }
+      : lastQuality.score >= 40
+        ? { color: "rgba(217,119,6,0.94)", label: t("capture.qualityFair"), icon: "alert-circle" as const }
+        : { color: "rgba(220,38,38,0.94)", label: t("capture.qualityPoor"), icon: "alert-triangle" as const }
+    : null;
+
   return (
     <View style={[styles.fill, { backgroundColor: colors.dark }]}>
       <CameraView
@@ -697,6 +773,19 @@ export default function CaptureCameraScreen() {
         <View style={[styles.errorBanner, { top: topPad + 160 }]} pointerEvents="none">
           <Feather name="alert-circle" size={16} color="#FFFFFF" />
           <Text style={styles.rapidBannerText}>{errorMsg}</Text>
+        </View>
+      ) : null}
+
+      {/* Capture-quality indicator (advisory, transient) */}
+      {qualityBand ? (
+        <View
+          style={[styles.qualityBanner, { bottom: insets.bottom + 140, backgroundColor: qualityBand.color }]}
+          pointerEvents="none"
+        >
+          <Feather name={qualityBand.icon} size={15} color="#FFFFFF" />
+          <Text style={styles.rapidBannerText}>
+            {t("capture.qualityLabel")}: {qualityBand.label}
+          </Text>
         </View>
       ) : null}
 
@@ -813,6 +902,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   rapidBannerText: { color: "#FFFFFF", fontSize: 13, fontFamily: FONT.semibold },
+  qualityBanner: {
+    position: "absolute",
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
   errorBanner: {
     position: "absolute",
     alignSelf: "center",

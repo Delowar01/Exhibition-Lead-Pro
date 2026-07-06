@@ -2428,6 +2428,24 @@ export const ScanStatus = {
 } as const;
 
 /**
+ * Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence).
+ * @nullable
+ */
+export type ScanFieldConfidences = {[key: string]: number} | null;
+
+/**
+ * Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation).
+ * @nullable
+ */
+export type ScanValidationStatus = { [key: string]: unknown } | null;
+
+/**
+ * On-device quality signals (brightness/sharpness/coverage). Opaque JSON.
+ * @nullable
+ */
+export type ScanQualityMeta = { [key: string]: unknown } | null;
+
+/**
  * The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.
  */
 export interface ExtractedCardOriginal {
@@ -2500,6 +2518,51 @@ export interface Scan {
   extractedData?: ExtractedCardData;
   /** @nullable */
   confidence?: number | null;
+  /**
+     * Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence).
+     * @nullable
+     */
+  fieldConfidences?: ScanFieldConfidences;
+  /**
+     * How the data was extracted: ai_vision | qr | vcard | nfc | manual.
+     * @nullable
+     */
+  extractionMethod?: string | null;
+  /**
+     * Where the card came from: camera | qr | vcard | digital_card | email_signature | nfc | manual.
+     * @nullable
+     */
+  captureSource?: string | null;
+  /**
+     * Provenance: the model that produced the extraction.
+     * @nullable
+     */
+  aiModel?: string | null;
+  /**
+     * Provenance: the extraction prompt version.
+     * @nullable
+     */
+  promptVersion?: number | null;
+  /**
+     * OCR round-trip latency in milliseconds.
+     * @nullable
+     */
+  processingTimeMs?: number | null;
+  /**
+     * Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation).
+     * @nullable
+     */
+  validationStatus?: ScanValidationStatus;
+  /**
+     * 0-100 on-device capture-quality heuristic (mobile best-effort).
+     * @nullable
+     */
+  qualityScore?: number | null;
+  /**
+     * On-device quality signals (brightness/sharpness/coverage). Opaque JSON.
+     * @nullable
+     */
+  qualityMeta?: ScanQualityMeta;
   createdAt: string;
 }
 
@@ -2519,6 +2582,29 @@ export const ScanInputAppLanguage = {
   ar: 'ar',
 } as const;
 
+/**
+ * Where the card came from. Defaults to camera when omitted.
+ * @nullable
+ */
+export type ScanInputCaptureSource = typeof ScanInputCaptureSource[keyof typeof ScanInputCaptureSource] | null;
+
+
+export const ScanInputCaptureSource = {
+  camera: 'camera',
+  qr: 'qr',
+  vcard: 'vcard',
+  digital_card: 'digital_card',
+  email_signature: 'email_signature',
+  nfc: 'nfc',
+  manual: 'manual',
+} as const;
+
+/**
+ * On-device quality signals (brightness/sharpness/coverage). Opaque JSON.
+ * @nullable
+ */
+export type ScanInputQualityMeta = { [key: string]: unknown } | null;
+
 export interface ScanInput {
   /** Base64-encoded image */
   imageData: string;
@@ -2532,6 +2618,220 @@ export interface ScanInput {
   longitude?: number | null;
   /** @nullable */
   gpsAccuracy?: number | null;
+  /**
+     * Where the card came from. Defaults to camera when omitted.
+     * @nullable
+     */
+  captureSource?: ScanInputCaptureSource;
+  /**
+     * 0-100 on-device capture-quality heuristic (mobile best-effort).
+     * @nullable
+     */
+  qualityScore?: number | null;
+  /**
+     * On-device quality signals (brightness/sharpness/coverage). Opaque JSON.
+     * @nullable
+     */
+  qualityMeta?: ScanInputQualityMeta;
+}
+
+/**
+ * Captured (not-yet-saved) card fields to analyze. All optional.
+ */
+export interface CaptureFields {
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  /** @nullable */
+  company?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  mobile?: string | null;
+  /** @nullable */
+  officePhone?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  linkedin?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+}
+
+export interface CaptureAnalyzeInput {
+  fields: CaptureFields;
+  /** When false, skips the best-effort AI industry classification (pure deterministic). */
+  includeAi?: boolean;
+}
+
+export type FieldValidationStatus = typeof FieldValidationStatus[keyof typeof FieldValidationStatus];
+
+
+export const FieldValidationStatus = {
+  valid: 'valid',
+  invalid: 'invalid',
+  warning: 'warning',
+  empty: 'empty',
+} as const;
+
+export interface FieldValidation {
+  field: string;
+  /** @nullable */
+  value?: string | null;
+  status: FieldValidationStatus;
+  message?: string;
+  /** @nullable */
+  dialCode?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  e164?: string | null;
+}
+
+export interface NormalizationSuggestion {
+  field: string;
+  original: string;
+  suggested: string;
+  reason: string;
+}
+
+export interface CaptureValidationResult {
+  validations: FieldValidation[];
+  suggestions: NormalizationSuggestion[];
+  /** @nullable */
+  detectedCountry: string | null;
+  /** @nullable */
+  detectedDialCode: string | null;
+}
+
+export interface ContactMatch {
+  contactId: number;
+  /** @nullable */
+  fullName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  mobile?: string | null;
+  /** @nullable */
+  contactCompany?: string | null;
+  status?: string;
+  confidence: number;
+  reasons: string[];
+}
+
+export type OrganizationMatchMatchType = typeof OrganizationMatchMatchType[keyof typeof OrganizationMatchMatchType];
+
+
+export const OrganizationMatchMatchType = {
+  exact: 'exact',
+  partial: 'partial',
+} as const;
+
+export interface OrganizationMatch {
+  organizationId: number;
+  name: string;
+  /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  country?: string | null;
+  contactCount: number;
+  leadCount: number;
+  matchType: OrganizationMatchMatchType;
+}
+
+export type SmartSuggestionSource = typeof SmartSuggestionSource[keyof typeof SmartSuggestionSource];
+
+
+export const SmartSuggestionSource = {
+  deterministic: 'deterministic',
+  ai: 'ai',
+} as const;
+
+export interface SmartSuggestion {
+  field: string;
+  suggested: string;
+  reason: string;
+  source: SmartSuggestionSource;
+  /** @nullable */
+  provider?: string | null;
+  /** @nullable */
+  model?: string | null;
+  /** @nullable */
+  promptKey?: string | null;
+  /** @nullable */
+  promptVersion?: number | null;
+}
+
+export type CaptureAnalysisDuplicateWarning = {
+  isLikelyDuplicate: boolean;
+  topMatchConfidence: number;
+  /** @nullable */
+  message: string | null;
+};
+
+export interface CaptureAnalysis {
+  validation: CaptureValidationResult;
+  contactMatches: ContactMatch[];
+  organizationMatches: OrganizationMatch[];
+  duplicateWarning: CaptureAnalysisDuplicateWarning;
+  suggestions: SmartSuggestion[];
+  /** True when an AI-backed suggestion was attempted but the provider was unavailable/failed. Deterministic results remain valid. */
+  aiDegraded: boolean;
+}
+
+export interface CaptureBatchItem {
+  /** Client-provided identifier echoed back on the matching result. */
+  key: string;
+  fields: CaptureFields;
+}
+
+export interface CaptureBatchInput {
+  items: CaptureBatchItem[];
+}
+
+export type CaptureBatchJobStatus = typeof CaptureBatchJobStatus[keyof typeof CaptureBatchJobStatus];
+
+
+export const CaptureBatchJobStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export type CaptureBatchJobResultsItem = {
+  key: string;
+  analysis: CaptureAnalysis;
+};
+
+export type CaptureBatchJobErrorsItem = {
+  key: string;
+  message: string;
+};
+
+export interface CaptureBatchJob {
+  id: string;
+  companyId: number;
+  requestedById: number;
+  status: CaptureBatchJobStatus;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  results: CaptureBatchJobResultsItem[];
+  errors: CaptureBatchJobErrorsItem[];
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
 }
 
 /**

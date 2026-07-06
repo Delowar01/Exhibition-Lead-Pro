@@ -57,6 +57,10 @@ import type {
   BusinessCardInput,
   CalendarInviteInput,
   CalendarInviteResult,
+  CaptureAnalysis,
+  CaptureAnalyzeInput,
+  CaptureBatchInput,
+  CaptureBatchJob,
   ChangePasswordInput,
   ClearRecentSearchesParams,
   CommunicationInput,
@@ -11467,6 +11471,227 @@ export const useCreateScan = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getCreateScanMutationOptions(options));
     }
+
+export const getAnalyzeCaptureUrl = () => {
+
+
+
+
+  return `/api/scans/analyze`
+}
+
+/**
+ * Read-only intelligent-capture analysis over the fields on a card being captured. Returns deterministic validation + normalization suggestions, recognition of existing contacts/organizations in the tenant, a duplicate warning, and smart gap-fill suggestions (best-effort AI industry soft-degrades). NEVER writes, links, merges, or auto-applies anything.
+ * @summary Analyze captured (not-yet-saved) card fields — validation, recognition, and suggestions
+ */
+export const analyzeCapture = async (captureAnalyzeInput: CaptureAnalyzeInput, options?: RequestInit): Promise<CaptureAnalysis> => {
+
+  return customFetch<CaptureAnalysis>(getAnalyzeCaptureUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      captureAnalyzeInput,)
+  }
+);}
+
+
+
+
+export const getAnalyzeCaptureMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeCapture>>, TError,{data: BodyType<CaptureAnalyzeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeCapture>>, TError,{data: BodyType<CaptureAnalyzeInput>}, TContext> => {
+
+const mutationKey = ['analyzeCapture'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeCapture>>, {data: BodyType<CaptureAnalyzeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  analyzeCapture(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeCaptureMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeCapture>>>
+    export type AnalyzeCaptureMutationBody = BodyType<CaptureAnalyzeInput>
+    export type AnalyzeCaptureMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Analyze captured (not-yet-saved) card fields — validation, recognition, and suggestions
+ */
+export const useAnalyzeCapture = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeCapture>>, TError,{data: BodyType<CaptureAnalyzeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeCapture>>,
+        TError,
+        {data: BodyType<CaptureAnalyzeInput>},
+        TContext
+      > => {
+      return useMutation(getAnalyzeCaptureMutationOptions(options));
+    }
+
+export const getStartCaptureBatchUrl = () => {
+
+
+
+
+  return `/api/scans/batch-analyze`
+}
+
+/**
+ * Enqueues one read-only analysis per submitted item and returns 202 immediately. Poll GET /scans/batch/{jobId} for progress and per-item results.
+ * @summary Analyze many captured cards at once (async batch)
+ */
+export const startCaptureBatch = async (captureBatchInput: CaptureBatchInput, options?: RequestInit): Promise<CaptureBatchJob> => {
+
+  return customFetch<CaptureBatchJob>(getStartCaptureBatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      captureBatchInput,)
+  }
+);}
+
+
+
+
+export const getStartCaptureBatchMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startCaptureBatch>>, TError,{data: BodyType<CaptureBatchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startCaptureBatch>>, TError,{data: BodyType<CaptureBatchInput>}, TContext> => {
+
+const mutationKey = ['startCaptureBatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startCaptureBatch>>, {data: BodyType<CaptureBatchInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startCaptureBatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartCaptureBatchMutationResult = NonNullable<Awaited<ReturnType<typeof startCaptureBatch>>>
+    export type StartCaptureBatchMutationBody = BodyType<CaptureBatchInput>
+    export type StartCaptureBatchMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Analyze many captured cards at once (async batch)
+ */
+export const useStartCaptureBatch = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startCaptureBatch>>, TError,{data: BodyType<CaptureBatchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startCaptureBatch>>,
+        TError,
+        {data: BodyType<CaptureBatchInput>},
+        TContext
+      > => {
+      return useMutation(getStartCaptureBatchMutationOptions(options));
+    }
+
+export const getGetCaptureBatchUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/scans/batch/${jobId}`
+}
+
+/**
+ * @summary Get capture batch-analysis status + results
+ */
+export const getCaptureBatch = async (jobId: string, options?: RequestInit): Promise<CaptureBatchJob> => {
+
+  return customFetch<CaptureBatchJob>(getGetCaptureBatchUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCaptureBatchQueryKey = (jobId: string,) => {
+    return [
+    `/api/scans/batch/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetCaptureBatchQueryOptions = <TData = Awaited<ReturnType<typeof getCaptureBatch>>, TError = ErrorType<unknown>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCaptureBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCaptureBatchQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCaptureBatch>>> = ({ signal }) => getCaptureBatch(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(jobId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCaptureBatch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCaptureBatchQueryResult = NonNullable<Awaited<ReturnType<typeof getCaptureBatch>>>
+export type GetCaptureBatchQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get capture batch-analysis status + results
+ */
+
+export function useGetCaptureBatch<TData = Awaited<ReturnType<typeof getCaptureBatch>>, TError = ErrorType<unknown>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCaptureBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCaptureBatchQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetScanUrl = (id: number,) => {
 

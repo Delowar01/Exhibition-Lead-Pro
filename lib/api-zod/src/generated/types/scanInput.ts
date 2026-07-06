@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ScanInputAppLanguage } from './scanInputAppLanguage';
+import type { ScanInputCaptureSource } from './scanInputCaptureSource';
+import type { ScanInputQualityMeta } from './scanInputQualityMeta';
 
 export interface ScanInput {
   /** Base64-encoded image */
@@ -20,4 +22,19 @@ export interface ScanInput {
   longitude?: number | null;
   /** @nullable */
   gpsAccuracy?: number | null;
+  /**
+     * Where the card came from. Defaults to camera when omitted.
+     * @nullable
+     */
+  captureSource?: ScanInputCaptureSource;
+  /**
+     * 0-100 on-device capture-quality heuristic (mobile best-effort).
+     * @nullable
+     */
+  qualityScore?: number | null;
+  /**
+     * On-device quality signals (brightness/sharpness/coverage). Opaque JSON.
+     * @nullable
+     */
+  qualityMeta?: ScanInputQualityMeta;
 }

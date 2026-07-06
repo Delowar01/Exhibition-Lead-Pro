@@ -3881,6 +3881,19 @@ export const ListScansResponse = zod.object({
 }).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
 }).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
   "confidence": zod.number().nullish(),
+  "fieldConfidences": zod.record(zod.string(), zod.number()).nullish().describe('Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence).'),
+  "extractionMethod": zod.string().nullish().describe('How the data was extracted: ai_vision | qr | vcard | nfc | manual.'),
+  "captureSource": zod.string().nullish().describe('Where the card came from: camera | qr | vcard | digital_card | email_signature | nfc | manual.'),
+  "aiModel": zod.string().nullish().describe('Provenance: the model that produced the extraction.'),
+  "promptVersion": zod.number().nullish().describe('Provenance: the extraction prompt version.'),
+  "processingTimeMs": zod.number().nullish().describe('OCR round-trip latency in milliseconds.'),
+  "validationStatus": zod.object({
+
+}).passthrough().nullish().describe('Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation).'),
+  "qualityScore": zod.number().nullish().describe('0-100 on-device capture-quality heuristic (mobile best-effort).'),
+  "qualityMeta": zod.object({
+
+}).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number()
@@ -3898,7 +3911,205 @@ export const CreateScanBody = zod.object({
   "eventId": zod.number().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
-  "gpsAccuracy": zod.number().nullish()
+  "gpsAccuracy": zod.number().nullish(),
+  "captureSource": zod.union([zod.literal('camera'),zod.literal('qr'),zod.literal('vcard'),zod.literal('digital_card'),zod.literal('email_signature'),zod.literal('nfc'),zod.literal('manual'),zod.literal(null)]).nullish().describe('Where the card came from. Defaults to camera when omitted.'),
+  "qualityScore": zod.number().nullish().describe('0-100 on-device capture-quality heuristic (mobile best-effort).'),
+  "qualityMeta": zod.object({
+
+}).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.')
+})
+
+
+/**
+ * Read-only intelligent-capture analysis over the fields on a card being captured. Returns deterministic validation + normalization suggestions, recognition of existing contacts/organizations in the tenant, a duplicate warning, and smart gap-fill suggestions (best-effort AI industry soft-degrades). NEVER writes, links, merges, or auto-applies anything.
+ * @summary Analyze captured (not-yet-saved) card fields — validation, recognition, and suggestions
+ */
+export const analyzeCaptureBodyIncludeAiDefault = true;
+
+export const AnalyzeCaptureBody = zod.object({
+  "fields": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "postalCode": zod.string().nullish()
+}).describe('Captured (not-yet-saved) card fields to analyze. All optional.'),
+  "includeAi": zod.boolean().default(analyzeCaptureBodyIncludeAiDefault).describe('When false, skips the best-effort AI industry classification (pure deterministic).')
+})
+
+export const AnalyzeCaptureResponse = zod.object({
+  "validation": zod.object({
+  "validations": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string().nullish(),
+  "status": zod.enum(['valid', 'invalid', 'warning', 'empty']),
+  "message": zod.string().optional(),
+  "dialCode": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "e164": zod.string().nullish()
+})),
+  "suggestions": zod.array(zod.object({
+  "field": zod.string(),
+  "original": zod.string(),
+  "suggested": zod.string(),
+  "reason": zod.string()
+})),
+  "detectedCountry": zod.string().nullable(),
+  "detectedDialCode": zod.string().nullable()
+}),
+  "contactMatches": zod.array(zod.object({
+  "contactId": zod.number(),
+  "fullName": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "status": zod.string().optional(),
+  "confidence": zod.number(),
+  "reasons": zod.array(zod.string())
+})),
+  "organizationMatches": zod.array(zod.object({
+  "organizationId": zod.number(),
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "contactCount": zod.number(),
+  "leadCount": zod.number(),
+  "matchType": zod.enum(['exact', 'partial'])
+})),
+  "duplicateWarning": zod.object({
+  "isLikelyDuplicate": zod.boolean(),
+  "topMatchConfidence": zod.number(),
+  "message": zod.string().nullable()
+}),
+  "suggestions": zod.array(zod.object({
+  "field": zod.string(),
+  "suggested": zod.string(),
+  "reason": zod.string(),
+  "source": zod.enum(['deterministic', 'ai']),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish()
+})),
+  "aiDegraded": zod.boolean().describe('True when an AI-backed suggestion was attempted but the provider was unavailable\/failed. Deterministic results remain valid.')
+})
+
+
+/**
+ * Enqueues one read-only analysis per submitted item and returns 202 immediately. Poll GET /scans/batch/{jobId} for progress and per-item results.
+ * @summary Analyze many captured cards at once (async batch)
+ */
+export const StartCaptureBatchBody = zod.object({
+  "items": zod.array(zod.object({
+  "key": zod.string().describe('Client-provided identifier echoed back on the matching result.'),
+  "fields": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "linkedin": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "postalCode": zod.string().nullish()
+}).describe('Captured (not-yet-saved) card fields to analyze. All optional.')
+}))
+})
+
+
+/**
+ * @summary Get capture batch-analysis status + results
+ */
+export const GetCaptureBatchParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const GetCaptureBatchResponse = zod.object({
+  "id": zod.string(),
+  "companyId": zod.number(),
+  "requestedById": zod.number(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "total": zod.number(),
+  "processed": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "results": zod.array(zod.object({
+  "key": zod.string(),
+  "analysis": zod.object({
+  "validation": zod.object({
+  "validations": zod.array(zod.object({
+  "field": zod.string(),
+  "value": zod.string().nullish(),
+  "status": zod.enum(['valid', 'invalid', 'warning', 'empty']),
+  "message": zod.string().optional(),
+  "dialCode": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "e164": zod.string().nullish()
+})),
+  "suggestions": zod.array(zod.object({
+  "field": zod.string(),
+  "original": zod.string(),
+  "suggested": zod.string(),
+  "reason": zod.string()
+})),
+  "detectedCountry": zod.string().nullable(),
+  "detectedDialCode": zod.string().nullable()
+}),
+  "contactMatches": zod.array(zod.object({
+  "contactId": zod.number(),
+  "fullName": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "status": zod.string().optional(),
+  "confidence": zod.number(),
+  "reasons": zod.array(zod.string())
+})),
+  "organizationMatches": zod.array(zod.object({
+  "organizationId": zod.number(),
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "contactCount": zod.number(),
+  "leadCount": zod.number(),
+  "matchType": zod.enum(['exact', 'partial'])
+})),
+  "duplicateWarning": zod.object({
+  "isLikelyDuplicate": zod.boolean(),
+  "topMatchConfidence": zod.number(),
+  "message": zod.string().nullable()
+}),
+  "suggestions": zod.array(zod.object({
+  "field": zod.string(),
+  "suggested": zod.string(),
+  "reason": zod.string(),
+  "source": zod.enum(['deterministic', 'ai']),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish()
+})),
+  "aiDegraded": zod.boolean().describe('True when an AI-backed suggestion was attempted but the provider was unavailable\/failed. Deterministic results remain valid.')
+})
+})),
+  "errors": zod.array(zod.object({
+  "key": zod.string(),
+  "message": zod.string()
+})),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullable()
 })
 
 
@@ -3943,6 +4154,19 @@ export const GetScanResponse = zod.object({
 }).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
 }).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
   "confidence": zod.number().nullish(),
+  "fieldConfidences": zod.record(zod.string(), zod.number()).nullish().describe('Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence).'),
+  "extractionMethod": zod.string().nullish().describe('How the data was extracted: ai_vision | qr | vcard | nfc | manual.'),
+  "captureSource": zod.string().nullish().describe('Where the card came from: camera | qr | vcard | digital_card | email_signature | nfc | manual.'),
+  "aiModel": zod.string().nullish().describe('Provenance: the model that produced the extraction.'),
+  "promptVersion": zod.number().nullish().describe('Provenance: the extraction prompt version.'),
+  "processingTimeMs": zod.number().nullish().describe('OCR round-trip latency in milliseconds.'),
+  "validationStatus": zod.object({
+
+}).passthrough().nullish().describe('Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation).'),
+  "qualityScore": zod.number().nullish().describe('0-100 on-device capture-quality heuristic (mobile best-effort).'),
+  "qualityMeta": zod.object({
+
+}).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -4002,6 +4226,19 @@ export const ReprocessScanResponse = zod.object({
 }).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
 }).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
   "confidence": zod.number().nullish(),
+  "fieldConfidences": zod.record(zod.string(), zod.number()).nullish().describe('Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence).'),
+  "extractionMethod": zod.string().nullish().describe('How the data was extracted: ai_vision | qr | vcard | nfc | manual.'),
+  "captureSource": zod.string().nullish().describe('Where the card came from: camera | qr | vcard | digital_card | email_signature | nfc | manual.'),
+  "aiModel": zod.string().nullish().describe('Provenance: the model that produced the extraction.'),
+  "promptVersion": zod.number().nullish().describe('Provenance: the extraction prompt version.'),
+  "processingTimeMs": zod.number().nullish().describe('OCR round-trip latency in milliseconds.'),
+  "validationStatus": zod.object({
+
+}).passthrough().nullish().describe('Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation).'),
+  "qualityScore": zod.number().nullish().describe('0-100 on-device capture-quality heuristic (mobile best-effort).'),
+  "qualityMeta": zod.object({
+
+}).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -4054,6 +4291,19 @@ export const ReplaceScanImageResponse = zod.object({
 }).optional().describe('The raw OCR values exactly as printed on the card — never translated or transliterated, never overwritten by the display values.')
 }).optional().describe('Display\/translated values per the active app language. The verbatim as-printed values are preserved under `original` and never overwritten.'),
   "confidence": zod.number().nullish(),
+  "fieldConfidences": zod.record(zod.string(), zod.number()).nullish().describe('Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence).'),
+  "extractionMethod": zod.string().nullish().describe('How the data was extracted: ai_vision | qr | vcard | nfc | manual.'),
+  "captureSource": zod.string().nullish().describe('Where the card came from: camera | qr | vcard | digital_card | email_signature | nfc | manual.'),
+  "aiModel": zod.string().nullish().describe('Provenance: the model that produced the extraction.'),
+  "promptVersion": zod.number().nullish().describe('Provenance: the extraction prompt version.'),
+  "processingTimeMs": zod.number().nullish().describe('OCR round-trip latency in milliseconds.'),
+  "validationStatus": zod.object({
+
+}).passthrough().nullish().describe('Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation).'),
+  "qualityScore": zod.number().nullish().describe('0-100 on-device capture-quality heuristic (mobile best-effort).'),
+  "qualityMeta": zod.object({
+
+}).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
   "createdAt": zod.coerce.date()
 })
 

@@ -6,7 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ExtractedCardData } from './extractedCardData';
+import type { ScanFieldConfidences } from './scanFieldConfidences';
+import type { ScanQualityMeta } from './scanQualityMeta';
 import type { ScanStatus } from './scanStatus';
+import type { ScanValidationStatus } from './scanValidationStatus';
 
 export interface Scan {
   id: number;
@@ -24,5 +27,50 @@ export interface Scan {
   extractedData?: ExtractedCardData;
   /** @nullable */
   confidence?: number | null;
+  /**
+     * Per-field OCR confidence (0-100) keyed by display field. A field the model did not score is omitted (treat as: use the overall confidence).
+     * @nullable
+     */
+  fieldConfidences?: ScanFieldConfidences;
+  /**
+     * How the data was extracted: ai_vision | qr | vcard | nfc | manual.
+     * @nullable
+     */
+  extractionMethod?: string | null;
+  /**
+     * Where the card came from: camera | qr | vcard | digital_card | email_signature | nfc | manual.
+     * @nullable
+     */
+  captureSource?: string | null;
+  /**
+     * Provenance: the model that produced the extraction.
+     * @nullable
+     */
+  aiModel?: string | null;
+  /**
+     * Provenance: the extraction prompt version.
+     * @nullable
+     */
+  promptVersion?: number | null;
+  /**
+     * OCR round-trip latency in milliseconds.
+     * @nullable
+     */
+  processingTimeMs?: number | null;
+  /**
+     * Deterministic validation + normalization summary computed at OCR time. Opaque JSON (see CaptureAnalysis.validation).
+     * @nullable
+     */
+  validationStatus?: ScanValidationStatus;
+  /**
+     * 0-100 on-device capture-quality heuristic (mobile best-effort).
+     * @nullable
+     */
+  qualityScore?: number | null;
+  /**
+     * On-device quality signals (brightness/sharpness/coverage). Opaque JSON.
+     * @nullable
+     */
+  qualityMeta?: ScanQualityMeta;
   createdAt: Date;
 }

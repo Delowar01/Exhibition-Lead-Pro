@@ -81,6 +81,16 @@ export interface CardExtractionResult {
   fields: ExtractedCardData;
   confidence: number;
   rawOcr: string;
+  /** Per-field OCR confidence (0-100) for the display fields, when the model reports it. */
+  fieldConfidences: Record<string, number>;
+  /** How the data was extracted — always "ai_vision" from this Gemini path. */
+  extractionMethod: string;
+  /** Provenance: the model that produced the extraction (as reported by the provider). */
+  model: string;
+  /** Provenance: the extraction prompt version recorded on the scan. */
+  promptVersion: number;
+  /** OCR round-trip latency in ms. */
+  processingTimeMs: number;
 }
 
 export interface LeadScoreResult {
@@ -161,6 +171,14 @@ function readOriginal(value: unknown): ExtractedCardOriginal {
 // parses JSON, and records the invocation to the ledger (fire-and-forget; never blocks
 // or fails the result path). Enforcement errors are thrown BEFORE any provider call and
 // are not recorded as failed invocations.
+export interface CallJsonMeta {
+  parsed: Record<string, unknown>;
+  provider: string;
+  model: string;
+  latencyMs: number;
+  promptVersion: number;
+}
+
 async function callJson(opts: {
   feature: AiFeature;
   parts: AiPart[];
@@ -168,6 +186,19 @@ async function callJson(opts: {
   ctx?: AiContext;
   confidenceOf?: (parsed: Record<string, unknown>) => number | null;
 }): Promise<Record<string, unknown>> {
+  return (await callJsonWithMeta(opts)).parsed;
+}
+
+// Same execution seam as callJson but also returns the runtime provenance (provider, the
+// model the provider actually used, latency, prompt version) so metadata-carrying features
+// (e.g. OCR capture) can persist honest provenance without a second resolve/DB read.
+async function callJsonWithMeta(opts: {
+  feature: AiFeature;
+  parts: AiPart[];
+  timeoutMs: number;
+  ctx?: AiContext;
+  confidenceOf?: (parsed: Record<string, unknown>) => number | null;
+}): Promise<CallJsonMeta> {
   const prompt = PROMPTS[opts.feature];
 
   // Provider/model resolution: a tenant's effective ai_settings (validated on write to
@@ -217,7 +248,7 @@ async function callJson(opts: {
       latencyMs,
       confidence: opts.confidenceOf ? opts.confidenceOf(parsed) : null,
     });
-    return parsed;
+    return { parsed, provider: provider.name, model: result.model, latencyMs, promptVersion: prompt.version };
   } catch (err) {
     const latencyMs = Date.now() - start;
     void aiService.recordInvocation({
@@ -247,13 +278,14 @@ export async function extractCardData(
     throw new Error("imageData is not a valid image payload");
   }
 
-  const parsed = await callJson({
+  const meta = await callJsonWithMeta({
     feature: "card_extraction",
     parts: [{ text: buildExtractionPrompt(appLanguage) }, { inlineData: { mimeType, data } }],
     timeoutMs: EXTRACTION_TIMEOUT_MS,
     ctx,
     confidenceOf: (p) => clampScore(p.confidence),
   });
+  const parsed = meta.parsed;
 
   const display = {
     firstName: str(parsed.firstName),
@@ -287,10 +319,28 @@ export async function extractCardData(
     address: originalRaw.address,
   };
 
+  // Per-field confidence: the model MAY report a "fieldConfidences" map (prompt v2).
+  // We read only the display-field keys and clamp each to 0-100; a field the model does
+  // not score is simply omitted (the UI treats a missing per-field score as "use the
+  // overall confidence"). This never fabricates a score — absent input means absent output.
+  const fieldConfidences: Record<string, number> = {};
+  const rawFieldConf = (parsed.fieldConfidences && typeof parsed.fieldConfidences === "object")
+    ? (parsed.fieldConfidences as Record<string, unknown>)
+    : {};
+  for (const key of Object.keys(display) as (keyof typeof display)[]) {
+    const v = rawFieldConf[key];
+    if (v != null && Number.isFinite(Number(v))) fieldConfidences[key] = clampScore(v);
+  }
+
   return {
     fields: { ...display, original },
     confidence: clampScore(parsed.confidence),
     rawOcr: str(parsed.rawText) ?? "",
+    fieldConfidences,
+    extractionMethod: "ai_vision",
+    model: meta.model,
+    promptVersion: meta.promptVersion,
+    processingTimeMs: meta.latencyMs,
   };
 }
 

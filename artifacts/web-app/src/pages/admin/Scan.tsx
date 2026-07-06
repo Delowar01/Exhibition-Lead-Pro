@@ -1,10 +1,15 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   useCreateScan,
   useCreateContact,
   useReprocessScan,
   useReplaceScanImage,
   useScoreScan,
+  useAnalyzeCapture,
+} from "@workspace/api-client-react";
+import type {
+  CaptureAnalysis,
+  CaptureFields,
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,9 +39,16 @@ import {
   Loader2,
   Flame,
   FileText,
+  AlertTriangle,
+  Users,
+  CheckCircle2,
+  XCircle,
+  Lightbulb,
+  ArrowRight,
+  ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 
 interface ScannedFields {
   firstName: string;
@@ -102,6 +114,65 @@ const TEMP_STYLES: Record<string, string> = {
   cold: "bg-sky-100 text-sky-700 border-sky-200",
 };
 
+// Map capture-field names (as used by the analyze API) back to the editable form state keys.
+const CAPTURE_TO_STATE: Record<string, keyof ScannedFields> = {
+  firstName: "firstName",
+  lastName: "lastName",
+  jobTitle: "jobTitle",
+  company: "contactCompany",
+  email: "email",
+  mobile: "mobile",
+  website: "website",
+  linkedin: "linkedin",
+  address: "address",
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  firstName: "First Name",
+  lastName: "Last Name",
+  jobTitle: "Job Title",
+  company: "Company",
+  email: "Email",
+  mobile: "Phone",
+  officePhone: "Office Phone",
+  website: "Website",
+  linkedin: "LinkedIn",
+  address: "Address",
+  country: "Country",
+  postalCode: "Postal Code",
+};
+
+// Build the analyze request body from the editable form state. Only include fields
+// that actually exist in state (company maps from contactCompany). Empty strings are
+// dropped so the backend never receives blank placeholders.
+function buildCaptureFields(d: ScannedFields): CaptureFields {
+  const fields: CaptureFields = {};
+  const add = (key: keyof CaptureFields, value: string) => {
+    const trimmed = value.trim();
+    if (trimmed) fields[key] = trimmed;
+  };
+  add("firstName", d.firstName);
+  add("lastName", d.lastName);
+  add("jobTitle", d.jobTitle);
+  add("company", d.contactCompany);
+  add("email", d.email);
+  add("mobile", d.mobile);
+  add("website", d.website);
+  add("linkedin", d.linkedin);
+  add("address", d.address);
+  return fields;
+}
+
+const VALIDATION_STYLES: Record<string, string> = {
+  invalid: "bg-red-100 text-red-700 border-red-200",
+  warning: "bg-amber-100 text-amber-700 border-amber-200",
+};
+
+const MATCH_TYPE_STYLES: Record<string, string> = {
+  exact: "bg-primary/10 text-primary border-primary/20",
+  partial: "bg-secondary text-secondary-foreground border-border",
+};
+
 export default function AdminScan() {
   const [scanning, setScanning] = useState(false);
   const [scannedData, setScannedData] = useState<ScannedFields | null>(null);
@@ -116,11 +187,65 @@ export default function AdminScan() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
+  const [analysis, setAnalysis] = useState<CaptureAnalysis | null>(null);
+
   const createScan = useCreateScan();
   const createContact = useCreateContact();
   const reprocessScan = useReprocessScan();
   const replaceScanImage = useReplaceScanImage();
   const scoreScan = useScoreScan();
+  const analyzeCapture = useAnalyzeCapture();
+
+  // Debounced capture-intelligence analysis. Runs after a successful scan (when
+  // scannedData is first set) and whenever the user edits the extracted fields.
+  useEffect(() => {
+    if (!scannedData) {
+      setAnalysis(null);
+      return;
+    }
+    const fields = buildCaptureFields(scannedData);
+    if (Object.keys(fields).length === 0) {
+      setAnalysis(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      analyzeCapture.mutate(
+        { data: { fields, includeAi: true } },
+        { onSuccess: (res) => setAnalysis(res) }
+      );
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannedData]);
+
+  const handleRecheck = () => {
+    if (!scannedData) return;
+    const fields = buildCaptureFields(scannedData);
+    if (Object.keys(fields).length === 0) return;
+    analyzeCapture.mutate(
+      { data: { fields, includeAi: true } },
+      {
+        onSuccess: (res) => {
+          setAnalysis(res);
+          toast({ title: "Capture intelligence updated", description: "Recognition and suggestions refreshed." });
+        },
+        onError: () => {
+          toast({
+            variant: "destructive",
+            title: "Analysis unavailable",
+            description: "Could not analyze the captured fields. Please try again.",
+          });
+        },
+      }
+    );
+  };
+
+  const applySuggestion = (field: string, value: string) => {
+    if (!scannedData) return;
+    const key = CAPTURE_TO_STATE[field];
+    if (!key) return;
+    setScannedData({ ...scannedData, [key]: value });
+  };
 
   const resetView = () => {
     setScale(1);
@@ -480,6 +605,230 @@ export default function AdminScan() {
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">{leadScore.reasoning}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Capture Intelligence — validation, recognition, and suggestions (advisory only) */}
+          {scannedData && (
+            <Card className="border-border/60">
+              <CardContent className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Sparkles className="h-4 w-4 text-primary" /> Capture Intelligence
+                    {analyzeCapture.isPending && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRecheck}
+                    disabled={analyzeCapture.isPending}
+                    className="h-8"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    Re-check
+                  </Button>
+                </div>
+
+                {!analysis && !analyzeCapture.isPending && (
+                  <p className="text-xs text-muted-foreground">
+                    Recognition and suggestions will appear here as you review the extracted fields.
+                  </p>
+                )}
+
+                {analysis && (
+                  <div className="space-y-4">
+                    {/* Duplicate warning — advisory only, never auto-merge */}
+                    {analysis.duplicateWarning.isLikelyDuplicate && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                          <AlertTriangle className="h-4 w-4" /> Possible duplicate
+                          <Badge variant="outline" className="ml-auto border-amber-300 text-amber-700">
+                            {analysis.duplicateWarning.topMatchConfidence}% match
+                          </Badge>
+                        </div>
+                        {analysis.duplicateWarning.message && (
+                          <p className="text-xs text-amber-700 leading-relaxed">
+                            {analysis.duplicateWarning.message}
+                          </p>
+                        )}
+                        <p className="text-[11px] text-amber-600">
+                          Review before saving — nothing is merged automatically.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Contact matches */}
+                    {analysis.contactMatches.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <Users className="h-3.5 w-3.5" /> Similar contacts
+                        </div>
+                        <div className="space-y-2">
+                          {analysis.contactMatches.map((m) => (
+                            <Link
+                              key={m.contactId}
+                              href={`/admin/contacts/${m.contactId}`}
+                              className="block rounded-lg border border-border/60 p-2.5 hover:border-primary/40 hover:bg-secondary/40 transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium truncate">
+                                  {m.fullName || m.email || `Contact #${m.contactId}`}
+                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Badge variant="secondary" className="text-[11px]">
+                                    {m.confidence}%
+                                  </Badge>
+                                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                </div>
+                              </div>
+                              {(m.contactCompany || m.email) && (
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                  {[m.contactCompany, m.email].filter(Boolean).join(" · ")}
+                                </p>
+                              )}
+                              {m.reasons.length > 0 && (
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                  {m.reasons.join(", ")}
+                                </p>
+                              )}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Organization recognition */}
+                    {analysis.organizationMatches.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <Building2 className="h-3.5 w-3.5" /> Organizations
+                        </div>
+                        <div className="space-y-2">
+                          {analysis.organizationMatches.map((o) => (
+                            <Link
+                              key={o.organizationId}
+                              href={`/admin/companies/${o.organizationId}`}
+                              className="block rounded-lg border border-border/60 p-2.5 hover:border-primary/40 hover:bg-secondary/40 transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium truncate">{o.name}</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Badge className={`border capitalize text-[11px] ${MATCH_TYPE_STYLES[o.matchType] ?? ""}`}>
+                                    {o.matchType}
+                                  </Badge>
+                                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {o.contactCount} contact{o.contactCount === 1 ? "" : "s"} · {o.leadCount} lead
+                                {o.leadCount === 1 ? "" : "s"}
+                                {o.industry ? ` · ${o.industry}` : ""}
+                              </p>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Field validation */}
+                    {analysis.validation.validations.some(
+                      (v) => v.status === "invalid" || v.status === "warning"
+                    ) && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Validation
+                        </div>
+                        <div className="space-y-1.5">
+                          {analysis.validation.validations
+                            .filter((v) => v.status === "invalid" || v.status === "warning")
+                            .map((v, i) => (
+                              <div key={`${v.field}-${i}`} className="flex items-start gap-2 text-xs">
+                                {v.status === "invalid" ? (
+                                  <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                                ) : (
+                                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                                )}
+                                <div className="min-w-0">
+                                  <span className="font-medium">{FIELD_LABELS[v.field] ?? v.field}</span>
+                                  {v.message && (
+                                    <span className="text-muted-foreground"> — {v.message}</span>
+                                  )}
+                                </div>
+                                <Badge
+                                  variant="outline"
+                                  className={`border capitalize ml-auto text-[10px] ${VALIDATION_STYLES[v.status] ?? ""}`}
+                                >
+                                  {v.status}
+                                </Badge>
+                              </div>
+                            ))}
+                        </div>
+                        {(analysis.validation.detectedCountry || analysis.validation.detectedDialCode) && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Detected{analysis.validation.detectedCountry ? ` ${analysis.validation.detectedCountry}` : ""}
+                            {analysis.validation.detectedDialCode ? ` (${analysis.validation.detectedDialCode})` : ""}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Smart suggestions */}
+                    {analysis.suggestions.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <Lightbulb className="h-3.5 w-3.5" /> Suggestions
+                        </div>
+                        <div className="space-y-2">
+                          {analysis.suggestions.map((s, i) => {
+                            const applicable = !!CAPTURE_TO_STATE[s.field];
+                            return (
+                              <div
+                                key={`${s.field}-${i}`}
+                                className="flex items-start gap-2 rounded-lg border border-border/60 p-2.5"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-xs font-medium">{FIELD_LABELS[s.field] ?? s.field}</span>
+                                    {s.source === "ai" ? (
+                                      <Badge className="text-[10px] border bg-primary/10 text-primary border-primary/20 gap-0.5">
+                                        <Sparkles className="h-2.5 w-2.5" /> AI
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-[10px]">
+                                        rule
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-sm font-medium truncate mt-0.5">{s.suggested}</p>
+                                  <p className="text-[11px] text-muted-foreground">{s.reason}</p>
+                                </div>
+                                {applicable && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 shrink-0"
+                                    onClick={() => applySuggestion(s.field, s.suggested)}
+                                  >
+                                    Apply
+                                  </Button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {analysis.aiDegraded && (
+                      <p className="text-[11px] text-muted-foreground italic">
+                        AI suggestions unavailable — deterministic results still shown.
+                      </p>
+                    )}
                   </div>
                 )}
               </CardContent>
