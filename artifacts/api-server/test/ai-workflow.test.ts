@@ -412,8 +412,11 @@ describe("Progression — uses the tenant's configured pipeline stages, not cano
       expect(res.status, `create stage ${name}`).toBe(201);
       created.push((await res.json()).id);
     };
-    await mkStage("Intake", 0);
-    await mkStage("Review", 1);
+    // Non-canonical ordering: "contacted" then "meeting_scheduled". Both are valid
+    // lead-stage enum values but are NOT in the canonical progression set — so the
+    // canonical fallback would return no next stage for a lead in "contacted".
+    await mkStage("Contacted", 0);
+    await mkStage("Meeting Scheduled", 1);
     await mkStage("Closing", 2, { isWon: true });
 
     // Drop the auto-seeded defaults so the live pipeline is purely non-canonical.
@@ -436,7 +439,7 @@ describe("Progression — uses the tenant's configured pipeline stages, not cano
     // A lead sitting in the first custom stage.
     const leadRes = await api("POST", "/leads", adminToken, {
       contactId: customContactId,
-      stage: "intake",
+      stage: "contacted",
       title: `Custom-pipeline lead ${SUFFIX}`,
       value: 2000,
       currency: "USD",
@@ -450,9 +453,9 @@ describe("Progression — uses the tenant's configured pipeline stages, not cano
       const prog = recs.find((r) => r.recommendationType === "progression");
       expect(prog, "progression recommendation present").toBeDefined();
       const data = prog!.data as { suggestedStageName?: string | null; suggestedStageKey?: string | null };
-      // The next stage must be the tenant's "Review" — a canonical fallback would
-      // never produce this (canonical stages are prospect/qualified/proposal_sent/...).
-      expect(data.suggestedStageName).toBe("Review");
+      // The next stage must be the tenant's "Meeting Scheduled" — the canonical
+      // fallback has no "contacted" stage, so it would never produce this.
+      expect(data.suggestedStageName).toBe("Meeting Scheduled");
     } finally {
       await api("DELETE", `/leads/${customLeadId}`, adminToken);
       for (const id of created) await api("DELETE", `/pipeline/stages/${id}`, adminToken);
