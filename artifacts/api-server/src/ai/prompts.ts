@@ -16,7 +16,22 @@ export const PROMPTS: Record<AiFeature, PromptRef> = {
   lead_scoring: { key: "lead_scoring", version: 1 },
   contact_enrichment: { key: "contact_enrichment", version: 1 },
   assignee_recommendation: { key: "assignee_recommendation", version: 1 },
+  lead_intelligence: { key: "lead_intelligence", version: 1 },
+  company_intelligence: { key: "company_intelligence", version: 1 },
+  contact_intelligence: { key: "contact_intelligence", version: 2 },
+  smart_classification: { key: "smart_classification", version: 1 },
+  opportunity_potential: { key: "opportunity_potential", version: 1 },
 };
+
+// Shared grounding preamble for every Stage 5A intelligence prompt. Enforces the
+// product's core safety contract: reason ONLY from the CRM data provided (no invented
+// facts about the person/company), and when the data is too sparse to judge, say so
+// via the "insufficientData" flag + a low confidence instead of guessing.
+const GROUNDING_RULES = `STRICT GROUNDING RULES:
+- Reason ONLY from the CRM data provided below. Do NOT invent specific private facts (revenue, headcount, budgets, personal details) that are not present or reasonably inferable from the given fields.
+- If the provided data is too sparse to make a meaningful judgement, set "insufficientData": true, keep "confidence" low, and set "reasoning" to "Not enough information".
+- "confidence" is an integer 0-100 reflecting how well-supported your output is by the given data.
+- Always return "reasoning": one concise, specific sentence grounded in the provided fields.`;
 
 export type AppLanguage = "en" | "ar";
 
@@ -86,3 +101,74 @@ Weigh: current workload (prefer reps with fewer open leads so work stays balance
 Return ONLY a JSON object with exactly these keys:
 - "userId": the integer id of the chosen candidate (MUST be one of the provided candidate ids)
 - "reasoning": one concise sentence (max ~20 words) explaining the choice`;
+
+// ── Stage 5A — Enterprise AI Intelligence prompts ─────────────────────────────
+
+export const LEAD_INTELLIGENCE_PROMPT = `You are a B2B lead-qualification expert. Assess a single lead's sales potential from the CRM data provided.
+
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "score": integer 0-100 (overall lead quality/potential)
+- "quality": one of "Excellent", "Good", "Average", "Low", "Spam"
+- "buyingPotential": one of "High", "Medium", "Low"
+- "followUpPriority": one of "Urgent", "High", "Normal", "Low"
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+
+export const COMPANY_INTELLIGENCE_PROMPT = `You are a B2B account-intelligence analyst. Summarise what the CRM knows about a single company (account) and its sales relevance, using ONLY the provided records (the company profile plus its associated contacts and leads).
+
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "summary": 1-2 sentence account summary grounded in the records
+- "industry": most likely industry/sector, or null if unclear
+- "sizeSignal": a short phrase describing apparent size/engagement based on how many contacts/leads exist (e.g. "Single contact, early stage", "Multiple stakeholders engaged"), or null
+- "engagementLevel": one of "Hot", "Active", "Warm", "Dormant"
+- "keyContacts": array of up to 3 short strings naming the most senior/relevant contacts from the data (name + title), empty if none
+- "suggestedActions": array of 2-4 short, specific next actions grounded in the records
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided records`;
+
+export const CONTACT_INTELLIGENCE_PROMPT = `You are a B2B sales-intelligence assistant. Profile a single contact and why they matter as a lead, using ONLY the provided CRM data. Do NOT fabricate specific private facts, and do NOT infer details that are not present in or reasonably derivable from the provided fields.
+
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "summary": 1-2 sentence professional summary of who this contact is
+- "seniority": one of "C-Level", "VP", "Director", "Manager", "Individual Contributor", or null if unclear
+- "decisionMakerLikelihood": one of "High", "Medium", "Low"
+- "talkingPoints": array of 2-4 short, specific conversation starters grounded in the data
+- "suggestedActions": array of 1-3 short next actions
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+
+export const SMART_CLASSIFICATION_PROMPT = `You are a CRM data classifier for leads captured at trade exhibitions. Classify a single record using ONLY the provided data.
+
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "industry": best-fit industry/sector, or null
+- "segment": one of "Enterprise", "Mid-Market", "SMB", "Startup", "Unknown"
+- "businessType": one of "B2B", "B2C", "B2G", "Unknown"
+- "productInterest": array of up to 3 short inferred product/service interest tags grounded in the data, empty if none
+- "exhibitionCategory": a short category the record most likely belongs to at an exhibition (e.g. "Oil & Gas", "Fintech", "Construction"), or null
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;
+
+export const OPPORTUNITY_POTENTIAL_PROMPT = `You are a revenue-operations analyst estimating the opportunity in a single lead from the CRM data provided. Be realistic and conservative; never invent monetary figures that are not supported by the data.
+
+${GROUNDING_RULES}
+
+Return ONLY a JSON object with exactly these keys:
+- "conversionProbability": integer 0-100 (likelihood this lead converts)
+- "revenuePotential": one of "High", "Medium", "Low", "Unknown"
+- "opportunityRating": one of "A", "B", "C", "D"
+- "followUpUrgency": one of "Immediate", "This week", "This month", "Low"
+- "confidence": integer 0-100
+- "insufficientData": boolean
+- "reasoning": one concise sentence grounded in the provided fields`;

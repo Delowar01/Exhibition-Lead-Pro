@@ -25,7 +25,11 @@ import type {
   ActivityItem,
   AddDocumentVersionInput,
   AdminDashboard,
+  AiAnalyzeResponse,
   AiHealthResponse,
+  AiInsight,
+  AiInsightsListResponse,
+  AiInsightsOverviewResponse,
   AiPlatformUsageResponse,
   AiSettingsResponse,
   AiUsageResponse,
@@ -13564,6 +13568,377 @@ export function useGetAiPlatformUsage<TData = Awaited<ReturnType<typeof getAiPla
 
 
 
+
+export const getGetAiInsightsOverviewUrl = () => {
+
+
+
+
+  return `/api/ai/insights/overview`
+}
+
+/**
+ * @summary Tenant-wide AI insights review summary (status counts + recent)
+ */
+export const getAiInsightsOverview = async ( options?: RequestInit): Promise<AiInsightsOverviewResponse> => {
+
+  return customFetch<AiInsightsOverviewResponse>(getGetAiInsightsOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiInsightsOverviewQueryKey = () => {
+    return [
+    `/api/ai/insights/overview`
+    ] as const;
+    }
+
+
+export const getGetAiInsightsOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getAiInsightsOverview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiInsightsOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiInsightsOverviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiInsightsOverview>>> = ({ signal }) => getAiInsightsOverview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiInsightsOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiInsightsOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getAiInsightsOverview>>>
+export type GetAiInsightsOverviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Tenant-wide AI insights review summary (status counts + recent)
+ */
+
+export function useGetAiInsightsOverview<TData = Awaited<ReturnType<typeof getAiInsightsOverview>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiInsightsOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiInsightsOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAnalyzeAiInsightsUrl = (entityType: string,
+    id: number,) => {
+
+
+
+
+  return `/api/ai/insights/${entityType}/${id}/analyze`
+}
+
+/**
+ * @summary Generate (or re-generate) all applicable AI insights for one CRM entity
+ */
+export const analyzeAiInsights = async (entityType: string,
+    id: number, options?: RequestInit): Promise<AiAnalyzeResponse> => {
+
+  return customFetch<AiAnalyzeResponse>(getAnalyzeAiInsightsUrl(entityType,id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAnalyzeAiInsightsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeAiInsights>>, TError,{entityType: string;id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeAiInsights>>, TError,{entityType: string;id: number}, TContext> => {
+
+const mutationKey = ['analyzeAiInsights'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeAiInsights>>, {entityType: string;id: number}> = (props) => {
+          const {entityType,id} = props ?? {};
+
+          return  analyzeAiInsights(entityType,id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeAiInsightsMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeAiInsights>>>
+
+    export type AnalyzeAiInsightsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Generate (or re-generate) all applicable AI insights for one CRM entity
+ */
+export const useAnalyzeAiInsights = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeAiInsights>>, TError,{entityType: string;id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeAiInsights>>,
+        TError,
+        {entityType: string;id: number},
+        TContext
+      > => {
+      return useMutation(getAnalyzeAiInsightsMutationOptions(options));
+    }
+
+export const getGetAiInsightsUrl = (entityType: string,
+    id: number,) => {
+
+
+
+
+  return `/api/ai/insights/${entityType}/${id}`
+}
+
+/**
+ * @summary List stored AI insights for one CRM entity
+ */
+export const getAiInsights = async (entityType: string,
+    id: number, options?: RequestInit): Promise<AiInsightsListResponse> => {
+
+  return customFetch<AiInsightsListResponse>(getGetAiInsightsUrl(entityType,id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiInsightsQueryKey = (entityType: string,
+    id: number,) => {
+    return [
+    `/api/ai/insights/${entityType}/${id}`
+    ] as const;
+    }
+
+
+export const getGetAiInsightsQueryOptions = <TData = Awaited<ReturnType<typeof getAiInsights>>, TError = ErrorType<ErrorResponse>>(entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiInsights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiInsightsQueryKey(entityType,id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiInsights>>> = ({ signal }) => getAiInsights(entityType,id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(entityType && id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiInsights>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiInsightsQueryResult = NonNullable<Awaited<ReturnType<typeof getAiInsights>>>
+export type GetAiInsightsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List stored AI insights for one CRM entity
+ */
+
+export function useGetAiInsights<TData = Awaited<ReturnType<typeof getAiInsights>>, TError = ErrorType<ErrorResponse>>(
+ entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiInsights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiInsightsQueryOptions(entityType,id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAcceptAiInsightUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/insights/${id}/accept`
+}
+
+/**
+ * @summary Accept an AI recommendation (audited user action; does not mutate CRM fields)
+ */
+export const acceptAiInsight = async (id: number, options?: RequestInit): Promise<AiInsight> => {
+
+  return customFetch<AiInsight>(getAcceptAiInsightUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAcceptAiInsightMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiInsight>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptAiInsight>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['acceptAiInsight'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptAiInsight>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  acceptAiInsight(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptAiInsightMutationResult = NonNullable<Awaited<ReturnType<typeof acceptAiInsight>>>
+
+    export type AcceptAiInsightMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Accept an AI recommendation (audited user action; does not mutate CRM fields)
+ */
+export const useAcceptAiInsight = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptAiInsight>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptAiInsight>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getAcceptAiInsightMutationOptions(options));
+    }
+
+export const getDismissAiInsightUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/insights/${id}/dismiss`
+}
+
+/**
+ * @summary Dismiss an AI recommendation (audited review action)
+ */
+export const dismissAiInsight = async (id: number, options?: RequestInit): Promise<AiInsight> => {
+
+  return customFetch<AiInsight>(getDismissAiInsightUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDismissAiInsightMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiInsight>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissAiInsight>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['dismissAiInsight'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissAiInsight>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  dismissAiInsight(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissAiInsightMutationResult = NonNullable<Awaited<ReturnType<typeof dismissAiInsight>>>
+
+    export type DismissAiInsightMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Dismiss an AI recommendation (audited review action)
+ */
+export const useDismissAiInsight = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissAiInsight>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissAiInsight>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDismissAiInsightMutationOptions(options));
+    }
 
 export const getRegisterPushTokenUrl = () => {
 

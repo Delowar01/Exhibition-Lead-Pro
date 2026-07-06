@@ -12,6 +12,7 @@ import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIco
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { CommunicationHub } from "@/components/CommunicationHub";
+import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 
 const ORG_NONE = "__none__";
 
@@ -303,6 +304,8 @@ export default function AdminContactDetail() {
             phone={contact.mobile}
             displayName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
           />
+
+          <AiInsightsPanel entityType="contact" id={contactId} />
 
           <Card>
             <CardHeader className="pb-3 bg-secondary/20">

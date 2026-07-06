@@ -462,6 +462,37 @@
     "savedFilters": "المرشحات المحفوظة",
     "savedFilterNamePlaceholder": "سمّ هذا المرشح…"
   },
+  "aiInsights": {
+    "title": "رؤى الذكاء الاصطناعي",
+    "analyze": "تحليل",
+    "reanalyze": "إعادة التحليل",
+    "accept": "قبول",
+    "dismiss": "تجاهل",
+    "empty": "لا توجد رؤى بعد. شغّل التحليل لإنشاء توصيات من بيانات هذا السجل نفسه. تبقى كل توصية قابلة للمراجعة ولا تُطبّق تلقائيًا أبدًا.",
+    "loading": "جارٍ تحميل الرؤى…",
+    "confidence": "ثقة {{value}}%",
+    "confidenceNa": "الثقة غير متاحة",
+    "ai": "ذكاء اصطناعي",
+    "ruleBased": "قائم على القواعد",
+    "analyzedAt": "حُلّل في {{when}}",
+    "model": "النموذج: {{model}}",
+    "promptVersion": "إصدار الموجّه {{version}}",
+    "suggested": "مقترح",
+    "accepted": "مقبول",
+    "dismissed": "مُتجاهَل",
+    "analysisWarnings": "تعذّر تشغيل {{count}} من ميزات الذكاء الاصطناعي وتم تخطّيها.",
+    "analysisFailed": "فشل التحليل. حاول مرة أخرى.",
+    "actionFailed": "فشل الإجراء. حاول مرة أخرى.",
+    "types": {
+      "lead_intelligence": "ذكاء العملاء المحتملين",
+      "company_intelligence": "ذكاء الشركات",
+      "contact_intelligence": "ذكاء جهات الاتصال",
+      "smart_classification": "التصنيف الذكي",
+      "opportunity_potential": "إمكانات الفرصة",
+      "missing_info": "اكتمال البيانات",
+      "duplicate_intelligence": "كشف التكرارات"
+    }
+  },
   "leads": {
     "title": "مسار العملاء",
     "subtitle": "أهّل عملاءك المحتملين وتابعهم",

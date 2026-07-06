@@ -48,6 +48,7 @@ import {
   useUpdateContact,
 } from "@workspace/api-client-react";
 import { CommunicationHub } from "@/components/CommunicationHub";
+import { AiInsightsSection } from "@/components/AiInsightsSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import {
@@ -579,6 +580,8 @@ export default function ContactDetailScreen() {
             phone={contact.mobile}
             displayName={contactName(contact, t("contacts.newContact"))}
           />
+
+          <AiInsightsSection entityType="contact" id={contactId} />
 
           {/* Lead intelligence */}
           {contact.leadTemperature || typeof contact.leadScore === "number" ? (

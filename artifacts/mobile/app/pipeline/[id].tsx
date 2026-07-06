@@ -61,6 +61,7 @@ import {
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
+import { AiInsightsSection } from "@/components/AiInsightsSection";
 import { CommunicationHub } from "@/components/CommunicationHub";
 import { DocumentsSection } from "@/components/DocumentsSection";
 import { MentionText } from "@/components/MentionText";
@@ -650,6 +651,8 @@ export default function PipelineDetailScreen() {
             phone={contactQuery.data?.mobile ?? contactQuery.data?.officePhone}
             displayName={lead.contactName ?? lead.title}
           />
+
+          <AiInsightsSection entityType="lead" id={leadId} />
 
           {/* Actions */}
           {!isWonOrLost ? (

@@ -4962,6 +4962,170 @@ export const GetAiPlatformUsageResponse = zod.object({
 
 
 /**
+ * @summary Tenant-wide AI insights review summary (status counts + recent)
+ */
+export const GetAiInsightsOverviewResponse = zod.object({
+  "counts": zod.record(zod.string(), zod.number()),
+  "recent": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Generate (or re-generate) all applicable AI insights for one CRM entity
+ */
+export const AnalyzeAiInsightsParams = zod.object({
+  "entityType": zod.coerce.string().describe('lead | contact | organization'),
+  "id": zod.coerce.number()
+})
+
+export const AnalyzeAiInsightsResponse = zod.object({
+  "insights": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})),
+  "aiErrors": zod.array(zod.object({
+  "feature": zod.string(),
+  "message": zod.string()
+}))
+})
+
+
+/**
+ * @summary List stored AI insights for one CRM entity
+ */
+export const GetAiInsightsParams = zod.object({
+  "entityType": zod.coerce.string().describe('lead | contact | organization'),
+  "id": zod.coerce.number()
+})
+
+export const GetAiInsightsResponse = zod.object({
+  "insights": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
+})
+
+
+/**
+ * @summary Accept an AI recommendation (audited user action; does not mutate CRM fields)
+ */
+export const AcceptAiInsightParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AcceptAiInsightResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Dismiss an AI recommendation (audited review action)
+ */
+export const DismissAiInsightParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DismissAiInsightResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityId": zod.number(),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
  * @summary Register an Expo push token for the current user's device
  */
 export const RegisterPushTokenBody = zod.object({

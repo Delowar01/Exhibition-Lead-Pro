@@ -43,6 +43,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { name: "Roles & Permissions", href: "/admin/roles", icon: ShieldCheck },
     { name: "Reports", href: "/admin/reports", icon: BarChart2 },
     { name: "Executive Dashboard", href: "/admin/analytics", icon: LineChart },
+    { name: "AI Insights", href: "/admin/ai-insights", icon: Sparkles },
     { name: "AI Intelligence", href: "/admin/ai", icon: Sparkles },
     { name: "Organization", href: "/admin/organization", icon: Building2 },
     { name: "Security", href: "/admin/security", icon: ShieldAlert },

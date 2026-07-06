@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronLeft, Building2, Globe, Phone, Mail, MapPin, Users, Target, DollarSign, Calendar, StickyNote, FileText, Clock } from "lucide-react";
+import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
@@ -125,28 +126,32 @@ export default function AdminCompanyDetail() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle>Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {infoRows.filter((r) => r.value).map((r) => (
-              <div key={r.label} className="flex items-start gap-3 text-sm">
-                <span className="text-muted-foreground mt-0.5">{r.icon}</span>
-                <div>
-                  <div className="text-xs text-muted-foreground">{r.label}</div>
-                  <div>{r.value}</div>
+        <div className="lg:col-span-1 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {infoRows.filter((r) => r.value).map((r) => (
+                <div key={r.label} className="flex items-start gap-3 text-sm">
+                  <span className="text-muted-foreground mt-0.5">{r.icon}</span>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{r.label}</div>
+                    <div>{r.value}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
-            {org.notes && (
-              <div className="pt-2 border-t">
-                <div className="text-xs text-muted-foreground mb-1">Notes</div>
-                <div className="text-sm whitespace-pre-wrap">{org.notes}</div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ))}
+              {org.notes && (
+                <div className="pt-2 border-t">
+                  <div className="text-xs text-muted-foreground mb-1">Notes</div>
+                  <div className="text-sm whitespace-pre-wrap">{org.notes}</div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {Number.isFinite(id) && id > 0 && <AiInsightsPanel entityType="organization" id={id} />}
+        </div>
 
         <Card className="lg:col-span-2">
           <CardHeader>

@@ -462,6 +462,37 @@
     "savedFilters": "Saved Filters",
     "savedFilterNamePlaceholder": "Name this filter…"
   },
+  "aiInsights": {
+    "title": "AI insights",
+    "analyze": "Analyze",
+    "reanalyze": "Re-analyze",
+    "accept": "Accept",
+    "dismiss": "Dismiss",
+    "empty": "No AI insights yet. Run an analysis to generate recommendations from this record's own data. Every recommendation stays reviewable and is never applied automatically.",
+    "loading": "Loading insights…",
+    "confidence": "{{value}}% confidence",
+    "confidenceNa": "Confidence n/a",
+    "ai": "AI",
+    "ruleBased": "Rule-based",
+    "analyzedAt": "Analyzed {{when}}",
+    "model": "Model: {{model}}",
+    "promptVersion": "Prompt v{{version}}",
+    "suggested": "Suggested",
+    "accepted": "Accepted",
+    "dismissed": "Dismissed",
+    "analysisWarnings": "{{count}} AI feature(s) could not run and were skipped.",
+    "analysisFailed": "Analysis failed. Please try again.",
+    "actionFailed": "Action failed. Please try again.",
+    "types": {
+      "lead_intelligence": "Lead intelligence",
+      "company_intelligence": "Company intelligence",
+      "contact_intelligence": "Contact intelligence",
+      "smart_classification": "Smart classification",
+      "opportunity_potential": "Opportunity potential",
+      "missing_info": "Data completeness",
+      "duplicate_intelligence": "Duplicate detection"
+    }
+  },
   "leads": {
     "title": "Pipeline",
     "subtitle": "Qualify and track your leads",

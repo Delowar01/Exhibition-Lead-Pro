@@ -3893,6 +3893,131 @@ paths:
               schema:
                 $ref: "#/components/schemas/AiPlatformUsageResponse"
 
+  /ai/insights/overview:
+    get:
+      operationId: getAiInsightsOverview
+      tags: [ai]
+      summary: Tenant-wide AI insights review summary (status counts + recent)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiInsightsOverviewResponse"
+
+  /ai/insights/{entityType}/{id}/analyze:
+    post:
+      operationId: analyzeAiInsights
+      tags: [ai]
+      summary: Generate (or re-generate) all applicable AI insights for one CRM entity
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: lead | contact | organization
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAnalyzeResponse"
+        "404":
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/insights/{entityType}/{id}:
+    get:
+      operationId: getAiInsights
+      tags: [ai]
+      summary: List stored AI insights for one CRM entity
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: lead | contact | organization
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiInsightsListResponse"
+        "404":
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/insights/{id}/accept:
+    post:
+      operationId: acceptAiInsight
+      tags: [ai]
+      summary: Accept an AI recommendation (audited user action; does not mutate CRM fields)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiInsight"
+        "404":
+          description: Insight not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/insights/{id}/dismiss:
+    post:
+      operationId: dismissAiInsight
+      tags: [ai]
+      summary: Dismiss an AI recommendation (audited review action)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiInsight"
+        "404":
+          description: Insight not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -9629,6 +9754,122 @@ components:
           $ref: "#/components/schemas/AiHealthLast24h"
         checkedAt:
           type: string
+
+    AiInsight:
+      type: object
+      required:
+        [
+          id,
+          companyId,
+          entityType,
+          entityId,
+          insightType,
+          data,
+          source,
+          status,
+          generatedAt,
+          lastAnalysisAt,
+        ]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        entityType:
+          type: string
+          description: lead | contact | organization
+        entityId:
+          type: integer
+        insightType:
+          type: string
+          description: lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence
+        data:
+          type: object
+          additionalProperties: true
+          description: Structured, feature-specific output (shape varies by insightType).
+        confidence:
+          type: integer
+          nullable: true
+          description: 0-100 confidence, null when unknown.
+        reasoning:
+          type: string
+          nullable: true
+        source:
+          type: string
+          description: ai | deterministic
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          description: suggested | accepted | dismissed
+        generatedAt:
+          type: string
+        lastAnalysisAt:
+          type: string
+        acceptedById:
+          type: integer
+          nullable: true
+        acceptedAt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    AiInsightsListResponse:
+      type: object
+      required: [insights]
+      properties:
+        insights:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiInsight"
+
+    AiInsightError:
+      type: object
+      required: [feature, message]
+      properties:
+        feature:
+          type: string
+        message:
+          type: string
+
+    AiAnalyzeResponse:
+      type: object
+      required: [insights, aiErrors]
+      properties:
+        insights:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiInsight"
+        aiErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiInsightError"
+
+    AiInsightsOverviewResponse:
+      type: object
+      required: [counts, recent]
+      properties:
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        recent:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiInsight"
 
     DashboardLeadKpis:
       type: object

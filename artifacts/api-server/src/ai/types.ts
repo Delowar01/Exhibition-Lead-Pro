@@ -8,13 +8,25 @@ export type AiFeature =
   | "card_extraction"
   | "lead_scoring"
   | "contact_enrichment"
-  | "assignee_recommendation";
+  | "assignee_recommendation"
+  // Stage 5A — Enterprise AI Intelligence. Each is a JSON-returning feature routed
+  // through the same gated runner + ledger as the foundation features.
+  | "lead_intelligence"
+  | "company_intelligence"
+  | "contact_intelligence"
+  | "smart_classification"
+  | "opportunity_potential";
 
 export const AI_FEATURES: AiFeature[] = [
   "card_extraction",
   "lead_scoring",
   "contact_enrichment",
   "assignee_recommendation",
+  "lead_intelligence",
+  "company_intelligence",
+  "contact_intelligence",
+  "smart_classification",
+  "opportunity_potential",
 ];
 
 export interface AiTextPart {

@@ -9,6 +9,11 @@ import {
   SCORING_PROMPT,
   ENRICHMENT_PROMPT,
   ASSIGNEE_PROMPT,
+  LEAD_INTELLIGENCE_PROMPT,
+  COMPANY_INTELLIGENCE_PROMPT,
+  CONTACT_INTELLIGENCE_PROMPT,
+  SMART_CLASSIFICATION_PROMPT,
+  OPPORTUNITY_POTENTIAL_PROMPT,
 } from "../ai/prompts.js";
 import type { AiFeature, AiPart, AiRequest } from "../ai/types.js";
 import * as aiService from "../services/ai.service.js";
@@ -430,6 +435,167 @@ export async function recommendAssignee(
   const idNum = typeof parsed.userId === "number" ? parsed.userId : Number(parsed.userId);
   const userId = Number.isFinite(idNum) ? Math.round(idNum) : candidates[0].id;
   return { userId, reasoning: str(parsed.reasoning) ?? "" };
+}
+
+// ── Stage 5A — Enterprise AI Intelligence runners ─────────────────────────────
+//
+// Each runner takes a CRM-data-only `context` string (assembled by the caller from
+// records ALREADY stored in the tenant) and routes through the same gated callJson
+// seam as the foundation features — so per-tenant enable/feature-flag/budget gates and
+// the ai_invocations ledger apply automatically. Every result carries confidence, an
+// insufficientData flag, and grounded reasoning; the shared prompt instructs the model
+// to return "Not enough information" (low confidence + insufficientData) rather than
+// guess. Callers never auto-write these into CRM fields — they are reviewable
+// suggestions persisted in ai_insights.
+
+function bool(value: unknown): boolean {
+  return value === true || value === "true";
+}
+
+function pick(value: unknown, allowed: string[], fallback: string): string {
+  const s = str(value);
+  if (!s) return fallback;
+  return allowed.find((a) => a.toLowerCase() === s.toLowerCase()) ?? fallback;
+}
+
+function strArr(value: unknown, max: number): string[] {
+  return Array.isArray(value)
+    ? value.map(str).filter((x): x is string => x !== null).slice(0, max)
+    : [];
+}
+
+export interface IntelligenceMeta {
+  confidence: number;
+  insufficientData: boolean;
+  reasoning: string;
+}
+
+export interface LeadIntelligenceResult extends IntelligenceMeta {
+  score: number;
+  quality: "Excellent" | "Good" | "Average" | "Low" | "Spam";
+  buyingPotential: "High" | "Medium" | "Low";
+  followUpPriority: "Urgent" | "High" | "Normal" | "Low";
+}
+
+export interface CompanyIntelligenceResult extends IntelligenceMeta {
+  summary: string | null;
+  industry: string | null;
+  sizeSignal: string | null;
+  engagementLevel: "Hot" | "Active" | "Warm" | "Dormant";
+  keyContacts: string[];
+  suggestedActions: string[];
+}
+
+export interface ContactIntelligenceResult extends IntelligenceMeta {
+  summary: string | null;
+  seniority: string | null;
+  decisionMakerLikelihood: "High" | "Medium" | "Low";
+  talkingPoints: string[];
+  suggestedActions: string[];
+}
+
+export interface SmartClassificationResult extends IntelligenceMeta {
+  industry: string | null;
+  segment: "Enterprise" | "Mid-Market" | "SMB" | "Startup" | "Unknown";
+  businessType: "B2B" | "B2C" | "B2G" | "Unknown";
+  productInterest: string[];
+  exhibitionCategory: string | null;
+}
+
+export interface OpportunityPotentialResult extends IntelligenceMeta {
+  conversionProbability: number;
+  revenuePotential: "High" | "Medium" | "Low" | "Unknown";
+  opportunityRating: "A" | "B" | "C" | "D";
+  followUpUrgency: "Immediate" | "This week" | "This month" | "Low";
+}
+
+async function runIntelligence(
+  feature: AiFeature,
+  promptText: string,
+  context: string,
+  ctx?: AiContext,
+): Promise<Record<string, unknown>> {
+  return callJson({
+    feature,
+    parts: [{ text: `${promptText}\n\nCRM data:\n${context}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+    confidenceOf: (p) => clampScore(p.confidence),
+  });
+}
+
+export async function analyzeLeadIntelligence(context: string, ctx?: AiContext): Promise<LeadIntelligenceResult> {
+  const p = await runIntelligence("lead_intelligence", LEAD_INTELLIGENCE_PROMPT, context, ctx);
+  return {
+    score: clampScore(p.score),
+    quality: pick(p.quality, ["Excellent", "Good", "Average", "Low", "Spam"], "Average") as LeadIntelligenceResult["quality"],
+    buyingPotential: pick(p.buyingPotential, ["High", "Medium", "Low"], "Low") as LeadIntelligenceResult["buyingPotential"],
+    followUpPriority: pick(p.followUpPriority, ["Urgent", "High", "Normal", "Low"], "Normal") as LeadIntelligenceResult["followUpPriority"],
+    confidence: clampScore(p.confidence),
+    insufficientData: bool(p.insufficientData),
+    reasoning: str(p.reasoning) ?? "",
+  };
+}
+
+export async function analyzeCompanyIntelligence(context: string, ctx?: AiContext): Promise<CompanyIntelligenceResult> {
+  const p = await runIntelligence("company_intelligence", COMPANY_INTELLIGENCE_PROMPT, context, ctx);
+  return {
+    summary: str(p.summary),
+    industry: str(p.industry),
+    sizeSignal: str(p.sizeSignal),
+    engagementLevel: pick(p.engagementLevel, ["Hot", "Active", "Warm", "Dormant"], "Dormant") as CompanyIntelligenceResult["engagementLevel"],
+    keyContacts: strArr(p.keyContacts, 3),
+    suggestedActions: strArr(p.suggestedActions, 4),
+    confidence: clampScore(p.confidence),
+    insufficientData: bool(p.insufficientData),
+    reasoning: str(p.reasoning) ?? "",
+  };
+}
+
+export async function analyzeContactIntelligence(context: string, ctx?: AiContext): Promise<ContactIntelligenceResult> {
+  const p = await runIntelligence("contact_intelligence", CONTACT_INTELLIGENCE_PROMPT, context, ctx);
+  const seniorityRaw = str(p.seniority);
+  const allowedSeniority = ["C-Level", "VP", "Director", "Manager", "Individual Contributor"];
+  const seniority = seniorityRaw && allowedSeniority.some((s) => s.toLowerCase() === seniorityRaw.toLowerCase())
+    ? allowedSeniority.find((s) => s.toLowerCase() === seniorityRaw.toLowerCase())!
+    : null;
+  return {
+    summary: str(p.summary),
+    seniority,
+    decisionMakerLikelihood: pick(p.decisionMakerLikelihood, ["High", "Medium", "Low"], "Low") as ContactIntelligenceResult["decisionMakerLikelihood"],
+    talkingPoints: strArr(p.talkingPoints, 4),
+    suggestedActions: strArr(p.suggestedActions, 3),
+    confidence: clampScore(p.confidence),
+    insufficientData: bool(p.insufficientData),
+    reasoning: str(p.reasoning) ?? "",
+  };
+}
+
+export async function classifyEntity(context: string, ctx?: AiContext): Promise<SmartClassificationResult> {
+  const p = await runIntelligence("smart_classification", SMART_CLASSIFICATION_PROMPT, context, ctx);
+  return {
+    industry: str(p.industry),
+    segment: pick(p.segment, ["Enterprise", "Mid-Market", "SMB", "Startup", "Unknown"], "Unknown") as SmartClassificationResult["segment"],
+    businessType: pick(p.businessType, ["B2B", "B2C", "B2G", "Unknown"], "Unknown") as SmartClassificationResult["businessType"],
+    productInterest: strArr(p.productInterest, 3),
+    exhibitionCategory: str(p.exhibitionCategory),
+    confidence: clampScore(p.confidence),
+    insufficientData: bool(p.insufficientData),
+    reasoning: str(p.reasoning) ?? "",
+  };
+}
+
+export async function analyzeOpportunity(context: string, ctx?: AiContext): Promise<OpportunityPotentialResult> {
+  const p = await runIntelligence("opportunity_potential", OPPORTUNITY_POTENTIAL_PROMPT, context, ctx);
+  return {
+    conversionProbability: clampScore(p.conversionProbability),
+    revenuePotential: pick(p.revenuePotential, ["High", "Medium", "Low", "Unknown"], "Unknown") as OpportunityPotentialResult["revenuePotential"],
+    opportunityRating: pick(p.opportunityRating, ["A", "B", "C", "D"], "D") as OpportunityPotentialResult["opportunityRating"],
+    followUpUrgency: pick(p.followUpUrgency, ["Immediate", "This week", "This month", "Low"], "Low") as OpportunityPotentialResult["followUpUrgency"],
+    confidence: clampScore(p.confidence),
+    insufficientData: bool(p.insufficientData),
+    reasoning: str(p.reasoning) ?? "",
+  };
 }
 
 export function logAiError(context: string, err: unknown): void {

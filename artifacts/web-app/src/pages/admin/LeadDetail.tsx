@@ -53,6 +53,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DocumentsPanel from "@/components/DocumentsPanel";
+import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -526,6 +527,8 @@ export default function AdminLeadDetail() {
               </CardContent>
             </Card>
           )}
+
+          <AiInsightsPanel entityType="lead" id={id} />
 
           <AssignmentCard lead={lead} leadId={id} />
 

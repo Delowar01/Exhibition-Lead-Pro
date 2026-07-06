@@ -3142,6 +3142,61 @@ export interface AiHealthResponse {
   checkedAt: string;
 }
 
+/**
+ * Structured, feature-specific output (shape varies by insightType).
+ */
+export type AiInsightData = { [key: string]: unknown };
+
+export interface AiInsight {
+  id: number;
+  companyId: number;
+  /** lead | contact | organization */
+  entityType: string;
+  entityId: number;
+  /** lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence */
+  insightType: string;
+  /** Structured, feature-specific output (shape varies by insightType). */
+  data: AiInsightData;
+  /** 0-100 confidence, null when unknown. */
+  confidence?: number | null;
+  reasoning?: string | null;
+  /** ai | deterministic */
+  source: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
+  /** suggested | accepted | dismissed */
+  status: string;
+  generatedAt: string;
+  lastAnalysisAt: string;
+  acceptedById?: number | null;
+  acceptedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiInsightsListResponse {
+  insights: AiInsight[];
+}
+
+export interface AiInsightError {
+  feature: string;
+  message: string;
+}
+
+export interface AiAnalyzeResponse {
+  insights: AiInsight[];
+  aiErrors: AiInsightError[];
+}
+
+export type AiInsightsOverviewResponseCounts = {[key: string]: number};
+
+export interface AiInsightsOverviewResponse {
+  counts: AiInsightsOverviewResponseCounts;
+  recent: AiInsight[];
+}
+
 export interface DashboardLeadKpis {
   total: number;
   today: number;
