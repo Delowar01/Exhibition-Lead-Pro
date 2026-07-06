@@ -364,9 +364,17 @@ describe("Org-scoped read-only rollups (health / sla-risks / bottlenecks)", () =
   });
 
   it("every SLA risk item carries a deterministic confidence (100)", async () => {
+    // A fresh contact — leads are one-open-lead-per-contact (409 otherwise).
+    const cRes = await api("POST", "/contacts", adminToken, {
+      firstName: "Otto",
+      lastName: "Overdue",
+      email: `otto.overdue-${SUFFIX}@example.com`,
+    });
+    expect(cRes.status).toBe(201);
+    const overdueContactId = (await cRes.json()).id;
     // Seed a guaranteed risk: a lead whose closing date is already in the past.
     const overdue = await api("POST", "/leads", adminToken, {
-      contactId,
+      contactId: overdueContactId,
       stage: "new",
       title: `Overdue QA lead ${SUFFIX}`,
       value: 1000,
@@ -417,9 +425,17 @@ describe("Progression — uses the tenant's configured pipeline stages, not cano
       if (s.isDefault) await api("DELETE", `/pipeline/stages/${s.id}`, adminToken);
     }
 
+    // A fresh contact — leads are one-open-lead-per-contact (409 otherwise).
+    const cRes = await api("POST", "/contacts", adminToken, {
+      firstName: "Iris",
+      lastName: "Intake",
+      email: `iris.intake-${SUFFIX}@example.com`,
+    });
+    expect(cRes.status).toBe(201);
+    const customContactId = (await cRes.json()).id;
     // A lead sitting in the first custom stage.
     const leadRes = await api("POST", "/leads", adminToken, {
-      contactId,
+      contactId: customContactId,
       stage: "intake",
       title: `Custom-pipeline lead ${SUFFIX}`,
       value: 2000,
