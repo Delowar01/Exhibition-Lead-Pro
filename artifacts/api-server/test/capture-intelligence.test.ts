@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { inArray, eq } from "drizzle-orm";
-import { db, contactsTable, scansTable } from "@workspace/db";
+import { inArray, eq, like } from "drizzle-orm";
+import { db, contactsTable, scansTable, companiesTable, usersTable, loginAttemptsTable } from "@workspace/db";
 import {
   validateEmail,
   normalizeEmail,
@@ -107,6 +107,8 @@ describe("capture-validation — analyzeCaptureFields aggregate", () => {
 
 const BASE = "http://localhost:80/api";
 const TECHCORP = { email: "admin@techcorp.com", password: "Admin123!" };
+const NEXUS = { email: "admin@nexussys.io", password: "Admin123!" };
+const PLATFORM = { email: "admin@cardscannerpro.com", password: "Admin123!" };
 
 type Session = { token: string; companyId: number };
 
@@ -190,6 +192,34 @@ describe("POST /scans/analyze — read-only capture intelligence", () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it("recognition is tenant-scoped — another tenant never sees TechCorp's contact", async () => {
+    const nexus = await login(NEXUS);
+    expect(nexus.companyId).not.toBe(tech.companyId);
+    const res = await fetch(`${BASE}/scans/analyze`, {
+      method: "POST",
+      headers: authHeaders(nexus),
+      body: JSON.stringify({ fields: { firstName: "Dupe", lastName: "Signal", mobile: uniquePhone }, includeAi: false }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The matching phone lives in TechCorp; Nexus must get an empty, non-leaking result.
+    expect(body.contactMatches.length).toBe(0);
+    expect(body.duplicateWarning.isLikelyDuplicate).toBe(false);
+  });
+
+  it("soft-degrades AI industry classification to HTTP 200 with a boolean aiDegraded flag", async () => {
+    const res = await fetch(`${BASE}/scans/analyze`, {
+      method: "POST",
+      headers: authHeaders(tech),
+      body: JSON.stringify({ fields: { company: "TechCorp", email: "someone@techcorp.com" }, includeAi: true }),
+    });
+    // Whether or not the LLM is reachable, the endpoint never 500s: it either
+    // returns an AI suggestion with provenance or degrades honestly.
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(typeof body.aiDegraded).toBe("boolean");
+  });
 });
 
 describe("POST /scans/batch-analyze — async batch", () => {
@@ -221,6 +251,60 @@ describe("POST /scans/batch-analyze — async batch", () => {
     }
     expect(done?.status).toBe("completed");
     expect(done?.results.length).toBe(1);
+  });
+});
+
+describe("POST /scans/analyze — scans:view permission gating", () => {
+  const SUFFIX = Date.now();
+  const ORG_DOMAIN = `captureperms-${SUFFIX}.test`;
+  const EMPLOYEE_EMAIL = `qa-employee@${ORG_DOMAIN}`;
+  const PW = "Admin123!";
+  let companyId = 0;
+  let employeeToken = "";
+
+  beforeAll(async () => {
+    const platform = await login(PLATFORM);
+    const createCo = await fetch(`${BASE}/companies`, {
+      method: "POST",
+      headers: authHeaders(platform),
+      body: JSON.stringify({ name: `QA CapturePerms ${SUFFIX}`, plan: "professional" }),
+    });
+    expect(createCo.status).toBe(201);
+    companyId = (await createCo.json()).id;
+    await db.update(companiesTable).set({ status: "active" }).where(eq(companiesTable.id, companyId));
+
+    // Employee with empty permissions: scans:view is deny-by-default, so the
+    // read-only analyze endpoint must 403 rather than leak tenant recognition.
+    const createEmp = await fetch(`${BASE}/users`, {
+      method: "POST",
+      headers: authHeaders(platform),
+      body: JSON.stringify({
+        email: EMPLOYEE_EMAIL,
+        name: "QA Capture Employee",
+        role: "employee",
+        companyId,
+        password: PW,
+        permissions: {},
+      }),
+    });
+    expect(createEmp.status).toBe(201);
+    const emp = await login({ email: EMPLOYEE_EMAIL, password: PW });
+    employeeToken = emp.token;
+  });
+
+  afterAll(async () => {
+    await db.delete(loginAttemptsTable).where(like(loginAttemptsTable.email, `%@${ORG_DOMAIN}`));
+    await db.delete(usersTable).where(like(usersTable.email, `%@${ORG_DOMAIN}`));
+    if (companyId) await db.delete(companiesTable).where(eq(companiesTable.id, companyId));
+  });
+
+  it("403s an employee without scans:view", async () => {
+    const res = await fetch(`${BASE}/scans/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${employeeToken}` },
+      body: JSON.stringify({ fields: { email: "x@y.com" }, includeAi: false }),
+    });
+    expect(res.status).toBe(403);
   });
 });
 

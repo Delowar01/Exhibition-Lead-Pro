@@ -5,6 +5,7 @@ import { logger } from "../lib/logger.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { analyzeCapture, type CaptureAnalysis } from "./capture-intelligence.service.js";
 import type { CaptureFields } from "../lib/capture-validation.js";
+import { extractCardData } from "../lib/ai.js";
 
 // Batch runner for Stage 5E intelligent capture. It lets a tenant analyze MANY captured
 // cards at once (e.g. a mobile batch-scan session) without holding the request open.
@@ -25,6 +26,8 @@ export interface CaptureAnalyzeJobPayload {
   jobId: string;
   key: string;
   fields: CaptureFields;
+  imageData?: string | null;
+  appLanguage?: string;
   user: AuthUser;
 }
 
@@ -72,6 +75,8 @@ function finalize(job: CaptureBatchJob): void {
 export interface CaptureBatchItem {
   key: string;
   fields: CaptureFields;
+  imageData?: string | null;
+  appLanguage?: string;
 }
 
 export async function startCaptureBatch(user: AuthUser, items: CaptureBatchItem[]): Promise<CaptureBatchJob> {
@@ -106,7 +111,7 @@ export async function startCaptureBatch(user: AuthUser, items: CaptureBatchItem[
   for (const item of items) {
     void queue.enqueue<CaptureAnalyzeJobPayload>(
       CAPTURE_ANALYZE_JOB,
-      { jobId: job.id, key: item.key, fields: item.fields, user },
+      { jobId: job.id, key: item.key, fields: item.fields, imageData: item.imageData ?? null, appLanguage: item.appLanguage, user },
       { maxAttempts: 1 },
     );
   }
@@ -121,7 +126,31 @@ export async function runCaptureAnalyzeJob(payload: CaptureAnalyzeJobPayload): P
   if (!job) return; // job pruned/expired — nothing to update
   if (job.status === "queued") job.status = "running";
   try {
-    const analysis = await analyzeCapture(payload.user, payload.fields);
+    // When the item carries a raw image, run OCR first so a batch of scans goes through the
+    // full OCR -> validation -> recognition pipeline. OCR-derived fields are the base; any
+    // explicitly supplied fields override them (a reviewer's edits win over raw OCR).
+    let fields = payload.fields;
+    if (typeof payload.imageData === "string" && payload.imageData.length > 0) {
+      const lang = payload.appLanguage === "ar" ? "ar" : "en";
+      const ocr = await extractCardData(payload.imageData, lang, {
+        companyId: payload.user.companyId ?? undefined,
+        userId: payload.user.id,
+      });
+      const f = ocr.fields;
+      const ocrFields: CaptureFields = {
+        firstName: f.firstName,
+        lastName: f.lastName,
+        jobTitle: f.jobTitle,
+        company: f.company,
+        email: f.email,
+        mobile: f.mobile,
+        website: f.website,
+        linkedin: f.linkedin,
+        address: f.address,
+      };
+      fields = { ...ocrFields, ...payload.fields };
+    }
+    const analysis = await analyzeCapture(payload.user, fields);
     job.results.push({ key: payload.key, analysis });
     job.succeeded += 1;
   } catch (err) {

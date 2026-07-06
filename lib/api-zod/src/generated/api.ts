@@ -4023,7 +4023,9 @@ export const StartCaptureBatchBody = zod.object({
   "address": zod.string().nullish(),
   "country": zod.string().nullish(),
   "postalCode": zod.string().nullish()
-}).describe('Captured (not-yet-saved) card fields to analyze. All optional.')
+}).describe('Captured (not-yet-saved) card fields to analyze. All optional.'),
+  "imageData": zod.string().nullish().describe('Optional base64 card image. When provided, the batch runs OCR to derive fields (merged under any explicitly provided fields) before validation + recognition.'),
+  "appLanguage": zod.string().optional().describe('OCR language hint, used only when imageData is provided.')
 }))
 })
 

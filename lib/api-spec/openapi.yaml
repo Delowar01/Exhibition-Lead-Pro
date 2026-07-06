@@ -9295,6 +9295,12 @@ components:
           description: "Client-provided identifier echoed back on the matching result."
         fields:
           $ref: "#/components/schemas/CaptureFields"
+        imageData:
+          type: ["string", "null"]
+          description: "Optional base64 card image. When provided, the batch runs OCR to derive fields (merged under any explicitly provided fields) before validation + recognition."
+        appLanguage:
+          type: string
+          description: "OCR language hint, used only when imageData is provided."
 
     CaptureBatchInput:
       type: object

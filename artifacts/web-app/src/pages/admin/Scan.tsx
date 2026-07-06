@@ -10,6 +10,7 @@ import {
 import type {
   CaptureAnalysis,
   CaptureFields,
+  Scan,
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -182,6 +183,24 @@ export default function AdminScan() {
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [leadScore, setLeadScore] = useState<LeadScorePreview | null>(null);
+  const [scanMeta, setScanMeta] = useState<{
+    aiModel: string | null;
+    promptVersion: number | null;
+    processingTimeMs: number | null;
+    qualityScore: number | null;
+    extractionMethod: string | null;
+    fieldConfidences: Record<string, number> | null;
+  } | null>(null);
+  const applyScanMeta = (res: Scan) => {
+    setScanMeta({
+      aiModel: res.aiModel ?? null,
+      promptVersion: res.promptVersion ?? null,
+      processingTimeMs: res.processingTimeMs ?? null,
+      qualityScore: res.qualityScore ?? null,
+      extractionMethod: res.extractionMethod ?? null,
+      fieldConfidences: (res.fieldConfidences as Record<string, number> | null) ?? null,
+    });
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -267,6 +286,7 @@ export default function AdminScan() {
       setCardImage(imageData);
       setScannedData(null);
       setConfidence(null);
+      setScanMeta(null);
       setScanId(null);
       setLeadScore(null);
       resetView();
@@ -290,6 +310,7 @@ export default function AdminScan() {
               return;
             }
             setConfidence(res.confidence ?? null);
+            applyScanMeta(res);
             setScannedData(fieldsFromExtracted(ex));
             toast({
               title: "Card scanned successfully",
@@ -317,6 +338,7 @@ export default function AdminScan() {
   const handleReset = () => {
     setScannedData(null);
     setConfidence(null);
+    setScanMeta(null);
     setCardImage(null);
     setScanId(null);
     setLeadScore(null);
@@ -332,6 +354,7 @@ export default function AdminScan() {
         onSuccess: (res) => {
           const ex = res.extractedData;
           setConfidence(res.confidence ?? null);
+          applyScanMeta(res);
           setScannedData(ex ? fieldsFromExtracted(ex) : emptyFields());
           toast({ title: "OCR re-run", description: "Fields updated from the stored image." });
         },
@@ -387,6 +410,7 @@ export default function AdminScan() {
             resetView();
             const ex = res.extractedData;
             setConfidence(res.confidence ?? null);
+            applyScanMeta(res);
             setScannedData(ex ? fieldsFromExtracted(ex) : emptyFields());
             toast({ title: "Image replaced", description: "New image stored and re-read." });
           },
@@ -860,6 +884,45 @@ export default function AdminScan() {
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {scanMeta && (
+                    <div className="rounded-lg border border-border/60 bg-secondary/30 p-4 space-y-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <Sparkles className="h-4 w-4 text-primary" /> OCR Intelligence
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                        {confidence != null && (
+                          <div>Overall confidence: <span className="font-medium text-foreground">{confidence}%</span></div>
+                        )}
+                        {scanMeta.qualityScore != null && (
+                          <div>Scan quality: <span className="font-medium text-foreground">{scanMeta.qualityScore}/100</span></div>
+                        )}
+                        {scanMeta.aiModel && (
+                          <div>Model: <span className="font-medium text-foreground">{scanMeta.aiModel}</span></div>
+                        )}
+                        {scanMeta.promptVersion != null && (
+                          <div>Prompt: <span className="font-medium text-foreground">v{scanMeta.promptVersion}</span></div>
+                        )}
+                        {scanMeta.processingTimeMs != null && (
+                          <div>Processing: <span className="font-medium text-foreground">{scanMeta.processingTimeMs} ms</span></div>
+                        )}
+                        {scanMeta.extractionMethod && (
+                          <div>Method: <span className="font-medium text-foreground">{scanMeta.extractionMethod}</span></div>
+                        )}
+                      </div>
+                      {scanMeta.fieldConfidences && Object.keys(scanMeta.fieldConfidences).length > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="text-xs font-medium text-muted-foreground">Per-field confidence</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Object.entries(scanMeta.fieldConfidences).map(([f, c]) => (
+                              <Badge key={f} variant="outline" className="text-[10px] font-normal">
+                                {f}: {Math.round(c)}%
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> First Name</Label>

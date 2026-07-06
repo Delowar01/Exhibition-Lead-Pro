@@ -341,6 +341,15 @@
     "aiBadge": "ذكاء",
     "ruleBadge": "قاعدة"
   },
+  "ocrIntel": {
+    "title": "ذكاء المسح الضوئي",
+    "quality": "جودة المسح",
+    "model": "النموذج",
+    "prompt": "الموجّه",
+    "processing": "المعالجة",
+    "method": "الطريقة",
+    "fieldConfidence": "ثقة كل حقل"
+  },
   "scanReview": {
     "title": "المراجعة والحفظ",
     "subtitle": "تحقّق من البيانات المستخرجة قبل الحفظ",

@@ -83,7 +83,24 @@ export default function ScanReviewScreen() {
     lng?: string;
     acc?: string;
     scanId?: string;
+    meta?: string;
   }>();
+  const scanMeta = useMemo(() => {
+    try {
+      if (!params.meta) return null;
+      return JSON.parse(params.meta) as {
+        captureSource?: string | null;
+        model?: string | null;
+        promptVersion?: number | null;
+        processingTimeMs?: number | null;
+        qualityScore?: number | null;
+        extractionMethod?: string | null;
+        fieldConfidences?: Record<string, number> | null;
+      };
+    } catch {
+      return null;
+    }
+  }, [params.meta]);
   const createContact = useCreateContact();
   const { isOnline, enqueueContact } = useOffline();
   const { activeEventId } = useSettings();
@@ -413,6 +430,65 @@ export default function ScanReviewScreen() {
               {confidenceTone.label}
             </Text>
           </View>
+        </View>
+      ) : null}
+
+      {scanMeta ? (
+        <View
+          style={[
+            styles.intelCard,
+            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
+          ]}
+        >
+          <View style={[styles.intelHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Feather name="cpu" size={15} color={colors.primary} />
+            <Text style={[styles.intelHeading, { color: colors.foreground, textAlign }]}>
+              {t("ocrIntel.title")}
+            </Text>
+          </View>
+          <View style={styles.ocrMetaGrid}>
+            {scanMeta.qualityScore != null ? (
+              <Text style={[styles.ocrMetaItem, { color: colors.mutedForeground, textAlign }]}>
+                {t("ocrIntel.quality")}: {scanMeta.qualityScore}/100
+              </Text>
+            ) : null}
+            {scanMeta.model ? (
+              <Text style={[styles.ocrMetaItem, { color: colors.mutedForeground, textAlign }]}>
+                {t("ocrIntel.model")}: {scanMeta.model}
+              </Text>
+            ) : null}
+            {scanMeta.promptVersion != null ? (
+              <Text style={[styles.ocrMetaItem, { color: colors.mutedForeground, textAlign }]}>
+                {t("ocrIntel.prompt")}: v{scanMeta.promptVersion}
+              </Text>
+            ) : null}
+            {scanMeta.processingTimeMs != null ? (
+              <Text style={[styles.ocrMetaItem, { color: colors.mutedForeground, textAlign }]}>
+                {t("ocrIntel.processing")}: {scanMeta.processingTimeMs} ms
+              </Text>
+            ) : null}
+            {scanMeta.extractionMethod ? (
+              <Text style={[styles.ocrMetaItem, { color: colors.mutedForeground, textAlign }]}>
+                {t("ocrIntel.method")}: {scanMeta.extractionMethod}
+              </Text>
+            ) : null}
+          </View>
+          {scanMeta.fieldConfidences && Object.keys(scanMeta.fieldConfidences).length > 0 ? (
+            <View style={{ gap: 6 }}>
+              <Text style={[styles.ocrFieldLabel, { color: colors.foreground, textAlign }]}>
+                {t("ocrIntel.fieldConfidence")}
+              </Text>
+              <View style={[styles.ocrChipWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                {Object.entries(scanMeta.fieldConfidences).map(([f, c]) => (
+                  <View key={f} style={[styles.ocrChip, { backgroundColor: colors.accent }]}>
+                    <Text style={[styles.ocrChipText, { color: colors.primary }]}>
+                      {f}: {Math.round(c)}%
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -952,6 +1028,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: FONT.regular,
     marginTop: -4,
+  },
+  ocrMetaGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  ocrMetaItem: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    width: "48%",
+  },
+  ocrFieldLabel: {
+    fontSize: 12,
+    fontFamily: FONT.semibold,
+  },
+  ocrChipWrap: {
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  ocrChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  ocrChipText: {
+    fontSize: 11,
+    fontFamily: FONT.medium,
   },
   dupBox: {
     borderWidth: 1,

@@ -47,7 +47,9 @@ router.post("/scans/analyze", requirePermission("scans", "view"), validateBody(A
 
 // POST /scans/batch-analyze — enqueue read-only analysis for many captured cards (202).
 router.post("/scans/batch-analyze", requirePermission("scans", "view"), validateBody(StartCaptureBatchBody), async (req: AuthRequest, res) => {
-  const body = req.body as { items: Array<{ key: string; fields: Record<string, unknown> }> };
+  const body = req.body as {
+    items: Array<{ key: string; fields: Record<string, unknown>; imageData?: string | null; appLanguage?: string }>;
+  };
   res.status(202).json(await startCaptureBatch(req.user!, body.items));
 });
 

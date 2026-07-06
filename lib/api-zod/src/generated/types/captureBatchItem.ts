@@ -11,4 +11,11 @@ export interface CaptureBatchItem {
   /** Client-provided identifier echoed back on the matching result. */
   key: string;
   fields: CaptureFields;
+  /**
+     * Optional base64 card image. When provided, the batch runs OCR to derive fields (merged under any explicitly provided fields) before validation + recognition.
+     * @nullable
+     */
+  imageData?: string | null;
+  /** OCR language hint, used only when imageData is provided. */
+  appLanguage?: string;
 }

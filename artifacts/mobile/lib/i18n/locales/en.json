@@ -341,6 +341,15 @@
     "aiBadge": "AI",
     "ruleBadge": "Rule"
   },
+  "ocrIntel": {
+    "title": "OCR Intelligence",
+    "quality": "Scan quality",
+    "model": "Model",
+    "prompt": "Prompt",
+    "processing": "Processing",
+    "method": "Method",
+    "fieldConfidence": "Per-field confidence"
+  },
   "scanReview": {
     "title": "Review & Save",
     "subtitle": "Check the extracted details before saving",

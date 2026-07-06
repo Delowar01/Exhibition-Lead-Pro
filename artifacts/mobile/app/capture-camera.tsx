@@ -174,6 +174,9 @@ export default function CaptureCameraScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ source?: string; mode?: string }>();
   const source = params.source === "signature" ? "signature" : "card";
+  // Stage 5E: classify + persist the capture source on the scan. Camera cards are
+  // "camera"; an email-signature photo maps to the "email_signature" taxonomy value.
+  const captureSource = source === "signature" ? "email_signature" : "camera";
   const mode = (["single", "rapid", "batch"].includes(params.mode ?? "")
     ? params.mode
     : "single") as CaptureMode;
@@ -346,6 +349,7 @@ export default function CaptureCameraScreen() {
           data: {
             imageData,
             appLanguage: language,
+            captureSource,
             eventId,
             latitude: gps.latitude,
             longitude: gps.longitude,
@@ -390,7 +394,7 @@ export default function CaptureCameraScreen() {
         setFailedCount((c) => c + 1);
       }
     },
-    [createScan, createContact, eventId, language, source, t],
+    [createScan, createContact, eventId, language, source, captureSource, t],
   );
 
   // Phase 7: turn raw failures into specific, actionable messages instead of a
@@ -470,6 +474,7 @@ export default function CaptureCameraScreen() {
               data: {
                 imageData,
                 appLanguage: language,
+                captureSource,
                 eventId,
                 latitude: gps.latitude,
                 longitude: gps.longitude,
@@ -552,6 +557,7 @@ export default function CaptureCameraScreen() {
           data: {
             imageData,
             appLanguage: language,
+            captureSource,
             eventId,
             latitude: gps.latitude,
             longitude: gps.longitude,
@@ -601,6 +607,15 @@ export default function CaptureCameraScreen() {
             lng: gps.longitude != null ? String(gps.longitude) : "",
             acc: gps.gpsAccuracy != null ? String(gps.gpsAccuracy) : "",
             scanId: String(scan.id),
+            meta: JSON.stringify({
+              captureSource,
+              model: scan.aiModel ?? null,
+              promptVersion: scan.promptVersion ?? null,
+              processingTimeMs: scan.processingTimeMs ?? null,
+              qualityScore: scan.qualityScore ?? null,
+              extractionMethod: scan.extractionMethod ?? null,
+              fieldConfidences: scan.fieldConfidences ?? null,
+            }),
           },
         });
         return;
