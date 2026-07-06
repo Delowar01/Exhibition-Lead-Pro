@@ -30,6 +30,7 @@ import {
   useAssignLead,
   useAutoAssignLead,
   useRecommendLeadAssignee,
+  useListCrmOrganizations,
   useListUsers,
   useListTeams,
   AssignLeadInputStrategy,
@@ -100,6 +101,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { MentionText } from "@/components/collaboration/MentionText";
 import { MentionInput, type MentionUser } from "@/components/collaboration/MentionInput";
 
+const ORG_NONE = "__none__";
+
 function fmtDate(s?: string | null): string {
   if (!s) return "";
   try {
@@ -144,6 +147,22 @@ export default function AdminLeadDetail() {
   });
   const { data: stagesData } = useListPipelineStages();
   const updateLead = useUpdateLead();
+  const { data: orgData } = useListCrmOrganizations({ status: "active", limit: 200 });
+  const organizations = orgData?.organizations ?? [];
+
+  const handleOrgChange = (val: string) => {
+    const organizationId = val === ORG_NONE ? null : Number(val);
+    updateLead.mutate(
+      { id, data: { organizationId } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(id) });
+          toast({ title: organizationId ? "Company linked" : "Company unlinked" });
+        },
+        onError: () => toast({ title: "Could not update company", variant: "destructive" }),
+      }
+    );
+  };
 
   const handleStageChange = (stageKey: string) => {
     updateLead.mutate(
@@ -517,6 +536,20 @@ export default function AdminLeadDetail() {
               <CardTitle className="text-base">Deal Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-muted-foreground">Company (CRM record)</Label>
+                <Select value={lead.organizationId ? String(lead.organizationId) : ORG_NONE} onValueChange={handleOrgChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Link to a company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ORG_NONE}>None</SelectItem>
+                    {organizations.map((o) => (
+                      <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {(lead.value ?? null) !== null && (
                 <InfoRow label="Value">
                   {(lead.currency ?? "") + " "}

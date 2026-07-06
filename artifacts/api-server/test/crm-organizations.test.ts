@@ -354,7 +354,7 @@ describe("Company Detail aggregate (events/notes/documents/timeline)", () => {
       lastName: "Gate",
       email: `aggie-${SUFFIX}@example.com`,
       organizationId: orgId,
-      eventId: String(eventId),
+      eventId,
     });
     expect(contact.status).toBe(201);
     contactId = (await contact.json()).id;
@@ -399,6 +399,36 @@ describe("Company Detail aggregate (events/notes/documents/timeline)", () => {
     const body = await res.json();
     expect(Array.isArray(body.entries)).toBe(true);
     expect(body.entries.length).toBeGreaterThan(0);
+  });
+
+  it("round-trips the contact ↔ company link via PATCH (link, unlink, relink)", async () => {
+    // unlink
+    let res = await api("PATCH", `/contacts/${contactId}`, orgToken, { organizationId: null });
+    expect(res.status).toBe(200);
+    expect((await res.json()).organizationId).toBeNull();
+    // relink
+    res = await api("PATCH", `/contacts/${contactId}`, orgToken, { organizationId: orgId });
+    expect(res.status).toBe(200);
+    expect((await res.json()).organizationId).toBe(orgId);
+  });
+
+  it("round-trips the lead ↔ company link via PATCH (link, unlink, relink)", async () => {
+    let res = await api("PATCH", `/leads/${leadId}`, orgToken, { organizationId: null });
+    expect(res.status).toBe(200);
+    expect((await res.json()).organizationId).toBeNull();
+    res = await api("PATCH", `/leads/${leadId}`, orgToken, { organizationId: orgId });
+    expect(res.status).toBe(200);
+    expect((await res.json()).organizationId).toBe(orgId);
+  });
+
+  it("rejects re-linking a lead to a cross-tenant company via PATCH (400)", async () => {
+    const [foreignOrg] = await db
+      .insert(organizationsTable)
+      .values({ companyId: foreignCompanyId, name: `QA Foreign Link ${SUFFIX}`, normalizedName: `qa foreign link ${SUFFIX}` })
+      .returning();
+    expect((await api("PATCH", `/leads/${leadId}`, orgToken, { organizationId: foreignOrg.id })).status).toBe(400);
+    // the lead's original own-tenant link is unaffected
+    expect((await (await api("GET", `/leads/${leadId}`, orgToken)).json()).organizationId).toBe(orgId);
   });
 
   it("view-gates every aggregate endpoint (employee without organizations.view → 403)", async () => {

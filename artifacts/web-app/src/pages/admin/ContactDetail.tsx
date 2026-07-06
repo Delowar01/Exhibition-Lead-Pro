@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
-import { useGetContact, useUpdateContact, useDeleteContact, useEnrichContact, getGetContactQueryKey, ContactStatus } from "@workspace/api-client-react";
+import { useGetContact, useUpdateContact, useDeleteContact, useEnrichContact, useListCrmOrganizations, getGetContactQueryKey, ContactStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIco
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { CommunicationHub } from "@/components/CommunicationHub";
+
+const ORG_NONE = "__none__";
 
 const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; bar: string; icon: React.ReactNode }> = {
   hot: { label: "Hot", badge: "bg-red-100 text-red-700 border-red-200", bar: "bg-red-500", icon: <Flame className="h-4 w-4" /> },
@@ -33,6 +35,19 @@ export default function AdminContactDetail() {
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
   const enrich = useEnrichContact();
+  const { data: orgData } = useListCrmOrganizations({ status: "active", limit: 200 });
+  const organizations = orgData?.organizations ?? [];
+
+  const handleOrgChange = (val: string) => {
+    const organizationId = val === ORG_NONE ? null : Number(val);
+    updateContact.mutate({ id: contactId, data: { organizationId } }, {
+      onSuccess: () => {
+        toast({ title: organizationId ? "Company linked" : "Company unlinked" });
+        queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+      },
+      onError: () => toast({ title: "Could not update company", variant: "destructive" }),
+    });
+  };
 
   const handleEnrich = () => {
     enrich.mutate({ id: contactId }, {
@@ -312,6 +327,25 @@ export default function AdminContactDetail() {
                   </Select>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3 bg-secondary/20">
+              <CardTitle className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Company (CRM record)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <Select value={contact.organizationId ? String(contact.organizationId) : ORG_NONE} onValueChange={handleOrgChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Link to a company" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ORG_NONE}>None</SelectItem>
+                  {organizations.map((o) => (
+                    <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </CardContent>
           </Card>
 
