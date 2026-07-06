@@ -38,6 +38,14 @@ export async function list(
   return { rows, total };
 }
 
+// Tenant-scoped, soft-delete-excluding fetch of a specific set of events (used by
+// the Company Detail aggregate, which derives event ids from an org's contacts).
+export async function listByIds(user: AuthUser, ids: number[]): Promise<EventRow[]> {
+  if (ids.length === 0) return [];
+  const where = activeScope(user, eventsTable.companyId, eventsTable.deletedAt, { extra: [inArray(eventsTable.id, ids)] });
+  return db.select().from(eventsTable).where(where).orderBy(eventsTable.startDate);
+}
+
 // Tenant-scoped, soft-delete-excluding single fetch. Returns undefined when the
 // row does not exist, is soft-deleted, or is not accessible to the caller.
 export async function findById(user: AuthUser, id: number): Promise<EventRow | undefined> {

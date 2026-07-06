@@ -10165,6 +10165,314 @@ export function useListCrmOrganizationLeads<TData = Awaited<ReturnType<typeof li
 
 
 
+export const getListCrmOrganizationEventsUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/events`
+}
+
+/**
+ * @summary List events an organization's contacts were captured at
+ */
+export const listCrmOrganizationEvents = async (id: number, options?: RequestInit): Promise<EventList> => {
+
+  return customFetch<EventList>(getListCrmOrganizationEventsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCrmOrganizationEventsQueryKey = (id: number,) => {
+    return [
+    `/api/organizations/${id}/events`
+    ] as const;
+    }
+
+
+export const getListCrmOrganizationEventsQueryOptions = <TData = Awaited<ReturnType<typeof listCrmOrganizationEvents>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrmOrganizationEventsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrmOrganizationEvents>>> = ({ signal }) => listCrmOrganizationEvents(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCrmOrganizationEventsQueryResult = NonNullable<Awaited<ReturnType<typeof listCrmOrganizationEvents>>>
+export type ListCrmOrganizationEventsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List events an organization's contacts were captured at
+ */
+
+export function useListCrmOrganizationEvents<TData = Awaited<ReturnType<typeof listCrmOrganizationEvents>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCrmOrganizationEventsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListCrmOrganizationNotesUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/notes`
+}
+
+/**
+ * @summary List notes across an organization's linked leads and contacts
+ */
+export const listCrmOrganizationNotes = async (id: number, options?: RequestInit): Promise<LeadNoteList> => {
+
+  return customFetch<LeadNoteList>(getListCrmOrganizationNotesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCrmOrganizationNotesQueryKey = (id: number,) => {
+    return [
+    `/api/organizations/${id}/notes`
+    ] as const;
+    }
+
+
+export const getListCrmOrganizationNotesQueryOptions = <TData = Awaited<ReturnType<typeof listCrmOrganizationNotes>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrmOrganizationNotesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrmOrganizationNotes>>> = ({ signal }) => listCrmOrganizationNotes(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationNotes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCrmOrganizationNotesQueryResult = NonNullable<Awaited<ReturnType<typeof listCrmOrganizationNotes>>>
+export type ListCrmOrganizationNotesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List notes across an organization's linked leads and contacts
+ */
+
+export function useListCrmOrganizationNotes<TData = Awaited<ReturnType<typeof listCrmOrganizationNotes>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCrmOrganizationNotesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListCrmOrganizationDocumentsUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/documents`
+}
+
+/**
+ * @summary List documents across an organization's linked contacts and leads
+ */
+export const listCrmOrganizationDocuments = async (id: number, options?: RequestInit): Promise<DocumentList> => {
+
+  return customFetch<DocumentList>(getListCrmOrganizationDocumentsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCrmOrganizationDocumentsQueryKey = (id: number,) => {
+    return [
+    `/api/organizations/${id}/documents`
+    ] as const;
+    }
+
+
+export const getListCrmOrganizationDocumentsQueryOptions = <TData = Awaited<ReturnType<typeof listCrmOrganizationDocuments>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationDocuments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrmOrganizationDocumentsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrmOrganizationDocuments>>> = ({ signal }) => listCrmOrganizationDocuments(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationDocuments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCrmOrganizationDocumentsQueryResult = NonNullable<Awaited<ReturnType<typeof listCrmOrganizationDocuments>>>
+export type ListCrmOrganizationDocumentsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List documents across an organization's linked contacts and leads
+ */
+
+export function useListCrmOrganizationDocuments<TData = Awaited<ReturnType<typeof listCrmOrganizationDocuments>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationDocuments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCrmOrganizationDocumentsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetCrmOrganizationTimelineUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/timeline`
+}
+
+/**
+ * @summary Merged activity + note timeline across an organization's leads and contacts
+ */
+export const getCrmOrganizationTimeline = async (id: number, options?: RequestInit): Promise<TimelineList> => {
+
+  return customFetch<TimelineList>(getGetCrmOrganizationTimelineUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCrmOrganizationTimelineQueryKey = (id: number,) => {
+    return [
+    `/api/organizations/${id}/timeline`
+    ] as const;
+    }
+
+
+export const getGetCrmOrganizationTimelineQueryOptions = <TData = Awaited<ReturnType<typeof getCrmOrganizationTimeline>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCrmOrganizationTimeline>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCrmOrganizationTimelineQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCrmOrganizationTimeline>>> = ({ signal }) => getCrmOrganizationTimeline(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCrmOrganizationTimeline>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCrmOrganizationTimelineQueryResult = NonNullable<Awaited<ReturnType<typeof getCrmOrganizationTimeline>>>
+export type GetCrmOrganizationTimelineQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Merged activity + note timeline across an organization's leads and contacts
+ */
+
+export function useGetCrmOrganizationTimeline<TData = Awaited<ReturnType<typeof getCrmOrganizationTimeline>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCrmOrganizationTimeline>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCrmOrganizationTimelineQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getListTeamsUrl = (params?: ListTeamsParams,) => {
   const normalizedParams = new URLSearchParams();
 

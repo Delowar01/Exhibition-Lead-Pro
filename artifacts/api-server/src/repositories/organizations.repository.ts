@@ -102,6 +102,16 @@ export async function leadIds(user: AuthUser, orgId: number): Promise<number[]> 
   return rows.map((r) => r.id);
 }
 
+// Distinct, tenant-scoped IDs of events referenced by an org's linked contacts.
+// Events have no organizationId, so linkage is transitive via contacts.eventId.
+export async function eventIds(user: AuthUser, orgId: number): Promise<number[]> {
+  const where = activeScope(user, contactsTable.companyId, contactsTable.deletedAt, {
+    extra: [eq(contactsTable.organizationId, orgId), isNotNull(contactsTable.eventId)],
+  });
+  const rows = await db.selectDistinct({ eventId: contactsTable.eventId }).from(contactsTable).where(where);
+  return rows.map((r) => r.eventId).filter((v): v is number => v != null);
+}
+
 export async function nameById(id: number): Promise<string | null> {
   const [row] = await db.select({ name: organizationsTable.name }).from(organizationsTable).where(eq(organizationsTable.id, id)).limit(1);
   return row?.name ?? null;

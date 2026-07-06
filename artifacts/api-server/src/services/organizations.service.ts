@@ -3,8 +3,14 @@ import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as orgRepo from "../repositories/organizations.repository.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
+import * as eventsRepo from "../repositories/events.repository.js";
+import * as notesRepo from "../repositories/lead_notes.repository.js";
+import * as docsRepo from "../repositories/documents.repository.js";
 import { enrichContactRows } from "./contacts.service.js";
 import { enrichLeads } from "./leads.service.js";
+import { formatNote } from "./lead_notes.service.js";
+import { formatDocumentRows } from "./documents.service.js";
+import { organizationTimeline } from "./timeline.service.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { convertCurrency } from "../lib/currency.js";
 
@@ -180,4 +186,51 @@ export async function listOrganizationLeads(user: AuthUser, id: number) {
   const present = rows.filter((r): r is NonNullable<typeof r> => !!r);
   const leads = await enrichLeads(present);
   return { leads, total: leads.length };
+}
+
+// Events an organization's contacts were captured at. Events have no
+// organizationId, so linkage is transitive via contacts.eventId. Returned in the
+// standard EventList shape (with per-event contact/lead counts).
+export async function listOrganizationEvents(user: AuthUser, id: number) {
+  const o = await orgRepo.findById(user, id);
+  if (!o) throw new AppError(404, "Organization not found");
+  const ids = await orgRepo.eventIds(user, id);
+  const rows = await eventsRepo.listByIds(user, ids);
+  const events = await Promise.all(
+    rows.map(async (e) => {
+      const { contactCount, leadCount } = await eventsRepo.counts(e.id);
+      return { ...e, contactCount, leadCount };
+    }),
+  );
+  return { events, total: events.length, page: 1, limit: events.length };
+}
+
+// Notes attached to any of an organization's linked leads or contacts, in the
+// standard LeadNoteList shape.
+export async function listOrganizationNotes(user: AuthUser, id: number) {
+  const o = await orgRepo.findById(user, id);
+  if (!o) throw new AppError(404, "Organization not found");
+  const [leadIds, contactIds] = await Promise.all([orgRepo.leadIds(user, id), orgRepo.contactIds(user, id)]);
+  const notes = (await notesRepo.listForOrg(user, leadIds, contactIds)).map(formatNote);
+  return { notes };
+}
+
+// Documents attached to any of an organization's linked contacts or leads, in
+// the standard DocumentList shape.
+export async function listOrganizationDocuments(user: AuthUser, id: number) {
+  const o = await orgRepo.findById(user, id);
+  if (!o) throw new AppError(404, "Organization not found");
+  const [contactIds, leadIds] = await Promise.all([orgRepo.contactIds(user, id), orgRepo.leadIds(user, id)]);
+  const rows = await docsRepo.listForOrg(user, contactIds, leadIds);
+  const documents = await formatDocumentRows(rows);
+  return { documents, total: documents.length };
+}
+
+// Merged activity + note timeline across all of an organization's linked leads
+// and contacts, in the standard TimelineList shape.
+export async function getOrganizationTimeline(user: AuthUser, id: number) {
+  const o = await orgRepo.findById(user, id);
+  if (!o) throw new AppError(404, "Organization not found");
+  const [leadIds, contactIds] = await Promise.all([orgRepo.leadIds(user, id), orgRepo.contactIds(user, id)]);
+  return organizationTimeline(user, leadIds, contactIds);
 }

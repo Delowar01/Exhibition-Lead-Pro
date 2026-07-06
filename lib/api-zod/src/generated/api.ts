@@ -3416,6 +3416,139 @@ export const ListCrmOrganizationLeadsResponse = zod.object({
 
 
 /**
+ * @summary List events an organization's contacts were captured at
+ */
+export const ListCrmOrganizationEventsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListCrmOrganizationEventsResponse = zod.object({
+  "events": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "venue": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "endDate": zod.coerce.date().nullish(),
+  "boothNumber": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "status": zod.enum(['upcoming', 'active', 'completed']).optional(),
+  "contactCount": zod.number().optional(),
+  "leadCount": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary List notes across an organization's linked leads and contacts
+ */
+export const ListCrmOrganizationNotesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListCrmOrganizationNotesResponse = zod.object({
+  "notes": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "body": zod.string(),
+  "mentions": zod.array(zod.number()).optional(),
+  "isPinned": zod.boolean().optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary List documents across an organization's linked contacts and leads
+ */
+export const ListCrmOrganizationDocumentsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListCrmOrganizationDocumentsResponse = zod.object({
+  "documents": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.enum(['company', 'contact', 'lead', 'event']),
+  "entityId": zod.number(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "description": zod.string().nullish(),
+  "currentVersionId": zod.number().nullish(),
+  "createdById": zod.number().nullish(),
+  "createdByName": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().nullish(),
+  "deletedAt": zod.coerce.date().nullish(),
+  "entityName": zod.string().nullish(),
+  "versionCount": zod.number().nullish(),
+  "currentVersion": zod.union([zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+}),zod.null()]).optional(),
+  "versions": zod.array(zod.object({
+  "id": zod.number(),
+  "documentId": zod.number(),
+  "versionNumber": zod.number(),
+  "label": zod.string().nullish(),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "fileSize": zod.number(),
+  "mimeType": zod.string(),
+  "uploadedById": zod.number().nullish(),
+  "uploadedByName": zod.string().nullish(),
+  "uploadedAt": zod.coerce.date()
+})).optional()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Merged activity + note timeline across an organization's leads and contacts
+ */
+export const GetCrmOrganizationTimelineParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetCrmOrganizationTimelineResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['activity', 'note', 'lead_history', 'contact_status', 'follow_up', 'meeting', 'task', 'scan']),
+  "type": zod.string().nullish(),
+  "source": zod.string().nullish(),
+  "title": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "actorId": zod.number().nullish(),
+  "actorName": zod.string().nullish(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date()
+}))
+})
+
+
+/**
  * @summary List teams
  */
 export const listTeamsQueryPageDefault = 1;

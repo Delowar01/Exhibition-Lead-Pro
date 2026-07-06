@@ -32,6 +32,26 @@ router.get("/organizations/:id/leads", requirePermission("organizations", "view"
   res.json(await organizations.listOrganizationLeads(req.user!, parseInt(String(req.params.id))));
 });
 
+// GET /organizations/:id/events
+router.get("/organizations/:id/events", requirePermission("organizations", "view"), async (req: AuthRequest, res) => {
+  res.json(await organizations.listOrganizationEvents(req.user!, parseInt(String(req.params.id))));
+});
+
+// GET /organizations/:id/notes
+router.get("/organizations/:id/notes", requirePermission("organizations", "view"), async (req: AuthRequest, res) => {
+  res.json(await organizations.listOrganizationNotes(req.user!, parseInt(String(req.params.id))));
+});
+
+// GET /organizations/:id/documents
+router.get("/organizations/:id/documents", requirePermission("organizations", "view"), async (req: AuthRequest, res) => {
+  res.json(await organizations.listOrganizationDocuments(req.user!, parseInt(String(req.params.id))));
+});
+
+// GET /organizations/:id/timeline
+router.get("/organizations/:id/timeline", requirePermission("organizations", "view"), async (req: AuthRequest, res) => {
+  res.json(await organizations.getOrganizationTimeline(req.user!, parseInt(String(req.params.id))));
+});
+
 // POST /organizations/:id/archive
 router.post("/organizations/:id/archive", requirePermission("organizations", "edit"), async (req: AuthRequest, res) => {
   res.json(await organizations.archiveOrganization(req.user!, parseInt(String(req.params.id))));

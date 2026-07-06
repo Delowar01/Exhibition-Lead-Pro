@@ -14,18 +14,38 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   type Contact,
   type Lead,
+  type Event as CrmEvent,
+  type LeadNote,
+  type Document as CrmDocument,
+  type TimelineEntry,
   getGetCrmOrganizationQueryKey,
   getListCrmOrganizationContactsQueryKey,
   getListCrmOrganizationLeadsQueryKey,
+  getListCrmOrganizationEventsQueryKey,
+  getListCrmOrganizationNotesQueryKey,
+  getListCrmOrganizationDocumentsQueryKey,
+  getGetCrmOrganizationTimelineQueryKey,
   useGetCrmOrganization,
   useListCrmOrganizationContacts,
   useListCrmOrganizationLeads,
+  useListCrmOrganizationEvents,
+  useListCrmOrganizationNotes,
+  useListCrmOrganizationDocuments,
+  useGetCrmOrganizationTimeline,
 } from "@workspace/api-client-react";
 
 import { Avatar, ErrorState, FONT, LoadingState, prettyLabel } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { formatCurrencyFull } from "@/lib/currency";
+import { formatGregorian } from "@/lib/date";
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return formatGregorian(d, { year: "numeric", month: "short", day: "numeric" });
+}
 
 export default function CompanyDetailScreen() {
   const colors = useColors();
@@ -34,7 +54,9 @@ export default function CompanyDetailScreen() {
   const { t, isRTL, textAlign } = useLocale();
   const { id } = useLocalSearchParams<{ id: string }>();
   const orgId = Number(id);
-  const [tab, setTab] = useState<"contacts" | "leads">("contacts");
+  const [tab, setTab] = useState<
+    "contacts" | "leads" | "events" | "notes" | "documents" | "timeline"
+  >("contacts");
 
   const query = useGetCrmOrganization(orgId, {
     query: { enabled: !!orgId, queryKey: getGetCrmOrganizationQueryKey(orgId) },
@@ -45,10 +67,26 @@ export default function CompanyDetailScreen() {
   const leadsQuery = useListCrmOrganizationLeads(orgId, {
     query: { enabled: !!orgId, queryKey: getListCrmOrganizationLeadsQueryKey(orgId) },
   });
+  const eventsQuery = useListCrmOrganizationEvents(orgId, {
+    query: { enabled: !!orgId, queryKey: getListCrmOrganizationEventsQueryKey(orgId) },
+  });
+  const notesQuery = useListCrmOrganizationNotes(orgId, {
+    query: { enabled: !!orgId, queryKey: getListCrmOrganizationNotesQueryKey(orgId) },
+  });
+  const documentsQuery = useListCrmOrganizationDocuments(orgId, {
+    query: { enabled: !!orgId, queryKey: getListCrmOrganizationDocumentsQueryKey(orgId) },
+  });
+  const timelineQuery = useGetCrmOrganizationTimeline(orgId, {
+    query: { enabled: !!orgId, queryKey: getGetCrmOrganizationTimelineQueryKey(orgId) },
+  });
 
   const org = query.data;
   const contacts = contactsQuery.data?.contacts ?? [];
   const leads = leadsQuery.data?.leads ?? [];
+  const events = eventsQuery.data?.events ?? [];
+  const notes = notesQuery.data?.notes ?? [];
+  const documents = documentsQuery.data?.documents ?? [];
+  const timeline = timelineQuery.data?.entries ?? [];
 
   const detailRows: { icon: keyof typeof Feather.glyphMap; label: string; value: string }[] = org
     ? (
@@ -166,30 +204,45 @@ export default function CompanyDetailScreen() {
           ) : null}
 
           {/* Tabs */}
-          <View style={[styles.tabRow, { backgroundColor: colors.muted, borderRadius: colors.radius + 2 }]}>
-            {(["contacts", "leads"] as const).map((k) => {
-              const active = tab === k;
-              return (
-                <Pressable
-                  key={k}
-                  onPress={() => setTab(k)}
-                  style={[
-                    styles.tab,
-                    active && { backgroundColor: colors.card, borderRadius: colors.radius },
-                  ]}
-                >
-                  <Text
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ flexDirection: isRTL ? "row-reverse" : "row" }}
+          >
+            <View style={[styles.tabRow, { backgroundColor: colors.muted, borderRadius: colors.radius + 2, flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {(
+                [
+                  { key: "contacts", label: t("companies.contacts"), count: contacts.length },
+                  { key: "leads", label: t("companies.leads"), count: leads.length },
+                  { key: "events", label: t("companies.events"), count: events.length },
+                  { key: "notes", label: t("companies.companyNotes"), count: notes.length },
+                  { key: "documents", label: t("companies.documents"), count: documents.length },
+                  { key: "timeline", label: t("companies.timeline"), count: timeline.length },
+                ] as const
+              ).map((it) => {
+                const active = tab === it.key;
+                return (
+                  <Pressable
+                    key={it.key}
+                    onPress={() => setTab(it.key)}
                     style={[
-                      styles.tabText,
-                      { color: active ? colors.foreground : colors.mutedForeground },
+                      styles.tab,
+                      active && { backgroundColor: colors.card, borderRadius: colors.radius },
                     ]}
                   >
-                    {t(`companies.${k}`)} ({k === "contacts" ? org.contactCount : org.leadCount})
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                    <Text
+                      style={[
+                        styles.tabText,
+                        { color: active ? colors.foreground : colors.mutedForeground },
+                      ]}
+                    >
+                      {it.label} ({it.count})
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
 
           {/* Tab content */}
           {tab === "contacts" ? (
@@ -228,39 +281,161 @@ export default function CompanyDetailScreen() {
                 ))}
               </View>
             )
-          ) : leads.length === 0 ? (
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("companies.noLeads")}</Text>
+          ) : tab === "leads" ? (
+            leads.length === 0 ? (
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("companies.noLeads")}</Text>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {leads.map((l: Lead) => (
+                  <Pressable
+                    key={l.id}
+                    onPress={() => router.push(`/pipeline/${l.id}`)}
+                    style={({ pressed }) => [
+                      styles.listRow,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.border,
+                        borderRadius: colors.radius + 2,
+                        flexDirection: isRTL ? "row-reverse" : "row",
+                        opacity: pressed ? 0.75 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.leadIcon, { backgroundColor: colors.primary + "1A" }]}>
+                      <Feather name="target" size={16} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.listName, { color: colors.foreground, textAlign }]}>
+                        {l.title || t("common.unnamedLead")}
+                      </Text>
+                      <Text numberOfLines={1} style={[styles.listSub, { color: colors.mutedForeground, textAlign }]}>
+                        {prettyLabel(l.stage ?? "")}
+                        {l.value != null ? ` · ${formatCurrencyFull(Number(l.value), l.currency ?? "USD")}` : ""}
+                      </Text>
+                    </View>
+                    <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={18} color={colors.mutedForeground} />
+                  </Pressable>
+                ))}
+              </View>
+            )
+          ) : tab === "events" ? (
+            events.length === 0 ? (
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("companies.noEvents")}</Text>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {events.map((e: CrmEvent) => (
+                  <Pressable
+                    key={e.id}
+                    onPress={() => router.push(`/event/${e.id}`)}
+                    style={({ pressed }) => [
+                      styles.listRow,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.border,
+                        borderRadius: colors.radius + 2,
+                        flexDirection: isRTL ? "row-reverse" : "row",
+                        opacity: pressed ? 0.75 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.leadIcon, { backgroundColor: colors.primary + "1A" }]}>
+                      <Feather name="calendar" size={16} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.listName, { color: colors.foreground, textAlign }]}>
+                        {e.name}
+                      </Text>
+                      <Text numberOfLines={1} style={[styles.listSub, { color: colors.mutedForeground, textAlign }]}>
+                        {[formatDate(e.startDate), e.venue].filter(Boolean).join(" · ") || "—"}
+                      </Text>
+                    </View>
+                    <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={18} color={colors.mutedForeground} />
+                  </Pressable>
+                ))}
+              </View>
+            )
+          ) : tab === "notes" ? (
+            notes.length === 0 ? (
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("companies.noNotes")}</Text>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {notes.map((n: LeadNote) => (
+                  <View
+                    key={n.id}
+                    style={[
+                      styles.noteCard,
+                      { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 },
+                    ]}
+                  >
+                    <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <Text style={[styles.listName, { color: colors.foreground, textAlign }]}>
+                        {n.userName ?? t("common.unnamedContact")}
+                      </Text>
+                      <Text style={[styles.listSub, { color: colors.mutedForeground }]}>{formatDate(n.createdAt)}</Text>
+                    </View>
+                    <Text style={[styles.noteBody, { color: colors.foreground, textAlign }]}>{n.body}</Text>
+                  </View>
+                ))}
+              </View>
+            )
+          ) : tab === "documents" ? (
+            documents.length === 0 ? (
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("companies.noDocuments")}</Text>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {documents.map((d: CrmDocument) => (
+                  <View
+                    key={d.id}
+                    style={[
+                      styles.listRow,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.border,
+                        borderRadius: colors.radius + 2,
+                        flexDirection: isRTL ? "row-reverse" : "row",
+                      },
+                    ]}
+                  >
+                    <View style={[styles.leadIcon, { backgroundColor: colors.primary + "1A" }]}>
+                      <Feather name="file-text" size={16} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.listName, { color: colors.foreground, textAlign }]}>
+                        {d.name}
+                      </Text>
+                      <Text numberOfLines={1} style={[styles.listSub, { color: colors.mutedForeground, textAlign }]}>
+                        {[prettyLabel(d.entityType), d.entityName].filter(Boolean).join(": ")}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )
+          ) : timeline.length === 0 ? (
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("companies.noTimeline")}</Text>
           ) : (
             <View style={{ gap: 10 }}>
-              {leads.map((l: Lead) => (
-                <Pressable
-                  key={l.id}
-                  onPress={() => router.push(`/pipeline/${l.id}`)}
-                  style={({ pressed }) => [
-                    styles.listRow,
-                    {
-                      backgroundColor: colors.card,
-                      borderColor: colors.border,
-                      borderRadius: colors.radius + 2,
-                      flexDirection: isRTL ? "row-reverse" : "row",
-                      opacity: pressed ? 0.75 : 1,
-                    },
+              {timeline.map((tItem: TimelineEntry) => (
+                <View
+                  key={tItem.id}
+                  style={[
+                    styles.noteCard,
+                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 },
                   ]}
                 >
-                  <View style={[styles.leadIcon, { backgroundColor: colors.primary + "1A" }]}>
-                    <Feather name="target" size={16} color={colors.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={[styles.listName, { color: colors.foreground, textAlign }]}>
-                      {l.title || t("common.unnamedLead")}
+                  <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <Text style={[styles.listName, { color: colors.foreground, textAlign }]}>
+                      {tItem.title ?? prettyLabel(tItem.type ?? tItem.kind)}
                     </Text>
-                    <Text numberOfLines={1} style={[styles.listSub, { color: colors.mutedForeground, textAlign }]}>
-                      {prettyLabel(l.stage ?? "")}
-                      {l.value != null ? ` · ${formatCurrencyFull(Number(l.value), l.currency ?? "USD")}` : ""}
-                    </Text>
+                    <Text style={[styles.listSub, { color: colors.mutedForeground }]}>{formatDate(tItem.occurredAt)}</Text>
                   </View>
-                  <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={18} color={colors.mutedForeground} />
-                </Pressable>
+                  {tItem.body ? (
+                    <Text style={[styles.noteBody, { color: colors.mutedForeground, textAlign }]}>{tItem.body}</Text>
+                  ) : null}
+                  {tItem.actorName ? (
+                    <Text style={[styles.listSub, { color: colors.mutedForeground, textAlign }]}>{tItem.actorName}</Text>
+                  ) : null}
+                </View>
               ))}
             </View>
           )}
@@ -383,6 +558,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FONT.regular,
     marginTop: 2,
+  },
+  noteCard: {
+    borderWidth: 1,
+    padding: 12,
+    gap: 6,
+  },
+  noteBody: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    lineHeight: 20,
   },
   emptyText: {
     fontSize: 14,

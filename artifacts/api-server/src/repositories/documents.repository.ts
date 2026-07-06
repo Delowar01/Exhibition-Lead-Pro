@@ -8,7 +8,7 @@ import {
   eventsTable,
   leadsTable,
 } from "@workspace/db";
-import { eq, count, desc, ilike, or, gte, lte, inArray, max, sql, type SQL } from "drizzle-orm";
+import { eq, and, count, desc, ilike, or, gte, lte, inArray, max, sql, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, combine, type Executor } from "./base.js";
 
@@ -77,6 +77,18 @@ export async function list(user: AuthUser, opts: ListDocumentsOpts): Promise<{ r
     .orderBy(desc(documentsTable.createdAt));
 
   return { rows: rows.map((r) => ({ doc: r.doc, currentVersion: r.version })), total };
+}
+
+// Documents attached to ANY of an org's contacts or leads (Company Detail
+// aggregate). Tenant-scoped + soft-delete-excluding; newest first.
+export async function listForOrg(user: AuthUser, contactIds: number[], leadIds: number[]): Promise<DocumentWithVersion[]> {
+  if (contactIds.length === 0 && leadIds.length === 0) return [];
+  const targets: SQL[] = [];
+  if (contactIds.length > 0) targets.push(and(eq(documentsTable.entityType, "contact"), inArray(documentsTable.entityId, contactIds))!);
+  if (leadIds.length > 0) targets.push(and(eq(documentsTable.entityType, "lead"), inArray(documentsTable.entityId, leadIds))!);
+  const where = activeScope(user, documentsTable.companyId, documentsTable.deletedAt, { extra: [or(...targets)!] });
+  const rows = await selectWithVersion().where(where).orderBy(desc(documentsTable.createdAt));
+  return rows.map((r) => ({ doc: r.doc, currentVersion: r.version }));
 }
 
 // Tenant-scoped single fetch. Pass includeDeleted=true for the restore path.

@@ -7,6 +7,7 @@ import {
   contactsTable,
   leadsTable,
   organizationsTable,
+  eventsTable,
   loginAttemptsTable,
 } from "@workspace/db";
 
@@ -99,6 +100,7 @@ afterAll(async () => {
     if (!cid) continue;
     await db.delete(leadsTable).where(eq(leadsTable.companyId, cid));
     await db.delete(contactsTable).where(eq(contactsTable.companyId, cid));
+    await db.delete(eventsTable).where(eq(eventsTable.companyId, cid));
     await db.delete(organizationsTable).where(eq(organizationsTable.companyId, cid));
     await db.delete(usersTable).where(eq(usersTable.companyId, cid));
   }
@@ -320,6 +322,90 @@ describe("Tenant isolation (cross-tenant 404)", () => {
     expect((await api("POST", `/organizations/${foreignOrgId}/archive`, orgToken)).status).toBe(404);
     expect((await api("GET", `/organizations/${foreignOrgId}/contacts`, orgToken)).status).toBe(404);
     expect((await api("GET", `/organizations/${foreignOrgId}/leads`, orgToken)).status).toBe(404);
+  });
+
+  it("does not leak another tenant's company-detail aggregate", async () => {
+    for (const sub of ["events", "notes", "documents", "timeline"]) {
+      expect((await api("GET", `/organizations/${foreignOrgId}/${sub}`, orgToken)).status).toBe(404);
+    }
+  });
+});
+
+describe("Company Detail aggregate (events/notes/documents/timeline)", () => {
+  let orgId = 0;
+  let eventId = 0;
+  let contactId = 0;
+  let leadId = 0;
+
+  beforeAll(async () => {
+    const org = await api("POST", "/organizations", orgToken, { name: `Aggregate Co ${SUFFIX}` });
+    expect(org.status).toBe(201);
+    orgId = (await org.json()).id;
+
+    // An event, then a contact linked to BOTH the org and the event — the org's
+    // events are DERIVED transitively via contacts.eventId (events have no
+    // organizationId of their own).
+    const event = await api("POST", "/events", orgToken, { name: `Aggregate Expo ${SUFFIX}`, venue: "Hall A" });
+    expect(event.status).toBe(201);
+    eventId = (await event.json()).id;
+
+    const contact = await api("POST", "/contacts", orgToken, {
+      firstName: "Aggie",
+      lastName: "Gate",
+      email: `aggie-${SUFFIX}@example.com`,
+      organizationId: orgId,
+      eventId: String(eventId),
+    });
+    expect(contact.status).toBe(201);
+    contactId = (await contact.json()).id;
+
+    const lead = await api("POST", "/leads", orgToken, {
+      contactId,
+      stage: "new",
+      title: `Aggregate Lead ${SUFFIX}`,
+      organizationId: orgId,
+    });
+    expect(lead.status).toBe(201);
+    leadId = (await lead.json()).id;
+
+    const note = await api("POST", `/leads/${leadId}/notes`, orgToken, { body: `Aggregate note ${SUFFIX}` });
+    expect(note.status).toBe(201);
+  });
+
+  it("derives the org's events from its linked contacts", async () => {
+    const res = await api("GET", `/organizations/${orgId}/events`, orgToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.events.some((e: { id: number }) => e.id === eventId)).toBe(true);
+  });
+
+  it("returns notes from the org's linked leads", async () => {
+    const res = await api("GET", `/organizations/${orgId}/notes`, orgToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.notes.some((n: { body: string }) => n.body === `Aggregate note ${SUFFIX}`)).toBe(true);
+  });
+
+  it("returns a documents list (empty when none linked)", async () => {
+    const res = await api("GET", `/organizations/${orgId}/documents`, orgToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.documents)).toBe(true);
+  });
+
+  it("returns a timeline aggregated from the org's linked records", async () => {
+    const res = await api("GET", `/organizations/${orgId}/timeline`, orgToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.entries)).toBe(true);
+    expect(body.entries.length).toBeGreaterThan(0);
+  });
+
+  it("view-gates every aggregate endpoint (employee without organizations.view → 403)", async () => {
+    const empToken = await loginToken({ email: EMP_EMAIL, password: PW });
+    for (const sub of ["events", "notes", "documents", "timeline"]) {
+      expect((await api("GET", `/organizations/${orgId}/${sub}`, empToken)).status).toBe(403);
+    }
   });
 });
 

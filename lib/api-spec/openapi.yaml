@@ -2956,6 +2956,82 @@ paths:
               schema:
                 $ref: "#/components/schemas/LeadList"
 
+  /organizations/{id}/events:
+    get:
+      operationId: listCrmOrganizationEvents
+      tags: [organizations]
+      summary: List events an organization's contacts were captured at
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventList"
+
+  /organizations/{id}/notes:
+    get:
+      operationId: listCrmOrganizationNotes
+      tags: [organizations]
+      summary: List notes across an organization's linked leads and contacts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadNoteList"
+
+  /organizations/{id}/documents:
+    get:
+      operationId: listCrmOrganizationDocuments
+      tags: [organizations]
+      summary: List documents across an organization's linked contacts and leads
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentList"
+
+  /organizations/{id}/timeline:
+    get:
+      operationId: getCrmOrganizationTimeline
+      tags: [organizations]
+      summary: Merged activity + note timeline across an organization's leads and contacts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineList"
+
   # TEAMS (Stage 3 Phase 1)
   /teams:
     get:

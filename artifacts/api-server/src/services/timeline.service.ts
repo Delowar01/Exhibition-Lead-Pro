@@ -72,3 +72,13 @@ export async function contactTimeline(user: AuthUser, contactId: number) {
   const [acts, notes] = await Promise.all([activitiesRepo.listForContact(user, contactId), notesRepo.listForContact(user, contactId)]);
   return merge([...acts.map(activityEntry), ...notes.map(noteEntry)]);
 }
+
+// Merged activity + note timeline across ALL of an organization's linked leads and
+// contacts (Company Detail aggregate). Callers resolve the org + its id sets first.
+export async function organizationTimeline(user: AuthUser, leadIds: number[], contactIds: number[]) {
+  const [acts, notes] = await Promise.all([
+    activitiesRepo.listForOrg(user, leadIds, contactIds),
+    notesRepo.listForOrg(user, leadIds, contactIds),
+  ]);
+  return merge([...acts.map(activityEntry), ...notes.map(noteEntry)]);
+}

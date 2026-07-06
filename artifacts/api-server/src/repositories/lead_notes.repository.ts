@@ -1,5 +1,5 @@
 import { db, leadNotesTable, usersTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or, inArray, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, type Executor, exec } from "./base.js";
 
@@ -32,6 +32,16 @@ export async function listForLead(user: AuthUser, leadId: number): Promise<LeadN
 
 export async function listForContact(user: AuthUser, contactId: number): Promise<LeadNoteWithUser[]> {
   const where = activeScope(user, leadNotesTable.companyId, leadNotesTable.deletedAt, { extra: [eq(leadNotesTable.contactId, contactId)] });
+  return selectWithUser().where(where).orderBy(desc(leadNotesTable.createdAt), desc(leadNotesTable.id));
+}
+
+// Notes attached to ANY of an org's leads or contacts (Company Detail aggregate).
+export async function listForOrg(user: AuthUser, leadIds: number[], contactIds: number[]): Promise<LeadNoteWithUser[]> {
+  if (leadIds.length === 0 && contactIds.length === 0) return [];
+  const targets: SQL[] = [];
+  if (leadIds.length > 0) targets.push(inArray(leadNotesTable.leadId, leadIds));
+  if (contactIds.length > 0) targets.push(inArray(leadNotesTable.contactId, contactIds));
+  const where = activeScope(user, leadNotesTable.companyId, leadNotesTable.deletedAt, { extra: [or(...targets)!] });
   return selectWithUser().where(where).orderBy(desc(leadNotesTable.createdAt), desc(leadNotesTable.id));
 }
 

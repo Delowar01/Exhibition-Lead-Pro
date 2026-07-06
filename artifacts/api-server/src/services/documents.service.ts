@@ -176,7 +176,14 @@ export async function listDocuments(user: AuthUser, params: ListDocumentsParams)
     offset,
   });
 
-  // Batched enrichment: version counts, creator names, entity names (grouped by type).
+  const documents = await formatDocumentRows(rows);
+  return { documents, total };
+}
+
+// Batched enrichment of raw document rows into the API Document shape: version
+// counts, creator names, uploader names, and attach-target entity names
+// (grouped by type). Shared by listDocuments and the Company Detail aggregate.
+export async function formatDocumentRows(rows: docsRepo.DocumentWithVersion[]) {
   const docIds = rows.map((r) => r.doc.id);
   const creatorIds = [...new Set(rows.map((r) => r.doc.createdById).filter((v): v is number => v != null))];
   const uploaderIds = [...new Set(rows.map((r) => r.currentVersion?.uploadedById).filter((v): v is number => v != null))];
@@ -201,7 +208,7 @@ export async function listDocuments(user: AuthUser, params: ListDocumentsParams)
     }),
   );
 
-  const documents = rows.map((r) =>
+  return rows.map((r) =>
     fmtDocument(r.doc, {
       currentVersion: r.currentVersion
         ? fmtVersion(r.currentVersion, r.currentVersion.uploadedById != null ? (uploaderName.get(r.currentVersion.uploadedById) ?? null) : null)
@@ -211,7 +218,6 @@ export async function listDocuments(user: AuthUser, params: ListDocumentsParams)
       versionCount: countMap.get(r.doc.id) ?? 0,
     }),
   );
-  return { documents, total };
 }
 
 // ── Single document (with full version history) ──────────────────────────────
