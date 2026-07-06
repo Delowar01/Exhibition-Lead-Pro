@@ -10,14 +10,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Layers, Sparkles, Contact, Building2, BarChart2, Info } from "lucide-react";
+import { Layers, Sparkles, Contact, Building2, BarChart2, CreditCard, Info } from "lucide-react";
 
-type EntityType = "lead" | "contact" | "organization";
+type EntityType = "lead" | "contact" | "organization" | "business_card";
 
 const ENTITY_OPTIONS: { value: EntityType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { value: "contact", label: "Contacts", icon: Contact },
   { value: "lead", label: "Leads", icon: BarChart2 },
   { value: "organization", label: "Organizations", icon: Building2 },
+  { value: "business_card", label: "Business cards", icon: CreditCard },
 ];
 
 const STATUS_TONE: Record<string, string> = {

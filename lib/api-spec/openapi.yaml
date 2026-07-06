@@ -3917,7 +3917,7 @@ paths:
           required: true
           schema:
             type: string
-          description: lead | contact | organization
+          description: lead | contact | organization | business_card
         - name: id
           in: path
           required: true
@@ -3948,7 +3948,7 @@ paths:
           required: true
           schema:
             type: string
-          description: lead | contact | organization
+          description: lead | contact | organization | business_card
         - name: id
           in: path
           required: true
@@ -9838,7 +9838,7 @@ components:
           type: integer
         entityType:
           type: string
-          description: lead | contact | organization
+          description: lead | contact | organization | business_card
         entityId:
           type: integer
         insightType:
@@ -9938,7 +9938,7 @@ components:
       properties:
         entityType:
           type: string
-          description: lead | contact | organization
+          description: lead | contact | organization | business_card
 
     AiBatchJob:
       type: object
@@ -9952,7 +9952,7 @@ components:
           type: integer
         entityType:
           type: string
-          description: lead | contact | organization
+          description: lead | contact | organization | business_card
         status:
           type: string
           description: queued | running | completed | failed

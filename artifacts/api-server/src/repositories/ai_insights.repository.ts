@@ -9,7 +9,7 @@ import { combine } from "./base.js";
 // re-analysis UPSERTS the latest result while preserving the first generatedAt. All
 // reads are tenant-scoped via tenantScope (never by companyId alone).
 
-export type EntityType = "lead" | "contact" | "organization";
+export type EntityType = "lead" | "contact" | "organization" | "business_card";
 export type InsightType =
   | "lead_intelligence"
   | "company_intelligence"

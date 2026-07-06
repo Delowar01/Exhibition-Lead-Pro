@@ -7,6 +7,7 @@ import {
   contactsTable,
   leadsTable,
   eventsTable,
+  scansTable,
   aiInsightsTable,
 } from "@workspace/db";
 
@@ -39,6 +40,10 @@ let adminBToken = "";
 let leadId = 0;
 let contactId = 0;
 let foreignLeadId = 0;
+let adminUserId = 0;
+let scanId = 0;
+let foreignScanId = 0;
+let dmContactId = 0;
 
 function headers(token: string) {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
@@ -87,7 +92,7 @@ beforeAll(async () => {
   companyId = (await createCo.json()).id;
   await db.update(companiesTable).set({ status: "active" }).where(eq(companiesTable.id, companyId));
 
-  await createUser(platformToken, ADMIN_EMAIL, "QA AI Admin", "primary_admin", companyId);
+  adminUserId = await createUser(platformToken, ADMIN_EMAIL, "QA AI Admin", "primary_admin", companyId);
   adminToken = await loginToken({ email: ADMIN_EMAIL, password: PW });
   await createUser(adminToken, EMP_EMAIL, "QA AI Emp", "employee");
   empToken = await loginToken({ email: EMP_EMAIL, password: PW });
@@ -122,6 +127,40 @@ beforeAll(async () => {
   expect(l1.status).toBe(201);
   leadId = (await l1.json()).id;
 
+  // A decision-maker colleague at the same company as contact c1 (VP Sales), plus a "won"
+  // status, so relationship_intelligence can surface multiple decision makers + customer status.
+  const c1b = await api("POST", "/contacts", adminToken, {
+    firstName: "Grace",
+    lastName: "Hopper",
+    email: `grace.hopper-${SUFFIX}@globex.test`,
+    jobTitle: "Chief Executive Officer",
+    contactCompany: "Globex Corp",
+    status: "won",
+  });
+  expect(c1b.status).toBe(201);
+  dmContactId = (await c1b.json()).id;
+  const c1c = await api("POST", "/contacts", adminToken, {
+    firstName: "Ada",
+    lastName: "Byron",
+    email: `ada.byron-${SUFFIX}@globex.test`,
+    jobTitle: "CFO",
+    contactCompany: "Globex Corp",
+  });
+  expect(c1c.status).toBe(201);
+
+  // Two near-duplicate SCANS (physical business cards) seeded directly (no AI OCR call):
+  // same email → duplicate_intelligence must flag them for the "business_card" entity type.
+  const cardData = JSON.stringify({ firstName: "Dana", lastName: "Ford", company: "Acme Co", email: `dana.ford-${SUFFIX}@example.com`, mobile: "+1 (555) 010-2000" });
+  const [s1] = await db
+    .insert(scansTable)
+    .values({ companyId, userId: adminUserId, status: "completed", extractedData: cardData })
+    .returning({ id: scansTable.id });
+  scanId = s1.id;
+  await db
+    .insert(scansTable)
+    .values({ companyId, userId: adminUserId, status: "completed", extractedData: cardData })
+    .returning({ id: scansTable.id });
+
   // --- Tenant B (cross-tenant isolation) ---
   const createCoB = await api("POST", "/companies", platformToken, { name: `QA AI Insights B ${SUFFIX}`, plan: "professional" });
   expect(createCoB.status).toBe(201);
@@ -140,12 +179,19 @@ beforeAll(async () => {
   const lb = await api("POST", "/leads", adminBToken, { contactId: foreignContactId, stage: "new", title: "Foreign lead" });
   expect(lb.status).toBe(201);
   foreignLeadId = (await lb.json()).id;
+
+  const [sb] = await db
+    .insert(scansTable)
+    .values({ companyId: companyBId, status: "completed", extractedData: JSON.stringify({ firstName: "Bob", lastName: "Foreign", email: `bob-${SUFFIX}@example.com` }) })
+    .returning({ id: scansTable.id });
+  foreignScanId = sb.id;
 });
 
 afterAll(async () => {
   for (const cid of [companyId, companyBId]) {
     if (!cid) continue;
     await db.delete(aiInsightsTable).where(eq(aiInsightsTable.companyId, cid));
+    await db.delete(scansTable).where(eq(scansTable.companyId, cid));
     await db.delete(leadsTable).where(eq(leadsTable.companyId, cid));
     await db.delete(contactsTable).where(eq(contactsTable.companyId, cid));
     await db.delete(usersTable).where(eq(usersTable.companyId, cid));
@@ -361,6 +407,48 @@ describe("relationship_intelligence — deterministic link derivation", () => {
   });
 });
 
+describe("business_card (scan) duplicate intelligence", () => {
+  it("404s a non-existent business card", async () => {
+    const res = await api("POST", `/ai/insights/business_card/99999999/analyze`, adminToken);
+    expect(res.status).toBe(404);
+  });
+
+  it("flags the duplicate scanned card (same email) — deterministic, never auto-merges", async () => {
+    const res = await api("POST", `/ai/insights/business_card/${scanId}/analyze`, adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const dup = body.insights.find((i: { insightType: string }) => i.insightType === "duplicate_intelligence");
+    expect(dup).toBeDefined();
+    expect(dup.source).toBe("deterministic");
+    expect(dup.entityType).toBe("business_card");
+    expect(dup.entityId).toBe(scanId);
+    expect(dup.data.count).toBeGreaterThanOrEqual(1);
+    // Business cards get ONLY duplicate intelligence (no AI/missing_info/relationship rows).
+    expect(body.insights.every((i: { insightType: string }) => i.insightType === "duplicate_intelligence")).toBe(true);
+  });
+
+  it("404s analyzing a business card from another tenant (no existence leak)", async () => {
+    const res = await api("POST", `/ai/insights/business_card/${foreignScanId}/analyze`, adminToken);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("relationship_intelligence — broadened patterns", () => {
+  it("surfaces multiple decision makers + existing-customer status at a shared company", async () => {
+    const res = await api("POST", `/ai/insights/contact/${dmContactId}/analyze`, adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const rel = body.insights.find((i: { insightType: string }) => i.insightType === "relationship_intelligence");
+    expect(rel).toBeDefined();
+    expect(rel.source).toBe("deterministic");
+    // Grace (CEO) + Ada (CFO) at "Globex Corp" → at least 2 decision makers.
+    expect(rel.data.multipleDecisionMakers).toBe(true);
+    expect(rel.data.decisionMakers.length).toBeGreaterThanOrEqual(2);
+    // Grace's contact status is "won" → existing customer, derived from the stored row.
+    expect(rel.data.customerStatus).toBe("existing_customer");
+  });
+});
+
 describe("POST /ai/insights/batch — tenant-scoped batch analysis", () => {
   it("400s an unknown entityType", async () => {
     const res = await api("POST", `/ai/insights/batch`, adminToken, { entityType: "widget" });
@@ -380,8 +468,8 @@ describe("POST /ai/insights/batch — tenant-scoped batch analysis", () => {
     expect(job.companyId).toBe(companyId);
     expect(job.entityType).toBe("contact");
     expect(["queued", "running", "completed"]).toContain(job.status);
-    // Tenant A has exactly the two seeded contacts (c1 + c2).
-    expect(job.total).toBe(2);
+    // Tenant A has exactly the four seeded contacts (c1 + c2 + the two decision-maker colleagues).
+    expect(job.total).toBe(4);
 
     // Poll until it finishes (fire-and-forget processing, deterministic engines always run).
     let final = job;
@@ -395,6 +483,26 @@ describe("POST /ai/insights/batch — tenant-scoped batch analysis", () => {
     expect(final.processed).toBe(final.total);
     expect(final.succeeded + final.failed).toBe(final.total);
     expect(typeof final.finishedAt).toBe("string");
+  });
+
+  it("runs a business_card batch on the shared queue and completes over all scans", async () => {
+    const res = await api("POST", `/ai/insights/batch`, adminToken, { entityType: "business_card" });
+    expect(res.status).toBe(202);
+    const job = await res.json();
+    expect(job.entityType).toBe("business_card");
+    expect(job.companyId).toBe(companyId);
+    expect(job.total).toBe(2); // the two seeded scans
+
+    let final = job;
+    for (let i = 0; i < 30 && final.status !== "completed" && final.status !== "failed"; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const poll = await api("GET", `/ai/insights/batch/${job.id}`, adminToken);
+      expect(poll.status).toBe(200);
+      final = await poll.json();
+    }
+    expect(final.status).toBe("completed");
+    expect(final.processed).toBe(final.total);
+    expect(final.succeeded).toBe(final.total);
   });
 
   it("lists batch jobs for the caller's tenant only", async () => {

@@ -2,6 +2,7 @@ import { logger } from "../logger.js";
 import { EMAIL_SEND_JOB, deliverEmailViaWorker } from "../email/index.js";
 import type { EmailMessage } from "../email/provider.js";
 import { getQueue } from "./queue.js";
+import { AI_ANALYZE_ENTITY_JOB, runAiAnalyzeEntityJob, type AiAnalyzeJobPayload } from "../../services/ai-batch.service.js";
 
 // Registers all job handlers on the process queue and starts the workers. Called once
 // at startup (index.ts). Producers (e.g. lib/email) only enqueue; the actual work runs
@@ -21,6 +22,13 @@ export function startWorkers(): void {
       "Email delivered",
     );
     // Any thrown transport error propagates to the queue for retry/backoff.
+  });
+
+  // Stage 5A batch AI analysis: one job per entity. The handler records per-entity
+  // failures on the batch job as soft failures and never throws, so a failing entity
+  // does not retry or dead-letter (maxAttempts is 1 at enqueue time regardless).
+  queue.register<AiAnalyzeJobPayload>(AI_ANALYZE_ENTITY_JOB, async (payload) => {
+    await runAiAnalyzeEntityJob(payload);
   });
 
   queue.start();

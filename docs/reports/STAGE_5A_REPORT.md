@@ -1,6 +1,14 @@
 # Stage 5A — Enterprise AI Intelligence
 
-Status: **COMPLETE**. Full-workspace typecheck clean (api-server, web-app, mobile, libs); pre-merge gate green (**23 files / 383 tests**).
+Status: **COMPLETE**. Full-workspace typecheck clean (api-server, web-app, mobile, libs); pre-merge gate green (**23 files / 398 tests**).
+
+Three code-review scope gaps have since been closed: (A) `duplicate_intelligence` now also
+covers **scanned business cards** (a new `business_card` entity type over the `scans`
+table); (B) `relationship_intelligence` now surfaces the **full deterministic pattern
+set** (decision makers / multiple decision makers, repeat interactions across events,
+customer status, previously-visited, multi-employee engagement, connected/sibling leads);
+(C) batch analysis now runs on the **existing in-process job queue** (`getQueue()` +
+`AI_ANALYZE_ENTITY_JOB`), not an ad-hoc mechanism.
 
 ## Scope
 
@@ -34,11 +42,19 @@ changes by default.
 - **Deterministic (always run, `source="deterministic"`, no provider):**
   - `missing_info` — data-completeness gaps (missing fields, completeness %).
   - `duplicate_intelligence` — near-duplicate detection (normalized name/email/phone).
-  - `relationship_intelligence` — link derivation over EXISTING CRM rows (a contact's
-    colleagues + linked leads + events; a lead's contact/org/sibling leads + capture
-    event; an organization's contacts + leads). Confidence 100, human reasoning, and an
-    honest "no related records" message when a record has no links — pure fact
-    derivation, NO LLM, NO fabricated data (`ai-relationships.service.ts`).
+    Covers contacts, leads, organizations, AND **scanned business cards** (the
+    `business_card` entity type over `scans`, matched on shared `contactId` / normalized
+    email / phone / name+company). Detection only — never auto-merges.
+  - `relationship_intelligence` — link + pattern derivation over EXISTING CRM rows
+    (`ai-relationships.service.ts`). Beyond the base links (a contact's colleagues +
+    linked leads + events; a lead's contact/org/sibling leads + capture event; an
+    organization's contacts + leads), it surfaces the full deterministic pattern set:
+    **decision makers** (title regex) and **multiple decision makers** at a company,
+    **repeat interactions** across events, **customer status** (existing/inactive from
+    the record's own status), **previously visited**, and **multi-employee engagement**
+    (distinct `assignedToId` counts — count-based, NEVER cross-currency value summing).
+    Confidence 100, human reasoning, and an honest "no related records" message when a
+    record has no links — pure fact derivation, NO LLM, NO fabricated data.
 - **AI (`source="ai"`, provenance-stamped, per-feature isolated):**
   - `lead_intelligence`, `opportunity_potential`, `smart_classification` (leads).
   - `contact_intelligence`, `smart_classification` (contacts).
@@ -49,13 +65,16 @@ changes by default.
 
 ### Batch processing (`ai-batch.service.ts`)
 - `POST /ai/insights/batch` (re)analyzes ALL records of one entity type (lead/contact/
-  organization) in the tenant. Jobs are self-contained in-process (NOT the shared job
-  queue, so a batch never floods the email dead-letter path), tenant-stamped, and only
-  visible to callers who can access the job's company (404 — not 403 — for another
-  tenant's job). Enumeration uses `tenantScope` (never a raw `companyId` scope).
-  Processing is fire-and-forget and reuses `analyzeEntity`, which collects — never
-  throws on — per-feature AI failures, so a batch degrades gracefully. Bounded to 500
-  entities / 20 retained errors / 200 retained jobs. Clients poll
+  organization/**business_card**) in the tenant. It enqueues one `AI_ANALYZE_ENTITY_JOB`
+  per entity on the **existing shared in-process job queue** (`getQueue()`, registered in
+  `lib/jobs/handlers.ts`) with `maxAttempts: 1`; the per-job handler updates the batch
+  counters and finalizes without ever throwing, so a failed entity is soft-recorded and
+  never dead-letter-storms. The `jobs` map is retained for polling only. Jobs are
+  tenant-stamped and only visible to callers who can access the job's company (404 — not
+  403 — for another tenant's job). Enumeration uses `tenantScope` (never a raw `companyId`
+  scope). Reuses `analyzeEntity`, which collects — never throws on — per-feature AI
+  failures, so a batch degrades gracefully. Bounded to 500 entities / 20 retained errors
+  / 200 retained jobs. Clients poll
   `GET /ai/insights/batch/{jobId}` for progress; `GET /ai/insights/batch` lists jobs.
   All batch routes are `ai_insights` `generate`/`view` permission-gated.
 
@@ -103,14 +122,20 @@ respect the cancelled-company read-only lifecycle), and `auditMutations("ai_insi
 - Added an `aiInsights` i18n block to `en.json` and `ar.json` (full RTL parity).
 
 ## Tests
-- New `test/ai-insights.test.ts` (13 tests): analyze (deterministic + AI, `aiErrors[]`
-  present), unknown-entityType 400, non-existent 404, near-duplicate detection, list,
-  re-analyze upsert (no duplicate rows), audited accept (status + `acceptedById` +
-  `acceptedAt`), dismiss (status + `acceptedById` cleared), cross-tenant accept 404,
-  overview (tenant-scoped), cross-tenant analyze/list 404, and employee
-  deny-by-default write RBAC (403 on generate). Assertions focus on the deterministic
-  engines so the suite is not flaky when the LLM is slow/unconfigured. All fixtures use
-  throwaway tenants torn down in `afterAll`.
+- `test/ai-insights.test.ts`: analyze (deterministic + AI, `aiErrors[]` present),
+  unknown-entityType 400, non-existent 404, near-duplicate detection, list, re-analyze
+  upsert (no duplicate rows), audited accept (status + `acceptedById` + `acceptedAt`),
+  dismiss (status + `acceptedById` cleared), cross-tenant accept 404, overview
+  (tenant-scoped), cross-tenant analyze/list 404, and employee deny-by-default write
+  RBAC (403 on generate). The scope-gap closure added: **business_card duplicate
+  intelligence** (seeds two same-email scans via direct DB insert — no AI OCR call —
+  asserts a deterministic `duplicate_intelligence` row with only that insight type; plus
+  non-existent 404 and cross-tenant 404), **broadened relationship patterns** (two
+  decision-maker colleagues at a shared company → `multipleDecisionMakers` +
+  `existing_customer` status), and a **business_card batch** run on the shared queue
+  (enqueue → poll to `completed`, all scans succeed). Assertions focus on the
+  deterministic engines so the suite is not flaky when the LLM is slow/unconfigured.
+  All fixtures use throwaway tenants torn down in `afterAll`.
 - Backend independently verified via live smoke test during development (analyze
   produced 5 insights, audited accept, overview, cross-tenant 404 — all pass).
 
@@ -129,4 +154,4 @@ respect the cancelled-company read-only lifecycle), and `auditMutations("ai_insi
   `pnpm --filter @workspace/db run push` after schema edits (both done).
 - Gate procedure unchanged: restart the `artifacts/api-server: API Server` workflow (and
   truncate `login_attempts` if stale) before running the full suite **once**. The Stage 5A
-  gate run was green at 23 files / 383 tests.
+  gate run was green at 23 files / 398 tests.

@@ -4969,7 +4969,7 @@ export const GetAiInsightsOverviewResponse = zod.object({
   "recent": zod.array(zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
   "entityId": zod.number(),
   "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
@@ -4995,7 +4995,7 @@ export const GetAiInsightsOverviewResponse = zod.object({
  * @summary Generate (or re-generate) all applicable AI insights for one CRM entity
  */
 export const AnalyzeAiInsightsParams = zod.object({
-  "entityType": zod.coerce.string().describe('lead | contact | organization'),
+  "entityType": zod.coerce.string().describe('lead | contact | organization | business_card'),
   "id": zod.coerce.number()
 })
 
@@ -5003,7 +5003,7 @@ export const AnalyzeAiInsightsResponse = zod.object({
   "insights": zod.array(zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
   "entityId": zod.number(),
   "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
@@ -5033,7 +5033,7 @@ export const AnalyzeAiInsightsResponse = zod.object({
  * @summary List stored AI insights for one CRM entity
  */
 export const GetAiInsightsParams = zod.object({
-  "entityType": zod.coerce.string().describe('lead | contact | organization'),
+  "entityType": zod.coerce.string().describe('lead | contact | organization | business_card'),
   "id": zod.coerce.number()
 })
 
@@ -5041,7 +5041,7 @@ export const GetAiInsightsResponse = zod.object({
   "insights": zod.array(zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
   "entityId": zod.number(),
   "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
@@ -5073,7 +5073,7 @@ export const AcceptAiInsightParams = zod.object({
 export const AcceptAiInsightResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
   "entityId": zod.number(),
   "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
@@ -5104,7 +5104,7 @@ export const DismissAiInsightParams = zod.object({
 export const DismissAiInsightResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
   "entityId": zod.number(),
   "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
@@ -5129,7 +5129,7 @@ export const DismissAiInsightResponse = zod.object({
  * @summary Start a batch (re)analysis of all records of one entity type in the tenant
  */
 export const StartAiInsightsBatchBody = zod.object({
-  "entityType": zod.string().describe('lead | contact | organization')
+  "entityType": zod.string().describe('lead | contact | organization | business_card')
 })
 
 
@@ -5141,7 +5141,7 @@ export const ListAiInsightsBatchesResponse = zod.object({
   "id": zod.string(),
   "companyId": zod.number(),
   "requestedById": zod.number(),
-  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
   "status": zod.string().describe('queued | running | completed | failed'),
   "total": zod.number(),
   "processed": zod.number(),
@@ -5168,7 +5168,7 @@ export const GetAiInsightsBatchResponse = zod.object({
   "id": zod.string(),
   "companyId": zod.number(),
   "requestedById": zod.number(),
-  "entityType": zod.string().describe('lead | contact | organization'),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
   "status": zod.string().describe('queued | running | completed | failed'),
   "total": zod.number(),
   "processed": zod.number(),

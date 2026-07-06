@@ -1,5 +1,5 @@
-import { db, contactsTable, leadsTable, organizationsTable, eventsTable } from "@workspace/db";
-import type { AiInsight, Contact, Lead, Organization } from "@workspace/db";
+import { db, contactsTable, leadsTable, organizationsTable, eventsTable, scansTable } from "@workspace/db";
+import type { AiInsight, Contact, Lead, Organization, Scan } from "@workspace/db";
 import { and, eq, ne, isNull, sql } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
@@ -32,7 +32,7 @@ import {
 // generatedAt/lastAnalysisAt. Nothing here writes back into CRM fields — insights are
 // suggestions a user explicitly accepts (an audited action recorded on the row).
 
-const ENTITY_TYPES: EntityType[] = ["lead", "contact", "organization"];
+const ENTITY_TYPES: EntityType[] = ["lead", "contact", "organization", "business_card"];
 
 export function assertEntityType(value: string): EntityType {
   if (!ENTITY_TYPES.includes(value as EntityType)) {
@@ -71,10 +71,17 @@ async function loadOrganization(user: AuthUser, id: number): Promise<Organizatio
   if (!row || !canAccessCompany(user, row.companyId)) throw new AppError(404, "Company not found");
   return row;
 }
+// Business card = a scanned physical card (scans table). Scans have no soft-delete column.
+async function loadScan(user: AuthUser, id: number): Promise<Scan> {
+  const [row] = await db.select().from(scansTable).where(eq(scansTable.id, id)).limit(1);
+  if (!row || !canAccessCompany(user, row.companyId)) throw new AppError(404, "Business card not found");
+  return row;
+}
 
 async function loadEntityCompanyId(user: AuthUser, entityType: EntityType, id: number): Promise<number> {
   if (entityType === "lead") return (await loadLead(user, id)).companyId;
   if (entityType === "contact") return (await loadContact(user, id)).companyId;
+  if (entityType === "business_card") return (await loadScan(user, id)).companyId;
   return (await loadOrganization(user, id)).companyId;
 }
 
@@ -215,6 +222,56 @@ async function leadDuplicates(companyId: number, lead: Lead): Promise<DuplicateM
   return out.slice(0, 10);
 }
 
+// Business-card (scan) duplicate detection. A scan carries OCR-extracted card fields
+// (JSON in `extractedData`) and, once saved, a contactId. Two scans are likely the same
+// physical card when they point at the same contact, or share an email/phone/name+company.
+interface ScanCardFields {
+  firstName?: string | null; lastName?: string | null; fullName?: string | null;
+  company?: string | null; email?: string | null; mobile?: string | null;
+}
+function parseScanFields(raw: string | null): ScanCardFields {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      firstName: (v.firstName as string) ?? null,
+      lastName: (v.lastName as string) ?? null,
+      fullName: (v.fullName as string) ?? null,
+      company: (v.company as string) ?? (v.contactCompany as string) ?? null,
+      email: (v.email as string) ?? null,
+      mobile: (v.mobile as string) ?? (v.phone as string) ?? null,
+    };
+  } catch {
+    return {};
+  }
+}
+function scanLabel(f: ScanCardFields, id: number): string {
+  return [f.firstName, f.lastName].filter(Boolean).join(" ") || f.fullName || `Business card #${id}`;
+}
+
+async function scanDuplicates(companyId: number, scan: Scan): Promise<DuplicateMatch[]> {
+  const rows = await db
+    .select({ id: scansTable.id, extractedData: scansTable.extractedData, contactId: scansTable.contactId })
+    .from(scansTable)
+    .where(and(eq(scansTable.companyId, companyId), ne(scansTable.id, scan.id)))
+    .limit(500);
+  const self = parseScanFields(scan.extractedData);
+  const email = normEmail(self.email);
+  const phone = normPhone(self.mobile);
+  const name = normName([self.firstName, self.lastName].filter(Boolean).join(" ") || self.fullName);
+  const company = normName(self.company);
+  const out: DuplicateMatch[] = [];
+  for (const r of rows) {
+    const f = parseScanFields(r.extractedData);
+    const label = scanLabel(f, r.id);
+    if (scan.contactId != null && r.contactId === scan.contactId) out.push({ id: r.id, label, reason: "Same linked contact" });
+    else if (email && normEmail(f.email) === email) out.push({ id: r.id, label, reason: "Same email address" });
+    else if (phone && phone.length >= 7 && normPhone(f.mobile) === phone) out.push({ id: r.id, label, reason: "Same phone number" });
+    else if (name && company && normName([f.firstName, f.lastName].filter(Boolean).join(" ") || f.fullName) === name && normName(f.company) === company) out.push({ id: r.id, label, reason: "Same name & company" });
+  }
+  return out.slice(0, 10);
+}
+
 function duplicateInsight(matches: DuplicateMatch[]): { data: Record<string, unknown>; confidence: number; reasoning: string } {
   const hasStrong = matches.some((m) => m.reason.startsWith("Same email") || m.reason === "Same phone number" || m.reason === "Same company name");
   const confidence = matches.length === 0 ? 100 : hasStrong ? 90 : 65;
@@ -341,6 +398,12 @@ export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: 
     ])));
     await insightsRepo.upsertInsight(detUpsert(cid, "contact", id, "duplicate_intelligence", duplicateInsight(await contactDuplicates(cid, contact))));
     await insightsRepo.upsertInsight(detUpsert(cid, "contact", id, "relationship_intelligence", await contactRelationships(cid, contact)));
+  } else if (entityType === "business_card") {
+    // A scanned physical business card. Only duplicate intelligence applies — it flags
+    // the same card captured more than once (deterministic, never auto-merges).
+    const scan = await loadScan(user, id);
+    const cid = scan.companyId;
+    await insightsRepo.upsertInsight(detUpsert(cid, "business_card", id, "duplicate_intelligence", duplicateInsight(await scanDuplicates(cid, scan))));
   } else {
     const org = await loadOrganization(user, id);
     const cid = org.companyId;

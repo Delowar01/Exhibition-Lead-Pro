@@ -11,7 +11,7 @@ export interface AiBatchJob {
   id: string;
   companyId: number;
   requestedById: number;
-  /** lead | contact | organization */
+  /** lead | contact | organization | business_card */
   entityType: string;
   /** queued | running | completed | failed */
   status: string;

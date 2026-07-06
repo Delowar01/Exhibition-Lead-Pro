@@ -34,3 +34,12 @@ audit_logs is append-only by design — only a positive JOBS_AUDIT_RETENTION_DAY
 **Caveat:** in-process queue = per-process memory; restart/crash loses queued work and
 each instance runs its own queue. Acceptable for transactional email + idempotent
 maintenance; swap to a shared broker behind JobQueue when durability is needed.
+
+**AI batch analysis rides the SAME shared queue** (reversed an earlier "self-contained,
+NOT the shared queue" design after code review). It enqueues one job per entity
+(`AI_ANALYZE_ENTITY_JOB`) with `maxAttempts:1`; the handler updates the batch counters +
+finalizes and MUST NOT throw (a per-entity failure is soft-recorded, not dead-lettered) —
+otherwise the "unconfigured→retry-flood" hazard above reappears for AI. The in-memory
+`jobs` map is polling state only. **Any new queue job type must also be registered in
+`lib/jobs/handlers.ts` startWorkers**, or it silently dead-letters ("No handler
+registered").

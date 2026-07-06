@@ -7,6 +7,6 @@
  */
 
 export interface AiBatchStartRequest {
-  /** lead | contact | organization */
+  /** lead | contact | organization | business_card */
   entityType: string;
 }

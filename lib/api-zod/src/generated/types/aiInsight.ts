@@ -10,7 +10,7 @@ import type { AiInsightData } from './aiInsightData';
 export interface AiInsight {
   id: number;
   companyId: number;
-  /** lead | contact | organization */
+  /** lead | contact | organization | business_card */
   entityType: string;
   entityId: number;
   /** lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence */
