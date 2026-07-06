@@ -157,12 +157,22 @@ router.post("/ai/copilot/outputs/:id/dismiss", requirePermission("ai_copilot", "
   res.json(await copilot.dismissOutput(req.user!, parseInt(String(req.params.id))));
 });
 
-// POST /ai/copilot/:entityType/:id/generate — generate one output for a CRM entity.
-router.post("/ai/copilot/:entityType/:id/generate", requirePermission("ai_copilot", "generate"), async (req: AuthRequest, res) => {
+// GET /ai/copilot/:entityType/:id/panel — aggregated Sales Copilot panel (static 3rd
+// segment "panel", registered before the 2-segment list route below).
+router.get("/ai/copilot/:entityType/:id/panel", requirePermission("ai_copilot", "view"), async (req: AuthRequest, res) => {
   const entityType = copilot.assertEntityType(String(req.params.entityType));
   const id = parseInt(String(req.params.id));
-  const body = (req.body ?? {}) as { outputType?: unknown; language?: unknown; instructions?: unknown };
-  const outputType = copilot.assertOutputType(String(body.outputType ?? ""));
+  res.json(await copilot.getPanel(req.user!, entityType, id));
+});
+
+// POST /ai/copilot/:entityType/:id/:outputType — generate one output for a CRM entity.
+// MUST be the LAST copilot POST route: the 3-segment :outputType param would otherwise
+// swallow /ai/copilot/outputs/:id/use|dismiss (also 3 segments). Options travel in the body.
+router.post("/ai/copilot/:entityType/:id/:outputType", requirePermission("ai_copilot", "generate"), async (req: AuthRequest, res) => {
+  const entityType = copilot.assertEntityType(String(req.params.entityType));
+  const id = parseInt(String(req.params.id));
+  const outputType = copilot.assertOutputType(String(req.params.outputType));
+  const body = (req.body ?? {}) as { language?: unknown; instructions?: unknown };
   res.json(await copilot.generateOutput(req.user!, entityType, id, outputType, { language: body.language, instructions: body.instructions }));
 });
 

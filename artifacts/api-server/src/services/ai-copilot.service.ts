@@ -22,6 +22,7 @@ import type { AiFeature } from "../ai/types.js";
 import { resolveSettings } from "./ai.service.js";
 import * as copilotRepo from "../repositories/ai_copilot_outputs.repository.js";
 import type { EntityType, OutputType, UpsertCopilotOutputInput } from "../repositories/ai_copilot_outputs.repository.js";
+import * as insightsRepo from "../repositories/ai_insights.repository.js";
 
 // Orchestration for the Stage 5B AI Sales Copilot. For a single CRM entity + one
 // requested output type it assembles a CRM-data-ONLY context (records already stored in
@@ -494,6 +495,37 @@ export async function getOverview(user: AuthUser) {
     copilotRepo.recentForCompany(user, 20),
   ]);
   return { counts, recent };
+}
+
+// Aggregated Sales Copilot panel for one CRM entity: the available generators, the
+// deterministic suggested next action + coaching risk signals (grounded in real fields),
+// any existing Stage 5A AI insights (lead score / summary / company + relationship
+// intelligence), and the stored copilot drafts. Tenant-scoped: nonexistent/cross-tenant
+// entities 404 via loadEntityContext (no existence leak). No fabricated data.
+export async function getPanel(user: AuthUser, entityType: EntityType, id: number) {
+  const loaded = await loadEntityContext(user, entityType, id);
+  const [outputs, insights] = await Promise.all([
+    copilotRepo.listByEntity(user, entityType, id),
+    insightsRepo.listByEntity(user, entityType, id).catch(() => []),
+  ]);
+  let suggestedAction: FollowupCore | null = null;
+  let coachingSignals: CoachingSignal[] = [];
+  if (loaded.lead) {
+    suggestedAction = leadFollowupCore(loaded.lead);
+    coachingSignals = leadCoachingSignals(loaded.lead);
+  } else if (loaded.contact) {
+    suggestedAction = contactFollowupCore(loaded.contact);
+    coachingSignals = contactCoachingSignals(loaded.contact);
+  }
+  return {
+    entityType,
+    entityId: id,
+    availableOutputTypes: APPLICABLE[entityType],
+    suggestedAction,
+    coachingSignals,
+    insights,
+    outputs,
+  };
 }
 
 // Used by the batch worker: process one entity for one output type. Errors propagate to

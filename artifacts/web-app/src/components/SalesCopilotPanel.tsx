@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Sparkles, Check, X, ShieldCheck, Cpu, Copy, Pencil, Info } from "lucide-react";
+import { Bot, Sparkles, Check, X, ShieldCheck, Cpu, Copy, Pencil, Info, Mail, MessageCircle } from "lucide-react";
 
 type EntityType = "lead" | "contact" | "organization";
 
@@ -179,10 +179,38 @@ function CopilotOutputCard({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editJson, setEditJson] = useState("");
+  const { toast } = useToast();
 
   const label = OUTPUT_LABELS[output.outputType] ?? humanizeKey(output.outputType);
   const isDeterministic = output.source === "deterministic";
   const displayContent = (output.editedContent || output.content) as Record<string, unknown>;
+
+  // OS handoff: the draft is copied/opened in the user's own mail/WhatsApp app —
+  // Copilot NEVER auto-sends. mailto has no recipient so the OS picks the mail app
+  // (honors the "no forced Gmail" preference); wa.me has no number so WhatsApp lets
+  // the user pick the contact. Only real generated content is used (no fabrication).
+  const isEmail = output.outputType === "email";
+  const isWhatsapp = output.outputType === "whatsapp";
+  const emailSubject = typeof displayContent.subject === "string" ? displayContent.subject : "";
+  const emailBody = typeof displayContent.body === "string" ? displayContent.body : "";
+  const waMessage = typeof displayContent.message === "string" ? displayContent.message : "";
+  const copyText =
+    isEmail && (emailSubject || emailBody)
+      ? `${emailSubject}\n\n${emailBody}`.trim()
+      : isWhatsapp && waMessage
+        ? waMessage
+        : JSON.stringify(displayContent, null, 2);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(copyText);
+    toast({ title: "Copied to clipboard" });
+  };
+  const openEmail = () => {
+    window.open(`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`, "_blank");
+  };
+  const openWhatsapp = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(waMessage)}`, "_blank");
+  };
 
   const handleEditOpen = () => {
     setEditJson(JSON.stringify(displayContent, null, 2));
@@ -238,6 +266,22 @@ function CopilotOutputCard({
           <span>Prompt v{output.promptVersion}</span>
         )}
         {output.usedAt && <span>Used {formatTs(output.usedAt)}</span>}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <Button size="sm" variant="ghost" onClick={handleCopy} className="gap-1">
+          <Copy className="h-3.5 w-3.5" /> Copy
+        </Button>
+        {isEmail && (emailSubject || emailBody) && (
+          <Button size="sm" variant="outline" onClick={openEmail} className="gap-1">
+            <Mail className="h-3.5 w-3.5" /> Open in Email
+          </Button>
+        )}
+        {isWhatsapp && waMessage && (
+          <Button size="sm" variant="outline" onClick={openWhatsapp} className="gap-1">
+            <MessageCircle className="h-3.5 w-3.5" /> Send on WhatsApp
+          </Button>
+        )}
       </div>
 
       {(output.status === "generated" || output.status === "edited") && (
@@ -319,7 +363,7 @@ export function SalesCopilotPanel({
   const handleGenerate = () => {
     if (!outputType) return;
     generate.mutate(
-      { entityType, id, data: { outputType, instructions: instructions || undefined } },
+      { entityType, id, outputType, data: { instructions: instructions || undefined } },
       {
         onSuccess: () => {
           invalidate();

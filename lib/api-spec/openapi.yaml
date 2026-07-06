@@ -4235,7 +4235,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /ai/copilot/{entityType}/{id}/generate:
+  /ai/copilot/{entityType}/{id}/{outputType}:
     post:
       operationId: generateAiCopilotOutput
       tags: [ai]
@@ -4252,8 +4252,14 @@ paths:
           required: true
           schema:
             type: integer
+        - name: outputType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -4265,6 +4271,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AiCopilotOutput"
+        "404":
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/copilot/{entityType}/{id}/panel:
+    get:
+      operationId: getAiCopilotPanel
+      tags: [ai]
+      summary: Aggregated Sales Copilot panel data for one CRM entity
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+          description: lead | contact | organization | business_card
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCopilotPanelResponse"
         "404":
           description: Entity not found
           content:
@@ -10318,17 +10355,46 @@ components:
 
     AiCopilotGenerateRequest:
       type: object
-      required: [outputType]
       properties:
-        outputType:
-          type: string
-          description: email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary
         language:
           type: string
           description: en | ar (defaults to en)
+        tone:
+          type: string
+          description: Optional tone hint (e.g. formal, friendly).
         instructions:
           type: string
           description: Optional extra grounding instructions from the user (never overrides safety rules).
+
+    AiCopilotPanelResponse:
+      type: object
+      required: [entityType, entityId, availableOutputTypes, outputs, insights, coachingSignals]
+      properties:
+        entityType:
+          type: string
+        entityId:
+          type: integer
+        availableOutputTypes:
+          type: array
+          items:
+            type: string
+        suggestedAction:
+          nullable: true
+          type: object
+          additionalProperties: true
+        coachingSignals:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        insights:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiInsight"
+        outputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCopilotOutput"
 
     AiCopilotEditRequest:
       type: object

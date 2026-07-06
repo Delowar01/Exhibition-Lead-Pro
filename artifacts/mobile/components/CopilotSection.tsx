@@ -75,7 +75,7 @@ export function CopilotSection({ entityType, id }: Props) {
   const handleGenerate = (outputType: string) => {
     setTypeModalVisible(false);
     generate.mutate(
-      { entityType, id, data: { outputType, language } },
+      { entityType, id, outputType, data: { language } },
       {
         onSuccess: success,
         onError: () => Alert.alert(t("copilot.title"), t("copilot.generateFailed")),

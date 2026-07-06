@@ -80,7 +80,7 @@ async function createUser(token: string, email: string, name: string, role: stri
 // Generate an output and return the parsed row. Deterministic cores never fail; LLM-only
 // types soft-degrade to HTTP 200. Always expects 200.
 async function generate(token: string, entityType: string, id: number, outputType: string, extra?: Record<string, unknown>) {
-  const res = await api("POST", `/ai/copilot/${entityType}/${id}/generate`, token, { outputType, ...(extra ?? {}) });
+  const res = await api("POST", `/ai/copilot/${entityType}/${id}/${outputType}`, token, extra ?? {});
   expect(res.status, `generate ${outputType} on ${entityType}/${id}`).toBe(200);
   return res.json();
 }
@@ -185,24 +185,24 @@ afterAll(async () => {
   }
 });
 
-describe("POST /ai/copilot/:entityType/:id/generate — validation", () => {
+describe("POST /ai/copilot/:entityType/:id/:outputType — validation", () => {
   it("400s an unknown entityType", async () => {
-    const res = await api("POST", `/ai/copilot/widget/${leadId}/generate`, adminToken, { outputType: "followup" });
+    const res = await api("POST", `/ai/copilot/widget/${leadId}/followup`, adminToken, {});
     expect(res.status).toBe(400);
   });
 
   it("400s an unknown outputType", async () => {
-    const res = await api("POST", `/ai/copilot/lead/${leadId}/generate`, adminToken, { outputType: "bogus" });
+    const res = await api("POST", `/ai/copilot/lead/${leadId}/bogus`, adminToken, {});
     expect(res.status).toBe(400);
   });
 
   it("400s an outputType that is not applicable to the entity (followup on organization)", async () => {
-    const res = await api("POST", `/ai/copilot/organization/${orgId}/generate`, adminToken, { outputType: "followup" });
+    const res = await api("POST", `/ai/copilot/organization/${orgId}/followup`, adminToken, {});
     expect(res.status).toBe(400);
   });
 
   it("404s a non-existent lead", async () => {
-    const res = await api("POST", `/ai/copilot/lead/99999999/generate`, adminToken, { outputType: "followup" });
+    const res = await api("POST", `/ai/copilot/lead/99999999/followup`, adminToken, {});
     expect(res.status).toBe(404);
   });
 });
@@ -252,7 +252,7 @@ describe("Deterministic-core outputs (followup / coaching) — grounded, provena
 
 describe("LLM-only outputs — soft-degrade to 200 (never 500)", () => {
   it("email generation returns 200 even if the provider is unavailable", async () => {
-    const res = await api("POST", `/ai/copilot/contact/${contactId}/generate`, adminToken, { outputType: "email" });
+    const res = await api("POST", `/ai/copilot/contact/${contactId}/email`, adminToken, {});
     expect(res.status).toBe(200);
     const out = await res.json();
     expect(out.outputType).toBe("email");
@@ -262,7 +262,7 @@ describe("LLM-only outputs — soft-degrade to 200 (never 500)", () => {
   });
 
   it("summary generation returns 200 for a business card (LLM-only, applicable)", async () => {
-    const res = await api("POST", `/ai/copilot/business_card/${scanId}/generate`, adminToken, { outputType: "summary" });
+    const res = await api("POST", `/ai/copilot/business_card/${scanId}/summary`, adminToken, {});
     expect(res.status).toBe(200);
     const out = await res.json();
     expect(out.entityType).toBe("business_card");
@@ -278,6 +278,39 @@ describe("GET /ai/copilot/:entityType/:id — listing", () => {
     expect(Array.isArray(body.outputs)).toBe(true);
     expect(body.outputs.length).toBeGreaterThan(0);
     expect(body.outputs.every((o: { companyId: number }) => o.companyId === companyId)).toBe(true);
+  });
+});
+
+describe("GET /ai/copilot/:entityType/:id/panel — aggregated panel", () => {
+  it("returns available generators, deterministic suggested action, coaching signals, insights and stored outputs for a lead", async () => {
+    // Ensure at least one stored output exists for this entity.
+    await generate(adminToken, "lead", leadId, "followup");
+    const res = await api("GET", `/ai/copilot/lead/${leadId}/panel`, adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.entityType).toBe("lead");
+    expect(body.entityId).toBe(leadId);
+    expect(Array.isArray(body.availableOutputTypes)).toBe(true);
+    // followup is applicable to leads and must be offered.
+    expect(body.availableOutputTypes).toContain("followup");
+    // Deterministic suggested action is grounded (never fabricated) for a lead.
+    expect(body.suggestedAction).toBeTruthy();
+    expect(typeof body.suggestedAction.channel).toBe("string");
+    expect(Array.isArray(body.coachingSignals)).toBe(true);
+    expect(Array.isArray(body.insights)).toBe(true);
+    expect(Array.isArray(body.outputs)).toBe(true);
+    // Stored outputs stay tenant-scoped.
+    expect(body.outputs.every((o: { companyId: number }) => o.companyId === companyId)).toBe(true);
+  });
+
+  it("404s a panel request for another tenant's lead (no existence leak)", async () => {
+    const res = await api("GET", `/ai/copilot/lead/${foreignLeadId}/panel`, adminToken);
+    expect(res.status).toBe(404);
+  });
+
+  it("denies an employee without ai_copilot:view (view-gated)", async () => {
+    const res = await api("GET", `/ai/copilot/lead/${leadId}/panel`, empToken);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -342,7 +375,7 @@ describe("GET /ai/copilot/overview — tenant-wide review summary", () => {
 
 describe("Cross-tenant isolation (404 not 403)", () => {
   it("404s generating on a foreign lead", async () => {
-    const res = await api("POST", `/ai/copilot/lead/${foreignLeadId}/generate`, adminToken, { outputType: "followup" });
+    const res = await api("POST", `/ai/copilot/lead/${foreignLeadId}/followup`, adminToken, {});
     expect(res.status).toBe(404);
   });
 
@@ -354,7 +387,7 @@ describe("Cross-tenant isolation (404 not 403)", () => {
 
 describe("RBAC — deny-by-default employee writes", () => {
   it("403s an employee generating (no ai_copilot.generate permission)", async () => {
-    const res = await api("POST", `/ai/copilot/lead/${leadId}/generate`, empToken, { outputType: "followup" });
+    const res = await api("POST", `/ai/copilot/lead/${leadId}/followup`, empToken, {});
     expect(res.status).toBe(403);
   });
 
@@ -371,7 +404,7 @@ describe("Platform-owner tenant firewall (requireTenantUser)", () => {
   });
 
   it("403s a platform_owner generating a copilot output", async () => {
-    const res = await api("POST", `/ai/copilot/lead/${leadId}/generate`, platformToken, { outputType: "followup" });
+    const res = await api("POST", `/ai/copilot/lead/${leadId}/followup`, platformToken, {});
     expect(res.status).toBe(403);
   });
 });
@@ -391,7 +424,7 @@ describe("Positive RBAC — granting ai_copilot view+use unlocks reads/actions b
       expect((await use.json()).usedById).toBe(empUserId);
 
       // Generate still requires the separate ai_copilot.generate permission.
-      const gen = await api("POST", `/ai/copilot/lead/${leadId}/generate`, empToken, { outputType: "followup" });
+      const gen = await api("POST", `/ai/copilot/lead/${leadId}/followup`, empToken, {});
       expect(gen.status).toBe(403);
     } finally {
       await db.update(usersTable).set({ permissions: {} }).where(eq(usersTable.id, empUserId));
@@ -466,7 +499,7 @@ describe("Read-only tenant (cancelled) — mutations blocked, reads allowed", ()
   it("403s a copilot generate for a cancelled tenant but still allows reads", async () => {
     await db.update(companiesTable).set({ status: "cancelled" }).where(eq(companiesTable.id, companyBId));
     try {
-      const gen = await api("POST", `/ai/copilot/lead/${foreignLeadId}/generate`, adminBToken, { outputType: "followup" });
+      const gen = await api("POST", `/ai/copilot/lead/${foreignLeadId}/followup`, adminBToken, {});
       expect(gen.status).toBe(403); // blockReadOnlyMutations
       const read = await api("GET", `/ai/copilot/lead/${foreignLeadId}`, adminBToken);
       expect(read.status).toBe(200); // reads stay open in read-only mode

@@ -5384,12 +5384,13 @@ export const DismissAiCopilotOutputResponse = zod.object({
  */
 export const GenerateAiCopilotOutputParams = zod.object({
   "entityType": zod.coerce.string().describe('lead | contact | organization | business_card'),
-  "id": zod.coerce.number()
+  "id": zod.coerce.number(),
+  "outputType": zod.coerce.string().describe('email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary')
 })
 
 export const GenerateAiCopilotOutputBody = zod.object({
-  "outputType": zod.string().describe('email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary'),
   "language": zod.string().optional().describe('en | ar (defaults to en)'),
+  "tone": zod.string().optional().describe('Optional tone hint (e.g. formal, friendly).'),
   "instructions": zod.string().optional().describe('Optional extra grounding instructions from the user (never overrides safety rules).')
 })
 
@@ -5416,6 +5417,69 @@ export const GenerateAiCopilotOutputResponse = zod.object({
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
   "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Aggregated Sales Copilot panel data for one CRM entity
+ */
+export const GetAiCopilotPanelParams = zod.object({
+  "entityType": zod.coerce.string().describe('lead | contact | organization | business_card'),
+  "id": zod.coerce.number()
+})
+
+export const GetAiCopilotPanelResponse = zod.object({
+  "entityType": zod.string(),
+  "entityId": zod.number(),
+  "availableOutputTypes": zod.array(zod.string()),
+  "suggestedAction": zod.record(zod.string(), zod.unknown()).nullish(),
+  "coachingSignals": zod.array(zod.record(zod.string(), zod.unknown())),
+  "insights": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
+  "entityId": zod.number(),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
+  "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "status": zod.string().describe('suggested | accepted | dismissed'),
+  "generatedAt": zod.string(),
+  "lastAnalysisAt": zod.string(),
+  "acceptedById": zod.number().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})),
+  "outputs": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization | business_card'),
+  "entityId": zod.number(),
+  "outputType": zod.string().describe('email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary'),
+  "content": zod.record(zod.string(), zod.unknown()).describe('Structured, output-type-specific draft (shape varies by outputType).'),
+  "editedContent": zod.record(zod.string(), zod.unknown()).nullish().describe('Human-edited version of content (null until edited).'),
+  "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
+  "reasoning": zod.string().nullish(),
+  "source": zod.string().describe('ai | deterministic'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "language": zod.string().describe('en | ar'),
+  "status": zod.string().describe('generated | edited | used | dismissed'),
+  "generatedAt": zod.string(),
+  "lastGeneratedAt": zod.string(),
+  "usedById": zod.number().nullish(),
+  "usedAt": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}))
 })
 
 

@@ -3283,12 +3283,26 @@ export interface AiCopilotOverviewResponse {
 }
 
 export interface AiCopilotGenerateRequest {
-  /** email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary */
-  outputType: string;
   /** en | ar (defaults to en) */
   language?: string;
+  /** Optional tone hint (e.g. formal, friendly). */
+  tone?: string;
   /** Optional extra grounding instructions from the user (never overrides safety rules). */
   instructions?: string;
+}
+
+export type AiCopilotPanelResponseSuggestedAction = { [key: string]: unknown } | null;
+
+export type AiCopilotPanelResponseCoachingSignalsItem = { [key: string]: unknown };
+
+export interface AiCopilotPanelResponse {
+  entityType: string;
+  entityId: number;
+  availableOutputTypes: string[];
+  suggestedAction?: AiCopilotPanelResponseSuggestedAction;
+  coachingSignals: AiCopilotPanelResponseCoachingSignalsItem[];
+  insights: AiInsight[];
+  outputs: AiCopilotOutput[];
 }
 
 export type AiCopilotEditRequestEditedContent = { [key: string]: unknown };

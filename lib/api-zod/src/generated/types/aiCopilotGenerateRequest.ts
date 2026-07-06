@@ -7,10 +7,10 @@
  */
 
 export interface AiCopilotGenerateRequest {
-  /** email | whatsapp | call_prep | meeting_prep | proposal | followup | coaching | summary */
-  outputType: string;
   /** en | ar (defaults to en) */
   language?: string;
+  /** Optional tone hint (e.g. formal, friendly). */
+  tone?: string;
   /** Optional extra grounding instructions from the user (never overrides safety rules). */
   instructions?: string;
 }

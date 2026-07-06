@@ -37,6 +37,7 @@ import type {
   AiCopilotOutput,
   AiCopilotOutputsListResponse,
   AiCopilotOverviewResponse,
+  AiCopilotPanelResponse,
   AiHealthResponse,
   AiInsight,
   AiInsightsListResponse,
@@ -14691,12 +14692,13 @@ export const useDismissAiCopilotOutput = <TError = ErrorType<ErrorResponse>,
     }
 
 export const getGenerateAiCopilotOutputUrl = (entityType: string,
-    id: number,) => {
+    id: number,
+    outputType: string,) => {
 
 
 
 
-  return `/api/ai/copilot/${entityType}/${id}/generate`
+  return `/api/ai/copilot/${entityType}/${id}/${outputType}`
 }
 
 /**
@@ -14704,9 +14706,10 @@ export const getGenerateAiCopilotOutputUrl = (entityType: string,
  */
 export const generateAiCopilotOutput = async (entityType: string,
     id: number,
-    aiCopilotGenerateRequest: AiCopilotGenerateRequest, options?: RequestInit): Promise<AiCopilotOutput> => {
+    outputType: string,
+    aiCopilotGenerateRequest?: AiCopilotGenerateRequest, options?: RequestInit): Promise<AiCopilotOutput> => {
 
-  return customFetch<AiCopilotOutput>(getGenerateAiCopilotOutputUrl(entityType,id),
+  return customFetch<AiCopilotOutput>(getGenerateAiCopilotOutputUrl(entityType,id,outputType),
   {
     ...options,
     method: 'POST',
@@ -14720,8 +14723,8 @@ export const generateAiCopilotOutput = async (entityType: string,
 
 
 export const getGenerateAiCopilotOutputMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;outputType: string;data?: BodyType<AiCopilotGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;outputType: string;data?: BodyType<AiCopilotGenerateRequest>}, TContext> => {
 
 const mutationKey = ['generateAiCopilotOutput'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -14733,10 +14736,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAiCopilotOutput>>, {entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}> = (props) => {
-          const {entityType,id,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAiCopilotOutput>>, {entityType: string;id: number;outputType: string;data?: BodyType<AiCopilotGenerateRequest>}> = (props) => {
+          const {entityType,id,outputType,data} = props ?? {};
 
-          return  generateAiCopilotOutput(entityType,id,data,requestOptions)
+          return  generateAiCopilotOutput(entityType,id,outputType,data,requestOptions)
         }
 
 
@@ -14747,22 +14750,104 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type GenerateAiCopilotOutputMutationResult = NonNullable<Awaited<ReturnType<typeof generateAiCopilotOutput>>>
-    export type GenerateAiCopilotOutputMutationBody = BodyType<AiCopilotGenerateRequest>
+    export type GenerateAiCopilotOutputMutationBody = BodyType<AiCopilotGenerateRequest> | undefined
     export type GenerateAiCopilotOutputMutationError = ErrorType<ErrorResponse>
 
     /**
  * @summary Generate (or re-generate) one AI Copilot output for a CRM entity
  */
 export const useGenerateAiCopilotOutput = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAiCopilotOutput>>, TError,{entityType: string;id: number;outputType: string;data?: BodyType<AiCopilotGenerateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof generateAiCopilotOutput>>,
         TError,
-        {entityType: string;id: number;data: BodyType<AiCopilotGenerateRequest>},
+        {entityType: string;id: number;outputType: string;data?: BodyType<AiCopilotGenerateRequest>},
         TContext
       > => {
       return useMutation(getGenerateAiCopilotOutputMutationOptions(options));
     }
+
+export const getGetAiCopilotPanelUrl = (entityType: string,
+    id: number,) => {
+
+
+
+
+  return `/api/ai/copilot/${entityType}/${id}/panel`
+}
+
+/**
+ * @summary Aggregated Sales Copilot panel data for one CRM entity
+ */
+export const getAiCopilotPanel = async (entityType: string,
+    id: number, options?: RequestInit): Promise<AiCopilotPanelResponse> => {
+
+  return customFetch<AiCopilotPanelResponse>(getGetAiCopilotPanelUrl(entityType,id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiCopilotPanelQueryKey = (entityType: string,
+    id: number,) => {
+    return [
+    `/api/ai/copilot/${entityType}/${id}/panel`
+    ] as const;
+    }
+
+
+export const getGetAiCopilotPanelQueryOptions = <TData = Awaited<ReturnType<typeof getAiCopilotPanel>>, TError = ErrorType<ErrorResponse>>(entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotPanel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiCopilotPanelQueryKey(entityType,id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiCopilotPanel>>> = ({ signal }) => getAiCopilotPanel(entityType,id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(entityType && id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotPanel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiCopilotPanelQueryResult = NonNullable<Awaited<ReturnType<typeof getAiCopilotPanel>>>
+export type GetAiCopilotPanelQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Aggregated Sales Copilot panel data for one CRM entity
+ */
+
+export function useGetAiCopilotPanel<TData = Awaited<ReturnType<typeof getAiCopilotPanel>>, TError = ErrorType<ErrorResponse>>(
+ entityType: string,
+    id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiCopilotPanel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiCopilotPanelQueryOptions(entityType,id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetAiCopilotOutputsUrl = (entityType: string,
     id: number,) => {
