@@ -1,0 +1,308 @@
+# Lead Capture Pro
+# Stage 5B – Enterprise AI Sales Copilot
+
+Objective
+
+Stage 5A – Enterprise AI Lead & Customer Intelligence has been completed and approved.
+
+Proceed with Stage 5B – Enterprise AI Sales Copilot.
+
+The goal is NOT simply to generate emails.
+
+The goal is to create an Enterprise Sales Copilot that helps sales teams prepare, communicate, follow up, and close opportunities more effectively.
+
+This phase must build upon the AI Platform Foundation (Stage 5.0) and AI Intelligence (Stage 5A).
+
+Do NOT implement Executive Intelligence.
+
+Do NOT implement AI Assistant.
+
+Do NOT implement Workflow Intelligence.
+
+Those belong to later phases.
+
+--------------------------------------------------
+
+Requirements
+
+Preserve:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• Contract-first architecture
+• Repository Layer
+• Service Layer
+• AI Platform Foundation
+• AI Lead Intelligence
+
+No regressions.
+
+No breaking API contracts.
+
+No breaking business logic.
+
+--------------------------------------------------
+
+Enterprise AI Principles
+
+Every AI response must include:
+
+• Confidence Score
+• Model
+• Prompt Version
+• Generated Date
+• Reasoning (where applicable)
+
+AI must never automatically send messages.
+
+AI must never automatically update CRM data.
+
+Users must always review and approve AI-generated content before sending or saving.
+
+All AI actions must be recorded in the AI Audit Ledger.
+
+--------------------------------------------------
+
+1. AI Email Composer
+
+Generate professional sales emails based on:
+
+• Lead Intelligence
+• Company Intelligence
+• Contact Intelligence
+• Relationship Intelligence
+• Previous Activities
+• Previous Notes
+• Event Information
+
+Support:
+
+• English
+• Arabic
+
+Allow users to regenerate and edit before sending.
+
+--------------------------------------------------
+
+2. AI WhatsApp Composer
+
+Generate:
+
+• First Contact Messages
+• Follow-up Messages
+• Meeting Reminders
+• Thank You Messages
+• Proposal Follow-ups
+
+Users review before sending.
+
+--------------------------------------------------
+
+3. AI Call Preparation
+
+Generate:
+
+• Customer Summary
+• Company Summary
+• Previous Interactions
+• Key Discussion Topics
+• Suggested Questions
+• Potential Objections
+• Recommended Talking Points
+
+--------------------------------------------------
+
+4. AI Meeting Preparation
+
+Generate:
+
+• Meeting Agenda
+• Customer Background
+• Decision Makers
+• Business Opportunities
+• Risk Indicators
+• Suggested Discussion Flow
+
+--------------------------------------------------
+
+5. AI Proposal Assistant
+
+Assist users by generating:
+
+• Proposal Outline
+• Executive Summary
+• Suggested Products/Services
+• Recommended Value Proposition
+• Suggested Next Steps
+
+Do NOT automatically create quotations.
+
+This phase only assists.
+
+--------------------------------------------------
+
+6. AI Follow-up Suggestions
+
+Recommend:
+
+• Best Next Action
+• Best Contact Time
+• Follow-up Priority
+• Suggested Follow-up Date
+• Suggested Communication Method
+
+--------------------------------------------------
+
+7. AI Sales Coaching
+
+Provide coaching based on CRM data.
+
+Examples:
+
+• High-value lead not contacted recently.
+• Lead at risk of becoming inactive.
+• Missing decision maker.
+• Missing follow-up.
+• Opportunity losing momentum.
+• Suggested actions to improve conversion.
+
+--------------------------------------------------
+
+8. AI Conversation Summary
+
+Generate summaries from:
+
+• Notes
+• Activities
+• Timeline
+• Communication History
+
+Create concise summaries for sales teams.
+
+--------------------------------------------------
+
+9. AI Sales Copilot Panel
+
+Create a dedicated Sales Copilot section displaying:
+
+• Lead Score
+• AI Summary
+• Company Intelligence
+• Relationship Intelligence
+• Suggested Next Action
+• Suggested Email
+• Suggested WhatsApp
+• Meeting Preparation
+• Call Preparation
+• Sales Coaching
+• Follow-up Suggestions
+
+--------------------------------------------------
+
+10. Bulk AI Assistance
+
+Support:
+
+• Bulk Email Drafts
+• Bulk Follow-up Suggestions
+• Bulk Lead Summaries
+• Bulk Sales Coaching
+
+Use background processing where appropriate.
+
+--------------------------------------------------
+
+Web
+
+Integrate into:
+
+• Lead Detail
+• Company Detail
+• Contact Detail
+• Sales Workspace
+• Pipeline
+• Dashboard
+
+--------------------------------------------------
+
+Mobile
+
+Maintain feature parity where practical.
+
+Support:
+
+• AI Summary
+• AI Follow-up Suggestions
+• AI Email Draft
+• AI WhatsApp Draft
+• AI Coaching
+• AI Meeting Preparation
+
+Maintain EN/AR support.
+
+--------------------------------------------------
+
+Performance
+
+Use background processing for long-running AI jobs.
+
+Do not block the UI.
+
+Optimize for enterprise-scale deployments.
+
+--------------------------------------------------
+
+Security
+
+Continue enforcing:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• AI Audit Logging
+• Tenant Isolation
+
+AI must never expose data outside the user's permissions.
+
+--------------------------------------------------
+
+Testing
+
+Add automated tests covering:
+
+• Email Generation
+• WhatsApp Generation
+• Meeting Preparation
+• Call Preparation
+• Sales Coaching
+• Follow-up Suggestions
+• AI Audit Logging
+• Tenant Isolation
+• Permission Enforcement
+• AI Failure Handling
+
+Run:
+
+• Full workspace typecheck
+• Complete regression suite
+
+No regressions.
+
+--------------------------------------------------
+
+Deliverables
+
+Provide:
+
+• Architecture summary
+• APIs added
+• Database changes
+• Prompt versions
+• Screenshots (Web)
+• Screenshots (Mobile)
+• Files modified
+• Test results
+• Validation report
+
+Wait for approval before beginning Stage 5E.
