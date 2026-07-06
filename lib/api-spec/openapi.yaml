@@ -11926,6 +11926,18 @@ components:
         source:
           type: string
           description: ai | deterministic
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
+          nullable: true
         status:
           type: string
           description: suggested | accepted | dismissed
@@ -12057,7 +12069,7 @@ components:
           nullable: true
         status:
           type: string
-          description: pending | processing | ready | failed
+          description: pending | generating | ready | failed
         downloadUrl:
           type: string
           nullable: true

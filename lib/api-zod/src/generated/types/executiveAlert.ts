@@ -20,6 +20,10 @@ export interface ExecutiveAlert {
   reasoning?: string | null;
   /** ai | deterministic */
   source: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
   /** suggested | accepted | dismissed */
   status: string;
   acceptedById?: number | null;

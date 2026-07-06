@@ -35,7 +35,8 @@ export default function MoreScreen() {
 
   const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
   const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
-  const canViewExecutive = isFullAccess || execPerms.includes("view");
+  const canViewExecutive =
+    user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
 
   async function applyAvatar(source: AvatarSource) {
     try {

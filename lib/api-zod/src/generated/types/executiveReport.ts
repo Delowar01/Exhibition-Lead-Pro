@@ -20,7 +20,7 @@ export interface ExecutiveReport {
   format: string;
   scopeType?: string | null;
   scopeId?: number | null;
-  /** pending | processing | ready | failed */
+  /** pending | generating | ready | failed */
   status: string;
   downloadUrl?: string | null;
   error?: string | null;

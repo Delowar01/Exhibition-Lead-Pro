@@ -3872,6 +3872,10 @@ export interface ExecutiveAlert {
   reasoning?: string | null;
   /** ai | deterministic */
   source: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
   /** suggested | accepted | dismissed */
   status: string;
   acceptedById?: number | null;
@@ -3941,7 +3945,7 @@ export interface ExecutiveReport {
   format: string;
   scopeType?: string | null;
   scopeId?: number | null;
-  /** pending | processing | ready | failed */
+  /** pending | generating | ready | failed */
   status: string;
   downloadUrl?: string | null;
   error?: string | null;

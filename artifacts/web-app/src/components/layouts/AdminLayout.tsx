@@ -15,7 +15,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const docPerms = (user?.permissions?.documents as string[] | undefined) ?? [];
   const canViewDocuments = isFullAccess || docPerms.includes("view");
   const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
-  const canViewExecutive = isFullAccess || execPerms.includes("view");
+  const canViewExecutive =
+    user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
