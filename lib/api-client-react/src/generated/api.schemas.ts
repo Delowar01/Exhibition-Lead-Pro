@@ -3933,6 +3933,10 @@ export interface ExecutiveReport {
   companyId: number;
   /** executive_summary | performance | forecast | full */
   reportType: string;
+  /** daily | weekly | monthly | quarterly */
+  periodType?: string;
+  /** resolved period key (e.g. 2026-07-06 | 2026-07 | 2026-Q3) */
+  periodKey?: string;
   /** pdf | xlsx */
   format: string;
   scopeType?: string | null;
@@ -3954,6 +3958,8 @@ export interface ExecutiveReportListResponse {
 export interface ExecutiveReportGenerateRequest {
   /** executive_summary | performance | forecast | full */
   reportType: string;
+  /** daily | weekly | monthly | quarterly (defaults to monthly) */
+  periodType?: string;
   /** pdf | xlsx */
   format: string;
   scopeType?: string;

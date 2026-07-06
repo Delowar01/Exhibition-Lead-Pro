@@ -11,7 +11,7 @@ import type {
   ExecutiveForecast,
   ExecutiveReport,
 } from "@workspace/db";
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, eq, or, inArray, desc, sql, type SQL, type AnyColumn } from "drizzle-orm";
 import { tenantScope, type AuthUser } from "../middlewares/requireAuth.js";
 import { combine } from "./base.js";
 
@@ -24,6 +24,28 @@ import { combine } from "./base.js";
 // carry AI provenance (provider/model/promptKey/promptVersion stay null).
 
 export type ScopeType = "company" | "department" | "team" | "employee";
+
+// Scope-privacy for persisted-artifact READS/lifecycle mutations. The generate paths
+// authorize scope up-front via the analytics privacy helper, but persisted rows are then
+// read back by id/list — those must be re-constrained to the scopes the caller is entitled
+// to (mirrors the dashboard's own scope privacy). Managers (primary_admin/admin) see every
+// scope in their tenant; a non-manager sees ONLY their own employee scope, the teams they
+// lead, and the departments they head. Without this a view-only employee could read
+// company-wide executive artifacts straight from the persisted tables.
+export interface ReadScope {
+  isManager: boolean;
+  userId: number;
+  teamIds: number[];
+  deptIds: number[];
+}
+
+function scopePrivacy(scope: ReadScope, scopeTypeCol: AnyColumn, scopeIdCol: AnyColumn): SQL | undefined {
+  if (scope.isManager) return undefined; // any scope in tenant
+  const clauses: (SQL | undefined)[] = [and(eq(scopeTypeCol, "employee"), eq(scopeIdCol, scope.userId))];
+  if (scope.teamIds.length) clauses.push(and(eq(scopeTypeCol, "team"), inArray(scopeIdCol, scope.teamIds)));
+  if (scope.deptIds.length) clauses.push(and(eq(scopeTypeCol, "department"), inArray(scopeIdCol, scope.deptIds)));
+  return or(...clauses);
+}
 
 interface Provenance {
   data: Record<string, unknown>;
@@ -96,13 +118,14 @@ export async function upsertSummary(input: UpsertSummaryInput): Promise<Executiv
   return row;
 }
 
-export async function listSummaries(user: AuthUser, periodType: string | null, limit: number): Promise<ExecutiveSummary[]> {
+export async function listSummaries(user: AuthUser, scope: ReadScope, periodType: string | null, limit: number): Promise<ExecutiveSummary[]> {
   return db
     .select()
     .from(executiveSummariesTable)
     .where(
       combine(
         tenantScope(user, executiveSummariesTable.companyId),
+        scopePrivacy(scope, executiveSummariesTable.scopeType, executiveSummariesTable.scopeId),
         periodType ? eq(executiveSummariesTable.periodType, periodType) : undefined,
       ),
     )
@@ -110,17 +133,24 @@ export async function listSummaries(user: AuthUser, periodType: string | null, l
     .limit(limit);
 }
 
-export async function getSummaryById(user: AuthUser, id: number): Promise<ExecutiveSummary | undefined> {
+export async function getSummaryById(user: AuthUser, scope: ReadScope, id: number): Promise<ExecutiveSummary | undefined> {
   const [row] = await db
     .select()
     .from(executiveSummariesTable)
-    .where(combine(tenantScope(user, executiveSummariesTable.companyId), eq(executiveSummariesTable.id, id)))
+    .where(
+      combine(
+        tenantScope(user, executiveSummariesTable.companyId),
+        scopePrivacy(scope, executiveSummariesTable.scopeType, executiveSummariesTable.scopeId),
+        eq(executiveSummariesTable.id, id),
+      ),
+    )
     .limit(1);
   return row;
 }
 
 export async function setSummaryStatus(
   user: AuthUser,
+  scope: ReadScope,
   id: number,
   status: "accepted" | "dismissed" | "suggested",
   acceptedById: number | null,
@@ -133,7 +163,13 @@ export async function setSummaryStatus(
       acceptedAt: status === "accepted" ? new Date() : null,
       updatedAt: new Date(),
     })
-    .where(combine(tenantScope(user, executiveSummariesTable.companyId), eq(executiveSummariesTable.id, id)))
+    .where(
+      combine(
+        tenantScope(user, executiveSummariesTable.companyId),
+        scopePrivacy(scope, executiveSummariesTable.scopeType, executiveSummariesTable.scopeId),
+        eq(executiveSummariesTable.id, id),
+      ),
+    )
     .returning();
   return row;
 }
@@ -198,13 +234,14 @@ export async function upsertAlert(input: UpsertAlertInput): Promise<ExecutiveAle
   return row;
 }
 
-export async function listAlerts(user: AuthUser, status: string | null, limit: number): Promise<ExecutiveAlert[]> {
+export async function listAlerts(user: AuthUser, scope: ReadScope, status: string | null, limit: number): Promise<ExecutiveAlert[]> {
   return db
     .select()
     .from(executiveAlertsTable)
     .where(
       combine(
         tenantScope(user, executiveAlertsTable.companyId),
+        scopePrivacy(scope, executiveAlertsTable.scopeType, executiveAlertsTable.scopeId),
         status ? eq(executiveAlertsTable.status, status) : undefined,
       ),
     )
@@ -212,17 +249,24 @@ export async function listAlerts(user: AuthUser, status: string | null, limit: n
     .limit(limit);
 }
 
-export async function getAlertById(user: AuthUser, id: number): Promise<ExecutiveAlert | undefined> {
+export async function getAlertById(user: AuthUser, scope: ReadScope, id: number): Promise<ExecutiveAlert | undefined> {
   const [row] = await db
     .select()
     .from(executiveAlertsTable)
-    .where(combine(tenantScope(user, executiveAlertsTable.companyId), eq(executiveAlertsTable.id, id)))
+    .where(
+      combine(
+        tenantScope(user, executiveAlertsTable.companyId),
+        scopePrivacy(scope, executiveAlertsTable.scopeType, executiveAlertsTable.scopeId),
+        eq(executiveAlertsTable.id, id),
+      ),
+    )
     .limit(1);
   return row;
 }
 
 export async function setAlertStatus(
   user: AuthUser,
+  scope: ReadScope,
   id: number,
   status: "accepted" | "dismissed" | "suggested",
   acceptedById: number | null,
@@ -235,7 +279,13 @@ export async function setAlertStatus(
       acceptedAt: status === "accepted" ? new Date() : null,
       updatedAt: new Date(),
     })
-    .where(combine(tenantScope(user, executiveAlertsTable.companyId), eq(executiveAlertsTable.id, id)))
+    .where(
+      combine(
+        tenantScope(user, executiveAlertsTable.companyId),
+        scopePrivacy(scope, executiveAlertsTable.scopeType, executiveAlertsTable.scopeId),
+        eq(executiveAlertsTable.id, id),
+      ),
+    )
     .returning();
   return row;
 }
@@ -303,13 +353,14 @@ export async function upsertForecast(input: UpsertForecastInput): Promise<Execut
   return row;
 }
 
-export async function listForecasts(user: AuthUser, forecastType: string | null, limit: number): Promise<ExecutiveForecast[]> {
+export async function listForecasts(user: AuthUser, scope: ReadScope, forecastType: string | null, limit: number): Promise<ExecutiveForecast[]> {
   return db
     .select()
     .from(executiveForecastsTable)
     .where(
       combine(
         tenantScope(user, executiveForecastsTable.companyId),
+        scopePrivacy(scope, executiveForecastsTable.scopeType, executiveForecastsTable.scopeId),
         forecastType ? eq(executiveForecastsTable.forecastType, forecastType) : undefined,
       ),
     )
@@ -324,6 +375,7 @@ export interface CreateReportInput {
   scopeType: ScopeType;
   scopeId: number;
   reportType: string;
+  periodType: string;
   periodKey: string;
   format: string;
   requestedById: number | null;
@@ -337,6 +389,7 @@ export async function createReport(input: CreateReportInput): Promise<ExecutiveR
       scopeType: input.scopeType,
       scopeId: input.scopeId,
       reportType: input.reportType,
+      periodType: input.periodType,
       periodKey: input.periodKey,
       format: input.format,
       status: "pending",
@@ -346,20 +399,31 @@ export async function createReport(input: CreateReportInput): Promise<ExecutiveR
   return row;
 }
 
-export async function getReportById(user: AuthUser, id: number): Promise<ExecutiveReport | undefined> {
+export async function getReportById(user: AuthUser, scope: ReadScope, id: number): Promise<ExecutiveReport | undefined> {
   const [row] = await db
     .select()
     .from(executiveReportsTable)
-    .where(combine(tenantScope(user, executiveReportsTable.companyId), eq(executiveReportsTable.id, id)))
+    .where(
+      combine(
+        tenantScope(user, executiveReportsTable.companyId),
+        scopePrivacy(scope, executiveReportsTable.scopeType, executiveReportsTable.scopeId),
+        eq(executiveReportsTable.id, id),
+      ),
+    )
     .limit(1);
   return row;
 }
 
-export async function listReports(user: AuthUser, limit: number): Promise<ExecutiveReport[]> {
+export async function listReports(user: AuthUser, scope: ReadScope, limit: number): Promise<ExecutiveReport[]> {
   return db
     .select()
     .from(executiveReportsTable)
-    .where(tenantScope(user, executiveReportsTable.companyId))
+    .where(
+      combine(
+        tenantScope(user, executiveReportsTable.companyId),
+        scopePrivacy(scope, executiveReportsTable.scopeType, executiveReportsTable.scopeId),
+      ),
+    )
     .orderBy(desc(executiveReportsTable.createdAt))
     .limit(limit);
 }
@@ -402,11 +466,16 @@ export async function updateReportResult(companyId: number, id: number, update: 
     .where(and(eq(executiveReportsTable.companyId, companyId), eq(executiveReportsTable.id, id)));
 }
 
-export async function statusCounts(user: AuthUser): Promise<Record<string, number>> {
+export async function statusCounts(user: AuthUser, scope: ReadScope): Promise<Record<string, number>> {
   const rows = await db
     .select({ status: executiveAlertsTable.status, n: sql<number>`count(*)` })
     .from(executiveAlertsTable)
-    .where(tenantScope(user, executiveAlertsTable.companyId))
+    .where(
+      combine(
+        tenantScope(user, executiveAlertsTable.companyId),
+        scopePrivacy(scope, executiveAlertsTable.scopeType, executiveAlertsTable.scopeId),
+      ),
+    )
     .groupBy(executiveAlertsTable.status);
   const out: Record<string, number> = { suggested: 0, accepted: 0, dismissed: 0 };
   for (const r of rows) out[r.status] = Number(r.n);

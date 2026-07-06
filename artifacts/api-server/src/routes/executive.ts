@@ -120,9 +120,10 @@ router.get("/ai/executive/reports", requirePermission("ai_executive", "view"), e
 });
 
 router.post("/ai/executive/reports", requirePermission("ai_executive", "generate"), async (req: AuthRequest, res) => {
-  const body = (req.body ?? {}) as { reportType?: unknown; format?: unknown; scopeType?: unknown; id?: unknown; language?: unknown };
+  const body = (req.body ?? {}) as { reportType?: unknown; periodType?: unknown; format?: unknown; scopeType?: unknown; id?: unknown; language?: unknown };
   const report = await exec.generateReport(req.user!, {
     reportType: body.reportType ? String(body.reportType) : undefined,
+    periodType: body.periodType ? String(body.periodType) : undefined,
     format: body.format ? String(body.format) : undefined,
     scopeType: body.scopeType ? String(body.scopeType) : undefined,
     id: parseId(body.id),

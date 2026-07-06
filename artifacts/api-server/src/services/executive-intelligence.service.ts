@@ -42,6 +42,26 @@ function scopeIdOf(id: number | null): number {
   return id ?? 0;
 }
 
+function isManager(role: string): boolean {
+  return role === "primary_admin" || role === "admin";
+}
+
+// Compute the scope-privacy entitlement for READING persisted executive artifacts. Managers
+// (primary_admin/admin) see every scope in the tenant. A non-manager sees ONLY their own
+// employee scope plus the teams they lead and departments they head — mirroring the
+// read-only dashboard's scope privacy so persisted rows can never leak wider than the live
+// dashboard would. Never company scope for non-managers.
+async function computeReadScope(user: AuthUser): Promise<execRepo.ReadScope> {
+  if (isManager(user.role)) return { isManager: true, userId: user.id, teamIds: [], deptIds: [] };
+  const [depts, teams] = await Promise.all([repo.listTenantDepartments(user), repo.listTenantTeams(user)]);
+  return {
+    isManager: false,
+    userId: user.id,
+    teamIds: teams.filter((t) => t.leaderId === user.id).map((t) => t.id),
+    deptIds: depts.filter((d) => d.headId === user.id).map((d) => d.id),
+  };
+}
+
 // Chronological USD-converted won-value series from the per-month, per-currency rows.
 // Cross-currency correctness: convert EACH currency bucket to USD BEFORE summing per month.
 function revenueSeries(rows: repo.MonthCurrencyValueRow[]): { months: string[]; values: number[] } {
@@ -250,7 +270,7 @@ async function computeSignals(
     headcount: scopeUsers.length,
   };
 
-  return { kpis, salesHealth, pipelineHealth, businessHealth, trends, forecast, team, alerts, revenue };
+  return { kpis, salesHealth, pipelineHealth, businessHealth, trends, forecast, team, alerts, revenue, leads };
 }
 
 function sumUsd<T extends { currency: string | null }>(rows: T[], key: keyof T): number {
@@ -414,29 +434,57 @@ export interface GenerateForecastOpts extends ExecScopeOpts {
   appLanguage?: AppLanguage;
 }
 
+// Each forecast type projects a DISTINCT real series (not always revenue): revenue → USD
+// won value; pipeline → count of won deals; leads → count of new leads. The deterministic
+// core (forecastNextPeriod) runs over the selected series so the persisted expected/low/high
+// and confidence actually reflect the requested dimension.
+const FORECAST_TYPES = new Set(["revenue", "pipeline", "leads"]);
+
+function forecastSeriesFor(forecastType: string, signals: Awaited<ReturnType<typeof computeSignals>>): {
+  months: string[];
+  values: number[];
+  unit: string;
+  label: string;
+  isCurrency: boolean;
+} {
+  switch (forecastType) {
+    case "pipeline":
+      return { months: signals.leads.months, values: signals.leads.won, unit: "deals", label: "won deals", isCurrency: false };
+    case "leads":
+      return { months: signals.leads.months, values: signals.leads.leads, unit: "leads", label: "new leads", isCurrency: false };
+    default:
+      return { months: signals.revenue.months, values: signals.revenue.values, unit: "USD", label: "revenue", isCurrency: true };
+  }
+}
+
 export async function generateForecast(user: AuthUser, opts: GenerateForecastOpts = {}) {
   const forecastType = opts.forecastType ?? "revenue";
+  if (!FORECAST_TYPES.has(forecastType)) throw new AppError(400, "Invalid forecastType (revenue | pipeline | leads)");
   const horizon = opts.horizon ?? "next_period";
   const resolved = await analytics.resolveScope(user, opts.scopeType, opts.id);
   const s = resolved.analyticsScope;
   const signals = await computeSignals(user, resolved, s);
-  const f = signals.forecast;
+  const series = forecastSeriesFor(forecastType, signals);
+  const f = core.forecastNextPeriod(series.values);
 
+  const fmt = (n: number) => (series.isCurrency ? `USD ${n.toLocaleString()}` : `${n.toLocaleString()} ${series.unit}`);
   const deterministic = {
     expected: f.expected,
     low: f.low,
     high: f.high,
+    unit: series.unit,
+    label: series.label,
     method: f.method,
     historyPoints: f.historyPoints,
     assumptions: f.assumptions,
-    series: signals.revenue.months.map((m, i) => ({ month: m, value: signals.revenue.values[i] })),
-    narrative: `Projected next-period ${forecastType} of USD ${f.expected.toLocaleString()} (range ${f.low.toLocaleString()}-${f.high.toLocaleString()}), ${f.method.replace("_", " ")}.`,
+    series: series.months.map((m, i) => ({ month: m, value: series.values[i] })),
+    narrative: `Projected next-period ${series.label} of ${fmt(f.expected)} (range ${fmt(f.low)}–${fmt(f.high)}), ${f.method.replace("_", " ")}.`,
     watchouts: f.assumptions,
   };
 
   let data: Record<string, unknown> = { ...deterministic };
   let confidence = f.confidence;
-  let reasoning = `Deterministic ${f.method} forecast from ${f.historyPoints} periods of real revenue history.`;
+  let reasoning = `Deterministic ${f.method} forecast from ${f.historyPoints} periods of real ${series.label} history.`;
   let source: "ai" | "deterministic" = "deterministic";
   let provider: string | null = null;
   let model: string | null = null;
@@ -445,11 +493,11 @@ export async function generateForecast(user: AuthUser, opts: GenerateForecastOpt
 
   try {
     const ctx = [
-      `Forecast type: ${forecastType}; horizon: ${horizon}`,
-      `Expected (USD): ${f.expected}; range ${f.low}-${f.high}`,
+      `Forecast type: ${forecastType} (${series.label}); horizon: ${horizon}`,
+      `Expected (${series.unit}): ${f.expected}; range ${f.low}-${f.high}`,
       `Method: ${f.method}; history points: ${f.historyPoints}; computed confidence: ${f.confidence}`,
       `Assumptions: ${f.assumptions.join("; ")}`,
-      `Recent revenue series (USD): ${signals.revenue.values.join(", ")}`,
+      `Recent ${series.label} series (${series.unit}): ${series.values.join(", ")}`,
     ].join("\n");
     const runtime = await resolveRuntime(user.companyId);
     const phrased = await ai.phraseExecutiveForecast(ctx, opts.appLanguage ?? "en", { companyId: user.companyId ?? null, userId: user.id });
@@ -508,40 +556,52 @@ export async function generateAlerts(user: AuthUser, opts: ExecScopeOpts = {}) {
       source: "deterministic",
     });
   }
-  return execRepo.listAlerts(user, null, 50);
+  const scope = await computeReadScope(user);
+  return execRepo.listAlerts(user, scope, null, 50);
 }
 
-// ---- Read + lifecycle (delegate to repo with tenant scope) -------------------
+// ---- Read + lifecycle (delegate to repo with tenant scope + scope privacy) ---
+// Every read/lifecycle path re-constrains to the caller's scope entitlement (see
+// computeReadScope) so a view-only employee can never read/mutate company-wide artifacts
+// straight from the persisted tables — the persisted layer matches the live dashboard's
+// scope privacy.
 
-export function listSummaries(user: AuthUser, periodType: string | null, limit = 20) {
-  return execRepo.listSummaries(user, periodType, limit);
+export async function listSummaries(user: AuthUser, periodType: string | null, limit = 20) {
+  const scope = await computeReadScope(user);
+  return execRepo.listSummaries(user, scope, periodType, limit);
 }
 export async function getSummary(user: AuthUser, id: number) {
-  const row = await execRepo.getSummaryById(user, id);
+  const scope = await computeReadScope(user);
+  const row = await execRepo.getSummaryById(user, scope, id);
   if (!row) throw new AppError(404, "Summary not found");
   return row;
 }
 export async function setSummaryStatus(user: AuthUser, id: number, status: "accepted" | "dismissed" | "suggested") {
-  const row = await execRepo.setSummaryStatus(user, id, status, status === "accepted" ? user.id : null);
+  const scope = await computeReadScope(user);
+  const row = await execRepo.setSummaryStatus(user, scope, id, status, status === "accepted" ? user.id : null);
   if (!row) throw new AppError(404, "Summary not found");
   return row;
 }
 
-export function listAlerts(user: AuthUser, status: string | null, limit = 50) {
-  return execRepo.listAlerts(user, status, limit);
+export async function listAlerts(user: AuthUser, status: string | null, limit = 50) {
+  const scope = await computeReadScope(user);
+  return execRepo.listAlerts(user, scope, status, limit);
 }
 export async function setAlertStatus(user: AuthUser, id: number, status: "accepted" | "dismissed" | "suggested") {
-  const row = await execRepo.setAlertStatus(user, id, status, status === "accepted" ? user.id : null);
+  const scope = await computeReadScope(user);
+  const row = await execRepo.setAlertStatus(user, scope, id, status, status === "accepted" ? user.id : null);
   if (!row) throw new AppError(404, "Alert not found");
   return row;
 }
 
-export function listForecasts(user: AuthUser, forecastType: string | null, limit = 20) {
-  return execRepo.listForecasts(user, forecastType, limit);
+export async function listForecasts(user: AuthUser, forecastType: string | null, limit = 20) {
+  const scope = await computeReadScope(user);
+  return execRepo.listForecasts(user, scope, forecastType, limit);
 }
 
-export function alertStatusCounts(user: AuthUser) {
-  return execRepo.statusCounts(user);
+export async function alertStatusCounts(user: AuthUser) {
+  const scope = await computeReadScope(user);
+  return execRepo.statusCounts(user, scope);
 }
 
 // ---------------------------------------------------------------------------
@@ -561,6 +621,7 @@ export interface ExecutiveReportJobPayload {
   scopeType: string;
   scopeId: number;
   reportType: string;
+  periodType: string;
   format: string;
   userId: number;
 }
@@ -583,6 +644,8 @@ async function toReportResponse(row: import("@workspace/db").ExecutiveReport) {
     id: row.id,
     companyId: row.companyId,
     reportType: row.reportType,
+    periodType: row.periodType,
+    periodKey: row.periodKey,
     format: row.format,
     scopeType: row.scopeType,
     scopeId: row.scopeId,
@@ -600,6 +663,7 @@ export interface GenerateReportOpts {
   scopeType?: string;
   id?: number;
   reportType?: string;
+  periodType?: string;
   format?: string;
   language?: AppLanguage;
 }
@@ -607,8 +671,10 @@ export interface GenerateReportOpts {
 export async function generateReport(user: AuthUser, opts: GenerateReportOpts) {
   const reportType = String(opts.reportType ?? "");
   const format = String(opts.format ?? "");
+  const periodType = opts.periodType ?? "monthly";
   if (!REPORT_TYPES.has(reportType)) throw new AppError(400, "Invalid reportType");
   if (!REPORT_FORMATS.has(format)) throw new AppError(400, "Invalid format (pdf | xlsx)");
+  if (!VALID_PERIODS.includes(periodType)) throw new AppError(400, "Invalid periodType");
 
   const resolved = await analytics.resolveScope(user, opts.scopeType, opts.id);
   const scopeId = scopeIdOf(resolved.scope.id);
@@ -617,38 +683,42 @@ export async function generateReport(user: AuthUser, opts: GenerateReportOpts) {
     scopeType: resolved.scope.type,
     scopeId,
     reportType,
-    periodKey: todayStr(),
+    periodType,
+    periodKey: periodKeyFor(periodType),
     format,
     requestedById: user.id,
   });
 
   await getQueue().enqueue<ExecutiveReportJobPayload>(
     EXECUTIVE_REPORT_JOB,
-    { companyId: user.companyId!, reportId: row.id, scopeType: resolved.scope.type, scopeId, reportType, format, userId: user.id },
+    { companyId: user.companyId!, reportId: row.id, scopeType: resolved.scope.type, scopeId, reportType, periodType, format, userId: user.id },
     { maxAttempts: 1 },
   );
   return toReportResponse(row);
 }
 
 export async function listReports(user: AuthUser, limit = 20) {
-  const rows = await execRepo.listReports(user, limit);
+  const scope = await computeReadScope(user);
+  const rows = await execRepo.listReports(user, scope, limit);
   return Promise.all(rows.map(toReportResponse));
 }
 
 export async function getReport(user: AuthUser, id: number) {
-  const row = await execRepo.getReportById(user, id);
+  const scope = await computeReadScope(user);
+  const row = await execRepo.getReportById(user, scope, id);
   if (!row) throw new AppError(404, "Report not found");
   return toReportResponse(row);
 }
 
 // Compose a title + column/row matrix for a report type from the real dashboard.
-function composeReportTable(reportType: string, dash: Awaited<ReturnType<typeof getExecutiveDashboard>>): {
+function composeReportTable(reportType: string, periodType: string, dash: Awaited<ReturnType<typeof getExecutiveDashboard>>): {
   title: string;
   columns: string[];
   rows: string[][];
   sections: Record<string, unknown>;
 } {
   const scopeName = dash.scope.name;
+  const period = periodType.charAt(0).toUpperCase() + periodType.slice(1); // Daily | Weekly | Monthly | Quarterly
   if (reportType === "performance") {
     const columns = ["Rank", "Name", "Overall", "Activity", "Conversion", "Hygiene", "Scans", "Leads", "Won", "Pipeline (USD)", "Note"];
     const rows = dash.teamPerformance.map((m, i) => [
@@ -664,7 +734,7 @@ function composeReportTable(reportType: string, dash: Awaited<ReturnType<typeof 
       String(m.pipelineValue),
       m.smallSample ? "small sample" : "",
     ]);
-    return { title: `Team Performance — ${scopeName}`, columns, rows, sections: { teamPerformance: dash.teamPerformance } };
+    return { title: `${period} Team Performance — ${scopeName}`, columns, rows, sections: { teamPerformance: dash.teamPerformance } };
   }
   if (reportType === "forecast") {
     const f = dash.forecast;
@@ -679,7 +749,7 @@ function composeReportTable(reportType: string, dash: Awaited<ReturnType<typeof 
       ...f.assumptions.map((a) => ["Assumption", a]),
       ...dash.revenueSeries.map((p) => [`Revenue ${p.month}`, String(p.value)]),
     ];
-    return { title: `Forecast — ${scopeName}`, columns, rows, sections: { forecast: f, revenueSeries: dash.revenueSeries } };
+    return { title: `${period} Forecast — ${scopeName}`, columns, rows, sections: { forecast: f, revenueSeries: dash.revenueSeries } };
   }
   // executive_summary and full share a Section/Metric/Value layout.
   const columns = ["Section", "Metric", "Value"];
@@ -706,7 +776,7 @@ function composeReportTable(reportType: string, dash: Awaited<ReturnType<typeof 
     for (const m of dash.teamPerformance) rows.push(["Team", m.name, `overall ${m.overall}, won ${m.won}, pipeline ${m.pipelineValue}`]);
   }
   return {
-    title: `Executive Summary — ${scopeName}`,
+    title: `${period} Executive Summary — ${scopeName}`,
     columns,
     rows,
     sections: { scope: dash.scope, health: dash.health, kpis: dash.kpis, trends: dash.trends, forecast: dash.forecast, alerts: dash.alerts, ...(reportType === "full" ? { teamPerformance: dash.teamPerformance } : {}) },
@@ -727,12 +797,13 @@ export async function runExecutiveReportJob(payload: ExecutiveReportJobPayload):
       scopeType: payload.scopeType,
       id: payload.scopeId === 0 ? undefined : payload.scopeId,
     });
-    const { title, columns, rows, sections } = composeReportTable(payload.reportType, dash);
+    const periodType = payload.periodType ?? "monthly";
+    const { title, columns, rows, sections } = composeReportTable(payload.reportType, periodType, dash);
     const exportFormat: ExportFormat = payload.format === "xlsx" ? "excel" : "pdf";
     const buffer = await generateFile({ format: exportFormat, title, columns, rows });
     const contentType = payload.format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf";
     const { objectPath } = await uploadExportBuffer(buffer, contentType);
-    const fileName = `${payload.reportType}-${dash.scope.type}-${todayStr()}.${payload.format}`;
+    const fileName = `${payload.reportType}-${periodType}-${dash.scope.type}-${todayStr()}.${payload.format}`;
     await execRepo.updateReportResult(companyId, reportId, {
       status: "ready",
       objectPath,

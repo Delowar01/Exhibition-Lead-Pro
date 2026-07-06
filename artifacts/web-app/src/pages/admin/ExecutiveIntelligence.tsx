@@ -185,7 +185,9 @@ function TeamRow({ m }: { m: ExecutiveTeamMember }) {
 export default function AdminExecutiveIntelligence() {
   const qc = useQueryClient();
   const [reportType, setReportType] = React.useState("executive_summary");
+  const [reportPeriodType, setReportPeriodType] = React.useState("monthly");
   const [reportFormat, setReportFormat] = React.useState("pdf");
+  const [forecastType, setForecastType] = React.useState("revenue");
 
   const dashQuery = useGetAiExecutiveDashboard(undefined, { query: { queryKey: getGetAiExecutiveDashboardQueryKey() } });
   const summariesQuery = useListAiExecutiveSummaries(undefined, { query: { queryKey: getListAiExecutiveSummariesQueryKey() } });
@@ -338,6 +340,16 @@ export default function AdminExecutiveIntelligence() {
                     ))}
                   </ul>
                 )}
+                <Select value={forecastType} onValueChange={setForecastType}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="revenue">Revenue</SelectItem>
+                    <SelectItem value="pipeline">Pipeline (won deals)</SelectItem>
+                    <SelectItem value="leads">New leads</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button
                   size="sm"
                   variant="outline"
@@ -345,7 +357,7 @@ export default function AdminExecutiveIntelligence() {
                   disabled={genForecast.isPending}
                   onClick={() =>
                     genForecast.mutate(
-                      { data: { forecastType: "revenue" } },
+                      { data: { forecastType } },
                       { onSuccess: () => invalidate(getListAiExecutiveForecastsQueryKey()) },
                     )
                   }
@@ -525,6 +537,15 @@ export default function AdminExecutiveIntelligence() {
                 <SelectItem value="full">Full report</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={reportPeriodType} onValueChange={setReportPeriodType}>
+              <SelectTrigger className="w-[120px] h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+                <SelectItem value="quarterly">Quarterly</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={reportFormat} onValueChange={setReportFormat}>
               <SelectTrigger className="w-[90px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -538,7 +559,7 @@ export default function AdminExecutiveIntelligence() {
               disabled={genReport.isPending}
               onClick={() =>
                 genReport.mutate(
-                  { data: { reportType, format: reportFormat } },
+                  { data: { reportType, periodType: reportPeriodType, format: reportFormat } },
                   { onSuccess: () => invalidate(getListAiExecutiveReportsQueryKey()) },
                 )
               }
@@ -559,6 +580,7 @@ export default function AdminExecutiveIntelligence() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium capitalize">{r.reportType.replace(/_/g, " ")}</span>
+                    {r.periodType && <Badge variant="outline" className="text-[10px] capitalize">{r.periodType}</Badge>}
                     <Badge variant="outline" className="text-[10px] uppercase">{r.format}</Badge>
                     <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${STATUS_TONE[r.status] ?? STATUS_TONE.pending}`}>
                       {r.status}

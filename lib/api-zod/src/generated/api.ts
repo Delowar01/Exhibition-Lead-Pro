@@ -6596,6 +6596,8 @@ export const ListAiExecutiveReportsResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "reportType": zod.string().describe('executive_summary | performance | forecast | full'),
+  "periodType": zod.string().optional().describe('daily | weekly | monthly | quarterly'),
+  "periodKey": zod.string().optional().describe('resolved period key (e.g. 2026-07-06 | 2026-07 | 2026-Q3)'),
   "format": zod.string().describe('pdf | xlsx'),
   "scopeType": zod.string().nullish(),
   "scopeId": zod.number().nullish(),
@@ -6615,6 +6617,7 @@ export const ListAiExecutiveReportsResponse = zod.object({
  */
 export const GenerateAiExecutiveReportBody = zod.object({
   "reportType": zod.string().describe('executive_summary | performance | forecast | full'),
+  "periodType": zod.string().optional().describe('daily | weekly | monthly | quarterly (defaults to monthly)'),
   "format": zod.string().describe('pdf | xlsx'),
   "scopeType": zod.string().optional(),
   "id": zod.number().optional(),
@@ -6633,6 +6636,8 @@ export const GetAiExecutiveReportResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
   "reportType": zod.string().describe('executive_summary | performance | forecast | full'),
+  "periodType": zod.string().optional().describe('daily | weekly | monthly | quarterly'),
+  "periodKey": zod.string().optional().describe('resolved period key (e.g. 2026-07-06 | 2026-07 | 2026-Q3)'),
   "format": zod.string().describe('pdf | xlsx'),
   "scopeType": zod.string().nullish(),
   "scopeId": zod.number().nullish(),

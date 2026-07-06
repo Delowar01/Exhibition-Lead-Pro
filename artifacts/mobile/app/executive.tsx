@@ -107,6 +107,7 @@ export default function ExecutiveScreen() {
   const [reportType, setReportType] = useState<"executive_summary" | "performance" | "forecast" | "full">(
     "executive_summary",
   );
+  const [reportPeriodType, setReportPeriodType] = useState<"daily" | "weekly" | "monthly" | "quarterly">("monthly");
   const [reportFormat, setReportFormat] = useState<"pdf" | "xlsx">("pdf");
 
   const refreshing = dashQuery.isRefetching || summariesQuery.isRefetching || reportsQuery.isRefetching;
@@ -438,13 +439,19 @@ export default function ExecutiveScreen() {
             labelFor={(r) => t(`executiveManager.reportTypes.${r}`)}
           />
           <Segmented
+            value={reportPeriodType}
+            options={["daily", "weekly", "monthly", "quarterly"] as const}
+            onChange={setReportPeriodType}
+            labelFor={(p) => t(`executiveManager.periods.${p}`, { defaultValue: p })}
+          />
+          <Segmented
             value={reportFormat}
             options={["pdf", "xlsx"] as const}
             onChange={setReportFormat}
             labelFor={(f) => (f === "pdf" ? "PDF" : "Excel")}
           />
           <Pressable
-            onPress={() => genReport.mutate({ data: { reportType, format: reportFormat, language } })}
+            onPress={() => genReport.mutate({ data: { reportType, periodType: reportPeriodType, format: reportFormat, language } })}
             disabled={genReport.isPending}
             style={[styles.genBtn, { backgroundColor: colors.primary, opacity: genReport.isPending ? 0.6 : 1 }]}
           >
@@ -468,7 +475,8 @@ export default function ExecutiveScreen() {
                 <Feather name="file" size={15} color={colors.mutedForeground} />
                 <View style={styles.flex1}>
                   <Text style={[styles.rowTitle, { color: colors.foreground, textAlign }]}>
-                    {t(`executiveManager.reportTypes.${r.reportType}`, { defaultValue: r.reportType })} · {r.format.toUpperCase()}
+                    {t(`executiveManager.reportTypes.${r.reportType}`, { defaultValue: r.reportType })}
+                    {r.periodType ? ` · ${t(`executiveManager.periods.${r.periodType}`, { defaultValue: r.periodType })}` : ""} · {r.format.toUpperCase()}
                   </Text>
                   <Text style={[styles.rowConf, { color: STATUS_COLOR[r.status] ?? colors.mutedForeground, textAlign }]}>
                     {t(`executiveManager.statuses.${r.status}`, { defaultValue: r.status })}

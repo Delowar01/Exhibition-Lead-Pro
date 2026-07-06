@@ -121,7 +121,8 @@ export const executiveReportsTable = pgTable("executive_reports", {
   companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
   scopeType: text("scope_type").notNull().default("company"),
   scopeId: integer("scope_id").notNull().default(0),
-  reportType: text("report_type").notNull(), // daily | weekly | monthly | quarterly
+  reportType: text("report_type").notNull(), // executive_summary | performance | forecast | full
+  periodType: text("period_type").notNull().default("monthly"), // daily | weekly | monthly | quarterly
   periodKey: text("period_key").notNull(),
   format: text("format").notNull().default("pdf"), // pdf | xlsx
   status: text("status").notNull().default("pending"), // pending | generating | ready | failed

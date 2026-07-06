@@ -9,6 +9,8 @@
 export interface ExecutiveReportGenerateRequest {
   /** executive_summary | performance | forecast | full */
   reportType: string;
+  /** daily | weekly | monthly | quarterly (defaults to monthly) */
+  periodType?: string;
   /** pdf | xlsx */
   format: string;
   scopeType?: string;

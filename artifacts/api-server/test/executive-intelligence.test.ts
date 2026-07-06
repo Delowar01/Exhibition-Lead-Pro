@@ -251,6 +251,29 @@ describe("Executive forecasts", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray((await res.json()).forecasts)).toBe(true);
   });
+
+  it("400s an invalid forecastType", async () => {
+    const res = await api("POST", "/ai/executive/forecasts", adminToken, { forecastType: "headcount" });
+    expect(res.status).toBe(400);
+  });
+
+  it.each(["pipeline", "leads"] as const)(
+    "forecasts %s over its own series (echoes type, honest range + unit)",
+    async (forecastType) => {
+      const res = await api("POST", "/ai/executive/forecasts", adminToken, { forecastType });
+      expect(res.status).toBe(200);
+      const f = await res.json();
+      expect(f.companyId).toBe(companyId);
+      expect(f.forecastType).toBe(forecastType);
+      const d = f.data as Record<string, unknown>;
+      expect(typeof d.expected).toBe("number");
+      expect(d.low as number).toBeLessThanOrEqual(d.high as number);
+      // Non-revenue series carry a discrete unit label (never masqueraded as currency).
+      expect(typeof d.unit).toBe("string");
+      expect((d.unit as string).length).toBeGreaterThan(0);
+      if (f.source === "deterministic") expect(f.provider ?? null).toBeNull();
+    },
+  );
 });
 
 describe("Executive alerts", () => {
@@ -304,9 +327,80 @@ describe("AI reports — async export job", () => {
     expect((downloadUrl as string).length).toBeGreaterThan(0);
   }, 55_000);
 
+  it("400s an invalid periodType", async () => {
+    const res = await api("POST", "/ai/executive/reports", adminToken, {
+      reportType: "executive_summary",
+      periodType: "hourly",
+      format: "pdf",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("echoes the requested reporting period (periodType + derived periodKey)", async () => {
+    const res = await api("POST", "/ai/executive/reports", adminToken, {
+      reportType: "executive_summary",
+      periodType: "quarterly",
+      format: "pdf",
+    });
+    expect(res.status).toBe(202);
+    const r = await res.json();
+    expect(r.periodType).toBe("quarterly");
+    expect(typeof r.periodKey).toBe("string");
+    expect(r.periodKey.length).toBeGreaterThan(0);
+  });
+
   it("isolates reports across tenants (404, not 403)", async () => {
     const res = await api("GET", `/ai/executive/reports/${reportId}`, adminBToken);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("Executive scope privacy — persisted artifacts never leak wider than the dashboard", () => {
+  let companyScopeSummaryId = 0;
+  let empScopeSummaryId = 0;
+
+  beforeAll(async () => {
+    // A company-wide summary (default scope).
+    const co = await api("POST", "/ai/executive/summaries", adminToken, { periodType: "monthly" });
+    expect(co.status).toBe(200);
+    const cs = await co.json();
+    companyScopeSummaryId = cs.id;
+    expect(cs.scopeType).toBe("company");
+
+    // An employee-scoped summary for the QA employee.
+    const emp = await api("POST", "/ai/executive/summaries", adminToken, {
+      periodType: "monthly",
+      scopeType: "employee",
+      id: empUserId,
+    });
+    expect(emp.status).toBe(200);
+    const es = await emp.json();
+    empScopeSummaryId = es.id;
+    expect(es.scopeType).toBe("employee");
+    expect(es.scopeId).toBe(empUserId);
+
+    // Give the employee view access (scope privacy must still fence company-wide rows).
+    await db.update(usersTable).set({ permissions: { ai_executive: ["view"] } }).where(eq(usersTable.id, empUserId));
+  });
+
+  it("hides company-wide artifacts from a view-only employee (absent from list + 404 on direct get)", async () => {
+    const list = await api("GET", "/ai/executive/summaries", empToken);
+    expect(list.status).toBe(200);
+    const ids = (await list.json()).summaries.map((s: { id: number }) => s.id);
+    expect(ids).not.toContain(companyScopeSummaryId);
+
+    const get = await api("GET", `/ai/executive/summaries/${companyScopeSummaryId}`, empToken);
+    expect(get.status).toBe(404);
+  });
+
+  it("exposes the employee's own-scope artifact to them (present in list + 200 on direct get)", async () => {
+    const list = await api("GET", "/ai/executive/summaries", empToken);
+    expect(list.status).toBe(200);
+    const ids = (await list.json()).summaries.map((s: { id: number }) => s.id);
+    expect(ids).toContain(empScopeSummaryId);
+
+    const get = await api("GET", `/ai/executive/summaries/${empScopeSummaryId}`, empToken);
+    expect(get.status).toBe(200);
   });
 });
 
