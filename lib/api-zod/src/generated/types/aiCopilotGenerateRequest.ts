@@ -11,6 +11,10 @@ export interface AiCopilotGenerateRequest {
   language?: string;
   /** Optional tone hint (e.g. formal, friendly). */
   tone?: string;
+  /** Optional sub-type / purpose hint (e.g. intro, follow-up, proposal). */
+  messageType?: string;
+  /** Optional variant hint (e.g. short, detailed) to bias phrasing. */
+  variant?: string;
   /** Optional extra grounding instructions from the user (never overrides safety rules). */
   instructions?: string;
 }

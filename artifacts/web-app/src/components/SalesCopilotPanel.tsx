@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import {
-  useGetAiCopilotOutputs,
+  useGetAiCopilotPanel,
   useGenerateAiCopilotOutput,
   useEditAiCopilotOutput,
   useUseAiCopilotOutput,
   useDismissAiCopilotOutput,
+  getGetAiCopilotPanelQueryKey,
   getGetAiCopilotOutputsQueryKey,
   getGetAiCopilotOverviewQueryKey,
   type AiCopilotOutput,
@@ -18,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Sparkles, Check, X, ShieldCheck, Cpu, Copy, Pencil, Info, Mail, MessageCircle } from "lucide-react";
+import { Bot, Sparkles, Check, X, ShieldCheck, Cpu, Copy, Pencil, Info, Mail, MessageCircle, Compass, AlertTriangle, Lightbulb, Languages } from "lucide-react";
 
 type EntityType = "lead" | "contact" | "organization";
 
@@ -342,9 +343,10 @@ export function SalesCopilotPanel({
   
   const [outputType, setOutputType] = useState<string>("");
   const [instructions, setInstructions] = useState("");
+  const [language, setLanguage] = useState<"en" | "ar">("en");
 
-  const { data, isLoading } = useGetAiCopilotOutputs(entityType, id, {
-    query: { queryKey: getGetAiCopilotOutputsQueryKey(entityType, id), enabled: id > 0 },
+  const { data, isLoading } = useGetAiCopilotPanel(entityType, id, {
+    query: { queryKey: getGetAiCopilotPanelQueryKey(entityType, id), enabled: id > 0 },
   });
   
   const generate = useGenerateAiCopilotOutput();
@@ -353,9 +355,13 @@ export function SalesCopilotPanel({
   const dismiss = useDismissAiCopilotOutput();
 
   const outputs = data?.outputs ?? [];
-  const validOutputs = OUTPUT_TYPES_BY_ENTITY[entityType] ?? [];
+  const suggestedAction = data?.suggestedAction ?? null;
+  const coachingSignals = data?.coachingSignals ?? [];
+  const insights = data?.insights ?? [];
+  const validOutputs = data?.availableOutputTypes ?? OUTPUT_TYPES_BY_ENTITY[entityType] ?? [];
 
   const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getGetAiCopilotPanelQueryKey(entityType, id) });
     queryClient.invalidateQueries({ queryKey: getGetAiCopilotOutputsQueryKey(entityType, id) });
     queryClient.invalidateQueries({ queryKey: getGetAiCopilotOverviewQueryKey() });
   };
@@ -363,7 +369,7 @@ export function SalesCopilotPanel({
   const handleGenerate = () => {
     if (!outputType) return;
     generate.mutate(
-      { entityType, id, outputType, data: { instructions: instructions || undefined } },
+      { entityType, id, outputType, data: { language, instructions: instructions || undefined } },
       {
         onSuccess: () => {
           invalidate();
@@ -433,7 +439,7 @@ export function SalesCopilotPanel({
             <Info className="h-3.5 w-3.5" />
             Every generated output is a reviewable draft. Copilot never auto-sends messages.
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Select value={outputType} onValueChange={setOutputType}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Select type..." />
@@ -444,17 +450,85 @@ export function SalesCopilotPanel({
                 ))}
               </SelectContent>
             </Select>
+            <Select value={language} onValueChange={(v) => setLanguage(v as "en" | "ar")}>
+              <SelectTrigger className="w-[130px]" aria-label="Draft language">
+                <Languages className="h-3.5 w-3.5 mr-1 opacity-70" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="ar">العربية</SelectItem>
+              </SelectContent>
+            </Select>
             <Input 
               placeholder="Optional context/instructions..." 
               value={instructions} 
               onChange={e => setInstructions(e.target.value)} 
-              className="flex-1"
+              className="flex-1 min-w-[160px]"
             />
             <Button size="sm" onClick={handleGenerate} disabled={acting || !outputType} className="gap-1">
               <Sparkles className="h-3.5 w-3.5" /> {generate.isPending ? "Generating..." : "Generate"}
             </Button>
           </div>
         </div>
+
+        {(suggestedAction || coachingSignals.length > 0 || insights.length > 0) && (
+          <div className="grid gap-3">
+            {suggestedAction && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-primary mb-1">
+                  <Compass className="h-3.5 w-3.5" /> Suggested next action
+                  <Badge variant="secondary" className="ml-1 text-[10px]">Rule-based</Badge>
+                </div>
+                <p className="text-sm">{String((suggestedAction as Record<string, unknown>).basis ?? "Follow up with this contact.")}</p>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                  {(suggestedAction as Record<string, unknown>).suggestedDate ? (
+                    <span>Date: {String((suggestedAction as Record<string, unknown>).suggestedDate)}</span>
+                  ) : null}
+                  {(suggestedAction as Record<string, unknown>).channel ? (
+                    <span>Channel: {String((suggestedAction as Record<string, unknown>).channel)}</span>
+                  ) : null}
+                  {(suggestedAction as Record<string, unknown>).priority ? (
+                    <span>Priority: {String((suggestedAction as Record<string, unknown>).priority)}</span>
+                  ) : null}
+                </div>
+              </div>
+            )}
+            {coachingSignals.length > 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Coaching signals
+                </div>
+                <ul className="space-y-1">
+                  {coachingSignals.map((s, i) => {
+                    const sig = s as Record<string, unknown>;
+                    return (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <Badge variant="outline" className="text-[10px] shrink-0">{String(sig.severity ?? "info")}</Badge>
+                        <span>{String(sig.detail ?? sig.type ?? "")}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            {insights.length > 0 && (
+              <div className="rounded-lg border border-border bg-secondary/20 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-1.5">
+                  <Lightbulb className="h-3.5 w-3.5" /> AI intelligence
+                </div>
+                <ul className="space-y-1">
+                  {insights.map((ins) => (
+                    <li key={ins.id} className="text-sm">
+                      <span className="font-medium">{humanizeKey(String(ins.insightType ?? ""))}</span>
+                      {ins.reasoning ? <span className="text-muted-foreground"> — {ins.reasoning}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="space-y-3">
           {isLoading ? (

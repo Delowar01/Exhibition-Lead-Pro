@@ -10362,6 +10362,12 @@ components:
         tone:
           type: string
           description: Optional tone hint (e.g. formal, friendly).
+        messageType:
+          type: string
+          description: Optional sub-type / purpose hint (e.g. intro, follow-up, proposal).
+        variant:
+          type: string
+          description: Optional variant hint (e.g. short, detailed) to bias phrasing.
         instructions:
           type: string
           description: Optional extra grounding instructions from the user (never overrides safety rules).

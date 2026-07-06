@@ -172,8 +172,22 @@ router.post("/ai/copilot/:entityType/:id/:outputType", requirePermission("ai_cop
   const entityType = copilot.assertEntityType(String(req.params.entityType));
   const id = parseInt(String(req.params.id));
   const outputType = copilot.assertOutputType(String(req.params.outputType));
-  const body = (req.body ?? {}) as { language?: unknown; instructions?: unknown };
-  res.json(await copilot.generateOutput(req.user!, entityType, id, outputType, { language: body.language, instructions: body.instructions }));
+  const body = (req.body ?? {}) as {
+    language?: unknown;
+    tone?: unknown;
+    messageType?: unknown;
+    variant?: unknown;
+    instructions?: unknown;
+  };
+  res.json(
+    await copilot.generateOutput(req.user!, entityType, id, outputType, {
+      language: body.language,
+      tone: body.tone,
+      messageType: body.messageType,
+      variant: body.variant,
+      instructions: body.instructions,
+    }),
+  );
 });
 
 // GET /ai/copilot/:entityType/:id — list stored copilot outputs for one entity.

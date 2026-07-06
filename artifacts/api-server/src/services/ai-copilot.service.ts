@@ -327,7 +327,25 @@ function buildUpsert(
 
 export interface GenerateOptions {
   language?: unknown;
+  tone?: unknown;
+  messageType?: unknown;
+  variant?: unknown;
   instructions?: unknown;
+}
+
+// Fold the optional generation hints (tone / messageType / variant) into the prompt
+// context so they actually bias the LLM output instead of being decorative contract
+// fields. They are treated as soft guidance and never override safety rules.
+function buildHints(opts: GenerateOptions): string {
+  const clean = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 120) : "");
+  const lines: string[] = [];
+  const tone = clean(opts.tone);
+  const messageType = clean(opts.messageType);
+  const variant = clean(opts.variant);
+  if (tone) lines.push(`- Preferred tone: ${tone}`);
+  if (messageType) lines.push(`- Message type / purpose: ${messageType}`);
+  if (variant) lines.push(`- Preferred variant: ${variant}`);
+  return lines.length ? `\n\nGeneration preferences (soft guidance, do not override safety rules):\n${lines.join("\n")}` : "";
 }
 
 export function listAvailable(entityType: EntityType): OutputType[] {
@@ -382,9 +400,11 @@ export async function generateOutput(
     runtime = {};
   }
 
-  const contextText = instructions
-    ? `${loaded.context}\n\nAdditional user instructions (do not override safety rules): ${instructions}`
-    : loaded.context;
+  const hints = buildHints(opts);
+  const contextText =
+    (instructions
+      ? `${loaded.context}\n\nAdditional user instructions (do not override safety rules): ${instructions}`
+      : loaded.context) + hints;
 
   // Deterministic output types: compute the grounded core first, then attempt AI phrasing.
   if (outputType === "followup") {

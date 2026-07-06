@@ -5391,6 +5391,8 @@ export const GenerateAiCopilotOutputParams = zod.object({
 export const GenerateAiCopilotOutputBody = zod.object({
   "language": zod.string().optional().describe('en | ar (defaults to en)'),
   "tone": zod.string().optional().describe('Optional tone hint (e.g. formal, friendly).'),
+  "messageType": zod.string().optional().describe('Optional sub-type \/ purpose hint (e.g. intro, follow-up, proposal).'),
+  "variant": zod.string().optional().describe('Optional variant hint (e.g. short, detailed) to bias phrasing.'),
   "instructions": zod.string().optional().describe('Optional extra grounding instructions from the user (never overrides safety rules).')
 })
 

@@ -240,6 +240,23 @@ describe("Deterministic-core outputs (followup / coaching) — grounded, provena
     expect(["ai", "deterministic"]).toContain(out.source);
   });
 
+  it("accepts the full generate options body (language/tone/messageType/variant) and echoes language", async () => {
+    const out = await generate(adminToken, "lead", leadId, "followup", {
+      language: "ar",
+      tone: "friendly",
+      messageType: "intro",
+      variant: "short",
+    });
+    expect(out.outputType).toBe("followup");
+    expect(out.language).toBe("ar");
+    expect(out.status).toBe("generated");
+  });
+
+  it("defaults language to en when omitted", async () => {
+    const out = await generate(adminToken, "contact", contactId, "followup", {});
+    expect(out.language).toBe("en");
+  });
+
   it("re-generating upserts (no duplicate rows) for the same entity+outputType", async () => {
     await generate(adminToken, "lead", leadId, "followup");
     const res = await api("GET", `/ai/copilot/lead/${leadId}`, adminToken);

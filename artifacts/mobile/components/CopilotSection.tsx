@@ -5,10 +5,10 @@ import React, { useState } from "react";
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View, Modal, ScrollView } from "react-native";
 
 import {
-  getGetAiCopilotOutputsQueryKey,
+  getGetAiCopilotPanelQueryKey,
   useDismissAiCopilotOutput,
   useGenerateAiCopilotOutput,
-  useGetAiCopilotOutputs,
+  useGetAiCopilotPanel,
   useUseAiCopilotOutput,
   type AiCopilotOutput,
 } from "@workspace/api-client-react";
@@ -55,8 +55,8 @@ export function CopilotSection({ entityType, id }: Props) {
 
   const [typeModalVisible, setTypeModalVisible] = useState(false);
 
-  const { data, isLoading } = useGetAiCopilotOutputs(entityType, id, {
-    query: { enabled: id > 0, queryKey: getGetAiCopilotOutputsQueryKey(entityType, id) },
+  const { data, isLoading } = useGetAiCopilotPanel(entityType, id, {
+    query: { enabled: id > 0, queryKey: getGetAiCopilotPanelQueryKey(entityType, id) },
   });
   
   const generate = useGenerateAiCopilotOutput();
@@ -64,6 +64,8 @@ export function CopilotSection({ entityType, id }: Props) {
   const dismiss = useDismissAiCopilotOutput();
 
   const outputs = data?.outputs ?? [];
+  const suggestedAction = (data?.suggestedAction ?? null) as Record<string, unknown> | null;
+  const coachingSignals = (data?.coachingSignals ?? []) as Record<string, unknown>[];
   const acting = markUsed.isPending || dismiss.isPending;
 
   const success = () => {
@@ -341,6 +343,32 @@ export function CopilotSection({ entityType, id }: Props) {
         {t("copilot.disclaimer")}
       </Text>
 
+      {suggestedAction ? (
+        <View style={[styles.panelBlock, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+          <View style={styles.panelHeaderRow}>
+            <Feather name="compass" size={13} color={colors.primary} />
+            <Text style={[styles.panelHeader, { color: colors.primary }]}>{t("copilot.suggestedAction")}</Text>
+          </View>
+          <Text style={[styles.valueText, { color: colors.foreground, textAlign }]}>
+            {scalar(suggestedAction.basis)}
+          </Text>
+        </View>
+      ) : null}
+
+      {coachingSignals.length > 0 ? (
+        <View style={[styles.panelBlock, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+          <View style={styles.panelHeaderRow}>
+            <Feather name="alert-triangle" size={13} color="#d97706" />
+            <Text style={[styles.panelHeader, { color: "#d97706" }]}>{t("copilot.coachingSignals")}</Text>
+          </View>
+          {coachingSignals.map((s, i) => (
+            <Text key={i} style={[styles.valueText, { color: colors.foreground, textAlign }]}>
+              • {scalar(s.detail ?? s.type)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
       {isLoading ? (
         <Text style={[styles.empty, { color: colors.mutedForeground, textAlign }]}>{t("copilot.loading")}</Text>
       ) : outputs.length === 0 ? (
@@ -394,6 +422,9 @@ const styles = StyleSheet.create({
   analyzeBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   analyzeText: { fontSize: 13, fontFamily: FONT.semibold },
   disclaimerText: { fontSize: 11, fontFamily: FONT.regular, fontStyle: "italic", marginBottom: 4 },
+  panelBlock: { borderWidth: 1, borderRadius: 8, padding: 10, marginTop: 8, gap: 4 },
+  panelHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
+  panelHeader: { fontSize: 12, fontFamily: FONT.semibold, textTransform: "uppercase", letterSpacing: 0.4 },
   empty: { fontSize: 13, lineHeight: 19, fontFamily: FONT.regular },
   card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },
   cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
