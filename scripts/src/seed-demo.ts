@@ -347,8 +347,9 @@ async function main() {
   // explicitly granted. (platform_owner is blocked from reports entirely; primary_admin bypasses.)
   // AI Sales Copilot (Stage 5B): admin gets full copilot access (view/generate/use) by
   // default so the generative drafting tools are usable out of the box; employee gets
-  // view/use (read + mark-used a draft) but must be explicitly granted "generate". A
-  // primary_admin bypasses all permission checks; platform_owner is blocked from /ai/copilot.
+  // ONLY view (read the panel/drafts) by default — BOTH writes (`generate` and `use`,
+  // which mutate) are deny-by-default and must be explicitly granted. A primary_admin
+  // bypasses all permission checks; platform_owner is blocked from /ai/copilot.
   const adminPerms: Record<string, string[]> = {
     contacts: ["view", "create", "edit", "delete"],
     leads: ["view", "edit"],
@@ -360,7 +361,7 @@ async function main() {
   const empPerms: Record<string, string[]> = {
     contacts: ["view", "create", "edit"],
     tasks: ["view", "create"],
-    ai_copilot: ["view", "use"],
+    ai_copilot: ["view"],
   };
 
   const [sarah] = await db.insert(usersTable).values({ ...uBase, email: "sarah.mitchell@gulfventures.ae", name: "Sarah Mitchell",  phone: "+971501111001", role: "primary_admin", companyId: gvc.id }).returning();

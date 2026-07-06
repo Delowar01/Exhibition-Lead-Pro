@@ -11,10 +11,11 @@ import { logger } from "./logger";
 // gated-read lockout trap). `platform_owner`/`primary_admin` bypass permission checks
 // and need no backfill.
 //
-// Policy (mirrors the seed): admin => view/generate/use (default-on); employee =>
-// view/use (generate stays opt-in). We ONLY touch rows that do NOT already carry an
-// `ai_copilot` key, so the backfill is idempotent and never clobbers an explicit
-// grant/revocation made by a primary_admin via Role & Permission Management.
+// Policy (mirrors the seed): admin => view/generate/use (default-on); employee => view
+// ONLY — both writes (`generate` and `use`, which mutate) stay deny-by-default and must
+// be explicitly granted. We ONLY touch rows that do NOT already carry an `ai_copilot`
+// key, so the backfill is idempotent and never clobbers an explicit grant/revocation
+// made by a primary_admin via Role & Permission Management.
 export async function backfillAiCopilotPermissions(): Promise<{ admins: number; employees: number }> {
   const admins = await db
     .update(usersTable)
@@ -24,7 +25,7 @@ export async function backfillAiCopilotPermissions(): Promise<{ admins: number; 
 
   const employees = await db
     .update(usersTable)
-    .set({ permissions: sql`${usersTable.permissions} || '{"ai_copilot":["view","use"]}'::jsonb` })
+    .set({ permissions: sql`${usersTable.permissions} || '{"ai_copilot":["view"]}'::jsonb` })
     .where(and(eq(usersTable.role, "employee"), sql`NOT jsonb_exists(${usersTable.permissions}, 'ai_copilot')`))
     .returning({ id: usersTable.id });
 

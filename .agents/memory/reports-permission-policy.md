@@ -44,4 +44,5 @@ missing the key and never clobbers an explicit primary_admin grant/revoke. Use
 placeholder ambiguity. This same startup call runs in production on first boot after deploy,
 so no separate manual prod migration is needed. Test the upgrade path by stripping the key
 off a seeded admin+employee, asserting 403, calling the backfill fn directly, then asserting
-access restored per policy (admin default-on incl. generate; employee view/use, generate opt-in).
+access restored per policy (admin default-on incl. generate; employee view ONLY — `use` is a
+WRITE (POST /outputs/:id/use), so like `generate` it stays deny-by-default/opt-in, not seeded).

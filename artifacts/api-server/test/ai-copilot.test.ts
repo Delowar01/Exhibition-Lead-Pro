@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import {
   db,
   companiesTable,
@@ -267,14 +267,25 @@ describe("Deterministic-core outputs (followup / coaching) — grounded, provena
       .limit(1);
     const sinceId = before?.id ?? 0;
     await generate(adminToken, "lead", leadId, "followup");
-    const [hit] = await db
-      .select({ id: auditLogsTable.id, action: auditLogsTable.action, userId: auditLogsTable.userId })
-      .from(auditLogsTable)
-      .where(and(eq(auditLogsTable.action, "ai_copilot.post"), eq(auditLogsTable.userId, adminUserId)))
-      .orderBy(desc(auditLogsTable.id))
-      .limit(1);
+    // auditMutations records on the response 'finish' event, which fires after the client
+    // receives the body — poll briefly so the assertion isn't racing the audit insert.
+    let hit: { id: number } | undefined;
+    for (let i = 0; i < 20 && !hit; i++) {
+      [hit] = await db
+        .select({ id: auditLogsTable.id })
+        .from(auditLogsTable)
+        .where(
+          and(
+            eq(auditLogsTable.action, "ai_copilot.post"),
+            eq(auditLogsTable.userId, adminUserId),
+            gt(auditLogsTable.id, sinceId),
+          ),
+        )
+        .orderBy(desc(auditLogsTable.id))
+        .limit(1);
+      if (!hit) await new Promise((r) => setTimeout(r, 100));
+    }
     expect(hit).toBeTruthy();
-    expect(hit.id).toBeGreaterThan(sinceId);
   });
 
   it("re-generating upserts (no duplicate rows) for the same entity+outputType", async () => {
@@ -559,15 +570,23 @@ describe("Stage 5B upgrade path — ai_copilot RBAC backfill (no lockout for pre
     expect((await api("GET", `/ai/copilot/lead/${leadId}/panel`, upEmpToken)).status).toBe(403);
   });
 
-  it("backfill restores admin (view/generate/use) + employee (view/use) without reseeding", async () => {
+  it("backfill restores admin (view/generate/use) + employee (view only) without reseeding", async () => {
     const res = await backfillAiCopilotPermissions();
     expect(res.admins + res.employees).toBeGreaterThanOrEqual(2);
     // admin: full access incl. generate.
     expect((await api("GET", `/ai/copilot/lead/${leadId}/panel`, upAdminToken)).status).toBe(200);
     expect((await api("POST", `/ai/copilot/lead/${leadId}/followup`, upAdminToken, {})).status).toBe(200);
-    // employee: view/use restored, but generate stays opt-in (403 by policy).
+    // employee: view (read) restored, but BOTH writes stay deny-by-default (opt-in).
     expect((await api("GET", `/ai/copilot/lead/${leadId}/panel`, upEmpToken)).status).toBe(200);
+    // generate is a write -> 403.
     expect((await api("POST", `/ai/copilot/lead/${leadId}/followup`, upEmpToken, {})).status).toBe(403);
+    // use is also a write (marks a draft used) -> 403 without an explicit grant.
+    const list = await api("GET", `/ai/copilot/lead/${leadId}`, upEmpToken);
+    expect(list.status).toBe(200);
+    const outId = (await list.json()).outputs[0]?.id;
+    if (outId) {
+      expect((await api("POST", `/ai/copilot/outputs/${outId}/use`, upEmpToken)).status).toBe(403);
+    }
   });
 
   it("is idempotent — re-running does not alter already-provisioned rows", async () => {
@@ -575,7 +594,7 @@ describe("Stage 5B upgrade path — ai_copilot RBAC backfill (no lockout for pre
     const [adminRow] = await db.select({ p: usersTable.permissions }).from(usersTable).where(eq(usersTable.id, upAdminId));
     const [empRow] = await db.select({ p: usersTable.permissions }).from(usersTable).where(eq(usersTable.id, upEmpId));
     expect((adminRow.p as Record<string, string[]>).ai_copilot).toEqual(["view", "generate", "use"]);
-    expect((empRow.p as Record<string, string[]>).ai_copilot).toEqual(["view", "use"]);
+    expect((empRow.p as Record<string, string[]>).ai_copilot).toEqual(["view"]);
   });
 });
 
