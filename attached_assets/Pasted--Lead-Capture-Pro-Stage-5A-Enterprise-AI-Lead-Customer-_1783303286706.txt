@@ -1,0 +1,349 @@
+# Lead Capture Pro
+# Stage 5A – Enterprise AI Lead & Customer Intelligence
+
+Objective
+
+Stage 5.0 (AI Platform Foundation) has been successfully completed and approved.
+
+Proceed with implementing Stage 5A – Enterprise AI Lead & Customer Intelligence.
+
+This phase should transform CRM data into meaningful business intelligence while preserving the enterprise architecture already implemented.
+
+Do NOT implement:
+
+- AI Assistant
+- Executive Intelligence
+- Workflow Intelligence
+- OCR Intelligence
+
+Those belong to later Stage 5 phases.
+
+This phase focuses only on Enterprise AI Intelligence for Leads, Contacts, Companies, Customer Relationships, and CRM Data Quality.
+
+--------------------------------------------------
+
+Requirements
+
+Preserve:
+
+• Existing business logic
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• Contract-first development
+• Repository Layer
+• Service Layer
+• AI Platform Foundation
+
+No regressions.
+
+No breaking API contracts.
+
+No breaking database changes unless required for AI metadata.
+
+--------------------------------------------------
+
+Enterprise AI Principles
+
+Every AI recommendation must include:
+
+• Confidence Score
+• Generated Date
+• Model Version
+• Prompt Version
+• Reasoning
+• Last Analysis Date
+
+AI must never silently overwrite CRM data.
+
+AI recommendations must always be reviewable.
+
+Users remain in control.
+
+Accepted AI recommendations must be audited.
+
+If confidence is insufficient, clearly display:
+
+"Not enough information."
+
+Never fabricate information.
+
+--------------------------------------------------
+
+1. AI Lead Score
+
+Generate:
+
+• Lead Score (0–100)
+• Lead Quality
+• Confidence
+• Reasoning
+• Buying Potential
+• Follow-up Priority
+
+--------------------------------------------------
+
+2. AI Lead Quality
+
+Classify:
+
+• Excellent
+• Good
+• Average
+• Low
+• Spam
+
+Explain why.
+
+--------------------------------------------------
+
+3. AI Company Intelligence
+
+Generate:
+
+• Industry
+• Business Category
+• Company Size
+• Potential Interest
+• Suggested Products
+• Suggested Services
+• Business Risks
+• Confidence
+
+Only use CRM data unless external enrichment is enabled.
+
+--------------------------------------------------
+
+4. AI Contact Intelligence
+
+Generate:
+
+• Decision Maker Probability
+• Seniority Estimate
+• Buying Influence
+• Communication Preference
+• Engagement Summary
+
+Never guess.
+
+--------------------------------------------------
+
+5. AI Missing Information Suggestions
+
+Suggest missing:
+
+• Website
+• Phone
+• Email
+• Address
+• Country
+• LinkedIn
+• Industry
+
+Suggestions remain optional.
+
+--------------------------------------------------
+
+6. AI Duplicate Intelligence
+
+Detect:
+
+• Similar Companies
+• Similar Contacts
+• Similar Leads
+• Similar Business Cards
+
+Never merge automatically.
+
+Display confidence.
+
+--------------------------------------------------
+
+7. AI Smart Classification
+
+Automatically classify:
+
+• Industry
+• Customer Segment
+• Business Type
+• Product Interest
+• Exhibition Category
+
+Always explain the classification.
+
+--------------------------------------------------
+
+8. AI Opportunity Potential
+
+Estimate:
+
+• Conversion Probability
+• Revenue Potential
+• Opportunity Rating
+• Follow-up Urgency
+
+Recommendations only.
+
+--------------------------------------------------
+
+9. AI Insights Panel
+
+Create an Enterprise AI Insights panel displaying:
+
+• Lead Score
+• Lead Quality
+• Company Intelligence
+• Contact Intelligence
+• Opportunity Potential
+• Suggested Actions
+• Missing Information
+• Duplicate Warnings
+• Confidence
+• Model
+• Prompt Version
+• Analysis Date
+
+--------------------------------------------------
+
+10. AI Relationship Intelligence (NEW)
+
+Implement Enterprise Relationship Intelligence.
+
+Analyze relationships across the CRM.
+
+Examples:
+
+• Detect contacts belonging to the same company.
+• Detect multiple decision makers within one organization.
+• Identify repeat interactions across different exhibitions.
+• Detect companies previously visited at other events.
+• Identify existing customer relationships.
+• Detect inactive customers requiring follow-up.
+• Identify high-value companies interacting with multiple employees.
+• Identify connected leads that should be managed together.
+
+Display these insights in a dedicated Relationship Intelligence section.
+
+Relationship suggestions must include:
+
+• Confidence
+• Reasoning
+• Related Records
+• Suggested Actions
+
+Never automatically merge or modify records.
+
+--------------------------------------------------
+
+11. AI Batch Processing
+
+Support:
+
+• Batch Lead Scoring
+• Batch Company Analysis
+• Batch Contact Analysis
+• Batch Duplicate Detection
+• Batch Relationship Analysis
+• Batch Re-analysis
+
+Use background processing where appropriate.
+
+--------------------------------------------------
+
+Web
+
+Implement complete support in:
+
+• Pipeline
+• Lead Detail
+• Contact Detail
+• Company Detail
+• Batch Operations
+• AI Insights
+• Relationship Intelligence
+
+--------------------------------------------------
+
+Mobile
+
+Maintain feature parity where practical.
+
+Display:
+
+• AI Score
+• AI Insights
+• Relationship Intelligence
+• Duplicate Warnings
+• Suggested Actions
+• Confidence
+
+Maintain EN/AR support.
+
+--------------------------------------------------
+
+Performance
+
+Support enterprise-scale datasets.
+
+Background processing for large AI jobs.
+
+Avoid blocking the UI.
+
+--------------------------------------------------
+
+Security
+
+Continue enforcing:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• AI audit logging
+• Tenant isolation
+
+No AI response should expose information outside the user's permissions.
+
+--------------------------------------------------
+
+Testing
+
+Add automated tests for:
+
+• Lead Score
+• Company Intelligence
+• Contact Intelligence
+• Relationship Intelligence
+• Duplicate Detection
+• Missing Information
+• Batch Processing
+• AI Confidence
+• Tenant Isolation
+• Permission Enforcement
+• AI Failure Handling
+
+Run:
+
+• Full workspace typecheck
+• Complete regression suite
+
+No regressions.
+
+--------------------------------------------------
+
+Deliverables
+
+Provide:
+
+• Architecture summary
+• APIs added
+• Database changes
+• AI models used
+• Prompt versions
+• AI relationship architecture
+• Screenshots (Web)
+• Screenshots (Mobile)
+• Files modified
+• Test results
+• Validation report
+
+Wait for review and approval before beginning Stage 5E – Enterprise OCR Intelligence.
