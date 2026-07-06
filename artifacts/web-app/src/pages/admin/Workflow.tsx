@@ -75,9 +75,12 @@ function RiskRow({ risk }: { risk: WorkflowSlaRisk }) {
           <p className="text-xs text-primary mt-0.5">→ {risk.recommendedAction}</p>
         )}
       </div>
-      {risk.ageDays !== null && risk.ageDays !== undefined && (
-        <span className="text-xs text-muted-foreground whitespace-nowrap">{risk.ageDays}d</span>
-      )}
+      <div className="flex flex-col items-end gap-0.5 shrink-0">
+        {risk.ageDays !== null && risk.ageDays !== undefined && (
+          <span className="text-xs text-muted-foreground whitespace-nowrap">{risk.ageDays}d</span>
+        )}
+        <span className="text-[10px] text-muted-foreground whitespace-nowrap">{risk.confidence}% conf.</span>
+      </div>
     </div>
   );
 }

@@ -33,6 +33,7 @@ import { resolveSettings } from "./ai.service.js";
 import * as repo from "../repositories/ai_workflow.repository.js";
 import type { EntityType, RecommendationType, UpsertRecommendationInput } from "../repositories/ai_workflow.repository.js";
 import * as analyticsRepo from "../repositories/analytics.repository.js";
+import * as pipelineStagesRepo from "../repositories/pipeline_stages.repository.js";
 import {
   localDateStr,
   addDaysStr,
@@ -374,8 +375,13 @@ async function analyzeLead(user: AuthUser, lead: LeadRow & { companyId: number }
     (p) => ({ taskTitle: p.taskTitle ?? taskTitleCore, taskDescription: p.taskDescription ?? na.action, dueDate: fu.suggestedDate, type: "follow_up" }),
   ));
 
-  // progression (AI-phrased)
-  const prog = leadProgressionCore(lead, []);
+  // progression (AI-phrased) — feed the tenant's REAL configured pipeline stages
+  // so the "next stage" reflects this company's pipeline, not canonical fallbacks.
+  // Many tenants define custom stage keys/names; passing [] would force canonical
+  // stages and mis-suggest (or null) progression for non-canonical pipelines.
+  // leadProgressionCore falls back to canonical only when no stages are configured.
+  const companyStages = (await pipelineStagesRepo.listForCompany(user)).filter((s) => s.companyId === cid);
+  const prog = leadProgressionCore(lead, companyStages);
   recs.push(await phrasedRec<WorkflowProgressionResult>(
     cid, "lead", lead.id, "progression", "workflow_progression", runtime,
     { data: { currentStage: prog.currentStage, suggestedStageKey: prog.suggestedStageKey, suggestedStageName: prog.suggestedStageName, action: prog.action, basis: prog.basis }, reasoning: prog.basis },

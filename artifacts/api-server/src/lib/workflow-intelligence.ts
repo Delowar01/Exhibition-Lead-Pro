@@ -133,6 +133,21 @@ export interface SlaRisk {
   recommendedAction: string;
   ageDays: number | null;
   ownerId: number | null;
+  // Deterministic detection certainty. Every risk here is derived from hard CRM
+  // fields (an overdue date, a stale timestamp), so the SIGNAL is certain — the
+  // severity is expressed by riskLevel, not by lowering confidence. Kept as an
+  // explicit numeric field to satisfy the "risk level + confidence + recommended
+  // action" contract and to leave room for future probabilistic risk sources.
+  confidence: number;
+}
+
+// Deterministic SLA-risk detections are grounded in real CRM fields, so they
+// carry full confidence (mirrors the deterministic-core convention elsewhere).
+export const SLA_RISK_CONFIDENCE = 100;
+
+// Stamp the deterministic confidence onto a batch of freshly-detected risks.
+function withConfidence(risks: Omit<SlaRisk, "confidence">[]): SlaRisk[] {
+  return risks.map((r) => ({ ...r, confidence: SLA_RISK_CONFIDENCE }));
 }
 
 // Numeric weight per risk level, used for the health score / SLA compliance rollups.
@@ -148,7 +163,7 @@ export interface LeadRiskOptions {
 }
 
 export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRisk[] {
-  const risks: SlaRisk[] = [];
+  const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const lead of leads) {
     if (isTerminalStage(lead.stage)) continue; // closed pipeline: no SLA pressure
     const label = lead.title ?? `Lead #${lead.id}`;
@@ -206,11 +221,11 @@ export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRis
       }
     }
   }
-  return risks;
+  return withConfidence(risks);
 }
 
 export function detectContactRisks(contacts: ContactRow[], today: string): SlaRisk[] {
-  const risks: SlaRisk[] = [];
+  const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const c of contacts) {
     const status = (c.status ?? "").toLowerCase();
     if (c.followUpDate && dayDiffStr(today, c.followUpDate) > 0 && status !== "won" && status !== "lost") {
@@ -235,11 +250,11 @@ export function detectContactRisks(contacts: ContactRow[], today: string): SlaRi
       });
     }
   }
-  return risks;
+  return withConfidence(risks);
 }
 
 export function detectTaskRisks(tasks: TaskRow[], today: string): SlaRisk[] {
-  const risks: SlaRisk[] = [];
+  const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const t of tasks) {
     const status = (t.status ?? "").toLowerCase();
     if (status === "completed" || status === "cancelled" || !t.dueDate) continue;
@@ -264,11 +279,11 @@ export function detectTaskRisks(tasks: TaskRow[], today: string): SlaRisk[] {
       });
     }
   }
-  return risks;
+  return withConfidence(risks);
 }
 
 export function detectFollowUpRisks(followUps: FollowUpRow[], today: string): SlaRisk[] {
-  const risks: SlaRisk[] = [];
+  const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const f of followUps) {
     if ((f.status ?? "").toLowerCase() !== "pending" || !f.scheduledDate) continue;
     const diff = dayDiffStr(today, f.scheduledDate);
@@ -283,7 +298,7 @@ export function detectFollowUpRisks(followUps: FollowUpRow[], today: string): Sl
       });
     }
   }
-  return risks;
+  return withConfidence(risks);
 }
 
 // ── Follow-up / next-action / priority / due-date cores (per entity) ──────────

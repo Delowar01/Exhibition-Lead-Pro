@@ -1438,6 +1438,7 @@
     "bottlenecksTitle": "Workflow Bottlenecks",
     "noBottlenecks": "No bottlenecks detected.",
     "ageDays": "{{days}}d",
+    "confidence": "{{value}}% conf.",
     "simTitle": "Scenario Simulation",
     "simSubtitle": "Preview a predicted outcome — this is a read-only estimate, nothing is written.",
     "leadId": "Lead ID",

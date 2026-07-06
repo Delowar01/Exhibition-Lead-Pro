@@ -149,11 +149,16 @@ export default function WorkflowScreen() {
           <Text style={[styles.rowAction, { color: colors.primary, textAlign }]}>→ {r.recommendedAction}</Text>
         ) : null}
       </View>
-      {r.ageDays != null ? (
-        <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>
-          {t("workflowManager.ageDays", { days: r.ageDays })}
+      <View style={{ alignItems: isRTL ? "flex-start" : "flex-end", gap: 2 }}>
+        {r.ageDays != null ? (
+          <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>
+            {t("workflowManager.ageDays", { days: r.ageDays })}
+          </Text>
+        ) : null}
+        <Text style={[styles.rowConf, { color: colors.mutedForeground }]}>
+          {t("workflowManager.confidence", { value: r.confidence })}
         </Text>
-      ) : null}
+      </View>
     </View>
   );
 
@@ -523,6 +528,7 @@ const styles = StyleSheet.create({
   rowDetail: { fontSize: 13, lineHeight: 19, fontFamily: FONT.regular, marginTop: 1 },
   rowAction: { fontSize: 13, fontFamily: FONT.medium, marginTop: 2 },
   rowMeta: { fontSize: 12, fontFamily: FONT.regular },
+  rowConf: { fontSize: 10, fontFamily: FONT.regular },
   flex1: { flex: 1 },
   fieldLabel: { fontSize: 12, fontFamily: FONT.medium, marginTop: 6 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, fontFamily: FONT.regular },

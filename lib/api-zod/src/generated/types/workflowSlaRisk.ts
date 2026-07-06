@@ -17,6 +17,8 @@ export interface WorkflowSlaRisk {
   title: string;
   detail: string;
   recommendedAction: string;
+  /** Deterministic detection certainty (0-100); grounded risk detections are 100. */
+  confidence: number;
   ageDays: number | null;
   ownerId: number | null;
 }

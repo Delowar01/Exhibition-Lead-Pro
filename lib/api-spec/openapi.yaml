@@ -11264,7 +11264,7 @@ components:
 
     WorkflowSlaRisk:
       type: object
-      required: [entityType, entityId, category, riskLevel, title, detail, recommendedAction, ageDays, ownerId]
+      required: [entityType, entityId, category, riskLevel, title, detail, recommendedAction, confidence, ageDays, ownerId]
       properties:
         entityType:
           type: string
@@ -11283,6 +11283,9 @@ components:
           type: string
         recommendedAction:
           type: string
+        confidence:
+          type: integer
+          description: Deterministic detection certainty (0-100); grounded risk detections are 100.
         ageDays:
           type: integer
           nullable: true

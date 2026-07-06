@@ -362,6 +362,86 @@ describe("Org-scoped read-only rollups (health / sla-risks / bottlenecks)", () =
     expect(Array.isArray(body.bottlenecks)).toBe(true);
     expect(typeof body.riskCount).toBe("number");
   });
+
+  it("every SLA risk item carries a deterministic confidence (100)", async () => {
+    // Seed a guaranteed risk: a lead whose closing date is already in the past.
+    const overdue = await api("POST", "/leads", adminToken, {
+      contactId,
+      stage: "new",
+      title: `Overdue QA lead ${SUFFIX}`,
+      value: 1000,
+      currency: "USD",
+      assignedToId: adminUserId,
+      closingDate: "2020-01-01",
+    });
+    expect(overdue.status).toBe(201);
+    const overdueId = (await overdue.json()).id;
+    try {
+      const res = await api("GET", `/ai/workflow/sla-risks`, adminToken);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(Array.isArray(body.risks)).toBe(true);
+      expect(body.risks.length).toBeGreaterThan(0);
+      for (const r of body.risks) {
+        expect(typeof r.confidence).toBe("number");
+        expect(r.confidence).toBe(100);
+      }
+    } finally {
+      await api("DELETE", `/leads/${overdueId}`, adminToken);
+    }
+  });
+});
+
+describe("Progression — uses the tenant's configured pipeline stages, not canonical fallbacks", () => {
+  it("suggests the company's real next stage for a non-canonical pipeline", async () => {
+    // Creating the first stage lazily seeds the six DEFAULT_STAGES (which happen to
+    // mirror the canonical fallback). To prove progression reads the TENANT pipeline
+    // and not the canonical fallback, we build a non-canonical pipeline and then drop
+    // the seeded defaults so only our custom stages remain at analyze time.
+    const created: number[] = [];
+    const mkStage = async (name: string, sortOrder: number, extra?: Record<string, unknown>) => {
+      const res = await api("POST", "/pipeline/stages", adminToken, { name, sortOrder, ...extra });
+      expect(res.status, `create stage ${name}`).toBe(201);
+      created.push((await res.json()).id);
+    };
+    await mkStage("Intake", 0);
+    await mkStage("Review", 1);
+    await mkStage("Closing", 2, { isWon: true });
+
+    // Drop the auto-seeded defaults so the live pipeline is purely non-canonical.
+    // (No further createStage calls follow, so ensureStages won't re-seed.)
+    const listRes = await api("GET", "/pipeline/stages", adminToken);
+    expect(listRes.status).toBe(200);
+    const { stages } = (await listRes.json()) as { stages: Array<{ id: number; isDefault: boolean }> };
+    for (const s of stages) {
+      if (s.isDefault) await api("DELETE", `/pipeline/stages/${s.id}`, adminToken);
+    }
+
+    // A lead sitting in the first custom stage.
+    const leadRes = await api("POST", "/leads", adminToken, {
+      contactId,
+      stage: "intake",
+      title: `Custom-pipeline lead ${SUFFIX}`,
+      value: 2000,
+      currency: "USD",
+      assignedToId: adminUserId,
+    });
+    expect(leadRes.status).toBe(201);
+    const customLeadId = (await leadRes.json()).id;
+
+    try {
+      const recs = await analyze(adminToken, "lead", customLeadId);
+      const prog = recs.find((r) => r.recommendationType === "progression");
+      expect(prog, "progression recommendation present").toBeDefined();
+      const data = prog!.data as { suggestedStageName?: string | null; suggestedStageKey?: string | null };
+      // The next stage must be the tenant's "Review" — a canonical fallback would
+      // never produce this (canonical stages are prospect/qualified/proposal_sent/...).
+      expect(data.suggestedStageName).toBe("Review");
+    } finally {
+      await api("DELETE", `/leads/${customLeadId}`, adminToken);
+      for (const id of created) await api("DELETE", `/pipeline/stages/${id}`, adminToken);
+    }
+  });
 });
 
 describe("POST /ai/workflow/simulate — what-if prediction (writes NOTHING)", () => {

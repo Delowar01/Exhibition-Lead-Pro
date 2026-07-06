@@ -5835,6 +5835,7 @@ export const GetAiWorkflowHealthResponse = zod.object({
   "title": zod.string(),
   "detail": zod.string(),
   "recommendedAction": zod.string(),
+  "confidence": zod.number().describe('Deterministic detection certainty (0-100); grounded risk detections are 100.'),
   "ageDays": zod.number().nullable(),
   "ownerId": zod.number().nullable()
 })),
@@ -5867,6 +5868,7 @@ export const GetAiWorkflowSlaRisksResponse = zod.object({
   "title": zod.string(),
   "detail": zod.string(),
   "recommendedAction": zod.string(),
+  "confidence": zod.number().describe('Deterministic detection certainty (0-100); grounded risk detections are 100.'),
   "ageDays": zod.number().nullable(),
   "ownerId": zod.number().nullable()
 }))
