@@ -2,7 +2,7 @@ import { Feather } from "@/components/icons";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
 import React, { useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View, Modal, ScrollView } from "react-native";
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View, Modal, ScrollView } from "react-native";
 
 import {
   getGetAiCopilotOutputsQueryKey,
@@ -103,6 +103,27 @@ export function CopilotSection({ entityType, id }: Props) {
     Alert.alert(t("copilot.title"), t("copilot.copied"));
   };
 
+  const openHandoff = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+      success();
+    } catch {
+      Alert.alert(t("copilot.title"), t("copilot.actionFailed"));
+    }
+  };
+
+  const handleEmail = (subject: string, body: string) => {
+    const params = [
+      subject ? `subject=${encodeURIComponent(subject)}` : "",
+      body ? `body=${encodeURIComponent(body)}` : "",
+    ].filter(Boolean).join("&");
+    openHandoff(params ? `mailto:?${params}` : "mailto:");
+  };
+
+  const handleWhatsapp = (message: string) => {
+    openHandoff(`https://wa.me/?text=${encodeURIComponent(message)}`);
+  };
+
   const typeLabel = (type: string) =>
     t(`copilot.outputTypes.${type}`, { defaultValue: humanizeKey(type) });
 
@@ -173,6 +194,18 @@ export function CopilotSection({ entityType, id }: Props) {
     const hasUnavailable = (dataToRender as any)?.unavailable === true;
     
     const dataEntries = hasUnavailable ? [] : Object.entries(dataToRender ?? {}).filter(([, v]) => v !== null && v !== undefined);
+
+    const emailSubject = typeof (dataToRender as any)?.subject === "string" ? (dataToRender as any).subject : "";
+    const emailBody = typeof (dataToRender as any)?.body === "string" ? (dataToRender as any).body : "";
+    const waMessage =
+      typeof (dataToRender as any)?.draftMessage === "string"
+        ? (dataToRender as any).draftMessage
+        : typeof (dataToRender as any)?.message === "string"
+          ? (dataToRender as any).message
+          : "";
+    const canEmail = output.outputType === "email" && !hasUnavailable && (emailSubject || emailBody);
+    const canWhatsapp = output.outputType === "whatsapp" && !hasUnavailable && !!waMessage;
+    const canAct = output.status === "generated" || output.status === "edited";
     
     const confColor =
       output.confidence == null
@@ -201,11 +234,9 @@ export function CopilotSection({ entityType, id }: Props) {
               ? t("copilot.confidenceNa")
               : t("copilot.confidence", { value: output.confidence })}
           </Text>
-          {output.status !== "draft" ? (
-            <Text style={[styles.statusText, { color: output.status === "used" ? "#059669" : colors.mutedForeground }]}>
-              {t(`copilot.${output.status}`)}
-            </Text>
-          ) : null}
+          <Text style={[styles.statusText, { color: output.status === "used" ? "#059669" : colors.mutedForeground }]}>
+            {t(`copilot.${output.status}`, { defaultValue: humanizeKey(output.status) })}
+          </Text>
         </View>
 
         {output.reasoning ? (
@@ -232,7 +263,30 @@ export function CopilotSection({ entityType, id }: Props) {
           {output.promptVersion != null ? ` · ${t("copilot.promptVersion", { version: output.promptVersion })}` : ""}
         </Text>
 
-        {output.status === "draft" ? (
+        {canEmail || canWhatsapp ? (
+          <View style={styles.actions}>
+            {canEmail ? (
+              <Pressable
+                onPress={() => handleEmail(emailSubject, emailBody)}
+                style={[styles.actionBtn, styles.dismissBtn, { borderColor: colors.border }]}
+              >
+                <Feather name="mail" size={14} color={colors.foreground} />
+                <Text style={[styles.actionText, { color: colors.foreground }]}>{t("copilot.openEmail")}</Text>
+              </Pressable>
+            ) : null}
+            {canWhatsapp ? (
+              <Pressable
+                onPress={() => handleWhatsapp(waMessage)}
+                style={[styles.actionBtn, styles.dismissBtn, { borderColor: colors.border }]}
+              >
+                <Feather name="message-circle" size={14} color={colors.foreground} />
+                <Text style={[styles.actionText, { color: colors.foreground }]}>{t("copilot.sendWhatsapp")}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {canAct ? (
           <View style={styles.actions}>
             <Pressable
               onPress={() => handleUse(output.id)}
