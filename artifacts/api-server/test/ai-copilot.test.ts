@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   db,
   companiesTable,
@@ -9,7 +9,9 @@ import {
   organizationsTable,
   scansTable,
   aiCopilotOutputsTable,
+  auditLogsTable,
 } from "@workspace/db";
+import { backfillAiCopilotPermissions } from "../src/lib/permission-backfill";
 
 // Stage 5B — Enterprise AI Sales Copilot. Exercises the /ai/copilot endpoints
 // against the LIVE API (localhost:80): generate (deterministic-core followup/coaching
@@ -255,6 +257,24 @@ describe("Deterministic-core outputs (followup / coaching) — grounded, provena
   it("defaults language to en when omitted", async () => {
     const out = await generate(adminToken, "contact", contactId, "followup", {});
     expect(out.language).toBe("en");
+  });
+
+  it("writes an audit_logs row for a generate action (ai_copilot.post)", async () => {
+    const [before] = await db
+      .select({ id: auditLogsTable.id })
+      .from(auditLogsTable)
+      .orderBy(desc(auditLogsTable.id))
+      .limit(1);
+    const sinceId = before?.id ?? 0;
+    await generate(adminToken, "lead", leadId, "followup");
+    const [hit] = await db
+      .select({ id: auditLogsTable.id, action: auditLogsTable.action, userId: auditLogsTable.userId })
+      .from(auditLogsTable)
+      .where(and(eq(auditLogsTable.action, "ai_copilot.post"), eq(auditLogsTable.userId, adminUserId)))
+      .orderBy(desc(auditLogsTable.id))
+      .limit(1);
+    expect(hit).toBeTruthy();
+    expect(hit.id).toBeGreaterThan(sinceId);
   });
 
   it("re-generating upserts (no duplicate rows) for the same entity+outputType", async () => {
@@ -508,6 +528,54 @@ describe("POST /ai/copilot/batch — tenant-scoped batch generation", () => {
   it("404s a non-existent batch job id", async () => {
     const res = await api("GET", `/ai/copilot/batch/00000000-0000-0000-0000-000000000000`, adminToken);
     expect(res.status).toBe(404);
+  });
+});
+
+// Stage 5B rollout: the copilot routes are requirePermission("ai_copilot", ...)-gated,
+// so shipping them would 403-lock every pre-existing admin/employee whose stored
+// permissions predate the module. The startup backfill (backfillAiCopilotPermissions)
+// closes that gap without reseeding. Here we simulate PRE-upgrade rows (no ai_copilot key)
+// and prove the backfill restores access per policy and is idempotent.
+describe("Stage 5B upgrade path — ai_copilot RBAC backfill (no lockout for pre-existing users)", () => {
+  let upAdminId = 0;
+  let upEmpId = 0;
+  let upAdminToken = "";
+  let upEmpToken = "";
+
+  beforeAll(async () => {
+    const upAdminEmail = `qa-upadmin@${DOMAIN}`;
+    const upEmpEmail = `qa-upemp@${DOMAIN}`;
+    upAdminId = await createUser(adminToken, upAdminEmail, "Upgrade Admin", "admin");
+    upEmpId = await createUser(adminToken, upEmpEmail, "Upgrade Emp", "employee");
+    // Simulate rows created BEFORE the ai_copilot module existed: no ai_copilot key.
+    await db.update(usersTable).set({ permissions: { contacts: ["view"] } }).where(eq(usersTable.id, upAdminId));
+    await db.update(usersTable).set({ permissions: { contacts: ["view"] } }).where(eq(usersTable.id, upEmpId));
+    upAdminToken = await loginToken({ email: upAdminEmail, password: PW });
+    upEmpToken = await loginToken({ email: upEmpEmail, password: PW });
+  });
+
+  it("pre-upgrade admin/employee are locked out of the copilot before backfill (403)", async () => {
+    expect((await api("GET", `/ai/copilot/lead/${leadId}/panel`, upAdminToken)).status).toBe(403);
+    expect((await api("GET", `/ai/copilot/lead/${leadId}/panel`, upEmpToken)).status).toBe(403);
+  });
+
+  it("backfill restores admin (view/generate/use) + employee (view/use) without reseeding", async () => {
+    const res = await backfillAiCopilotPermissions();
+    expect(res.admins + res.employees).toBeGreaterThanOrEqual(2);
+    // admin: full access incl. generate.
+    expect((await api("GET", `/ai/copilot/lead/${leadId}/panel`, upAdminToken)).status).toBe(200);
+    expect((await api("POST", `/ai/copilot/lead/${leadId}/followup`, upAdminToken, {})).status).toBe(200);
+    // employee: view/use restored, but generate stays opt-in (403 by policy).
+    expect((await api("GET", `/ai/copilot/lead/${leadId}/panel`, upEmpToken)).status).toBe(200);
+    expect((await api("POST", `/ai/copilot/lead/${leadId}/followup`, upEmpToken, {})).status).toBe(403);
+  });
+
+  it("is idempotent — re-running does not alter already-provisioned rows", async () => {
+    await backfillAiCopilotPermissions();
+    const [adminRow] = await db.select({ p: usersTable.permissions }).from(usersTable).where(eq(usersTable.id, upAdminId));
+    const [empRow] = await db.select({ p: usersTable.permissions }).from(usersTable).where(eq(usersTable.id, upEmpId));
+    expect((adminRow.p as Record<string, string[]>).ai_copilot).toEqual(["view", "generate", "use"]);
+    expect((empRow.p as Record<string, string[]>).ai_copilot).toEqual(["view", "use"]);
   });
 });
 

@@ -34,3 +34,14 @@ rows** in addition to updating the seed (the seed only affects fresh installs). 
 `permissions` column is `jsonb`, so backfill with
 `permissions = permissions || '{"<module>":["<action>"]}'::jsonb`. Production data needs the
 same one-time backfill at deploy time — the dev DB backfill does not carry over.
+
+**Concrete mechanism (Stage 5B `ai_copilot`):** the backfill is an idempotent startup
+routine (`api-server/src/lib/permission-backfill.ts`) wired into `index.ts` after
+`app.listen` (fire-and-forget, logs+continues on failure — never blocks boot). Idempotency
+comes from a `NOT jsonb_exists(permissions, '<module>')` guard so it only touches rows
+missing the key and never clobbers an explicit primary_admin grant/revoke. Use
+`jsonb_exists(col, key)` (not the `?` operator) inside a drizzle `sql\`\`` template to avoid
+placeholder ambiguity. This same startup call runs in production on first boot after deploy,
+so no separate manual prod migration is needed. Test the upgrade path by stripping the key
+off a seeded admin+employee, asserting 403, calling the backfill fn directly, then asserting
+access restored per policy (admin default-on incl. generate; employee view/use, generate opt-in).

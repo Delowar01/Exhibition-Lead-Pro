@@ -1,0 +1,393 @@
+# Lead Capture Pro
+# Stage 5E – Enterprise AI Intelligent Capture Engine
+
+Objective
+
+Stage 5B – Enterprise AI Sales Copilot has been successfully completed and approved.
+
+Proceed with Stage 5E.
+
+Do NOT treat this as an OCR enhancement project.
+
+Transform the entire Business Card Capture process into an Enterprise Intelligent Capture Engine.
+
+The objective is to maximize data quality before information enters the CRM.
+
+This phase builds on:
+
+✅ Stage 5.0 – AI Platform Foundation
+✅ Stage 5A – Enterprise AI Intelligence
+✅ Stage 5B – Enterprise AI Sales Copilot
+
+Do NOT begin:
+
+• Stage 5F
+• Stage 5C
+• Stage 5D
+
+--------------------------------------------------
+
+Project Principles
+
+Preserve:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• Contract-first Architecture
+• Repository Layer
+• Service Layer
+• Existing OCR workflow
+• Existing Capture workflow
+
+No regressions.
+
+No breaking APIs.
+
+No breaking database schema unless required for OCR metadata.
+
+--------------------------------------------------
+
+Mission
+
+The scanner should no longer simply read text.
+
+It should intelligently:
+
+• Detect
+• Validate
+• Normalize
+• Recognize
+• Suggest
+• Classify
+• Review
+
+before data is committed into the CRM.
+
+--------------------------------------------------
+
+1. Intelligent OCR Engine
+
+Improve extraction accuracy for:
+
+• Full Name
+• Company Name
+• Designation
+• Mobile Number
+• Telephone
+• Email
+• Website
+• Address
+• Country
+• City
+• Postal Code
+
+Support:
+
+• English
+• Arabic
+• Mixed-language business cards
+
+--------------------------------------------------
+
+2. OCR Confidence Engine
+
+Every extracted field must include:
+
+• Confidence Score
+• Extraction Method
+• AI Model
+• Prompt Version
+• Processing Time
+• Validation Status
+
+Never fabricate values.
+
+If confidence is low:
+
+Display:
+
+"Low confidence"
+
+instead of guessing.
+
+--------------------------------------------------
+
+3. Intelligent Validation
+
+Validate:
+
+• Email
+• Website
+• Phone
+• Country
+• Postal Code
+• International Dial Codes
+
+Suggest corrections.
+
+Users remain in control.
+
+--------------------------------------------------
+
+4. Intelligent Company Recognition
+
+Search existing CRM.
+
+If company exists:
+
+Display:
+
+Existing Company Found
+
+Show:
+
+• Company
+• Existing Contacts
+• Existing Leads
+• Previous Events
+• Relationship Summary
+
+Allow the user to link.
+
+Never link automatically.
+
+--------------------------------------------------
+
+5. Intelligent Contact Recognition
+
+Detect existing contacts.
+
+Display:
+
+• Existing Contact
+• Existing Lead
+• Existing Customer
+• Existing Decision Maker
+
+Show confidence.
+
+Never merge automatically.
+
+--------------------------------------------------
+
+6. Intelligent Duplicate Detection
+
+Detect:
+
+• Duplicate Business Card
+• Duplicate Contact
+• Duplicate Company
+• Similar Company Names
+• Similar Email
+• Similar Phone
+
+Never merge automatically.
+
+Users review.
+
+--------------------------------------------------
+
+7. Intelligent Data Cleanup
+
+Normalize:
+
+• Company Name
+• Phone Number
+• Country Code
+• Email
+• Website
+• Address
+
+Always preserve:
+
+• Original OCR
+• Original Scan
+• Original Raw Data
+
+--------------------------------------------------
+
+8. Smart Suggestions
+
+Suggest:
+
+• Missing Website
+• Missing Email
+• Missing Country
+• Missing Industry
+• Missing Company Category
+
+Only when confidence is high.
+
+Otherwise show:
+
+"Not enough information."
+
+--------------------------------------------------
+
+9. QR Intelligence
+
+Improve support for:
+
+• Business Card QR
+• Digital Business Cards
+• Contact QR
+• Email Signature QR
+• vCard QR
+
+Automatically classify:
+
+Capture Source
+
+--------------------------------------------------
+
+10. Scan Quality Analysis
+
+Before OCR:
+
+Detect:
+
+• Blur
+• Rotation
+• Low Light
+• Cropped Card
+• Reflection
+• Perspective Distortion
+
+Provide live guidance.
+
+Example:
+
+Move closer
+
+Rotate slightly
+
+Increase lighting
+
+Hold steady
+
+--------------------------------------------------
+
+11. OCR Intelligence Dashboard
+
+Display:
+
+• OCR Confidence
+• Validation Status
+• Existing Company
+• Existing Contact
+• Duplicate Warning
+• Suggested Corrections
+• Scan Quality
+• AI Confidence
+• Model
+• Prompt Version
+• Processing Time
+
+--------------------------------------------------
+
+12. Batch Intelligent Processing
+
+Support:
+
+• Batch OCR
+• Batch Validation
+• Batch Cleanup
+• Batch Duplicate Detection
+• Batch Company Recognition
+• Batch Contact Recognition
+
+Background processing only.
+
+--------------------------------------------------
+
+13. Mobile Experience
+
+Maintain complete feature parity.
+
+Provide:
+
+• Live Capture Quality Indicator
+• OCR Confidence
+• Existing Contact Alerts
+• Existing Company Alerts
+• Duplicate Alerts
+• Suggested Corrections
+
+Maintain:
+
+• English
+• Arabic
+• RTL
+
+--------------------------------------------------
+
+Performance
+
+Optimize for:
+
+• High-speed exhibition scanning
+• Continuous scan sessions
+• Large enterprise deployments
+• Low latency
+• Background AI processing
+
+--------------------------------------------------
+
+Security
+
+Continue enforcing:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• AI Audit Logging
+• Tenant Isolation
+
+No OCR result should expose another tenant's data.
+
+--------------------------------------------------
+
+Testing
+
+Add automated tests for:
+
+• OCR Accuracy
+• Validation
+• Duplicate Detection
+• Company Recognition
+• Contact Recognition
+• Scan Quality Detection
+• QR Recognition
+• Batch Processing
+• AI Failure Handling
+• Tenant Isolation
+• Permission Enforcement
+
+Run:
+
+• Full workspace typecheck
+• Complete regression suite
+
+No regressions.
+
+--------------------------------------------------
+
+Deliverables
+
+Provide:
+
+• Architecture Summary
+• OCR Pipeline Diagram
+• APIs Added
+• Database Changes
+• Prompt Versions
+• AI Models Used
+• Files Modified
+• Before vs After Performance Comparison
+• Web Screenshots
+• Mobile Screenshots
+• Test Results
+• Validation Report
+
+Wait for review and approval before beginning Stage 5F – Enterprise Workflow Intelligence.
