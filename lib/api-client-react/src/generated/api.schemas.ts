@@ -718,6 +718,106 @@ export interface TeamMembersAssignment {
   userIds: number[];
 }
 
+export type CrmOrganizationStatus = typeof CrmOrganizationStatus[keyof typeof CrmOrganizationStatus];
+
+
+export const CrmOrganizationStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface CrmOrganization {
+  id: number;
+  companyId: number;
+  name: string;
+  /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  size?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  status: CrmOrganizationStatus;
+  contactCount: number;
+  leadCount: number;
+  openLeadValue?: number;
+  createdAt: string;
+}
+
+export interface CrmOrganizationList {
+  organizations: CrmOrganization[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type CrmOrganizationInputStatus = typeof CrmOrganizationInputStatus[keyof typeof CrmOrganizationInputStatus];
+
+
+export const CrmOrganizationInputStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface CrmOrganizationInput {
+  name: string;
+  /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  size?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  status?: CrmOrganizationInputStatus;
+}
+
+export type CrmOrganizationUpdateStatus = typeof CrmOrganizationUpdateStatus[keyof typeof CrmOrganizationUpdateStatus];
+
+
+export const CrmOrganizationUpdateStatus = {
+  active: 'active',
+  archived: 'archived',
+} as const;
+
+export interface CrmOrganizationUpdate {
+  name?: string;
+  /** @nullable */
+  industry?: string | null;
+  /** @nullable */
+  website?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  size?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  status?: CrmOrganizationUpdateStatus;
+}
+
 export interface OrgHierarchyNode {
   id: number;
   name: string;
@@ -1312,6 +1412,10 @@ export interface Contact {
   assignedToId?: number | null;
   /** @nullable */
   assignedToName?: string | null;
+  /** @nullable */
+  organizationId?: number | null;
+  /** @nullable */
+  organizationName?: string | null;
   createdAt: string;
 }
 
@@ -1384,6 +1488,8 @@ export interface ContactInput {
   /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
+  organizationId?: number | null;
+  /** @nullable */
   cardImageUrl?: string | null;
 }
 
@@ -1445,6 +1551,8 @@ export interface ContactUpdate {
   eventId?: number | null;
   /** @nullable */
   assignedToId?: number | null;
+  /** @nullable */
+  organizationId?: number | null;
 }
 
 export interface StatusCount {
@@ -1598,6 +1706,10 @@ export interface Lead {
   /** @nullable */
   companyName?: string | null;
   /** @nullable */
+  organizationId?: number | null;
+  /** @nullable */
+  organizationName?: string | null;
+  /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
   assignedToName?: string | null;
@@ -1671,6 +1783,8 @@ export interface LeadInput {
   stageId?: number | null;
   /** @nullable */
   teamId?: number | null;
+  /** @nullable */
+  organizationId?: number | null;
 }
 
 export type LeadUpdateStage = typeof LeadUpdateStage[keyof typeof LeadUpdateStage];
@@ -1717,6 +1831,8 @@ export interface LeadUpdate {
   stageId?: number | null;
   /** @nullable */
   teamId?: number | null;
+  /** @nullable */
+  organizationId?: number | null;
 }
 
 export interface PipelineStageConfig {
@@ -4406,6 +4522,13 @@ limit?: number;
 };
 
 export type ListDepartmentsParams = {
+search?: string;
+status?: string;
+page?: number;
+limit?: number;
+};
+
+export type ListCrmOrganizationsParams = {
 search?: string;
 status?: string;
 page?: number;

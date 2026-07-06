@@ -1151,6 +1151,8 @@ export const ListContactsResponse = zod.object({
   "eventName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number(),
@@ -1188,6 +1190,7 @@ export const CreateContactBody = zod.object({
   "followUpTime": zod.string().nullish(),
   "eventId": zod.number().nullish(),
   "assignedToId": zod.number().nullish(),
+  "organizationId": zod.number().nullish(),
   "cardImageUrl": zod.string().nullish()
 })
 
@@ -1238,6 +1241,8 @@ export const GetContactResponse = zod.object({
   "eventName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1269,7 +1274,8 @@ export const UpdateContactBody = zod.object({
   "followUpDate": zod.string().nullish(),
   "followUpTime": zod.string().nullish(),
   "eventId": zod.number().nullish(),
-  "assignedToId": zod.number().nullish()
+  "assignedToId": zod.number().nullish(),
+  "organizationId": zod.number().nullish()
 })
 
 export const UpdateContactResponse = zod.object({
@@ -1311,6 +1317,8 @@ export const UpdateContactResponse = zod.object({
   "eventName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1391,6 +1399,8 @@ export const GetContactDuplicatesResponse = zod.object({
   "eventName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 }))
 }))
@@ -1445,6 +1455,8 @@ export const MergeContactsResponse = zod.object({
   "eventName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1569,6 +1581,8 @@ export const EnrichContactResponse = zod.object({
   "eventName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1606,6 +1620,8 @@ export const ListLeadsResponse = zod.object({
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -1659,7 +1675,8 @@ export const CreateLeadBody = zod.object({
   "assignedToId": zod.number().nullish(),
   "eventId": zod.number().nullish(),
   "stageId": zod.number().nullish(),
-  "teamId": zod.number().nullish()
+  "teamId": zod.number().nullish(),
+  "organizationId": zod.number().nullish()
 })
 
 
@@ -1687,6 +1704,8 @@ export const GetLeadResponse = zod.object({
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -1739,7 +1758,8 @@ export const UpdateLeadBody = zod.object({
   "assignedToId": zod.number().nullish(),
   "eventId": zod.number().nullish(),
   "stageId": zod.number().nullish(),
-  "teamId": zod.number().nullish()
+  "teamId": zod.number().nullish(),
+  "organizationId": zod.number().nullish()
 })
 
 export const UpdateLeadResponse = zod.object({
@@ -1759,6 +1779,8 @@ export const UpdateLeadResponse = zod.object({
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -1826,6 +1848,8 @@ export const GetLeadPipelineResponse = zod.object({
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -2345,6 +2369,8 @@ export const SearchContactsResponse = zod.object({
   "eventName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number(),
@@ -2614,6 +2640,8 @@ export const AssignLeadResponse = zod.object({
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -2715,6 +2743,8 @@ export const AutoAssignLeadResponse = zod.object({
   "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
   "notes": zod.string().nullish(),
   "companyName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
   "assignedToId": zod.number().nullish(),
   "assignedToName": zod.string().nullish(),
   "eventId": zod.number().nullish(),
@@ -3074,6 +3104,314 @@ export const RestoreDepartmentResponse = zod.object({
   "employeeCount": zod.number().optional(),
   "teamCount": zod.number().optional(),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List organizations (CRM companies)
+ */
+export const listCrmOrganizationsQueryPageDefault = 1;
+export const listCrmOrganizationsQueryLimitDefault = 50;
+
+export const ListCrmOrganizationsQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "status": zod.coerce.string().optional(),
+  "page": zod.coerce.number().default(listCrmOrganizationsQueryPageDefault),
+  "limit": zod.coerce.number().default(listCrmOrganizationsQueryLimitDefault)
+})
+
+export const ListCrmOrganizationsResponse = zod.object({
+  "organizations": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "size": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "contactCount": zod.number(),
+  "leadCount": zod.number(),
+  "openLeadValue": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary Create organization
+ */
+export const createCrmOrganizationBodyStatusDefault = `active`;
+
+export const CreateCrmOrganizationBody = zod.object({
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "size": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']).default(createCrmOrganizationBodyStatusDefault)
+})
+
+
+/**
+ * @summary Get organization
+ */
+export const GetCrmOrganizationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetCrmOrganizationResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "size": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "contactCount": zod.number(),
+  "leadCount": zod.number(),
+  "openLeadValue": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update organization
+ */
+export const UpdateCrmOrganizationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateCrmOrganizationBody = zod.object({
+  "name": zod.string().optional(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "size": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']).optional()
+})
+
+export const UpdateCrmOrganizationResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "size": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "contactCount": zod.number(),
+  "leadCount": zod.number(),
+  "openLeadValue": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete organization
+ */
+export const DeleteCrmOrganizationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteCrmOrganizationResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Archive organization
+ */
+export const ArchiveCrmOrganizationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ArchiveCrmOrganizationResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "size": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "contactCount": zod.number(),
+  "leadCount": zod.number(),
+  "openLeadValue": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Restore archived organization
+ */
+export const RestoreCrmOrganizationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RestoreCrmOrganizationResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "industry": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "size": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['active', 'archived']),
+  "contactCount": zod.number(),
+  "leadCount": zod.number(),
+  "openLeadValue": zod.number().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List contacts linked to an organization
+ */
+export const ListCrmOrganizationContactsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListCrmOrganizationContactsResponse = zod.object({
+  "contacts": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "fullName": zod.string().nullish(),
+  "arabicName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "mobile": zod.string().nullish(),
+  "officePhone": zod.string().nullish(),
+  "website": zod.string().nullish(),
+  "country": zod.string().nullish(),
+  "address": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "duplicateOfId": zod.number().nullish(),
+  "linkedin": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "source": zod.string().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "status": zod.enum(['new', 'contacted', 'quotation_sent', 'negotiation', 'won', 'lost', 'qualified', 'interested', 'proposal_sent', 'archived']),
+  "leadScore": zod.number().nullish(),
+  "leadTemperature": zod.union([zod.literal('hot'),zod.literal('warm'),zod.literal('cold'),zod.literal(null)]).nullish(),
+  "aiReasoning": zod.string().nullish(),
+  "industry": zod.string().nullish(),
+  "seniority": zod.string().nullish(),
+  "enrichmentSummary": zod.string().nullish(),
+  "talkingPoints": zod.array(zod.string()).optional(),
+  "enrichedAt": zod.coerce.date().nullish(),
+  "followUpDate": zod.coerce.date().nullish(),
+  "followUpTime": zod.string().nullish(),
+  "cardImageUrl": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary List leads linked to an organization
+ */
+export const ListCrmOrganizationLeadsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListCrmOrganizationLeadsResponse = zod.object({
+  "leads": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "contactName": zod.string().nullish(),
+  "contactEmail": zod.string().nullish(),
+  "contactCompany": zod.string().nullish(),
+  "stage": zod.enum(['prospect', 'qualified', 'proposal_sent', 'negotiation', 'won', 'lost', 'new', 'contacted', 'meeting_scheduled', 'archived']),
+  "source": zod.string().nullish(),
+  "title": zod.string().nullish(),
+  "value": zod.number().nullish(),
+  "currency": zod.string().nullish(),
+  "closingDate": zod.string().nullish(),
+  "probability": zod.number().nullish(),
+  "priority": zod.enum(['low', 'medium', 'high', 'null']).nullish(),
+  "notes": zod.string().nullish(),
+  "companyName": zod.string().nullish(),
+  "organizationId": zod.number().nullish(),
+  "organizationName": zod.string().nullish(),
+  "assignedToId": zod.number().nullish(),
+  "assignedToName": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "stageId": zod.number().nullish(),
+  "stageName": zod.string().nullish(),
+  "stageKey": zod.string().nullish(),
+  "teamId": zod.number().nullish(),
+  "teamName": zod.string().nullish(),
+  "tags": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "color": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "createdAt": zod.coerce.date().optional()
+})).optional(),
+  "createdAt": zod.coerce.date(),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "leadId": zod.number(),
+  "changedBy": zod.number().nullish(),
+  "changedByName": zod.string().nullish(),
+  "fieldName": zod.string(),
+  "oldValue": zod.string().nullish(),
+  "newValue": zod.string().nullish(),
+  "changedAt": zod.coerce.date()
+})).optional()
+})),
+  "total": zod.number()
 })
 
 

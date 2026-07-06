@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { companiesTable } from "./companies";
 import { eventsTable } from "./events";
 import { usersTable } from "./users";
+import { organizationsTable } from "./organizations";
 
 export const contactsTable = pgTable("contacts", {
   id: serial("id").primaryKey(),
@@ -14,6 +15,9 @@ export const contactsTable = pgTable("contacts", {
   arabicName: text("arabic_name"),
   jobTitle: text("job_title"),
   contactCompany: text("contact_company"),
+  // First-class CRM Organization link (Stage 5A). Additive + nullable; the
+  // free-text contactCompany above is retained for backward compatibility.
+  organizationId: integer("organization_id").references(() => organizationsTable.id, { onDelete: "set null" }),
   email: text("email"),
   mobile: text("mobile"),
   officePhone: text("office_phone"),
@@ -51,6 +55,7 @@ export const contactsTable = pgTable("contacts", {
 }, (t) => [
   index("contacts_company_id_idx").on(t.companyId),
   index("contacts_company_duplicate_idx").on(t.companyId, t.duplicateOfId),
+  index("contacts_organization_id_idx").on(t.organizationId),
   index("contacts_event_id_idx").on(t.eventId),
   index("contacts_assigned_to_id_idx").on(t.assignedToId),
   index("contacts_status_idx").on(t.status),

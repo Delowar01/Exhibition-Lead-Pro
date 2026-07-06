@@ -37,4 +37,6 @@ export interface LeadInput {
   stageId?: number | null;
   /** @nullable */
   teamId?: number | null;
+  /** @nullable */
+  organizationId?: number | null;
 }

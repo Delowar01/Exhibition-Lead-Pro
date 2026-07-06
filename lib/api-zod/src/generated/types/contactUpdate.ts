@@ -49,4 +49,6 @@ export interface ContactUpdate {
   eventId?: number | null;
   /** @nullable */
   assignedToId?: number | null;
+  /** @nullable */
+  organizationId?: number | null;
 }

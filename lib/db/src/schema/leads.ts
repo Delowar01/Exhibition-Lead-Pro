@@ -7,6 +7,7 @@ import { usersTable } from "./users";
 import { eventsTable } from "./events";
 import { pipelineStagesTable } from "./pipeline_stages";
 import { teamsTable } from "./teams";
+import { organizationsTable } from "./organizations";
 
 export const leadsTable = pgTable("leads", {
   id: serial("id").primaryKey(),
@@ -22,6 +23,9 @@ export const leadsTable = pgTable("leads", {
   priority: text("priority"),
   notes: text("notes"),
   companyName: text("company_name"),
+  // First-class CRM Organization link (Stage 5A). Additive + nullable; the
+  // free-text companyName above is retained for backward compatibility.
+  organizationId: integer("organization_id").references(() => organizationsTable.id, { onDelete: "set null" }),
   assignedToId: integer("assigned_to_id").references(() => usersTable.id, { onDelete: "set null" }), // lead OWNER
   eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }),
   // Configurable pipeline stage (additive; legacy text `stage` above is kept in sync for backward compat).
@@ -40,6 +44,7 @@ export const leadsTable = pgTable("leads", {
   index("leads_company_stage_idx").on(t.companyId, t.stage),
   index("leads_stage_id_idx").on(t.stageId),
   index("leads_team_id_idx").on(t.teamId),
+  index("leads_organization_id_idx").on(t.organizationId),
 ]);
 
 export const leadHistoryTable = pgTable("lead_history", {

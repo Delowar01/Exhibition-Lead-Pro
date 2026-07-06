@@ -1,4 +1,4 @@
-import { eventsTable, usersTable, contactsTable, departmentsTable, teamsTable, pipelineStagesTable, tagsTable, leadsTable } from "@workspace/db";
+import { eventsTable, usersTable, contactsTable, departmentsTable, teamsTable, pipelineStagesTable, tagsTable, leadsTable, organizationsTable } from "@workspace/db";
 import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
 import { findCompanyIdById } from "../repositories/base.js";
 
@@ -13,6 +13,7 @@ const REF_TABLES = {
   pipelineStages: { table: pipelineStagesTable, idColumn: pipelineStagesTable.id, companyColumn: pipelineStagesTable.companyId, deletedAtColumn: pipelineStagesTable.deletedAt },
   tags: { table: tagsTable, idColumn: tagsTable.id, companyColumn: tagsTable.companyId, deletedAtColumn: tagsTable.deletedAt },
   leads: { table: leadsTable, idColumn: leadsTable.id, companyColumn: leadsTable.companyId, deletedAtColumn: leadsTable.deletedAt },
+  organizations: { table: organizationsTable, idColumn: organizationsTable.id, companyColumn: organizationsTable.companyId, deletedAtColumn: organizationsTable.deletedAt },
 } as const;
 
 // Validates that a referenced foreign-key row (event, user, contact) exists AND

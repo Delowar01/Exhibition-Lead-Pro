@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useCreateContact, ContactStatus } from "@workspace/api-client-react";
+import { useCreateContact, useListCrmOrganizations, ContactStatus } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChevronLeft } from "lucide-react";
@@ -20,9 +20,12 @@ const contactSchema = z.object({
   mobile: z.string().optional(),
   jobTitle: z.string().optional(),
   contactCompany: z.string().optional(),
+  organizationId: z.string().optional(),
   status: z.nativeEnum(ContactStatus),
   notes: z.string().optional(),
 });
+
+const NONE = "__none__";
 
 type ContactForm = z.infer<typeof contactSchema>;
 
@@ -30,6 +33,8 @@ export default function AdminContactNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createContact = useCreateContact();
+  const { data: orgData } = useListCrmOrganizations({ status: "active", limit: 200 });
+  const organizations = orgData?.organizations ?? [];
 
   const form = useForm<ContactForm>({
     resolver: zodResolver(contactSchema),
@@ -40,13 +45,19 @@ export default function AdminContactNew() {
       mobile: "",
       jobTitle: "",
       contactCompany: "",
+      organizationId: NONE,
       status: ContactStatus.new,
       notes: "",
     },
   });
 
   const onSubmit = (data: ContactForm) => {
-    createContact.mutate({ data }, {
+    const { organizationId, ...rest } = data;
+    const payload = {
+      ...rest,
+      organizationId: organizationId && organizationId !== NONE ? Number(organizationId) : null,
+    };
+    createContact.mutate({ data: payload }, {
       onSuccess: (res) => {
         toast({ title: "Contact created successfully" });
         setLocation(`/admin/contacts/${res.id}`);
@@ -101,9 +112,27 @@ export default function AdminContactNew() {
                 <Input id="jobTitle" {...form.register("jobTitle")} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contactCompany">Company</Label>
+                <Label htmlFor="contactCompany">Company (label)</Label>
                 <Input id="contactCompany" {...form.register("contactCompany")} />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Company (CRM record)</Label>
+              <Select
+                onValueChange={(val) => form.setValue("organizationId", val)}
+                defaultValue={form.getValues("organizationId")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Link to a company" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>None</SelectItem>
+                  {organizations.map((o) => (
+                    <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">

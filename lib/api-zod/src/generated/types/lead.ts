@@ -41,6 +41,10 @@ export interface Lead {
   /** @nullable */
   companyName?: string | null;
   /** @nullable */
+  organizationId?: number | null;
+  /** @nullable */
+  organizationName?: string | null;
+  /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
   assignedToName?: string | null;

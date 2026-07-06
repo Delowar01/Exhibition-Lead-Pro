@@ -46,6 +46,8 @@ tags:
     description: Self-service user profile and activity
   - name: departments
     description: Department management (org hierarchy)
+  - name: organizations
+    description: CRM organizations (customer companies/accounts)
   - name: teams
     description: Team management (org hierarchy)
   - name: documents
@@ -2768,6 +2770,191 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Department"
+
+  # ORGANIZATIONS (Stage 5A — Company Entity Foundation): CRM companies/accounts
+  /organizations:
+    get:
+      operationId: listCrmOrganizations
+      tags: [organizations]
+      summary: List organizations (CRM companies)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrmOrganizationList"
+    post:
+      operationId: createCrmOrganization
+      tags: [organizations]
+      summary: Create organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CrmOrganizationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrmOrganization"
+
+  /organizations/{id}:
+    get:
+      operationId: getCrmOrganization
+      tags: [organizations]
+      summary: Get organization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrmOrganization"
+    patch:
+      operationId: updateCrmOrganization
+      tags: [organizations]
+      summary: Update organization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CrmOrganizationUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrmOrganization"
+    delete:
+      operationId: deleteCrmOrganization
+      tags: [organizations]
+      summary: Delete organization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /organizations/{id}/archive:
+    post:
+      operationId: archiveCrmOrganization
+      tags: [organizations]
+      summary: Archive organization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrmOrganization"
+
+  /organizations/{id}/restore:
+    post:
+      operationId: restoreCrmOrganization
+      tags: [organizations]
+      summary: Restore archived organization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrmOrganization"
+
+  /organizations/{id}/contacts:
+    get:
+      operationId: listCrmOrganizationContacts
+      tags: [organizations]
+      summary: List contacts linked to an organization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactList"
+
+  /organizations/{id}/leads:
+    get:
+      operationId: listCrmOrganizationLeads
+      tags: [organizations]
+      summary: List leads linked to an organization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadList"
 
   # TEAMS (Stage 3 Phase 1)
   /teams:
@@ -6233,6 +6420,113 @@ components:
           items:
             type: integer
 
+    # ---- ORGANIZATIONS (Stage 5A — Company Entity Foundation) ----
+    CrmOrganization:
+      type: object
+      required: [id, companyId, name, status, contactCount, leadCount, createdAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        industry:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        size:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+        contactCount:
+          type: integer
+        leadCount:
+          type: integer
+        openLeadValue:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+
+    CrmOrganizationList:
+      type: object
+      required: [organizations, total, page, limit]
+      properties:
+        organizations:
+          type: array
+          items:
+            $ref: "#/components/schemas/CrmOrganization"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    CrmOrganizationInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        industry:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        size:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+          default: active
+
+    CrmOrganizationUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        industry:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        size:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [active, archived]
+
     OrgHierarchyNode:
       type: object
       required: [id, name, reports]
@@ -6975,6 +7269,10 @@ components:
           type: ["integer", "null"]
         assignedToName:
           type: ["string", "null"]
+        organizationId:
+          type: ["integer", "null"]
+        organizationName:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time
@@ -7047,6 +7345,8 @@ components:
           type: ["integer", "null"]
         assignedToId:
           type: ["integer", "null"]
+        organizationId:
+          type: ["integer", "null"]
         cardImageUrl:
           type: ["string", "null"]
 
@@ -7096,6 +7396,8 @@ components:
         eventId:
           type: ["integer", "null"]
         assignedToId:
+          type: ["integer", "null"]
+        organizationId:
           type: ["integer", "null"]
 
     ContactStats:
@@ -7220,6 +7522,10 @@ components:
           type: ["string", "null"]
         companyName:
           type: ["string", "null"]
+        organizationId:
+          type: ["integer", "null"]
+        organizationName:
+          type: ["string", "null"]
         assignedToId:
           type: ["integer", "null"]
         assignedToName:
@@ -7296,6 +7602,8 @@ components:
           type: ["integer", "null"]
         teamId:
           type: ["integer", "null"]
+        organizationId:
+          type: ["integer", "null"]
 
     LeadUpdate:
       type: object
@@ -7328,6 +7636,8 @@ components:
         stageId:
           type: ["integer", "null"]
         teamId:
+          type: ["integer", "null"]
+        organizationId:
           type: ["integer", "null"]
 
     LeadHistory:

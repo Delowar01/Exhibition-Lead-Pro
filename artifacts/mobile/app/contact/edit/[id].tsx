@@ -33,6 +33,7 @@ function toFormValues(c: Contact): ContactFormValues {
     country: c.country ?? "",
     address: c.address ?? "",
     notes: c.notes ?? "",
+    organizationId: c.organizationId ?? null,
   };
 }
 

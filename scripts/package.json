@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "seed-demo": "tsx ./src/seed-demo.ts",
+    "backfill-organizations": "tsx ./src/backfill-organizations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

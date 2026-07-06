@@ -31,6 +31,8 @@ import AdminEventDetail from "@/pages/admin/EventDetail";
 import AdminTeam from "@/pages/admin/Team";
 import AdminDepartments from "@/pages/admin/Departments";
 import AdminTeams from "@/pages/admin/Teams";
+import AdminCompanies from "@/pages/admin/Companies";
+import AdminCompanyDetail from "@/pages/admin/CompanyDetail";
 import AdminDirectory from "@/pages/admin/Directory";
 import AdminOrgHierarchy from "@/pages/admin/OrgHierarchy";
 import AdminRoles from "@/pages/admin/Roles";
@@ -218,6 +220,12 @@ function Router() {
       </Route>
       <Route path="/admin/team">
         {() => <ProtectedRoute component={AdminTeam} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/companies">
+        {() => <ProtectedRoute component={AdminCompanies} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/companies/:id">
+        {() => <ProtectedRoute component={AdminCompanyDetail} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/departments">
         {() => <ProtectedRoute component={AdminDepartments} role="admin" layout={AdminLayout} />}

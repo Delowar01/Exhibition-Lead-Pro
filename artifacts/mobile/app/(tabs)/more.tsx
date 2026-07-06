@@ -174,6 +174,14 @@ export default function MoreScreen() {
       onPress: () => router.push("/(tabs)/contacts"),
     },
     {
+      key: "companies",
+      label: t("nav.companies"),
+      sub: t("companies.subtitle"),
+      icon: "briefcase",
+      color: "#6366F1",
+      onPress: () => router.push("/companies"),
+    },
+    {
       key: "duplicates",
       label: t("nav.duplicates"),
       sub: t("duplicates.subtitle"),

@@ -80,5 +80,9 @@ export interface Contact {
   assignedToId?: number | null;
   /** @nullable */
   assignedToName?: string | null;
+  /** @nullable */
+  organizationId?: number | null;
+  /** @nullable */
+  organizationName?: string | null;
   createdAt: Date;
 }

@@ -4,6 +4,7 @@ export * from "./departments";
 export * from "./teams";
 export * from "./device_tokens";
 export * from "./events";
+export * from "./organizations";
 export * from "./contacts";
 export * from "./pipeline_stages";
 export * from "./leads";

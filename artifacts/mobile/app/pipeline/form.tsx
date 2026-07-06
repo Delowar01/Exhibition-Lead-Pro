@@ -20,6 +20,7 @@ import {
   getGetContactQueryKey,
   getGetLeadQueryKey,
   getListContactsQueryKey,
+  getListCrmOrganizationsQueryKey,
   getListEventsQueryKey,
   getListUsersQueryKey,
   LeadInputStage,
@@ -28,6 +29,7 @@ import {
   useGetContact,
   useGetLead,
   useListContacts,
+  useListCrmOrganizations,
   useListEvents,
   useListUsers,
   useUpdateLead,
@@ -147,12 +149,14 @@ export default function PipelineFormScreen() {
   const [contactId, setContactId] = useState<number | null>(prefillContactId);
   const [assignedToId, setAssignedToId] = useState<number | null>(null);
   const [eventId, setEventId] = useState<number | null>(null);
+  const [organizationId, setOrganizationId] = useState<number | null>(null);
 
-  const [picker, setPicker] = useState<"contact" | "user" | "event" | "stage" | "currency" | null>(null);
+  const [picker, setPicker] = useState<"contact" | "user" | "event" | "stage" | "currency" | "organization" | null>(null);
 
   const contactsQuery = useListContacts({ limit: 200 }, { query: { enabled: picker === "contact", queryKey: getListContactsQueryKey({ limit: 200 }) } });
   const usersQuery = useListUsers({ limit: 100 }, { query: { enabled: picker === "user", queryKey: getListUsersQueryKey({ limit: 100 }) } });
   const eventsQuery = useListEvents(undefined, { query: { enabled: picker === "event", queryKey: getListEventsQueryKey(undefined) } });
+  const orgsQuery = useListCrmOrganizations({ limit: 200 }, { query: { enabled: picker === "organization", queryKey: getListCrmOrganizationsQueryKey({ limit: 200 }) } });
 
   const lead = existingLead.data;
   useEffect(() => {
@@ -169,6 +173,7 @@ export default function PipelineFormScreen() {
     setContactId(lead.contactId ?? null);
     setAssignedToId(lead.assignedToId ?? null);
     setEventId(lead.eventId ?? null);
+    setOrganizationId((lead as { organizationId?: number | null }).organizationId ?? null);
   }, [lead]);
 
   // Auto-fill fields from the pre-selected contact when creating from contact detail.
@@ -185,6 +190,8 @@ export default function PipelineFormScreen() {
       setEventId(e => (e != null ? e : (prefillContactData.eventId ?? null)));
     if (prefillContactData.assignedToId != null)
       setAssignedToId(a => (a != null ? a : (prefillContactData.assignedToId ?? null)));
+    const orgId = (prefillContactData as { organizationId?: number | null }).organizationId;
+    if (orgId != null) setOrganizationId(o => (o != null ? o : orgId));
   }, [prefillContactData, isEdit]);
 
   const contactItems = (contactsQuery.data?.contacts ?? []).map(c => ({
@@ -194,12 +201,14 @@ export default function PipelineFormScreen() {
   }));
   const userItems = (usersQuery.data?.users ?? []).map(u => ({ id: u.id, label: u.name ?? "Unknown" }));
   const eventItems = (eventsQuery.data?.events ?? []).map(e => ({ id: e.id, label: e.name }));
+  const orgItems = (orgsQuery.data?.organizations ?? []).map(o => ({ id: o.id, label: o.name, sub: o.industry ?? undefined }));
   const stageItems = LEAD_STAGE_ORDER.map(s => ({ id: s, label: t(`leads.stages.${s}`, { defaultValue: prettyLabel(s) }) }));
   const currencyItems = CURRENCIES.map(c => ({ id: c, label: c }));
 
   const selectedContact = contactItems.find(c => c.id === contactId);
   const selectedUser = userItems.find(u => u.id === assignedToId);
   const selectedEvent = eventItems.find(e => e.id === eventId);
+  const selectedOrg = orgItems.find(o => o.id === organizationId);
 
   async function handleSave() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -215,6 +224,7 @@ export default function PipelineFormScreen() {
       contactId: contactId ?? null,
       assignedToId: assignedToId ?? null,
       eventId: eventId ?? null,
+      organizationId: organizationId ?? null,
     };
     try {
       if (isEdit) {
@@ -453,6 +463,21 @@ export default function PipelineFormScreen() {
             </Pressable>
           </View>
 
+          {/* Company (CRM organization) */}
+          <View>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t("companies.linkLabel").toUpperCase()}</Text>
+            <Pressable
+              onPress={() => { if (!orgsQuery.isFetched) orgsQuery.refetch(); setPicker("organization"); }}
+              style={[styles.pickerBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <Feather name="briefcase" size={16} color={colors.mutedForeground} />
+              <Text style={[styles.pickerBtnText, { color: selectedOrg ? colors.foreground : colors.mutedForeground, flex: 1 }]}>
+                {selectedOrg?.label ?? t("companies.none")}
+              </Text>
+              <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+
           {/* Notes */}
           <View>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>{t("pipeline.notes").toUpperCase()}</Text>
@@ -527,6 +552,15 @@ export default function PipelineFormScreen() {
         onSelect={v => setEventId(v != null ? Number(v) : null)}
         onClose={() => setPicker(null)}
         searchPlaceholder={t("pipeline.searchEvent")}
+      />
+      {/* Company picker */}
+      <PickerModal
+        visible={picker === "organization"}
+        title={t("companies.select")}
+        items={orgItems}
+        onSelect={v => setOrganizationId(v != null ? Number(v) : null)}
+        onClose={() => setPicker(null)}
+        searchPlaceholder={t("companies.searchPlaceholder")}
       />
     </View>
   );

@@ -1,6 +1,7 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
-import { refAccessible } from "../lib/tenant.js";
+import { refAccessible, refInCompany } from "../lib/tenant.js";
+import * as orgRepo from "../repositories/organizations.repository.js";
 import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/ai.js";
 import { notifyUser } from "../lib/push.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
@@ -14,7 +15,7 @@ function parseTags(tags: string | null): string[] {
   try { return JSON.parse(tags); } catch { return []; }
 }
 
-function formatContact(c: ContactRow, eventName?: string | null, assignedToName?: string | null) {
+function formatContact(c: ContactRow, eventName?: string | null, assignedToName?: string | null, organizationName?: string | null) {
   return {
     ...c,
     fullName: c.fullName ?? ([c.firstName, c.lastName].filter(Boolean).join(" ") || null),
@@ -22,13 +23,15 @@ function formatContact(c: ContactRow, eventName?: string | null, assignedToName?
     talkingPoints: parseTags(c.talkingPoints),
     eventName: eventName ?? null,
     assignedToName: assignedToName ?? null,
+    organizationName: organizationName ?? null,
   };
 }
 
 async function namesFor(c: ContactRow) {
   const event = c.eventId ? await contactsRepo.eventName(c.eventId) : null;
   const assignee = c.assignedToId ? await contactsRepo.assigneeName(c.assignedToId) : null;
-  return { eventName: event?.name, assignedToName: assignee?.name };
+  const organizationName = c.organizationId ? await orgRepo.nameById(c.organizationId) : null;
+  return { eventName: event?.name, assignedToName: assignee?.name, organizationName };
 }
 
 export interface ListContactsParams {
@@ -71,9 +74,11 @@ export async function listContacts(user: AuthUser, params: ListContactsParams) {
   // two per row. Same output shape as the per-row namesFor() path.
   const eventIds = [...new Set(rows.map((c) => c.eventId).filter((v): v is number => v != null))];
   const userIds = [...new Set(rows.map((c) => c.assignedToId).filter((v): v is number => v != null))];
-  const [events, users] = await Promise.all([
+  const orgIds = [...new Set(rows.map((c) => c.organizationId).filter((v): v is number => v != null))];
+  const [events, users, orgNameById] = await Promise.all([
     contactsRepo.eventNamesByIds(eventIds),
     contactsRepo.usersByIds(userIds),
+    orgRepo.namesByIds(orgIds),
   ]);
   const eventNameById = new Map(events.map((e) => [e.id, e.name]));
   const userNameById = new Map(users.map((u) => [u.id, u.name]));
@@ -83,6 +88,7 @@ export async function listContacts(user: AuthUser, params: ListContactsParams) {
       c,
       c.eventId != null ? eventNameById.get(c.eventId) : null,
       c.assignedToId != null ? userNameById.get(c.assignedToId) : null,
+      c.organizationId != null ? orgNameById.get(c.organizationId) : null,
     ),
   );
 
@@ -95,7 +101,8 @@ export async function listContacts(user: AuthUser, params: ListContactsParams) {
 export async function enrichContactRows(rows: ContactRow[]): Promise<ReturnType<typeof formatContact>[]> {
   const eventIds = [...new Set(rows.map((c) => c.eventId).filter((v): v is number => v != null))];
   const userIds = [...new Set(rows.map((c) => c.assignedToId).filter((v): v is number => v != null))];
-  const [events, users] = await Promise.all([contactsRepo.eventNamesByIds(eventIds), contactsRepo.usersByIds(userIds)]);
+  const orgIds = [...new Set(rows.map((c) => c.organizationId).filter((v): v is number => v != null))];
+  const [events, users, orgNameById] = await Promise.all([contactsRepo.eventNamesByIds(eventIds), contactsRepo.usersByIds(userIds), orgRepo.namesByIds(orgIds)]);
   const eventNameById = new Map(events.map((e) => [e.id, e.name]));
   const userNameById = new Map(users.map((u) => [u.id, u.name]));
   return rows.map((c) =>
@@ -103,6 +110,7 @@ export async function enrichContactRows(rows: ContactRow[]): Promise<ReturnType<
       c,
       c.eventId != null ? eventNameById.get(c.eventId) : null,
       c.assignedToId != null ? userNameById.get(c.assignedToId) : null,
+      c.organizationId != null ? orgNameById.get(c.organizationId) : null,
     ),
   );
 }
@@ -130,6 +138,7 @@ export interface CreateContactInput {
   followUpTime?: string | null;
   eventId?: number | null;
   assignedToId?: number | null;
+  organizationId?: number | null;
   cardImageUrl?: string | null;
   source?: string | null;
 }
@@ -137,9 +146,13 @@ export interface CreateContactInput {
 export async function createContact(user: AuthUser, input: CreateContactInput) {
   const companyId = user.companyId ?? null;
   if (!companyId) throw new AppError(400, "No company context");
-  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, cardImageUrl, source } = input;
+  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, cardImageUrl, source } = input;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
+  // organizationId is bound to the CONTACT's own tenant — use refInCompany
+  // (target-company-scoped), NOT refAccessible (caller-scoped), so a multi-company
+  // caller cannot point this contact at another tenant's organization.
+  if (organizationId != null && !(await refInCompany("organizations", companyId, organizationId))) throw new AppError(400, "Invalid organizationId");
   const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
   const { arabicName } = input;
 
@@ -148,7 +161,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   // are filled in asynchronously; the mobile client refetches and shows them
   // within a second or two. Blocking the response on the Gemini call was the
   // single biggest avoidable latency in the save path.
-  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null });
+  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, organizationId: organizationId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null });
   // Record the initial lead status in the append-only history.
   void contactsRepo.insertStatusHistory({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: user.id }).catch(() => {});
 
@@ -609,8 +622,8 @@ export async function mergeContacts(
     }),
   );
 
-  const { eventName, assignedToName } = await namesFor(merged);
-  return formatContact(merged, eventName, assignedToName);
+  const { eventName, assignedToName, organizationName } = await namesFor(merged);
+  return formatContact(merged, eventName, assignedToName, organizationName);
 }
 
 // Undo a previously-recorded contact merge: re-create the merged-away duplicates,
@@ -732,8 +745,8 @@ export async function setContactCustomFields(user: AuthUser, id: number, body: {
 export async function getContact(user: AuthUser, id: number) {
   const c = await contactsRepo.findById(user, id);
   if (!c) throw new AppError(404, "Contact not found");
-  const { eventName, assignedToName } = await namesFor(c);
-  return formatContact(c, eventName, assignedToName);
+  const { eventName, assignedToName, organizationName } = await namesFor(c);
+  return formatContact(c, eventName, assignedToName, organizationName);
 }
 
 export interface UpdateContactInput {
@@ -756,17 +769,20 @@ export interface UpdateContactInput {
   followUpTime?: string | null;
   eventId?: number | null;
   assignedToId?: number | null;
+  organizationId?: number | null;
   source?: string | null;
 }
 
 export async function updateContact(user: AuthUser, id: number, body: UpdateContactInput) {
   const existing = await contactsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Contact not found");
-  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId, source } = body;
+  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId, organizationId, source } = body;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
+  // Bind to the contact's OWN tenant (existing.companyId), not the caller's scope.
+  if (organizationId != null && !(await refInCompany("organizations", existing.companyId, organizationId))) throw new AppError(400, "Invalid organizationId");
   const fullName = firstName !== undefined || lastName !== undefined ? [firstName, lastName].filter(Boolean).join(" ") || null : undefined;
-  const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId, source };
+  const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, source };
   if (fullName !== undefined) updateData.fullName = fullName;
   if (tags !== undefined) updateData.tags = JSON.stringify(tags);
   // Remove undefined
@@ -779,8 +795,8 @@ export async function updateContact(user: AuthUser, id: number, body: UpdateCont
   if (statusChanged) {
     void contactsRepo.insertStatusHistory({ companyId: existing.companyId, contactId: id, fromStatus: existing.status, toStatus: status, comment: statusComment ?? null, changedById: user.id }).catch(() => {});
   }
-  const { eventName, assignedToName } = await namesFor(c);
-  return formatContact(c, eventName, assignedToName);
+  const { eventName, assignedToName, organizationName } = await namesFor(c);
+  return formatContact(c, eventName, assignedToName, organizationName);
 }
 
 export async function deleteContact(user: AuthUser, id: number) {
@@ -820,8 +836,8 @@ export async function enrichContact(user: AuthUser, id: number) {
   });
   if (!updated) throw new AppError(404, "Contact not found");
 
-  const { eventName, assignedToName } = await namesFor(updated);
-  return formatContact(updated, eventName, assignedToName);
+  const { eventName, assignedToName, organizationName } = await namesFor(updated);
+  return formatContact(updated, eventName, assignedToName, organizationName);
 }
 
 export async function statusHistory(user: AuthUser, id: number) {

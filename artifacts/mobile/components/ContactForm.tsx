@@ -1,6 +1,11 @@
 import { Feather } from "@/components/icons";
 import React, { useState } from "react";
-import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+
+import {
+  getListCrmOrganizationsQueryKey,
+  useListCrmOrganizations,
+} from "@workspace/api-client-react";
 
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
@@ -19,6 +24,7 @@ export interface ContactFormValues {
   country: string;
   address: string;
   notes: string;
+  organizationId: number | null;
 }
 
 export const EMPTY_CONTACT: ContactFormValues = {
@@ -34,6 +40,7 @@ export const EMPTY_CONTACT: ContactFormValues = {
   country: "",
   address: "",
   notes: "",
+  organizationId: null,
 };
 
 /** Strips empty strings to null for the API payload. */
@@ -57,11 +64,16 @@ export function toContactPayload(values: ContactFormValues) {
     country: clean(values.country),
     address: clean(values.address),
     notes: clean(values.notes),
+    organizationId: values.organizationId ?? null,
   };
 }
 
+type StringKey = {
+  [K in keyof ContactFormValues]: ContactFormValues[K] extends string ? K : never;
+}[keyof ContactFormValues];
+
 interface FieldConfig {
-  key: keyof ContactFormValues;
+  key: StringKey;
   labelKey: string;
   icon: keyof typeof Feather.glyphMap;
   /** Static placeholder key under contacts.placeholders, when not country-aware. */
@@ -111,6 +123,18 @@ export function ContactForm({
     countryName,
   } = useLocale();
   const [values, setValues] = useState<ContactFormValues>(initial);
+  const [orgPickerOpen, setOrgPickerOpen] = useState(false);
+  const [orgSearch, setOrgSearch] = useState("");
+
+  const orgsQuery = useListCrmOrganizations(
+    { limit: 200 },
+    { query: { enabled: orgPickerOpen, queryKey: getListCrmOrganizationsQueryKey({ limit: 200 }) } },
+  );
+  const orgs = orgsQuery.data?.organizations ?? [];
+  const filteredOrgs = orgSearch.trim()
+    ? orgs.filter((o) => o.name.toLowerCase().includes(orgSearch.trim().toLowerCase()))
+    : orgs;
+  const selectedOrg = orgs.find((o) => o.id === values.organizationId);
 
   function update(key: keyof ContactFormValues, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -179,6 +203,46 @@ export function ContactForm({
   return (
     <View>
       <View style={styles.grid}>{FIELDS.map(renderField)}</View>
+
+      <View style={styles.fieldWrap}>
+        <Text numberOfLines={1} style={[styles.label, { color: colors.mutedForeground, textAlign }]}>
+          {t("companies.linkLabel")}
+        </Text>
+        <Pressable
+          onPress={() => setOrgPickerOpen(true)}
+          style={[
+            styles.inputWrap,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderRadius: colors.radius + 2,
+              flexDirection: isRTL ? "row-reverse" : "row",
+            },
+          ]}
+        >
+          <Feather name="briefcase" size={16} color={colors.mutedForeground} />
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.input,
+              { color: selectedOrg ? colors.foreground : colors.mutedForeground, textAlign },
+            ]}
+          >
+            {selectedOrg?.name ?? t("companies.none")}
+          </Text>
+          {values.organizationId != null ? (
+            <Pressable
+              onPress={() => setValues((prev) => ({ ...prev, organizationId: null }))}
+              hitSlop={10}
+            >
+              <Feather name="x" size={16} color={colors.mutedForeground} />
+            </Pressable>
+          ) : (
+            <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
+          )}
+        </Pressable>
+      </View>
+
       <PrimaryButton
         label={submitLabel}
         icon="check"
@@ -186,6 +250,87 @@ export function ContactForm({
         onPress={() => onSubmit(values)}
         style={{ marginTop: 20 }}
       />
+
+      <Modal
+        visible={orgPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOrgPickerOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setOrgPickerOpen(false)}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.modalTitle, { color: colors.foreground, textAlign }]}>
+              {t("companies.select")}
+            </Text>
+            <TextInput
+              value={orgSearch}
+              onChangeText={setOrgSearch}
+              placeholder={t("companies.searchPlaceholder")}
+              placeholderTextColor={colors.mutedForeground}
+              autoCorrect={false}
+              style={[
+                styles.modalSearch,
+                { color: colors.foreground, borderColor: colors.border, textAlign },
+              ]}
+            />
+            <ScrollView
+              style={{ maxHeight: 320 }}
+              contentContainerStyle={{ flexGrow: 1 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Pressable
+                style={[styles.modalRow, { borderBottomColor: colors.border }]}
+                onPress={() => {
+                  setValues((prev) => ({ ...prev, organizationId: null }));
+                  setOrgPickerOpen(false);
+                }}
+              >
+                <Text style={[styles.modalRowText, { color: colors.mutedForeground, textAlign }]}>
+                  {t("companies.none")}
+                </Text>
+              </Pressable>
+              {orgsQuery.isLoading ? (
+                <Text style={[styles.modalEmpty, { color: colors.mutedForeground }]}>
+                  {t("common.loading")}
+                </Text>
+              ) : filteredOrgs.length === 0 ? (
+                <Text style={[styles.modalEmpty, { color: colors.mutedForeground }]}>
+                  {t("companies.empty")}
+                </Text>
+              ) : (
+                filteredOrgs.map((o) => (
+                  <Pressable
+                    key={o.id}
+                    style={[styles.modalRow, { borderBottomColor: colors.border }]}
+                    onPress={() => {
+                      setValues((prev) => ({ ...prev, organizationId: o.id }));
+                      setOrgPickerOpen(false);
+                    }}
+                  >
+                    <Feather name="briefcase" size={15} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.modalRowText, { color: colors.foreground, textAlign }]}>
+                        {o.name}
+                      </Text>
+                      {o.industry ? (
+                        <Text numberOfLines={1} style={[styles.modalRowSub, { color: colors.mutedForeground, textAlign }]}>
+                          {o.industry}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {values.organizationId === o.id ? (
+                      <Feather name="check" size={16} color={colors.primary} />
+                    ) : null}
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -226,5 +371,52 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FONT.regular,
     padding: 0,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontFamily: FONT.semibold,
+    marginBottom: 12,
+  },
+  modalSearch: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+    fontSize: 15,
+    fontFamily: FONT.regular,
+    marginBottom: 8,
+  },
+  modalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalRowText: {
+    fontSize: 15,
+    fontFamily: FONT.medium,
+  },
+  modalRowSub: {
+    fontSize: 12.5,
+    fontFamily: FONT.regular,
+    marginTop: 2,
+  },
+  modalEmpty: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    paddingVertical: 20,
+    textAlign: "center",
   },
 });

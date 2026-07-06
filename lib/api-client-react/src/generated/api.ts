@@ -56,6 +56,10 @@ import type {
   ContactStatusHistoryList,
   ContactUpdate,
   CreateInvitationInput,
+  CrmOrganization,
+  CrmOrganizationInput,
+  CrmOrganizationList,
+  CrmOrganizationUpdate,
   CustomFieldDefinition,
   CustomFieldDefinitionInput,
   CustomFieldDefinitionList,
@@ -141,6 +145,7 @@ import type {
   ListAuditLogsParams,
   ListCompaniesParams,
   ListContactsParams,
+  ListCrmOrganizationsParams,
   ListCustomFieldDefinitionsParams,
   ListDepartmentsParams,
   ListDocumentsParams,
@@ -9491,6 +9496,674 @@ export const useRestoreDepartment = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getRestoreDepartmentMutationOptions(options));
     }
+
+export const getListCrmOrganizationsUrl = (params?: ListCrmOrganizationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/organizations?${stringifiedParams}` : `/api/organizations`
+}
+
+/**
+ * @summary List organizations (CRM companies)
+ */
+export const listCrmOrganizations = async (params?: ListCrmOrganizationsParams, options?: RequestInit): Promise<CrmOrganizationList> => {
+
+  return customFetch<CrmOrganizationList>(getListCrmOrganizationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCrmOrganizationsQueryKey = (params?: ListCrmOrganizationsParams,) => {
+    return [
+    `/api/organizations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCrmOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listCrmOrganizations>>, TError = ErrorType<unknown>>(params?: ListCrmOrganizationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrmOrganizationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrmOrganizations>>> = ({ signal }) => listCrmOrganizations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCrmOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof listCrmOrganizations>>>
+export type ListCrmOrganizationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List organizations (CRM companies)
+ */
+
+export function useListCrmOrganizations<TData = Awaited<ReturnType<typeof listCrmOrganizations>>, TError = ErrorType<unknown>>(
+ params?: ListCrmOrganizationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCrmOrganizationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateCrmOrganizationUrl = () => {
+
+
+
+
+  return `/api/organizations`
+}
+
+/**
+ * @summary Create organization
+ */
+export const createCrmOrganization = async (crmOrganizationInput: CrmOrganizationInput, options?: RequestInit): Promise<CrmOrganization> => {
+
+  return customFetch<CrmOrganization>(getCreateCrmOrganizationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      crmOrganizationInput,)
+  }
+);}
+
+
+
+
+export const getCreateCrmOrganizationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCrmOrganization>>, TError,{data: BodyType<CrmOrganizationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCrmOrganization>>, TError,{data: BodyType<CrmOrganizationInput>}, TContext> => {
+
+const mutationKey = ['createCrmOrganization'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCrmOrganization>>, {data: BodyType<CrmOrganizationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCrmOrganization(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCrmOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof createCrmOrganization>>>
+    export type CreateCrmOrganizationMutationBody = BodyType<CrmOrganizationInput>
+    export type CreateCrmOrganizationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create organization
+ */
+export const useCreateCrmOrganization = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCrmOrganization>>, TError,{data: BodyType<CrmOrganizationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCrmOrganization>>,
+        TError,
+        {data: BodyType<CrmOrganizationInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCrmOrganizationMutationOptions(options));
+    }
+
+export const getGetCrmOrganizationUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}`
+}
+
+/**
+ * @summary Get organization
+ */
+export const getCrmOrganization = async (id: number, options?: RequestInit): Promise<CrmOrganization> => {
+
+  return customFetch<CrmOrganization>(getGetCrmOrganizationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCrmOrganizationQueryKey = (id: number,) => {
+    return [
+    `/api/organizations/${id}`
+    ] as const;
+    }
+
+
+export const getGetCrmOrganizationQueryOptions = <TData = Awaited<ReturnType<typeof getCrmOrganization>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCrmOrganization>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCrmOrganizationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCrmOrganization>>> = ({ signal }) => getCrmOrganization(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCrmOrganization>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCrmOrganizationQueryResult = NonNullable<Awaited<ReturnType<typeof getCrmOrganization>>>
+export type GetCrmOrganizationQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get organization
+ */
+
+export function useGetCrmOrganization<TData = Awaited<ReturnType<typeof getCrmOrganization>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCrmOrganization>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCrmOrganizationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateCrmOrganizationUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}`
+}
+
+/**
+ * @summary Update organization
+ */
+export const updateCrmOrganization = async (id: number,
+    crmOrganizationUpdate: CrmOrganizationUpdate, options?: RequestInit): Promise<CrmOrganization> => {
+
+  return customFetch<CrmOrganization>(getUpdateCrmOrganizationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      crmOrganizationUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateCrmOrganizationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCrmOrganization>>, TError,{id: number;data: BodyType<CrmOrganizationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCrmOrganization>>, TError,{id: number;data: BodyType<CrmOrganizationUpdate>}, TContext> => {
+
+const mutationKey = ['updateCrmOrganization'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCrmOrganization>>, {id: number;data: BodyType<CrmOrganizationUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCrmOrganization(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCrmOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof updateCrmOrganization>>>
+    export type UpdateCrmOrganizationMutationBody = BodyType<CrmOrganizationUpdate>
+    export type UpdateCrmOrganizationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update organization
+ */
+export const useUpdateCrmOrganization = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCrmOrganization>>, TError,{id: number;data: BodyType<CrmOrganizationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCrmOrganization>>,
+        TError,
+        {id: number;data: BodyType<CrmOrganizationUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCrmOrganizationMutationOptions(options));
+    }
+
+export const getDeleteCrmOrganizationUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}`
+}
+
+/**
+ * @summary Delete organization
+ */
+export const deleteCrmOrganization = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteCrmOrganizationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCrmOrganizationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCrmOrganization>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCrmOrganization>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteCrmOrganization'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCrmOrganization>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteCrmOrganization(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCrmOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCrmOrganization>>>
+
+    export type DeleteCrmOrganizationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete organization
+ */
+export const useDeleteCrmOrganization = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCrmOrganization>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCrmOrganization>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteCrmOrganizationMutationOptions(options));
+    }
+
+export const getArchiveCrmOrganizationUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/archive`
+}
+
+/**
+ * @summary Archive organization
+ */
+export const archiveCrmOrganization = async (id: number, options?: RequestInit): Promise<CrmOrganization> => {
+
+  return customFetch<CrmOrganization>(getArchiveCrmOrganizationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getArchiveCrmOrganizationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveCrmOrganization>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveCrmOrganization>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['archiveCrmOrganization'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveCrmOrganization>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  archiveCrmOrganization(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveCrmOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof archiveCrmOrganization>>>
+
+    export type ArchiveCrmOrganizationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Archive organization
+ */
+export const useArchiveCrmOrganization = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveCrmOrganization>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveCrmOrganization>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getArchiveCrmOrganizationMutationOptions(options));
+    }
+
+export const getRestoreCrmOrganizationUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/restore`
+}
+
+/**
+ * @summary Restore archived organization
+ */
+export const restoreCrmOrganization = async (id: number, options?: RequestInit): Promise<CrmOrganization> => {
+
+  return customFetch<CrmOrganization>(getRestoreCrmOrganizationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRestoreCrmOrganizationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCrmOrganization>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreCrmOrganization>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['restoreCrmOrganization'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreCrmOrganization>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  restoreCrmOrganization(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreCrmOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof restoreCrmOrganization>>>
+
+    export type RestoreCrmOrganizationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Restore archived organization
+ */
+export const useRestoreCrmOrganization = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCrmOrganization>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreCrmOrganization>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRestoreCrmOrganizationMutationOptions(options));
+    }
+
+export const getListCrmOrganizationContactsUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/contacts`
+}
+
+/**
+ * @summary List contacts linked to an organization
+ */
+export const listCrmOrganizationContacts = async (id: number, options?: RequestInit): Promise<ContactList> => {
+
+  return customFetch<ContactList>(getListCrmOrganizationContactsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCrmOrganizationContactsQueryKey = (id: number,) => {
+    return [
+    `/api/organizations/${id}/contacts`
+    ] as const;
+    }
+
+
+export const getListCrmOrganizationContactsQueryOptions = <TData = Awaited<ReturnType<typeof listCrmOrganizationContacts>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationContacts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrmOrganizationContactsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrmOrganizationContacts>>> = ({ signal }) => listCrmOrganizationContacts(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationContacts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCrmOrganizationContactsQueryResult = NonNullable<Awaited<ReturnType<typeof listCrmOrganizationContacts>>>
+export type ListCrmOrganizationContactsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List contacts linked to an organization
+ */
+
+export function useListCrmOrganizationContacts<TData = Awaited<ReturnType<typeof listCrmOrganizationContacts>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationContacts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCrmOrganizationContactsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListCrmOrganizationLeadsUrl = (id: number,) => {
+
+
+
+
+  return `/api/organizations/${id}/leads`
+}
+
+/**
+ * @summary List leads linked to an organization
+ */
+export const listCrmOrganizationLeads = async (id: number, options?: RequestInit): Promise<LeadList> => {
+
+  return customFetch<LeadList>(getListCrmOrganizationLeadsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCrmOrganizationLeadsQueryKey = (id: number,) => {
+    return [
+    `/api/organizations/${id}/leads`
+    ] as const;
+    }
+
+
+export const getListCrmOrganizationLeadsQueryOptions = <TData = Awaited<ReturnType<typeof listCrmOrganizationLeads>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationLeads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCrmOrganizationLeadsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCrmOrganizationLeads>>> = ({ signal }) => listCrmOrganizationLeads(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationLeads>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCrmOrganizationLeadsQueryResult = NonNullable<Awaited<ReturnType<typeof listCrmOrganizationLeads>>>
+export type ListCrmOrganizationLeadsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List leads linked to an organization
+ */
+
+export function useListCrmOrganizationLeads<TData = Awaited<ReturnType<typeof listCrmOrganizationLeads>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCrmOrganizationLeads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCrmOrganizationLeadsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getListTeamsUrl = (params?: ListTeamsParams,) => {
   const normalizedParams = new URLSearchParams();

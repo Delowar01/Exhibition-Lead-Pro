@@ -26,6 +26,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { name: "Contacts", href: "/admin/contacts", icon: Contact },
+    { name: "Companies", href: "/admin/companies", icon: Building2 },
     { name: "Duplicates", href: "/admin/duplicates", icon: CopyCheck },
     { name: "Leads Pipeline", href: "/admin/leads", icon: BarChart2 },
     { name: "Pipeline Settings", href: "/admin/pipeline-settings", icon: Columns3 },

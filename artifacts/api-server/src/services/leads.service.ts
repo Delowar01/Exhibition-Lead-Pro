@@ -1,6 +1,7 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { refAccessible, refInCompany } from "../lib/tenant.js";
+import * as orgRepo from "../repositories/organizations.repository.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
 import * as pipelineRepo from "../repositories/pipeline_stages.repository.js";
 import * as tagsRepo from "../repositories/tags.repository.js";
@@ -51,10 +52,11 @@ function formatLead(
   contact: ContactSummary | null | undefined,
   assignedToName: string | null,
   eventName: string | null,
-  opts?: { stage?: StageLite | null; teamName?: string | null; tags?: TagLite[]; history?: LeadHistoryItem[] },
+  opts?: { stage?: StageLite | null; teamName?: string | null; tags?: TagLite[]; history?: LeadHistoryItem[]; organizationName?: string | null },
 ) {
   return {
     ...l,
+    organizationName: opts?.organizationName ?? null,
     value: l.value ? parseFloat(l.value) : null,
     probability: l.probability ?? null,
     currency: l.currency ?? "USD",
@@ -81,6 +83,7 @@ async function enrichLead(l: leadsRepo.LeadRow, includeHistory = false) {
   const event = l.eventId ? await leadsRepo.eventName(l.eventId) : null;
   const stage = l.stageId ? await leadsRepo.stageInfo(l.stageId) : null;
   const team = l.teamId ? await leadsRepo.teamName(l.teamId) : null;
+  const organizationName = l.organizationId ? await orgRepo.nameById(l.organizationId) : null;
   const tags = fmtTags(await tagsRepo.tagsForLead(l.id));
 
   let history: LeadHistoryItem[] = [];
@@ -93,6 +96,7 @@ async function enrichLead(l: leadsRepo.LeadRow, includeHistory = false) {
     stage: stage ? { name: stage.name, key: stage.key } : null,
     teamName: team?.name ?? null,
     tags,
+    organizationName,
     history: includeHistory ? history : undefined,
   });
 }
@@ -100,20 +104,22 @@ async function enrichLead(l: leadsRepo.LeadRow, includeHistory = false) {
 // Batched enrichment for list/pipeline: a fixed number of lookups (contacts +
 // users + events + stages + teams + tags) instead of per row. Never includes
 // history (list views don't need it), matching enrichLead(l, false) exactly.
-async function enrichLeads(rows: leadsRepo.LeadRow[]) {
+export async function enrichLeads(rows: leadsRepo.LeadRow[]) {
   const contactIds = [...new Set(rows.map((l) => l.contactId).filter((v): v is number => v != null))];
   const userIds = [...new Set(rows.map((l) => l.assignedToId).filter((v): v is number => v != null))];
   const eventIds = [...new Set(rows.map((l) => l.eventId).filter((v): v is number => v != null))];
   const stageIds = [...new Set(rows.map((l) => l.stageId).filter((v): v is number => v != null))];
   const teamIds = [...new Set(rows.map((l) => l.teamId).filter((v): v is number => v != null))];
+  const orgIds = [...new Set(rows.map((l) => l.organizationId).filter((v): v is number => v != null))];
   const leadIds = rows.map((l) => l.id);
-  const [contacts, users, events, stages, teams, tagMap] = await Promise.all([
+  const [contacts, users, events, stages, teams, tagMap, orgNameById] = await Promise.all([
     leadsRepo.contactSummariesByIds(contactIds),
     leadsRepo.userNamesByIds(userIds),
     leadsRepo.eventNamesByIds(eventIds),
     leadsRepo.stageInfosByIds(stageIds),
     leadsRepo.teamNamesByIds(teamIds),
     tagsRepo.tagsForLeads(leadIds),
+    orgRepo.namesByIds(orgIds),
   ]);
   const contactById = new Map(contacts.map((c) => [c.id, c]));
   const userNameById = new Map(users.map((u) => [u.id, u.name]));
@@ -131,6 +137,7 @@ async function enrichLeads(rows: leadsRepo.LeadRow[]) {
         stage: stage ? { name: stage.name, key: stage.key } : null,
         teamName: l.teamId != null ? (teamNameById.get(l.teamId) ?? null) : null,
         tags: fmtTags(tagMap.get(l.id) ?? []),
+        organizationName: l.organizationId != null ? (orgNameById.get(l.organizationId) ?? null) : null,
       },
     );
   });
@@ -176,6 +183,7 @@ export interface LeadInput {
   eventId?: number | null;
   stageId?: number | null;
   teamId?: number | null;
+  organizationId?: number | null;
   source?: string | null;
 }
 
@@ -186,13 +194,14 @@ export type CreateLeadResult =
 export async function createLead(user: AuthUser, input: LeadInput): Promise<CreateLeadResult> {
   const companyId = user.companyId;
   if (!companyId) throw new AppError(400, "No company context");
-  const { contactId, stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId, source } = input;
+  const { contactId, stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId, organizationId, source } = input;
 
   if (contactId != null && !(await refAccessible(user, "contacts", contactId))) throw new AppError(400, "Invalid contactId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (stageId != null && !(await refInCompany("pipelineStages", companyId, stageId))) throw new AppError(400, "Invalid stageId");
   if (teamId != null && !(await refInCompany("teams", companyId, teamId))) throw new AppError(400, "Invalid teamId");
+  if (organizationId != null && !(await refInCompany("organizations", companyId, organizationId))) throw new AppError(400, "Invalid organizationId");
 
   // 409 if this contact already has a non-lost lead in this company
   if (contactId != null) {
@@ -232,6 +241,7 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
     companyName: companyName ?? null,
     assignedToId: assignedToId ?? null,
     eventId: eventId ?? null,
+    organizationId: organizationId ?? null,
     source: source ?? null,
     createdById: user.id,
   });
@@ -271,11 +281,12 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
   const existing = await leadsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Lead not found");
 
-  const { stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId, source } = input;
+  const { stage, title, value, currency, closingDate, probability, priority, notes, companyName, assignedToId, eventId, stageId, teamId, organizationId, source } = input;
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (stageId != null && !(await refInCompany("pipelineStages", existing.companyId, stageId))) throw new AppError(400, "Invalid stageId");
   if (teamId != null && !(await refInCompany("teams", existing.companyId, teamId))) throw new AppError(400, "Invalid teamId");
+  if (organizationId != null && !(await refInCompany("organizations", existing.companyId, organizationId))) throw new AppError(400, "Invalid organizationId");
 
   const updateData: Record<string, unknown> = {};
   if (title !== undefined) updateData.title = title;
@@ -289,6 +300,7 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
   if (assignedToId !== undefined) updateData.assignedToId = assignedToId;
   if (eventId !== undefined) updateData.eventId = eventId;
   if (teamId !== undefined) updateData.teamId = teamId;
+  if (organizationId !== undefined) updateData.organizationId = organizationId;
   if (source !== undefined) updateData.source = source;
 
   // Stage sync: the configurable `stageId` and the legacy text `stage` are kept

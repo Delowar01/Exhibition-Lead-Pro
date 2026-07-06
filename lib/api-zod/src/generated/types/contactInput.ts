@@ -53,5 +53,7 @@ export interface ContactInput {
   /** @nullable */
   assignedToId?: number | null;
   /** @nullable */
+  organizationId?: number | null;
+  /** @nullable */
   cardImageUrl?: string | null;
 }

@@ -178,7 +178,7 @@ export default function AdminLeadDetail() {
   const email = (lead.contactEmail ?? contact?.email) || null;
   const phone = (contact?.mobile ?? contact?.officePhone) || null;
   const jobTitle = contact?.jobTitle || null;
-  const company = (lead.contactCompany ?? lead.companyName) || contact?.contactCompany || null;
+  const company = lead.organizationName || (lead.contactCompany ?? lead.companyName) || contact?.contactCompany || null;
   const industry = contact?.industry || null;
   const website = contact?.website || null;
   const linkedin = contact?.linkedin || null;
