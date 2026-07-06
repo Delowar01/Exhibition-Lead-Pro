@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requireRole, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
+import { microCache } from "../middlewares/microCache.js";
 import * as ai from "../services/ai.service.js";
 import * as insights from "../services/ai-insights.service.js";
 import * as aiBatch from "../services/ai-batch.service.js";
@@ -213,18 +214,25 @@ router.use("/ai/workflow", requireTenantUser);
 router.use("/ai/workflow", blockReadOnlyMutations);
 router.use("/ai/workflow", auditMutations("ai_workflow"));
 
+// 30s TTL micro-cache for the COMPUTED org-scoped rollups (same pattern as
+// analytics/reports). Key includes userId + full URL (scope id varies the key);
+// any successful write bumps the global write epoch and busts these immediately.
+// Only applied to the always-fresh computed reads — NOT to batch polling or the
+// per-entity persisted-row list.
+const workflowCache = microCache(30_000);
+
 // GET /ai/workflow/overview — tenant-wide review summary (static path before /:entityType).
-router.get("/ai/workflow/overview", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+router.get("/ai/workflow/overview", requirePermission("ai_workflow", "view"), workflowCache, async (req: AuthRequest, res) => {
   res.json(await workflow.getOverview(req.user!));
 });
 
 // Org-scoped read-only rollups (scope selector: scopeType=company|department|team|employee & id).
-router.get("/ai/workflow/health", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+router.get("/ai/workflow/health", requirePermission("ai_workflow", "view"), workflowCache, async (req: AuthRequest, res) => {
   const q = req.query as Record<string, unknown>;
   res.json(await workflow.getHealth(req.user!, { scopeType: q.scopeType ? String(q.scopeType) : undefined, id: q.id != null ? parseInt(String(q.id)) : undefined }));
 });
 
-router.get("/ai/workflow/sla-risks", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+router.get("/ai/workflow/sla-risks", requirePermission("ai_workflow", "view"), workflowCache, async (req: AuthRequest, res) => {
   const q = req.query as Record<string, unknown>;
   res.json(await workflow.getSlaRisks(req.user!, {
     scopeType: q.scopeType ? String(q.scopeType) : undefined,
@@ -233,7 +241,7 @@ router.get("/ai/workflow/sla-risks", requirePermission("ai_workflow", "view"), a
   }));
 });
 
-router.get("/ai/workflow/bottlenecks", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
+router.get("/ai/workflow/bottlenecks", requirePermission("ai_workflow", "view"), workflowCache, async (req: AuthRequest, res) => {
   const q = req.query as Record<string, unknown>;
   res.json(await workflow.getBottlenecks(req.user!, { scopeType: q.scopeType ? String(q.scopeType) : undefined, id: q.id != null ? parseInt(String(q.id)) : undefined }));
 });
