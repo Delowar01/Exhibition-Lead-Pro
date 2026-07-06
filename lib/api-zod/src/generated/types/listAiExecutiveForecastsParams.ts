@@ -8,7 +8,7 @@
 
 export type ListAiExecutiveForecastsParams = {
 /**
- * revenue | pipeline | leads
+ * revenue | pipeline | leads | lead_conversion | workload | risk
  */
 forecastType?: string;
 limit?: number;

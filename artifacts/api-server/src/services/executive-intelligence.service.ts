@@ -238,6 +238,17 @@ async function computeSignals(
   }));
   const team = core.computeTeamPerformance(members);
 
+  // Team workload imbalance (deterministic): flag members carrying an outsized
+  // overdue follow-up load relative to the team average. Grounded in real
+  // per-user overdue counts; advisory only.
+  const teamAvgOverdue = members.length
+    ? members.reduce((acc, m) => acc + m.overdue, 0) / members.length
+    : 0;
+  const overloaded = members
+    .filter((m) => m.overdue >= 5 && m.overdue >= 2 * Math.max(1, teamAvgOverdue))
+    .sort((a, b) => b.overdue - a.overdue);
+  const topOverloaded = overloaded[0];
+
   // Deterministic advisory alerts.
   const alerts = core.computeAlerts({
     newLeads,
@@ -251,6 +262,9 @@ async function computeSignals(
     wonValuePrev: wonValuePrevMonth,
     highValueOpenCount: pipelineRows.filter((r) => convertCurrency(Number(r.pipelineValue ?? 0), r.currency ?? "USD", "USD") >= HIGH_VALUE_THRESHOLD_USD).length,
     topEventUnderperformingName: null,
+    teamOverloadCount: overloaded.length,
+    teamOverloadName: topOverloaded?.name ?? null,
+    teamOverloadOverdue: topOverloaded?.overdue ?? 0,
   });
 
   const kpis = {
@@ -438,7 +452,15 @@ export interface GenerateForecastOpts extends ExecScopeOpts {
 // won value; pipeline → count of won deals; leads → count of new leads. The deterministic
 // core (forecastNextPeriod) runs over the selected series so the persisted expected/low/high
 // and confidence actually reflect the requested dimension.
-const FORECAST_TYPES = new Set(["revenue", "pipeline", "leads"]);
+const FORECAST_TYPES = new Set([
+  "revenue",
+  "pipeline",
+  "leads",
+  "lead_conversion",
+  "workload",
+  "risk",
+]);
+const FORECAST_TYPES_LABEL = "revenue | pipeline | leads | lead_conversion | workload | risk";
 
 function forecastSeriesFor(forecastType: string, signals: Awaited<ReturnType<typeof computeSignals>>): {
   months: string[];
@@ -446,12 +468,53 @@ function forecastSeriesFor(forecastType: string, signals: Awaited<ReturnType<typ
   unit: string;
   label: string;
   isCurrency: boolean;
+  extraAssumptions?: string[];
 } {
   switch (forecastType) {
     case "pipeline":
       return { months: signals.leads.months, values: signals.leads.won, unit: "deals", label: "won deals", isCurrency: false };
     case "leads":
       return { months: signals.leads.months, values: signals.leads.leads, unit: "leads", label: "new leads", isCurrency: false };
+    case "lead_conversion": {
+      // Per-month conversion rate = won / new leads. Grounded in the real
+      // monthly won/leads series; guards divide-by-zero months.
+      const values = signals.leads.leads.map((l, i) =>
+        l > 0 ? Math.round(((signals.leads.won[i] ?? 0) / l) * 100) : 0,
+      );
+      return {
+        months: signals.leads.months,
+        values,
+        unit: "%",
+        label: "lead conversion rate",
+        isCurrency: false,
+        extraAssumptions: ["Conversion = won ÷ new leads per month (real series)"],
+      };
+    }
+    case "workload": {
+      // Resource-needs proxy: incoming lead volume is the demand driver a team
+      // must service next period. Uses the real monthly new-leads series.
+      return {
+        months: signals.leads.months,
+        values: signals.leads.leads,
+        unit: "leads",
+        label: "team workload (incoming leads to service)",
+        isCurrency: false,
+        extraAssumptions: ["Workload proxied by incoming lead volume (resource-needs driver)"],
+      };
+    }
+    case "risk": {
+      // Upcoming risk exposure: leads not (yet) won per month — the unconverted
+      // backlog carrying churn/slippage risk. Derived from the real series.
+      const values = signals.leads.leads.map((l, i) => Math.max(0, l - (signals.leads.won[i] ?? 0)));
+      return {
+        months: signals.leads.months,
+        values,
+        unit: "leads",
+        label: "at-risk unconverted leads",
+        isCurrency: false,
+        extraAssumptions: ["Risk = new leads − won per month (unconverted exposure)"],
+      };
+    }
     default:
       return { months: signals.revenue.months, values: signals.revenue.values, unit: "USD", label: "revenue", isCurrency: true };
   }
@@ -459,13 +522,14 @@ function forecastSeriesFor(forecastType: string, signals: Awaited<ReturnType<typ
 
 export async function generateForecast(user: AuthUser, opts: GenerateForecastOpts = {}) {
   const forecastType = opts.forecastType ?? "revenue";
-  if (!FORECAST_TYPES.has(forecastType)) throw new AppError(400, "Invalid forecastType (revenue | pipeline | leads)");
+  if (!FORECAST_TYPES.has(forecastType)) throw new AppError(400, `Invalid forecastType (${FORECAST_TYPES_LABEL})`);
   const horizon = opts.horizon ?? "next_period";
   const resolved = await analytics.resolveScope(user, opts.scopeType, opts.id);
   const s = resolved.analyticsScope;
   const signals = await computeSignals(user, resolved, s);
   const series = forecastSeriesFor(forecastType, signals);
   const f = core.forecastNextPeriod(series.values);
+  const assumptions = [...(series.extraAssumptions ?? []), ...f.assumptions];
 
   const fmt = (n: number) => (series.isCurrency ? `USD ${n.toLocaleString()}` : `${n.toLocaleString()} ${series.unit}`);
   const deterministic = {
@@ -476,10 +540,10 @@ export async function generateForecast(user: AuthUser, opts: GenerateForecastOpt
     label: series.label,
     method: f.method,
     historyPoints: f.historyPoints,
-    assumptions: f.assumptions,
+    assumptions,
     series: series.months.map((m, i) => ({ month: m, value: series.values[i] })),
     narrative: `Projected next-period ${series.label} of ${fmt(f.expected)} (range ${fmt(f.low)}–${fmt(f.high)}), ${f.method.replace("_", " ")}.`,
-    watchouts: f.assumptions,
+    watchouts: assumptions,
   };
 
   let data: Record<string, unknown> = { ...deterministic };
@@ -653,6 +717,12 @@ async function toReportResponse(row: import("@workspace/db").ExecutiveReport) {
     downloadUrl,
     error: row.error,
     data: row.data,
+    confidence: row.confidence,
+    source: row.source,
+    provider: row.provider,
+    model: row.model,
+    promptKey: row.promptKey,
+    promptVersion: row.promptVersion,
     generatedAt: (row.completedAt ?? row.generatedAt).toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -808,7 +878,14 @@ export async function runExecutiveReportJob(payload: ExecutiveReportJobPayload):
       status: "ready",
       objectPath,
       fileName,
+      // Reports are deterministic compositions of grounded data: full confidence,
+      // and NO AI provenance (provider/model/promptVersion stay null — honest).
+      confidence: 100,
       source: "deterministic",
+      provider: null,
+      model: null,
+      promptKey: null,
+      promptVersion: null,
       data: { title, generatedAt: dash.generatedAt, sections },
     });
   } catch (err) {

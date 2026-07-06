@@ -3892,7 +3892,7 @@ export interface ExecutiveForecast {
   companyId: number;
   scopeType: string;
   scopeId: number;
-  /** revenue | pipeline | leads */
+  /** revenue | pipeline | leads | lead_conversion | workload | risk */
   forecastType: string;
   horizon: string;
   method: string;
@@ -3918,7 +3918,7 @@ export interface ExecutiveForecastListResponse {
 export interface ExecutiveForecastGenerateRequest {
   scopeType?: string;
   id?: number;
-  /** revenue | pipeline | leads (defaults to revenue) */
+  /** revenue | pipeline | leads | lead_conversion | workload | risk (defaults to revenue) */
   forecastType?: string;
   /** next_period (default) */
   horizon?: string;
@@ -3946,6 +3946,13 @@ export interface ExecutiveReport {
   downloadUrl?: string | null;
   error?: string | null;
   data?: ExecutiveReportData;
+  confidence?: number | null;
+  /** ai | deterministic (reports are deterministic compositions) */
+  source?: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
   generatedAt: string;
   createdAt?: string;
   updatedAt?: string;
@@ -5659,7 +5666,7 @@ limit?: number;
 
 export type ListAiExecutiveForecastsParams = {
 /**
- * revenue | pipeline | leads
+ * revenue | pipeline | leads | lead_conversion | workload | risk
  */
 forecastType?: string;
 limit?: number;

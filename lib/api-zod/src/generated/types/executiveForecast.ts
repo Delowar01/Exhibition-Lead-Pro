@@ -12,7 +12,7 @@ export interface ExecutiveForecast {
   companyId: number;
   scopeType: string;
   scopeId: number;
-  /** revenue | pipeline | leads */
+  /** revenue | pipeline | leads | lead_conversion | workload | risk */
   forecastType: string;
   horizon: string;
   method: string;

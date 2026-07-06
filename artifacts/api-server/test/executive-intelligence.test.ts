@@ -257,7 +257,7 @@ describe("Executive forecasts", () => {
     expect(res.status).toBe(400);
   });
 
-  it.each(["pipeline", "leads"] as const)(
+  it.each(["pipeline", "leads", "lead_conversion", "workload", "risk"] as const)(
     "forecasts %s over its own series (echoes type, honest range + unit)",
     async (forecastType) => {
       const res = await api("POST", "/ai/executive/forecasts", adminToken, { forecastType });
@@ -271,6 +271,9 @@ describe("Executive forecasts", () => {
       // Non-revenue series carry a discrete unit label (never masqueraded as currency).
       expect(typeof d.unit).toBe("string");
       expect((d.unit as string).length).toBeGreaterThan(0);
+      // A per-type label distinguishes the projected dimension (not always "revenue").
+      expect(typeof d.label).toBe("string");
+      expect((d.label as string).length).toBeGreaterThan(0);
       if (f.source === "deterministic") expect(f.provider ?? null).toBeNull();
     },
   );
@@ -287,6 +290,33 @@ describe("Executive alerts", () => {
     const res = await api("GET", "/ai/executive/alerts", adminToken);
     expect(res.status).toBe(200);
     expect(Array.isArray((await res.json()).alerts)).toBe(true);
+  });
+
+  it("only emits known alert types (incl. team_overload) and grounds each one", async () => {
+    const gen = await api("POST", "/ai/executive/alerts/generate", adminToken, {});
+    expect(gen.status).toBe(200);
+    const known = new Set([
+      "pipeline_slowing",
+      "conversion_dropping",
+      "sla_risk",
+      "team_overload",
+      "event_underperforming",
+      "revenue_below_target",
+      "high_value_opportunity",
+    ]);
+    const alerts = (await gen.json()).alerts as Array<Record<string, unknown>>;
+    for (const a of alerts) {
+      expect(known.has(a.alertType as string)).toBe(true);
+      // Deterministic advisory alerts always carry a recommendation and are honest
+      // about being grounded (no AI provenance masquerade).
+      expect(typeof a.recommendation).toBe("string");
+      expect((a.recommendation as string).length).toBeGreaterThan(0);
+    }
+    // team_overload is now a first-class, deterministically-emitted type: any that
+    // surface must be grounded (confidence 100) and advisory.
+    for (const a of alerts.filter((x) => x.alertType === "team_overload")) {
+      expect(a.confidence).toBe(100);
+    }
   });
 });
 
@@ -326,6 +356,22 @@ describe("AI reports — async export job", () => {
     expect(typeof downloadUrl).toBe("string");
     expect((downloadUrl as string).length).toBeGreaterThan(0);
   }, 55_000);
+
+  it("stamps honest provenance on the ready report (confidence + deterministic source, no AI masquerade)", async () => {
+    const poll = await api("GET", `/ai/executive/reports/${reportId}`, adminToken);
+    expect(poll.status).toBe(200);
+    const r = await poll.json();
+    expect(r.status).toBe("ready");
+    // Reports are deterministic compositions of grounded data.
+    expect(r.source).toBe("deterministic");
+    expect(typeof r.confidence).toBe("number");
+    // Deterministic rows NEVER carry AI provenance.
+    expect(r.provider ?? null).toBeNull();
+    expect(r.model ?? null).toBeNull();
+    expect(r.promptVersion ?? null).toBeNull();
+    expect(typeof r.generatedAt).toBe("string");
+    expect((r.generatedAt as string).length).toBeGreaterThan(0);
+  });
 
   it("400s an invalid periodType", async () => {
     const res = await api("POST", "/ai/executive/reports", adminToken, {

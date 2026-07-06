@@ -9,7 +9,7 @@
 export interface ExecutiveForecastGenerateRequest {
   scopeType?: string;
   id?: number;
-  /** revenue | pipeline | leads (defaults to revenue) */
+  /** revenue | pipeline | leads | lead_conversion | workload | risk (defaults to revenue) */
   forecastType?: string;
   /** next_period (default) */
   horizon?: string;

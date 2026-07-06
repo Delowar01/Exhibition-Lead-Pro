@@ -348,6 +348,9 @@ export default function AdminExecutiveIntelligence() {
                     <SelectItem value="revenue">Revenue</SelectItem>
                     <SelectItem value="pipeline">Pipeline (won deals)</SelectItem>
                     <SelectItem value="leads">New leads</SelectItem>
+                    <SelectItem value="lead_conversion">Lead conversion rate</SelectItem>
+                    <SelectItem value="workload">Workload (resource needs)</SelectItem>
+                    <SelectItem value="risk">Upcoming risk (unconverted)</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button

@@ -4976,7 +4976,7 @@ paths:
           required: false
           schema:
             type: string
-          description: revenue | pipeline | leads
+          description: revenue | pipeline | leads | lead_conversion | workload | risk
         - name: limit
           in: query
           required: false
@@ -11965,7 +11965,7 @@ components:
           type: integer
         forecastType:
           type: string
-          description: revenue | pipeline | leads
+          description: revenue | pipeline | leads | lead_conversion | workload | risk
         horizon:
           type: string
         method:
@@ -12021,7 +12021,7 @@ components:
           type: integer
         forecastType:
           type: string
-          description: revenue | pipeline | leads (defaults to revenue)
+          description: revenue | pipeline | leads | lead_conversion | workload | risk (defaults to revenue)
         horizon:
           type: string
           description: next_period (default)
@@ -12067,6 +12067,24 @@ components:
         data:
           type: object
           additionalProperties: true
+          nullable: true
+        confidence:
+          type: integer
+          nullable: true
+        source:
+          type: string
+          description: ai | deterministic (reports are deterministic compositions)
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
           nullable: true
         generatedAt:
           type: string

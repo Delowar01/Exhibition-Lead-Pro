@@ -25,6 +25,13 @@ export interface ExecutiveReport {
   downloadUrl?: string | null;
   error?: string | null;
   data?: ExecutiveReportData;
+  confidence?: number | null;
+  /** ai | deterministic (reports are deterministic compositions) */
+  source?: string;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
   generatedAt: string;
   createdAt?: string;
   updatedAt?: string;

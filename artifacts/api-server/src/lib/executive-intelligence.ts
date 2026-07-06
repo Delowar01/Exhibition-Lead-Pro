@@ -337,6 +337,11 @@ export interface AlertSignals {
   wonValuePrev: number;
   highValueOpenCount: number; // open leads above a value threshold with no recent activity
   topEventUnderperformingName?: string | null;
+  // Team workload imbalance: members carrying an outsized overdue follow-up load
+  // relative to the team average (computed upstream from real per-user stats).
+  teamOverloadCount?: number;
+  teamOverloadName?: string | null;
+  teamOverloadOverdue?: number;
 }
 
 export function computeAlerts(s: AlertSignals): ExecAlert[] {
@@ -410,6 +415,18 @@ export function computeAlerts(s: AlertSignals): ExecAlert[] {
       detail: `${s.highValueOpenCount} high-value open lead(s) have had no recent activity.`,
       recommendation: "Assign a senior rep and schedule an executive touchpoint this week.",
       metric: s.highValueOpenCount,
+      confidence: 100,
+    });
+  }
+
+  if (s.teamOverloadCount && s.teamOverloadCount > 0 && s.teamOverloadName) {
+    alerts.push({
+      alertType: "team_overload",
+      severity: s.teamOverloadCount >= 3 ? "critical" : "warning",
+      title: "Team workload imbalance",
+      detail: `${s.teamOverloadCount} team member(s) carry an outsized overdue follow-up load — ${s.teamOverloadName} has ${s.teamOverloadOverdue ?? 0} overdue.`,
+      recommendation: "Rebalance overdue follow-ups across the team and consider added capacity where the overload is sustained.",
+      metric: s.teamOverloadOverdue ?? null,
       confidence: 100,
     });
   }

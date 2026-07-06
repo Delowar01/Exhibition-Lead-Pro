@@ -6521,7 +6521,7 @@ export const DismissAiExecutiveAlertResponse = zod.object({
  * @summary List persisted executive forecasts
  */
 export const ListAiExecutiveForecastsQueryParams = zod.object({
-  "forecastType": zod.coerce.string().optional().describe('revenue | pipeline | leads'),
+  "forecastType": zod.coerce.string().optional().describe('revenue | pipeline | leads | lead_conversion | workload | risk'),
   "limit": zod.coerce.number().optional()
 })
 
@@ -6531,7 +6531,7 @@ export const ListAiExecutiveForecastsResponse = zod.object({
   "companyId": zod.number(),
   "scopeType": zod.string(),
   "scopeId": zod.number(),
-  "forecastType": zod.string().describe('revenue | pipeline | leads'),
+  "forecastType": zod.string().describe('revenue | pipeline | leads | lead_conversion | workload | risk'),
   "horizon": zod.string(),
   "method": zod.string(),
   "data": zod.record(zod.string(), zod.unknown()),
@@ -6556,7 +6556,7 @@ export const ListAiExecutiveForecastsResponse = zod.object({
 export const GenerateAiExecutiveForecastBody = zod.object({
   "scopeType": zod.string().optional(),
   "id": zod.number().optional(),
-  "forecastType": zod.string().optional().describe('revenue | pipeline | leads (defaults to revenue)'),
+  "forecastType": zod.string().optional().describe('revenue | pipeline | leads | lead_conversion | workload | risk (defaults to revenue)'),
   "horizon": zod.string().optional().describe('next_period (default)'),
   "language": zod.string().optional().describe('en | ar (defaults to en)')
 })
@@ -6566,7 +6566,7 @@ export const GenerateAiExecutiveForecastResponse = zod.object({
   "companyId": zod.number(),
   "scopeType": zod.string(),
   "scopeId": zod.number(),
-  "forecastType": zod.string().describe('revenue | pipeline | leads'),
+  "forecastType": zod.string().describe('revenue | pipeline | leads | lead_conversion | workload | risk'),
   "horizon": zod.string(),
   "method": zod.string(),
   "data": zod.record(zod.string(), zod.unknown()),
@@ -6605,6 +6605,12 @@ export const ListAiExecutiveReportsResponse = zod.object({
   "downloadUrl": zod.string().nullish(),
   "error": zod.string().nullish(),
   "data": zod.record(zod.string(), zod.unknown()).nullish(),
+  "confidence": zod.number().nullish(),
+  "source": zod.string().optional().describe('ai | deterministic (reports are deterministic compositions)'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
   "generatedAt": zod.string(),
   "createdAt": zod.string().optional(),
   "updatedAt": zod.string().optional()
@@ -6645,6 +6651,12 @@ export const GetAiExecutiveReportResponse = zod.object({
   "downloadUrl": zod.string().nullish(),
   "error": zod.string().nullish(),
   "data": zod.record(zod.string(), zod.unknown()).nullish(),
+  "confidence": zod.number().nullish(),
+  "source": zod.string().optional().describe('ai | deterministic (reports are deterministic compositions)'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
   "generatedAt": zod.string(),
   "createdAt": zod.string().optional(),
   "updatedAt": zod.string().optional()
