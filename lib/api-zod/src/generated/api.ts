@@ -4971,7 +4971,7 @@ export const GetAiInsightsOverviewResponse = zod.object({
   "companyId": zod.number(),
   "entityType": zod.string().describe('lead | contact | organization'),
   "entityId": zod.number(),
-  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
   "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
   "reasoning": zod.string().nullish(),
@@ -5005,7 +5005,7 @@ export const AnalyzeAiInsightsResponse = zod.object({
   "companyId": zod.number(),
   "entityType": zod.string().describe('lead | contact | organization'),
   "entityId": zod.number(),
-  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
   "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
   "reasoning": zod.string().nullish(),
@@ -5043,7 +5043,7 @@ export const GetAiInsightsResponse = zod.object({
   "companyId": zod.number(),
   "entityType": zod.string().describe('lead | contact | organization'),
   "entityId": zod.number(),
-  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
   "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
   "reasoning": zod.string().nullish(),
@@ -5075,7 +5075,7 @@ export const AcceptAiInsightResponse = zod.object({
   "companyId": zod.number(),
   "entityType": zod.string().describe('lead | contact | organization'),
   "entityId": zod.number(),
-  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
   "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
   "reasoning": zod.string().nullish(),
@@ -5106,7 +5106,7 @@ export const DismissAiInsightResponse = zod.object({
   "companyId": zod.number(),
   "entityType": zod.string().describe('lead | contact | organization'),
   "entityId": zod.number(),
-  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence'),
+  "insightType": zod.string().describe('lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence'),
   "data": zod.record(zod.string(), zod.unknown()).describe('Structured, feature-specific output (shape varies by insightType).'),
   "confidence": zod.number().nullish().describe('0-100 confidence, null when unknown.'),
   "reasoning": zod.string().nullish(),
@@ -5122,6 +5122,64 @@ export const DismissAiInsightResponse = zod.object({
   "acceptedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
   "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Start a batch (re)analysis of all records of one entity type in the tenant
+ */
+export const StartAiInsightsBatchBody = zod.object({
+  "entityType": zod.string().describe('lead | contact | organization')
+})
+
+
+/**
+ * @summary List AI batch jobs visible to the caller's tenant
+ */
+export const ListAiInsightsBatchesResponse = zod.object({
+  "jobs": zod.array(zod.object({
+  "id": zod.string(),
+  "companyId": zod.number(),
+  "requestedById": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "status": zod.string().describe('queued | running | completed | failed'),
+  "total": zod.number(),
+  "processed": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "errors": zod.array(zod.object({
+  "entityId": zod.number(),
+  "message": zod.string()
+})),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Get the status/progress of one AI batch job
+ */
+export const GetAiInsightsBatchParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const GetAiInsightsBatchResponse = zod.object({
+  "id": zod.string(),
+  "companyId": zod.number(),
+  "requestedById": zod.number(),
+  "entityType": zod.string().describe('lead | contact | organization'),
+  "status": zod.string().describe('queued | running | completed | failed'),
+  "total": zod.number(),
+  "processed": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "errors": zod.array(zod.object({
+  "entityId": zod.number(),
+  "message": zod.string()
+})),
+  "startedAt": zod.string(),
+  "finishedAt": zod.string().nullish()
 })
 
 

@@ -30,17 +30,34 @@ changes by default.
   (set-null FK to users), and `accepted_at`. `data` is a structured, feature-specific
   JSONB payload. Applied via `db push`.
 
-### Insight engines (7 types; 2 deterministic, 5 AI)
+### Insight engines (8 types; 3 deterministic, 5 AI)
 - **Deterministic (always run, `source="deterministic"`, no provider):**
   - `missing_info` — data-completeness gaps (missing fields, completeness %).
   - `duplicate_intelligence` — near-duplicate detection (normalized name/email/phone).
+  - `relationship_intelligence` — link derivation over EXISTING CRM rows (a contact's
+    colleagues + linked leads + events; a lead's contact/org/sibling leads + capture
+    event; an organization's contacts + leads). Confidence 100, human reasoning, and an
+    honest "no related records" message when a record has no links — pure fact
+    derivation, NO LLM, NO fabricated data (`ai-relationships.service.ts`).
 - **AI (`source="ai"`, provenance-stamped, per-feature isolated):**
   - `lead_intelligence`, `opportunity_potential`, `smart_classification` (leads).
   - `contact_intelligence`, `smart_classification` (contacts).
   - `company_intelligence` (organizations).
 - Each AI feature runs in isolation: a disabled/failing/timeout feature is captured in
   the response's `aiErrors[]` and never blocks the other features or the deterministic
-  insights. `relationship_intelligence` is intentionally deferred.
+  insights.
+
+### Batch processing (`ai-batch.service.ts`)
+- `POST /ai/insights/batch` (re)analyzes ALL records of one entity type (lead/contact/
+  organization) in the tenant. Jobs are self-contained in-process (NOT the shared job
+  queue, so a batch never floods the email dead-letter path), tenant-stamped, and only
+  visible to callers who can access the job's company (404 — not 403 — for another
+  tenant's job). Enumeration uses `tenantScope` (never a raw `companyId` scope).
+  Processing is fire-and-forget and reuses `analyzeEntity`, which collects — never
+  throws on — per-feature AI failures, so a batch degrades gracefully. Bounded to 500
+  entities / 20 retained errors / 200 retained jobs. Clients poll
+  `GET /ai/insights/batch/{jobId}` for progress; `GET /ai/insights/batch` lists jobs.
+  All batch routes are `ai_insights` `generate`/`view` permission-gated.
 
 ### API (`ai` tag in `openapi.yaml`, Orval-regenerated)
 - `GET  /ai/insights/overview` — tenant-wide review summary (status counts + recent).
@@ -48,11 +65,17 @@ changes by default.
 - `GET  /ai/insights/{entityType}/{id}` — list stored insights for one entity.
 - `POST /ai/insights/{id}/accept` — record an audited acceptance (status→accepted).
 - `POST /ai/insights/{id}/dismiss` — dismiss a recommendation (audited).
+- `POST /ai/insights/batch` — start a tenant-wide batch (re)analysis of one entity type.
+- `GET  /ai/insights/batch` — list batch jobs visible to the caller's tenant.
+- `GET  /ai/insights/batch/{jobId}` — poll one batch job's status/progress.
+  (Batch routes are registered BEFORE `/{entityType}/{id}` so the param route does not
+  swallow the static `/batch` sub-paths.)
 
 Schemas added: `AiInsight`, `AiInsightsListResponse`, `AiInsightError`,
-`AiAnalyzeResponse`, `AiInsightsOverviewResponse`. Generated hooks:
-`useGetAiInsightsOverview`, `useAnalyzeAiInsights`, `useGetAiInsights`,
-`useAcceptAiInsight`, `useDismissAiInsight`.
+`AiAnalyzeResponse`, `AiInsightsOverviewResponse`, `AiBatchStartRequest`, `AiBatchJob`,
+`AiBatchListResponse`. Generated hooks: `useGetAiInsightsOverview`, `useAnalyzeAiInsights`,
+`useGetAiInsights`, `useAcceptAiInsight`, `useDismissAiInsight`, `useStartAiInsightsBatch`,
+`useListAiInsightsBatches`, `useGetAiInsightsBatch`.
 
 Guards are **path-scoped** to `/ai/insights` (avoiding the documented router-level
 guard-leak): `requireTenantUser` (AI operates ONLY on a tenant's own CRM — the
@@ -92,8 +115,11 @@ respect the cancelled-company read-only lifecycle), and `auditMutations("ai_insi
   produced 5 insights, audited accept, overview, cross-tenant 404 — all pass).
 
 ## Deviations from plan
-- `relationship_intelligence` was **deferred** (documented as a future insight type),
-  keeping Stage 5A focused on per-entity intelligence.
+- None outstanding. `relationship_intelligence` and batch processing (originally the
+  deferred scope gap) are now fully implemented, tested, and shipped: a deterministic
+  relationship engine wired into `analyzeEntity` for all three entity types, plus a
+  tenant-scoped in-process batch runner with start/list/get endpoints, a web Batch AI
+  Operations page (`/admin/ai-batch`), and EN/AR mobile insight labels.
 - Insight engines live in `artifacts/api-server/src/services/ai-insights.service.ts` +
   `repositories/ai_insights.repository.ts` (server-only), consistent with the Stage 5.0
   decision to keep AI code in the api-server until a second consumer exists.

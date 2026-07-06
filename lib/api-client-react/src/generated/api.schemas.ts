@@ -3153,7 +3153,7 @@ export interface AiInsight {
   /** lead | contact | organization */
   entityType: string;
   entityId: number;
-  /** lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence */
+  /** lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence */
   insightType: string;
   /** Structured, feature-specific output (shape varies by insightType). */
   data: AiInsightData;
@@ -3195,6 +3195,37 @@ export type AiInsightsOverviewResponseCounts = {[key: string]: number};
 export interface AiInsightsOverviewResponse {
   counts: AiInsightsOverviewResponseCounts;
   recent: AiInsight[];
+}
+
+export interface AiBatchStartRequest {
+  /** lead | contact | organization */
+  entityType: string;
+}
+
+export type AiBatchJobErrorsItem = {
+  entityId: number;
+  message: string;
+};
+
+export interface AiBatchJob {
+  id: string;
+  companyId: number;
+  requestedById: number;
+  /** lead | contact | organization */
+  entityType: string;
+  /** queued | running | completed | failed */
+  status: string;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  errors: AiBatchJobErrorsItem[];
+  startedAt: string;
+  finishedAt?: string | null;
+}
+
+export interface AiBatchListResponse {
+  jobs: AiBatchJob[];
 }
 
 export interface DashboardLeadKpis {

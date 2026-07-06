@@ -13,7 +13,7 @@ export interface AiInsight {
   /** lead | contact | organization */
   entityType: string;
   entityId: number;
-  /** lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence */
+  /** lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence */
   insightType: string;
   /** Structured, feature-specific output (shape varies by insightType). */
   data: AiInsightData;

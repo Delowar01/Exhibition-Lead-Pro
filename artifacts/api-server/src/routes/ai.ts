@@ -3,6 +3,7 @@ import { requireAuth, requireTenantUser, blockReadOnlyMutations, requireRole, re
 import { auditMutations } from "../lib/audit.js";
 import * as ai from "../services/ai.service.js";
 import * as insights from "../services/ai-insights.service.js";
+import * as aiBatch from "../services/ai-batch.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -58,6 +59,23 @@ router.use("/ai/insights", auditMutations("ai_insights"));
 // GET /ai/insights/overview — tenant-wide review summary (static path before /:entityType).
 router.get("/ai/insights/overview", requirePermission("ai_insights", "view"), async (req: AuthRequest, res) => {
   res.json(await insights.getOverview(req.user!));
+});
+
+// ── Batch processing ──────────────────────────────────────────────────────────
+// Static "/batch" paths MUST be registered BEFORE /:entityType/:id so "batch" is not
+// captured as an entityType (and /batch/:jobId before /:entityType/:id which is also
+// two segments). "generate" gates starting a batch; "view" gates reading progress.
+router.post("/ai/insights/batch", requirePermission("ai_insights", "generate"), async (req: AuthRequest, res) => {
+  const entityType = String((req.body ?? {}).entityType ?? "");
+  res.status(202).json(await aiBatch.startBatch(req.user!, entityType));
+});
+
+router.get("/ai/insights/batch", requirePermission("ai_insights", "view"), async (req: AuthRequest, res) => {
+  res.json({ jobs: aiBatch.listBatches(req.user!) });
+});
+
+router.get("/ai/insights/batch/:jobId", requirePermission("ai_insights", "view"), async (req: AuthRequest, res) => {
+  res.json(aiBatch.getBatch(req.user!, String(req.params.jobId)));
 });
 
 // POST /ai/insights/:entityType/:id/analyze — (re)generate all applicable insights.

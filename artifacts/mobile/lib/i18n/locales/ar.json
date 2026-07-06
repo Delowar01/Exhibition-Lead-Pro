@@ -490,7 +490,8 @@
       "smart_classification": "التصنيف الذكي",
       "opportunity_potential": "إمكانات الفرصة",
       "missing_info": "اكتمال البيانات",
-      "duplicate_intelligence": "كشف التكرارات"
+      "duplicate_intelligence": "كشف التكرارات",
+      "relationship_intelligence": "ذكاء العلاقات"
     }
   },
   "leads": {

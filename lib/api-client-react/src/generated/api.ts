@@ -26,6 +26,9 @@ import type {
   AddDocumentVersionInput,
   AdminDashboard,
   AiAnalyzeResponse,
+  AiBatchJob,
+  AiBatchListResponse,
+  AiBatchStartRequest,
   AiHealthResponse,
   AiInsight,
   AiInsightsListResponse,
@@ -13939,6 +13942,231 @@ export const useDismissAiInsight = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getDismissAiInsightMutationOptions(options));
     }
+
+export const getStartAiInsightsBatchUrl = () => {
+
+
+
+
+  return `/api/ai/insights/batch`
+}
+
+/**
+ * @summary Start a batch (re)analysis of all records of one entity type in the tenant
+ */
+export const startAiInsightsBatch = async (aiBatchStartRequest: AiBatchStartRequest, options?: RequestInit): Promise<AiBatchJob> => {
+
+  return customFetch<AiBatchJob>(getStartAiInsightsBatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiBatchStartRequest,)
+  }
+);}
+
+
+
+
+export const getStartAiInsightsBatchMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAiInsightsBatch>>, TError,{data: BodyType<AiBatchStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startAiInsightsBatch>>, TError,{data: BodyType<AiBatchStartRequest>}, TContext> => {
+
+const mutationKey = ['startAiInsightsBatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startAiInsightsBatch>>, {data: BodyType<AiBatchStartRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startAiInsightsBatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartAiInsightsBatchMutationResult = NonNullable<Awaited<ReturnType<typeof startAiInsightsBatch>>>
+    export type StartAiInsightsBatchMutationBody = BodyType<AiBatchStartRequest>
+    export type StartAiInsightsBatchMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Start a batch (re)analysis of all records of one entity type in the tenant
+ */
+export const useStartAiInsightsBatch = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startAiInsightsBatch>>, TError,{data: BodyType<AiBatchStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startAiInsightsBatch>>,
+        TError,
+        {data: BodyType<AiBatchStartRequest>},
+        TContext
+      > => {
+      return useMutation(getStartAiInsightsBatchMutationOptions(options));
+    }
+
+export const getListAiInsightsBatchesUrl = () => {
+
+
+
+
+  return `/api/ai/insights/batch`
+}
+
+/**
+ * @summary List AI batch jobs visible to the caller's tenant
+ */
+export const listAiInsightsBatches = async ( options?: RequestInit): Promise<AiBatchListResponse> => {
+
+  return customFetch<AiBatchListResponse>(getListAiInsightsBatchesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiInsightsBatchesQueryKey = () => {
+    return [
+    `/api/ai/insights/batch`
+    ] as const;
+    }
+
+
+export const getListAiInsightsBatchesQueryOptions = <TData = Awaited<ReturnType<typeof listAiInsightsBatches>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiInsightsBatches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiInsightsBatchesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiInsightsBatches>>> = ({ signal }) => listAiInsightsBatches({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiInsightsBatches>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiInsightsBatchesQueryResult = NonNullable<Awaited<ReturnType<typeof listAiInsightsBatches>>>
+export type ListAiInsightsBatchesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List AI batch jobs visible to the caller's tenant
+ */
+
+export function useListAiInsightsBatches<TData = Awaited<ReturnType<typeof listAiInsightsBatches>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiInsightsBatches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiInsightsBatchesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiInsightsBatchUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/ai/insights/batch/${jobId}`
+}
+
+/**
+ * @summary Get the status/progress of one AI batch job
+ */
+export const getAiInsightsBatch = async (jobId: string, options?: RequestInit): Promise<AiBatchJob> => {
+
+  return customFetch<AiBatchJob>(getGetAiInsightsBatchUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiInsightsBatchQueryKey = (jobId: string,) => {
+    return [
+    `/api/ai/insights/batch/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetAiInsightsBatchQueryOptions = <TData = Awaited<ReturnType<typeof getAiInsightsBatch>>, TError = ErrorType<ErrorResponse>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiInsightsBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiInsightsBatchQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiInsightsBatch>>> = ({ signal }) => getAiInsightsBatch(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(jobId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiInsightsBatch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiInsightsBatchQueryResult = NonNullable<Awaited<ReturnType<typeof getAiInsightsBatch>>>
+export type GetAiInsightsBatchQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the status/progress of one AI batch job
+ */
+
+export function useGetAiInsightsBatch<TData = Awaited<ReturnType<typeof getAiInsightsBatch>>, TError = ErrorType<ErrorResponse>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiInsightsBatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiInsightsBatchQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getRegisterPushTokenUrl = () => {
 

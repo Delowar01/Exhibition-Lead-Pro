@@ -25,6 +25,7 @@ const INSIGHT_LABELS: Record<string, string> = {
   opportunity_potential: "Opportunity Potential",
   missing_info: "Data Completeness",
   duplicate_intelligence: "Duplicate Detection",
+  relationship_intelligence: "Relationship Intelligence",
 };
 
 function humanizeKey(key: string): string {

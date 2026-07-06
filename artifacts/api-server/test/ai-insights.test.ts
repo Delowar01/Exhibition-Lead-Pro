@@ -6,6 +6,7 @@ import {
   usersTable,
   contactsTable,
   leadsTable,
+  eventsTable,
   aiInsightsTable,
 } from "@workspace/db";
 
@@ -301,5 +302,119 @@ describe("RBAC — deny-by-default employee writes", () => {
   it("403s an employee generating insights (no ai_insights.generate permission)", async () => {
     const res = await api("POST", `/ai/insights/lead/${leadId}/analyze`, empToken);
     expect(res.status).toBe(403);
+  });
+});
+
+describe("relationship_intelligence — deterministic link derivation", () => {
+  it("surfaces the contact's linked lead (deterministic, confidence 100, real CRM data)", async () => {
+    const res = await api("POST", `/ai/insights/contact/${contactId}/analyze`, adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const rel = body.insights.find((i: { insightType: string }) => i.insightType === "relationship_intelligence");
+    expect(rel).toBeDefined();
+    expect(rel.source).toBe("deterministic");
+    expect(rel.confidence).toBe(100);
+    expect(rel.entityType).toBe("contact");
+    expect(rel.entityId).toBe(contactId);
+    // A lead (leadId) is linked to this contact, so relatedLeads must reflect it —
+    // derived purely from stored rows, never fabricated.
+    expect(rel.data.counts.relatedLeads).toBeGreaterThanOrEqual(1);
+    expect(rel.data.relatedLeads.some((l: { id: number }) => l.id === leadId)).toBe(true);
+    expect(typeof rel.reasoning).toBe("string");
+    expect(rel.reasoning.length).toBeGreaterThan(0);
+  });
+
+  it("links the lead back to its primary contact (deterministic)", async () => {
+    const res = await api("POST", `/ai/insights/lead/${leadId}/analyze`, adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const rel = body.insights.find((i: { insightType: string }) => i.insightType === "relationship_intelligence");
+    expect(rel).toBeDefined();
+    expect(rel.source).toBe("deterministic");
+    expect(rel.data.contact).not.toBeNull();
+    expect(rel.data.contact.id).toBe(contactId);
+    // Deterministic relationship rows must never masquerade as AI.
+    expect(rel.provider ?? null).toBeNull();
+    expect(rel.model ?? null).toBeNull();
+  });
+
+  it("scopes FK dereferences to the tenant — a forced cross-tenant eventId never leaks the foreign event name", async () => {
+    // Simulate a cross-tenant FK that write-path guards normally reject: insert an
+    // event under tenant B and point tenant A's lead at it directly via the DB. The
+    // relationship engine must NOT dereference it (tenant-scoped lookup returns null).
+    const [ev] = await db
+      .insert(eventsTable)
+      .values({ companyId: companyBId, name: "FOREIGN-EVENT-LEAK" })
+      .returning({ id: eventsTable.id });
+    await db.update(leadsTable).set({ eventId: ev.id }).where(eq(leadsTable.id, leadId));
+    try {
+      const res = await api("POST", `/ai/insights/lead/${leadId}/analyze`, adminToken);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const rel = body.insights.find((i: { insightType: string }) => i.insightType === "relationship_intelligence");
+      expect(rel).toBeDefined();
+      expect(rel.data.event ?? null).toBeNull();
+      expect(String(rel.reasoning)).not.toContain("FOREIGN-EVENT-LEAK");
+    } finally {
+      await db.update(leadsTable).set({ eventId: null }).where(eq(leadsTable.id, leadId));
+    }
+  });
+});
+
+describe("POST /ai/insights/batch — tenant-scoped batch analysis", () => {
+  it("400s an unknown entityType", async () => {
+    const res = await api("POST", `/ai/insights/batch`, adminToken, { entityType: "widget" });
+    expect(res.status).toBe(400);
+  });
+
+  it("403s an employee starting a batch (no ai_insights.generate permission)", async () => {
+    const res = await api("POST", `/ai/insights/batch`, empToken, { entityType: "contact" });
+    expect(res.status).toBe(403);
+  });
+
+  it("starts a batch and reports progress scoped to the caller's tenant", async () => {
+    const res = await api("POST", `/ai/insights/batch`, adminToken, { entityType: "contact" });
+    expect(res.status).toBe(202);
+    const job = await res.json();
+    expect(typeof job.id).toBe("string");
+    expect(job.companyId).toBe(companyId);
+    expect(job.entityType).toBe("contact");
+    expect(["queued", "running", "completed"]).toContain(job.status);
+    // Tenant A has exactly the two seeded contacts (c1 + c2).
+    expect(job.total).toBe(2);
+
+    // Poll until it finishes (fire-and-forget processing, deterministic engines always run).
+    let final = job;
+    for (let i = 0; i < 30 && final.status !== "completed" && final.status !== "failed"; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const poll = await api("GET", `/ai/insights/batch/${job.id}`, adminToken);
+      expect(poll.status).toBe(200);
+      final = await poll.json();
+    }
+    expect(final.status).toBe("completed");
+    expect(final.processed).toBe(final.total);
+    expect(final.succeeded + final.failed).toBe(final.total);
+    expect(typeof final.finishedAt).toBe("string");
+  });
+
+  it("lists batch jobs for the caller's tenant only", async () => {
+    const res = await api("GET", `/ai/insights/batch`, adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.jobs)).toBe(true);
+    expect(body.jobs.length).toBeGreaterThan(0);
+    expect(body.jobs.every((j: { companyId: number }) => j.companyId === companyId)).toBe(true);
+  });
+
+  it("404s fetching another tenant's batch job (no existence leak)", async () => {
+    const start = await api("POST", `/ai/insights/batch`, adminToken, { entityType: "contact" });
+    const job = await start.json();
+    const res = await api("GET", `/ai/insights/batch/${job.id}`, adminBToken);
+    expect(res.status).toBe(404);
+  });
+
+  it("404s a non-existent batch job id", async () => {
+    const res = await api("GET", `/ai/insights/batch/00000000-0000-0000-0000-000000000000`, adminToken);
+    expect(res.status).toBe(404);
   });
 });

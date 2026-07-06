@@ -18,6 +18,11 @@ import type { AiFeature } from "../ai/types.js";
 import { resolveSettings } from "./ai.service.js";
 import * as insightsRepo from "../repositories/ai_insights.repository.js";
 import type { EntityType, InsightType, UpsertInsightInput } from "../repositories/ai_insights.repository.js";
+import {
+  contactRelationships,
+  leadRelationships,
+  organizationRelationships,
+} from "./ai-relationships.service.js";
 
 // Orchestration for the Stage 5A reviewable AI intelligence layer. For a single CRM
 // entity it assembles a CRM-data-ONLY context (records already stored in the tenant),
@@ -91,18 +96,18 @@ function contactLines(c: Contact): string[] {
   ];
 }
 
-async function eventName(id: number | null): Promise<string | null> {
+async function eventName(companyId: number, id: number | null): Promise<string | null> {
   if (id == null) return null;
-  const [row] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
+  const [row] = await db.select({ name: eventsTable.name }).from(eventsTable).where(and(eq(eventsTable.companyId, companyId), eq(eventsTable.id, id))).limit(1);
   return row?.name ?? null;
 }
 
 async function buildLeadContext(lead: Lead): Promise<string> {
   let contact: Contact | undefined;
   if (lead.contactId != null) {
-    [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, lead.contactId)).limit(1);
+    [contact] = await db.select().from(contactsTable).where(and(eq(contactsTable.companyId, lead.companyId), eq(contactsTable.id, lead.contactId), isNull(contactsTable.deletedAt))).limit(1);
   }
-  const evName = await eventName(lead.eventId);
+  const evName = await eventName(lead.companyId, lead.eventId);
   const lines = [
     `Lead title: ${lead.title ?? "(none)"}`,
     `Stage: ${lead.stage}`,
@@ -123,12 +128,12 @@ async function buildOrganizationContext(org: Organization): Promise<string> {
   const contacts = await db
     .select({ firstName: contactsTable.firstName, lastName: contactsTable.lastName, fullName: contactsTable.fullName, jobTitle: contactsTable.jobTitle })
     .from(contactsTable)
-    .where(and(eq(contactsTable.organizationId, org.id), isNull(contactsTable.deletedAt)))
+    .where(and(eq(contactsTable.companyId, org.companyId), eq(contactsTable.organizationId, org.id), isNull(contactsTable.deletedAt)))
     .limit(25);
   const [{ leadCount, leadValue } = { leadCount: 0, leadValue: 0 }] = await db
     .select({ leadCount: sql<number>`count(*)`, leadValue: sql<number>`coalesce(sum(${leadsTable.value}),0)` })
     .from(leadsTable)
-    .where(and(eq(leadsTable.organizationId, org.id), isNull(leadsTable.deletedAt)));
+    .where(and(eq(leadsTable.companyId, org.companyId), eq(leadsTable.organizationId, org.id), isNull(leadsTable.deletedAt)));
   const lines = [
     `Company name: ${org.name}`,
     `Industry: ${org.industry ?? "(none)"}`,
@@ -321,6 +326,7 @@ export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: 
       { label: "Closing date", value: lead.closingDate }, { label: "Contact", value: lead.contactId }, { label: "Owner", value: lead.assignedToId },
     ])));
     await insightsRepo.upsertInsight(detUpsert(cid, "lead", id, "duplicate_intelligence", duplicateInsight(await leadDuplicates(cid, lead))));
+    await insightsRepo.upsertInsight(detUpsert(cid, "lead", id, "relationship_intelligence", await leadRelationships(cid, lead)));
   } else if (entityType === "contact") {
     const contact = await loadContact(user, id);
     const cid = contact.companyId;
@@ -334,6 +340,7 @@ export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: 
       { label: "Company", value: contact.contactCompany ?? contact.organizationId }, { label: "Website", value: contact.website }, { label: "Country", value: contact.country },
     ])));
     await insightsRepo.upsertInsight(detUpsert(cid, "contact", id, "duplicate_intelligence", duplicateInsight(await contactDuplicates(cid, contact))));
+    await insightsRepo.upsertInsight(detUpsert(cid, "contact", id, "relationship_intelligence", await contactRelationships(cid, contact)));
   } else {
     const org = await loadOrganization(user, id);
     const cid = org.companyId;
@@ -345,6 +352,7 @@ export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: 
       { label: "Email", value: org.email }, { label: "Country", value: org.country }, { label: "Size", value: org.size },
     ])));
     await insightsRepo.upsertInsight(detUpsert(cid, "organization", id, "duplicate_intelligence", duplicateInsight(await organizationDuplicates(cid, org))));
+    await insightsRepo.upsertInsight(detUpsert(cid, "organization", id, "relationship_intelligence", await organizationRelationships(cid, org)));
   }
 
   const insights = await insightsRepo.listByEntity(user, entityType, id);

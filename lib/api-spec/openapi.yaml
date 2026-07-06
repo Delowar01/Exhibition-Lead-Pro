@@ -4018,6 +4018,67 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /ai/insights/batch:
+    post:
+      operationId: startAiInsightsBatch
+      tags: [ai]
+      summary: Start a batch (re)analysis of all records of one entity type in the tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiBatchStartRequest"
+      responses:
+        "202":
+          description: Batch accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiBatchJob"
+        "400":
+          description: Invalid entity type or missing company context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: listAiInsightsBatches
+      tags: [ai]
+      summary: List AI batch jobs visible to the caller's tenant
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiBatchListResponse"
+
+  /ai/insights/batch/{jobId}:
+    get:
+      operationId: getAiInsightsBatch
+      tags: [ai]
+      summary: Get the status/progress of one AI batch job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiBatchJob"
+        "404":
+          description: Batch job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -9782,7 +9843,7 @@ components:
           type: integer
         insightType:
           type: string
-          description: lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence
+          description: lead_intelligence | company_intelligence | contact_intelligence | smart_classification | opportunity_potential | missing_info | duplicate_intelligence | relationship_intelligence
         data:
           type: object
           additionalProperties: true
@@ -9870,6 +9931,63 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiInsight"
+
+    AiBatchStartRequest:
+      type: object
+      required: [entityType]
+      properties:
+        entityType:
+          type: string
+          description: lead | contact | organization
+
+    AiBatchJob:
+      type: object
+      required: [id, companyId, requestedById, entityType, status, total, processed, succeeded, failed, errors, startedAt]
+      properties:
+        id:
+          type: string
+        companyId:
+          type: integer
+        requestedById:
+          type: integer
+        entityType:
+          type: string
+          description: lead | contact | organization
+        status:
+          type: string
+          description: queued | running | completed | failed
+        total:
+          type: integer
+        processed:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            required: [entityId, message]
+            properties:
+              entityId:
+                type: integer
+              message:
+                type: string
+        startedAt:
+          type: string
+        finishedAt:
+          type: string
+          nullable: true
+
+    AiBatchListResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiBatchJob"
 
     DashboardLeadKpis:
       type: object

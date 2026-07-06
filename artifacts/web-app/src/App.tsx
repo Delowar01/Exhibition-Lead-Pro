@@ -43,6 +43,7 @@ import AdminReports from "@/pages/admin/Reports";
 import AdminAnalytics from "@/pages/admin/Analytics";
 import AdminAiSettings from "@/pages/admin/AiSettings";
 import AdminAiInsightsReview from "@/pages/admin/AiInsightsReview";
+import AdminBatchOperations from "@/pages/admin/BatchOperations";
 import AdminSubscription from "@/pages/admin/Subscription";
 import AdminSettings from "@/pages/admin/Settings";
 import AdminScan from "@/pages/admin/Scan";
@@ -257,6 +258,9 @@ function Router() {
       </Route>
       <Route path="/admin/analytics">
         {() => <ProtectedRoute component={AdminAnalytics} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/ai-batch">
+        {() => <ProtectedRoute component={AdminBatchOperations} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/ai-insights">
         {() => <ProtectedRoute component={AdminAiInsightsReview} role="admin" layout={AdminLayout} />}

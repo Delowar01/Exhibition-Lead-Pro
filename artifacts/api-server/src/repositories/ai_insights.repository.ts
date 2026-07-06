@@ -17,7 +17,8 @@ export type InsightType =
   | "smart_classification"
   | "opportunity_potential"
   | "missing_info"
-  | "duplicate_intelligence";
+  | "duplicate_intelligence"
+  | "relationship_intelligence";
 
 export interface UpsertInsightInput {
   companyId: number;

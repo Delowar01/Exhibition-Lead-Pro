@@ -490,7 +490,8 @@
       "smart_classification": "Smart classification",
       "opportunity_potential": "Opportunity potential",
       "missing_info": "Data completeness",
-      "duplicate_intelligence": "Duplicate detection"
+      "duplicate_intelligence": "Duplicate detection",
+      "relationship_intelligence": "Relationship intelligence"
     }
   },
   "leads": {
