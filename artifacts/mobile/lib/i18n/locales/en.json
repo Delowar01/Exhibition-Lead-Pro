@@ -513,6 +513,20 @@
     "calLocationPlaceholder": "Office, video call, address…",
     "createInvite": "Create invite"
   },
+  "workspace": {
+    "overview": "Overview",
+    "timeline": "Timeline",
+    "activities": "Activities",
+    "documents": "Documents",
+    "intelligence": "Intelligence",
+    "discussion": "Discussion",
+    "contacts": "Contacts",
+    "leads": "Leads",
+    "events": "Events",
+    "notes": "Notes",
+    "interactions": "Interactions",
+    "noInteractions": "No interactions recorded."
+  },
   "contacts": {
     "title": "Contacts",
     "searchPlaceholder": "Search contacts",
@@ -1394,7 +1408,9 @@
     "groupAi": "AI Intelligence",
     "groupWorkspace": "My Workspace",
     "groupSettings": "Settings",
-    "followupsSub": "Due and upcoming follow-ups"
+    "followupsSub": "Due and upcoming follow-ups",
+    "devPerf": "Dev Performance",
+    "devPerfSub": "Scan pipeline timings"
   },
   "batch": {
     "backToContacts": "Back to contacts",

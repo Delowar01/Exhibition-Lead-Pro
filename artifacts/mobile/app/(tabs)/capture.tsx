@@ -16,6 +16,7 @@ import { FONT } from "@/components/ui";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { RADIUS, SPACING, TOUCH_TARGET } from "@/constants/tokens";
 
 type CaptureMode = "single" | "rapid" | "batch";
 
@@ -33,8 +34,6 @@ export default function CaptureScreen() {
   const { captureMode, isLoaded, activeEventId, activeEventName } = useSettings();
   const [mode, setMode] = useState<CaptureMode>(captureMode);
 
-  // Apply the persisted default capture mode once settings hydrate, while still
-  // letting the user override it locally afterwards.
   const hydrated = useRef(false);
   useEffect(() => {
     if (isLoaded && !hydrated.current) {
@@ -46,8 +45,6 @@ export default function CaptureScreen() {
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
   const activeMode = MODES.find((m) => m.key === mode)!;
 
-  // #1 — every capture must be tagged to an active event. If none is selected,
-  // send the user to pick/create one first.
   function requireEvent(run: () => void) {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (!activeEventId) {
@@ -57,57 +54,44 @@ export default function CaptureScreen() {
     run();
   }
 
-  const methods: {
-    key: string;
-    label: string;
-    sub: string;
-    icon: keyof typeof Feather.glyphMap;
-    color: string;
-    onPress: () => void;
-  }[] = [
+  const primaryMethods = [
     {
       key: "card",
       label: t("capture.businessCard"),
       sub: t("capture.businessCardDesc"),
-      icon: "credit-card",
+      icon: "camera" as keyof typeof Feather.glyphMap,
       color: colors.primary,
-      onPress: () =>
-        requireEvent(() =>
-          router.push({ pathname: "/capture-camera", params: { source: "card", mode } }),
-        ),
-    },
-    {
-      key: "signature",
-      label: t("capture.emailSignature"),
-      sub: t("capture.emailSignatureDesc"),
-      icon: "mail",
-      color: "#8B5CF6",
-      onPress: () =>
-        requireEvent(() =>
-          router.push({ pathname: "/capture-camera", params: { source: "signature", mode } }),
-        ),
-    },
-    {
-      key: "nfc",
-      label: t("capture.nfc"),
-      sub: t("capture.nfcDesc"),
-      icon: "wifi",
-      color: "#10B981",
-      onPress: () => requireEvent(() => router.push("/capture-nfc")),
+      onPress: () => requireEvent(() => router.push({ pathname: "/capture-camera", params: { source: "card", mode } })),
     },
     {
       key: "qr",
       label: t("capture.qrCode"),
       sub: t("capture.qrCodeDesc"),
-      icon: "grid",
+      icon: "grid" as keyof typeof Feather.glyphMap,
       color: "#06B6D4",
       onPress: () => requireEvent(() => router.push("/capture-qr")),
+    },
+  ];
+
+  const secondaryMethods = [
+    {
+      key: "nfc",
+      label: t("capture.nfc"),
+      icon: "wifi" as keyof typeof Feather.glyphMap,
+      color: "#10B981",
+      onPress: () => requireEvent(() => router.push("/capture-nfc")),
+    },
+    {
+      key: "signature",
+      label: t("capture.emailSignature"),
+      icon: "mail" as keyof typeof Feather.glyphMap,
+      color: "#8B5CF6",
+      onPress: () => requireEvent(() => router.push({ pathname: "/capture-camera", params: { source: "signature", mode } })),
     },
     {
       key: "manual",
       label: t("capture.manual"),
-      sub: t("capture.manualDesc"),
-      icon: "edit-3",
+      icon: "edit-3" as keyof typeof Feather.glyphMap,
       color: "#F59E0B",
       onPress: () => requireEvent(() => router.push("/capture-manual")),
     },
@@ -117,109 +101,87 @@ export default function CaptureScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: topPad + 14,
-          paddingHorizontal: 20,
+          paddingTop: topPad + SPACING.lg,
+          paddingHorizontal: SPACING.xl,
           paddingBottom: insets.bottom + 110,
           flexGrow: 1,
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
-          {t("capture.title")}
-        </Text>
-        <Text style={[styles.subheading, { color: colors.mutedForeground, textAlign }]}>
-          {t("capture.subtitle")}
-        </Text>
+        <View style={{ marginBottom: SPACING.xl }}>
+          <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
+            {t("capture.title")}
+          </Text>
+          <Text style={[styles.subheading, { color: colors.mutedForeground, textAlign }]}>
+            {t("capture.subtitle")}
+          </Text>
+        </View>
 
-        {/* Active event */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
-          {t("home.activeEvent").toUpperCase()}
-        </Text>
+        {/* Active Event */}
         <Pressable
-          onPress={() => {
-            router.push("/event-picker");
-          }}
+          onPress={() => router.push("/event-picker")}
           style={({ pressed }) => [
-            styles.eventBar,
+            styles.eventCard,
             {
-              backgroundColor: activeEventId ? colors.accent : colors.card,
-              borderColor: activeEventId ? colors.primary : colors.border,
-              borderRadius: colors.radius + 4,
+              backgroundColor: activeEventId ? colors.primary + "12" : colors.card,
+              borderColor: activeEventId ? colors.primary + "40" : colors.border,
+              borderRadius: RADIUS.lg,
               opacity: pressed ? 0.8 : 1,
               flexDirection: isRTL ? "row-reverse" : "row",
             },
           ]}
         >
-          <View
-            style={[
-              styles.eventBarIcon,
-              { backgroundColor: activeEventId ? colors.primary : colors.muted },
-            ]}
-          >
-            <Feather
-              name={activeEventId ? "calendar" : "alert-circle"}
-              size={18}
-              color={activeEventId ? "#FFFFFF" : colors.mutedForeground}
-            />
+          <View style={[styles.eventIcon, { backgroundColor: activeEventId ? colors.primary : colors.muted }]}>
+            <Feather name={activeEventId ? "map-pin" : "calendar"} size={18} color={activeEventId ? "#FFF" : colors.mutedForeground} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={[styles.eventBarTitle, { color: colors.foreground, textAlign }]}>
+            <Text style={[styles.eventTitle, { color: activeEventId ? colors.primary : colors.foreground, textAlign }]} numberOfLines={1}>
               {activeEventName ?? t("home.noActiveEvent")}
             </Text>
-            <Text style={[styles.eventBarSub, { color: colors.mutedForeground, textAlign }]}>
+            <Text style={[styles.eventSub, { color: colors.mutedForeground, textAlign }]}>
               {activeEventId ? t("capture.eventTagged") : t("capture.eventSelectHint")}
             </Text>
           </View>
           <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
         </Pressable>
 
-        {/* Mode selector */}
+        {/* Mode Selector */}
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
           {t("capture.captureMode").toUpperCase()}
         </Text>
-        <View style={[styles.modeBar, { backgroundColor: colors.muted, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" }]}>
+        <View style={[styles.modeBar, { backgroundColor: colors.muted, borderRadius: RADIUS.lg, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           {MODES.map((m) => {
             const active = m.key === mode;
             return (
               <Pressable
                 key={m.key}
-                onPress={() => {
-                  setMode(m.key);
-                }}
+                onPress={() => setMode(m.key)}
                 style={[
                   styles.modeChip,
-                  {
-                    backgroundColor: active ? colors.card : "transparent",
-                    borderRadius: colors.radius + 1,
-                  },
+                  { backgroundColor: active ? colors.card : "transparent", borderRadius: RADIUS.md },
                   active && styles.modeChipActive,
                 ]}
               >
                 <Feather name={m.icon} size={15} color={active ? colors.primary : colors.mutedForeground} />
-                <Text
-                  style={[
-                    styles.modeChipText,
-                    { color: active ? colors.foreground : colors.mutedForeground },
-                  ]}
-                >
+                <Text style={[styles.modeChipText, { color: active ? colors.foreground : colors.mutedForeground }]}>
                   {t(m.labelKey)}
                 </Text>
               </Pressable>
             );
           })}
         </View>
-        <View style={[styles.modeHint, { backgroundColor: colors.accent, borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
-          <Feather name={activeMode.icon} size={15} color={colors.primary} />
-          <Text style={[styles.modeHintText, { color: colors.accentForeground, textAlign }]}>
+        <View style={[styles.modeHint, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+          <Feather name="info" size={14} color={colors.mutedForeground} />
+          <Text style={[styles.modeHintText, { color: colors.mutedForeground, textAlign }]}>
             {t(activeMode.descKey)}
           </Text>
         </View>
 
-        {/* Methods */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>{t("capture.captureMethod")}</Text>
-        <View style={{ gap: 12 }}>
-          {methods.map((m) => (
+        {/* Primary Methods */}
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>{t("capture.captureMethod").toUpperCase()}</Text>
+        <View style={{ gap: SPACING.md }}>
+          {primaryMethods.map((m) => (
             <Pressable
               key={m.key}
               onPress={() => {
@@ -227,18 +189,39 @@ export default function CaptureScreen() {
                 m.onPress();
               }}
               style={({ pressed }) => [
-                styles.methodCard,
-                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, opacity: pressed ? 0.75 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
+                styles.primaryMethodCard,
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: RADIUS.lg, opacity: pressed ? 0.8 : 1, flexDirection: isRTL ? "row-reverse" : "row" },
               ]}
             >
-              <View style={[styles.methodIcon, { backgroundColor: m.color + "1A" }]}>
-                <Feather name={m.icon} size={22} color={m.color} />
+              <View style={[styles.primaryMethodIcon, { backgroundColor: m.color + "1A" }]}>
+                <Feather name={m.icon} size={28} color={m.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.methodLabel, { color: colors.foreground, textAlign }]}>{m.label}</Text>
-                <Text style={[styles.methodSub, { color: colors.mutedForeground, textAlign }]}>{m.sub}</Text>
+                <Text style={[styles.primaryMethodLabel, { color: colors.foreground, textAlign }]}>{m.label}</Text>
+                <Text style={[styles.primaryMethodSub, { color: colors.mutedForeground, textAlign }]}>{m.sub}</Text>
               </View>
-              <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Secondary Methods Grid */}
+        <View style={[styles.secondaryGrid, { flexDirection: isRTL ? "row-reverse" : "row", marginTop: SPACING.md }]}>
+          {secondaryMethods.map((m) => (
+            <Pressable
+              key={m.key}
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                m.onPress();
+              }}
+              style={({ pressed }) => [
+                styles.secondaryMethodCard,
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: RADIUS.lg, opacity: pressed ? 0.8 : 1 },
+              ]}
+            >
+              <View style={[styles.secondaryMethodIcon, { backgroundColor: m.color + "1A" }]}>
+                <Feather name={m.icon} size={20} color={m.color} />
+              </View>
+              <Text style={[styles.secondaryMethodLabel, { color: colors.foreground, textAlign: "center" }]}>{m.label}</Text>
             </Pressable>
           ))}
         </View>
@@ -248,103 +231,25 @@ export default function CaptureScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: {
-    fontSize: 30,
-    fontFamily: FONT.bold,
-  },
-  subheading: {
-    fontSize: 14,
-    fontFamily: FONT.regular,
-    marginTop: 2,
-  },
-  sectionTitle: {
-    fontSize: 11.5,
-    fontFamily: FONT.semibold,
-    letterSpacing: 0.6,
-    marginTop: 24,
-    marginBottom: 12,
-  },
-  eventBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderWidth: 1.5,
-  },
-  eventBarIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  eventBarTitle: {
-    fontSize: 15.5,
-    fontFamily: FONT.semibold,
-  },
-  eventBarSub: {
-    fontSize: 12.5,
-    fontFamily: FONT.regular,
-    marginTop: 2,
-  },
-  modeBar: {
-    flexDirection: "row",
-    padding: 4,
-    gap: 4,
-  },
-  modeChip: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-  },
-  modeChipActive: {
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  modeChipText: {
-    fontSize: 13.5,
-    fontFamily: FONT.semibold,
-  },
-  modeHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 12,
-    marginTop: 10,
-  },
-  modeHintText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: FONT.medium,
-    lineHeight: 18,
-  },
-  methodCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    padding: 16,
-    borderWidth: 1,
-  },
-  methodIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  methodLabel: {
-    fontSize: 16,
-    fontFamily: FONT.semibold,
-  },
-  methodSub: {
-    fontSize: 13,
-    fontFamily: FONT.regular,
-    marginTop: 2,
-  },
+  heading: { fontSize: 32, fontFamily: FONT.bold, letterSpacing: -0.5 },
+  subheading: { fontSize: 15, fontFamily: FONT.regular, marginTop: 4 },
+  sectionTitle: { fontSize: 12, fontFamily: FONT.semibold, letterSpacing: 0.8, marginTop: SPACING.xxl, marginBottom: SPACING.md },
+  eventCard: { flexDirection: "row", alignItems: "center", gap: SPACING.md, padding: SPACING.lg, borderWidth: 1 },
+  eventIcon: { width: 44, height: 44, borderRadius: RADIUS.full, alignItems: "center", justifyContent: "center" },
+  eventTitle: { fontSize: 16, fontFamily: FONT.semibold },
+  eventSub: { fontSize: 13, fontFamily: FONT.regular, marginTop: 2 },
+  modeBar: { flexDirection: "row", padding: SPACING.xs, gap: SPACING.xs },
+  modeChip: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12 },
+  modeChipActive: { shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  modeChipText: { fontSize: 14, fontFamily: FONT.semibold },
+  modeHint: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4, marginTop: SPACING.sm },
+  modeHintText: { flex: 1, fontSize: 13, fontFamily: FONT.medium, lineHeight: 18 },
+  primaryMethodCard: { flexDirection: "row", alignItems: "center", gap: SPACING.lg, padding: SPACING.lg, borderWidth: 1 },
+  primaryMethodIcon: { width: 56, height: 56, borderRadius: RADIUS.full, alignItems: "center", justifyContent: "center" },
+  primaryMethodLabel: { fontSize: 18, fontFamily: FONT.semibold },
+  primaryMethodSub: { fontSize: 14, fontFamily: FONT.regular, marginTop: 4 },
+  secondaryGrid: { gap: SPACING.md },
+  secondaryMethodCard: { flex: 1, padding: SPACING.lg, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: SPACING.sm },
+  secondaryMethodIcon: { width: 40, height: 40, borderRadius: RADIUS.full, alignItems: "center", justifyContent: "center" },
+  secondaryMethodLabel: { fontSize: 14, fontFamily: FONT.medium },
 });

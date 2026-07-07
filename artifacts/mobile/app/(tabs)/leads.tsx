@@ -1,6 +1,6 @@
 import { Feather } from "@/components/icons";
 import * as Haptics from "expo-haptics";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -47,6 +47,8 @@ import {
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
+import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader";
+import { QuickActionsBar } from "@/components/workspace/QuickActionsBar";
 import { ExportSheet } from "@/components/ExportSheet";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
@@ -455,45 +457,30 @@ export default function LeadsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20 }}>
-        {router.canGoBack() && (
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={10}
-            style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          >
-            <Feather name={isRTL ? "chevron-right" : "chevron-left"} size={20} color={colors.foreground} />
-          </Pressable>
-        )}
-
-        <View style={[styles.headerActions, { top: topPad + 12, right: isRTL ? undefined : 20, left: isRTL ? 20 : undefined, flexDirection: isRTL ? "row-reverse" : "row" }]}>
-          <Pressable
-            onPress={() => {
-              if (selectionMode) exitSelection();
-              else setSelectionMode(true);
-            }}
-            hitSlop={10}
-            style={[styles.iconBtn, { backgroundColor: selectionMode ? colors.primary : colors.card, borderColor: selectionMode ? colors.primary : colors.border }]}
-          >
-            <Feather name={selectionMode ? "x" : "check-square"} size={17} color={selectionMode ? "#FFFFFF" : colors.foreground} />
-          </Pressable>
-          {showExport && (
-            <Pressable
-              onPress={() => setExportOpen(true)}
-              hitSlop={10}
-              style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              <Feather name="share" size={17} color={colors.foreground} />
-            </Pressable>
-          )}
-        </View>
-
-        <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("leads.title")}</Text>
-        <Text style={[styles.headingSub, { color: colors.mutedForeground, textAlign }]}>
-          {formatCurrency(totalOpenValue, currencyCode)} {t("leads.openValueSuffix")}
-        </Text>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={{ paddingTop: topPad }}>
+        <WorkspaceHeader
+          title={t("leads.title")}
+          subtitle={`${formatCurrency(totalOpenValue, currencyCode)} ${t("leads.openValueSuffix")}`}
+          onBack={router.canGoBack() ? () => router.back() : undefined}
+          rightAction={
+            <View style={{ flexDirection: "row", gap: 14 }}>
+              <Pressable onPress={() => {
+                if (selectionMode) exitSelection();
+                else setSelectionMode(true);
+              }} hitSlop={10}>
+                <Feather name={selectionMode ? "x" : "check-square"} size={19} color={selectionMode ? colors.primary : colors.foreground} />
+              </Pressable>
+              {showExport && (
+                <Pressable onPress={() => setExportOpen(true)} hitSlop={10}>
+                  <Feather name="share" size={19} color={colors.foreground} />
+                </Pressable>
+              )}
+            </View>
+          }
+        />
         {!selectionMode && (
-          <Text style={[styles.hint, { color: colors.mutedForeground, textAlign }]}>{t("leads.kanbanHint")}</Text>
+          <Text style={[styles.hint, { color: colors.mutedForeground, textAlign, paddingHorizontal: 20, paddingBottom: 12 }]}>{t("leads.kanbanHint")}</Text>
         )}
       </View>
 

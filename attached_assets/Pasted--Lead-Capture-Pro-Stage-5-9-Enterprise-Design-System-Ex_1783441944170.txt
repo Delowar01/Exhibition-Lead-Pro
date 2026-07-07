@@ -1,0 +1,422 @@
+# Lead Capture Pro
+# Stage 5.9 – Enterprise Design System & Experience Modernization
+# Phase 4 – Enterprise Mobile Experience Modernization
+
+Objective
+
+Stage 5.9 Phase 3B has been successfully completed, reviewed and approved.
+
+Proceed with Stage 5.9 Phase 4.
+
+This phase focuses exclusively on the Employee Mobile Application.
+
+The goal is NOT to replicate the web interface.
+
+The goal is to create a world-class mobile CRM designed specifically for field sales professionals attending exhibitions, conferences, meetings, and customer visits.
+
+=========================================================
+
+IMPORTANT
+
+This is NOT a visual redesign only.
+
+This is a complete Mobile User Experience modernization.
+
+Every screen should optimize:
+
+• Speed
+• One-handed usage
+• Productivity
+• Minimal taps
+• Offline usability
+• Clear information hierarchy
+
+=========================================================
+
+Preserve
+
+Do NOT modify:
+
+• Business Logic
+• APIs
+• Database
+• RBAC
+• Enterprise Privacy
+• Multi-tenancy
+• AI Logic
+• OCR Logic
+• Workflow Logic
+
+Zero regressions.
+
+=========================================================
+
+Primary Objective
+
+Build the best possible mobile sales application.
+
+Every screen should help a salesperson complete tasks faster while in the field.
+
+=========================================================
+
+Modernize
+
+• Home Dashboard
+
+• Scan Experience
+
+• Leads
+
+• Lead Workspace
+
+• Contact Workspace
+
+• Company Workspace
+
+• Notifications
+
+• AI Intelligence
+
+• Documents
+
+• More Menu
+
+• Settings
+
+=========================================================
+
+Dashboard
+
+Create a personalized dashboard focused on daily work.
+
+Examples:
+
+Today's Tasks
+
+Today's Follow-ups
+
+My Leads
+
+Recent Scans
+
+Meetings
+
+AI Recommendations
+
+Workflow Alerts
+
+Quick Actions
+
+Recent Activity
+
+=========================================================
+
+Scan Experience
+
+The Scan screen should be the fastest workflow in the application.
+
+Optimize:
+
+• Camera UX
+
+• Capture flow
+
+• OCR progress
+
+• Existing contact detection
+
+• Duplicate warning
+
+• Interaction confirmation
+
+• Queue status
+
+• Sync status
+
+Minimize user interaction.
+
+=========================================================
+
+Workspace Family
+
+Continue the Enterprise Workspace concept introduced in Phase 3B.
+
+Lead
+
+Company
+
+Contact
+
+should all share one mobile workspace language.
+
+Include:
+
+Overview
+
+Timeline
+
+Activities
+
+Documents
+
+Interaction History
+
+AI Intelligence
+
+Reserve a Discussion tab for future Stage 5.5.
+
+=========================================================
+
+Quick Actions
+
+Primary actions should always remain easily accessible.
+
+Examples:
+
+Call
+
+Email
+
+WhatsApp
+
+Add Note
+
+Schedule Follow-up
+
+Assign
+
+Change Stage
+
+Generate Proposal
+
+AI Assistant
+
+=========================================================
+
+Offline Experience
+
+Improve visibility of offline behavior.
+
+Clearly display:
+
+• Pending uploads
+
+• Pending scans
+
+• Pending OCR
+
+• Sync progress
+
+• Last synchronization
+
+• Offline mode
+
+Users should never wonder whether data has been saved.
+
+=========================================================
+
+AI Experience
+
+Create a premium mobile AI workspace.
+
+Unify:
+
+• AI Command Center
+
+• Sales Copilot
+
+• Lead Intelligence
+
+• Workflow Intelligence
+
+• OCR Intelligence
+
+Provide contextual suggestions without clutter.
+
+=========================================================
+
+Navigation
+
+Continue using:
+
+Home
+
+Scan
+
+Leads
+
+Notifications
+
+More
+
+Optimize every flow to minimize taps.
+
+=========================================================
+
+Enterprise UX Rules
+
+Every mobile screen should answer:
+
+1.
+
+Where am I?
+
+2.
+
+What is the most important information?
+
+3.
+
+What should I do next?
+
+=========================================================
+
+Performance
+
+Improve:
+
+• Screen transitions
+
+• Animation smoothness
+
+• Skeleton loading
+
+• Lazy rendering
+
+• List performance
+
+• Image loading
+
+• Memory usage
+
+=========================================================
+
+Accessibility
+
+Maintain:
+
+• WCAG compliance
+
+• Proper touch targets
+
+• Screen reader support
+
+• Focus management
+
+• High contrast
+
+=========================================================
+
+Responsive
+
+Verify across:
+
+Small phones
+
+Large phones
+
+Tablets
+
+Maintain complete EN/AR parity and RTL support.
+
+=========================================================
+
+Presentation Requirements
+
+For EVERY redesigned screen provide:
+
+1. Before Screenshot
+
+2. UX Problems
+
+3. Design Decisions
+
+4. Business Justification
+
+5. After Screenshot
+
+6. Performance Improvements
+
+7. Accessibility Improvements
+
+8. Offline UX Improvements
+
+9. Dark Mode Verification
+
+10. EN/AR RTL Verification
+
+Explain WHY each change improves field productivity.
+
+=========================================================
+
+Validation
+
+Run:
+
+• Full workspace typecheck
+
+• Full regression suite
+
+• Mobile UI verification
+
+Verify:
+
+• Zero API changes
+
+• Zero business logic changes
+
+• Zero RBAC changes
+
+• Zero permission changes
+
+• Zero tenant isolation changes
+
+=========================================================
+
+Deliverables
+
+Provide:
+
+• Before vs After Screenshots
+
+• Mobile Modernization Report
+
+• Mobile UX Improvement Report
+
+• Performance Report
+
+• Accessibility Report
+
+• Offline UX Report
+
+• Files Modified
+
+• Test Results
+
+STOP after Phase 4.
+
+Do NOT begin Phase 5 until Phase 4 has been reviewed and approved.
+
+=========================================================
+
+Long-Term Roadmap
+
+Continue with the approved roadmap:
+
+Stage 5.9 Phase 4
+
+↓
+
+Stage 5.9 Phase 5
+Accessibility
+Performance
+Final Polish
+
+↓
+
+Stage 5.5
+Enterprise Collaboration & Communication Center
+
+↓
+
+Stage 6

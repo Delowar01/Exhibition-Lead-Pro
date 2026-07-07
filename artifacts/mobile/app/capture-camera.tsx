@@ -664,7 +664,7 @@ export default function CaptureCameraScreen() {
   // Permission loading
   if (!permission) {
     return (
-      <View style={[styles.fill, { backgroundColor: colors.dark }]}>
+      <View style={[styles.fill, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
@@ -674,41 +674,45 @@ export default function CaptureCameraScreen() {
   if (!permission.granted) {
     const blocked = permission.status === "denied" && !permission.canAskAgain;
     return (
-      <View style={[styles.permissionWrap, { backgroundColor: colors.dark, paddingTop: topPad + 60 }]}>
-        <Pressable onPress={() => router.back()} style={styles.permClose} hitSlop={12}>
-          <Feather name="x" size={24} color="#FFFFFF" />
-        </Pressable>
-        <View style={[styles.permIcon, { backgroundColor: colors.primary + "22" }]}>
-          <Feather name="camera" size={32} color={colors.primary} />
-        </View>
-        <Text style={styles.permTitle}>{t("capture.cameraNeeded")}</Text>
-        <Text style={styles.permText}>
-          {t("capture.cameraNeededDesc", { label: sourceLabel })}
-        </Text>
-        <View style={{ height: 24 }} />
-        <PrimaryButton
-          label={blocked ? t("capture.openSettings") : t("capture.enableCamera")}
-          icon="camera"
-          onPress={() => {
-            if (blocked && Platform.OS !== "web") {
-              try {
-                Linking.openSettings();
-              } catch {
-                /* noop */
-              }
-            } else {
-              requestPermission();
-            }
-          }}
-          style={{ alignSelf: "stretch" }}
-        />
-        {Platform.OS === "web" ? (
-          <Pressable onPress={handleCapture} style={styles.webSkip}>
-            <Text style={[styles.webSkipText, { color: "rgba(255,255,255,0.6)" }]}>
-              {t("capture.simulateScan")}
-            </Text>
+      <View style={[styles.fill, { backgroundColor: colors.background }]}>
+        <View style={[styles.permissionWrap, { paddingTop: topPad + 60, paddingBottom: insets.bottom + 20 }]}>
+          <Pressable onPress={() => router.back()} style={styles.permClose} hitSlop={12}>
+            <Feather name="x" size={28} color={colors.foreground} />
           </Pressable>
-        ) : null}
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <View style={[styles.permIcon, { backgroundColor: colors.primary + "1A" }]}>
+              <Feather name="camera" size={40} color={colors.primary} />
+            </View>
+            <Text style={[styles.permTitle, { color: colors.foreground }]}>{t("capture.cameraNeeded")}</Text>
+            <Text style={[styles.permText, { color: colors.mutedForeground }]}>
+              {t("capture.cameraNeededDesc", { label: sourceLabel })}
+            </Text>
+          </View>
+          <View style={{ width: "100%", gap: 16 }}>
+            <PrimaryButton
+              label={blocked ? t("capture.openSettings") : t("capture.enableCamera")}
+              icon="camera"
+              onPress={() => {
+                if (blocked && Platform.OS !== "web") {
+                  try {
+                    Linking.openSettings();
+                  } catch {
+                    /* noop */
+                  }
+                } else {
+                  requestPermission();
+                }
+              }}
+            />
+            {Platform.OS === "web" ? (
+              <Pressable onPress={handleCapture} style={styles.webSkip}>
+                <Text style={[styles.webSkipText, { color: colors.primary }]}>
+                  {t("capture.simulateScan")}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
       </View>
     );
   }
@@ -716,14 +720,14 @@ export default function CaptureCameraScreen() {
   // Advisory capture-quality band → color + label. good ≥66 / fair ≥40 / poor.
   const qualityBand = lastQuality
     ? lastQuality.score >= 66
-      ? { color: "rgba(22,163,74,0.94)", label: t("capture.qualityGood"), icon: "check-circle" as const }
+      ? { color: "#22C55E", label: t("capture.qualityGood"), icon: "check-circle" as const }
       : lastQuality.score >= 40
-        ? { color: "rgba(217,119,6,0.94)", label: t("capture.qualityFair"), icon: "alert-circle" as const }
-        : { color: "rgba(220,38,38,0.94)", label: t("capture.qualityPoor"), icon: "alert-triangle" as const }
+        ? { color: "#F59E0B", label: t("capture.qualityFair"), icon: "alert-circle" as const }
+        : { color: "#EF4444", label: t("capture.qualityPoor"), icon: "alert-triangle" as const }
     : null;
 
   return (
-    <View style={[styles.fill, { backgroundColor: colors.dark }]}>
+    <View style={[styles.fill, { backgroundColor: "#000000" }]}>
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
@@ -734,26 +738,29 @@ export default function CaptureCameraScreen() {
 
       {/* Top overlay */}
       <LinearGradient
-        colors={["rgba(0,0,0,0.65)", "transparent"]}
+        colors={["rgba(0,0,0,0.8)", "transparent"]}
         style={[styles.topOverlay, { paddingTop: topPad + 12 }]}
       >
         <View style={styles.topRow}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeBtn}>
-            <Feather name="x" size={22} color="#FFFFFF" />
+            <Feather name="x" size={24} color="#FFFFFF" />
           </Pressable>
           <View style={[styles.modePill, { backgroundColor: colors.primary }]}>
             <Text style={styles.modePillText}>{mode.toUpperCase()}</Text>
           </View>
+          <View style={{ width: 44 }} /> {/* Spacer to balance the row */}
         </View>
-        <Text style={styles.overlayTitle}>
-          {source === "signature" ? t("capture.scanSignature") : t("capture.scanCardTitle")}
-        </Text>
-        <Text style={styles.overlaySub}>{t("capture.alignFrame", { label: sourceLabel })}</Text>
+        <View style={{ alignItems: "center", marginTop: 8 }}>
+          <Text style={styles.overlayTitle}>
+            {source === "signature" ? t("capture.scanSignature") : t("capture.scanCardTitle")}
+          </Text>
+          <Text style={styles.overlaySub}>{t("capture.alignFrame", { label: sourceLabel })}</Text>
+        </View>
       </LinearGradient>
 
       {/* Frame guide */}
       <View style={styles.frameWrap} pointerEvents="none">
-        <View style={[styles.frame, { borderColor: colors.primary }]}>
+        <View style={[styles.frame, { borderColor: "rgba(255,255,255,0.4)" }]}>
           <View style={[styles.corner, styles.tl, { borderColor: colors.primary }]} />
           <View style={[styles.corner, styles.tr, { borderColor: colors.primary }]} />
           <View style={[styles.corner, styles.bl, { borderColor: colors.primary }]} />
@@ -761,43 +768,45 @@ export default function CaptureCameraScreen() {
         </View>
       </View>
 
-      {/* Rapid feedback */}
-      {mode === "rapid" && rapidCount > 0 ? (
-        <View style={[styles.rapidBanner, { top: topPad + 110 }]} pointerEvents="none">
-          <Feather name="check-circle" size={16} color="#FFFFFF" />
-          <Text style={styles.rapidBannerText}>
-            {t("capture.savedCount", { count: savedCount })}
-            {failedCount > 0 ? t("capture.failedSuffix", { count: failedCount }) : ""}
-            {lastSaved ? ` · ${lastSaved}` : ""}
-          </Text>
-        </View>
-      ) : null}
+      <View style={[styles.feedbackContainer, { top: topPad + 120 }]} pointerEvents="none">
+        {/* Rapid feedback */}
+        {mode === "rapid" && rapidCount > 0 ? (
+          <View style={styles.rapidBanner}>
+            <Feather name="check-circle" size={18} color="#FFFFFF" />
+            <Text style={styles.rapidBannerText}>
+              {t("capture.savedCount", { count: savedCount })}
+              {failedCount > 0 ? t("capture.failedSuffix", { count: failedCount }) : ""}
+              {lastSaved ? ` · ${lastSaved}` : ""}
+            </Text>
+          </View>
+        ) : null}
 
-      {/* Batch counter */}
-      {mode === "batch" && batchCount > 0 ? (
-        <View style={[styles.rapidBanner, { top: topPad + 110, backgroundColor: "rgba(255,107,0,0.94)" }]} pointerEvents="none">
-          <Feather name="layers" size={16} color="#FFFFFF" />
-          <Text style={styles.rapidBannerText}>
-            {t("capture.batchBanner", { count: batchCount })}
-          </Text>
-        </View>
-      ) : null}
+        {/* Batch counter */}
+        {mode === "batch" && batchCount > 0 ? (
+          <View style={[styles.rapidBanner, { backgroundColor: "#FB923C" }]}>
+            <Feather name="layers" size={18} color="#FFFFFF" />
+            <Text style={styles.rapidBannerText}>
+              {t("capture.batchBanner", { count: batchCount })}
+            </Text>
+          </View>
+        ) : null}
 
-      {/* Error feedback */}
-      {errorMsg ? (
-        <View style={[styles.errorBanner, { top: topPad + 160 }]} pointerEvents="none">
-          <Feather name="alert-circle" size={16} color="#FFFFFF" />
-          <Text style={styles.rapidBannerText}>{errorMsg}</Text>
-        </View>
-      ) : null}
+        {/* Error feedback */}
+        {errorMsg ? (
+          <View style={[styles.errorBanner]}>
+            <Feather name="alert-circle" size={18} color="#FFFFFF" />
+            <Text style={styles.rapidBannerText}>{errorMsg}</Text>
+          </View>
+        ) : null}
+      </View>
 
       {/* Capture-quality indicator (advisory, transient) */}
       {qualityBand ? (
         <View
-          style={[styles.qualityBanner, { bottom: insets.bottom + 140, backgroundColor: qualityBand.color }]}
+          style={[styles.qualityBanner, { bottom: insets.bottom + 160, backgroundColor: qualityBand.color }]}
           pointerEvents="none"
         >
-          <Feather name={qualityBand.icon} size={15} color="#FFFFFF" />
+          <Feather name={qualityBand.icon} size={16} color="#FFFFFF" />
           <Text style={styles.rapidBannerText}>
             {t("capture.qualityLabel")}: {qualityBand.label}
           </Text>
@@ -805,38 +814,48 @@ export default function CaptureCameraScreen() {
       ) : null}
 
       {/* Capture control */}
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 28 }]}>
-        <Pressable
-          onPress={handleCapture}
-          disabled={capturing}
-          style={({ pressed }) => [styles.shutterOuter, { borderColor: "#FFFFFF", opacity: pressed ? 0.7 : 1 }]}
-        >
-          <View style={[styles.shutterInner, { backgroundColor: capturing ? colors.mutedForeground : colors.primary }]}>
-            {capturing ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Feather name="maximize" size={24} color="#FFFFFF" />
-            )}
-          </View>
-        </Pressable>
-        <Text style={styles.shutterLabel}>
-          {capturing
-            ? t("capture.capturing")
-            : mode === "rapid"
-              ? t("capture.rapidHint")
-              : mode === "batch"
-                ? t("capture.tapCaptureAnother")
-                : t("capture.tapCapture")}
-        </Text>
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 32, paddingTop: 40 }]}>
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.8)"]}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        <View style={{ alignItems: "center", justifyContent: "center" }}>
+          <Pressable
+            onPress={handleCapture}
+            disabled={capturing}
+            accessibilityRole="button"
+            accessibilityLabel={t("capture.tapCapture")}
+            style={({ pressed }) => [styles.shutterOuter, { borderColor: "#FFFFFF", opacity: pressed ? 0.8 : 1 }]}
+          >
+            <View style={[styles.shutterInner, { backgroundColor: capturing ? "rgba(255,255,255,0.4)" : colors.primary }]}>
+              {capturing ? (
+                <ActivityIndicator color="#FFFFFF" size="large" />
+              ) : null}
+            </View>
+          </Pressable>
+          <Text style={styles.shutterLabel}>
+            {capturing
+              ? t("capture.capturing")
+              : mode === "rapid"
+                ? t("capture.rapidHint")
+                : mode === "batch"
+                  ? t("capture.tapCaptureAnother")
+                  : t("capture.tapCapture")}
+          </Text>
+        </View>
 
         {mode === "batch" ? (
           <Pressable
             onPress={finishBatch}
-            style={[styles.doneBtn, { borderColor: "rgba(255,255,255,0.4)" }]}
+            accessibilityRole="button"
+            accessibilityLabel={t("capture.done")}
+            style={({ pressed }) => [styles.doneBtn, { backgroundColor: "rgba(255,255,255,0.2)", opacity: pressed ? 0.7 : 1 }]}
           >
             <Text style={styles.doneBtnText}>
               {batchCount > 0 ? t("capture.doneReview", { count: batchCount }) : t("capture.done")}
             </Text>
+            <Feather name="chevron-right" size={20} color="#FFFFFF" />
           </Pressable>
         ) : null}
       </View>
@@ -845,97 +864,106 @@ export default function CaptureCameraScreen() {
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, alignItems: "center", justifyContent: "center" },
-  permissionWrap: { flex: 1, paddingHorizontal: 28, alignItems: "center" },
-  permClose: { position: "absolute", top: 56, right: 24 },
+  fill: { flex: 1 },
+  permissionWrap: { flex: 1, paddingHorizontal: 24 },
+  permClose: { position: "absolute", top: 56, right: 24, zIndex: 10 },
   permIcon: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  permTitle: { color: "#FFFFFF", fontSize: 24, fontFamily: FONT.bold, textAlign: "center" },
+  permTitle: { fontSize: 24, fontFamily: FONT.bold, textAlign: "center", marginBottom: 12 },
   permText: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 16,
+    fontFamily: FONT.regular,
+    lineHeight: 24,
     textAlign: "center",
-    marginTop: 12,
   },
-  webSkip: { marginTop: 20, padding: 8 },
-  webSkipText: { fontSize: 14, fontFamily: FONT.medium, textDecorationLine: "underline" },
+  webSkip: { alignItems: "center", paddingVertical: 12 },
+  webSkipText: { fontSize: 15, fontFamily: FONT.medium },
   topOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 24,
-    paddingBottom: 28,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+    zIndex: 10,
   },
   topRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
   },
   closeBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.4)",
     alignItems: "center",
     justifyContent: "center",
   },
-  modePill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999 },
-  modePillText: { color: "#FFFFFF", fontSize: 11, fontFamily: FONT.bold, letterSpacing: 0.6 },
-  overlayTitle: { color: "#FFFFFF", fontSize: 22, fontFamily: FONT.bold },
-  overlaySub: { color: "rgba(255,255,255,0.8)", fontSize: 14, fontFamily: FONT.regular, marginTop: 4 },
-  frameWrap: { alignItems: "center" },
+  modePill: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 999 },
+  modePillText: { color: "#FFFFFF", fontSize: 13, fontFamily: FONT.bold, letterSpacing: 0.5 },
+  overlayTitle: { color: "#FFFFFF", fontSize: 24, fontFamily: FONT.bold, marginBottom: 4 },
+  overlaySub: { color: "rgba(255,255,255,0.9)", fontSize: 15, fontFamily: FONT.regular },
+  frameWrap: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: -60 },
   frame: {
-    width: 300,
-    height: 190,
+    width: "85%",
+    aspectRatio: 1.586, // Standard business card aspect ratio
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
+    borderWidth: 2,
+    borderStyle: "dashed",
   },
-  corner: { position: "absolute", width: 30, height: 30, borderColor: "#FFFFFF" },
-  tl: { top: -2, left: -2, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 16 },
-  tr: { top: -2, right: -2, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 16 },
-  bl: { bottom: -2, left: -2, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 16 },
-  br: { bottom: -2, right: -2, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 16 },
-  rapidBanner: {
+  corner: { position: "absolute", width: 40, height: 40 },
+  tl: { top: -2, left: -2, borderTopWidth: 5, borderLeftWidth: 5, borderTopLeftRadius: 16 },
+  tr: { top: -2, right: -2, borderTopWidth: 5, borderRightWidth: 5, borderTopRightRadius: 16 },
+  bl: { bottom: -2, left: -2, borderBottomWidth: 5, borderLeftWidth: 5, borderBottomLeftRadius: 16 },
+  br: { bottom: -2, right: -2, borderBottomWidth: 5, borderRightWidth: 5, borderBottomRightRadius: 16 },
+  feedbackContainer: {
     position: "absolute",
-    alignSelf: "center",
-    flexDirection: "row",
+    left: 0,
+    right: 0,
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(34,197,94,0.92)",
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
+    zIndex: 20,
   },
-  rapidBannerText: { color: "#FFFFFF", fontSize: 13, fontFamily: FONT.semibold },
+  rapidBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#22C55E",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  rapidBannerText: { color: "#FFFFFF", fontSize: 15, fontFamily: FONT.semibold },
   qualityBanner: {
     position: "absolute",
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 999,
+    zIndex: 20,
   },
   errorBanner: {
-    position: "absolute",
-    alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(239,68,68,0.94)",
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    gap: 10,
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 999,
   },
   bottomBar: {
@@ -944,29 +972,37 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
+    justifyContent: "flex-end",
+    zIndex: 10,
   },
   shutterOuter: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 4,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 5,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 16,
   },
   shutterInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     alignItems: "center",
     justifyContent: "center",
   },
-  shutterLabel: { color: "#FFFFFF", fontSize: 14, fontFamily: FONT.medium, marginTop: 14 },
+  shutterLabel: { color: "#FFFFFF", fontSize: 15, fontFamily: FONT.medium, textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   doneBtn: {
-    marginTop: 18,
-    borderWidth: 1,
+    position: "absolute",
+    right: 24,
+    bottom: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     borderRadius: 999,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
-  doneBtnText: { color: "#FFFFFF", fontSize: 14, fontFamily: FONT.semibold },
+  doneBtnText: { color: "#FFFFFF", fontSize: 16, fontFamily: FONT.semibold },
 });
+

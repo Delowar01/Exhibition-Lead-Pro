@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useUpdateOwnProfile } from "@workspace/api-client-react";
 
-import { Avatar, Badge, FONT, prettyLabel } from "@/components/ui";
+import { Avatar, Badge, Card, FONT, ListRow, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
@@ -120,20 +120,6 @@ export default function MoreScreen() {
   type MoreGroup = { key: string; title: string; items: MoreItem[] };
 
   const allGroups: MoreGroup[] = [
-    {
-      key: "comms",
-      title: t("more.groupComms"),
-      items: [
-        {
-          key: "communications",
-          label: t("more.commsTitle"),
-          sub: t("more.commsSoon"),
-          icon: "message-square" as keyof typeof Feather.glyphMap,
-          color: "#94A3B8",
-          disabled: true,
-        },
-      ],
-    },
     {
       key: "crm",
       title: t("more.groupCrm"),
@@ -281,8 +267,8 @@ export default function MoreScreen() {
           ? [
               {
                 key: "dev-perf",
-                label: "Dev Performance",
-                sub: "Scan pipeline timings (dev build only)",
+                label: t("more.devPerf"),
+                sub: t("more.devPerfSub"),
                 icon: "activity" as keyof typeof Feather.glyphMap,
                 color: "#8B5CF6",
                 onPress: () => router.push("/dev-perf"),
@@ -308,108 +294,80 @@ export default function MoreScreen() {
       >
         <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>{t("nav.more")}</Text>
 
-        {/* Profile card */}
-        <View
-          style={[
-            styles.profileCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
-          ]}
-        >
-          <Pressable onPress={onAvatarPress} hitSlop={8} style={styles.avatarWrap}>
-            <Avatar name={user?.name} color={colors.primary} size={56} uri={user?.avatarUrl} />
-            <View style={[styles.avatarBadge, { backgroundColor: colors.primary, borderColor: colors.card }]}>
-              <Feather name="camera" size={12} color="#FFFFFF" />
-            </View>
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground, textAlign }]}>
-              {user?.name ?? "—"}
-            </Text>
-            <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground, textAlign }]}>
-              {user?.email ?? ""}
-            </Text>
-            {user?.role ? (
-              <View style={{ marginTop: 6 }}>
-                <Badge label={prettyLabel(user.role)} color={colors.primary} />
+        <Card padded={false} style={{ overflow: "hidden", marginBottom: 12 }}>
+          <View style={[styles.profileCard, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Pressable onPress={onAvatarPress} hitSlop={8} style={styles.avatarWrap}>
+              <Avatar name={user?.name} color={colors.primary} size={64} uri={user?.avatarUrl} />
+              <View style={[styles.avatarBadge, { backgroundColor: colors.primary, borderColor: colors.card }]}>
+                <Feather name="camera" size={12} color="#FFFFFF" />
               </View>
-            ) : null}
-          </View>
-        </View>
-
-        {/* Company */}
-        {user?.companyName ? (
-          <View
-            style={[
-              styles.companyCard,
-              { backgroundColor: colors.accent, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
-            ]}
-          >
-            <View style={[styles.companyIcon, { backgroundColor: colors.primary }]}>
-              <Feather name="briefcase" size={18} color="#FFFFFF" />
-            </View>
+            </Pressable>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.companyLabel, { color: colors.mutedForeground, textAlign }]}>
-                {t("nav.workspace").toUpperCase()}
+              <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground, textAlign }]}>
+                {user?.name ?? "—"}
               </Text>
-              <Text numberOfLines={1} style={[styles.companyName, { color: colors.foreground, textAlign }]}>
-                {user.companyName}
+              <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground, textAlign }]}>
+                {user?.email ?? ""}
               </Text>
+              {user?.role ? (
+                <View style={{ marginTop: 6, alignSelf: isRTL ? "flex-end" : "flex-start" }}>
+                  <Badge label={prettyLabel(user.role)} color={colors.primary} />
+                </View>
+              ) : null}
             </View>
           </View>
+        </Card>
+
+        {user?.companyName ? (
+          <Card padded={false} style={{ backgroundColor: colors.accent, marginBottom: 20 }}>
+            <View style={[styles.companyCard, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              <View style={[styles.companyIcon, { backgroundColor: colors.primary }]}>
+                <Feather name="briefcase" size={18} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.companyLabel, { color: colors.mutedForeground, textAlign }]}>
+                  {t("nav.workspace").toUpperCase()}
+                </Text>
+                <Text numberOfLines={1} style={[styles.companyName, { color: colors.foreground, textAlign }]}>
+                  {user.companyName}
+                </Text>
+              </View>
+            </View>
+          </Card>
         ) : null}
 
-        {/* Navigation */}
         {navGroups.map((group) => (
           <View key={group.key}>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
               {group.title.toUpperCase()}
             </Text>
-            <View
-              style={[
-                styles.menuCard,
-                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-              ]}
-            >
+            <Card padded={false}>
               {group.items.map((item, idx) => (
-                <Pressable
+                <ListRow
                   key={item.key}
-                  disabled={item.disabled}
-                  accessibilityRole="button"
-                  accessibilityLabel={item.label}
-                  accessibilityState={item.disabled ? { disabled: true } : undefined}
-                  onPress={() => {
-                    item.onPress?.();
-                  }}
-                  style={({ pressed }) => [
+                  icon={item.icon}
+                  title={item.label}
+                  subtitle={item.sub}
+                  onPress={item.disabled ? undefined : item.onPress}
+                  showChevron={!item.disabled}
+                  right={
+                    item.badge && item.badge > 0 ? (
+                      <View style={[styles.countBadge, { backgroundColor: item.color }]}>
+                        <Text style={styles.countBadgeText}>{item.badge}</Text>
+                      </View>
+                    ) : null
+                  }
+                  style={[
                     styles.menuRow,
-                    { flexDirection: isRTL ? "row-reverse" : "row" },
                     idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-                    pressed && !item.disabled && { backgroundColor: colors.muted },
                     item.disabled && { opacity: 0.55 },
                   ]}
-                >
-                  <View style={[styles.menuIcon, { backgroundColor: item.color + "1A" }]}>
-                    <Feather name={item.icon} size={18} color={item.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.menuLabel, { color: colors.foreground, textAlign }]}>{item.label}</Text>
-                    <Text style={[styles.menuSub, { color: colors.mutedForeground, textAlign }]}>{item.sub}</Text>
-                  </View>
-                  {item.badge && item.badge > 0 ? (
-                    <View style={[styles.countBadge, { backgroundColor: item.color }]}>
-                      <Text style={styles.countBadgeText}>{item.badge}</Text>
-                    </View>
-                  ) : null}
-                  {!item.disabled && (
-                    <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={20} color={colors.mutedForeground} />
-                  )}
-                </Pressable>
+                />
               ))}
-            </View>
+            </Card>
           </View>
         ))}
 
-        {/* Sign out */}
         <Pressable
           onPress={confirmLogout}
           style={({ pressed }) => [
@@ -441,16 +399,15 @@ export default function MoreScreen() {
 
 const styles = StyleSheet.create({
   heading: {
-    fontSize: 30,
+    fontSize: 32,
     fontFamily: FONT.bold,
-    marginBottom: 18,
+    marginBottom: 20,
+    letterSpacing: -0.5,
   },
   profileCard: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 16,
     padding: 16,
-    borderWidth: 1,
   },
   avatarWrap: {
     position: "relative",
@@ -459,78 +416,54 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: -2,
     bottom: -2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
   },
   profileName: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: FONT.bold,
   },
   profileEmail: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontFamily: FONT.regular,
     marginTop: 2,
   },
   companyCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    marginTop: 12,
-  },
-  companyIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  companyLabel: {
-    fontSize: 10.5,
-    fontFamily: FONT.semibold,
-    letterSpacing: 0.6,
-  },
-  companyName: {
-    fontSize: 15.5,
-    fontFamily: FONT.semibold,
-    marginTop: 2,
-  },
-  sectionTitle: {
-    fontSize: 11.5,
-    fontFamily: FONT.semibold,
-    letterSpacing: 0.6,
-    marginTop: 26,
-    marginBottom: 12,
-  },
-  menuCard: {
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  menuRow: {
-    flexDirection: "row",
     alignItems: "center",
     gap: 14,
     padding: 16,
   },
-  menuIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  companyIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
-  menuLabel: {
-    fontSize: 15.5,
+  companyLabel: {
+    fontSize: 11,
     fontFamily: FONT.semibold,
+    letterSpacing: 0.8,
   },
-  menuSub: {
-    fontSize: 12.5,
-    fontFamily: FONT.regular,
-    marginTop: 1,
+  companyName: {
+    fontSize: 16,
+    fontFamily: FONT.semibold,
+    marginTop: 2,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontFamily: FONT.semibold,
+    letterSpacing: 0.8,
+    marginTop: 28,
+    marginBottom: 10,
+    marginLeft: 4,
+  },
+  menuRow: {
+    paddingHorizontal: 16,
   },
   countBadge: {
     minWidth: 22,
@@ -539,7 +472,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 4,
   },
   countBadgeText: {
     color: "#FFFFFF",
@@ -551,21 +483,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    height: 52,
+    height: 54,
     borderWidth: 1,
-    marginTop: 26,
+    marginTop: 32,
   },
   logoutText: {
-    fontSize: 15.5,
+    fontSize: 16,
     fontFamily: FONT.semibold,
   },
   footer: {
     alignItems: "center",
-    marginTop: 28,
-    gap: 2,
+    marginTop: 32,
+    gap: 4,
   },
   footerText: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: FONT.semibold,
   },
   footerVersion: {

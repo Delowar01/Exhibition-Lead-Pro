@@ -18,7 +18,7 @@ import {
   toContactPayload,
   type ContactFormValues,
 } from "@/components/ContactForm";
-import { FONT, LoadingState, PrimaryButton } from "@/components/ui";
+import { Card, FONT, LoadingState, PrimaryButton } from "@/components/ui";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
@@ -250,21 +250,25 @@ export default function BatchReviewScreen() {
           showsVerticalScrollIndicator={false}
         >
           {ocrError ? (
-            <View style={[styles.errorBox, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius }]}>
-              <Feather name="alert-circle" size={15} color={colors.destructive} />
-              <Text style={[styles.errorText, { color: colors.destructive }]}>
-                {t("batch.readError")}
-              </Text>
-            </View>
+            <Card padded={false} style={{ backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40", marginBottom: 16 }}>
+              <View style={styles.errorBox}>
+                <Feather name="alert-circle" size={16} color={colors.destructive} />
+                <Text style={[styles.errorText, { color: colors.destructive }]}>
+                  {t("batch.readError")}
+                </Text>
+              </View>
+            </Card>
           ) : null}
 
           {createContact.isError ? (
-            <View style={[styles.errorBox, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius }]}>
-              <Feather name="alert-circle" size={15} color={colors.destructive} />
-              <Text style={[styles.errorText, { color: colors.destructive }]}>
-                {t("batch.saveError")}
-              </Text>
-            </View>
+            <Card padded={false} style={{ backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40", marginBottom: 16 }}>
+              <View style={styles.errorBox}>
+                <Feather name="alert-circle" size={16} color={colors.destructive} />
+                <Text style={[styles.errorText, { color: colors.destructive }]}>
+                  {t("batch.saveError")}
+                </Text>
+              </View>
+            </Card>
           ) : null}
 
           <ContactForm

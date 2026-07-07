@@ -41,6 +41,9 @@ import { useLocale } from "@/hooks/useLocale";
 import { formatCurrencyFull } from "@/lib/currency";
 import { formatGregorian } from "@/lib/date";
 
+import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader";
+import { WorkspaceTabs, type TabItem } from "@/components/workspace/WorkspaceTabs";
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -117,7 +120,8 @@ export default function CompanyDetailScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: org?.name ?? t("companies.title"),
+          headerShown: !org,
+          title: t("companies.title"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
@@ -139,25 +143,14 @@ export default function CompanyDetailScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <View style={[styles.headerRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-            <View style={[styles.orgIcon, { backgroundColor: colors.primary + "1A" }]}>
-              <Feather name="briefcase" size={24} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.orgName, { color: colors.foreground, textAlign }]}>{org.name}</Text>
-              {org.industry ? (
-                <Text style={[styles.orgSub, { color: colors.mutedForeground, textAlign }]}>{org.industry}</Text>
-              ) : null}
-            </View>
-            {org.status === "archived" ? (
-              <View style={[styles.archivedBadge, { backgroundColor: colors.muted }]}>
-                <Text style={[styles.archivedText, { color: colors.mutedForeground }]}>
-                  {t("companies.archivedBadge")}
-                </Text>
-              </View>
-            ) : null}
-          </View>
+          <WorkspaceHeader
+            title={org.name}
+            subtitle={org.industry ?? undefined}
+            avatarName={org.name}
+            avatarColor={colors.primary}
+            badges={org.status === "archived" ? [{ label: t("companies.archivedBadge"), color: colors.mutedForeground }] : undefined}
+            onBack={() => router.back()}
+          />
 
           {/* Stats */}
           <View style={{ flexDirection: "row", gap: 12 }}>
@@ -207,45 +200,18 @@ export default function CompanyDetailScreen() {
           {orgId > 0 ? <WorkflowSection entityType="organization" id={orgId} /> : null}
 
           {/* Tabs */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ flexDirection: isRTL ? "row-reverse" : "row" }}
-          >
-            <View style={[styles.tabRow, { backgroundColor: colors.muted, borderRadius: colors.radius + 2, flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              {(
-                [
-                  { key: "contacts", label: t("companies.contacts"), count: contacts.length },
-                  { key: "leads", label: t("companies.leads"), count: leads.length },
-                  { key: "events", label: t("companies.events"), count: events.length },
-                  { key: "notes", label: t("companies.companyNotes"), count: notes.length },
-                  { key: "documents", label: t("companies.documents"), count: documents.length },
-                  { key: "timeline", label: t("companies.timeline"), count: timeline.length },
-                ] as const
-              ).map((it) => {
-                const active = tab === it.key;
-                return (
-                  <Pressable
-                    key={it.key}
-                    onPress={() => setTab(it.key)}
-                    style={[
-                      styles.tab,
-                      active && { backgroundColor: colors.card, borderRadius: colors.radius },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.tabText,
-                        { color: active ? colors.foreground : colors.mutedForeground },
-                      ]}
-                    >
-                      {it.label} ({it.count})
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
+          <WorkspaceTabs
+            tabs={[
+              { key: "contacts", label: t("companies.contacts"), count: contacts.length },
+              { key: "leads", label: t("companies.leads"), count: leads.length },
+              { key: "events", label: t("companies.events"), count: events.length },
+              { key: "notes", label: t("companies.companyNotes"), count: notes.length },
+              { key: "documents", label: t("companies.documents"), count: documents.length },
+              { key: "timeline", label: t("companies.timeline"), count: timeline.length },
+            ]}
+            activeTab={tab}
+            onChange={(k) => setTab(k as typeof tab)}
+          />
 
           {/* Tab content */}
           {tab === "contacts" ? (

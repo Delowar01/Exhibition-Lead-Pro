@@ -4,6 +4,7 @@ import React from "react";
 import {
   ActivityIndicator,
   Pressable,
+  StyleProp,
   StyleSheet,
   Text,
   TextInput,
@@ -217,7 +218,7 @@ export function PrimaryButton({
   loading?: boolean;
   disabled?: boolean;
   icon?: keyof typeof Feather.glyphMap;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }) {
   const colors = useColors();
   const isDisabled = disabled || loading;
@@ -339,7 +340,7 @@ export function Card({
   padded = true,
 }: {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   padded?: boolean;
 }) {
   const colors = useColors();
@@ -377,7 +378,7 @@ export function ListRow({
   right?: React.ReactNode;
   onPress?: () => void;
   showChevron?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }) {
   const colors = useColors();
   const content = (
@@ -454,7 +455,7 @@ export function SecondaryButton({
   disabled?: boolean;
   icon?: keyof typeof Feather.glyphMap;
   destructive?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }) {
   const colors = useColors();
   const isDisabled = disabled || loading;
@@ -504,7 +505,7 @@ export function IconButton({
   label: string;
   color?: string;
   disabled?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }) {
   const colors = useColors();
   return (

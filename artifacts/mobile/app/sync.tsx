@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { EmptyState, FONT } from "@/components/ui";
+import { Card, EmptyState, FONT, PrimaryButton } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
@@ -154,79 +154,59 @@ export default function SyncScreen() {
         </View>
 
         {/* Connection status */}
-        <View
-          style={[
-            styles.statusCard,
-            {
-              backgroundColor: isOnline ? colors.primary + "12" : colors.destructive + "12",
-              borderRadius: colors.radius + 4,
-              flexDirection: isRTL ? "row-reverse" : "row",
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: isOnline ? "#22C55E" : colors.destructive },
-            ]}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.statusTitle, { color: colors.foreground, textAlign }]}>
-              {isOnline ? t("sync.online") : t("sync.offline")}
-            </Text>
-            <Text style={[styles.statusSub, { color: colors.mutedForeground, textAlign }]}>
-              {isOnline
-                ? t("sync.onlineDesc")
-                : manualOffline
-                  ? t("sync.offlineDesc")
-                  : t("sync.offlineAutoDesc")}
-            </Text>
+        <Card style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 12 }}>
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: isOnline ? "#22C55E" : colors.destructive },
+              ]}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.statusTitle, { color: colors.foreground, textAlign }]}>
+                {isOnline ? t("sync.online") : t("sync.offline")}
+              </Text>
+              <Text style={[styles.statusSub, { color: colors.mutedForeground, textAlign }]}>
+                {isOnline
+                  ? t("sync.onlineDesc")
+                  : manualOffline
+                    ? t("sync.offlineDesc")
+                    : t("sync.offlineAutoDesc")}
+              </Text>
+            </View>
           </View>
-        </View>
+        </Card>
 
         {/* Work-offline toggle */}
-        <View
-          style={[
-            styles.toggleCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
-          ]}
-        >
-          <View style={[styles.toggleIcon, { backgroundColor: "#67707D1A" }]}>
-            <Feather name="wifi-off" size={18} color="#67707D" />
+        <Card style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 12 }}>
+            <View style={[styles.toggleIcon, { backgroundColor: "#67707D1A" }]}>
+              <Feather name="wifi-off" size={18} color="#67707D" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.toggleTitle, { color: colors.foreground, textAlign }]}>{t("sync.workOffline")}</Text>
+              <Text style={[styles.toggleSub, { color: colors.mutedForeground, textAlign }]}>
+                {t("sync.workOfflineDesc")}{!isConnected ? t("sync.noConnectionSuffix") : ""}
+              </Text>
+            </View>
+            <Switch
+              value={manualOffline}
+              onValueChange={(v) => {
+                setManualOffline(v);
+              }}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#FFFFFF"
+            />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.toggleTitle, { color: colors.foreground, textAlign }]}>{t("sync.workOffline")}</Text>
-            <Text style={[styles.toggleSub, { color: colors.mutedForeground, textAlign }]}>
-              {t("sync.workOfflineDesc")}{!isConnected ? t("sync.noConnectionSuffix") : ""}
-            </Text>
-          </View>
-          <Switch
-            value={manualOffline}
-            onValueChange={(v) => {
-              setManualOffline(v);
-            }}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#FFFFFF"
-          />
-        </View>
+        </Card>
 
         {/* Summary + sync */}
-        <View style={[styles.summaryRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-          <View
-            style={[
-              styles.summaryCard,
-              { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-            ]}
-          >
+        <View style={[styles.summaryRow, { flexDirection: isRTL ? "row-reverse" : "row", marginBottom: 12 }]}>
+          <Card style={{ flex: 1, alignItems: "center", paddingVertical: 16 }}>
             <Text style={[styles.summaryNum, { color: colors.foreground }]}>{pendingCount}</Text>
             <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t("sync.pending")}</Text>
-          </View>
-          <View
-            style={[
-              styles.summaryCard,
-              { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-            ]}
-          >
+          </Card>
+          <Card style={{ flex: 1, alignItems: "center", paddingVertical: 16 }}>
             <Text
               style={[
                 styles.summaryNum,
@@ -236,26 +216,16 @@ export default function SyncScreen() {
               {failedCount}
             </Text>
             <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t("sync.failed")}</Text>
-          </View>
+          </Card>
         </View>
 
-        <Pressable
+        <PrimaryButton
           onPress={onSyncPress}
           disabled={!canSync}
-          style={({ pressed }) => [
-            styles.syncBtn,
-            {
-              backgroundColor: colors.primary,
-              borderRadius: colors.radius + 4,
-              opacity: !canSync ? 0.5 : pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          <Feather name={isSyncing ? "loader" : "refresh-cw"} size={18} color={colors.primaryForeground} />
-          <Text style={[styles.syncBtnText, { color: colors.primaryForeground }]}>
-            {isSyncing ? t("sync.syncing") : t("sync.syncNow")}
-          </Text>
-        </Pressable>
+          loading={isSyncing}
+          icon="refresh-cw"
+          label={isSyncing ? t("sync.syncing") : t("sync.syncNow")}
+        />
         {lastSyncAt ? (
           <Text style={[styles.lastSync, { color: colors.mutedForeground }]}>
             {t("sync.lastSyncedPrefix")}{timeAgo(t, lastSyncAt)}
@@ -278,14 +248,9 @@ export default function SyncScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
                   {t("sync.needsAttention")}
                 </Text>
-                <View
-                  style={[
-                    styles.listCard,
-                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-                  ]}
-                >
+                <Card padded={false} style={{ overflow: "hidden" }}>
                   {failed.map(renderRow)}
-                </View>
+                </Card>
               </>
             ) : null}
             {pending.length > 0 ? (
@@ -293,14 +258,9 @@ export default function SyncScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
                   {t("sync.queued")}
                 </Text>
-                <View
-                  style={[
-                    styles.listCard,
-                    { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-                  ]}
-                >
+                <Card padded={false} style={{ overflow: "hidden" }}>
                   {pending.map(renderRow)}
-                </View>
+                </Card>
               </>
             ) : null}
           </>

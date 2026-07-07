@@ -48,7 +48,7 @@ import {
   toContactPayload,
   type ContactFormValues,
 } from "@/components/ContactForm";
-import { FONT } from "@/components/ui";
+import { FONT, PrimaryButton, SecondaryButton, Card } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -512,12 +512,7 @@ export default function ScanReviewScreen() {
       ) : null}
 
       {scanMeta ? (
-        <View
-          style={[
-            styles.intelCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius },
-          ]}
-        >
+        <Card style={{ marginBottom: 16 }}>
           <View style={[styles.intelHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="cpu" size={15} color={colors.primary} />
             <Text style={[styles.intelHeading, { color: colors.foreground, textAlign }]}>
@@ -567,16 +562,11 @@ export default function ScanReviewScreen() {
               </View>
             </View>
           ) : null}
-        </View>
+        </Card>
       ) : null}
 
       {imageUri ? (
-        <View
-          style={[
-            styles.reviewCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 },
-          ]}
-        >
+        <Card style={{ marginBottom: 16 }}>
           <View style={[styles.reviewHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
             <Feather name="crop" size={15} color={colors.primary} />
             <Text style={[styles.reviewHeading, { color: colors.foreground, textAlign }]}>
@@ -605,21 +595,21 @@ export default function ScanReviewScreen() {
           </Text>
 
           <View style={styles.reviewActions}>
-            <ReviewAction
+            <SecondaryButton
               icon="refresh-cw"
               label={t("scanReview.reprocess")}
               onPress={handleReprocess}
               loading={reprocess.isPending}
               disabled={reviewBusy}
             />
-            <ReviewAction
+            <SecondaryButton
               icon="zap"
               label={t("scanReview.rerunAi")}
               onPress={handleRerunAi}
               loading={rerunAi.isPending}
               disabled={reviewBusy}
             />
-            <ReviewAction
+            <SecondaryButton
               icon="image"
               label={t("scanReview.replaceImage")}
               onPress={handleReplaceImage}
@@ -648,16 +638,11 @@ export default function ScanReviewScreen() {
               ) : null}
             </View>
           ) : null}
-        </View>
+        </Card>
       ) : null}
 
       {originalRows.length > 0 ? (
-        <View
-          style={[
-            styles.origBox,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 },
-          ]}
-        >
+        <Card style={{ marginBottom: 16 }}>
           <Text style={[styles.origHeading, { color: colors.mutedForeground, textAlign }]}>
             {t("scanReview.originalLabel")}
           </Text>
@@ -705,25 +690,18 @@ export default function ScanReviewScreen() {
               </View>
             </View>
           ))}
-        </View>
+        </Card>
       ) : null}
 
       {createContact.isError ? (
-        <View
-          style={[
-            styles.errorBox,
-            {
-              backgroundColor: colors.destructive + "14",
-              borderRadius: colors.radius,
-              flexDirection: isRTL ? "row-reverse" : "row",
-            },
-          ]}
-        >
-          <Feather name="alert-circle" size={15} color={colors.destructive} />
-          <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
-            {t("scanReview.saveError")}
-          </Text>
-        </View>
+        <Card padded={false} style={{ backgroundColor: colors.destructive + "14", borderColor: colors.destructive + "40", marginBottom: 16 }}>
+          <View style={[styles.errorBox, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Feather name="alert-circle" size={15} color={colors.destructive} />
+            <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
+              {t("scanReview.saveError")}
+            </Text>
+          </View>
+        </Card>
       ) : null}
 
       <CaptureIntelligence
@@ -1020,12 +998,7 @@ function CaptureIntelligence({
   const rowDir = isRTL ? "row-reverse" : "row";
 
   return (
-    <View
-      style={[
-        styles.intelCard,
-        { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 2 },
-      ]}
-    >
+    <Card style={{ marginBottom: 16 }}>
       <View style={[styles.intelHeader, { flexDirection: rowDir }]}>
         <Feather name="zap" size={15} color={colors.primary} />
         <Text style={[styles.intelHeading, { color: colors.foreground, textAlign }]}>
@@ -1321,7 +1294,7 @@ function CaptureIntelligence({
           </Text>
         </View>
       ) : null}
-    </View>
+    </Card>
   );
 }
 

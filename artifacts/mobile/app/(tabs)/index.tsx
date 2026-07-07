@@ -309,9 +309,9 @@ export default function HomeScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: topPad + 14,
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 110,
+          paddingTop: topPad + 16,
+          paddingHorizontal: 16,
+          paddingBottom: insets.bottom + 120,
           flexGrow: 1,
         }}
         keyboardShouldPersistTaps="handled"

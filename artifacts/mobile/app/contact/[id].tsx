@@ -93,6 +93,10 @@ const TEMPERATURE_GUIDANCE: Record<string, { priorityKey: string; windowKey: str
   cold: { priorityKey: "contacts.priorityLow", windowKey: "contacts.followUpWindowCold", color: "#3B82F6" },
 };
 
+import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader";
+import { WorkspaceTabs, type TabItem } from "@/components/workspace/WorkspaceTabs";
+import { QuickActionsBar } from "@/components/workspace/QuickActionsBar";
+
 function formatHistoryDate(iso: string): string {
   const d = new Date(iso);
   return formatGregorian(d, {
@@ -120,6 +124,10 @@ export default function ContactDetailScreen() {
   const { t } = useLocale();
   const { id } = useLocalSearchParams<{ id: string }>();
   const contactId = Number(id);
+
+  const [tab, setTab] = useState<
+    "overview" | "timeline" | "activities" | "documents" | "interactions" | "ai" | "discussion"
+  >("overview");
 
   const queryClient = useQueryClient();
   const query = useGetContact(contactId);
@@ -517,19 +525,11 @@ export default function ContactDetailScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
         options={{
-          title: contact ? contactName(contact, t("common.unnamedContact")) : t("common.contact"),
+          headerShown: !contact,
+          title: t("common.contact"),
           headerStyle: { backgroundColor: colors.card },
           headerTintColor: colors.foreground,
           headerTitleStyle: { fontFamily: FONT.semibold },
-          headerRight: () =>
-            contact ? (
-              <Pressable
-                onPress={() => router.push(`/contact/edit/${contact.id}`)}
-                hitSlop={10}
-              >
-                <Feather name="edit-2" size={19} color={colors.primary} />
-              </Pressable>
-            ) : null,
         }}
       />
 
@@ -542,344 +542,374 @@ export default function ContactDetailScreen() {
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40, flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Hero */}
-          <View style={styles.hero}>
-            <Avatar
-              name={contactName(contact, t("common.unnamedContact"))}
-              size={76}
-              color={CONTACT_STATUS_COLORS[contact.status] ?? colors.primary}
+          <View style={{ paddingTop: insets.top }}>
+            <WorkspaceHeader
+              title={contactName(contact, t("common.unnamedContact"))}
+              subtitle={[contact.jobTitle, contact.contactCompany].filter(Boolean).join(" · ")}
+              avatarName={contactName(contact, t("common.unnamedContact"))}
+              avatarColor={CONTACT_STATUS_COLORS[contact.status] ?? colors.primary}
+              avatarUri={contact.cardImageUrl ? `${getBaseUrl()}${contact.cardImageUrl}` : undefined}
+              badges={[
+                { label: t(`leads.stages.${contact.status}`, { defaultValue: prettyLabel(contact.status) }), color: CONTACT_STATUS_COLORS[contact.status] ?? colors.mutedForeground },
+                ...(contact.assignedToName ? [{ label: contact.assignedToName, color: colors.primary }] : [])
+              ]}
+              onBack={() => router.back()}
+              rightAction={
+                <Pressable
+                  onPress={() => router.push(`/contact/edit/${contact.id}`)}
+                  hitSlop={10}
+                >
+                  <Feather name="edit-2" size={19} color={colors.primary} />
+                </Pressable>
+              }
             />
-            <Text style={[styles.heroName, { color: colors.foreground }]}>
-              {contactName(contact, t("common.unnamedContact"))}
-            </Text>
-            {contact.jobTitle || contact.contactCompany ? (
-              <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>
-                {[contact.jobTitle, contact.contactCompany].filter(Boolean).join(" · ")}
-              </Text>
-            ) : null}
-            <View style={styles.heroBadges}>
-              <Badge
-                label={t(`leads.stages.${contact.status}`, { defaultValue: prettyLabel(contact.status) })}
-                color={CONTACT_STATUS_COLORS[contact.status] ?? colors.mutedForeground}
-              />
-              {contact.assignedToName ? (
-                <Badge
-                  label={contact.assignedToName}
-                  color={colors.primary}
-                />
-              ) : null}
-            </View>
           </View>
 
-          {/* Primary lead actions */}
-          <View style={styles.actionsRow}>
-            <QuickAction icon="phone" label={t("contacts.callMobile")} disabled={!contact.mobile} onPress={handleCall} />
-            <QuickAction icon="message-circle" label={t("contacts.whatsapp")} disabled={!contact.mobile} onPress={handleWhatsApp} />
-            <QuickAction icon="mail" label={t("contacts.sendEmail")} disabled={!contact.email} onPress={handleEmail} />
-            <QuickAction icon="globe" label={t("contacts.openWebsite")} disabled={!contact.website} onPress={handleWebsite} />
-          </View>
-
-          <CommunicationHub
-            entity="contact"
-            id={contactId}
-            email={contact.email}
-            phone={contact.mobile}
-            displayName={contactName(contact, t("contacts.newContact"))}
+          <QuickActionsBar
+            actions={[
+              { key: "call", icon: "phone", label: t("contacts.callMobile"), disabled: !contact.mobile, onPress: handleCall },
+              { key: "whatsapp", icon: "message-circle", label: t("contacts.whatsapp"), disabled: !contact.mobile, onPress: handleWhatsApp },
+              { key: "email", icon: "mail", label: t("contacts.sendEmail"), disabled: !contact.email, onPress: handleEmail },
+              { key: "website", icon: "globe", label: t("contacts.openWebsite"), disabled: !contact.website, onPress: handleWebsite },
+            ]}
           />
 
-          <CopilotSection entityType="contact" id={contactId} />
+          <WorkspaceTabs
+            tabs={[
+              { key: "overview", label: t("workspace.overview") },
+              { key: "timeline", label: t("workspace.timeline"), count: history.length },
+              { key: "activities", label: t("workspace.activities") },
+              { key: "documents", label: t("workspace.documents") },
+              { key: "interactions", label: t("workspace.interactions"), count: interactions.length },
+              { key: "ai", label: t("workspace.intelligence") },
+              { key: "discussion", label: t("workspace.discussion"), disabled: true },
+            ]}
+            activeTab={tab}
+            onChange={(k) => setTab(k as any)}
+          />
 
-          <WorkflowSection entityType="contact" id={contactId} />
-
-          <AiInsightsSection entityType="contact" id={contactId} />
-
-          {/* Lead intelligence */}
-          {contact.leadTemperature || typeof contact.leadScore === "number" ? (
-            <Section title={t("contacts.sectionLeadIntel")}>
-              <View style={styles.leadRow}>
-                {contact.leadTemperature ? (
-                  <Badge
-                    label={t(`leads.${contact.leadTemperature}`, { defaultValue: prettyLabel(contact.leadTemperature) })}
-                    color={LEAD_TEMPERATURE_COLORS[contact.leadTemperature] ?? colors.mutedForeground}
-                  />
-                ) : null}
-                {typeof contact.leadScore === "number" ? (
-                  <Text style={[styles.leadScore, { color: colors.foreground }]}>
-                    {contact.leadScore}
-                    <Text style={[styles.leadScoreMax, { color: colors.mutedForeground }]}> / 100</Text>
-                  </Text>
-                ) : null}
-              </View>
-              {contact.aiReasoning ? (
-                <Text style={[styles.leadReason, { color: colors.mutedForeground }]}>
-                  {contact.aiReasoning}
-                </Text>
-              ) : null}
-              {contact.leadTemperature && TEMPERATURE_GUIDANCE[contact.leadTemperature] ? (
-                <View style={[styles.recommendBox, { borderTopColor: colors.border }]}>
-                  <View style={styles.recommendRow}>
-                    <Feather name="flag" size={13} color={TEMPERATURE_GUIDANCE[contact.leadTemperature].color} />
-                    <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
-                      {t("contacts.recommendedPriority")}:{" "}
-                      <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
-                        {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].priorityKey)}
-                      </Text>
-                    </Text>
-                  </View>
-                  <View style={styles.recommendRow}>
-                    <Feather name="clock" size={13} color={colors.mutedForeground} />
-                    <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
-                      {t("contacts.recommendedFollowUp")}:{" "}
-                      <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
-                        {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].windowKey)}
-                      </Text>
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-            </Section>
-          ) : null}
-
-          {/* Sales Pipeline opportunity */}
-          {(() => {
-            const allLeads = leadsQuery.data?.leads ?? [];
-            const openLead = allLeads.find(l => l.stage !== "lost");
-            return (
-              <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-                  {t("pipeline.title", { defaultValue: "SALES PIPELINE" }).toUpperCase()}
-                </Text>
-                {openLead ? (
-                  <Pressable
-                    onPress={() => router.push(`/pipeline/${openLead.id}`)}
-                    style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary, opacity: pressed ? 0.75 : 1 }]}
-                  >
-                    <Feather name="trending-up" size={16} color={colors.primary} />
-                    <Text style={[styles.pipelineBtnText, { color: colors.primary }]}>
-                      {t("pipeline.viewPipeline")}
-                    </Text>
-                    <Feather name="chevron-right" size={16} color={colors.primary} style={{ marginLeft: "auto" }} />
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={() => router.push(`/pipeline/form?contactId=${contactId}`)}
-                    style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
-                  >
-                    <Feather name="plus-circle" size={16} color={colors.mutedForeground} />
-                    <Text style={[styles.pipelineBtnText, { color: colors.foreground }]}>
-                      {t("pipeline.addToPipeline")}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            );
-          })()}
-
-          {/* Details */}
-          <Section title={t("contacts.sectionDetails")}>
-            <DetailRow icon="mail" label={t("contacts.fields.email")} value={contact.email} />
-            <DetailRow icon="phone" label={t("contacts.fields.mobile")} value={contact.mobile} />
-            <DetailRow icon="phone-call" label={t("contacts.office")} value={contact.officePhone} />
-            <DetailRow icon="globe" label={t("contacts.fields.website")} value={contact.website} />
-            <DetailRow icon="linkedin" label="LinkedIn" value={contact.linkedin} />
-            <DetailRow icon="map-pin" label={t("contacts.fields.address")} value={contact.address} />
-            <DetailRow icon="flag" label={t("contacts.fields.country")} value={contact.country} />
-            {contact.eventName ? (
-              <DetailRow icon="calendar" label={t("contacts.fields.event")} value={contact.eventName} />
-            ) : null}
-            {contact.latitude && contact.longitude ? (
-              <Pressable onPress={openMaps} style={styles.detailRow}>
-                <Feather name="map-pin" size={17} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>
-                    {t("contacts.captureLocation")}
-                  </Text>
-                  <Text style={[styles.detailValue, { color: colors.primary }]}>
-                    {t("contacts.viewOnMaps")}
-                    {typeof contact.gpsAccuracy === "number"
-                      ? ` · ±${Math.round(contact.gpsAccuracy)}m`
-                      : ""}
-                  </Text>
-                </View>
-                <Feather name="external-link" size={16} color={colors.mutedForeground} />
-              </Pressable>
-            ) : null}
-          </Section>
-
-          {contact.notes ? (
-            <Section title={t("contacts.notes")}>
-              <Text style={[styles.notes, { color: colors.foreground }]}>
-                {contact.notes}
-              </Text>
-            </Section>
-          ) : null}
-
-          {/* Captured card image */}
-          {(() => {
-            const base = getBaseUrl();
-            if (!contact.cardImageUrl || !base) return null;
-            return (
-              <Section title={t("contacts.sectionCapturedCard")}>
-                <ManageRow
-                  icon="eye"
-                  label={t("contacts.previewImage")}
-                  onPress={() => setImageModalOpen(true)}
-                />
-              </Section>
-            );
-          })()}
-
-          {/* Schedule */}
-          <Section title={t("contacts.sectionSchedule")}>
-            <ManageRow
-              icon="clock"
-              label={t("contacts.scheduleFollowUp")}
-              onPress={() => setSchedule("followup")}
-            />
-            <ManageRow
-              icon="calendar"
-              label={t("contacts.scheduleMeeting")}
-              onPress={() => setSchedule("meeting")}
-              divider
-            />
-          </Section>
-
-          {/* Manage */}
-          <Section title={t("contacts.sectionManage")}>
-            <ManageRow
-              icon="share-2"
-              label={t("contacts.shareContact")}
-              onPress={handleShare}
-            />
-            <ManageRow
-              icon="user-plus"
-              label={t("contacts.saveToPhone")}
-              onPress={handleSaveToContacts}
-              divider
-            />
-            <ManageRow
-              icon="users"
-              label={contact.assignedToName ? t("contacts.assignedTo", { name: contact.assignedToName }) : t("contacts.assignToTeammate")}
-              onPress={() => setAssignOpen(true)}
-              divider
-            />
-            <ManageRow
-              icon="trash-2"
-              label={t("contacts.deleteTitle")}
-              destructive
-              onPress={confirmDelete}
-              divider
-            />
-          </Section>
-
-          {/* Status pipeline */}
-          <Section title={t("contacts.sectionLeadPipeline")}>
-            <View style={styles.statusGrid}>
-              {STATUS_OPTIONS.map((status) => {
-                const active = contact.status === status;
-                const color = CONTACT_STATUS_COLORS[status] ?? colors.primary;
-                return (
-                  <Pressable
-                    key={status}
-                    onPress={() => changeStatus(status)}
-                    disabled={updateContact.isPending}
-                    style={[
-                      styles.statusOption,
-                      {
-                        backgroundColor: active ? color : colors.card,
-                        borderColor: active ? color : colors.border,
-                        borderRadius: colors.radius,
-                      },
-                    ]}
-                  >
-                    <Feather
-                      name={CONTACT_STATUS_ICONS[status] ?? "circle"}
-                      size={14}
-                      color={active ? "#FFFFFF" : color}
-                    />
-                    <Text
-                      style={[
-                        styles.statusOptionText,
-                        { color: active ? "#FFFFFF" : colors.foreground },
-                      ]}
-                    >
-                      {t(`leads.stages.${status}`, { defaultValue: prettyLabel(status) })}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Section>
-
-          {/* Status history */}
-          {history.length > 0 ? (
-            <Section title={t("contacts.sectionStatusHistory")}>
-              <View style={{ padding: 8, gap: 14 }}>
-                {history.map((h, idx) => {
-                  const color = CONTACT_STATUS_COLORS[h.toStatus] ?? colors.primary;
-                  return (
-                    <View key={h.id} style={styles.historyRow}>
-                      <View style={styles.historyTimeline}>
-                        <View style={[styles.historyDot, { backgroundColor: color }]} />
-                        {idx < history.length - 1 ? (
-                          <View style={[styles.historyLine, { backgroundColor: colors.border }]} />
-                        ) : null}
-                      </View>
-                      <View style={{ flex: 1, paddingBottom: 2 }}>
-                        <Text style={[styles.historyStatus, { color: colors.foreground }]}>
-                          {h.fromStatus ? `${t(`leads.stages.${h.fromStatus}`, { defaultValue: prettyLabel(h.fromStatus) })} → ` : ""}
-                          {t(`leads.stages.${h.toStatus}`, { defaultValue: prettyLabel(h.toStatus) })}
+            {tab === "overview" && (
+              <>
+                {/* Lead intelligence */}
+                {contact.leadTemperature || typeof contact.leadScore === "number" ? (
+                  <Section title={t("contacts.sectionLeadIntel")}>
+                    <View style={styles.leadRow}>
+                      {contact.leadTemperature ? (
+                        <Badge
+                          label={t(`leads.${contact.leadTemperature}`, { defaultValue: prettyLabel(contact.leadTemperature) })}
+                          color={LEAD_TEMPERATURE_COLORS[contact.leadTemperature] ?? colors.mutedForeground}
+                        />
+                      ) : null}
+                      {typeof contact.leadScore === "number" ? (
+                        <Text style={[styles.leadScore, { color: colors.foreground }]}>
+                          {contact.leadScore}
+                          <Text style={[styles.leadScoreMax, { color: colors.mutedForeground }]}> / 100</Text>
                         </Text>
-                        <Text style={[styles.historyMeta, { color: colors.mutedForeground }]}>
-                          {formatHistoryDate(h.createdAt)}
-                          {h.changedByName ? ` · ${h.changedByName}` : ""}
-                        </Text>
-                        {h.comment ? (
-                          <Text style={[styles.historyComment, { color: colors.mutedForeground }]}>
-                            {h.comment}
+                      ) : null}
+                    </View>
+                    {contact.aiReasoning ? (
+                      <Text style={[styles.leadReason, { color: colors.mutedForeground }]}>
+                        {contact.aiReasoning}
+                      </Text>
+                    ) : null}
+                    {contact.leadTemperature && TEMPERATURE_GUIDANCE[contact.leadTemperature] ? (
+                      <View style={[styles.recommendBox, { borderTopColor: colors.border }]}>
+                        <View style={styles.recommendRow}>
+                          <Feather name="flag" size={13} color={TEMPERATURE_GUIDANCE[contact.leadTemperature].color} />
+                          <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
+                            {t("contacts.recommendedPriority")}:{" "}
+                            <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
+                              {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].priorityKey)}
+                            </Text>
                           </Text>
-                        ) : null}
+                        </View>
+                        <View style={styles.recommendRow}>
+                          <Feather name="clock" size={13} color={colors.mutedForeground} />
+                          <Text style={[styles.recommendText, { color: colors.mutedForeground }]}>
+                            {t("contacts.recommendedFollowUp")}:{" "}
+                            <Text style={{ color: colors.foreground, fontFamily: FONT.semibold }}>
+                              {t(TEMPERATURE_GUIDANCE[contact.leadTemperature].windowKey)}
+                            </Text>
+                          </Text>
+                        </View>
                       </View>
+                    ) : null}
+                  </Section>
+                ) : null}
+
+                {/* Sales Pipeline opportunity */}
+                {(() => {
+                  const allLeads = leadsQuery.data?.leads ?? [];
+                  const openLead = allLeads.find(l => l.stage !== "lost");
+                  return (
+                    <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+                        {t("pipeline.title", { defaultValue: "SALES PIPELINE" }).toUpperCase()}
+                      </Text>
+                      {openLead ? (
+                        <Pressable
+                          onPress={() => router.push(`/pipeline/${openLead.id}`)}
+                          style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.primary + "15", borderColor: colors.primary, opacity: pressed ? 0.75 : 1 }]}
+                        >
+                          <Feather name="trending-up" size={16} color={colors.primary} />
+                          <Text style={[styles.pipelineBtnText, { color: colors.primary }]}>
+                            {t("pipeline.viewPipeline")}
+                          </Text>
+                          <Feather name="chevron-right" size={16} color={colors.primary} style={{ marginLeft: "auto" }} />
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          onPress={() => router.push(`/pipeline/form?contactId=${contactId}`)}
+                          style={({ pressed }) => [styles.pipelineBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
+                        >
+                          <Feather name="plus-circle" size={16} color={colors.mutedForeground} />
+                          <Text style={[styles.pipelineBtnText, { color: colors.foreground }]}>
+                            {t("pipeline.addToPipeline")}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View>
                   );
-                })}
-              </View>
-            </Section>
-          ) : null}
+                })()}
 
-          {/* Interaction history — permanent record of every capture with this
-              contact (business-card scan, QR, manual entry, etc.). Read-only. */}
-          {interactions.length > 0 ? (
-            <Section title={t("contacts.sectionInteractions")}>
-              <View style={{ padding: 8, gap: 14 }}>
-                {interactions.map((it, idx) => (
-                  <InteractionRow
-                    key={it.id}
-                    interaction={it}
-                    isLast={idx === interactions.length - 1}
+                {/* Details */}
+                <Section title={t("contacts.sectionDetails")}>
+                  <DetailRow icon="mail" label={t("contacts.fields.email")} value={contact.email} />
+                  <DetailRow icon="phone" label={t("contacts.fields.mobile")} value={contact.mobile} />
+                  <DetailRow icon="phone-call" label={t("contacts.office")} value={contact.officePhone} />
+                  <DetailRow icon="globe" label={t("contacts.fields.website")} value={contact.website} />
+                  <DetailRow icon="linkedin" label="LinkedIn" value={contact.linkedin} />
+                  <DetailRow icon="map-pin" label={t("contacts.fields.address")} value={contact.address} />
+                  <DetailRow icon="flag" label={t("contacts.fields.country")} value={contact.country} />
+                  {contact.eventName ? (
+                    <DetailRow icon="calendar" label={t("contacts.fields.event")} value={contact.eventName} />
+                  ) : null}
+                  {contact.latitude && contact.longitude ? (
+                    <Pressable onPress={openMaps} style={styles.detailRow}>
+                      <Feather name="map-pin" size={17} color={colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>
+                          {t("contacts.captureLocation")}
+                        </Text>
+                        <Text style={[styles.detailValue, { color: colors.primary }]}>
+                          {t("contacts.viewOnMaps")}
+                          {typeof contact.gpsAccuracy === "number"
+                            ? ` · ±${Math.round(contact.gpsAccuracy)}m`
+                            : ""}
+                        </Text>
+                      </View>
+                      <Feather name="external-link" size={16} color={colors.mutedForeground} />
+                    </Pressable>
+                  ) : null}
+                </Section>
+
+                {contact.notes ? (
+                  <Section title={t("contacts.notes")}>
+                    <Text style={[styles.notes, { color: colors.foreground }]}>
+                      {contact.notes}
+                    </Text>
+                  </Section>
+                ) : null}
+
+                {/* Captured card image */}
+                {(() => {
+                  const base = getBaseUrl();
+                  if (!contact.cardImageUrl || !base) return null;
+                  return (
+                    <Section title={t("contacts.sectionCapturedCard")}>
+                      <ManageRow
+                        icon="eye"
+                        label={t("contacts.previewImage")}
+                        onPress={() => setImageModalOpen(true)}
+                      />
+                    </Section>
+                  );
+                })()}
+
+                {/* Schedule */}
+                <Section title={t("contacts.sectionSchedule")}>
+                  <ManageRow
+                    icon="clock"
+                    label={t("contacts.scheduleFollowUp")}
+                    onPress={() => setSchedule("followup")}
                   />
-                ))}
-              </View>
-            </Section>
-          ) : null}
+                  <ManageRow
+                    icon="calendar"
+                    label={t("contacts.scheduleMeeting")}
+                    onPress={() => setSchedule("meeting")}
+                    divider
+                  />
+                </Section>
 
-          {/* Documents */}
-          <View style={{ marginTop: 24 }}>
-            <View
-              style={[
-                styles.sectionBody,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                  borderRadius: colors.radius + 4,
-                  padding: 16,
-                },
-              ]}
-            >
-              <DocumentsSection entityType="contact" entityId={contact.id} />
-            </View>
-          </View>
-        </ScrollView>
+                {/* Manage */}
+                <Section title={t("contacts.sectionManage")}>
+                  <ManageRow
+                    icon="share-2"
+                    label={t("contacts.shareContact")}
+                    onPress={handleShare}
+                  />
+                  <ManageRow
+                    icon="user-plus"
+                    label={t("contacts.saveToPhone")}
+                    onPress={handleSaveToContacts}
+                    divider
+                  />
+                  <ManageRow
+                    icon="users"
+                    label={contact.assignedToName ? t("contacts.assignedTo", { name: contact.assignedToName }) : t("contacts.assignToTeammate")}
+                    onPress={() => setAssignOpen(true)}
+                    divider
+                  />
+                  <ManageRow
+                    icon="trash-2"
+                    label={t("contacts.deleteTitle")}
+                    destructive
+                    onPress={confirmDelete}
+                    divider
+                  />
+                </Section>
+              </>
+            )}
+
+            {tab === "timeline" && (
+              <>
+                {/* Status pipeline */}
+                <Section title={t("contacts.sectionLeadPipeline")}>
+                  <View style={styles.statusGrid}>
+                    {STATUS_OPTIONS.map((status) => {
+                      const active = contact.status === status;
+                      const color = CONTACT_STATUS_COLORS[status] ?? colors.primary;
+                      return (
+                        <Pressable
+                          key={status}
+                          onPress={() => changeStatus(status)}
+                          disabled={updateContact.isPending}
+                          style={[
+                            styles.statusOption,
+                            {
+                              backgroundColor: active ? color : colors.card,
+                              borderColor: active ? color : colors.border,
+                              borderRadius: colors.radius,
+                            },
+                          ]}
+                        >
+                          <Feather
+                            name={CONTACT_STATUS_ICONS[status] ?? "circle"}
+                            size={14}
+                            color={active ? "#FFFFFF" : color}
+                          />
+                          <Text
+                            style={[
+                              styles.statusOptionText,
+                              { color: active ? "#FFFFFF" : colors.foreground },
+                            ]}
+                          >
+                            {t(`leads.stages.${status}`, { defaultValue: prettyLabel(status) })}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </Section>
+
+                {/* Status history */}
+                {history.length > 0 ? (
+                  <Section title={t("contacts.sectionStatusHistory")}>
+                    <View style={{ padding: 8, gap: 14 }}>
+                      {history.map((h, idx) => {
+                        const color = CONTACT_STATUS_COLORS[h.toStatus] ?? colors.primary;
+                        return (
+                          <View key={h.id} style={styles.historyRow}>
+                            <View style={styles.historyTimeline}>
+                              <View style={[styles.historyDot, { backgroundColor: color }]} />
+                              {idx < history.length - 1 ? (
+                                <View style={[styles.historyLine, { backgroundColor: colors.border }]} />
+                              ) : null}
+                            </View>
+                            <View style={{ flex: 1, paddingBottom: 2 }}>
+                              <Text style={[styles.historyStatus, { color: colors.foreground }]}>
+                                {h.fromStatus ? `${t(`leads.stages.${h.fromStatus}`, { defaultValue: prettyLabel(h.fromStatus) })} → ` : ""}
+                                {t(`leads.stages.${h.toStatus}`, { defaultValue: prettyLabel(h.toStatus) })}
+                              </Text>
+                              <Text style={[styles.historyMeta, { color: colors.mutedForeground }]}>
+                                {formatHistoryDate(h.createdAt)}
+                                {h.changedByName ? ` · ${h.changedByName}` : ""}
+                              </Text>
+                              {h.comment ? (
+                                <Text style={[styles.historyComment, { color: colors.mutedForeground }]}>
+                                  {h.comment}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </Section>
+                ) : null}
+              </>
+            )}
+
+            {tab === "interactions" && (
+              <>
+                {interactions.length > 0 ? (
+                  <Section title={t("contacts.sectionInteractions")}>
+                    <View style={{ padding: 8, gap: 14 }}>
+                      {interactions.map((it, idx) => (
+                        <InteractionRow
+                          key={it.id}
+                          interaction={it}
+                          isLast={idx === interactions.length - 1}
+                        />
+                      ))}
+                    </View>
+                  </Section>
+                ) : (
+                  <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("workspace.noInteractions")}</Text>
+                )}
+              </>
+            )}
+
+            {tab === "documents" && (
+              <View style={{ marginTop: 24 }}>
+                <View
+                  style={[
+                    styles.sectionBody,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                      borderRadius: colors.radius + 4,
+                      padding: 16,
+                    },
+                  ]}
+                >
+                  <DocumentsSection entityType="contact" entityId={contact.id} />
+                </View>
+              </View>
+            )}
+
+            {tab === "activities" && (
+              <View style={{ gap: 24 }}>
+                <CommunicationHub
+                  entity="contact"
+                  id={contactId}
+                  email={contact.email}
+                  phone={contact.mobile}
+                  displayName={contactName(contact, t("contacts.newContact"))}
+                />
+
+                <WorkflowSection entityType="contact" id={contactId} />
+              </View>
+            )}
+
+            {tab === "ai" && (
+              <View style={{ gap: 24 }}>
+                <AiInsightsSection entityType="contact" id={contactId} />
+                <CopilotSection entityType="contact" id={contactId} />
+              </View>
+            )}
+
+          </ScrollView>
       )}
 
       {/* Assign modal */}
@@ -1465,6 +1495,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FONT.semibold,
     flex: 1,
+  },
+  emptyText: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    textAlign: "center",
+    paddingVertical: 24,
   },
   sectionBody: {
     borderWidth: 1,

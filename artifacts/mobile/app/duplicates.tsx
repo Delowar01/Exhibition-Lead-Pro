@@ -35,6 +35,8 @@ import {
   LEAD_TEMPERATURE_COLORS,
   LoadingState,
   PrimaryButton,
+  SecondaryButton,
+  Card,
   prettyLabel,
 } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
@@ -374,12 +376,7 @@ function LinkedDuplicateCard({
   if (!original) return null;
 
   return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-      ]}
-    >
+    <Card style={{ marginBottom: 16 }}>
       <View style={[styles.cardHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
         <View
           style={[styles.matchPill, { backgroundColor: colors.primary + "18", flexDirection: isRTL ? "row-reverse" : "row" }]}
@@ -544,7 +541,7 @@ function LinkedDuplicateCard({
         onClose={() => setPreviewContact(null)}
         onMadeOriginal={onRefresh}
       />
-    </View>
+    </Card>
   );
 }
 
@@ -595,12 +592,7 @@ function DuplicateCard({
   }
 
   return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-      ]}
-    >
+    <Card style={{ marginBottom: 16 }}>
       <View style={[styles.cardHeader, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
         <View
           style={[styles.matchPill, { backgroundColor: colors.accent, flexDirection: isRTL ? "row-reverse" : "row" }]}
@@ -669,7 +661,7 @@ function DuplicateCard({
         onPress={handleMerge}
         style={{ marginTop: 14 }}
       />
-    </View>
+    </Card>
   );
 }
 

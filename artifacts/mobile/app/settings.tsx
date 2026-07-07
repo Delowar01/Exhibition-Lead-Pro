@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useChangePassword } from "@workspace/api-client-react";
 
-import { Avatar, Badge, FONT, PrimaryButton, prettyLabel } from "@/components/ui";
+import { Avatar, Badge, FONT, PrimaryButton, prettyLabel, Card, ListRow } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   type CaptureModePref,
@@ -56,7 +56,7 @@ export default function SettingsScreen() {
   const settings = useSettings();
   const { unlock, refreshPinAvailability, pinFallbackAvailable } = useAppLock();
   const changePassword = useChangePassword();
-  const { t, language, isRTL, textAlign, row } = useLocale();
+  const { t, language, isRTL, textAlign, writingDirection } = useLocale();
 
   const THEME_OPTIONS: { value: ThemePref; label: string; icon: keyof typeof Feather.glyphMap }[] = [
     { value: "light", label: t("settings.themeLight"), icon: "sun" },
@@ -75,14 +75,14 @@ export default function SettingsScreen() {
   const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
   const [bioBusy, setBioBusy] = useState(false);
 
-  // PIN setup modal state (shown after biometric lock is enabled)
+  // PIN setup modal state
   const [pinSetupVisible, setPinSetupVisible] = useState(false);
   const [pinStep, setPinStep] = useState<1 | 2>(1);
   const [pinFirstPin, setPinFirstPin] = useState("");
   const [pinResetSignal, setPinResetSignal] = useState(0);
   const [pinError, setPinError] = useState<string | null>(null);
 
-  // Change PIN modal state (shown when user taps "Change PIN" in Settings)
+  // Change PIN modal state
   const [changePinVisible, setChangePinVisible] = useState(false);
   const [changePinStep, setChangePinStep] = useState<1 | 2>(1);
   const [changePinFirstPin, setChangePinFirstPin] = useState("");
@@ -111,6 +111,9 @@ export default function SettingsScreen() {
   }, []);
 
   function haptic() {
+    if (Platform.OS !== "web") {
+      Haptics.selectionAsync();
+    }
   }
 
   async function toggleBiometric(value: boolean) {
@@ -120,7 +123,6 @@ export default function SettingsScreen() {
         Alert.alert(t("errors.notFound"), t("auth.signInFailed"));
         return;
       }
-      // Step 1: verify biometrics are available on this device.
       const supported = await isBiometricSupported();
       if (!supported) {
         Alert.alert(
@@ -129,18 +131,12 @@ export default function SettingsScreen() {
         );
         return;
       }
-      // Step 2: require the user to authenticate before enabling the lock.
       setBioBusy(true);
       try {
         const ok = await authenticateBiometric(t("settings.biometricEnablePrompt"));
-        if (!ok) {
-          // User cancelled or failed — leave the toggle OFF.
-          return;
-        }
-        // Step 3: persist the vault and enable the setting.
+        if (!ok) return;
         await saveBiometricVault(token, user);
         settings.setBiometricEnabled(true);
-        // Step 4: offer PIN setup as a backup.
         setPinStep(1);
         setPinFirstPin("");
         setPinError(null);
@@ -156,20 +152,14 @@ export default function SettingsScreen() {
       try {
         await clearBiometricVault();
         settings.setBiometricEnabled(false);
-        // Dismiss the lock overlay immediately if it happens to be showing.
         unlock();
-        // If a PIN backup exists, ask whether to keep or remove it rather than
-        // silently wiping it — the user may re-enable the lock later.
         const pinExists = await hasPinSet();
         if (pinExists && Platform.OS !== "web") {
           Alert.alert(
             t("settings.removePinTitle"),
             t("settings.removePinBody"),
             [
-              {
-                text: t("settings.keepPin"),
-                style: "cancel",
-              },
+              { text: t("settings.keepPin"), style: "cancel" },
               {
                 text: t("settings.removePin"),
                 style: "destructive",
@@ -194,12 +184,10 @@ export default function SettingsScreen() {
 
   async function handlePinSetupComplete(pin: string) {
     if (pinStep === 1) {
-      // Store the first entry and move to confirmation step.
       setPinFirstPin(pin);
       setPinStep(2);
       setPinError(null);
     } else {
-      // Confirm step — verify the two entries match.
       if (pin !== pinFirstPin) {
         setPinError(t("settings.pinMismatch"));
         setPinResetSignal((s) => s + 1);
@@ -252,10 +240,9 @@ export default function SettingsScreen() {
       if (!ok) return;
       await clearPin();
       await refreshPinAvailability();
-      // Re-open the modal so the user can set a brand-new PIN.
       openChangePinModal();
     } catch {
-      // silently ignore
+      // ignore
     } finally {
       setBioBusy(false);
     }
@@ -289,24 +276,6 @@ export default function SettingsScreen() {
     }
   }
 
-  function confirmLogout() {
-    if (Platform.OS === "web") {
-      void logout();
-      return;
-    }
-    Alert.alert(t("settings.logout"), t("auth.logoutConfirm"), [
-      { text: t("common.cancel"), style: "cancel" },
-      {
-        text: t("settings.logout"),
-        style: "destructive",
-        onPress: () => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          void logout();
-        },
-      },
-    ]);
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Stack.Screen
@@ -330,31 +299,30 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Profile */}
-        <View
-          style={[
-            styles.profileCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4, flexDirection: isRTL ? "row-reverse" : "row" },
-          ]}
-        >
-          <Avatar name={user?.name} color={colors.primary} size={52} />
-          <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground, textAlign }]}>
-              {user?.name ?? "—"}
-            </Text>
-            <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground, textAlign }]}>
-              {user?.email ?? ""}
-            </Text>
+        <Card padded={false} style={{ overflow: "hidden", marginBottom: 24 }}>
+          <View style={[styles.profileCard, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+            <Avatar name={user?.name} color={colors.primary} size={64} />
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={[styles.profileName, { color: colors.foreground, textAlign }]}>
+                {user?.name ?? "—"}
+              </Text>
+              <Text numberOfLines={1} style={[styles.profileEmail, { color: colors.mutedForeground, textAlign }]}>
+                {user?.email ?? ""}
+              </Text>
+            </View>
+            {user?.role ? <Badge label={prettyLabel(user.role)} color={colors.primary} /> : null}
           </View>
-          {user?.role ? <Badge label={prettyLabel(user.role)} color={colors.primary} /> : null}
-        </View>
+        </Card>
 
-        {/* Language */}
-        <Section title={t("settings.language")}>
+        {/* Preferences */}
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+          {t("settings.appearance").toUpperCase()}
+        </Text>
+        <Card padded={false} style={{ marginBottom: 24, padding: 16 }}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
-            {t("settings.languageDesc")}
+            {t("settings.language")}
           </Text>
-          <View style={[styles.segment, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+          <View style={[styles.segment, { flexDirection: isRTL ? "row-reverse" : "row", marginBottom: 16 }]}>
             {LANGUAGE_OPTIONS.map((opt) => {
               const active = settings.language === opt.value;
               return (
@@ -372,24 +340,46 @@ export default function SettingsScreen() {
                     },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      { color: active ? "#FFFFFF" : colors.foreground },
-                    ]}
-                  >
+                  <Text style={[styles.segmentText, { color: active ? "#FFFFFF" : colors.foreground }]}>
                     {t(opt.labelKey)}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
-        </Section>
 
-        {/* Country / Region */}
-        <Section title={t("settings.country")}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
-            {t("settings.countryDesc")}
+            {t("settings.theme")}
+          </Text>
+          <View style={[styles.segment, { flexDirection: isRTL ? "row-reverse" : "row", marginBottom: 16 }]}>
+            {THEME_OPTIONS.map((opt) => {
+              const active = settings.theme === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => {
+                    haptic();
+                    settings.setTheme(opt.value);
+                  }}
+                  style={[
+                    styles.segmentItem,
+                    {
+                      backgroundColor: active ? colors.primary : colors.muted,
+                      borderRadius: colors.radius,
+                    },
+                  ]}
+                >
+                  <Feather name={opt.icon} size={16} color={active ? "#FFFFFF" : colors.mutedForeground} />
+                  <Text style={[styles.segmentText, { color: active ? "#FFFFFF" : colors.foreground }]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+            {t("settings.country")}
           </Text>
           {(() => {
             const selected = getCountry(settings.country);
@@ -419,159 +409,100 @@ export default function SettingsScreen() {
                     {selected.dialCode}
                   </Text>
                 </View>
-                <Feather
-                  name="chevron-down"
-                  size={20}
-                  color={colors.mutedForeground}
-                />
+                <Feather name="chevron-down" size={20} color={colors.mutedForeground} />
               </Pressable>
             );
           })()}
-        </Section>
+        </Card>
 
-        {/* Appearance */}
-        <Section title={t("settings.appearance")}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
-            {t("settings.theme")}
-          </Text>
-          <View style={[styles.segment, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-            {THEME_OPTIONS.map((opt) => {
-              const active = settings.theme === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  onPress={() => {
-                    haptic();
-                    settings.setTheme(opt.value);
-                  }}
-                  style={[
-                    styles.segmentItem,
-                    {
-                      backgroundColor: active ? colors.primary : colors.muted,
-                      borderRadius: colors.radius,
-                    },
-                  ]}
-                >
-                  <Feather
-                    name={opt.icon}
-                    size={15}
-                    color={active ? "#FFFFFF" : colors.mutedForeground}
-                  />
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      { color: active ? "#FFFFFF" : colors.foreground },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Section>
-
-        {/* Capture */}
-        <Section title={t("settings.captureMode")}>
-          <View style={{ gap: 10 }}>
-            {CAPTURE_OPTIONS.map((opt) => {
-              const active = settings.captureMode === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  onPress={() => {
-                    haptic();
-                    settings.setCaptureMode(opt.value);
-                  }}
-                  style={[
-                    styles.captureRow,
-                    {
-                      borderColor: active ? colors.primary : colors.border,
-                      backgroundColor: active ? colors.accent : "transparent",
-                      borderRadius: colors.radius + 2,
-                      flexDirection: isRTL ? "row-reverse" : "row",
-                    },
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.captureLabel, { color: colors.foreground, textAlign }]}>
-                      {opt.label}
-                    </Text>
-                    <Text style={[styles.captureSub, { color: colors.mutedForeground, textAlign }]}>
-                      {opt.sub}
-                    </Text>
+        {/* Capture Mode */}
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+          {t("settings.captureMode").toUpperCase()}
+        </Text>
+        <Card padded={false} style={{ marginBottom: 24 }}>
+          {CAPTURE_OPTIONS.map((opt, idx) => {
+            const active = settings.captureMode === opt.value;
+            return (
+              <ListRow
+                key={opt.value}
+                title={opt.label}
+                subtitle={opt.sub}
+                onPress={() => {
+                  haptic();
+                  settings.setCaptureMode(opt.value);
+                }}
+                showChevron={false}
+                style={[
+                  styles.menuRow,
+                  active && { backgroundColor: colors.accent },
+                  idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+                ]}
+                right={
+                  <View style={[styles.radio, { borderColor: active ? colors.primary : colors.border }]}>
+                    {active ? <View style={[styles.radioDot, { backgroundColor: colors.primary }]} /> : null}
                   </View>
-                  <View
-                    style={[
-                      styles.radio,
-                      { borderColor: active ? colors.primary : colors.border },
-                    ]}
-                  >
-                    {active ? (
-                      <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Section>
+                }
+              />
+            );
+          })}
+        </Card>
 
         {/* Notifications */}
-        <Section title={t("settings.notifications")}>
-          <View style={[styles.switchRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
-                {t("settings.followUpNotifications")}
-              </Text>
-              <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
-                {t("settings.followUpNotificationsDesc")}
-              </Text>
-            </View>
-            <Switch
-              value={settings.followUpNotifications}
-              onValueChange={(v) => {
-                haptic();
-                settings.setFollowUpNotifications(v);
-              }}
-              trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-          <View style={[styles.switchRow, { marginTop: 12, flexDirection: isRTL ? "row-reverse" : "row" }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
-                {t("settings.meetingReminders")}
-              </Text>
-              <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
-                {t("settings.meetingRemindersDesc")}
-              </Text>
-            </View>
-            <Switch
-              value={settings.meetingReminders}
-              onValueChange={(v) => {
-                haptic();
-                settings.setMeetingReminders(v);
-              }}
-              trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-        </Section>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+          {t("settings.notifications").toUpperCase()}
+        </Text>
+        <Card padded={false} style={{ marginBottom: 24 }}>
+          <ListRow
+            title={t("settings.followUpNotifications")}
+            subtitle={t("settings.followUpNotificationsDesc")}
+            showChevron={false}
+            style={styles.menuRow}
+            right={
+              <Switch
+                value={settings.followUpNotifications}
+                onValueChange={(v) => {
+                  haptic();
+                  settings.setFollowUpNotifications(v);
+                }}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
+            }
+          />
+          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+          <ListRow
+            title={t("settings.meetingReminders")}
+            subtitle={t("settings.meetingRemindersDesc")}
+            showChevron={false}
+            style={styles.menuRow}
+            right={
+              <Switch
+                value={settings.meetingReminders}
+                onValueChange={(v) => {
+                  haptic();
+                  settings.setMeetingReminders(v);
+                }}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
+            }
+          />
+        </Card>
 
         {/* Security */}
-        <Section title={t("settings.account")}>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+          {t("settings.account").toUpperCase()}
+        </Text>
+        <Card padded={false} style={{ padding: 16 }}>
           {Platform.OS !== "web" ? (
             <>
-              <View style={[styles.switchRow, { marginBottom: 8, flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              <View style={[styles.switchRow, { marginBottom: 16, flexDirection: isRTL ? "row-reverse" : "row" }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.switchLabel, { color: colors.foreground, textAlign }]}>
                     {t("settings.biometric")}
                   </Text>
                   <Text style={[styles.switchSub, { color: colors.mutedForeground, textAlign }]}>
-                    {bioSupported
-                      ? t("settings.biometricDesc")
-                      : t("settings.biometricUnavailableTitle")}
+                    {bioSupported ? t("settings.biometricDesc") : t("settings.biometricUnavailableTitle")}
                   </Text>
                 </View>
                 <Switch
@@ -582,12 +513,11 @@ export default function SettingsScreen() {
                   thumbColor="#FFFFFF"
                 />
               </View>
+
               {settings.biometricEnabled ? (
-                <LockTimeoutPicker
-                  value={settings.lockTimeoutMs}
-                  onChange={settings.setLockTimeoutMs}
-                />
+                <LockTimeoutPicker value={settings.lockTimeoutMs} onChange={settings.setLockTimeoutMs} />
               ) : null}
+
               {settings.biometricEnabled && pinFallbackAvailable ? (
                 <Pressable
                   onPress={() => {
@@ -609,181 +539,80 @@ export default function SettingsScreen() {
                   <Text style={[styles.changePinLabel, { color: colors.foreground, textAlign }]}>
                     {t("settings.changePin")}
                   </Text>
-                  <Feather
-                    name={isRTL ? "chevron-left" : "chevron-right"}
-                    size={16}
-                    color={colors.mutedForeground}
-                  />
+                  <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={16} color={colors.mutedForeground} />
                 </Pressable>
               ) : null}
+              
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 20 }} />
             </>
           ) : null}
 
-          <Text
-            style={[
-              styles.fieldLabel,
-              { color: colors.mutedForeground, marginTop: 8, textAlign },
-            ]}
-          >
+          <Text style={[styles.fieldLabel, { color: colors.foreground, textAlign, marginBottom: 12 }]}>
             {t("auth.password")}
           </Text>
 
           {pwError ? (
-            <View
-              style={[
-                styles.banner,
-                { backgroundColor: colors.destructive + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" },
-              ]}
-            >
+            <View style={[styles.banner, { backgroundColor: colors.destructive + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
               <Feather name="alert-circle" size={14} color={colors.destructive} />
               <Text style={[styles.bannerText, { color: colors.destructive, textAlign }]}>{pwError}</Text>
             </View>
           ) : null}
           {pwSuccess ? (
-            <View
-              style={[
-                styles.banner,
-                { backgroundColor: colors.success + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" },
-              ]}
-            >
+            <View style={[styles.banner, { backgroundColor: colors.success + "14", borderRadius: colors.radius, flexDirection: isRTL ? "row-reverse" : "row" }]}>
               <Feather name="check-circle" size={14} color={colors.success} />
-              <Text style={[styles.bannerText, { color: colors.success, textAlign }]}>
-                {t("success.saved")}
-              </Text>
+              <Text style={[styles.bannerText, { color: colors.success, textAlign }]}>{t("success.saved")}</Text>
             </View>
           ) : null}
 
-          <PwInput
-            placeholder={t("auth.password")}
-            value={currentPassword}
-            onChangeText={setCurrentPassword}
-          />
-          <PwInput
-            placeholder={t("auth.passwordPlaceholder")}
-            value={newPassword}
-            onChangeText={setNewPassword}
-          />
-          <PwInput
-            placeholder={t("auth.passwordPlaceholder")}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-          />
-          <PrimaryButton
-            label={t("common.save")}
-            icon="lock"
-            loading={changePassword.isPending}
-            onPress={handleChangePassword}
-            style={{ marginTop: 6 }}
-          />
-        </Section>
+          <View style={{ gap: 10 }}>
+            <PwInput placeholder={t("auth.password")} value={currentPassword} onChangeText={setCurrentPassword} isRTL={isRTL} writingDirection={writingDirection} colors={colors} />
+            <PwInput placeholder={t("auth.passwordPlaceholder")} value={newPassword} onChangeText={setNewPassword} isRTL={isRTL} writingDirection={writingDirection} colors={colors} />
+            <PwInput placeholder={t("auth.passwordPlaceholder")} value={confirmPassword} onChangeText={setConfirmPassword} isRTL={isRTL} writingDirection={writingDirection} colors={colors} />
+            <PrimaryButton
+              label={t("common.save")}
+              icon="lock"
+              loading={changePassword.isPending}
+              onPress={handleChangePassword}
+              style={{ marginTop: 4 }}
+            />
+          </View>
+        </Card>
 
-        {/* Sign out */}
-        <Pressable
-          onPress={confirmLogout}
-          style={({ pressed }) => [
-            styles.logoutBtn,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              borderRadius: colors.radius + 4,
-              opacity: pressed ? 0.7 : 1,
-              flexDirection: isRTL ? "row-reverse" : "row",
-            },
-          ]}
-        >
-          <Feather name="log-out" size={18} color={colors.destructive} />
-          <Text style={[styles.logoutText, { color: colors.destructive }]}>{t("settings.logout")}</Text>
-        </Pressable>
-
-        <Text style={[styles.brand, { color: colors.mutedForeground }]}>
-          {t("settings.poweredBy")}
-        </Text>
       </ScrollView>
 
-      {/* PIN setup modal — shown after enabling biometric lock */}
-      <Modal
-        visible={pinSetupVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={skipPinSetup}
-      >
+      {/* Modals for PIN and Country Picker remain essentially identical */}
+      <Modal visible={pinSetupVisible} transparent animationType="fade" onRequestClose={skipPinSetup}>
         <View style={pinStyles.backdrop}>
-          <View style={[pinStyles.card, { paddingBottom: insets.bottom + 24 }]}>
-            <Text style={pinStyles.title}>{t("settings.pinSetupTitle")}</Text>
-            <Text style={pinStyles.body}>{t("settings.pinSetupBody")}</Text>
-            <Text style={pinStyles.stepLabel}>
-              {pinStep === 1 ? t("settings.pinStep1") : t("settings.pinStep2")}
-            </Text>
-            <PinPad
-              onComplete={handlePinSetupComplete}
-              resetSignal={pinResetSignal}
-              subtitle={undefined}
-              error={pinError ?? undefined}
-            />
-            <Pressable
-              onPress={skipPinSetup}
-              style={({ pressed }) => [pinStyles.skipBtn, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Text style={pinStyles.skipText}>{t("settings.pinSkip")}</Text>
+          <View style={[pinStyles.card, { paddingBottom: insets.bottom + 24, backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[pinStyles.title, { color: colors.foreground }]}>{t("settings.pinSetupTitle")}</Text>
+            <Text style={[pinStyles.body, { color: colors.mutedForeground }]}>{t("settings.pinSetupBody")}</Text>
+            <Text style={[pinStyles.stepLabel, { color: colors.primary }]}>{pinStep === 1 ? t("settings.pinStep1") : t("settings.pinStep2")}</Text>
+            <PinPad onComplete={handlePinSetupComplete} resetSignal={pinResetSignal} subtitle={undefined} error={pinError ?? undefined} />
+            <Pressable onPress={skipPinSetup} style={({ pressed }) => [pinStyles.skipBtn, { opacity: pressed ? 0.6 : 1 }]}>
+              <Text style={[pinStyles.skipText, { color: colors.mutedForeground }]}>{t("settings.pinSkip")}</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
 
-      {/* Change PIN modal — shown when user taps "Change PIN" in Settings */}
-      <Modal
-        visible={changePinVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setChangePinVisible(false)}
-      >
+      <Modal visible={changePinVisible} transparent animationType="fade" onRequestClose={() => setChangePinVisible(false)}>
         <View style={pinStyles.backdrop}>
-          <View style={[pinStyles.card, { paddingBottom: insets.bottom + 24 }]}>
-            <Text style={pinStyles.title}>{t("settings.changePinTitle")}</Text>
-            <Text style={pinStyles.stepLabel}>
-              {changePinStep === 1 ? t("settings.pinStep1") : t("settings.pinStep2")}
-            </Text>
-            <PinPad
-              onComplete={handleChangePinComplete}
-              resetSignal={changePinResetSignal}
-              subtitle={undefined}
-              error={changePinError ?? undefined}
-            />
-            <Pressable
-              onPress={handleForgotPin}
-              style={({ pressed }) => [pinStyles.skipBtn, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Text style={pinStyles.skipText}>{t("settings.forgotPin")}</Text>
+          <View style={[pinStyles.card, { paddingBottom: insets.bottom + 24, backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[pinStyles.title, { color: colors.foreground }]}>{t("settings.changePinTitle")}</Text>
+            <Text style={[pinStyles.stepLabel, { color: colors.primary }]}>{changePinStep === 1 ? t("settings.pinStep1") : t("settings.pinStep2")}</Text>
+            <PinPad onComplete={handleChangePinComplete} resetSignal={changePinResetSignal} subtitle={undefined} error={changePinError ?? undefined} />
+            <Pressable onPress={handleForgotPin} style={({ pressed }) => [pinStyles.skipBtn, { opacity: pressed ? 0.6 : 1 }]}>
+              <Text style={[pinStyles.skipText, { color: colors.mutedForeground }]}>{t("settings.forgotPin")}</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
 
-      <Modal
-        visible={countryPickerOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCountryPickerOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setCountryPickerOpen(false)}
-        >
-          <Pressable
-            style={[
-              styles.modalSheet,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                paddingBottom: insets.bottom + 12,
-              },
-            ]}
-            onPress={(e) => e.stopPropagation()}
-          >
+      <Modal visible={countryPickerOpen} transparent animationType="slide" onRequestClose={() => setCountryPickerOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setCountryPickerOpen(false)}>
+          <Pressable style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 12 }]} onPress={(e) => e.stopPropagation()}>
             <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.modalTitle, { color: colors.foreground, textAlign }]}>
-              {t("settings.country")}
-            </Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground, textAlign }]}>{t("settings.country")}</Text>
             <ScrollView style={{ maxHeight: 420 }}>
               <View style={{ gap: 8 }}>
                 {COUNTRY_ORDER.map((code) => {
@@ -798,34 +627,15 @@ export default function SettingsScreen() {
                         settings.setCountry(code);
                         setCountryPickerOpen(false);
                       }}
-                      style={[
-                        styles.countryRow,
-                        {
-                          borderColor: active ? colors.primary : colors.border,
-                          backgroundColor: active ? colors.accent : "transparent",
-                          borderRadius: colors.radius + 2,
-                          flexDirection: isRTL ? "row-reverse" : "row",
-                        },
-                      ]}
+                      style={[styles.countryRow, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.accent : "transparent", borderRadius: colors.radius + 2, flexDirection: isRTL ? "row-reverse" : "row" }]}
                     >
                       <Text style={styles.flag}>{profile.flag}</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.countryName, { color: colors.foreground, textAlign }]}>
-                          {name}
-                        </Text>
-                        <Text style={[styles.countryDial, { color: colors.mutedForeground, textAlign }]}>
-                          {profile.dialCode}
-                        </Text>
+                        <Text style={[styles.countryName, { color: colors.foreground, textAlign }]}>{name}</Text>
+                        <Text style={[styles.countryDial, { color: colors.mutedForeground, textAlign }]}>{profile.dialCode}</Text>
                       </View>
-                      <View
-                        style={[
-                          styles.radio,
-                          { borderColor: active ? colors.primary : colors.border },
-                        ]}
-                      >
-                        {active ? (
-                          <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />
-                        ) : null}
+                      <View style={[styles.radio, { borderColor: active ? colors.primary : colors.border }]}>
+                        {active ? <View style={[styles.radioDot, { backgroundColor: colors.primary }]} /> : null}
                       </View>
                     </Pressable>
                   );
@@ -847,18 +657,12 @@ const LOCK_TIMEOUT_OPTIONS: { value: LockTimeoutMs; labelKey: string }[] = [
   { value: 300_000, labelKey: "settings.lockTimeout5min" },
 ];
 
-function LockTimeoutPicker({
-  value,
-  onChange,
-}: {
-  value: LockTimeoutMs;
-  onChange: (v: LockTimeoutMs) => void;
-}) {
+function LockTimeoutPicker({ value, onChange }: { value: LockTimeoutMs; onChange: (v: LockTimeoutMs) => void; }) {
   const colors = useColors();
   const { t, isRTL, textAlign } = useLocale();
   return (
-    <View style={{ marginTop: 4, marginBottom: 4 }}>
-      <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
+    <View style={{ marginBottom: 8 }}>
+      <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign, marginBottom: 8 }]}>
         {t("settings.lockTimeoutLabel")}
       </Text>
       <View style={[styles.segment, { flexWrap: "wrap", flexDirection: isRTL ? "row-reverse" : "row" }]}>
@@ -876,15 +680,11 @@ function LockTimeoutPicker({
                   minWidth: 72,
                   flex: undefined,
                   paddingHorizontal: 10,
+                  paddingVertical: 8,
                 },
               ]}
             >
-              <Text
-                style={[
-                  styles.segmentText,
-                  { color: active ? "#FFFFFF" : colors.foreground, fontSize: 13 },
-                ]}
-              >
+              <Text style={[styles.segmentText, { color: active ? "#FFFFFF" : colors.foreground, fontSize: 13 }]}>
                 {t(opt.labelKey)}
               </Text>
             </Pressable>
@@ -895,25 +695,10 @@ function LockTimeoutPicker({
   );
 }
 
-function PwInput({
-  placeholder,
-  value,
-  onChangeText,
-}: {
-  placeholder: string;
-  value: string;
-  onChangeText: (v: string) => void;
-}) {
-  const colors = useColors();
-  const { isRTL, writingDirection } = useLocale();
+function PwInput({ placeholder, value, onChangeText, isRTL, writingDirection, colors }: any) {
   const [show, setShow] = useState(false);
   return (
-    <View
-      style={[
-        styles.inputWrap,
-        { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: colors.radius + 2, flexDirection: isRTL ? "row-reverse" : "row" },
-      ]}
-    >
+    <View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border, borderRadius: colors.radius + 2, flexDirection: isRTL ? "row-reverse" : "row" }]}>
       <Feather name="lock" size={16} color={colors.mutedForeground} />
       <TextInput
         value={value}
@@ -932,58 +717,31 @@ function PwInput({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  const colors = useColors();
-  const { textAlign } = useLocale();
-  return (
-    <View style={{ marginTop: 24 }}>
-      <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
-        {title.toUpperCase()}
-      </Text>
-      <View
-        style={[
-          styles.sectionBody,
-          { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-        ]}
-      >
-        {children}
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   profileCard: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 16,
     padding: 16,
-    borderWidth: 1,
   },
   profileName: {
-    fontSize: 17,
+    fontSize: 20,
     fontFamily: FONT.bold,
   },
   profileEmail: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: FONT.regular,
     marginTop: 2,
   },
   sectionTitle: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontFamily: FONT.semibold,
-    letterSpacing: 0.6,
-    marginBottom: 8,
-    marginHorizontal: 4,
-  },
-  sectionBody: {
-    borderWidth: 1,
-    padding: 16,
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    marginLeft: 4,
   },
   fieldLabel: {
-    fontSize: 12.5,
-    fontFamily: FONT.medium,
-    marginBottom: 8,
+    fontSize: 13,
+    fontFamily: FONT.semibold,
   },
   segment: {
     flexDirection: "row",
@@ -995,17 +753,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 11,
+    paddingVertical: 12,
   },
   segmentText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontFamily: FONT.semibold,
   },
   countryRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    borderWidth: 1.5,
+    borderWidth: 1,
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
@@ -1013,17 +771,17 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   countryName: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: FONT.semibold,
   },
   countryDial: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontFamily: FONT.regular,
     marginTop: 1,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   modalSheet: {
@@ -1041,24 +799,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 16,
-    fontFamily: FONT.semibold,
+    fontSize: 18,
+    fontFamily: FONT.bold,
     marginBottom: 14,
-  },
-  captureRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1.5,
-    padding: 14,
-  },
-  captureLabel: {
-    fontSize: 15,
-    fontFamily: FONT.semibold,
-  },
-  captureSub: {
-    fontSize: 12.5,
-    fontFamily: FONT.regular,
-    marginTop: 1,
   },
   radio: {
     width: 22,
@@ -1069,9 +812,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   radioDot: {
-    width: 11,
-    height: 11,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  menuRow: {
+    paddingHorizontal: 16,
   },
   switchRow: {
     flexDirection: "row",
@@ -1083,21 +829,21 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semibold,
   },
   switchSub: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontFamily: FONT.regular,
     marginTop: 2,
-    lineHeight: 17,
+    lineHeight: 18,
   },
   banner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    padding: 10,
-    marginBottom: 10,
+    padding: 12,
+    marginBottom: 12,
   },
   bannerText: {
     flex: 1,
-    fontSize: 12.5,
+    fontSize: 13,
     fontFamily: FONT.medium,
   },
   inputWrap: {
@@ -1106,8 +852,7 @@ const styles = StyleSheet.create({
     gap: 10,
     borderWidth: 1,
     paddingHorizontal: 12,
-    height: 50,
-    marginBottom: 10,
+    height: 52,
   },
   input: {
     flex: 1,
@@ -1120,83 +865,59 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderWidth: 1,
     marginTop: 10,
   },
   changePinLabel: {
     flex: 1,
-    fontSize: 14.5,
+    fontSize: 15,
     fontFamily: FONT.medium,
-  },
-  logoutBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    height: 52,
-    borderWidth: 1,
-    marginTop: 26,
-  },
-  logoutText: {
-    fontSize: 15.5,
-    fontFamily: FONT.semibold,
-  },
-  brand: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    textAlign: "center",
-    marginTop: 22,
   },
 });
 
 const pinStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.88)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    padding: 20,
   },
   card: {
     width: "100%",
-    maxWidth: 360,
-    backgroundColor: "#1A1A1A",
-    borderRadius: 20,
-    padding: 28,
+    maxWidth: 400,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 24,
     alignItems: "center",
-    gap: 12,
   },
   title: {
-    color: "#FFFFFF",
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: FONT.bold,
+    marginBottom: 8,
     textAlign: "center",
   },
   body: {
-    color: "rgba(255,255,255,0.55)",
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: FONT.regular,
     textAlign: "center",
-    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 10,
+    lineHeight: 22,
   },
   stepLabel: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: FONT.semibold,
-    textAlign: "center",
-    marginTop: 4,
-    letterSpacing: 0.4,
+    marginBottom: 16,
   },
   skipBtn: {
-    marginTop: 8,
+    marginTop: 24,
     paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   skipText: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: FONT.medium,
-    textAlign: "center",
   },
 });

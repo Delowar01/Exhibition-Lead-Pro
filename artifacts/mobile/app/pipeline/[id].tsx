@@ -62,6 +62,9 @@ import {
   prettyLabel,
 } from "@/components/ui";
 import { CopilotSection } from "@/components/CopilotSection";
+import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader";
+import { WorkspaceTabs, type TabItem } from "@/components/workspace/WorkspaceTabs";
+import { QuickActionsBar, type QuickActionItem } from "@/components/workspace/QuickActionsBar";
 import { WorkflowSection } from "@/components/WorkflowSection";
 import { AiInsightsSection } from "@/components/AiInsightsSection";
 import { CommunicationHub } from "@/components/CommunicationHub";
@@ -219,6 +222,16 @@ export default function PipelineDetailScreen() {
   const { t, isRTL, textAlign } = useLocale();
   const { id } = useLocalSearchParams<{ id: string }>();
   const leadId = parseInt(id ?? "0");
+  const [activeTab, setActiveTab] = useState("overview");
+
+  const TABS: TabItem[] = [
+    { key: "overview", label: t("workspace.overview") },
+    { key: "timeline", label: t("workspace.timeline") },
+    { key: "notes", label: t("workspace.notes") },
+    { key: "documents", label: t("workspace.documents") },
+    { key: "intelligence", label: t("workspace.intelligence") },
+    { key: "discussion", label: t("workspace.discussion"), disabled: true },
+  ];
 
   const queryClient = useQueryClient();
   const query = useGetLead(leadId, { query: { enabled: leadId > 0, queryKey: getGetLeadQueryKey(leadId) } });
@@ -533,394 +546,354 @@ export default function PipelineDetailScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <Stack.Screen
-        options={{
-          title: lead?.title ?? t("common.unnamedLead"),
-          headerStyle: { backgroundColor: colors.card },
-          headerTintColor: colors.foreground,
-          headerTitleStyle: { fontFamily: FONT.semibold },
-          headerRight: () =>
-            lead ? (
-              <View style={{ flexDirection: "row", gap: 14 }}>
-                <Pressable onPress={() => router.push(`/pipeline/form?id=${lead.id}`)} hitSlop={10}>
-                  <Feather name="edit-2" size={19} color={colors.primary} />
-                </Pressable>
-                <Pressable onPress={confirmDelete} hitSlop={10}>
-                  <Feather name="trash-2" size={19} color={colors.destructive} />
-                </Pressable>
-              </View>
-            ) : null,
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
       {query.isLoading ? (
         <LoadingState />
       ) : query.isError || !lead ? (
         <ErrorState onRetry={() => query.refetch()} />
       ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 60, gap: 16, flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-          }
-        >
-          {/* Hero card */}
-          <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 6 }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <Badge
-                label={t(`leads.stages.${lead.stage}`, { defaultValue: prettyLabel(lead.stage) })}
-                color={stageColor}
-              />
-              {lead.priority ? (
-                <Badge
-                  label={t(`pipeline.priority${lead.priority.charAt(0).toUpperCase() + lead.priority.slice(1)}`)}
-                  color={priorityColor(lead.priority)}
-                />
-              ) : null}
-            </View>
-
-            {lead.title ? (
-              <Text style={[styles.heroTitle, { color: colors.foreground }]}>{lead.title}</Text>
-            ) : null}
-
-            {lead.value != null && lead.value > 0 ? (
-              <Text style={[styles.heroValue, { color: colors.success }]}>
-                {formatCurrency(lead.value, lead.currency ?? "USD")}
-              </Text>
-            ) : null}
-
-            {typeof lead.probability === "number" ? (
-              <View style={{ marginTop: 10 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                  <Text style={[styles.probLabel, { color: colors.mutedForeground }]}>{t("pipeline.probability")}</Text>
-                  <Text style={[styles.probLabel, { color: colors.foreground, fontFamily: FONT.semibold }]}>{lead.probability}%</Text>
+        <View style={{ flex: 1 }}>
+          <View style={{ paddingTop: insets.top + (Platform.OS === "web" ? 67 : 0) }}>
+            <WorkspaceHeader
+              title={lead.title ?? t("common.unnamedLead")}
+              subtitle={lead.contactName ? `${lead.contactName} ${lead.contactCompany ? `· ${lead.contactCompany}` : ""}` : (lead.contactCompany ?? t("common.noCompany"))}
+              avatarName={lead.contactName ?? "?"}
+              avatarColor={stageColor}
+              badges={[
+                { label: t(`leads.stages.${lead.stage}`, { defaultValue: prettyLabel(lead.stage) }), color: stageColor },
+                ...(lead.priority ? [{ label: t(`pipeline.priority${lead.priority.charAt(0).toUpperCase() + lead.priority.slice(1)}`), color: priorityColor(lead.priority) }] : [])
+              ]}
+              onBack={() => router.back()}
+              rightAction={
+                <View style={{ flexDirection: "row", gap: 14 }}>
+                  <Pressable onPress={() => router.push(`/pipeline/form?id=${lead.id}`)} hitSlop={10}>
+                    <Feather name="edit-2" size={19} color={colors.primary} />
+                  </Pressable>
+                  <Pressable onPress={confirmDelete} hitSlop={10}>
+                    <Feather name="trash-2" size={19} color={colors.destructive} />
+                  </Pressable>
                 </View>
-                <View style={[styles.probBar, { backgroundColor: colors.muted }]}>
-                  <View style={[styles.probFill, { width: `${lead.probability}%` as `${number}%`, backgroundColor: stageColor }]} />
-                </View>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Details */}
-          <Section
-            title={t("contacts.sectionDetails")}
-            action={
-              <Pressable
-                onPress={() => {
-                  setAssignStrategy(AssignLeadInputStrategy.manual);
-                  setAssignOwnerId(lead.assignedToId ?? null);
-                  setAssignTeamId(lead.teamId ?? null);
-                  setRecommendation(null);
-                  setAssignModalVisible(true);
-                }}
-                hitSlop={8}
-                style={({ pressed }) => [styles.sectionAction, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}
-              >
-                <Feather name="user-plus" size={13} color={colors.primary} />
-                <Text style={[styles.sectionActionText, { color: colors.primary }]}>{t("pipeline.assign.button")}</Text>
-              </Pressable>
-            }
-          >
-            {lead.contactName ? (
-              <View style={[styles.infoRow, { marginBottom: 4 }]}>
-                <Avatar name={lead.contactName} size={28} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{t("pipeline.contact")}</Text>
-                  <Text style={[styles.infoValue, { color: colors.foreground }]}>{lead.contactName}</Text>
-                  {lead.contactCompany ? (
-                    <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{lead.contactCompany}</Text>
-                  ) : null}
-                </View>
-              </View>
-            ) : null}
-            <InfoRow icon="user-check" label={t("pipeline.assignedTo")} value={lead.assignedToName ?? t("pipeline.unassigned")} />
-            <InfoRow icon="users" label={t("pipeline.team")} value={lead.teamName ?? t("pipeline.noTeam")} />
-            <InfoRow icon="calendar" label={t("pipeline.event")} value={lead.eventName ?? undefined} />
-            <InfoRow
-              icon="target"
-              label={t("pipeline.closeDate")}
-              value={lead.closingDate ? formatDate(lead.closingDate) : t("pipeline.noClosingDate")}
+              }
             />
-            {lead.notes ? <InfoRow icon="file-text" label={t("pipeline.notes")} value={lead.notes} /> : null}
-          </Section>
-
-          <CommunicationHub
-            entity="lead"
-            id={leadId}
-            email={contactQuery.data?.email ?? lead.contactEmail}
-            phone={contactQuery.data?.mobile ?? contactQuery.data?.officePhone}
-            displayName={lead.contactName ?? lead.title}
+          </View>
+          <WorkspaceTabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
+          
+          <QuickActionsBar
+            actions={[
+              { key: "log_activity", icon: "activity", label: t("pipeline.logActivity"), onPress: () => setActivityModalVisible(true) },
+              { key: "assign", icon: "user-plus", label: t("pipeline.assign.button"), onPress: () => {
+                setAssignStrategy(AssignLeadInputStrategy.manual);
+                setAssignOwnerId(lead.assignedToId ?? null);
+                setAssignTeamId(lead.teamId ?? null);
+                setRecommendation(null);
+                setAssignModalVisible(true);
+              }},
+              { key: "won", icon: "award", label: t("pipeline.markWon"), onPress: confirmMarkWon, disabled: isWonOrLost },
+              { key: "lost", icon: "x-circle", label: t("pipeline.markLost"), onPress: confirmMarkLost, disabled: isWonOrLost },
+            ]}
           />
 
-          <CopilotSection entityType="lead" id={leadId} />
-
-          <WorkflowSection entityType="lead" id={leadId} />
-
-          <AiInsightsSection entityType="lead" id={leadId} />
-
-          {/* Actions */}
-          {!isWonOrLost ? (
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <Pressable
-                onPress={confirmMarkWon}
-                style={({ pressed }) => [styles.actionBtn, { backgroundColor: "#22C55E" + "1A", borderColor: "#22C55E", opacity: pressed ? 0.7 : 1, flex: 1 }]}
-              >
-                <Feather name="award" size={16} color="#22C55E" />
-                <Text style={[styles.actionBtnText, { color: "#22C55E" }]}>{t("pipeline.markWon")}</Text>
-              </Pressable>
-              <Pressable
-                onPress={confirmMarkLost}
-                style={({ pressed }) => [styles.actionBtn, { backgroundColor: colors.destructive + "1A", borderColor: colors.destructive, opacity: pressed ? 0.7 : 1, flex: 1 }]}
-              >
-                <Feather name="x-circle" size={16} color={colors.destructive} />
-                <Text style={[styles.actionBtnText, { color: colors.destructive }]}>{t("pipeline.markLost")}</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              onPress={() => moveStage("prospect")}
-              style={({ pressed }) => [styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Feather name="refresh-cw" size={16} color={colors.foreground} />
-              <Text style={[styles.actionBtnText, { color: colors.foreground }]}>{t("pipeline.reopen")}</Text>
-            </Pressable>
-          )}
-
-          {/* Tags */}
-          <Section
-            title={t("pipeline.tagsSection.title")}
-            action={
-              <Pressable
-                onPress={() => setTagModalVisible(true)}
-                hitSlop={8}
-                style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 4 }}
-              >
-                <Feather name="plus" size={14} color={colors.primary} />
-                <Text style={[styles.linkText, { color: colors.primary }]}>{t("pipeline.tagsSection.add")}</Text>
-              </Pressable>
+          <ScrollView
+            contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 60, gap: 16, flexGrow: 1 }}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
             }
           >
-            {leadTags.length === 0 ? (
-              <Text style={[styles.emptyInline, { color: colors.mutedForeground, textAlign }]}>
-                {t("pipeline.tagsSection.empty")}
-              </Text>
-            ) : (
-              <View style={[styles.tagWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-                {leadTags.map((tag) => {
-                  const tColor = (tag.color ?? "") || colors.primary;
-                  return (
-                    <Pressable
-                      key={tag.id}
-                      onPress={() => onDetachTag(tag)}
-                      style={[styles.tagChip, { backgroundColor: tColor + "1A", borderColor: tColor + "55", flexDirection: isRTL ? "row-reverse" : "row" }]}
-                    >
-                      <View style={[styles.tagDot, { backgroundColor: tColor }]} />
-                      <Text style={[styles.tagText, { color: tColor }]}>{tag.name}</Text>
-                      <Feather name="x" size={12} color={tColor} />
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-          </Section>
-
-          {/* Notes */}
-          <Section title={t("pipeline.notesSection.title")}>
-            {mentionMatches.length > 0 ? (
-              <View style={[styles.mentionBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                {mentionMatches.map((u) => (
-                  <Pressable
-                    key={u.id}
-                    onPress={() => pickMention(u)}
-                    style={({ pressed }) => [
-                      styles.mentionRow,
-                      { flexDirection: isRTL ? "row-reverse" : "row", opacity: pressed ? 0.6 : 1 },
-                    ]}
-                  >
-                    <View style={[styles.mentionAvatar, { backgroundColor: colors.primary }]}>
-                      <Text style={{ color: colors.primaryForeground, fontSize: 11, fontFamily: FONT.semibold }}>
-                        {u.name.charAt(0)}
-                      </Text>
-                    </View>
-                    <Text style={[styles.mentionName, { color: colors.foreground, textAlign }]}>{u.name}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-            <View style={[styles.noteInputRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              <TextInput
-                style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, textAlign }]}
-                placeholder={t("pipeline.notesSection.placeholder")}
-                placeholderTextColor={colors.mutedForeground}
-                value={noteText}
-                onChangeText={onNoteTextChange}
-                multiline
-              />
-              <Pressable
-                onPress={submitNote}
-                disabled={!noteText.trim() || createNote.isPending}
-                style={({ pressed }) => [
-                  styles.noteSendBtn,
-                  { backgroundColor: colors.primary, opacity: !noteText.trim() || createNote.isPending ? 0.5 : pressed ? 0.8 : 1 },
-                ]}
-              >
-                <Feather name="send" size={16} color={colors.primaryForeground} />
-              </Pressable>
-            </View>
-
-            {notes.length === 0 ? (
-              <Text style={[styles.emptyInline, { color: colors.mutedForeground, textAlign }]}>
-                {t("pipeline.notesSection.empty")}
-              </Text>
-            ) : (
-              notes.map((note, idx) => (
-                <View
-                  key={note.id}
-                  style={[styles.noteRow, idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
-                >
-                  <MentionText
-                    body={note.body}
-                    color={colors.foreground}
-                    mentionColor={colors.primary}
-                    style={[styles.noteBody, { textAlign }]}
-                  />
-                  <Text style={[styles.noteMeta, { color: colors.mutedForeground, textAlign }]}>
-                    {note.userName ? `${note.userName} · ` : ""}
-                    {formatTimelineDate(note.createdAt)}
-                  </Text>
-                </View>
-              ))
-            )}
-          </Section>
-
-          {/* Log activity quick action */}
-          <Pressable
-            onPress={() => setActivityModalVisible(true)}
-            style={({ pressed }) => [styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Feather name="plus-circle" size={16} color={colors.primary} />
-            <Text style={[styles.actionBtnText, { color: colors.primary }]}>{t("pipeline.logActivity")}</Text>
-          </Pressable>
-
-          {/* Activity timeline */}
-          <Section title={t("pipeline.timeline.title")}>
-            {timelineQuery.isLoading ? (
-              <View style={{ paddingVertical: 16 }}>
-                <LoadingState />
-              </View>
-            ) : timelineEntries.length === 0 ? (
-              <View style={{ paddingVertical: 16 }}>
-                <EmptyState icon="activity" title={t("pipeline.timeline.empty")} />
-              </View>
-            ) : (
+            {activeTab === "overview" && (
               <>
-                <View
-                  style={[
-                    styles.timelineSearchBox,
-                    { backgroundColor: colors.muted, flexDirection: isRTL ? "row-reverse" : "row" },
-                  ]}
-                >
-                  <Feather name="search" size={15} color={colors.mutedForeground} />
-                  <TextInput
-                    value={timelineSearch}
-                    onChangeText={setTimelineSearch}
-                    placeholder={t("pipeline.timeline.search")}
-                    placeholderTextColor={colors.mutedForeground}
-                    style={[styles.timelineSearchInput, { color: colors.foreground, textAlign }]}
-                  />
+                <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 6 }]}>
+                  {lead.value != null && lead.value > 0 ? (
+                    <Text style={[styles.heroValue, { color: colors.success }]}>
+                      {formatCurrency(lead.value, lead.currency ?? "USD")}
+                    </Text>
+                  ) : null}
+
+                  {typeof lead.probability === "number" ? (
+                    <View style={{ marginTop: lead.value != null && lead.value > 0 ? 10 : 0 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                        <Text style={[styles.probLabel, { color: colors.mutedForeground }]}>{t("pipeline.probability")}</Text>
+                        <Text style={[styles.probLabel, { color: colors.foreground, fontFamily: FONT.semibold }]}>{lead.probability}%</Text>
+                      </View>
+                      <View style={[styles.probBar, { backgroundColor: colors.muted }]}>
+                        <View style={[styles.probFill, { width: `${lead.probability}%` as `${number}%`, backgroundColor: stageColor }]} />
+                      </View>
+                    </View>
+                  ) : null}
                 </View>
-                {timelineKinds.length > 1 ? (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-                    style={{ marginBottom: 8 }}
-                  >
-                    {["all", ...timelineKinds].map((k) => {
-                      const active = timelineKind === k;
-                      const label =
-                        k === "all"
-                          ? t("pipeline.timeline.filterAll")
-                          : t(`pipeline.timeline.kinds.${k}`, { defaultValue: prettyLabel(k) });
-                      return (
-                        <Pressable
-                          key={k}
-                          onPress={() => setTimelineKind(k)}
-                          style={[
-                            styles.timelineChip,
-                            {
-                              backgroundColor: active ? colors.primary : colors.card,
-                              borderColor: active ? colors.primary : colors.border,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              fontWeight: "600",
-                              color: active ? colors.primaryForeground : colors.mutedForeground,
-                            }}
-                          >
-                            {label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                ) : null}
-                {filteredTimeline.length === 0 ? (
-                  <View style={{ paddingVertical: 16 }}>
-                    <EmptyState icon="search" title={t("pipeline.timeline.noMatch")} />
-                  </View>
-                ) : (
-                  timelineGroups.map((group) => (
-                    <View key={group.label} style={{ marginBottom: 4 }}>
-                      <Text style={[styles.timelineGroupLabel, { color: colors.mutedForeground, textAlign }]}>
-                        {group.label}
-                      </Text>
-                      {group.entries.map((entry: TimelineEntry, idx) => {
-                        const kindLabel = t(`pipeline.timeline.kinds.${entry.kind}`, { defaultValue: prettyLabel(entry.kind) });
-                        const icon = TIMELINE_KIND_ICONS[entry.kind] ?? "activity";
-                        const primary = (entry.title ?? "").trim() || kindLabel;
+
+                {/* Details */}
+                <Section title={t("contacts.sectionDetails")}>
+                  {lead.contactName ? (
+                    <View style={[styles.infoRow, { marginBottom: 4 }]}>
+                      <Avatar name={lead.contactName} size={28} color={colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{t("pipeline.contact")}</Text>
+                        <Text style={[styles.infoValue, { color: colors.foreground }]}>{lead.contactName}</Text>
+                        {lead.contactCompany ? (
+                          <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{lead.contactCompany}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  ) : null}
+                  <InfoRow icon="user-check" label={t("pipeline.assignedTo")} value={lead.assignedToName ?? t("pipeline.unassigned")} />
+                  <InfoRow icon="users" label={t("pipeline.team")} value={lead.teamName ?? t("pipeline.noTeam")} />
+                  <InfoRow icon="calendar" label={t("pipeline.event")} value={lead.eventName ?? undefined} />
+                  <InfoRow
+                    icon="target"
+                    label={t("pipeline.closeDate")}
+                    value={lead.closingDate ? formatDate(lead.closingDate) : t("pipeline.noClosingDate")}
+                  />
+                  {lead.notes ? <InfoRow icon="file-text" label={t("pipeline.notes")} value={lead.notes} /> : null}
+                </Section>
+
+                <CommunicationHub
+                  entity="lead"
+                  id={leadId}
+                  email={contactQuery.data?.email ?? lead.contactEmail}
+                  phone={contactQuery.data?.mobile ?? contactQuery.data?.officePhone}
+                  displayName={lead.contactName ?? lead.title}
+                />
+
+                {/* Tags */}
+                <Section
+                  title={t("pipeline.tagsSection.title")}
+                  action={
+                    <Pressable
+                      onPress={() => setTagModalVisible(true)}
+                      hitSlop={8}
+                      style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 4 }}
+                    >
+                      <Feather name="plus" size={14} color={colors.primary} />
+                      <Text style={[styles.linkText, { color: colors.primary }]}>{t("pipeline.tagsSection.add")}</Text>
+                    </Pressable>
+                  }
+                >
+                  {leadTags.length === 0 ? (
+                    <Text style={[styles.emptyInline, { color: colors.mutedForeground, textAlign }]}>
+                      {t("pipeline.tagsSection.empty")}
+                    </Text>
+                  ) : (
+                    <View style={[styles.tagWrap, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                      {leadTags.map((tag) => {
+                        const tColor = (tag.color ?? "") || colors.primary;
                         return (
-                          <View
-                            key={entry.id}
-                            style={[
-                              styles.historyRow,
-                              { flexDirection: isRTL ? "row-reverse" : "row" },
-                              idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-                            ]}
+                          <Pressable
+                            key={tag.id}
+                            onPress={() => onDetachTag(tag)}
+                            style={[styles.tagChip, { backgroundColor: tColor + "1A", borderColor: tColor + "55", flexDirection: isRTL ? "row-reverse" : "row" }]}
                           >
-                            <View style={[styles.timelineIcon, { backgroundColor: colors.muted }]}>
-                              <Feather name={icon} size={13} color={colors.mutedForeground} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.historyField, { color: colors.foreground, textAlign }]}>{primary}</Text>
-                              {entry.body ? (
-                                <Text style={[styles.timelineBody, { color: colors.mutedForeground, textAlign }]}>{entry.body}</Text>
-                              ) : null}
-                              <Text style={[styles.historyMeta, { color: colors.mutedForeground, textAlign }]}>
-                                {entry.actorName ? `${entry.actorName} · ` : ""}
-                                {formatTimelineDate(entry.occurredAt)}
-                              </Text>
-                            </View>
-                          </View>
+                            <View style={[styles.tagDot, { backgroundColor: tColor }]} />
+                            <Text style={[styles.tagText, { color: tColor }]}>{tag.name}</Text>
+                            <Feather name="x" size={12} color={tColor} />
+                          </Pressable>
                         );
                       })}
                     </View>
-                  ))
-                )}
+                  )}
+                </Section>
               </>
             )}
-          </Section>
 
-          {/* Documents */}
-          <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 }]}>
-            <DocumentsSection entityType="lead" entityId={leadId} />
-          </View>
-        </ScrollView>
+            {activeTab === "intelligence" && (
+              <>
+                <CopilotSection entityType="lead" id={leadId} />
+                <WorkflowSection entityType="lead" id={leadId} />
+                <AiInsightsSection entityType="lead" id={leadId} />
+              </>
+            )}
+
+            {activeTab === "notes" && (
+              <Section title={t("pipeline.notesSection.title")}>
+                {mentionMatches.length > 0 ? (
+                  <View style={[styles.mentionBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    {mentionMatches.map((u) => (
+                      <Pressable
+                        key={u.id}
+                        onPress={() => pickMention(u)}
+                        style={({ pressed }) => [
+                          styles.mentionRow,
+                          { flexDirection: isRTL ? "row-reverse" : "row", opacity: pressed ? 0.6 : 1 },
+                        ]}
+                      >
+                        <View style={[styles.mentionAvatar, { backgroundColor: colors.primary }]}>
+                          <Text style={{ color: colors.primaryForeground, fontSize: 11, fontFamily: FONT.semibold }}>
+                            {u.name.charAt(0)}
+                          </Text>
+                        </View>
+                        <Text style={[styles.mentionName, { color: colors.foreground, textAlign }]}>{u.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={[styles.noteInputRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                  <TextInput
+                    style={[styles.noteInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, textAlign }]}
+                    placeholder={t("pipeline.notesSection.placeholder")}
+                    placeholderTextColor={colors.mutedForeground}
+                    value={noteText}
+                    onChangeText={onNoteTextChange}
+                    multiline
+                  />
+                  <Pressable
+                    onPress={submitNote}
+                    disabled={!noteText.trim() || createNote.isPending}
+                    style={({ pressed }) => [
+                      styles.noteSendBtn,
+                      { backgroundColor: colors.primary, opacity: !noteText.trim() || createNote.isPending ? 0.5 : pressed ? 0.8 : 1 },
+                    ]}
+                  >
+                    <Feather name="send" size={16} color={colors.primaryForeground} />
+                  </Pressable>
+                </View>
+
+                {notes.length === 0 ? (
+                  <Text style={[styles.emptyInline, { color: colors.mutedForeground, textAlign }]}>
+                    {t("pipeline.notesSection.empty")}
+                  </Text>
+                ) : (
+                  notes.map((note, idx) => (
+                    <View
+                      key={note.id}
+                      style={[styles.noteRow, idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
+                    >
+                      <MentionText
+                        body={note.body}
+                        color={colors.foreground}
+                        mentionColor={colors.primary}
+                        style={[styles.noteBody, { textAlign }]}
+                      />
+                      <Text style={[styles.noteMeta, { color: colors.mutedForeground, textAlign }]}>
+                        {note.userName ? `${note.userName} · ` : ""}
+                        {formatTimelineDate(note.createdAt)}
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </Section>
+            )}
+
+            {activeTab === "timeline" && (
+              <Section title={t("pipeline.timeline.title")}>
+                {timelineQuery.isLoading ? (
+                  <View style={{ paddingVertical: 16 }}>
+                    <LoadingState />
+                  </View>
+                ) : timelineEntries.length === 0 ? (
+                  <View style={{ paddingVertical: 16 }}>
+                    <EmptyState icon="activity" title={t("pipeline.timeline.empty")} />
+                  </View>
+                ) : (
+                  <>
+                    <View
+                      style={[
+                        styles.timelineSearchBox,
+                        { backgroundColor: colors.muted, flexDirection: isRTL ? "row-reverse" : "row" },
+                      ]}
+                    >
+                      <Feather name="search" size={15} color={colors.mutedForeground} />
+                      <TextInput
+                        value={timelineSearch}
+                        onChangeText={setTimelineSearch}
+                        placeholder={t("pipeline.timeline.search")}
+                        placeholderTextColor={colors.mutedForeground}
+                        style={[styles.timelineSearchInput, { color: colors.foreground, textAlign }]}
+                      />
+                    </View>
+                    {timelineKinds.length > 1 ? (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+                        style={{ marginBottom: 8 }}
+                      >
+                        {["all", ...timelineKinds].map((k) => {
+                          const active = timelineKind === k;
+                          const label =
+                            k === "all"
+                              ? t("pipeline.timeline.filterAll")
+                              : t(`pipeline.timeline.kinds.${k}`, { defaultValue: prettyLabel(k) });
+                          return (
+                            <Pressable
+                              key={k}
+                              onPress={() => setTimelineKind(k)}
+                              style={[
+                                styles.timelineChip,
+                                {
+                                  backgroundColor: active ? colors.primary : colors.card,
+                                  borderColor: active ? colors.primary : colors.border,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: "600",
+                                  color: active ? colors.primaryForeground : colors.mutedForeground,
+                                }}
+                              >
+                                {label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    ) : null}
+                    {filteredTimeline.length === 0 ? (
+                      <View style={{ paddingVertical: 16 }}>
+                        <EmptyState icon="search" title={t("pipeline.timeline.noMatch")} />
+                      </View>
+                    ) : (
+                      timelineGroups.map((group) => (
+                        <View key={group.label} style={{ marginBottom: 4 }}>
+                          <Text style={[styles.timelineGroupLabel, { color: colors.mutedForeground, textAlign }]}>
+                            {group.label}
+                          </Text>
+                          {group.entries.map((entry: TimelineEntry, idx) => {
+                            const kindLabel = t(`pipeline.timeline.kinds.${entry.kind}`, { defaultValue: prettyLabel(entry.kind) });
+                            const icon = TIMELINE_KIND_ICONS[entry.kind] ?? "activity";
+                            const primary = (entry.title ?? "").trim() || kindLabel;
+                            return (
+                              <View
+                                key={entry.id}
+                                style={[
+                                  styles.historyRow,
+                                  { flexDirection: isRTL ? "row-reverse" : "row" },
+                                  idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+                                ]}
+                              >
+                                <View style={[styles.timelineIcon, { backgroundColor: colors.muted }]}>
+                                  <Feather name={icon} size={13} color={colors.mutedForeground} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.historyField, { color: colors.foreground, textAlign }]}>{primary}</Text>
+                                  {entry.body ? (
+                                    <Text style={[styles.timelineBody, { color: colors.mutedForeground, textAlign }]}>{entry.body}</Text>
+                                  ) : null}
+                                  <Text style={[styles.historyMeta, { color: colors.mutedForeground, textAlign }]}>
+                                    {entry.actorName ? `${entry.actorName} · ` : ""}
+                                    {formatTimelineDate(entry.occurredAt)}
+                                  </Text>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      ))
+                    )}
+                  </>
+                )}
+              </Section>
+            )}
+
+            {activeTab === "documents" && (
+              <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 }]}>
+                <DocumentsSection entityType="lead" entityId={leadId} />
+              </View>
+            )}
+          </ScrollView>
+        </View>
       )}
 
       {/* Log-activity modal */}

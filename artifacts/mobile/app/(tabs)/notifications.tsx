@@ -23,7 +23,7 @@ import {
   type Notification,
 } from "@workspace/api-client-react";
 
-import { FONT } from "@/components/ui";
+import { FONT, Card, SecondaryButton, EmptyState } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 
@@ -131,26 +131,28 @@ export default function NotificationsScreen() {
               { backgroundColor: (unread ? colors.primary : colors.mutedForeground) + "1A" },
             ]}
           >
-            <Feather name={icon} size={18} color={unread ? colors.primary : colors.mutedForeground} />
+            <Feather name={icon} size={20} color={unread ? colors.primary : colors.mutedForeground} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text
-              numberOfLines={2}
-              style={[
-                styles.title,
-                { color: colors.foreground, textAlign, fontFamily: unread ? FONT.bold : FONT.semibold },
-              ]}
-            >
-              {item.title}
-            </Text>
+            <View style={[styles.titleRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.title,
+                  { color: colors.foreground, textAlign, fontFamily: unread ? FONT.bold : FONT.semibold, flex: 1 },
+                ]}
+              >
+                {item.title}
+              </Text>
+              <Text style={[styles.time, { color: colors.mutedForeground }]}>
+                {timeAgo(item.createdAt, language)}
+              </Text>
+            </View>
             {item.body ? (
               <Text numberOfLines={2} style={[styles.body, { color: colors.mutedForeground, textAlign }]}>
                 {item.body}
               </Text>
             ) : null}
-            <Text style={[styles.time, { color: colors.mutedForeground, textAlign }]}>
-              {timeAgo(item.createdAt, language)}
-            </Text>
           </View>
           {unread ? <View style={[styles.dot, { backgroundColor: colors.primary }]} /> : null}
         </Pressable>
@@ -169,24 +171,26 @@ export default function NotificationsScreen() {
           <RefreshControl refreshing={isRefetching} onRefresh={() => void refetch()} tintColor={colors.primary} />
         }
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingTop: topPad + 14,
           paddingHorizontal: 20,
           paddingBottom: insets.bottom + 110,
           flexGrow: 1,
-          gap: 10,
+          gap: 12,
         }}
         ListHeaderComponent={
-          <View style={{ marginBottom: 8 }}>
+          <View style={{ marginBottom: 12 }}>
             <View
               style={{
                 flexDirection: isRTL ? "row-reverse" : "row",
                 alignItems: "center",
                 justifyContent: "space-between",
+                marginBottom: 4,
               }}
             >
               <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
-                {t("notifCenter.title")}
+                {t("nav.notifications")}
               </Text>
               {unreadCount > 0 ? (
                 <Pressable
@@ -214,18 +218,22 @@ export default function NotificationsScreen() {
           </View>
         }
         ListEmptyComponent={
-          isLoading ? null : (
-            <View style={styles.empty}>
-              <View style={[styles.emptyIcon, { backgroundColor: colors.primary + "1A" }]}>
-                <Feather name="bell" size={26} color={colors.primary} />
-              </View>
-              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-                {t("notifCenter.empty")}
-              </Text>
-              <Text style={[styles.emptyDesc, { color: colors.mutedForeground }]}>
-                {t("notifCenter.emptyDesc")}
-              </Text>
+          isLoading ? (
+            <View style={{ gap: 12 }}>
+               {[1,2,3,4].map(i => (
+                 <View key={i} style={[styles.row, { borderColor: colors.border, backgroundColor: colors.card, borderRadius: colors.radius + 4 }]} >
+                   <View style={[styles.iconWrap, { backgroundColor: colors.muted }]} />
+                   <View style={{ flex: 1, gap: 8 }}>
+                     <View style={{ height: 16, backgroundColor: colors.muted, borderRadius: 4, width: '60%' }} />
+                     <View style={{ height: 12, backgroundColor: colors.muted, borderRadius: 4, width: '90%' }} />
+                   </View>
+                 </View>
+               ))}
             </View>
+          ) : (
+            <Card padded style={{ marginTop: 32 }}>
+               <EmptyState icon="bell" title={t("notifCenter.empty")} subtitle={t("notifCenter.emptyDesc")} />
+            </Card>
           )
         }
       />
@@ -235,81 +243,62 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   heading: {
-    fontSize: 30,
+    fontSize: 32,
     fontFamily: FONT.bold,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 13.5,
+    fontSize: 15,
     fontFamily: FONT.regular,
-    marginTop: 4,
   },
   markAllBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
-    height: 34,
-    borderRadius: 17,
+    paddingHorizontal: 14,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
   },
   markAllText: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontFamily: FONT.semibold,
   },
   row: {
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
+    alignItems: "flex-start",
+    gap: 14,
+    padding: 16,
     borderWidth: 1,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
-  title: {
-    fontSize: 14.5,
-  },
-  body: {
-    fontSize: 13,
-    fontFamily: FONT.regular,
-    marginTop: 2,
-  },
-  time: {
-    fontSize: 11.5,
-    fontFamily: FONT.regular,
-    marginTop: 4,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  empty: {
+  titleRow: {
+    justifyContent: "space-between",
     alignItems: "center",
-    justifyContent: "center",
-    flexGrow: 1,
-    paddingVertical: 60,
     gap: 8,
-  },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
     marginBottom: 4,
   },
-  emptyTitle: {
-    fontSize: 16.5,
-    fontFamily: FONT.bold,
+  title: {
+    fontSize: 16,
   },
-  emptyDesc: {
-    fontSize: 13.5,
+  body: {
+    fontSize: 14,
     fontFamily: FONT.regular,
-    textAlign: "center",
-    maxWidth: 260,
+    lineHeight: 20,
+  },
+  time: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 6,
   },
 });

@@ -513,6 +513,20 @@
     "calLocationPlaceholder": "المكتب، مكالمة فيديو، عنوان…",
     "createInvite": "إنشاء الدعوة"
   },
+  "workspace": {
+    "overview": "نظرة عامة",
+    "timeline": "الجدول الزمني",
+    "activities": "الأنشطة",
+    "documents": "المستندات",
+    "intelligence": "الذكاء",
+    "discussion": "نقاش",
+    "contacts": "جهات الاتصال",
+    "leads": "العملاء المحتملين",
+    "events": "الفعاليات",
+    "notes": "ملاحظات",
+    "interactions": "التفاعلات",
+    "noInteractions": "لا توجد تفاعلات مسجلة."
+  },
   "contacts": {
     "title": "جهات الاتصال",
     "searchPlaceholder": "ابحث في جهات الاتصال",
@@ -1394,7 +1408,9 @@
     "groupAi": "الذكاء الاصطناعي",
     "groupWorkspace": "مساحة عملي",
     "groupSettings": "الإعدادات",
-    "followupsSub": "المتابعات المستحقة والقادمة"
+    "followupsSub": "المتابعات المستحقة والقادمة",
+    "devPerf": "أداء المطور",
+    "devPerfSub": "توقيتات خط أنابيب المسح"
   },
   "batch": {
     "backToContacts": "العودة إلى جهات الاتصال",
