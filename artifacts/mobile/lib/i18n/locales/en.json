@@ -387,7 +387,16 @@
     "suggestionsTitle": "Smart suggestions",
     "apply": "Apply",
     "aiBadge": "AI",
-    "ruleBadge": "Rule"
+    "ruleBadge": "Rule",
+    "existingCustomer": "Existing customer",
+    "activeLead": "Active lead",
+    "activeLeadCount": "Active lead ×{{count}}",
+    "decisionMaker": "Decision maker",
+    "seenAt": "Seen at: {{events}}",
+    "similarTitle": "Similar records",
+    "similarAdvisory": "Advisory only — nothing is linked or merged automatically.",
+    "insufficientTitle": "Not enough information",
+    "insufficientBody": "{{fields}} — no grounded suggestion available from this card or your CRM."
   },
   "ocrIntel": {
     "title": "OCR Intelligence",
@@ -490,6 +499,7 @@
       "email": "jane@acme.com",
       "website": "acme.com",
       "linkedin": "linkedin.com/in/jane",
+      "postalCode": "12345",
       "notes": "Met at the exhibition — interested in the enterprise plan"
     },
     "empty": "No contacts yet",
@@ -524,6 +534,7 @@
       "address": "Address",
       "city": "City",
       "country": "Country",
+      "postalCode": "Postal code",
       "event": "Event",
       "notes": "Notes",
       "tags": "Tags"

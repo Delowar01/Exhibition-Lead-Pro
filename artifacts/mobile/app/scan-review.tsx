@@ -155,6 +155,8 @@ export default function ScanReviewScreen() {
         linkedin: d.linkedin ?? "",
         country: d.country ?? "",
         address: d.address ?? "",
+        city: d.city ?? "",
+        postalCode: d.postalCode ?? "",
         notes: d.arabicName ? `${t("scanReview.arabicName")}: ${d.arabicName}` : "",
       };
     },
@@ -684,6 +686,8 @@ const FIELD_TO_FORM: Record<string, keyof ContactFormValues> = {
   linkedin: "linkedin",
   country: "country",
   address: "address",
+  city: "city",
+  postalCode: "postalCode",
 };
 
 /** Map the review form values to the analyze request body (company→company). */
@@ -704,6 +708,8 @@ function buildCaptureFields(v: ContactFormValues): CaptureFields {
     linkedin: clean(v.linkedin),
     country: clean(v.country),
     address: clean(v.address),
+    city: clean(v.city),
+    postalCode: clean(v.postalCode),
   };
 }
 
@@ -744,6 +750,8 @@ function CaptureIntelligence({
   const detectedDialCode = analysis?.validation.detectedDialCode ?? null;
   const suggestions = analysis?.suggestions ?? [];
   const aiDegraded = analysis?.aiDegraded ?? false;
+  const similarWarnings = analysis?.similarWarnings ?? [];
+  const insufficient = analysis?.insufficient ?? [];
 
   const rowDir = isRTL ? "row-reverse" : "row";
 
@@ -824,6 +832,33 @@ function CaptureIntelligence({
                     {c.reasons.join(" · ")}
                   </Text>
                 ) : null}
+                {c.isCustomer || c.isLead || c.isDecisionMaker ? (
+                  <View style={[styles.flagRow, { flexDirection: rowDir }]}>
+                    {c.isCustomer ? (
+                      <View style={[styles.flagPill, { backgroundColor: "#05966914" }]}>
+                        <Text style={[styles.flagPillText, { color: "#059669" }]}>
+                          {t("captureIntel.existingCustomer")}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {c.isLead && !c.isCustomer ? (
+                      <View style={[styles.flagPill, { backgroundColor: "#0284c714" }]}>
+                        <Text style={[styles.flagPillText, { color: "#0284c7" }]}>
+                          {typeof c.leadCount === "number" && c.leadCount > 1
+                            ? t("captureIntel.activeLeadCount", { count: c.leadCount })
+                            : t("captureIntel.activeLead")}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {c.isDecisionMaker ? (
+                      <View style={[styles.flagPill, { backgroundColor: "#7c3aed14" }]}>
+                        <Text style={[styles.flagPillText, { color: "#7c3aed" }]}>
+                          {t("captureIntel.decisionMaker")}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
               <View style={[styles.confChip, { backgroundColor: colors.accent }]}>
                 <Text style={[styles.confChipText, { color: colors.primary }]}>
@@ -858,6 +893,16 @@ function CaptureIntelligence({
                 <Text style={[styles.matchReason, { color: colors.mutedForeground, textAlign }]} numberOfLines={1}>
                   {t("captureIntel.orgCounts", { contacts: o.contactCount, leads: o.leadCount })}
                 </Text>
+                {o.relationshipSummary ? (
+                  <Text style={[styles.matchReason, { color: colors.mutedForeground, textAlign }]} numberOfLines={2}>
+                    {o.relationshipSummary}
+                  </Text>
+                ) : null}
+                {(o.recentEvents?.length ?? 0) > 0 ? (
+                  <Text style={[styles.matchReason, { color: colors.mutedForeground, textAlign }]} numberOfLines={1}>
+                    {t("captureIntel.seenAt", { events: o.recentEvents!.join(isRTL ? "، " : ", ") })}
+                  </Text>
+                ) : null}
               </View>
               <View style={[styles.matchTypePill, { backgroundColor: colors.accent }]}>
                 <Text style={[styles.matchTypeText, { color: colors.primary }]}>
@@ -867,6 +912,46 @@ function CaptureIntelligence({
               <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={16} color={colors.mutedForeground} />
             </Pressable>
           ))}
+        </View>
+      ) : null}
+
+      {/* Similar-record warnings — advisory only, never auto-links or merges. */}
+      {similarWarnings.length > 0 ? (
+        <View style={styles.intelSection}>
+          <Text style={[styles.intelSectionTitle, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.similarTitle")}
+          </Text>
+          {similarWarnings.map((w, i) => {
+            const inner = (
+              <>
+                <Feather name="alert-triangle" size={14} color="#d97706" />
+                <Text style={[styles.validationText, { color: colors.foreground, textAlign }]} numberOfLines={3}>
+                  {w.message}
+                </Text>
+                <View style={[styles.confChip, { backgroundColor: colors.accent }]}>
+                  <Text style={[styles.confChipText, { color: colors.primary }]}>
+                    {t("captureIntel.matchConfidence", { confidence: Math.round(w.confidence) })}
+                  </Text>
+                </View>
+              </>
+            );
+            return w.contactId ? (
+              <Pressable
+                key={`${w.kind}-${i}`}
+                onPress={() => router.push(`/contact/${w.contactId}`)}
+                style={[styles.validationRow, { flexDirection: rowDir }]}
+              >
+                {inner}
+              </Pressable>
+            ) : (
+              <View key={`${w.kind}-${i}`} style={[styles.validationRow, { flexDirection: rowDir }]}>
+                {inner}
+              </View>
+            );
+          })}
+          <Text style={[styles.intelNote, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.similarAdvisory")}
+          </Text>
         </View>
       ) : null}
 
@@ -954,6 +1039,22 @@ function CaptureIntelligence({
               </View>
             );
           })}
+        </View>
+      ) : null}
+
+      {/* Fields with no grounded suggestion — honest "not enough information". */}
+      {insufficient.length > 0 ? (
+        <View style={styles.intelSection}>
+          <Text style={[styles.intelSectionTitle, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.insufficientTitle")}
+          </Text>
+          <Text style={[styles.intelNote, { color: colors.mutedForeground, textAlign }]}>
+            {t("captureIntel.insufficientBody", {
+              fields: insufficient
+                .map((f) => t(`contacts.fields.${f}`, { defaultValue: f }))
+                .join(isRTL ? "، " : ", "),
+            })}
+          </Text>
         </View>
       ) : null}
     </View>
@@ -1108,6 +1209,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
+  },
+  flagRow: {
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
+  flagPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  flagPillText: {
+    fontSize: 11,
+    fontFamily: FONT.semibold,
   },
   confChipText: {
     fontSize: 11,

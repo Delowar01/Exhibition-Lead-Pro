@@ -19,4 +19,10 @@ export interface OrganizationMatch {
   contactCount: number;
   leadCount: number;
   matchType: OrganizationMatchMatchType;
+  /** Distinct events where contacts of this organization were captured (Stage 5E). */
+  eventCount?: number;
+  /** Up to 3 most recent of those event names. */
+  recentEvents?: string[];
+  /** Deterministic one-line summary of the CRM relationship with this company. */
+  relationshipSummary?: string;
 }

@@ -62,6 +62,9 @@ interface ScannedFields {
   website: string;
   linkedin: string;
   address: string;
+  city: string;
+  country: string;
+  postalCode: string;
 }
 
 interface LeadScorePreview {
@@ -81,6 +84,9 @@ const emptyFields = (): ScannedFields => ({
   website: "",
   linkedin: "",
   address: "",
+  city: "",
+  country: "",
+  postalCode: "",
 });
 
 function fieldsFromExtracted(ex: {
@@ -94,6 +100,9 @@ function fieldsFromExtracted(ex: {
   website?: string | null;
   linkedin?: string | null;
   address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  postalCode?: string | null;
 }): ScannedFields {
   return {
     firstName: ex.firstName ?? "",
@@ -106,6 +115,9 @@ function fieldsFromExtracted(ex: {
     website: ex.website ?? "",
     linkedin: ex.linkedin ?? "",
     address: ex.address ?? "",
+    city: ex.city ?? "",
+    country: ex.country ?? "",
+    postalCode: ex.postalCode ?? "",
   };
 }
 
@@ -126,6 +138,9 @@ const CAPTURE_TO_STATE: Record<string, keyof ScannedFields> = {
   website: "website",
   linkedin: "linkedin",
   address: "address",
+  city: "city",
+  country: "country",
+  postalCode: "postalCode",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -139,8 +154,10 @@ const FIELD_LABELS: Record<string, string> = {
   website: "Website",
   linkedin: "LinkedIn",
   address: "Address",
+  city: "City",
   country: "Country",
   postalCode: "Postal Code",
+  industry: "Industry",
 };
 
 // Build the analyze request body from the editable form state. Only include fields
@@ -161,6 +178,9 @@ function buildCaptureFields(d: ScannedFields): CaptureFields {
   add("website", d.website);
   add("linkedin", d.linkedin);
   add("address", d.address);
+  add("city", d.city);
+  add("country", d.country);
+  add("postalCode", d.postalCode);
   return fields;
 }
 
@@ -720,6 +740,25 @@ export default function AdminScan() {
                                   {m.reasons.join(", ")}
                                 </p>
                               )}
+                              {(m.isCustomer || m.isLead || m.isDecisionMaker) && (
+                                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                  {m.isCustomer && (
+                                    <Badge className="text-[10px] border bg-emerald-100 text-emerald-700 border-emerald-200">
+                                      Existing customer
+                                    </Badge>
+                                  )}
+                                  {m.isLead && !m.isCustomer && (
+                                    <Badge className="text-[10px] border bg-sky-100 text-sky-700 border-sky-200">
+                                      Active lead{typeof m.leadCount === "number" && m.leadCount > 1 ? ` ×${m.leadCount}` : ""}
+                                    </Badge>
+                                  )}
+                                  {m.isDecisionMaker && (
+                                    <Badge className="text-[10px] border bg-violet-100 text-violet-700 border-violet-200">
+                                      Decision maker
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
                             </Link>
                           ))}
                         </div>
@@ -753,9 +792,53 @@ export default function AdminScan() {
                                 {o.leadCount === 1 ? "" : "s"}
                                 {o.industry ? ` · ${o.industry}` : ""}
                               </p>
+                              {o.relationshipSummary && (
+                                <p className="text-[11px] text-muted-foreground mt-1">{o.relationshipSummary}</p>
+                              )}
+                              {(o.recentEvents?.length ?? 0) > 0 && (
+                                <p className="text-[11px] text-muted-foreground mt-0.5">
+                                  Seen at: {o.recentEvents!.join(", ")}
+                                </p>
+                              )}
                             </Link>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Similar-record warnings — advisory only, never auto-merge */}
+                    {(analysis.similarWarnings?.length ?? 0) > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <AlertTriangle className="h-3.5 w-3.5" /> Similar records
+                        </div>
+                        <div className="space-y-1.5">
+                          {analysis.similarWarnings!.map((w, i) => (
+                            <div
+                              key={`${w.kind}-${i}`}
+                              className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2.5"
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs text-amber-800">
+                                  {w.contactId ? (
+                                    <Link href={`/admin/contacts/${w.contactId}`} className="underline underline-offset-2 hover:text-amber-900">
+                                      {w.message}
+                                    </Link>
+                                  ) : (
+                                    w.message
+                                  )}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 shrink-0">
+                                {w.confidence}%
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Advisory only — nothing is linked or merged automatically.
+                        </p>
                       </div>
                     )}
 
@@ -845,6 +928,19 @@ export default function AdminScan() {
                             );
                           })}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Fields with no grounded suggestion — honest "not enough information" */}
+                    {(analysis.insufficient?.length ?? 0) > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <Lightbulb className="h-3.5 w-3.5" /> Not enough information
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {analysis.insufficient!.map((f) => FIELD_LABELS[f] ?? f).join(", ")} — no grounded
+                          suggestion available from this card or your CRM.
+                        </p>
                       </div>
                     )}
 
@@ -973,6 +1069,21 @@ export default function AdminScan() {
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> Address</Label>
                     <Input value={scannedData.address} onChange={(e) => setScannedData({...scannedData, address: e.target.value})} placeholder="—" />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">City</Label>
+                      <Input value={scannedData.city} onChange={(e) => setScannedData({...scannedData, city: e.target.value})} placeholder="—" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Country</Label>
+                      <Input value={scannedData.country} onChange={(e) => setScannedData({...scannedData, country: e.target.value})} placeholder="—" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">Postal Code</Label>
+                      <Input value={scannedData.postalCode} onChange={(e) => setScannedData({...scannedData, postalCode: e.target.value})} placeholder="—" />
+                    </div>
                   </div>
 
                   <div className="pt-4 border-t border-border mt-8">

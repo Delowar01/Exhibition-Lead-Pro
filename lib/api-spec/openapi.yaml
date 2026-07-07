@@ -8470,6 +8470,10 @@ components:
           type: ["string", "null"]
         address:
           type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
         latitude:
           type: ["number", "null"]
         longitude:
@@ -8574,6 +8578,10 @@ components:
           type: ["string", "null"]
         address:
           type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
+          type: ["string", "null"]
         latitude:
           type: ["number", "null"]
         longitude:
@@ -8629,6 +8637,10 @@ components:
         country:
           type: ["string", "null"]
         address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
           type: ["string", "null"]
         linkedin:
           type: ["string", "null"]
@@ -9789,6 +9801,8 @@ components:
           type: ["string", "null"]
         address:
           type: ["string", "null"]
+        city:
+          type: ["string", "null"]
         country:
           type: ["string", "null"]
         postalCode:
@@ -9877,6 +9891,18 @@ components:
           type: array
           items:
             type: string
+        leadCount:
+          type: integer
+          description: "Count of non-deleted leads linked to this contact (Stage 5E recognition)."
+        isLead:
+          type: boolean
+          description: "True when the contact already has at least one lead in the pipeline."
+        isCustomer:
+          type: boolean
+          description: "True when the contact's status is won (existing customer)."
+        isDecisionMaker:
+          type: boolean
+          description: "Deterministic seniority/job-title heuristic (C-Level/VP/Director or equivalent)."
 
     OrganizationMatch:
       type: object
@@ -9899,6 +9925,35 @@ components:
         matchType:
           type: string
           enum: [exact, partial]
+        eventCount:
+          type: integer
+          description: "Distinct events where contacts of this organization were captured (Stage 5E)."
+        recentEvents:
+          type: array
+          items:
+            type: string
+          description: "Up to 3 most recent of those event names."
+        relationshipSummary:
+          type: string
+          description: "Deterministic one-line summary of the CRM relationship with this company."
+
+    SimilarWarning:
+      type: object
+      required: [kind, message, confidence]
+      description: "Stage 5E advisory similar-record warning — never blocks or auto-merges."
+      properties:
+        kind:
+          type: string
+          enum: [similar_company, similar_email, similar_phone, duplicate_card]
+        message:
+          type: string
+        confidence:
+          type: integer
+          description: "0-100 deterministic similarity confidence."
+        contactId:
+          type: ["integer", "null"]
+        scanId:
+          type: ["integer", "null"]
 
     SmartSuggestion:
       type: object
@@ -9950,6 +10005,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SmartSuggestion"
+        similarWarnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimilarWarning"
+          description: "Stage 5E advisory similar-record warnings (similar company/email/phone or duplicate card)."
+        insufficient:
+          type: array
+          items:
+            type: string
+          description: "Gap fields with no grounded suggestion — UI shows 'Not enough information' instead of a guess."
         aiDegraded:
           type: boolean
           description: "True when an AI-backed suggestion was attempted but the provider was unavailable/failed. Deterministic results remain valid."
@@ -10141,6 +10206,10 @@ components:
         officePhone:
           type: ["string", "null"]
         country:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        postalCode:
           type: ["string", "null"]
         original:
           $ref: "#/components/schemas/ExtractedCardOriginal"

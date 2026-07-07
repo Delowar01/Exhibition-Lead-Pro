@@ -1,0 +1,356 @@
+# Lead Capture Pro
+# Stage 5E – Enterprise Intelligent Capture Engine
+
+Stage 5.0, Stage 5A, Stage 5B, and Stage 5C have been successfully completed, validated, reviewed, and approved.
+
+Proceed with Stage 5E – Enterprise Intelligent Capture Engine.
+
+This stage must transform the existing Business Card Scanner into a world-class Enterprise Intelligent Capture platform.
+
+The objective is not only to improve OCR accuracy, but to ensure every piece of information entering the CRM is validated, normalized, and intelligently reviewed before becoming part of the customer database.
+
+=========================================================
+Requirements
+=========================================================
+
+Preserve:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• Contract-first architecture
+• Repository Layer
+• Service Layer
+• Existing OCR workflow
+• Existing scan workflow
+• Existing AI Platform Foundation
+• Existing AI Intelligence
+• Existing AI Sales Copilot
+• Existing Executive Intelligence
+
+No regressions.
+
+No breaking API contracts.
+
+No breaking database changes unless required for OCR metadata.
+
+=========================================================
+Enterprise AI Principles
+=========================================================
+
+Every OCR result must include:
+
+• Confidence Score
+• Processing Time
+• AI Model
+• Prompt Version
+• Validation Status
+• Extraction Method
+• Generated Date
+
+Never fabricate data.
+
+If confidence is low, clearly indicate:
+
+"Low Confidence"
+
+or
+
+"Not enough information"
+
+instead of guessing.
+
+Every suggestion must be reviewable.
+
+Nothing should automatically overwrite CRM data.
+
+=========================================================
+Features
+=========================================================
+
+1. Enterprise OCR Engine
+
+Improve extraction accuracy for:
+
+• Full Name
+• Company Name
+• Designation
+• Mobile Number
+• Telephone
+• Email
+• Website
+• Address
+• Country
+• City
+• Postal Code
+
+Support:
+
+• English
+• Arabic
+• Mixed-language cards
+
+---------------------------------------------------------
+
+2. OCR Confidence Engine
+
+Each extracted field must include:
+
+• Confidence
+• Validation Result
+• Extraction Method
+• AI Model
+• Prompt Version
+
+---------------------------------------------------------
+
+3. Intelligent Validation
+
+Validate:
+
+• Email
+• Phone
+• Website
+• Country
+• Postal Code
+• Dial Codes
+
+Provide correction suggestions.
+
+---------------------------------------------------------
+
+4. Company Recognition
+
+Search the CRM.
+
+If company exists:
+
+Show:
+
+• Existing Company
+• Existing Contacts
+• Existing Leads
+• Previous Exhibitions
+• Company Relationship Summary
+
+Allow the user to review and link.
+
+Never link automatically.
+
+---------------------------------------------------------
+
+5. Contact Recognition
+
+Detect existing contacts.
+
+Display:
+
+• Existing Contact
+• Existing Lead
+• Existing Customer
+• Existing Decision Maker
+
+Include confidence.
+
+---------------------------------------------------------
+
+6. Duplicate Intelligence
+
+Detect:
+
+• Duplicate Business Card
+• Duplicate Contact
+• Duplicate Company
+• Similar Company
+• Similar Email
+• Similar Phone
+
+Never merge automatically.
+
+---------------------------------------------------------
+
+7. Intelligent Data Cleanup
+
+Normalize:
+
+• Company Names
+• Phone Numbers
+• Country Codes
+• Email
+• Website
+• Address
+
+Always preserve:
+
+• Original OCR Output
+• Original Image
+• Original Raw Data
+
+---------------------------------------------------------
+
+8. Smart Suggestions
+
+Suggest:
+
+• Missing Website
+• Missing Email
+• Missing Country
+• Missing Industry
+• Missing Company Category
+
+Only when confidence is high.
+
+Otherwise display:
+
+"Not enough information."
+
+---------------------------------------------------------
+
+9. QR & Digital Card Intelligence
+
+Improve support for:
+
+• Business Card QR
+• Digital Business Cards
+• vCard QR
+• Email Signature QR
+• Contact QR
+
+Automatically classify the capture source.
+
+---------------------------------------------------------
+
+10. Intelligent Scan Quality
+
+Detect:
+
+• Blur
+• Low Light
+• Reflection
+• Rotation
+• Cropping
+• Perspective Distortion
+
+Provide real-time user guidance before OCR processing.
+
+---------------------------------------------------------
+
+11. OCR Intelligence Dashboard
+
+Display:
+
+• OCR Confidence
+• Validation Results
+• Existing Company
+• Existing Contact
+• Duplicate Warnings
+• Suggested Corrections
+• Scan Quality
+• Processing Time
+• AI Model
+• Prompt Version
+
+---------------------------------------------------------
+
+12. Batch Intelligent Processing
+
+Support:
+
+• Batch OCR
+• Batch Validation
+• Batch Cleanup
+• Batch Duplicate Detection
+• Batch Company Recognition
+• Batch Contact Recognition
+
+Background processing only.
+
+---------------------------------------------------------
+
+13. Mobile Experience
+
+Maintain full feature parity.
+
+Provide:
+
+• Live Scan Quality Indicator
+• OCR Confidence
+• Existing Company Alerts
+• Existing Contact Alerts
+• Duplicate Alerts
+• Suggested Corrections
+
+Maintain EN/AR and RTL support.
+
+=========================================================
+Performance Targets
+=========================================================
+
+Optimize for:
+
+• Continuous exhibition scanning
+• High-volume scanning
+• Background OCR processing
+• Enterprise-scale deployments
+• Low latency
+
+=========================================================
+Security
+=========================================================
+
+Continue enforcing:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• AI Audit Logging
+• Tenant Isolation
+
+No OCR result may expose another tenant's data.
+
+=========================================================
+Testing
+=========================================================
+
+Add automated tests covering:
+
+• OCR Accuracy
+• OCR Validation
+• Duplicate Detection
+• Company Recognition
+• Contact Recognition
+• QR Recognition
+• Scan Quality Detection
+• Batch Processing
+• AI Failure Handling
+• Tenant Isolation
+• Permission Enforcement
+
+Run:
+
+• Full workspace typecheck
+• Complete regression suite
+
+No regressions.
+
+=========================================================
+Deliverables
+=========================================================
+
+Provide:
+
+• Architecture Summary
+• OCR Pipeline Diagram
+• APIs Added
+• Database Changes
+• AI Models Used
+• Prompt Versions
+• Performance Benchmark (Before vs After)
+• OCR Accuracy Improvements
+• Web Screenshots
+• Mobile Screenshots
+• Files Modified
+• Test Results
+• Validation Report
+
+Wait for review and approval before proceeding to Stage 5F – Enterprise Workflow Intelligence.

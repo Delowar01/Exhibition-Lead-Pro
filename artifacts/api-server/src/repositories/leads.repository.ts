@@ -113,6 +113,20 @@ export async function activeLeadIdForContact(companyId: number, contactId: numbe
   return row?.id;
 }
 
+// Stage 5E recognition: non-deleted lead counts per contact, tenant-scoped.
+// Used to flag "existing lead" on capture-time contact matches. Read-only.
+export async function leadCountsByContactIds(companyId: number, contactIds: number[]): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  if (contactIds.length === 0) return out;
+  const rows = await db
+    .select({ contactId: leadsTable.contactId, n: count() })
+    .from(leadsTable)
+    .where(and(eq(leadsTable.companyId, companyId), inArray(leadsTable.contactId, contactIds), notDeleted(leadsTable.deletedAt)))
+    .groupBy(leadsTable.contactId);
+  for (const r of rows) if (r.contactId != null) out.set(r.contactId, Number(r.n));
+  return out;
+}
+
 export async function insert(values: typeof leadsTable.$inferInsert): Promise<LeadRow> {
   const [row] = await db.insert(leadsTable).values(values).returning();
   return row;

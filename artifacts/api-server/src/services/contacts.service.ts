@@ -5,6 +5,7 @@ import * as orgRepo from "../repositories/organizations.repository.js";
 import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/ai.js";
 import { notifyUser } from "../lib/push.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
+import * as leadsRepo from "../repositories/leads.repository.js";
 import type { ContactRow } from "../repositories/contacts.repository.js";
 import * as mergeHistoryRepo from "../repositories/merge_history.repository.js";
 import * as customFields from "./custom_fields.service.js";
@@ -127,6 +128,8 @@ export interface CreateContactInput {
   website?: string | null;
   country?: string | null;
   address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   gpsAccuracy?: number | null;
@@ -146,7 +149,7 @@ export interface CreateContactInput {
 export async function createContact(user: AuthUser, input: CreateContactInput) {
   const companyId = user.companyId ?? null;
   if (!companyId) throw new AppError(400, "No company context");
-  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, cardImageUrl, source } = input;
+  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city, postalCode, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, cardImageUrl, source } = input;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   // organizationId is bound to the CONTACT's own tenant — use refInCompany
@@ -161,7 +164,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   // are filled in asynchronously; the mobile client refetches and shows them
   // within a second or two. Blocking the response on the Gemini call was the
   // single biggest avoidable latency in the save path.
-  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, organizationId: organizationId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null });
+  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city: city ?? null, postalCode: postalCode ?? null, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, organizationId: organizationId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null });
   // Record the initial lead status in the append-only history.
   void contactsRepo.insertStatusHistory({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: user.id }).catch(() => {});
 
@@ -269,7 +272,7 @@ function normUrl(v: string | null): string | null {
   return t.length > 0 ? t : null;
 }
 // Normalized Levenshtein similarity ratio in [0,1] (1 = identical).
-function nameSimilarity(a: string, b: string): number {
+export function nameSimilarity(a: string, b: string): number {
   if (a === b) return 1;
   const m = a.length, n = b.length;
   if (m === 0 || n === 0) return 0;
@@ -384,6 +387,23 @@ export interface ContactMatch {
   status: string;
   confidence: number;
   reasons: string[];
+  // Stage 5E recognition flags — all derived from live tenant CRM data, never guessed.
+  /** Count of non-deleted leads linked to this contact. */
+  leadCount: number;
+  /** True when this contact already has at least one lead in the pipeline. */
+  isLead: boolean;
+  /** True when the contact's status is "won" (existing customer). */
+  isCustomer: boolean;
+  /** Deterministic seniority/title heuristic (C-Level/VP/Director or equivalent title). */
+  isDecisionMaker: boolean;
+}
+
+// Deterministic decision-maker heuristic: AI-enriched seniority (when present) or a
+// conservative job-title keyword check. No AI call, no guessing beyond stored fields.
+const DECISION_TITLE_RE = /\b(ceo|cto|cfo|coo|cio|cmo|chief|founder|co-?founder|president|vice\s*president|vp|director|managing\s+director|general\s+manager|owner|partner|head\s+of)\b/i;
+export function isDecisionMakerHeuristic(seniority: string | null, jobTitle: string | null): boolean {
+  if (seniority && /^(c-level|vp|director)$/i.test(seniority.trim())) return true;
+  return jobTitle != null && DECISION_TITLE_RE.test(jobTitle);
 }
 
 // Read-only recognition for the capture flow: given the fields on a card being
@@ -436,11 +456,22 @@ export async function matchExistingContacts(user: AuthUser, input: ContactMatchI
         status: c.status,
         confidence,
         reasons,
+        leadCount: 0, // filled below for the returned top matches only
+        isLead: false,
+        isCustomer: c.status === "won",
+        isDecisionMaker: isDecisionMakerHeuristic(c.seniority, c.jobTitle),
       });
     }
   }
   matches.sort((a, b) => b.confidence - a.confidence);
-  return matches.slice(0, 5);
+  const top = matches.slice(0, 5);
+  // Recognition flags: live lead linkage for just the returned matches (tenant-scoped).
+  const leadCounts = await leadsRepo.leadCountsByContactIds(user.companyId, top.map((m) => m.contactId));
+  for (const m of top) {
+    m.leadCount = leadCounts.get(m.contactId) ?? 0;
+    m.isLead = m.leadCount > 0;
+  }
+  return top;
 }
 
 // Explainable-signal weights (max confidence contributed by each shared signal).
@@ -596,7 +627,7 @@ export async function listDuplicates(user: AuthUser) {
 
 const MERGE_BACKFILL_FIELDS = [
   "firstName", "lastName", "fullName", "arabicName", "jobTitle", "contactCompany",
-  "email", "mobile", "officePhone", "website", "country", "address", "linkedin",
+  "email", "mobile", "officePhone", "website", "country", "address", "city", "postalCode", "linkedin",
   "notes", "leadScore", "leadTemperature", "aiReasoning", "industry", "seniority",
   "enrichmentSummary", "talkingPoints", "followUpDate", "cardImageUrl", "eventId", "assignedToId",
 ] as const;
@@ -833,6 +864,8 @@ export interface UpdateContactInput {
   website?: string | null;
   country?: string | null;
   address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
   linkedin?: string | null;
   notes?: string | null;
   tags?: string[];
@@ -849,13 +882,13 @@ export interface UpdateContactInput {
 export async function updateContact(user: AuthUser, id: number, body: UpdateContactInput) {
   const existing = await contactsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Contact not found");
-  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId, organizationId, source } = body;
+  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city, postalCode, linkedin, notes, tags, status, statusComment, followUpDate, followUpTime, eventId, assignedToId, organizationId, source } = body;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   // Bind to the contact's OWN tenant (existing.companyId), not the caller's scope.
   if (organizationId != null && !(await refInCompany("organizations", existing.companyId, organizationId))) throw new AppError(400, "Invalid organizationId");
   const fullName = firstName !== undefined || lastName !== undefined ? [firstName, lastName].filter(Boolean).join(" ") || null : undefined;
-  const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, source };
+  const updateData: Record<string, unknown> = { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city, postalCode, linkedin, notes, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, source };
   if (fullName !== undefined) updateData.fullName = fullName;
   if (tags !== undefined) updateData.tags = JSON.stringify(tags);
   // Remove undefined

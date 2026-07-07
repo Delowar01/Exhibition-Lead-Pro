@@ -35,6 +35,7 @@ export interface CaptureFields {
   website?: string | null;
   linkedin?: string | null;
   address?: string | null;
+  city?: string | null;
   country?: string | null;
   postalCode?: string | null;
 }

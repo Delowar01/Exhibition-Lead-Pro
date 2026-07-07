@@ -13,6 +13,21 @@ export async function list(user: AuthUser, opts: { limit: number; offset: number
   return { rows, total };
 }
 
+// Stage 5E duplicate-card recognition: recent completed scans (newest first),
+// tenant-scoped, with just the fields needed to compare extracted identifiers.
+export async function recentCompleted(
+  user: AuthUser,
+  limit: number,
+): Promise<Array<{ id: number; extractedData: string | null; createdAt: Date }>> {
+  const where = tenantOnly(user, scansTable.companyId, eq(scansTable.status, "completed"));
+  return db
+    .select({ id: scansTable.id, extractedData: scansTable.extractedData, createdAt: scansTable.createdAt })
+    .from(scansTable)
+    .where(where)
+    .orderBy(sql`${scansTable.createdAt} DESC`)
+    .limit(limit);
+}
+
 // Tenant-scoped single fetch. Returns undefined when the row does not exist or
 // is not accessible to the caller (both map to a 404 in the service).
 export async function findById(user: AuthUser, id: number): Promise<ScanRow | undefined> {

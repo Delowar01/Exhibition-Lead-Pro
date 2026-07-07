@@ -67,6 +67,9 @@ export interface ExtractedCardOriginal {
   website: string | null;
   linkedin: string | null;
   address: string | null;
+  city: string | null;
+  country: string | null;
+  postalCode: string | null;
 }
 
 export interface ExtractedCardData {
@@ -80,6 +83,9 @@ export interface ExtractedCardData {
   website: string | null;
   linkedin: string | null;
   address: string | null;
+  city: string | null;
+  country: string | null;
+  postalCode: string | null;
   /** Raw OCR values exactly as printed — never translated/overwritten. */
   original: ExtractedCardOriginal;
 }
@@ -130,6 +136,9 @@ const EMPTY_ORIGINAL: ExtractedCardOriginal = {
   website: null,
   linkedin: null,
   address: null,
+  city: null,
+  country: null,
+  postalCode: null,
 };
 
 const EMPTY_FIELDS: ExtractedCardData = {
@@ -170,6 +179,9 @@ function readOriginal(value: unknown): ExtractedCardOriginal {
     website: str(o.website),
     linkedin: str(o.linkedin),
     address: str(o.address),
+    city: str(o.city),
+    country: str(o.country),
+    postalCode: str(o.postalCode),
   };
 }
 
@@ -305,6 +317,9 @@ export async function extractCardData(
     website: str(parsed.website),
     linkedin: str(parsed.linkedin),
     address: str(parsed.address),
+    city: str(parsed.city),
+    country: str(parsed.country),
+    postalCode: str(parsed.postalCode),
   };
   // Original = text exactly as printed on the card. For translatable text fields
   // (name, job title, company, address) we must NOT fall back to `display` when the
@@ -324,6 +339,11 @@ export async function extractCardData(
     website: originalRaw.website ?? display.website,
     linkedin: originalRaw.linkedin ?? display.linkedin,
     address: originalRaw.address,
+    // city/country are translatable text — never fall back to the (possibly translated)
+    // display value. postalCode is never translated, so display fallback is lossless.
+    city: originalRaw.city,
+    country: originalRaw.country,
+    postalCode: originalRaw.postalCode ?? display.postalCode,
   };
 
   // Per-field confidence: the model MAY report a "fieldConfidences" map (prompt v2).

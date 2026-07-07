@@ -36,6 +36,10 @@ export interface Contact {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+  /** @nullable */
   latitude?: number | null;
   /** @nullable */
   longitude?: number | null;

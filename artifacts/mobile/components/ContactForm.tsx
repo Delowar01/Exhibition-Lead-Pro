@@ -23,6 +23,8 @@ export interface ContactFormValues {
   linkedin: string;
   country: string;
   address: string;
+  city: string;
+  postalCode: string;
   notes: string;
   organizationId: number | null;
 }
@@ -39,6 +41,8 @@ export const EMPTY_CONTACT: ContactFormValues = {
   linkedin: "",
   country: "",
   address: "",
+  city: "",
+  postalCode: "",
   notes: "",
   organizationId: null,
 };
@@ -63,6 +67,8 @@ export function toContactPayload(values: ContactFormValues) {
     linkedin: clean(values.linkedin),
     country: clean(values.country),
     address: clean(values.address),
+    city: clean(values.city),
+    postalCode: clean(values.postalCode),
     notes: clean(values.notes),
     organizationId: values.organizationId ?? null,
   };
@@ -96,8 +102,10 @@ const FIELDS: FieldConfig[] = [
   { key: "officePhone", labelKey: "phone", icon: "phone", placeholderKind: "phone", keyboardType: "phone-pad", half: true },
   { key: "website", labelKey: "website", icon: "globe", placeholderKey: "website", keyboardType: "url", autoCapitalize: "none" },
   { key: "linkedin", labelKey: "linkedin", icon: "linkedin", placeholderKey: "linkedin", keyboardType: "url", autoCapitalize: "none" },
+  { key: "city", labelKey: "city", icon: "map-pin", placeholderKind: "city", autoCapitalize: "words", half: true },
   { key: "country", labelKey: "country", icon: "map-pin", placeholderKind: "country", autoCapitalize: "words", half: true },
   { key: "address", labelKey: "address", icon: "map", placeholderKind: "address", autoCapitalize: "words" },
+  { key: "postalCode", labelKey: "postalCode", icon: "hash", placeholderKey: "postalCode", autoCapitalize: "none", half: true },
   { key: "notes", labelKey: "notes", icon: "file-text", placeholderKey: "notes", autoCapitalize: "sentences", multiline: true },
 ];
 

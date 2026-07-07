@@ -21,3 +21,9 @@ typecheck alone will not).
 consumed the now-optional field. For mobile, MFA challenge is out of scope, so the
 guard is `if (!res.token || !res.user) { show auth.mfaWebOnly; return; }` — keep
 EN/AR locale parity when adding the message key.
+
+**Related trap (additive fields):** capture/scan fields exist in TWO separate OpenAPI
+schemas — `CaptureFields` (analyze request) AND `ExtractedCardData` (OCR result). Adding
+a new capture field (e.g. city/postalCode) to only one typechecks the server fine but
+breaks the mobile artifact, which seeds forms from `ExtractedCardData`. Add to both,
+regenerate, then run the full root typecheck.

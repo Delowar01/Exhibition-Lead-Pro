@@ -35,5 +35,9 @@ export interface ExtractedCardData {
   officePhone?: string | null;
   /** @nullable */
   country?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
   original?: ExtractedCardOriginal;
 }

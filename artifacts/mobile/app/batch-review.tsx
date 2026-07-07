@@ -43,6 +43,8 @@ function extractedToValues(extracted: ExtractedCardData): ContactFormValues {
     linkedin: extracted.linkedin ?? "",
     country: extracted.country ?? "",
     address: extracted.address ?? "",
+    city: extracted.city ?? "",
+    postalCode: extracted.postalCode ?? "",
     notes: extracted.arabicName ? `Arabic name: ${extracted.arabicName}` : "",
   };
 }

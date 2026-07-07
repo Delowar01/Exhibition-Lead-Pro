@@ -494,6 +494,8 @@ export * from './sessionList';
 export * from './setCustomFieldValueItem';
 export * from './setCustomFieldValuesInput';
 export * from './setUserRolesInput';
+export * from './similarWarning';
+export * from './similarWarningKind';
 export * from './smartSuggestion';
 export * from './smartSuggestionSource';
 export * from './statusCount';

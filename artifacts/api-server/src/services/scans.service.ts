@@ -25,6 +25,9 @@ function ocrPersistFields(
     website: ocr.fields.website,
     linkedin: ocr.fields.linkedin,
     address: ocr.fields.address,
+    city: ocr.fields.city,
+    country: ocr.fields.country,
+    postalCode: ocr.fields.postalCode,
   });
   return {
     fieldConfidences: JSON.stringify(ocr.fieldConfidences),

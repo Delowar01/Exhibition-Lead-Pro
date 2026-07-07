@@ -9,6 +9,7 @@ import type { CaptureAnalysisDuplicateWarning } from './captureAnalysisDuplicate
 import type { CaptureValidationResult } from './captureValidationResult';
 import type { ContactMatch } from './contactMatch';
 import type { OrganizationMatch } from './organizationMatch';
+import type { SimilarWarning } from './similarWarning';
 import type { SmartSuggestion } from './smartSuggestion';
 
 export interface CaptureAnalysis {
@@ -17,6 +18,10 @@ export interface CaptureAnalysis {
   organizationMatches: OrganizationMatch[];
   duplicateWarning: CaptureAnalysisDuplicateWarning;
   suggestions: SmartSuggestion[];
+  /** Stage 5E advisory similar-record warnings (similar company/email/phone or duplicate card). */
+  similarWarnings?: SimilarWarning[];
+  /** Gap fields with no grounded suggestion — UI shows 'Not enough information' instead of a guess. */
+  insufficient?: string[];
   /** True when an AI-backed suggestion was attempted but the provider was unavailable/failed. Deterministic results remain valid. */
   aiDegraded: boolean;
 }

@@ -24,6 +24,9 @@ export const contactsTable = pgTable("contacts", {
   website: text("website"),
   country: text("country"),
   address: text("address"),
+  city: text("city"), // Stage 5E additive: city extracted from the card / entered at capture
+  postalCode: text("postal_code"), // Stage 5E additive: postal/ZIP from the card
+
   latitude: doublePrecision("latitude"), // GPS captured at scan time (nullable when unavailable)
   longitude: doublePrecision("longitude"),
   gpsAccuracy: doublePrecision("gps_accuracy"), // meters

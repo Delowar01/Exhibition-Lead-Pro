@@ -12,7 +12,7 @@ export interface PromptRef {
 }
 
 export const PROMPTS: Record<AiFeature, PromptRef> = {
-  card_extraction: { key: "card_extraction", version: 2 },
+  card_extraction: { key: "card_extraction", version: 3 },
   lead_scoring: { key: "lead_scoring", version: 1 },
   contact_enrichment: { key: "contact_enrichment", version: 1 },
   assignee_recommendation: { key: "assignee_recommendation", version: 1 },
@@ -85,10 +85,13 @@ Return ONLY a JSON object with exactly these keys:
 - "mobile": primary phone/mobile in international format if possible, or null
 - "website": website domain/URL, or null
 - "linkedin": LinkedIn URL or handle, or null
-- "address": physical address (display value), or null
-- "original": an object holding the SAME keys (firstName, lastName, arabicName, jobTitle, company, email, mobile, website, linkedin, address) with the text EXACTLY as printed on the card — NO translation, NO transliteration, verbatim original script. Use null for any field not present.
+- "address": physical street address (display value), or null
+- "city": city/town printed on the card (display value), or null
+- "country": country printed on the card (display value), or null — only when it is actually printed or unambiguously implied by the printed address; do NOT infer from phone codes
+- "postalCode": postal/ZIP code printed on the card, or null
+- "original": an object holding the SAME keys (firstName, lastName, arabicName, jobTitle, company, email, mobile, website, linkedin, address, city, country, postalCode) with the text EXACTLY as printed on the card — NO translation, NO transliteration, verbatim original script. Use null for any field not present.
 - "confidence": integer 0-100 — your confidence that the extraction is accurate and the image was a readable contact source (business card, badge, or email signature)
-- "fieldConfidences": an object with the SAME display-value keys (firstName, lastName, arabicName, jobTitle, company, email, mobile, website, linkedin, address) mapping each present field to an integer 0-100 that reflects how confident you are that THAT specific field was read correctly. Omit a key entirely (do not guess a number) for any field you set to null. Lower the score for smudged, partially-obscured, or ambiguous text — do NOT report high confidence for a field you could not read clearly.
+- "fieldConfidences": an object with the SAME display-value keys (firstName, lastName, arabicName, jobTitle, company, email, mobile, website, linkedin, address, city, country, postalCode) mapping each present field to an integer 0-100 that reflects how confident you are that THAT specific field was read correctly. Omit a key entirely (do not guess a number) for any field you set to null. Lower the score for smudged, partially-obscured, or ambiguous text — do NOT report high confidence for a field you could not read clearly.
 - "rawText": all raw text you read from the card, as a single string
 
 Use null (not empty string) for any field not present. Do not invent data. Never report high confidence for a field you could not read clearly — an honest low score is required over a confident guess. The "original" object must always reflect exactly what is printed, regardless of the display translation rules.`;

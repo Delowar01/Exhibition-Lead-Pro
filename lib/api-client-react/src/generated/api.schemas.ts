@@ -1368,6 +1368,10 @@ export interface Contact {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+  /** @nullable */
   latitude?: number | null;
   /** @nullable */
   longitude?: number | null;
@@ -1466,6 +1470,10 @@ export interface ContactInput {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+  /** @nullable */
   latitude?: number | null;
   /** @nullable */
   longitude?: number | null;
@@ -1530,6 +1538,10 @@ export interface ContactUpdate {
   country?: string | null;
   /** @nullable */
   address?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
   /** @nullable */
   linkedin?: string | null;
   /** @nullable */
@@ -2499,6 +2511,10 @@ export interface ExtractedCardData {
   officePhone?: string | null;
   /** @nullable */
   country?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
   original?: ExtractedCardOriginal;
 }
 
@@ -2660,6 +2676,8 @@ export interface CaptureFields {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  city?: string | null;
+  /** @nullable */
   country?: string | null;
   /** @nullable */
   postalCode?: string | null;
@@ -2724,6 +2742,14 @@ export interface ContactMatch {
   status?: string;
   confidence: number;
   reasons: string[];
+  /** Count of non-deleted leads linked to this contact (Stage 5E recognition). */
+  leadCount?: number;
+  /** True when the contact already has at least one lead in the pipeline. */
+  isLead?: boolean;
+  /** True when the contact's status is won (existing customer). */
+  isCustomer?: boolean;
+  /** Deterministic seniority/job-title heuristic (C-Level/VP/Director or equivalent). */
+  isDecisionMaker?: boolean;
 }
 
 export type OrganizationMatchMatchType = typeof OrganizationMatchMatchType[keyof typeof OrganizationMatchMatchType];
@@ -2746,6 +2772,36 @@ export interface OrganizationMatch {
   contactCount: number;
   leadCount: number;
   matchType: OrganizationMatchMatchType;
+  /** Distinct events where contacts of this organization were captured (Stage 5E). */
+  eventCount?: number;
+  /** Up to 3 most recent of those event names. */
+  recentEvents?: string[];
+  /** Deterministic one-line summary of the CRM relationship with this company. */
+  relationshipSummary?: string;
+}
+
+export type SimilarWarningKind = typeof SimilarWarningKind[keyof typeof SimilarWarningKind];
+
+
+export const SimilarWarningKind = {
+  similar_company: 'similar_company',
+  similar_email: 'similar_email',
+  similar_phone: 'similar_phone',
+  duplicate_card: 'duplicate_card',
+} as const;
+
+/**
+ * Stage 5E advisory similar-record warning — never blocks or auto-merges.
+ */
+export interface SimilarWarning {
+  kind: SimilarWarningKind;
+  message: string;
+  /** 0-100 deterministic similarity confidence. */
+  confidence: number;
+  /** @nullable */
+  contactId?: number | null;
+  /** @nullable */
+  scanId?: number | null;
 }
 
 export type SmartSuggestionSource = typeof SmartSuggestionSource[keyof typeof SmartSuggestionSource];
@@ -2784,6 +2840,10 @@ export interface CaptureAnalysis {
   organizationMatches: OrganizationMatch[];
   duplicateWarning: CaptureAnalysisDuplicateWarning;
   suggestions: SmartSuggestion[];
+  /** Stage 5E advisory similar-record warnings (similar company/email/phone or duplicate card). */
+  similarWarnings?: SimilarWarning[];
+  /** Gap fields with no grounded suggestion — UI shows 'Not enough information' instead of a guess. */
+  insufficient?: string[];
   /** True when an AI-backed suggestion was attempted but the provider was unavailable/failed. Deterministic results remain valid. */
   aiDegraded: boolean;
 }

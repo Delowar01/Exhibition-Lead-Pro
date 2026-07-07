@@ -1127,6 +1127,8 @@ export const ListContactsResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -1178,6 +1180,8 @@ export const CreateContactBody = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -1217,6 +1221,8 @@ export const GetContactResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -1265,6 +1271,8 @@ export const UpdateContactBody = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "source": zod.string().nullish(),
@@ -1293,6 +1301,8 @@ export const UpdateContactResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -1375,6 +1385,8 @@ export const GetContactDuplicatesResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -1431,6 +1443,8 @@ export const MergeContactsResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -1557,6 +1571,8 @@ export const EnrichContactResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -2345,6 +2361,8 @@ export const SearchContactsResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -3321,6 +3339,8 @@ export const ListCrmOrganizationContactsResponse = zod.object({
   "website": zod.string().nullish(),
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "latitude": zod.number().nullish(),
   "longitude": zod.number().nullish(),
   "gpsAccuracy": zod.number().nullish(),
@@ -3867,6 +3887,8 @@ export const ListScansResponse = zod.object({
   "address": zod.string().nullish(),
   "officePhone": zod.string().nullish(),
   "country": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "original": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -3938,6 +3960,7 @@ export const AnalyzeCaptureBody = zod.object({
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
   "country": zod.string().nullish(),
   "postalCode": zod.string().nullish()
 }).describe('Captured (not-yet-saved) card fields to analyze. All optional.'),
@@ -3972,7 +3995,11 @@ export const AnalyzeCaptureResponse = zod.object({
   "contactCompany": zod.string().nullish(),
   "status": zod.string().optional(),
   "confidence": zod.number(),
-  "reasons": zod.array(zod.string())
+  "reasons": zod.array(zod.string()),
+  "leadCount": zod.number().optional().describe('Count of non-deleted leads linked to this contact (Stage 5E recognition).'),
+  "isLead": zod.boolean().optional().describe('True when the contact already has at least one lead in the pipeline.'),
+  "isCustomer": zod.boolean().optional().describe('True when the contact\'s status is won (existing customer).'),
+  "isDecisionMaker": zod.boolean().optional().describe('Deterministic seniority\/job-title heuristic (C-Level\/VP\/Director or equivalent).')
 })),
   "organizationMatches": zod.array(zod.object({
   "organizationId": zod.number(),
@@ -3982,7 +4009,10 @@ export const AnalyzeCaptureResponse = zod.object({
   "country": zod.string().nullish(),
   "contactCount": zod.number(),
   "leadCount": zod.number(),
-  "matchType": zod.enum(['exact', 'partial'])
+  "matchType": zod.enum(['exact', 'partial']),
+  "eventCount": zod.number().optional().describe('Distinct events where contacts of this organization were captured (Stage 5E).'),
+  "recentEvents": zod.array(zod.string()).optional().describe('Up to 3 most recent of those event names.'),
+  "relationshipSummary": zod.string().optional().describe('Deterministic one-line summary of the CRM relationship with this company.')
 })),
   "duplicateWarning": zod.object({
   "isLikelyDuplicate": zod.boolean(),
@@ -3999,6 +4029,14 @@ export const AnalyzeCaptureResponse = zod.object({
   "promptKey": zod.string().nullish(),
   "promptVersion": zod.number().nullish()
 })),
+  "similarWarnings": zod.array(zod.object({
+  "kind": zod.enum(['similar_company', 'similar_email', 'similar_phone', 'duplicate_card']),
+  "message": zod.string(),
+  "confidence": zod.number().describe('0-100 deterministic similarity confidence.'),
+  "contactId": zod.number().nullish(),
+  "scanId": zod.number().nullish()
+}).describe('Stage 5E advisory similar-record warning — never blocks or auto-merges.')).optional().describe('Stage 5E advisory similar-record warnings (similar company\/email\/phone or duplicate card).'),
+  "insufficient": zod.array(zod.string()).optional().describe('Gap fields with no grounded suggestion — UI shows \'Not enough information\' instead of a guess.'),
   "aiDegraded": zod.boolean().describe('True when an AI-backed suggestion was attempted but the provider was unavailable\/failed. Deterministic results remain valid.')
 })
 
@@ -4021,6 +4059,7 @@ export const StartCaptureBatchBody = zod.object({
   "website": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "address": zod.string().nullish(),
+  "city": zod.string().nullish(),
   "country": zod.string().nullish(),
   "postalCode": zod.string().nullish()
 }).describe('Captured (not-yet-saved) card fields to analyze. All optional.'),
@@ -4076,7 +4115,11 @@ export const GetCaptureBatchResponse = zod.object({
   "contactCompany": zod.string().nullish(),
   "status": zod.string().optional(),
   "confidence": zod.number(),
-  "reasons": zod.array(zod.string())
+  "reasons": zod.array(zod.string()),
+  "leadCount": zod.number().optional().describe('Count of non-deleted leads linked to this contact (Stage 5E recognition).'),
+  "isLead": zod.boolean().optional().describe('True when the contact already has at least one lead in the pipeline.'),
+  "isCustomer": zod.boolean().optional().describe('True when the contact\'s status is won (existing customer).'),
+  "isDecisionMaker": zod.boolean().optional().describe('Deterministic seniority\/job-title heuristic (C-Level\/VP\/Director or equivalent).')
 })),
   "organizationMatches": zod.array(zod.object({
   "organizationId": zod.number(),
@@ -4086,7 +4129,10 @@ export const GetCaptureBatchResponse = zod.object({
   "country": zod.string().nullish(),
   "contactCount": zod.number(),
   "leadCount": zod.number(),
-  "matchType": zod.enum(['exact', 'partial'])
+  "matchType": zod.enum(['exact', 'partial']),
+  "eventCount": zod.number().optional().describe('Distinct events where contacts of this organization were captured (Stage 5E).'),
+  "recentEvents": zod.array(zod.string()).optional().describe('Up to 3 most recent of those event names.'),
+  "relationshipSummary": zod.string().optional().describe('Deterministic one-line summary of the CRM relationship with this company.')
 })),
   "duplicateWarning": zod.object({
   "isLikelyDuplicate": zod.boolean(),
@@ -4103,6 +4149,14 @@ export const GetCaptureBatchResponse = zod.object({
   "promptKey": zod.string().nullish(),
   "promptVersion": zod.number().nullish()
 })),
+  "similarWarnings": zod.array(zod.object({
+  "kind": zod.enum(['similar_company', 'similar_email', 'similar_phone', 'duplicate_card']),
+  "message": zod.string(),
+  "confidence": zod.number().describe('0-100 deterministic similarity confidence.'),
+  "contactId": zod.number().nullish(),
+  "scanId": zod.number().nullish()
+}).describe('Stage 5E advisory similar-record warning — never blocks or auto-merges.')).optional().describe('Stage 5E advisory similar-record warnings (similar company\/email\/phone or duplicate card).'),
+  "insufficient": zod.array(zod.string()).optional().describe('Gap fields with no grounded suggestion — UI shows \'Not enough information\' instead of a guess.'),
   "aiDegraded": zod.boolean().describe('True when an AI-backed suggestion was attempted but the provider was unavailable\/failed. Deterministic results remain valid.')
 })
 })),
@@ -4142,6 +4196,8 @@ export const GetScanResponse = zod.object({
   "address": zod.string().nullish(),
   "officePhone": zod.string().nullish(),
   "country": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "original": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -4214,6 +4270,8 @@ export const ReprocessScanResponse = zod.object({
   "address": zod.string().nullish(),
   "officePhone": zod.string().nullish(),
   "country": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "original": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),
@@ -4279,6 +4337,8 @@ export const ReplaceScanImageResponse = zod.object({
   "address": zod.string().nullish(),
   "officePhone": zod.string().nullish(),
   "country": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
   "original": zod.object({
   "firstName": zod.string().nullish(),
   "lastName": zod.string().nullish(),

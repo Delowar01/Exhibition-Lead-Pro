@@ -19,4 +19,12 @@ export interface ContactMatch {
   status?: string;
   confidence: number;
   reasons: string[];
+  /** Count of non-deleted leads linked to this contact (Stage 5E recognition). */
+  leadCount?: number;
+  /** True when the contact already has at least one lead in the pipeline. */
+  isLead?: boolean;
+  /** True when the contact's status is won (existing customer). */
+  isCustomer?: boolean;
+  /** Deterministic seniority/job-title heuristic (C-Level/VP/Director or equivalent). */
+  isDecisionMaker?: boolean;
 }

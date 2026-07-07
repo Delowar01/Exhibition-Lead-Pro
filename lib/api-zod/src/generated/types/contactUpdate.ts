@@ -29,6 +29,10 @@ export interface ContactUpdate {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+  /** @nullable */
   linkedin?: string | null;
   /** @nullable */
   notes?: string | null;

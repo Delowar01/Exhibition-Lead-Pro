@@ -31,6 +31,8 @@ export interface CaptureFields {
   /** @nullable */
   address?: string | null;
   /** @nullable */
+  city?: string | null;
+  /** @nullable */
   country?: string | null;
   /** @nullable */
   postalCode?: string | null;

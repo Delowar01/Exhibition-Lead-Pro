@@ -387,7 +387,16 @@
     "suggestionsTitle": "اقتراحات ذكية",
     "apply": "تطبيق",
     "aiBadge": "ذكاء",
-    "ruleBadge": "قاعدة"
+    "ruleBadge": "قاعدة",
+    "existingCustomer": "عميل حالي",
+    "activeLead": "عميل محتمل نشط",
+    "activeLeadCount": "عميل محتمل نشط ×{{count}}",
+    "decisionMaker": "صانع قرار",
+    "seenAt": "شوهد في: {{events}}",
+    "similarTitle": "سجلات مشابهة",
+    "similarAdvisory": "إرشادي فقط — لا يتم الربط أو الدمج تلقائيًا.",
+    "insufficientTitle": "لا تتوفر معلومات كافية",
+    "insufficientBody": "{{fields}} — لا يوجد اقتراح موثّق من هذه البطاقة أو من نظامك."
   },
   "ocrIntel": {
     "title": "ذكاء المسح الضوئي",
@@ -490,6 +499,7 @@
       "email": "mohammed@example.com",
       "website": "example.com",
       "linkedin": "linkedin.com/in/mohammed",
+      "postalCode": "12345",
       "notes": "التقينا في المعرض — مهتم بالباقة المؤسسية"
     },
     "empty": "لا توجد جهات اتصال بعد",
@@ -524,6 +534,7 @@
       "address": "العنوان",
       "city": "المدينة",
       "country": "الدولة",
+      "postalCode": "الرمز البريدي",
       "event": "الفعالية",
       "notes": "الملاحظات",
       "tags": "الوسوم"

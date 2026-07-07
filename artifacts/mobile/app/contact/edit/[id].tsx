@@ -32,6 +32,8 @@ function toFormValues(c: Contact): ContactFormValues {
     linkedin: c.linkedin ?? "",
     country: c.country ?? "",
     address: c.address ?? "",
+    city: c.city ?? "",
+    postalCode: c.postalCode ?? "",
     notes: c.notes ?? "",
     organizationId: c.organizationId ?? null,
   };
