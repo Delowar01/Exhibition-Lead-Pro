@@ -101,14 +101,60 @@ function leadNum(value: string | null): number | null {
 }
 
 // ── Tunable thresholds (business rules, not magic — surfaced in `basis` text) ──
+//
+// Stage 5F: these are now TENANT-CONFIGURABLE workflow rules. The platform defaults
+// below preserve the original behavior; a tenant admin can override any threshold via
+// AI Settings (ai_settings.workflow_rules). Every engine below accepts an optional
+// `rules` argument and falls back to the defaults, so pure-function behavior is
+// unchanged for callers that pass nothing.
 
-const STALLED_DAYS = 14; // no update on an open lead
-const STALLED_HIGH_DAYS = 30;
-const AGING_DAYS = 30; // open lead this old counts as an aging opportunity
-const UNANSWERED_DAYS = 7; // open lead/contact with no logged interaction
-const EXPIRING_TASK_DAYS = 2; // task due within N days
-const HIGH_VALUE = 10_000; // deal value (in its own currency) considered significant
-const FOLLOWUP_OVERDUE_CRITICAL_DAYS = 7;
+export interface WorkflowRules {
+  stalledDays: number; // no update on an open lead for N days => stalled
+  stalledHighDays: number; // stalled this long escalates the risk level
+  agingDays: number; // open lead this old counts as an aging opportunity
+  unansweredDays: number; // open lead/contact with no logged interaction for N days
+  expiringTaskDays: number; // task due within N days counts as expiring
+  highValueThreshold: number; // deal value (in its own currency) considered significant
+  followupOverdueCriticalDays: number; // overdue items older than N days become critical
+}
+
+export const DEFAULT_WORKFLOW_RULES: WorkflowRules = {
+  stalledDays: 14,
+  stalledHighDays: 30,
+  agingDays: 30,
+  unansweredDays: 7,
+  expiringTaskDays: 2,
+  highValueThreshold: 10_000,
+  followupOverdueCriticalDays: 7,
+};
+
+// Bounds for each rule (min/max inclusive). Day-based rules are 1..365; the value
+// threshold is 0..1e9. Shared by the settings write path (validation) and the
+// normalizer below so stored and runtime bounds can never drift apart.
+export const WORKFLOW_RULE_BOUNDS: Record<keyof WorkflowRules, { min: number; max: number }> = {
+  stalledDays: { min: 1, max: 365 },
+  stalledHighDays: { min: 1, max: 365 },
+  agingDays: { min: 1, max: 365 },
+  unansweredDays: { min: 1, max: 365 },
+  expiringTaskDays: { min: 0, max: 365 },
+  highValueThreshold: { min: 0, max: 1_000_000_000 },
+  followupOverdueCriticalDays: { min: 1, max: 365 },
+};
+
+// Normalize an untrusted stored/db value into a complete, in-bounds WorkflowRules.
+// Field-by-field: unknown/absent/out-of-bounds/non-integer values fall back to the
+// default for that field (never blind-cast a jsonb payload).
+export function normalizeWorkflowRules(raw: unknown): WorkflowRules {
+  const out: WorkflowRules = { ...DEFAULT_WORKFLOW_RULES };
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return out;
+  const obj = raw as Record<string, unknown>;
+  for (const key of Object.keys(WORKFLOW_RULE_BOUNDS) as Array<keyof WorkflowRules>) {
+    const v = obj[key];
+    const b = WORKFLOW_RULE_BOUNDS[key];
+    if (typeof v === "number" && Number.isInteger(v) && v >= b.min && v <= b.max) out[key] = v;
+  }
+  return out;
+}
 
 // ── SLA / risk detection ──────────────────────────────────────────────────────
 
@@ -160,9 +206,12 @@ export interface LeadRiskOptions {
   now: Date;
   // Last logged interaction (call/email/meeting/message) per lead id; null when none.
   lastActivityByLead?: Map<number, Date | null>;
+  // Tenant workflow rules; defaults preserve platform behavior.
+  rules?: WorkflowRules;
 }
 
 export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRisk[] {
+  const rules = opts.rules ?? DEFAULT_WORKFLOW_RULES;
   const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const lead of leads) {
     if (isTerminalStage(lead.stage)) continue; // closed pipeline: no SLA pressure
@@ -172,7 +221,7 @@ export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRis
       const overdueDays = dayDiffStr(opts.today, lead.closingDate);
       risks.push({
         entityType: "lead", entityId: lead.id, category: "overdue_lead",
-        riskLevel: overdueDays >= FOLLOWUP_OVERDUE_CRITICAL_DAYS ? "critical" : "high",
+        riskLevel: overdueDays >= rules.followupOverdueCriticalDays ? "critical" : "high",
         title: label,
         detail: `Closing date ${lead.closingDate} passed ${overdueDays} day(s) ago while the lead is still in "${lead.stage}".`,
         recommendedAction: "Contact the customer to confirm the timeline, then update the closing date or move the deal to a closed stage.",
@@ -181,10 +230,10 @@ export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRis
     }
 
     const staleDays = daysBetween(opts.now, lead.updatedAt);
-    if (staleDays >= STALLED_DAYS) {
+    if (staleDays >= rules.stalledDays) {
       risks.push({
         entityType: "lead", entityId: lead.id, category: "stalled_stage",
-        riskLevel: staleDays >= STALLED_HIGH_DAYS ? "high" : "medium",
+        riskLevel: staleDays >= rules.stalledHighDays ? "high" : "medium",
         title: label,
         detail: `No update in ${staleDays} days; the deal is stalled in "${lead.stage}".`,
         recommendedAction: "Log an update and advance the stage, or schedule the next step.",
@@ -193,10 +242,10 @@ export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRis
     }
 
     const ageDays = daysBetween(opts.now, lead.createdAt);
-    if (ageDays >= AGING_DAYS) {
+    if (ageDays >= rules.agingDays) {
       risks.push({
         entityType: "lead", entityId: lead.id, category: "aging_opportunity",
-        riskLevel: ageDays >= AGING_DAYS * 2 ? "medium" : "low",
+        riskLevel: ageDays >= rules.agingDays * 2 ? "medium" : "low",
         title: label,
         detail: `Opportunity has been open for ${ageDays} days without closing.`,
         recommendedAction: "Review whether the deal is still viable and set a realistic closing date.",
@@ -207,10 +256,10 @@ export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRis
     if (opts.lastActivityByLead) {
       const last = opts.lastActivityByLead.get(lead.id) ?? null;
       const sinceDays = last ? daysBetween(opts.now, last) : daysBetween(opts.now, lead.createdAt);
-      if (sinceDays >= UNANSWERED_DAYS) {
+      if (sinceDays >= rules.unansweredDays) {
         risks.push({
           entityType: "lead", entityId: lead.id, category: "unanswered_comms",
-          riskLevel: sinceDays >= UNANSWERED_DAYS * 3 ? "high" : "medium",
+          riskLevel: sinceDays >= rules.unansweredDays * 3 ? "high" : "medium",
           title: label,
           detail: last
             ? `No interaction logged in ${sinceDays} days.`
@@ -224,7 +273,7 @@ export function detectLeadRisks(leads: LeadRow[], opts: LeadRiskOptions): SlaRis
   return withConfidence(risks);
 }
 
-export function detectContactRisks(contacts: ContactRow[], today: string): SlaRisk[] {
+export function detectContactRisks(contacts: ContactRow[], today: string, rules: WorkflowRules = DEFAULT_WORKFLOW_RULES): SlaRisk[] {
   const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const c of contacts) {
     const status = (c.status ?? "").toLowerCase();
@@ -232,7 +281,7 @@ export function detectContactRisks(contacts: ContactRow[], today: string): SlaRi
       const overdueDays = dayDiffStr(today, c.followUpDate);
       risks.push({
         entityType: "contact", entityId: c.id, category: "missed_follow_up",
-        riskLevel: overdueDays >= FOLLOWUP_OVERDUE_CRITICAL_DAYS ? "critical" : "high",
+        riskLevel: overdueDays >= rules.followupOverdueCriticalDays ? "critical" : "high",
         title: `Contact #${c.id}`,
         detail: `Follow-up was due ${c.followUpDate} (${overdueDays} day(s) overdue).`,
         recommendedAction: "Reach out now and reschedule or complete the follow-up.",
@@ -253,7 +302,7 @@ export function detectContactRisks(contacts: ContactRow[], today: string): SlaRi
   return withConfidence(risks);
 }
 
-export function detectTaskRisks(tasks: TaskRow[], today: string): SlaRisk[] {
+export function detectTaskRisks(tasks: TaskRow[], today: string, rules: WorkflowRules = DEFAULT_WORKFLOW_RULES): SlaRisk[] {
   const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const t of tasks) {
     const status = (t.status ?? "").toLowerCase();
@@ -262,13 +311,13 @@ export function detectTaskRisks(tasks: TaskRow[], today: string): SlaRisk[] {
     if (diff > 0) {
       risks.push({
         entityType: "task", entityId: t.id, category: "expiring_task",
-        riskLevel: diff >= FOLLOWUP_OVERDUE_CRITICAL_DAYS ? "critical" : "high",
+        riskLevel: diff >= rules.followupOverdueCriticalDays ? "critical" : "high",
         title: t.title,
         detail: `Task is overdue by ${diff} day(s) (due ${t.dueDate}).`,
         recommendedAction: "Complete the task or move its due date.",
         ageDays: diff, ownerId: t.assignedToId,
       });
-    } else if (diff >= -EXPIRING_TASK_DAYS) {
+    } else if (diff >= -rules.expiringTaskDays) {
       risks.push({
         entityType: "task", entityId: t.id, category: "expiring_task",
         riskLevel: diff === 0 ? "high" : "medium",
@@ -282,7 +331,7 @@ export function detectTaskRisks(tasks: TaskRow[], today: string): SlaRisk[] {
   return withConfidence(risks);
 }
 
-export function detectFollowUpRisks(followUps: FollowUpRow[], today: string): SlaRisk[] {
+export function detectFollowUpRisks(followUps: FollowUpRow[], today: string, rules: WorkflowRules = DEFAULT_WORKFLOW_RULES): SlaRisk[] {
   const risks: Omit<SlaRisk, "confidence">[] = [];
   for (const f of followUps) {
     if ((f.status ?? "").toLowerCase() !== "pending" || !f.scheduledDate) continue;
@@ -290,7 +339,7 @@ export function detectFollowUpRisks(followUps: FollowUpRow[], today: string): Sl
     if (diff > 0) {
       risks.push({
         entityType: "follow_up", entityId: f.id, category: "missed_follow_up",
-        riskLevel: diff >= FOLLOWUP_OVERDUE_CRITICAL_DAYS ? "critical" : "high",
+        riskLevel: diff >= rules.followupOverdueCriticalDays ? "critical" : "high",
         title: `Follow-up #${f.id}`,
         detail: `Scheduled follow-up was due ${f.scheduledDate} (${diff} day(s) overdue).`,
         recommendedAction: "Complete or reschedule the follow-up.",
@@ -339,7 +388,7 @@ export interface NextActionCore {
   basis: string;
 }
 
-export function leadNextActionCore(lead: LeadRow, today: string, now: Date, lastActivity: Date | null): NextActionCore {
+export function leadNextActionCore(lead: LeadRow, today: string, now: Date, lastActivity: Date | null, rules: WorkflowRules = DEFAULT_WORKFLOW_RULES): NextActionCore {
   if (lead.closingDate && dayDiffStr(today, lead.closingDate) > 0 && !isTerminalStage(lead.stage)) {
     return { action: "Call the customer today to confirm the timeline, then update the closing date or the stage.", priority: "Urgent", basis: `Closing date ${lead.closingDate} has passed while the lead is open.` };
   }
@@ -347,11 +396,11 @@ export function leadNextActionCore(lead: LeadRow, today: string, now: Date, last
     return { action: "Link a contact to this lead so you can reach the customer.", priority: "High", basis: "The lead has no associated contact." };
   }
   const staleDays = daysBetween(now, lead.updatedAt);
-  if (staleDays >= STALLED_DAYS) {
-    return { action: "Log an update and advance the stage — the deal has gone quiet.", priority: staleDays >= STALLED_HIGH_DAYS ? "High" : "Normal", basis: `No update in ${staleDays} days.` };
+  if (staleDays >= rules.stalledDays) {
+    return { action: "Log an update and advance the stage — the deal has gone quiet.", priority: staleDays >= rules.stalledHighDays ? "High" : "Normal", basis: `No update in ${staleDays} days.` };
   }
   const sinceActivity = lastActivity ? daysBetween(now, lastActivity) : daysBetween(now, lead.createdAt);
-  if (sinceActivity >= UNANSWERED_DAYS) {
+  if (sinceActivity >= rules.unansweredDays) {
     return { action: "Reach out to the customer and log the interaction.", priority: "Normal", basis: `No interaction logged in ${sinceActivity} days.` };
   }
   const stage = (lead.stage ?? "").toLowerCase();
@@ -380,18 +429,18 @@ export interface PriorityCore {
   basis: string;
 }
 
-export function leadPriorityCore(lead: LeadRow, today: string, now: Date): PriorityCore {
+export function leadPriorityCore(lead: LeadRow, today: string, now: Date, rules: WorkflowRules = DEFAULT_WORKFLOW_RULES): PriorityCore {
   if (lead.closingDate && dayDiffStr(today, lead.closingDate) > 0 && !isTerminalStage(lead.stage)) {
     return { priority: "Urgent", basis: `Closing date ${lead.closingDate} has passed.` };
   }
   const value = leadNum(lead.value);
   const closingSoon = lead.closingDate ? dayDiffStr(lead.closingDate, today) : null;
   const staleDays = daysBetween(now, lead.updatedAt);
-  if ((value != null && value >= HIGH_VALUE) || (closingSoon != null && closingSoon >= 0 && closingSoon <= 7) || staleDays >= STALLED_HIGH_DAYS) {
+  if ((value != null && value >= rules.highValueThreshold) || (closingSoon != null && closingSoon >= 0 && closingSoon <= 7) || staleDays >= rules.stalledHighDays) {
     const reasons: string[] = [];
-    if (value != null && value >= HIGH_VALUE) reasons.push(`high deal value (${value} ${lead.currency ?? "USD"})`);
+    if (value != null && value >= rules.highValueThreshold) reasons.push(`high deal value (${value} ${lead.currency ?? "USD"})`);
     if (closingSoon != null && closingSoon >= 0 && closingSoon <= 7) reasons.push(`closing within ${closingSoon} day(s)`);
-    if (staleDays >= STALLED_HIGH_DAYS) reasons.push(`stalled for ${staleDays} days`);
+    if (staleDays >= rules.stalledHighDays) reasons.push(`stalled for ${staleDays} days`);
     return { priority: "High", basis: `Elevated because of ${reasons.join(", ")}.` };
   }
   return { priority: "Normal", basis: "No urgency signals detected from value, timing, or staleness." };
@@ -602,7 +651,7 @@ export interface Bottleneck {
 }
 
 export interface BottleneckInput {
-  // Per-stage open-lead counts and count of those stalled (updatedAt older than STALLED_DAYS).
+  // Per-stage open-lead counts and count of those stalled (updatedAt older than rules.stalledDays).
   stageStats: Array<{ stage: string; open: number; stalled: number }>;
   // Per-owner open-lead + overdue-item counts (already scope-filtered by the service).
   workload: WorkloadEntry[];
@@ -612,7 +661,7 @@ export interface BottleneckInput {
   lostCount: number;
 }
 
-export function analyzeBottlenecks(input: BottleneckInput): Bottleneck[] {
+export function analyzeBottlenecks(input: BottleneckInput, rules: WorkflowRules = DEFAULT_WORKFLOW_RULES): Bottleneck[] {
   const out: Bottleneck[] = [];
 
   for (const s of input.stageStats) {
@@ -620,7 +669,7 @@ export function analyzeBottlenecks(input: BottleneckInput): Bottleneck[] {
       out.push({
         type: "stage_bottleneck", severity: s.stalled >= 10 ? "high" : "medium",
         title: `"${s.stage}" is a pipeline bottleneck`,
-        detail: `${s.stalled} of ${s.open} open leads in "${s.stage}" have stalled (no update in ${STALLED_DAYS}+ days).`,
+        detail: `${s.stalled} of ${s.open} open leads in "${s.stage}" have stalled (no update in ${rules.stalledDays}+ days).`,
         metric: s.stalled,
         recommendedAction: `Review the "${s.stage}" stage and unblock or re-qualify the stalled deals.`,
       });
@@ -703,20 +752,20 @@ function clampPct(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-function leadRiskLevel(lead: LeadRow, today: string, now: Date): RiskLevel {
+function leadRiskLevel(lead: LeadRow, today: string, now: Date, rules: WorkflowRules): RiskLevel {
   if (lead.closingDate && dayDiffStr(today, lead.closingDate) > 0 && !isTerminalStage(lead.stage)) return "critical";
   const staleDays = daysBetween(now, lead.updatedAt);
-  if (staleDays >= STALLED_HIGH_DAYS) return "high";
-  if (staleDays >= STALLED_DAYS) return "medium";
+  if (staleDays >= rules.stalledHighDays) return "high";
+  if (staleDays >= rules.stalledDays) return "medium";
   return "low";
 }
 
 // All simulations are DETERMINISTIC estimates over real CRM fields and write NOTHING.
 // They are clearly labeled estimates with explicit assumptions; confidence reflects how
 // much grounding data supports the estimate, never certainty about the future.
-export function simulate(lead: LeadRow, scenario: ScenarioType, params: SimulationParams, today: string, now = new Date()): SimulationResult {
+export function simulate(lead: LeadRow, scenario: ScenarioType, params: SimulationParams, today: string, now = new Date(), rules: WorkflowRules = DEFAULT_WORKFLOW_RULES): SimulationResult {
   const baseProb = stageWinProbability(lead);
-  const baseRisk = leadRiskLevel(lead, today, now);
+  const baseRisk = leadRiskLevel(lead, today, now, rules);
   const assumptions: string[] = ["Estimate derived from current CRM fields only; actual outcomes depend on execution."];
 
   if (scenario === "reassign") {
@@ -750,7 +799,7 @@ export function simulate(lead: LeadRow, scenario: ScenarioType, params: Simulati
     // Scheduling a prompt follow-up clears overdue pressure and modestly lifts win odds.
     const wasOverdue = lead.closingDate ? dayDiffStr(today, lead.closingDate) > 0 : false;
     const staleDays = daysBetween(now, lead.updatedAt);
-    const lift = wasOverdue ? 8 : staleDays >= STALLED_DAYS ? 6 : 3;
+    const lift = wasOverdue ? 8 : staleDays >= rules.stalledDays ? 6 : 3;
     const predictedRisk: RiskLevel = baseRisk === "critical" ? "high" : baseRisk === "high" ? "medium" : "low";
     assumptions.push("Assumes the follow-up happens tomorrow and is logged.");
     return {

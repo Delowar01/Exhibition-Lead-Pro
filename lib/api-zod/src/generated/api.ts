@@ -5110,6 +5110,15 @@ export const GetAiSettingsResponse = zod.object({
 }),
   "monthlyTokenBudget": zod.number().nullish(),
   "monthlyCostBudgetUsd": zod.number().nullish(),
+  "workflowRules": zod.object({
+  "stalledDays": zod.number(),
+  "stalledHighDays": zod.number(),
+  "agingDays": zod.number(),
+  "unansweredDays": zod.number(),
+  "expiringTaskDays": zod.number(),
+  "highValueThreshold": zod.number(),
+  "followupOverdueCriticalDays": zod.number()
+}).describe('Effective tenant workflow-intelligence thresholds (Stage 5F). All fields are integers; day thresholds are 1-365.'),
   "hasCustomSettings": zod.boolean(),
   "availableProviders": zod.array(zod.string()),
   "updatedAt": zod.string().nullish()
@@ -5130,7 +5139,16 @@ export const UpdateAiSettingsBody = zod.object({
   "assignee_recommendation": zod.boolean().optional()
 }).optional(),
   "monthlyTokenBudget": zod.number().nullish(),
-  "monthlyCostBudgetUsd": zod.number().nullish()
+  "monthlyCostBudgetUsd": zod.number().nullish(),
+  "workflowRules": zod.object({
+  "stalledDays": zod.number().optional(),
+  "stalledHighDays": zod.number().optional(),
+  "agingDays": zod.number().optional(),
+  "unansweredDays": zod.number().optional(),
+  "expiringTaskDays": zod.number().optional(),
+  "highValueThreshold": zod.number().optional(),
+  "followupOverdueCriticalDays": zod.number().optional()
+}).nullish().describe('Partial workflow-rule override; provided keys are validated and merged over the current effective rules. Null resets all rules to platform defaults.')
 }).describe('Partial update of the tenant\'s AI settings. Any omitted field is left unchanged. Null clears a budget (unlimited).')
 
 export const UpdateAiSettingsResponse = zod.object({
@@ -5146,6 +5164,15 @@ export const UpdateAiSettingsResponse = zod.object({
 }),
   "monthlyTokenBudget": zod.number().nullish(),
   "monthlyCostBudgetUsd": zod.number().nullish(),
+  "workflowRules": zod.object({
+  "stalledDays": zod.number(),
+  "stalledHighDays": zod.number(),
+  "agingDays": zod.number(),
+  "unansweredDays": zod.number(),
+  "expiringTaskDays": zod.number(),
+  "highValueThreshold": zod.number(),
+  "followupOverdueCriticalDays": zod.number()
+}).describe('Effective tenant workflow-intelligence thresholds (Stage 5F). All fields are integers; day thresholds are 1-365.'),
   "hasCustomSettings": zod.boolean(),
   "availableProviders": zod.array(zod.string()),
   "updatedAt": zod.string().nullish()
@@ -6023,6 +6050,15 @@ export const ListAiWorkflowBatchesResponse = zod.object({
   "finishedAt": zod.string().nullish()
 }))
 })
+
+
+/**
+ * @summary Run the workflow risk alert sweep for the caller's company (advisory notifications only)
+ */
+export const RunAiWorkflowAlertsResponse = zod.object({
+  "notified": zod.number(),
+  "skipped": zod.number()
+}).describe('Result of a manual workflow risk alert sweep for one company (notifications dispatched, users skipped because they were already alerted today).')
 
 
 /**

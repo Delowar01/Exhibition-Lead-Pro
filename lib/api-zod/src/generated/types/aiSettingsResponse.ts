@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AiFeatureFlags } from './aiFeatureFlags';
+import type { WorkflowRules } from './workflowRules';
 
 export interface AiSettingsResponse {
   companyId: number;
@@ -15,6 +16,7 @@ export interface AiSettingsResponse {
   featureFlags: AiFeatureFlags;
   monthlyTokenBudget?: number | null;
   monthlyCostBudgetUsd?: number | null;
+  workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   availableProviders: string[];
   updatedAt?: string | null;

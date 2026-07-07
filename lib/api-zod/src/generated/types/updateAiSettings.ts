@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { UpdateAiSettingsFeatureFlags } from './updateAiSettingsFeatureFlags';
+import type { UpdateAiSettingsWorkflowRules } from './updateAiSettingsWorkflowRules';
 
 /**
  * Partial update of the tenant's AI settings. Any omitted field is left unchanged. Null clears a budget (unlimited).
@@ -17,4 +18,6 @@ export interface UpdateAiSettings {
   featureFlags?: UpdateAiSettingsFeatureFlags;
   monthlyTokenBudget?: number | null;
   monthlyCostBudgetUsd?: number | null;
+  /** Partial workflow-rule override; provided keys are validated and merged over the current effective rules. Null resets all rules to platform defaults. */
+  workflowRules?: UpdateAiSettingsWorkflowRules;
 }

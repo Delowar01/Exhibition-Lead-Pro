@@ -3,6 +3,7 @@ import { logger } from "../logger.js";
 import { runFollowUpReminders } from "../followup-scheduler.js";
 import { runMaintenance } from "./maintenance.js";
 import { runDueSchedules } from "../../services/export.service.js";
+import { runWorkflowAlerts } from "../workflow-alerts.js";
 
 // Recurring task scheduler (Phase 2.6). A single mechanism for all periodic work,
 // replacing per-feature setTimeout/setInterval. Tasks run after a first-run delay and
@@ -33,11 +34,14 @@ export function startScheduler(): void {
   registerRecurring("maintenance", s.maintenanceFirstDelayMs, s.maintenanceIntervalMs, runMaintenance);
   // Scheduled-export sweep: produce files for due export schedules (all tenants).
   registerRecurring("exportSchedules", s.exportFirstDelayMs, s.exportIntervalMs, runDueSchedules);
+  // Stage 5F workflow risk alerts: critical/high SLA risks → owner + executive digests.
+  registerRecurring("workflowAlerts", s.workflowAlertsFirstDelayMs, s.workflowAlertsIntervalMs, runWorkflowAlerts);
   logger.info(
     {
       followUpIntervalMs: s.followUpIntervalMs,
       maintenanceIntervalMs: s.maintenanceIntervalMs,
       exportIntervalMs: s.exportIntervalMs,
+      workflowAlertsIntervalMs: s.workflowAlertsIntervalMs,
     },
     "Recurring task scheduler started",
   );

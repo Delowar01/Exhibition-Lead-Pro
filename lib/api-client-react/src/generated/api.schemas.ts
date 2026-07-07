@@ -3410,6 +3410,19 @@ export interface AiFeatureFlags {
   assignee_recommendation: boolean;
 }
 
+/**
+ * Effective tenant workflow-intelligence thresholds (Stage 5F). All fields are integers; day thresholds are 1-365.
+ */
+export interface WorkflowRules {
+  stalledDays: number;
+  stalledHighDays: number;
+  agingDays: number;
+  unansweredDays: number;
+  expiringTaskDays: number;
+  highValueThreshold: number;
+  followupOverdueCriticalDays: number;
+}
+
 export interface AiSettingsResponse {
   companyId: number;
   provider: string;
@@ -3418,6 +3431,7 @@ export interface AiSettingsResponse {
   featureFlags: AiFeatureFlags;
   monthlyTokenBudget?: number | null;
   monthlyCostBudgetUsd?: number | null;
+  workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   availableProviders: string[];
   updatedAt?: string | null;
@@ -3431,6 +3445,19 @@ export type UpdateAiSettingsFeatureFlags = {
 };
 
 /**
+ * Partial workflow-rule override; provided keys are validated and merged over the current effective rules. Null resets all rules to platform defaults.
+ */
+export type UpdateAiSettingsWorkflowRules = {
+  stalledDays?: number;
+  stalledHighDays?: number;
+  agingDays?: number;
+  unansweredDays?: number;
+  expiringTaskDays?: number;
+  highValueThreshold?: number;
+  followupOverdueCriticalDays?: number;
+} | null;
+
+/**
  * Partial update of the tenant's AI settings. Any omitted field is left unchanged. Null clears a budget (unlimited).
  */
 export interface UpdateAiSettings {
@@ -3440,6 +3467,8 @@ export interface UpdateAiSettings {
   featureFlags?: UpdateAiSettingsFeatureFlags;
   monthlyTokenBudget?: number | null;
   monthlyCostBudgetUsd?: number | null;
+  /** Partial workflow-rule override; provided keys are validated and merged over the current effective rules. Null resets all rules to platform defaults. */
+  workflowRules?: UpdateAiSettingsWorkflowRules;
 }
 
 export interface AiUsageAgg {
@@ -4183,6 +4212,14 @@ export interface AiWorkflowBatchJob {
 
 export interface AiWorkflowBatchListResponse {
   jobs: AiWorkflowBatchJob[];
+}
+
+/**
+ * Result of a manual workflow risk alert sweep for one company (notifications dispatched, users skipped because they were already alerted today).
+ */
+export interface AiWorkflowAlertsRunResponse {
+  notified: number;
+  skipped: number;
 }
 
 export interface DashboardLeadKpis {

@@ -8,6 +8,11 @@ import { AI_FEATURES, type AiFeature, type AiUsage } from "../ai/types.js";
 import { availableProviders } from "../ai/providers/index.js";
 import { geminiProvider } from "../ai/providers/gemini.js";
 import { hasPricing } from "../ai/pricing.js";
+import {
+  normalizeWorkflowRules,
+  WORKFLOW_RULE_BOUNDS,
+  type WorkflowRules,
+} from "../lib/workflow-intelligence.js";
 
 // Service layer for the AI Platform Foundation: resolves per-tenant settings (with a
 // short in-process cache so the hot scan/score path stays fast), enforces the
@@ -27,6 +32,11 @@ export interface EffectiveAiSettings {
   featureFlags: Record<string, boolean>; // raw stored flags; a missing key means "enabled"
   monthlyTokenBudget: number | null;
   monthlyCostBudgetMicroUsd: number | null;
+  // Stage 5F: normalized, complete tenant workflow-intelligence thresholds. This is the
+  // SINGLE source of truth for both the settings read path (GET /ai/settings) and the
+  // workflow runtime (risk detection, health, bottlenecks, simulate, alerts) so the two
+  // can never drift apart.
+  workflowRules: WorkflowRules;
   hasCustomSettings: boolean;
   updatedAt: Date | null;
 }
@@ -46,6 +56,7 @@ function defaults(companyId: number): EffectiveAiSettings {
     featureFlags: {},
     monthlyTokenBudget: null,
     monthlyCostBudgetMicroUsd: null,
+    workflowRules: normalizeWorkflowRules(null),
     hasCustomSettings: false,
     updatedAt: null,
   };
@@ -70,6 +81,7 @@ export async function resolveSettings(companyId: number): Promise<EffectiveAiSet
         featureFlags: (row.featureFlags ?? {}) as Record<string, boolean>,
         monthlyTokenBudget: row.monthlyTokenBudget,
         monthlyCostBudgetMicroUsd: row.monthlyCostBudgetMicroUsd,
+        workflowRules: normalizeWorkflowRules(row.workflowRules),
         hasCustomSettings: true,
         updatedAt: row.updatedAt,
       }
@@ -175,6 +187,7 @@ function formatSettings(s: EffectiveAiSettings) {
     featureFlags: effectiveFlags(s),
     monthlyTokenBudget: s.monthlyTokenBudget,
     monthlyCostBudgetUsd: s.monthlyCostBudgetMicroUsd == null ? null : microToUsd(s.monthlyCostBudgetMicroUsd),
+    workflowRules: s.workflowRules,
     hasCustomSettings: s.hasCustomSettings,
     availableProviders: availableProviders(),
     updatedAt: s.updatedAt ? s.updatedAt.toISOString() : null,
@@ -245,6 +258,29 @@ export async function updateSettings(user: AuthUser, body: Record<string, unknow
   if (body.monthlyCostBudgetUsd !== undefined) {
     const usd = normalizeBudgetNumber(body.monthlyCostBudgetUsd, "monthlyCostBudgetUsd");
     values.monthlyCostBudgetMicroUsd = usd == null ? null : Math.round(usd * 1_000_000);
+  }
+  if (body.workflowRules !== undefined) {
+    if (body.workflowRules === null) {
+      values.workflowRules = null; // reset to platform defaults
+    } else {
+      if (typeof body.workflowRules !== "object" || Array.isArray(body.workflowRules)) {
+        throw new AppError(400, "workflowRules must be an object or null");
+      }
+      const incoming = body.workflowRules as Record<string, unknown>;
+      // Merge over the currently-effective rules so a partial PATCH only changes the
+      // provided fields. Strict validation (unknown key / non-integer / out of bounds
+      // => 400) — silent normalization is reserved for stored data, not client input.
+      const merged: Record<string, number> = { ...current.workflowRules };
+      for (const [k, v] of Object.entries(incoming)) {
+        const bounds = WORKFLOW_RULE_BOUNDS[k as keyof WorkflowRules];
+        if (!bounds) throw new AppError(400, `Unknown workflow rule: ${k}`);
+        if (typeof v !== "number" || !Number.isInteger(v) || v < bounds.min || v > bounds.max) {
+          throw new AppError(400, `workflowRules.${k} must be an integer between ${bounds.min} and ${bounds.max}`);
+        }
+        merged[k] = v;
+      }
+      values.workflowRules = merged;
+    }
   }
 
   if (Object.keys(values).length === 0) throw new AppError(400, "No valid fields to update");

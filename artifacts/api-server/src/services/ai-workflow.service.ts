@@ -51,6 +51,8 @@ import {
   computeHealth,
   analyzeBottlenecks,
   simulate,
+  DEFAULT_WORKFLOW_RULES,
+  type WorkflowRules,
   type LeadRow,
   type ContactRow,
   type TaskRow,
@@ -333,12 +335,13 @@ async function analyzeLead(user: AuthUser, lead: LeadRow & { companyId: number }
   const today = localDateStr(new Date());
   const now = new Date();
   const ctx = { companyId: cid, userId: user.id };
+  const rules = await loadWorkflowRules(cid);
   const lastActivity = await lastActivityForLead(cid, lead.id);
   const lines = leadLines(lead);
   const recs: UpsertRecommendationInput[] = [];
 
   // next_action (AI-phrased)
-  const na = leadNextActionCore(lead, today, now, lastActivity);
+  const na = leadNextActionCore(lead, today, now, lastActivity, rules);
   recs.push(await phrasedRec<WorkflowNextActionResult>(
     cid, "lead", lead.id, "next_action", "workflow_next_action", runtime,
     { data: { action: na.action, priority: na.priority, rationale: na.basis }, reasoning: na.basis },
@@ -354,7 +357,7 @@ async function analyzeLead(user: AuthUser, lead: LeadRow & { companyId: number }
   recs.push(detRec(cid, "lead", lead.id, "due_date", { suggestedDate: fu.suggestedDate, basis: fu.basis }, 100, `Suggested next-action date: ${fu.suggestedDate}.`));
 
   // priority (deterministic)
-  const pr = leadPriorityCore(lead, today, now);
+  const pr = leadPriorityCore(lead, today, now, rules);
   recs.push(detRec(cid, "lead", lead.id, "priority", { suggestedPriority: pr.priority, basis: pr.basis }, 100, pr.basis));
 
   // reminder (AI-phrased)
@@ -672,7 +675,17 @@ async function userNameMap(user: AuthUser, ids: number[]): Promise<Map<number, s
   return map;
 }
 
-const STALLED_DAYS = 14;
+// Resolve the tenant's effective workflow rules via the SAME settings resolver the
+// GET/PATCH /ai/settings path uses (single source of truth). Guarded: a resolver
+// failure falls back to platform defaults instead of breaking a read-only rollup.
+async function loadWorkflowRules(companyId: number): Promise<WorkflowRules> {
+  try {
+    const s = await resolveSettings(companyId);
+    return s.workflowRules;
+  } catch {
+    return DEFAULT_WORKFLOW_RULES;
+  }
+}
 
 function isTerminal(stage: string): boolean {
   const s = (stage ?? "").toLowerCase();
@@ -686,24 +699,27 @@ async function computeScopeRisks(user: AuthUser, userIds: number[] | null): Prom
   contacts: ContactRow[];
   tasks: TaskRow[];
   followUps: FollowUpRow[];
+  rules: WorkflowRules;
 }> {
-  const [leads, contacts, tasks, followUps] = await Promise.all([
+  const [leads, contacts, tasks, followUps, rules] = await Promise.all([
     loadScopedLeads(user, userIds),
     loadScopedContacts(user, userIds),
     loadScopedTasks(user, userIds),
     loadScopedFollowUps(user, userIds),
+    // Workflow routes are tenant-scoped (requireTenantUser), so companyId is set.
+    loadWorkflowRules(user.companyId!),
   ]);
   const today = localDateStr(new Date());
   const now = new Date();
   const openLeadIds = leads.filter((l) => !isTerminal(l.stage)).map((l) => l.id);
   const lastActivityByLead = await lastActivityMap(user, openLeadIds);
   const risks = [
-    ...detectLeadRisks(leads, { today, now, lastActivityByLead }),
-    ...detectContactRisks(contacts, today),
-    ...detectTaskRisks(tasks, today),
-    ...detectFollowUpRisks(followUps, today),
+    ...detectLeadRisks(leads, { today, now, lastActivityByLead, rules }),
+    ...detectContactRisks(contacts, today, rules),
+    ...detectTaskRisks(tasks, today, rules),
+    ...detectFollowUpRisks(followUps, today, rules),
   ];
-  return { risks, leads, contacts, tasks, followUps };
+  return { risks, leads, contacts, tasks, followUps, rules };
 }
 
 export async function getHealth(user: AuthUser, opts: { scopeType?: string; id?: number } = {}) {
@@ -746,7 +762,7 @@ export async function getSlaRisks(user: AuthUser, opts: { scopeType?: string; id
 
 export async function getBottlenecks(user: AuthUser, opts: { scopeType?: string; id?: number } = {}) {
   const resolved = await resolveScope(user, opts);
-  const { risks, leads, tasks, followUps } = await computeScopeRisks(user, resolved.userIds);
+  const { risks, leads, tasks, followUps, rules } = await computeScopeRisks(user, resolved.userIds);
   const now = new Date();
 
   const openLeads = leads.filter((l) => !isTerminal(l.stage));
@@ -754,7 +770,7 @@ export async function getBottlenecks(user: AuthUser, opts: { scopeType?: string;
   for (const l of openLeads) {
     const cur = stageMap.get(l.stage) ?? { open: 0, stalled: 0 };
     cur.open += 1;
-    if ((now.getTime() - l.updatedAt.getTime()) / 86_400_000 >= STALLED_DAYS) cur.stalled += 1;
+    if ((now.getTime() - l.updatedAt.getTime()) / 86_400_000 >= rules.stalledDays) cur.stalled += 1;
     stageMap.set(l.stage, cur);
   }
   const stageStats = [...stageMap.entries()].map(([stage, v]) => ({ stage, open: v.open, stalled: v.stalled }));
@@ -773,7 +789,7 @@ export async function getBottlenecks(user: AuthUser, opts: { scopeType?: string;
   const wonCount = leads.filter((l) => l.stage.toLowerCase() === "won").length;
   const lostCount = leads.filter((l) => l.stage.toLowerCase() === "lost").length;
 
-  const bottlenecks = analyzeBottlenecks({ stageStats, workload, overdueTasks, overdueFollowUps, wonCount, lostCount });
+  const bottlenecks = analyzeBottlenecks({ stageStats, workload, overdueTasks, overdueFollowUps, wonCount, lostCount }, rules);
   return { scope: resolved.scope, bottlenecks, riskCount: risks.length };
 }
 
@@ -803,7 +819,8 @@ export async function simulateScenario(user: AuthUser, input: SimulateInput) {
     if (!candidate) throw new AppError(400, "candidateUserId is not an eligible owner in this company");
   }
 
-  const result = simulate(lead, scenario as ScenarioType, { candidate, delayDays: input.delayDays }, today, now);
+  const rules = await loadWorkflowRules(lead.companyId);
+  const result = simulate(lead, scenario as ScenarioType, { candidate, delayDays: input.delayDays }, today, now, rules);
   return { leadId: lead.id, ...result };
 }
 

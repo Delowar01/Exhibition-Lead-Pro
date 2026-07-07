@@ -201,6 +201,10 @@ export const config = {
       // Scheduled-export sweep: find due export schedules and produce their files.
       exportFirstDelayMs: numEnv("JOBS_EXPORT_DELAY_MS", 90_000, 0),
       exportIntervalMs: numEnv("JOBS_EXPORT_INTERVAL_MS", 15 * 60 * 1000, 1_000),
+      // Stage 5F workflow risk alert sweep: critical/high SLA risks → notifications.
+      // Dispatch is deduped to one digest per user per local day regardless of cadence.
+      workflowAlertsFirstDelayMs: numEnv("JOBS_WORKFLOW_ALERTS_DELAY_MS", 120_000, 0),
+      workflowAlertsIntervalMs: numEnv("JOBS_WORKFLOW_ALERTS_INTERVAL_MS", 6 * 60 * 60 * 1000, 1_000),
     },
     retention: {
       // Delete read notifications older than this many days (0 disables).

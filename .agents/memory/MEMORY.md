@@ -46,3 +46,4 @@
 - [AI artifact completeness contract](ai-artifact-completeness-contract.md) — declared-but-unemitted enum members, missing forecast dimensions, and provenance stamped only in DB (not the response/OpenAPI) are silent bugs typecheck+tests miss.
 - [Scope privacy on persisted per-scope AI artifacts](exec-scope-privacy-persisted-artifacts.md) — a read-scope entitlement must gate EVERY read/get/lifecycle path (not just list), else a view-only employee fetches/mutates a company-wide row by guessed id.
 - [Background job AuthUser rebuild](background-job-authuser.md) — async workers must rebuild the full AuthUser via loadAuthUserById; a partial {id,companyId,role} breaks tenant-scoped reads (accessibleCompanies.length).
+- [Workflow alert dedup & deep links](workflow-alert-dedup.md) — daily digest sweeps need pg_advisory_xact_lock around check+insert; notification links must match real client routes (assert in tests).

@@ -9,6 +9,7 @@ import * as copilot from "../services/ai-copilot.service.js";
 import * as copilotBatch from "../services/ai-copilot-batch.service.js";
 import * as workflow from "../services/ai-workflow.service.js";
 import * as workflowBatch from "../services/ai-workflow-batch.service.js";
+import { runWorkflowAlertsForCompany } from "../lib/workflow-alerts.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -265,6 +266,13 @@ router.post("/ai/workflow/batch", requirePermission("ai_workflow", "generate"), 
 
 router.get("/ai/workflow/batch", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {
   res.json({ jobs: workflowBatch.listBatches(req.user!) });
+});
+
+// POST /ai/workflow/alerts/run — manual trigger of the workflow risk alert sweep for the
+// caller's OWN company only (the recurring scheduler covers all tenants). Advisory:
+// dispatches notifications, never writes the source CRM. Deduped per user per local day.
+router.post("/ai/workflow/alerts/run", requirePermission("ai_workflow", "generate"), async (req: AuthRequest, res) => {
+  res.json(await runWorkflowAlertsForCompany(req.user!.companyId!));
 });
 
 router.get("/ai/workflow/batch/:jobId", requirePermission("ai_workflow", "view"), async (req: AuthRequest, res) => {

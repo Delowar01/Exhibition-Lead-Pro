@@ -18,6 +18,9 @@ export const aiSettingsTable = pgTable("ai_settings", {
   featureFlags: jsonb("feature_flags").$type<Record<string, boolean>>().notNull().default({}), // { card_extraction:true, lead_scoring:true, contact_enrichment:true, assignee_recommendation:true }
   monthlyTokenBudget: integer("monthly_token_budget"), // null = unlimited
   monthlyCostBudgetMicroUsd: integer("monthly_cost_budget_micro_usd"), // null = unlimited; micro-USD (1e-6 USD)
+  // Stage 5F: tenant-configurable workflow-intelligence thresholds (partial override;
+  // null / missing keys = platform defaults). Normalized field-by-field on read.
+  workflowRules: jsonb("workflow_rules").$type<Record<string, number>>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

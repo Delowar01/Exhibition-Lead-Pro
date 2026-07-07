@@ -4569,6 +4569,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/AiWorkflowBatchListResponse"
 
+  /ai/workflow/alerts/run:
+    post:
+      operationId: runAiWorkflowAlerts
+      tags: [ai]
+      summary: Run the workflow risk alert sweep for the caller's company (advisory notifications only)
+      responses:
+        "200":
+          description: Sweep completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiWorkflowAlertsRunResponse"
+        "403":
+          description: Caller lacks the ai_workflow generate permission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /ai/workflow/batch/{jobId}:
     get:
       operationId: getAiWorkflowBatch
@@ -10968,6 +10987,7 @@ components:
           model,
           enabled,
           featureFlags,
+          workflowRules,
           hasCustomSettings,
           availableProviders,
         ]
@@ -10988,6 +11008,8 @@ components:
         monthlyCostBudgetUsd:
           type: number
           nullable: true
+        workflowRules:
+          $ref: "#/components/schemas/WorkflowRules"
         hasCustomSettings:
           type: boolean
         availableProviders:
@@ -10997,6 +11019,35 @@ components:
         updatedAt:
           type: string
           nullable: true
+
+    WorkflowRules:
+      type: object
+      description: Effective tenant workflow-intelligence thresholds (Stage 5F). All fields are integers; day thresholds are 1-365.
+      required:
+        [
+          stalledDays,
+          stalledHighDays,
+          agingDays,
+          unansweredDays,
+          expiringTaskDays,
+          highValueThreshold,
+          followupOverdueCriticalDays,
+        ]
+      properties:
+        stalledDays:
+          type: integer
+        stalledHighDays:
+          type: integer
+        agingDays:
+          type: integer
+        unansweredDays:
+          type: integer
+        expiringTaskDays:
+          type: integer
+        highValueThreshold:
+          type: integer
+        followupOverdueCriticalDays:
+          type: integer
 
     UpdateAiSettings:
       type: object
@@ -11025,6 +11076,25 @@ components:
         monthlyCostBudgetUsd:
           type: number
           nullable: true
+        workflowRules:
+          type: object
+          nullable: true
+          description: Partial workflow-rule override; provided keys are validated and merged over the current effective rules. Null resets all rules to platform defaults.
+          properties:
+            stalledDays:
+              type: integer
+            stalledHighDays:
+              type: integer
+            agingDays:
+              type: integer
+            unansweredDays:
+              type: integer
+            expiringTaskDays:
+              type: integer
+            highValueThreshold:
+              type: integer
+            followupOverdueCriticalDays:
+              type: integer
 
     AiUsageAgg:
       type: object
@@ -12471,6 +12541,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiWorkflowBatchJob"
+
+    AiWorkflowAlertsRunResponse:
+      type: object
+      description: Result of a manual workflow risk alert sweep for one company (notifications dispatched, users skipped because they were already alerted today).
+      required: [notified, skipped]
+      properties:
+        notified:
+          type: integer
+        skipped:
+          type: integer
 
     DashboardLeadKpis:
       type: object

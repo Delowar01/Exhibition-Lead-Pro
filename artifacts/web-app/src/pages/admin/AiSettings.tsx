@@ -49,6 +49,25 @@ const FEATURE_LABELS: Record<FeatureKey, { title: string; desc: string }> = {
 
 const FEATURE_ORDER: FeatureKey[] = ["card_extraction", "lead_scoring", "contact_enrichment", "assignee_recommendation"];
 
+type RuleKey =
+  | "stalledDays"
+  | "stalledHighDays"
+  | "agingDays"
+  | "unansweredDays"
+  | "expiringTaskDays"
+  | "highValueThreshold"
+  | "followupOverdueCriticalDays";
+
+const RULE_FIELDS: Array<{ key: RuleKey; label: string; desc: string; min: number; max: number }> = [
+  { key: "stalledDays", label: "Stalled lead (days)", desc: "Open lead with no update for this many days is flagged as stalled.", min: 1, max: 365 },
+  { key: "stalledHighDays", label: "Severely stalled (days)", desc: "Stalled leads older than this escalate to high risk.", min: 1, max: 365 },
+  { key: "agingDays", label: "Aging lead (days)", desc: "Open lead older than this without closing is flagged as aging.", min: 1, max: 365 },
+  { key: "unansweredDays", label: "Unanswered activity (days)", desc: "Last activity older than this counts as unanswered communication.", min: 1, max: 365 },
+  { key: "expiringTaskDays", label: "Task due-soon window (days)", desc: "Open tasks due within this many days are flagged as expiring.", min: 0, max: 365 },
+  { key: "highValueThreshold", label: "High-value lead threshold", desc: "Leads at or above this value get escalated risk priority.", min: 0, max: 1_000_000_000 },
+  { key: "followupOverdueCriticalDays", label: "Critical overdue follow-up (days)", desc: "Follow-ups overdue by this many days become critical.", min: 1, max: 365 },
+];
+
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const NUM = new Intl.NumberFormat("en-US");
 
@@ -102,8 +121,28 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
   const [costBudget, setCostBudget] = React.useState<string>(
     settings.monthlyCostBudgetUsd == null ? "" : String(settings.monthlyCostBudgetUsd),
   );
+  const [rules, setRules] = React.useState<Record<RuleKey, string>>(() =>
+    Object.fromEntries(RULE_FIELDS.map((f) => [f.key, String(settings.workflowRules[f.key])])) as Record<RuleKey, string>,
+  );
+
+  const ruleError = (f: (typeof RULE_FIELDS)[number]): string | null => {
+    const raw = rules[f.key].trim();
+    if (raw === "") return "Required";
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return "Must be a whole number";
+    if (n < f.min || n > f.max) return `Must be ${f.min}–${NUM.format(f.max)}`;
+    return null;
+  };
+  const rulesInvalid = RULE_FIELDS.some((f) => ruleError(f) !== null);
 
   const handleSave = () => {
+    // Send only the rules that changed from the current effective values (server merges
+    // partial overrides over the effective rules; omit = unchanged).
+    const changedRules: Partial<Record<RuleKey, number>> = {};
+    for (const f of RULE_FIELDS) {
+      const n = Number(rules[f.key].trim());
+      if (n !== settings.workflowRules[f.key]) changedRules[f.key] = n;
+    }
     const body: UpdateAiSettings = {
       enabled,
       provider,
@@ -111,6 +150,7 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
       featureFlags: flags,
       monthlyTokenBudget: tokenBudget.trim() === "" ? null : Number(tokenBudget),
       monthlyCostBudgetUsd: costBudget.trim() === "" ? null : Number(costBudget),
+      ...(Object.keys(changedRules).length > 0 ? { workflowRules: changedRules } : {}),
     };
     update.mutate(
       { data: body },
@@ -230,9 +270,40 @@ function SettingsForm({ settings, canEdit }: SettingsFormProps) {
           </div>
         </div>
 
+        {/* Workflow intelligence rules (Stage 5F) */}
+        <div className="space-y-3">
+          <div>
+            <div className="text-sm font-medium">Workflow risk thresholds</div>
+            <p className="text-xs text-muted-foreground">
+              Tune when the AI workflow engine flags leads, tasks and follow-ups as at risk. Applies to SLA risks, health scores, bottlenecks and alerts.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {RULE_FIELDS.map((f) => {
+              const err = ruleError(f);
+              return (
+                <div key={f.key} className="space-y-1.5">
+                  <Label htmlFor={`rule-${f.key}`}>{f.label}</Label>
+                  <Input
+                    id={`rule-${f.key}`}
+                    type="number"
+                    min={f.min}
+                    max={f.max}
+                    value={rules[f.key]}
+                    onChange={(e) => setRules((r) => ({ ...r, [f.key]: e.target.value }))}
+                    disabled={!canEdit}
+                    aria-invalid={err !== null}
+                  />
+                  <p className={`text-xs ${err ? "text-destructive" : "text-muted-foreground"}`}>{err ?? f.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {canEdit && (
           <div className="flex justify-end">
-            <Button onClick={handleSave} disabled={update.isPending}>
+            <Button onClick={handleSave} disabled={update.isPending || rulesInvalid}>
               {update.isPending ? "Saving…" : "Save changes"}
             </Button>
           </div>

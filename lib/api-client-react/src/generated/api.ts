@@ -45,6 +45,7 @@ import type {
   AiPlatformUsageResponse,
   AiSettingsResponse,
   AiUsageResponse,
+  AiWorkflowAlertsRunResponse,
   AiWorkflowBatchJob,
   AiWorkflowBatchListResponse,
   AiWorkflowBatchStartRequest,
@@ -15736,6 +15737,76 @@ export function useListAiWorkflowBatches<TData = Awaited<ReturnType<typeof listA
 
 
 
+
+export const getRunAiWorkflowAlertsUrl = () => {
+
+
+
+
+  return `/api/ai/workflow/alerts/run`
+}
+
+/**
+ * @summary Run the workflow risk alert sweep for the caller's company (advisory notifications only)
+ */
+export const runAiWorkflowAlerts = async ( options?: RequestInit): Promise<AiWorkflowAlertsRunResponse> => {
+
+  return customFetch<AiWorkflowAlertsRunResponse>(getRunAiWorkflowAlertsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRunAiWorkflowAlertsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAiWorkflowAlerts>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runAiWorkflowAlerts>>, TError,void, TContext> => {
+
+const mutationKey = ['runAiWorkflowAlerts'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runAiWorkflowAlerts>>, void> = () => {
+
+
+          return  runAiWorkflowAlerts(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunAiWorkflowAlertsMutationResult = NonNullable<Awaited<ReturnType<typeof runAiWorkflowAlerts>>>
+
+    export type RunAiWorkflowAlertsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Run the workflow risk alert sweep for the caller's company (advisory notifications only)
+ */
+export const useRunAiWorkflowAlerts = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAiWorkflowAlerts>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runAiWorkflowAlerts>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunAiWorkflowAlertsMutationOptions(options));
+    }
 
 export const getGetAiWorkflowBatchUrl = (jobId: string,) => {
 

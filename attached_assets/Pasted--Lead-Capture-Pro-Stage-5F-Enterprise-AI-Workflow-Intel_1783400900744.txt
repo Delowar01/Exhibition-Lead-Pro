@@ -1,0 +1,341 @@
+# Lead Capture Pro
+# Stage 5F – Enterprise AI Workflow Intelligence
+
+Objective
+
+Stage 5E – Enterprise Intelligent Capture has been successfully completed and approved.
+
+Proceed with Stage 5F – Enterprise AI Workflow Intelligence.
+
+The objective is to transform Lead Capture Pro from a passive CRM into an intelligent CRM that proactively monitors activities, identifies opportunities and risks, recommends next actions, and automates repetitive business workflows while keeping users fully in control.
+
+This phase builds upon:
+
+✅ Stage 5.0 – AI Platform Foundation
+✅ Stage 5A – Enterprise AI Lead & Customer Intelligence
+✅ Stage 5B – Enterprise AI Sales Copilot
+✅ Stage 5C – Executive Intelligence
+✅ Stage 5E – Enterprise Intelligent Capture
+
+Do NOT begin Stage 5D (Enterprise AI Assistant).
+
+=========================================================
+
+Requirements
+
+Preserve:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• Contract-first Architecture
+• Repository Layer
+• Service Layer
+• Existing CRM
+• Existing AI Platform
+• Existing OCR
+• Existing Sales Copilot
+• Existing Executive Intelligence
+
+No regressions.
+
+No breaking APIs.
+
+No breaking database changes unless required for workflow intelligence.
+
+=========================================================
+
+Enterprise AI Principles
+
+AI recommends.
+
+Users decide.
+
+Nothing should automatically:
+
+• Change CRM records
+• Send messages
+• Assign leads
+• Close opportunities
+• Delete records
+
+Every recommendation must include:
+
+• Confidence Score
+• Reasoning
+• Model
+• Prompt Version
+• Generated Date
+• Suggested Action
+
+Every accepted workflow action must be audited.
+
+=========================================================
+
+1. AI Next Best Action
+
+Generate intelligent recommendations such as:
+
+• Call customer
+• Send follow-up email
+• Send WhatsApp
+• Schedule meeting
+• Assign salesperson
+• Escalate lead
+• Prepare proposal
+• Mark opportunity at risk
+
+Explain why.
+
+=========================================================
+
+2. Follow-up Intelligence
+
+Automatically detect:
+
+• Missed follow-ups
+• Overdue follow-ups
+• High-value leads without activity
+• Long inactive customers
+• Opportunities losing momentum
+
+Recommend actions.
+
+=========================================================
+
+3. AI Task Recommendations
+
+Recommend:
+
+• Today's priorities
+• This week's priorities
+• High-priority leads
+• Accounts needing attention
+• Upcoming meetings
+• Proposal reminders
+
+=========================================================
+
+4. Workflow Automation Suggestions
+
+Suggest automation for:
+
+• Lead assignment
+• Reminder creation
+• Follow-up scheduling
+• Document requests
+• Meeting preparation
+• Opportunity review
+
+Suggestions only.
+
+Users approve execution.
+
+=========================================================
+
+5. Lead Routing Intelligence
+
+Recommend the best owner based on:
+
+• Territory
+• Workload
+• Industry
+• Previous relationship
+• Performance history
+• Existing customer ownership
+
+Never assign automatically.
+
+=========================================================
+
+6. Opportunity Risk Intelligence
+
+Identify:
+
+• Deals slowing down
+• No recent communication
+• Missing decision makers
+• Missing documents
+• No next meeting
+• Long approval cycles
+
+Provide recommendations.
+
+=========================================================
+
+7. SLA & Response Monitoring
+
+Track:
+
+• First response time
+• Follow-up SLA
+• Response delays
+• Overdue actions
+
+Notify responsible users.
+
+=========================================================
+
+8. Team Workload Intelligence
+
+Monitor:
+
+• Employee workload
+• Open leads
+• Follow-ups
+• Tasks
+• Meetings
+
+Recommend workload balancing.
+
+=========================================================
+
+9. Workflow Intelligence Dashboard
+
+Create a dedicated dashboard displaying:
+
+• Recommended Actions
+• Opportunity Risks
+• Overdue Items
+• Team Workload
+• SLA Status
+• Priority Leads
+• AI Recommendations
+• Workflow Health
+• Automation Suggestions
+
+=========================================================
+
+10. AI Workflow Rules
+
+Allow administrators to configure:
+
+• Reminder thresholds
+• Risk thresholds
+• Escalation thresholds
+• Assignment preferences
+• Notification rules
+
+All tenant-specific.
+
+=========================================================
+
+11. Batch Workflow Analysis
+
+Support:
+
+• Batch Next Best Action
+• Batch Risk Analysis
+• Batch Follow-up Analysis
+• Batch Lead Routing Suggestions
+• Batch SLA Review
+
+Background processing only.
+
+=========================================================
+
+12. Notifications
+
+Generate intelligent notifications for:
+
+• Overdue follow-ups
+• High-risk opportunities
+• Missed SLA
+• Assignment recommendations
+• High-value leads
+• Executive alerts
+
+Notification only.
+
+Never execute actions automatically.
+
+=========================================================
+
+13. Mobile Experience
+
+Maintain feature parity.
+
+Provide:
+
+• AI Recommendations
+• Today's Priorities
+• Workflow Alerts
+• Opportunity Risks
+• SLA Notifications
+• Team Tasks
+
+Maintain:
+
+• English
+• Arabic
+• RTL
+
+=========================================================
+
+Performance
+
+Optimize for:
+
+• Large enterprise datasets
+• Background processing
+• Low latency
+• Efficient workflow evaluation
+
+=========================================================
+
+Security
+
+Continue enforcing:
+
+• Enterprise Privacy
+• Multi-tenancy
+• RBAC
+• AI Audit Logging
+• Tenant Isolation
+
+No workflow recommendation may expose another tenant's data.
+
+=========================================================
+
+Testing
+
+Add automated tests covering:
+
+• Next Best Action
+• Workflow Recommendations
+• Lead Routing
+• Opportunity Risk
+• SLA Monitoring
+• Team Workload
+• Batch Processing
+• AI Failure Handling
+• Tenant Isolation
+• Permission Enforcement
+
+Run:
+
+• Full workspace typecheck
+• Complete regression suite
+
+No regressions.
+
+=========================================================
+
+Deliverables
+
+Provide:
+
+• Architecture Summary
+• Workflow Engine Diagram
+• APIs Added
+• Database Changes
+• Workflow Rule Architecture
+• AI Models Used
+• Prompt Versions
+• Screenshots (Web)
+• Screenshots (Mobile)
+• Files Modified
+• Test Results
+• Validation Report
+
+Wait for review and approval before beginning Stage 5D – Enterprise AI Assistant.

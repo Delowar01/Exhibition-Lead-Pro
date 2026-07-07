@@ -9,6 +9,8 @@ import {
   organizationsTable,
   aiWorkflowRecommendationsTable,
   auditLogsTable,
+  notificationsTable,
+  aiSettingsTable,
 } from "@workspace/db";
 import { backfillAiWorkflowPermissions } from "../src/lib/permission-backfill";
 
@@ -162,6 +164,8 @@ afterAll(async () => {
   for (const cid of [companyId, companyBId]) {
     if (!cid) continue;
     await db.delete(aiWorkflowRecommendationsTable).where(eq(aiWorkflowRecommendationsTable.companyId, cid));
+    await db.delete(notificationsTable).where(eq(notificationsTable.companyId, cid));
+    await db.delete(aiSettingsTable).where(eq(aiSettingsTable.companyId, cid));
     await db.delete(leadsTable).where(eq(leadsTable.companyId, cid));
     await db.delete(contactsTable).where(eq(contactsTable.companyId, cid));
     await db.delete(organizationsTable).where(eq(organizationsTable.companyId, cid));
@@ -651,6 +655,102 @@ describe("Stage 5F upgrade path — ai_workflow RBAC backfill (no lockout for pr
     const [empRow] = await db.select({ p: usersTable.permissions }).from(usersTable).where(eq(usersTable.id, upEmpId));
     expect((adminRow.p as Record<string, string[]>).ai_workflow).toEqual(["view", "generate", "accept"]);
     expect((empRow.p as Record<string, string[]>).ai_workflow).toEqual(["view"]);
+  });
+});
+
+describe("Workflow rules — tenant-configurable thresholds via /ai/settings", () => {
+  it("GET /ai/settings exposes effective workflowRules (defaults when unset)", async () => {
+    const res = await api("GET", "/ai/settings", adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.workflowRules).toBeDefined();
+    expect(body.workflowRules.stalledDays).toBe(14);
+    expect(body.workflowRules.followupOverdueCriticalDays).toBe(7);
+  });
+
+  it("PATCH merges a partial override over effective rules; rest stay default", async () => {
+    const res = await api("PATCH", "/ai/settings", adminToken, { workflowRules: { stalledDays: 3 } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.workflowRules.stalledDays).toBe(3);
+    expect(body.workflowRules.agingDays).toBe(30); // untouched key keeps default
+  });
+
+  it("400s an unknown rule key, out-of-bounds and non-integer values", async () => {
+    expect((await api("PATCH", "/ai/settings", adminToken, { workflowRules: { nope: 5 } })).status).toBe(400);
+    expect((await api("PATCH", "/ai/settings", adminToken, { workflowRules: { stalledDays: 0 } })).status).toBe(400);
+    expect((await api("PATCH", "/ai/settings", adminToken, { workflowRules: { stalledDays: 400 } })).status).toBe(400);
+    expect((await api("PATCH", "/ai/settings", adminToken, { workflowRules: { stalledDays: 2.5 } })).status).toBe(400);
+  });
+
+  it("custom rules change what the risk engine flags (stalled lead appears)", async () => {
+    // Age the lead's updatedAt by 5 days: NOT stalled under stalledDays=14, stalled under 3.
+    await db
+      .update(leadsTable)
+      .set({ updatedAt: new Date(Date.now() - 5 * 86_400_000) })
+      .where(eq(leadsTable.id, leadId));
+    const res = await api("GET", "/ai/workflow/sla-risks", adminToken);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const stalled = (body.risks as Array<Record<string, unknown>>).filter(
+      (r) => r.entityType === "lead" && r.entityId === leadId && r.category === "stalled_stage",
+    );
+    expect(stalled.length).toBeGreaterThan(0);
+  });
+
+  it("workflowRules: null resets to platform defaults (stalled risk disappears)", async () => {
+    const res = await api("PATCH", "/ai/settings", adminToken, { workflowRules: null });
+    expect(res.status).toBe(200);
+    expect((await res.json()).workflowRules.stalledDays).toBe(14);
+    const risks = await api("GET", "/ai/workflow/sla-risks", adminToken);
+    const body = await risks.json();
+    const stalled = (body.risks as Array<Record<string, unknown>>).filter(
+      (r) => r.entityType === "lead" && r.entityId === leadId && r.category === "stalled_stage",
+    );
+    expect(stalled.length).toBe(0);
+  });
+
+  it("employee cannot change workflow rules (RBAC on /ai/settings)", async () => {
+    expect((await api("PATCH", "/ai/settings", empToken, { workflowRules: { stalledDays: 5 } })).status).toBe(403);
+  });
+});
+
+describe("POST /ai/workflow/alerts/run — advisory risk notifications, deduped daily", () => {
+  it("403s an employee without ai_workflow.generate", async () => {
+    expect((await api("POST", "/ai/workflow/alerts/run", empToken)).status).toBe(403);
+  });
+
+  it("dispatches notifications for critical/high risks, then dedupes within the day", async () => {
+    // Force a CRITICAL risk: contact follow-up 10 days overdue (> followupOverdueCriticalDays=7).
+    const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000);
+    const dstr = `${tenDaysAgo.getFullYear()}-${String(tenDaysAgo.getMonth() + 1).padStart(2, "0")}-${String(tenDaysAgo.getDate()).padStart(2, "0")}`;
+    const upd = await api("PATCH", `/contacts/${contactId}`, adminToken, { followUpDate: dstr });
+    expect(upd.status).toBe(200);
+
+    const first = await api("POST", "/ai/workflow/alerts/run", adminToken);
+    expect(first.status).toBe(200);
+    const r1 = await first.json();
+    // At minimum the primary admin gets an executive rollup for the tenant.
+    expect(r1.notified).toBeGreaterThan(0);
+
+    // Same-day re-run: everyone already alerted → nothing new goes out.
+    const second = await api("POST", "/ai/workflow/alerts/run", adminToken);
+    expect(second.status).toBe(200);
+    const r2 = await second.json();
+    expect(r2.notified).toBe(0);
+    expect(r2.skipped).toBeGreaterThan(0);
+
+    // The dispatched notification is advisory metadata-tagged, never a CRM write.
+    const [note] = await db
+      .select({ metadata: notificationsTable.metadata, category: notificationsTable.category, link: notificationsTable.link })
+      .from(notificationsTable)
+      .where(eq(notificationsTable.companyId, companyId))
+      .orderBy(desc(notificationsTable.id))
+      .limit(1);
+    expect(note).toBeDefined();
+    expect((note.metadata as Record<string, unknown>).kind).toBe("workflow_alerts");
+    expect(note.category).toBe("ai");
+    expect(note.link).toBe("/admin/workflow");
   });
 });
 
