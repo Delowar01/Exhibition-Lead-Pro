@@ -34,6 +34,9 @@ import {
   StickyNote,
   FileText,
   Clock,
+  History,
+  CalendarCheck,
+  UserCheck,
 } from "lucide-react";
 
 import {
@@ -43,7 +46,6 @@ import {
   WorkspaceMain,
   WorkspaceSidebar,
 } from "@/components/ds/workspace";
-
 import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 import { SalesCopilotPanel } from "@/components/SalesCopilotPanel";
 import { WorkflowIntelligencePanel } from "@/components/WorkflowIntelligencePanel";
@@ -200,6 +202,33 @@ export default function AdminCompanyDetail() {
                     {formatCurrency(org.openLeadValue ?? 0)}
                   </div>
                   <div className="text-sm text-muted-foreground">Open Pipeline</div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm border-border/50">
+              <CardContent className="pt-6 flex items-center gap-3">
+                <History className="h-8 w-8 text-primary/60" />
+                <div>
+                  <div className="text-2xl font-bold">{org.interactionCount ?? 0}</div>
+                  <div className="text-sm text-muted-foreground">Interactions</div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm border-border/50">
+              <CardContent className="pt-6 flex items-center gap-3">
+                <CalendarCheck className="h-8 w-8 text-primary/60" />
+                <div>
+                  <div className="text-2xl font-bold">{org.eventsAttended ?? 0}</div>
+                  <div className="text-sm text-muted-foreground">Events Attended</div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm border-border/50">
+              <CardContent className="pt-6 flex items-center gap-3">
+                <Clock className="h-8 w-8 text-primary/60" />
+                <div>
+                  <div className="text-2xl font-bold">{formatDate(org.lastInteractionDate)}</div>
+                  <div className="text-sm text-muted-foreground">Last Interaction</div>
                 </div>
               </CardContent>
             </Card>
@@ -537,6 +566,36 @@ export default function AdminCompanyDetail() {
               )}
             </CardContent>
           </Card>
+
+          {org.recentEmployeesMet && org.recentEmployeesMet.length > 0 && (
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="pb-3 bg-secondary/30">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-primary" /> Recently Met
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  People from this company you interacted with most recently.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-3">
+                {org.recentEmployeesMet.map((emp) => (
+                  <Link
+                    key={emp.contactId}
+                    href={`/admin/contacts/${emp.contactId}`}
+                    className="flex items-start justify-between gap-2 rounded-md border p-3 hover:bg-muted/50 transition-colors bg-card"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{emp.fullName ?? "—"}</div>
+                      {emp.jobTitle && <div className="text-xs text-muted-foreground">{emp.jobTitle}</div>}
+                    </div>
+                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                      {formatDate(emp.lastInteractionDate)}
+                    </div>
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {Number.isFinite(id) && id > 0 && (
             <>

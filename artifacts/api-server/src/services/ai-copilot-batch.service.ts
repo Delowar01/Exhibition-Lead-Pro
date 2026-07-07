@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db, contactsTable, leadsTable, organizationsTable, scansTable } from "@workspace/db";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
 import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
 import { logger } from "../lib/logger.js";
@@ -75,7 +75,12 @@ function finalize(job: CopilotBatchJob): void {
 
 async function enumerateIds(companyId: number, entityType: EntityType): Promise<number[]> {
   if (entityType === "business_card") {
-    const rows = await db.select({ id: scansTable.id }).from(scansTable).where(eq(scansTable.companyId, companyId)).limit(MAX_ENTITIES);
+    // Real card scans only — exclude soft-deleted scans and synthetic manual-interaction rows (no image and no card data).
+    const rows = await db
+      .select({ id: scansTable.id })
+      .from(scansTable)
+      .where(and(eq(scansTable.companyId, companyId), isNull(scansTable.deletedAt), or(isNotNull(scansTable.imageUrl), isNotNull(scansTable.extractedData))))
+      .limit(MAX_ENTITIES);
     return rows.map((r) => r.id);
   }
   const table = entityType === "lead" ? leadsTable : entityType === "contact" ? contactsTable : organizationsTable;

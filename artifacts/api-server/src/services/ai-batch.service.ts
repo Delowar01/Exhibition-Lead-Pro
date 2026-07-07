@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db, contactsTable, leadsTable, organizationsTable, scansTable } from "@workspace/db";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 import { AppError } from "../middlewares/errorHandler.js";
 import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
 import { logger } from "../lib/logger.js";
@@ -78,14 +78,14 @@ function finalize(job: BatchJob): void {
 // own company), NOT the caller's full accessible set — a batch never spans tenants even
 // for a multi-company caller. platform_owner is blocked upstream by requireTenantUser, and
 // startBatch has already asserted companyId is non-null (so this is never a null/unfiltered
-// scope). Business cards (scans) have no soft-delete column, so the deletedAt guard applies
-// only to the CRM tables.
+// scope). Business-card batches cover REAL card scans only: soft-deleted scans and synthetic
+// manual-interaction rows (no image) carry no card to analyze, so both are excluded.
 async function enumerateIds(companyId: number, entityType: EntityType): Promise<number[]> {
   if (entityType === "business_card") {
     const rows = await db
       .select({ id: scansTable.id })
       .from(scansTable)
-      .where(eq(scansTable.companyId, companyId))
+      .where(and(eq(scansTable.companyId, companyId), isNull(scansTable.deletedAt), or(isNotNull(scansTable.imageUrl), isNotNull(scansTable.extractedData))))
       .limit(MAX_ENTITIES);
     return rows.map((r) => r.id);
   }

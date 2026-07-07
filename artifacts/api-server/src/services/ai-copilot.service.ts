@@ -21,6 +21,7 @@ import {
 import type { AiFeature } from "../ai/types.js";
 import { resolveSettings } from "./ai.service.js";
 import * as copilotRepo from "../repositories/ai_copilot_outputs.repository.js";
+import * as scansRepo from "../repositories/scans.repository.js";
 import type { EntityType, OutputType, UpsertCopilotOutputInput } from "../repositories/ai_copilot_outputs.repository.js";
 import * as insightsRepo from "../repositories/ai_insights.repository.js";
 
@@ -123,6 +124,25 @@ function contactLines(c: Contact): string[] {
     `Follow-up date: ${c.followUpDate ?? "(none)"}`,
     `Notes: ${c.notes ?? "(none)"}`,
   ];
+}
+
+// Interaction model: full capture/interaction history per contact (real CRM data
+// only) so copilot drafts can reference how often and where the person was met.
+async function interactionHistoryLines(companyId: number, contactId: number): Promise<string[]> {
+  const rows = await scansRepo.interactionsForContact(companyId, contactId);
+  if (rows.length === 0) return [];
+  const lines = [`Interaction history (${rows.length} interaction${rows.length === 1 ? "" : "s"}):`];
+  for (const r of rows.slice(0, 10)) {
+    const parts = [
+      r.createdAt.toISOString().slice(0, 10),
+      `via ${(r.captureSource ?? "manual").replace(/_/g, " ")}`,
+      r.eventName ? `at ${r.eventName}` : null,
+      r.userName ? `by ${r.userName}` : null,
+      r.notes ? `notes: ${r.notes}` : null,
+    ].filter(Boolean);
+    lines.push(`  - ${parts.join(", ")}`);
+  }
+  return lines;
 }
 
 async function eventName(companyId: number, id: number | null): Promise<string | null> {
@@ -364,7 +384,10 @@ async function loadEntityContext(user: AuthUser, entityType: EntityType, id: num
   }
   if (entityType === "contact") {
     const contact = await loadContact(user, id);
-    return { companyId: contact.companyId, context: contactLines(contact).join("\n"), contact };
+    // Full interaction history feeds the copilot so follow-up/coaching drafts can
+    // reference how often and where the contact was actually met (real CRM data).
+    const history = await interactionHistoryLines(contact.companyId, contact.id);
+    return { companyId: contact.companyId, context: [...contactLines(contact), ...history].join("\n"), contact };
   }
   if (entityType === "business_card") {
     const scan = await loadScan(user, id);

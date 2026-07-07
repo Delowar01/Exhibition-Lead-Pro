@@ -1340,6 +1340,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Contact"
+        "409":
+          description: >-
+            A probable existing contact was found (high-confidence match) and no
+            dedupeResolution was provided. Nothing was created; the client must present the
+            options to the user and re-submit with an explicit resolution.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExistingContactFound"
 
   /contacts/{id}:
     get:
@@ -2480,6 +2489,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Lead"
+
+  /contacts/{id}/interactions:
+    get:
+      operationId: listContactInteractions
+      tags: [contacts]
+      summary: List the permanent interaction (capture) history for a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InteractionList"
+        "404":
+          description: Contact not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /contacts/{id}/timeline:
     get:
@@ -7873,6 +7907,31 @@ components:
           type: integer
         openLeadValue:
           type: number
+        interactionCount:
+          type: integer
+          description: Total interactions (captures) recorded across this organization's contacts.
+        eventsAttended:
+          type: integer
+          description: Distinct events where this organization's contacts were captured.
+        lastInteractionDate:
+          type: ["string", "null"]
+          format: date-time
+        recentEmployeesMet:
+          type: array
+          description: This organization's people most recently interacted with.
+          items:
+            type: object
+            required: [contactId]
+            properties:
+              contactId:
+                type: integer
+              fullName:
+                type: ["string", "null"]
+              jobTitle:
+                type: ["string", "null"]
+              lastInteractionDate:
+                type: ["string", "null"]
+                format: date-time
         createdAt:
           type: string
           format: date-time
@@ -8774,6 +8833,24 @@ components:
           type: ["integer", "null"]
         cardImageUrl:
           type: ["string", "null"]
+        scanId:
+          type: ["integer", "null"]
+          description: >-
+            The scan (interaction) this contact is being created from. When set, the scan is
+            permanently linked to the created (or matched) contact as an interaction record.
+        dedupeResolution:
+          type: ["string", "null"]
+          enum: [add_interaction, create_separate, null]
+          description: >-
+            Explicit human resolution when a probable existing contact is detected. Omitted →
+            the server responds 409 with ExistingContactFound when a high-confidence match
+            exists (no contact is created). "add_interaction" records the capture as a new
+            interaction on the matched contact instead of creating a duplicate.
+            "create_separate" forces creation of a separate contact (manual override).
+            No automatic merging or linking ever occurs.
+        matchedContactId:
+          type: ["integer", "null"]
+          description: Required with dedupeResolution=add_interaction — the existing contact to attach the interaction to.
 
     ContactUpdate:
       type: object
@@ -9888,6 +9965,21 @@ components:
         qualityMeta:
           type: ["object", "null"]
           description: "On-device quality signals (brightness/sharpness/coverage). Opaque JSON."
+        eventId:
+          type: ["integer", "null"]
+          description: "Event/exhibition where this capture (interaction) happened."
+        latitude:
+          type: ["number", "null"]
+        longitude:
+          type: ["number", "null"]
+        gpsAccuracy:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+          description: "Notes entered at capture time (part of the permanent interaction record)."
+        aiSummary:
+          type: ["string", "null"]
+          description: "Optional AI summary of the interaction."
         createdAt:
           type: string
           format: date-time
@@ -9936,6 +10028,9 @@ components:
         qualityMeta:
           type: ["object", "null"]
           description: "On-device quality signals (brightness/sharpness/coverage). Opaque JSON."
+        notes:
+          type: ["string", "null"]
+          description: "Notes entered at capture time — stored on the permanent interaction record."
 
     CaptureFields:
       type: object
@@ -10063,6 +10158,90 @@ components:
         isDecisionMaker:
           type: boolean
           description: "Deterministic seniority/job-title heuristic (C-Level/VP/Director or equivalent)."
+
+    Interaction:
+      type: object
+      required: [id, companyId, occurredAt]
+      description: >-
+        A permanent, immutable record of one capture/interaction with a contact (business-card
+        scan, QR, vCard, NFC, manual entry, import). Anchored on the scans table.
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        contactId:
+          type: ["integer", "null"]
+        userId:
+          type: ["integer", "null"]
+        userName:
+          type: ["string", "null"]
+        eventId:
+          type: ["integer", "null"]
+        eventName:
+          type: ["string", "null"]
+        captureSource:
+          type: ["string", "null"]
+          description: camera | qr | vcard | digital_card | email_signature | nfc | manual | import
+        extractionMethod:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        latitude:
+          type: ["number", "null"]
+        longitude:
+          type: ["number", "null"]
+        gpsAccuracy:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        aiSummary:
+          type: ["string", "null"]
+        ocrData:
+          description: Extracted OCR fields captured at scan time (null for manual entries).
+        occurredAt:
+          type: string
+          format: date-time
+
+    InteractionList:
+      type: object
+      required: [interactions, total]
+      properties:
+        interactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        total:
+          type: integer
+
+    ExistingContactFound:
+      type: object
+      required: [code, message, contact, matches, previousEvents, interactionCount]
+      description: >-
+        Returned (409) by POST /contacts when a high-confidence existing contact is detected
+        and no explicit dedupeResolution was provided. Never auto-merges; the human decides.
+      properties:
+        code:
+          type: string
+          enum: [existing_contact_found]
+        message:
+          type: string
+        contact:
+          $ref: "#/components/schemas/Contact"
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactMatch"
+        previousEvents:
+          type: array
+          items:
+            type: string
+          description: Names of events/exhibitions where this contact was previously captured.
+        interactionCount:
+          type: integer
+        lastInteractionDate:
+          type: ["string", "null"]
+          format: date-time
 
     OrganizationMatch:
       type: object

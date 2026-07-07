@@ -36,6 +36,7 @@ import {
   getBaseUrl,
   getGetContactQueryKey,
   getListUsersQueryKey,
+  type Interaction,
   type MeetingInputType,
   useCreateFollowUp,
   useCreateMeeting,
@@ -43,6 +44,7 @@ import {
   useDeleteContact,
   useGetContact,
   useGetContactStatusHistory,
+  useListContactInteractions,
   useListLeads,
   useListUsers,
   useUpdateContact,
@@ -147,6 +149,7 @@ export default function ContactDetailScreen() {
   });
   const deleteContact = useDeleteContact();
   const historyQuery = useGetContactStatusHistory(contactId);
+  const interactionsQuery = useListContactInteractions(contactId);
   const leadsQuery = useListLeads({ contactId, limit: 100 });
   const createFollowUp = useCreateFollowUp();
   const createMeeting = useCreateMeeting();
@@ -237,6 +240,7 @@ export default function ContactDetailScreen() {
 
   const contact = query.data;
   const history = historyQuery.data?.history ?? [];
+  const interactions = interactionsQuery.data?.interactions ?? [];
 
   async function handleShare() {
     if (!contact) return;
@@ -843,6 +847,22 @@ export default function ContactDetailScreen() {
             </Section>
           ) : null}
 
+          {/* Interaction history — permanent record of every capture with this
+              contact (business-card scan, QR, manual entry, etc.). Read-only. */}
+          {interactions.length > 0 ? (
+            <Section title={t("contacts.sectionInteractions")}>
+              <View style={{ padding: 8, gap: 14 }}>
+                {interactions.map((it, idx) => (
+                  <InteractionRow
+                    key={it.id}
+                    interaction={it}
+                    isLast={idx === interactions.length - 1}
+                  />
+                ))}
+              </View>
+            </Section>
+          ) : null}
+
           {/* Documents */}
           <View style={{ marginTop: 24 }}>
             <View
@@ -1308,6 +1328,70 @@ function DetailRow({
   );
 }
 
+const CAPTURE_SOURCE_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
+  camera: "camera",
+  qr: "grid",
+  vcard: "credit-card",
+  digital_card: "smartphone",
+  email_signature: "mail",
+  nfc: "wifi",
+  manual: "edit-3",
+  import: "upload",
+};
+
+function InteractionRow({
+  interaction,
+  isLast,
+}: {
+  interaction: Interaction;
+  isLast: boolean;
+}) {
+  const colors = useColors();
+  const { t, isRTL } = useLocale();
+  const source = interaction.captureSource ?? "manual";
+  const icon = CAPTURE_SOURCE_ICONS[source] ?? "activity";
+  const sourceLabel = t(`contacts.captureSources.${source}`, {
+    defaultValue: prettyLabel(source),
+  });
+  const meta = [
+    formatHistoryDate(interaction.occurredAt),
+    interaction.userName || undefined,
+    interaction.eventName || undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <View style={[styles.historyRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+      <View style={styles.historyTimeline}>
+        <View style={[styles.interactionIcon, { backgroundColor: colors.accent }]}>
+          <Feather name={icon} size={12} color={colors.primary} />
+        </View>
+        {!isLast ? (
+          <View style={[styles.historyLine, { backgroundColor: colors.border }]} />
+        ) : null}
+      </View>
+      <View style={{ flex: 1, paddingBottom: 2 }}>
+        <Text style={[styles.historyStatus, { color: colors.foreground }]}>
+          {sourceLabel}
+        </Text>
+        <Text style={[styles.historyMeta, { color: colors.mutedForeground }]}>
+          {meta}
+        </Text>
+        {interaction.aiSummary ? (
+          <Text style={[styles.historyComment, { color: colors.mutedForeground }]}>
+            {interaction.aiSummary}
+          </Text>
+        ) : interaction.notes ? (
+          <Text style={[styles.historyComment, { color: colors.mutedForeground }]}>
+            {interaction.notes}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   hero: {
     alignItems: "center",
@@ -1473,6 +1557,13 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     marginTop: 3,
+  },
+  interactionIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
   historyLine: {
     flex: 1,

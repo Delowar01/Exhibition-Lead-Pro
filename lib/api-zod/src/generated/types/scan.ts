@@ -72,5 +72,26 @@ export interface Scan {
      * @nullable
      */
   qualityMeta?: ScanQualityMeta;
+  /**
+     * Event/exhibition where this capture (interaction) happened.
+     * @nullable
+     */
+  eventId?: number | null;
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
+  /**
+     * Notes entered at capture time (part of the permanent interaction record).
+     * @nullable
+     */
+  notes?: string | null;
+  /**
+     * Optional AI summary of the interaction.
+     * @nullable
+     */
+  aiSummary?: string | null;
   createdAt: Date;
 }

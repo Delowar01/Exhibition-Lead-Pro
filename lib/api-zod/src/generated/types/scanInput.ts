@@ -37,4 +37,9 @@ export interface ScanInput {
      * @nullable
      */
   qualityMeta?: ScanInputQualityMeta;
+  /**
+     * Notes entered at capture time — stored on the permanent interaction record.
+     * @nullable
+     */
+  notes?: string | null;
 }

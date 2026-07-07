@@ -134,6 +134,7 @@ import type {
   ExecutiveSummary,
   ExecutiveSummaryGenerateRequest,
   ExecutiveSummaryListResponse,
+  ExistingContactFound,
   ExportCreateInput,
   ExportDownloadResponse,
   ExportRunList,
@@ -173,6 +174,7 @@ import type {
   ImportPreviewResult,
   ImportValidateInput,
   ImportValidateResult,
+  InteractionList,
   InvitationListResponse,
   InvitationResponse,
   Lead,
@@ -4354,7 +4356,7 @@ export const createContact = async (contactInput: ContactInput, options?: Reques
 
 
 
-export const getCreateContactMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateContactMutationOptions = <TError = ErrorType<ExistingContactFound>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContact>>, TError,{data: BodyType<ContactInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createContact>>, TError,{data: BodyType<ContactInput>}, TContext> => {
 
@@ -4383,12 +4385,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateContactMutationResult = NonNullable<Awaited<ReturnType<typeof createContact>>>
     export type CreateContactMutationBody = BodyType<ContactInput>
-    export type CreateContactMutationError = ErrorType<unknown>
+    export type CreateContactMutationError = ErrorType<ExistingContactFound>
 
     /**
  * @summary Create contact
  */
-export const useCreateContact = <TError = ErrorType<unknown>,
+export const useCreateContact = <TError = ErrorType<ExistingContactFound>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContact>>, TError,{data: BodyType<ContactInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createContact>>,
@@ -8517,6 +8519,83 @@ export const useAutoAssignLead = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getAutoAssignLeadMutationOptions(options));
     }
+
+export const getListContactInteractionsUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/interactions`
+}
+
+/**
+ * @summary List the permanent interaction (capture) history for a contact
+ */
+export const listContactInteractions = async (id: number, options?: RequestInit): Promise<InteractionList> => {
+
+  return customFetch<InteractionList>(getListContactInteractionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListContactInteractionsQueryKey = (id: number,) => {
+    return [
+    `/api/contacts/${id}/interactions`
+    ] as const;
+    }
+
+
+export const getListContactInteractionsQueryOptions = <TData = Awaited<ReturnType<typeof listContactInteractions>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactInteractions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListContactInteractionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listContactInteractions>>> = ({ signal }) => listContactInteractions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listContactInteractions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListContactInteractionsQueryResult = NonNullable<Awaited<ReturnType<typeof listContactInteractions>>>
+export type ListContactInteractionsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List the permanent interaction (capture) history for a contact
+ */
+
+export function useListContactInteractions<TData = Awaited<ReturnType<typeof listContactInteractions>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactInteractions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListContactInteractionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetContactTimelineUrl = (id: number,) => {
 

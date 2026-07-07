@@ -32,6 +32,7 @@ An enterprise SaaS platform for business card scanning and lead management. Two 
 - `artifacts/web-app/src/pages/platform/` — Platform Owner portal pages
 - `artifacts/web-app/src/pages/admin/` — Company Admin portal pages
 - `artifacts/web-app/src/contexts/AuthContext.tsx` — auth state management
+- Contact vs Interaction model (every capture = permanent interaction on `scans`; weighted dedupe + human-in-the-loop 409 flow): **[docs/interaction-model.md](docs/interaction-model.md)**
 
 ## Roadmap & direction (long-term, per owner directive July 2026)
 

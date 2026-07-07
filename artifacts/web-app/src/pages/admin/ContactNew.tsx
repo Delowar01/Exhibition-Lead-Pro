@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -8,10 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useCreateContact, useListCrmOrganizations, ContactStatus } from "@workspace/api-client-react";
+import { useCreateContact, useListCrmOrganizations, ContactStatus, ApiError } from "@workspace/api-client-react";
+import type { ContactInput, ExistingContactFound } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChevronLeft } from "lucide-react";
+import { ExistingContactDialog } from "@/components/ExistingContactDialog";
 
 const contactSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -51,24 +53,64 @@ export default function AdminContactNew() {
     },
   });
 
-  const onSubmit = (data: ContactForm) => {
-    const { organizationId, ...rest } = data;
-    const payload = {
-      ...rest,
-      organizationId: organizationId && organizationId !== NONE ? Number(organizationId) : null,
-    };
+  const [pendingPayload, setPendingPayload] = useState<ContactInput | null>(null);
+  const [existingContact, setExistingContact] = useState<ExistingContactFound | null>(null);
+  const [dedupeDialogOpen, setDedupeDialogOpen] = useState(false);
+
+  const submitPayload = (
+    payload: ContactInput,
+    opts?: { onSuccessSeparate?: boolean }
+  ) => {
     createContact.mutate({ data: payload }, {
       onSuccess: (res) => {
-        toast({ title: "Contact created successfully" });
+        setDedupeDialogOpen(false);
+        toast({
+          title: opts?.onSuccessSeparate
+            ? "Interaction added"
+            : "Contact created successfully",
+        });
         setLocation(`/admin/contacts/${res.id}`);
       },
-      onError: () => {
+      onError: (err) => {
+        if (
+          !payload.dedupeResolution &&
+          err instanceof ApiError &&
+          err.status === 409 &&
+          (err.data as ExistingContactFound | null)?.code === "existing_contact_found"
+        ) {
+          setExistingContact(err.data as ExistingContactFound);
+          setDedupeDialogOpen(true);
+          return;
+        }
         toast({
           variant: "destructive",
           title: "Failed to create contact",
         });
       }
     });
+  };
+
+  const onSubmit = (data: ContactForm) => {
+    const { organizationId, ...rest } = data;
+    const payload: ContactInput = {
+      ...rest,
+      organizationId: organizationId && organizationId !== NONE ? Number(organizationId) : null,
+    };
+    setPendingPayload(payload);
+    submitPayload(payload);
+  };
+
+  const handleAddInteraction = (matchedContactId: number) => {
+    if (!pendingPayload) return;
+    submitPayload(
+      { ...pendingPayload, dedupeResolution: "add_interaction", matchedContactId },
+      { onSuccessSeparate: true }
+    );
+  };
+
+  const handleCreateSeparate = () => {
+    if (!pendingPayload) return;
+    submitPayload({ ...pendingPayload, dedupeResolution: "create_separate" });
   };
 
   return (
@@ -166,6 +208,16 @@ export default function AdminContactNew() {
           </form>
         </CardContent>
       </Card>
+
+      <ExistingContactDialog
+        data={existingContact}
+        open={dedupeDialogOpen}
+        onOpenChange={setDedupeDialogOpen}
+        submitting={createContact.isPending}
+        onAddInteraction={handleAddInteraction}
+        onCreateSeparate={handleCreateSeparate}
+        onReview={(cid) => setLocation(`/admin/contacts/${cid}`)}
+      />
     </div>
   );
 }

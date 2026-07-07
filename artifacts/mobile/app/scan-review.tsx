@@ -7,8 +7,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -21,9 +23,11 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  ApiError,
   type CaptureAnalysis,
   type CaptureFields,
   type ContactMatch,
+  type ExistingContactFound,
   type ExtractedCardData,
   type ExtractedCardOriginal,
   type FieldValidation,
@@ -50,6 +54,7 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { formatGregorian } from "@/lib/date";
 
 function parseNum(v?: string): number | null {
   if (!v) return null;
@@ -136,6 +141,14 @@ export default function ScanReviewScreen() {
   const replaceImage = useReplaceScanImage();
   const [scorePreview, setScorePreview] = useState<LeadScorePreview | null>(null);
   const [formKey, setFormKey] = useState(0);
+  // Human-in-the-loop duplicate resolution. When the server responds 409
+  // existing_contact_found it NEVER auto-merges — we surface the existing
+  // contact and let the user decide (add interaction / create separate /
+  // review existing). The submitted payload is retained so the chosen
+  // resolution can be replayed with an explicit dedupeResolution.
+  const [existingMatch, setExistingMatch] = useState<ExistingContactFound | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   // Build the contact-form value object from OCR extraction. Used to seed the
   // form and to reset it after reprocess/replace.
@@ -350,6 +363,9 @@ export default function ScanReviewScreen() {
       longitude: gps.longitude,
       gpsAccuracy: gps.gpsAccuracy,
       cardImageUrl: params.scanId ? `/api/scans/${params.scanId}/image` : null,
+      // Link the originating scan so the created (or matched) contact records
+      // this capture as a permanent interaction.
+      scanId: scanId || undefined,
     };
     if (!isOnline) {
       const label =
@@ -370,12 +386,72 @@ export default function ScanReviewScreen() {
     try {
       await createContact.mutateAsync({ data: payload });
       router.replace("/contacts");
-    } catch {
-      // mutation error surfaced via createContact.isError below
+    } catch (err) {
+      // A high-confidence existing contact was detected. The server does NOT
+      // merge — surface the match and let the user resolve it explicitly.
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        (err.data as ExistingContactFound | undefined)?.code === "existing_contact_found"
+      ) {
+        setPendingPayload(payload);
+        setExistingMatch(err.data as ExistingContactFound);
+        return;
+      }
+      // Other errors surfaced via createContact.isError below.
     }
   }
 
+  // Record this capture as a new interaction on the already-existing contact
+  // (no duplicate created). Explicit human decision — never automatic.
+  async function resolveAddInteraction() {
+    if (!pendingPayload || !existingMatch) return;
+    const targetId = existingMatch.contact.id;
+    setResolving(true);
+    try {
+      await createContact.mutateAsync({
+        data: {
+          ...pendingPayload,
+          dedupeResolution: "add_interaction",
+          matchedContactId: targetId,
+        },
+      });
+      setExistingMatch(null);
+      router.replace(`/contact/${targetId}`);
+    } catch {
+      // surfaced via createContact.isError
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  // Force creation of a separate contact (manual override) despite the match.
+  async function resolveCreateSeparate() {
+    if (!pendingPayload) return;
+    setResolving(true);
+    try {
+      await createContact.mutateAsync({
+        data: { ...pendingPayload, dedupeResolution: "create_separate" },
+      });
+      setExistingMatch(null);
+      router.replace("/contacts");
+    } catch {
+      // surfaced via createContact.isError
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  // Open the existing contact so the user can inspect it before deciding.
+  function reviewExisting() {
+    if (!existingMatch) return;
+    const targetId = existingMatch.contact.id;
+    setExistingMatch(null);
+    router.push(`/contact/${targetId}`);
+  }
+
   return (
+    <>
     <KeyboardAwareScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{
@@ -668,6 +744,194 @@ export default function ScanReviewScreen() {
         onChange={setFormValues}
       />
     </KeyboardAwareScrollView>
+
+    <ExistingContactDialog
+      match={existingMatch}
+      resolving={resolving}
+      onAddInteraction={resolveAddInteraction}
+      onCreateSeparate={resolveCreateSeparate}
+      onReviewExisting={reviewExisting}
+      onClose={() => setExistingMatch(null)}
+    />
+    </>
+  );
+}
+
+/**
+ * Human-in-the-loop duplicate resolution sheet. Shown when POST /contacts
+ * returns 409 existing_contact_found. Presents the existing contact and its
+ * interaction history, then lets the user explicitly choose how to proceed —
+ * NEVER auto-merges or auto-links.
+ */
+function ExistingContactDialog({
+  match,
+  resolving,
+  onAddInteraction,
+  onCreateSeparate,
+  onReviewExisting,
+  onClose,
+}: {
+  match: ExistingContactFound | null;
+  resolving: boolean;
+  onAddInteraction: () => void;
+  onCreateSeparate: () => void;
+  onReviewExisting: () => void;
+  onClose: () => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { t, isRTL, textAlign } = useLocale();
+
+  const contact = match?.contact;
+  const name =
+    contact?.fullName ||
+    [contact?.firstName, contact?.lastName].filter(Boolean).join(" ") ||
+    t("common.unnamedContact");
+  const subtitle = [contact?.jobTitle, contact?.contactCompany]
+    .filter(Boolean)
+    .join(" · ");
+  const lastDate = match?.lastInteractionDate
+    ? formatGregorian(new Date(match.lastInteractionDate), {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : null;
+  const rowDir = isRTL ? "row-reverse" : "row";
+
+  return (
+    <Modal
+      visible={!!match}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      hardwareAccelerated
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.dialogBackdrop} onPress={resolving ? undefined : onClose}>
+        <Pressable
+          style={[
+            styles.dialogSheet,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              paddingBottom: insets.bottom + 16,
+            },
+          ]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View style={styles.dialogHandle}>
+            <View style={[styles.dialogHandleBar, { backgroundColor: colors.border }]} />
+          </View>
+
+          <View style={[styles.dialogHeader, { flexDirection: rowDir }]}>
+            <Feather name="users" size={18} color={colors.primary} />
+            <Text style={[styles.dialogTitle, { color: colors.foreground, textAlign }]}>
+              {t("scanReview.existingContact.title")}
+            </Text>
+          </View>
+          <Text style={[styles.dialogMessage, { color: colors.mutedForeground, textAlign }]}>
+            {t("scanReview.existingContact.message")}
+          </Text>
+
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            <View
+              style={[
+                styles.dialogContactCard,
+                { backgroundColor: colors.background, borderColor: colors.border, borderRadius: colors.radius },
+              ]}
+            >
+              <Text style={[styles.dialogContactName, { color: colors.foreground, textAlign }]}>
+                {name}
+              </Text>
+              {subtitle ? (
+                <Text style={[styles.dialogContactSub, { color: colors.mutedForeground, textAlign }]}>
+                  {subtitle}
+                </Text>
+              ) : null}
+              {contact?.email ? (
+                <Text style={[styles.dialogContactSub, { color: colors.mutedForeground, textAlign }]}>
+                  {contact.email}
+                </Text>
+              ) : null}
+              {contact?.mobile ? (
+                <Text style={[styles.dialogContactSub, { color: colors.mutedForeground, textAlign }]}>
+                  {contact.mobile}
+                </Text>
+              ) : null}
+
+              <View style={[styles.dialogStatRow, { flexDirection: rowDir }]}>
+                <Feather name="repeat" size={13} color={colors.mutedForeground} />
+                <Text style={[styles.dialogStatText, { color: colors.foreground, textAlign }]}>
+                  {t("scanReview.existingContact.interactionCount", {
+                    count: match?.interactionCount ?? 0,
+                  })}
+                </Text>
+              </View>
+
+              {lastDate ? (
+                <View style={[styles.dialogStatRow, { flexDirection: rowDir }]}>
+                  <Feather name="clock" size={13} color={colors.mutedForeground} />
+                  <Text style={[styles.dialogStatText, { color: colors.foreground, textAlign }]}>
+                    {t("scanReview.existingContact.lastInteraction", { date: lastDate })}
+                  </Text>
+                </View>
+              ) : null}
+
+              {match?.previousEvents?.length ? (
+                <View style={[styles.dialogStatRow, { flexDirection: rowDir, alignItems: "flex-start" }]}>
+                  <Feather name="calendar" size={13} color={colors.mutedForeground} style={{ marginTop: 2 }} />
+                  <Text style={[styles.dialogStatText, { color: colors.foreground, textAlign, flex: 1 }]}>
+                    {t("scanReview.existingContact.previousEvents")}:{" "}
+                    {match.previousEvents.join("، ")}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </ScrollView>
+
+          <Pressable
+            disabled={resolving}
+            onPress={onAddInteraction}
+            style={[styles.dialogPrimaryBtn, { backgroundColor: colors.primary, opacity: resolving ? 0.6 : 1 }]}
+          >
+            {resolving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.dialogPrimaryBtnText}>
+                {t("scanReview.existingContact.addInteraction")}
+              </Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            disabled={resolving}
+            onPress={onReviewExisting}
+            style={[
+              styles.dialogSecondaryBtn,
+              { borderColor: colors.border, opacity: resolving ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[styles.dialogSecondaryBtnText, { color: colors.foreground }]}>
+              {t("scanReview.existingContact.reviewExisting")}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            disabled={resolving}
+            onPress={onCreateSeparate}
+            style={[
+              styles.dialogSecondaryBtn,
+              { borderColor: colors.border, opacity: resolving ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[styles.dialogSecondaryBtnText, { color: colors.foreground }]}>
+              {t("scanReview.existingContact.createSeparate")}
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1470,5 +1734,88 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontFamily: FONT.medium,
+  },
+  dialogBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  dialogSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  dialogHandle: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  dialogHandleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+  },
+  dialogHeader: {
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  dialogTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontFamily: FONT.bold,
+  },
+  dialogMessage: {
+    fontSize: 13.5,
+    fontFamily: FONT.regular,
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  dialogContactCard: {
+    borderWidth: 1,
+    padding: 14,
+    gap: 6,
+  },
+  dialogContactName: {
+    fontSize: 16,
+    fontFamily: FONT.semibold,
+  },
+  dialogContactSub: {
+    fontSize: 13.5,
+    fontFamily: FONT.regular,
+  },
+  dialogStatRow: {
+    alignItems: "center",
+    gap: 8,
+    marginTop: 2,
+  },
+  dialogStatText: {
+    fontSize: 13,
+    fontFamily: FONT.medium,
+  },
+  dialogPrimaryBtn: {
+    marginTop: 16,
+    height: 52,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dialogPrimaryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontFamily: FONT.semibold,
+  },
+  dialogSecondaryBtn: {
+    marginTop: 10,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dialogSecondaryBtnText: {
+    fontSize: 15,
+    fontFamily: FONT.semibold,
   },
 });

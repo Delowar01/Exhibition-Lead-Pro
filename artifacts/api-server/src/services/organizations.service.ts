@@ -6,6 +6,7 @@ import * as leadsRepo from "../repositories/leads.repository.js";
 import * as eventsRepo from "../repositories/events.repository.js";
 import * as notesRepo from "../repositories/lead_notes.repository.js";
 import * as docsRepo from "../repositories/documents.repository.js";
+import * as scansRepo from "../repositories/scans.repository.js";
 import { enrichContactRows } from "./contacts.service.js";
 import { enrichLeads } from "./leads.service.js";
 import { formatNote } from "./lead_notes.service.js";
@@ -67,7 +68,18 @@ export async function listOrganizations(user: AuthUser, params: ListOrganization
 export async function getOrganization(user: AuthUser, id: number) {
   const o = await orgRepo.findById(user, id);
   if (!o) throw new AppError(404, "Organization not found");
-  return enrich(o);
+  const base = await enrich(o);
+  // Interaction-model stats (detail view only): how often, where, and with whom
+  // this organization's people were captured — derived from real scan records.
+  const contactIds = await orgRepo.contactIds(user, id);
+  const stats = await scansRepo.orgInteractionStats(o.companyId, contactIds);
+  return {
+    ...base,
+    interactionCount: stats.interactionCount,
+    eventsAttended: stats.eventsAttended,
+    lastInteractionDate: stats.lastInteractionDate,
+    recentEmployeesMet: stats.recentEmployeesMet,
+  };
 }
 
 export interface OrganizationInput {

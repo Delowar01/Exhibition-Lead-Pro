@@ -49,3 +49,4 @@
 - [Scope privacy on persisted per-scope AI artifacts](exec-scope-privacy-persisted-artifacts.md) — a read-scope entitlement must gate EVERY read/get/lifecycle path (not just list), else a view-only employee fetches/mutates a company-wide row by guessed id.
 - [Background job AuthUser rebuild](background-job-authuser.md) — async workers must rebuild the full AuthUser via loadAuthUserById; a partial {id,companyId,role} breaks tenant-scoped reads (accessibleCompanies.length).
 - [Workflow alert dedup & deep links](workflow-alert-dedup.md) — daily digest sweeps need pg_advisory_xact_lock around check+insert; notification links must match real client routes (assert in tests).
+- [Interaction model & dedupe](interaction-model-dedupe.md) — every contact create writes a scans interaction row; scan enumerators must filter synthetic rows; POST /contacts 409 flow never auto-merges; contact soft-delete keeps scans.contactId.

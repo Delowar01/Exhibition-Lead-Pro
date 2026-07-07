@@ -11,7 +11,11 @@ import type {
   CaptureAnalysis,
   CaptureFields,
   Scan,
+  ContactInput,
+  ExistingContactFound,
 } from "@workspace/api-client-react";
+import { ApiError } from "@workspace/api-client-react";
+import { ExistingContactDialog } from "@/components/ExistingContactDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -450,25 +454,84 @@ export default function AdminScan() {
     reader.readAsDataURL(file);
   };
 
+  const [existingContact, setExistingContact] = useState<ExistingContactFound | null>(null);
+  const [dedupeDialogOpen, setDedupeDialogOpen] = useState(false);
+
+  const buildContactPayload = (
+    resolution?: "add_interaction" | "create_separate",
+    matchedContactId?: number
+  ): ContactInput => {
+    const payload: ContactInput = {
+      ...scannedData,
+      cardImageUrl: cardImage,
+      scanId: scanId ?? undefined,
+    };
+    if (resolution) payload.dedupeResolution = resolution;
+    if (matchedContactId != null) payload.matchedContactId = matchedContactId;
+    return payload;
+  };
+
+  const saveContactSuccess = (res: { id: number; firstName?: string | null; lastName?: string | null }) => {
+    toast({
+      title: "Contact saved",
+      description: `${res.firstName ?? ""} ${res.lastName ?? ""} added to CRM.`.trim(),
+    });
+    setLocation(`/admin/contacts/${res.id}`);
+  };
+
   const handleSaveContact = () => {
     if (!scannedData) return;
 
     createContact.mutate(
-      { data: { ...scannedData, cardImageUrl: cardImage } },
+      { data: buildContactPayload() },
       {
-        onSuccess: (res) => {
-          toast({
-            title: "Contact saved",
-            description: `${res.firstName ?? ""} ${res.lastName ?? ""} added to CRM.`.trim(),
-          });
-          setLocation(`/admin/contacts/${res.id}`);
-        },
-        onError: () => {
+        onSuccess: saveContactSuccess,
+        onError: (err) => {
+          if (
+            err instanceof ApiError &&
+            err.status === 409 &&
+            (err.data as ExistingContactFound | null)?.code === "existing_contact_found"
+          ) {
+            setExistingContact(err.data as ExistingContactFound);
+            setDedupeDialogOpen(true);
+            return;
+          }
           toast({
             variant: "destructive",
             title: "Failed to save",
             description: "Could not save the contact.",
           });
+        },
+      }
+    );
+  };
+
+  const handleAddInteraction = (matchedContactId: number) => {
+    createContact.mutate(
+      { data: buildContactPayload("add_interaction", matchedContactId) },
+      {
+        onSuccess: (res) => {
+          setDedupeDialogOpen(false);
+          toast({ title: "Interaction added", description: "The capture was linked to the existing contact." });
+          setLocation(`/admin/contacts/${res.id}`);
+        },
+        onError: () => {
+          toast({ variant: "destructive", title: "Failed to add interaction", description: "Could not link the capture." });
+        },
+      }
+    );
+  };
+
+  const handleCreateSeparate = () => {
+    createContact.mutate(
+      { data: buildContactPayload("create_separate") },
+      {
+        onSuccess: (res) => {
+          setDedupeDialogOpen(false);
+          saveContactSuccess(res);
+        },
+        onError: () => {
+          toast({ variant: "destructive", title: "Failed to save", description: "Could not save the contact." });
         },
       }
     );
@@ -1113,6 +1176,16 @@ export default function AdminScan() {
           100% { top: 100%; opacity: 0; }
         }
       `}} />
+
+      <ExistingContactDialog
+        data={existingContact}
+        open={dedupeDialogOpen}
+        onOpenChange={setDedupeDialogOpen}
+        submitting={createContact.isPending}
+        onAddInteraction={handleAddInteraction}
+        onCreateSeparate={handleCreateSeparate}
+        onReview={(cid) => setLocation(`/admin/contacts/${cid}`)}
+      />
     </div>
   );
 }

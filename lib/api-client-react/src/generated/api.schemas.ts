@@ -726,6 +726,16 @@ export const CrmOrganizationStatus = {
   archived: 'archived',
 } as const;
 
+export type CrmOrganizationRecentEmployeesMetItem = {
+  contactId: number;
+  /** @nullable */
+  fullName?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  /** @nullable */
+  lastInteractionDate?: string | null;
+};
+
 export interface CrmOrganization {
   id: number;
   companyId: number;
@@ -750,6 +760,14 @@ export interface CrmOrganization {
   contactCount: number;
   leadCount: number;
   openLeadValue?: number;
+  /** Total interactions (captures) recorded across this organization's contacts. */
+  interactionCount?: number;
+  /** Distinct events where this organization's contacts were captured. */
+  eventsAttended?: number;
+  /** @nullable */
+  lastInteractionDate?: string | null;
+  /** This organization's people most recently interacted with. */
+  recentEmployeesMet?: CrmOrganizationRecentEmployeesMetItem[];
   createdAt: string;
 }
 
@@ -1446,6 +1464,18 @@ export const ContactInputStatus = {
   archived: 'archived',
 } as const;
 
+/**
+ * Explicit human resolution when a probable existing contact is detected. Omitted → the server responds 409 with ExistingContactFound when a high-confidence match exists (no contact is created). "add_interaction" records the capture as a new interaction on the matched contact instead of creating a duplicate. "create_separate" forces creation of a separate contact (manual override). No automatic merging or linking ever occurs.
+ * @nullable
+ */
+export type ContactInputDedupeResolution = typeof ContactInputDedupeResolution[keyof typeof ContactInputDedupeResolution] | null;
+
+
+export const ContactInputDedupeResolution = {
+  add_interaction: 'add_interaction',
+  create_separate: 'create_separate',
+} as const;
+
 export interface ContactInput {
   /** @nullable */
   firstName?: string | null;
@@ -1499,6 +1529,21 @@ export interface ContactInput {
   organizationId?: number | null;
   /** @nullable */
   cardImageUrl?: string | null;
+  /**
+     * The scan (interaction) this contact is being created from. When set, the scan is permanently linked to the created (or matched) contact as an interaction record.
+     * @nullable
+     */
+  scanId?: number | null;
+  /**
+     * Explicit human resolution when a probable existing contact is detected. Omitted → the server responds 409 with ExistingContactFound when a high-confidence match exists (no contact is created). "add_interaction" records the capture as a new interaction on the matched contact instead of creating a duplicate. "create_separate" forces creation of a separate contact (manual override). No automatic merging or linking ever occurs.
+     * @nullable
+     */
+  dedupeResolution?: ContactInputDedupeResolution;
+  /**
+     * Required with dedupeResolution=add_interaction — the existing contact to attach the interaction to.
+     * @nullable
+     */
+  matchedContactId?: number | null;
 }
 
 export type ContactUpdateStatus = typeof ContactUpdateStatus[keyof typeof ContactUpdateStatus];
@@ -2579,6 +2624,27 @@ export interface Scan {
      * @nullable
      */
   qualityMeta?: ScanQualityMeta;
+  /**
+     * Event/exhibition where this capture (interaction) happened.
+     * @nullable
+     */
+  eventId?: number | null;
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
+  /**
+     * Notes entered at capture time (part of the permanent interaction record).
+     * @nullable
+     */
+  notes?: string | null;
+  /**
+     * Optional AI summary of the interaction.
+     * @nullable
+     */
+  aiSummary?: string | null;
   createdAt: string;
 }
 
@@ -2649,6 +2715,11 @@ export interface ScanInput {
      * @nullable
      */
   qualityMeta?: ScanInputQualityMeta;
+  /**
+     * Notes entered at capture time — stored on the permanent interaction record.
+     * @nullable
+     */
+  notes?: string | null;
 }
 
 /**
@@ -2750,6 +2821,73 @@ export interface ContactMatch {
   isCustomer?: boolean;
   /** Deterministic seniority/job-title heuristic (C-Level/VP/Director or equivalent). */
   isDecisionMaker?: boolean;
+}
+
+/**
+ * A permanent, immutable record of one capture/interaction with a contact (business-card scan, QR, vCard, NFC, manual entry, import). Anchored on the scans table.
+ */
+export interface Interaction {
+  id: number;
+  companyId: number;
+  /** @nullable */
+  contactId?: number | null;
+  /** @nullable */
+  userId?: number | null;
+  /** @nullable */
+  userName?: string | null;
+  /** @nullable */
+  eventId?: number | null;
+  /** @nullable */
+  eventName?: string | null;
+  /**
+     * camera | qr | vcard | digital_card | email_signature | nfc | manual | import
+     * @nullable
+     */
+  captureSource?: string | null;
+  /** @nullable */
+  extractionMethod?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  /** @nullable */
+  gpsAccuracy?: number | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  aiSummary?: string | null;
+  /** Extracted OCR fields captured at scan time (null for manual entries). */
+  ocrData?: unknown;
+  occurredAt: string;
+}
+
+export interface InteractionList {
+  interactions: Interaction[];
+  total: number;
+}
+
+export type ExistingContactFoundCode = typeof ExistingContactFoundCode[keyof typeof ExistingContactFoundCode];
+
+
+export const ExistingContactFoundCode = {
+  existing_contact_found: 'existing_contact_found',
+} as const;
+
+/**
+ * Returned (409) by POST /contacts when a high-confidence existing contact is detected and no explicit dedupeResolution was provided. Never auto-merges; the human decides.
+ */
+export interface ExistingContactFound {
+  code: ExistingContactFoundCode;
+  message: string;
+  contact: Contact;
+  matches: ContactMatch[];
+  /** Names of events/exhibitions where this contact was previously captured. */
+  previousEvents: string[];
+  interactionCount: number;
+  /** @nullable */
+  lastInteractionDate?: string | null;
 }
 
 export type OrganizationMatchMatchType = typeof OrganizationMatchMatchType[keyof typeof OrganizationMatchMatchType];

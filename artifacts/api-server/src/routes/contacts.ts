@@ -18,9 +18,11 @@ router.get("/contacts", async (req: AuthRequest, res) => {
   res.json(await contacts.listContacts(req.user!, req.query as contacts.ListContactsParams));
 });
 
-// POST /contacts
+// POST /contacts — 201 on create/attach; 409 (existing_contact_found) when a
+// high-confidence duplicate is detected and no explicit resolution was provided.
 router.post("/contacts", requirePermission("contacts", "create"), validateBody(CreateContactBody), async (req: AuthRequest, res) => {
-  res.status(201).json(await contacts.createContact(req.user!, req.body ?? {}));
+  const result = await contacts.createContact(req.user!, req.body ?? {});
+  res.status(result.status).json(result.body);
 });
 
 // GET /contacts/stats
@@ -86,6 +88,11 @@ router.post("/contacts/:id/enrich", requirePermission("contacts", "edit"), async
 // GET /contacts/:id/status-history — lead status change history
 router.get("/contacts/:id/status-history", async (req: AuthRequest, res) => {
   res.json(await contacts.statusHistory(req.user!, parseInt(String(req.params.id))));
+});
+
+// GET /contacts/:id/interactions — permanent interaction (capture) history
+router.get("/contacts/:id/interactions", async (req: AuthRequest, res) => {
+  res.json(await contacts.listContactInteractions(req.user!, parseInt(String(req.params.id))));
 });
 
 // GET /contacts/:id/timeline — aggregated activity + note timeline for the contact

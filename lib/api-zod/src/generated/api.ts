@@ -1195,7 +1195,10 @@ export const CreateContactBody = zod.object({
   "eventId": zod.number().nullish(),
   "assignedToId": zod.number().nullish(),
   "organizationId": zod.number().nullish(),
-  "cardImageUrl": zod.string().nullish()
+  "cardImageUrl": zod.string().nullish(),
+  "scanId": zod.number().nullish().describe('The scan (interaction) this contact is being created from. When set, the scan is permanently linked to the created (or matched) contact as an interaction record.'),
+  "dedupeResolution": zod.union([zod.literal('add_interaction'),zod.literal('create_separate'),zod.literal(null)]).nullish().describe('Explicit human resolution when a probable existing contact is detected. Omitted → the server responds 409 with ExistingContactFound when a high-confidence match exists (no contact is created). \"add_interaction\" records the capture as a new interaction on the matched contact instead of creating a duplicate. \"create_separate\" forces creation of a separate contact (manual override). No automatic merging or linking ever occurs.'),
+  "matchedContactId": zod.number().nullish().describe('Required with dedupeResolution=add_interaction — the existing contact to attach the interaction to.')
 })
 
 
@@ -2795,6 +2798,37 @@ export const AutoAssignLeadResponse = zod.object({
 
 
 /**
+ * @summary List the permanent interaction (capture) history for a contact
+ */
+export const ListContactInteractionsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListContactInteractionsResponse = zod.object({
+  "interactions": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
+  "captureSource": zod.string().nullish().describe('camera | qr | vcard | digital_card | email_signature | nfc | manual | import'),
+  "extractionMethod": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "notes": zod.string().nullish(),
+  "aiSummary": zod.string().nullish(),
+  "ocrData": zod.unknown().optional().describe('Extracted OCR fields captured at scan time (null for manual entries).'),
+  "occurredAt": zod.coerce.date()
+}).describe('A permanent, immutable record of one capture\/interaction with a contact (business-card scan, QR, vCard, NFC, manual entry, import). Anchored on the scans table.')),
+  "total": zod.number()
+})
+
+
+/**
  * @summary Unified customer timeline for a contact
  */
 export const GetContactTimelineParams = zod.object({
@@ -3155,6 +3189,15 @@ export const ListCrmOrganizationsResponse = zod.object({
   "contactCount": zod.number(),
   "leadCount": zod.number(),
   "openLeadValue": zod.number().optional(),
+  "interactionCount": zod.number().optional().describe('Total interactions (captures) recorded across this organization\'s contacts.'),
+  "eventsAttended": zod.number().optional().describe('Distinct events where this organization\'s contacts were captured.'),
+  "lastInteractionDate": zod.coerce.date().nullish(),
+  "recentEmployeesMet": zod.array(zod.object({
+  "contactId": zod.number(),
+  "fullName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "lastInteractionDate": zod.coerce.date().nullish()
+})).optional().describe('This organization\'s people most recently interacted with.'),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number(),
@@ -3205,6 +3248,15 @@ export const GetCrmOrganizationResponse = zod.object({
   "contactCount": zod.number(),
   "leadCount": zod.number(),
   "openLeadValue": zod.number().optional(),
+  "interactionCount": zod.number().optional().describe('Total interactions (captures) recorded across this organization\'s contacts.'),
+  "eventsAttended": zod.number().optional().describe('Distinct events where this organization\'s contacts were captured.'),
+  "lastInteractionDate": zod.coerce.date().nullish(),
+  "recentEmployeesMet": zod.array(zod.object({
+  "contactId": zod.number(),
+  "fullName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "lastInteractionDate": zod.coerce.date().nullish()
+})).optional().describe('This organization\'s people most recently interacted with.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -3245,6 +3297,15 @@ export const UpdateCrmOrganizationResponse = zod.object({
   "contactCount": zod.number(),
   "leadCount": zod.number(),
   "openLeadValue": zod.number().optional(),
+  "interactionCount": zod.number().optional().describe('Total interactions (captures) recorded across this organization\'s contacts.'),
+  "eventsAttended": zod.number().optional().describe('Distinct events where this organization\'s contacts were captured.'),
+  "lastInteractionDate": zod.coerce.date().nullish(),
+  "recentEmployeesMet": zod.array(zod.object({
+  "contactId": zod.number(),
+  "fullName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "lastInteractionDate": zod.coerce.date().nullish()
+})).optional().describe('This organization\'s people most recently interacted with.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -3285,6 +3346,15 @@ export const ArchiveCrmOrganizationResponse = zod.object({
   "contactCount": zod.number(),
   "leadCount": zod.number(),
   "openLeadValue": zod.number().optional(),
+  "interactionCount": zod.number().optional().describe('Total interactions (captures) recorded across this organization\'s contacts.'),
+  "eventsAttended": zod.number().optional().describe('Distinct events where this organization\'s contacts were captured.'),
+  "lastInteractionDate": zod.coerce.date().nullish(),
+  "recentEmployeesMet": zod.array(zod.object({
+  "contactId": zod.number(),
+  "fullName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "lastInteractionDate": zod.coerce.date().nullish()
+})).optional().describe('This organization\'s people most recently interacted with.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -3312,6 +3382,15 @@ export const RestoreCrmOrganizationResponse = zod.object({
   "contactCount": zod.number(),
   "leadCount": zod.number(),
   "openLeadValue": zod.number().optional(),
+  "interactionCount": zod.number().optional().describe('Total interactions (captures) recorded across this organization\'s contacts.'),
+  "eventsAttended": zod.number().optional().describe('Distinct events where this organization\'s contacts were captured.'),
+  "lastInteractionDate": zod.coerce.date().nullish(),
+  "recentEmployeesMet": zod.array(zod.object({
+  "contactId": zod.number(),
+  "fullName": zod.string().nullish(),
+  "jobTitle": zod.string().nullish(),
+  "lastInteractionDate": zod.coerce.date().nullish()
+})).optional().describe('This organization\'s people most recently interacted with.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -3916,6 +3995,12 @@ export const ListScansResponse = zod.object({
   "qualityMeta": zod.object({
 
 }).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
+  "eventId": zod.number().nullish().describe('Event\/exhibition where this capture (interaction) happened.'),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "notes": zod.string().nullish().describe('Notes entered at capture time (part of the permanent interaction record).'),
+  "aiSummary": zod.string().nullish().describe('Optional AI summary of the interaction.'),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number()
@@ -3938,7 +4023,8 @@ export const CreateScanBody = zod.object({
   "qualityScore": zod.number().nullish().describe('0-100 on-device capture-quality heuristic (mobile best-effort).'),
   "qualityMeta": zod.object({
 
-}).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.')
+}).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
+  "notes": zod.string().nullish().describe('Notes entered at capture time — stored on the permanent interaction record.')
 })
 
 
@@ -4225,6 +4311,12 @@ export const GetScanResponse = zod.object({
   "qualityMeta": zod.object({
 
 }).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
+  "eventId": zod.number().nullish().describe('Event\/exhibition where this capture (interaction) happened.'),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "notes": zod.string().nullish().describe('Notes entered at capture time (part of the permanent interaction record).'),
+  "aiSummary": zod.string().nullish().describe('Optional AI summary of the interaction.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -4299,6 +4391,12 @@ export const ReprocessScanResponse = zod.object({
   "qualityMeta": zod.object({
 
 }).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
+  "eventId": zod.number().nullish().describe('Event\/exhibition where this capture (interaction) happened.'),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "notes": zod.string().nullish().describe('Notes entered at capture time (part of the permanent interaction record).'),
+  "aiSummary": zod.string().nullish().describe('Optional AI summary of the interaction.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -4366,6 +4464,12 @@ export const ReplaceScanImageResponse = zod.object({
   "qualityMeta": zod.object({
 
 }).passthrough().nullish().describe('On-device quality signals (brightness\/sharpness\/coverage). Opaque JSON.'),
+  "eventId": zod.number().nullish().describe('Event\/exhibition where this capture (interaction) happened.'),
+  "latitude": zod.number().nullish(),
+  "longitude": zod.number().nullish(),
+  "gpsAccuracy": zod.number().nullish(),
+  "notes": zod.string().nullish().describe('Notes entered at capture time (part of the permanent interaction record).'),
+  "aiSummary": zod.string().nullish().describe('Optional AI summary of the interaction.'),
   "createdAt": zod.coerce.date()
 })
 

@@ -5,6 +5,7 @@ import * as orgRepo from "../repositories/organizations.repository.js";
 import { scoreLead, enrichContact as aiEnrichContact, logAiError } from "../lib/ai.js";
 import { notifyUser } from "../lib/push.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
+import * as scansRepo from "../repositories/scans.repository.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
 import type { ContactRow } from "../repositories/contacts.repository.js";
 import * as mergeHistoryRepo from "../repositories/merge_history.repository.js";
@@ -144,12 +145,31 @@ export interface CreateContactInput {
   organizationId?: number | null;
   cardImageUrl?: string | null;
   source?: string | null;
+  // ── Interaction model (Contact vs Interaction) ──
+  /** Scan this contact is being created from — permanently linked as an interaction. */
+  scanId?: number | null;
+  /** Explicit human resolution for a detected existing contact. Never auto-applied. */
+  dedupeResolution?: "add_interaction" | "create_separate" | null;
+  /** With dedupeResolution=add_interaction: the existing contact to attach the interaction to. */
+  matchedContactId?: number | null;
 }
+
+export type CreateContactResult =
+  | { status: 201; body: ReturnType<typeof formatContact> }
+  | { status: 409; body: {
+      code: "existing_contact_found";
+      message: string;
+      contact: ReturnType<typeof formatContact>;
+      matches: ContactMatch[];
+      previousEvents: string[];
+      interactionCount: number;
+      lastInteractionDate: string | null;
+    } };
 
 export async function createContact(user: AuthUser, input: CreateContactInput) {
   const companyId = user.companyId ?? null;
   if (!companyId) throw new AppError(400, "No company context");
-  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city, postalCode, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, cardImageUrl, source } = input;
+  const { firstName, lastName, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city, postalCode, latitude, longitude, gpsAccuracy, linkedin, notes, tags, status, followUpDate, followUpTime, eventId, assignedToId, organizationId, cardImageUrl, source, scanId, dedupeResolution, matchedContactId } = input;
   if (!(await refAccessible(user, "events", eventId))) throw new AppError(400, "Invalid eventId");
   if (!(await refAccessible(user, "users", assignedToId))) throw new AppError(400, "Invalid assignedToId");
   // organizationId is bound to the CONTACT's own tenant — use refInCompany
@@ -158,6 +178,61 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   if (organizationId != null && !(await refInCompany("organizations", companyId, organizationId))) throw new AppError(400, "Invalid organizationId");
   const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
   const { arabicName } = input;
+
+  // ── Interaction model: resolve the originating scan (must be in-tenant). ──
+  let scanRow: Awaited<ReturnType<typeof scansRepo.findById>> = undefined;
+  if (scanId != null) {
+    scanRow = await scansRepo.findById(user, scanId);
+    if (!scanRow || scanRow.companyId !== companyId) throw new AppError(400, "Invalid scanId");
+  }
+  // Context fields for the permanent interaction record: prefer values already
+  // persisted on the scan at capture time, fall back to the create payload.
+  const interactionExtra = {
+    eventId: scanRow?.eventId ?? eventId ?? null,
+    latitude: scanRow?.latitude ?? latitude ?? null,
+    longitude: scanRow?.longitude ?? longitude ?? null,
+    gpsAccuracy: scanRow?.gpsAccuracy ?? gpsAccuracy ?? null,
+    notes: scanRow?.notes ?? null,
+  };
+
+  // ── Human-in-the-loop duplicate detection (409, never auto-merge). ──
+  // Only when the client has not yet made an explicit resolution choice.
+  if (dedupeResolution == null) {
+    const matches = await matchExistingContacts(user, { email, mobile, officePhone, firstName, lastName, contactCompany, website, linkedin, address });
+    const top = matches[0];
+    if (top && top.confidence >= DUPLICATE_PROMPT_THRESHOLD) {
+      const existing = await contactsRepo.findById(user, top.contactId);
+      if (existing) {
+        const summary = await scansRepo.interactionSummary(companyId, existing.id);
+        return {
+          status: 409,
+          body: {
+            code: "existing_contact_found",
+            message: `${existing.fullName ?? "This contact"} already exists in your contacts.`,
+            contact: formatContact(existing),
+            matches,
+            previousEvents: summary.eventNames,
+            interactionCount: summary.count,
+            lastInteractionDate: summary.lastAt ? summary.lastAt.toISOString() : null,
+          },
+        };
+      }
+    }
+  }
+
+  // ── Resolution: attach this capture as a NEW interaction on the existing
+  // contact. The contact record itself is NOT modified (no auto-merge).
+  if (dedupeResolution === "add_interaction") {
+    if (matchedContactId == null) throw new AppError(400, "matchedContactId is required for add_interaction");
+    const existing = await contactsRepo.findById(user, matchedContactId);
+    if (!existing || existing.companyId !== companyId) throw new AppError(400, "Invalid matchedContactId");
+    if (scanRow) {
+      await scansRepo.linkScanToContact(companyId, scanRow.id, existing.id, interactionExtra);
+    } else {
+      await scansRepo.insert({ companyId, userId: user.id, contactId: existing.id, status: "completed", imageUrl: null, extractedData: null, captureSource: source ?? "manual", extractionMethod: "manual", ...interactionExtra });
+    }
+    return { status: 201, body: formatContact(existing) };
+  }
 
   // AI lead qualification is deferred to a background task (see below) so the
   // contact appears IMMEDIATELY. The score/temperature/reasoning start null and
@@ -168,22 +243,19 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   // Record the initial lead status in the append-only history.
   void contactsRepo.insertStatusHistory({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: user.id }).catch(() => {});
 
-  // Auto-link: if this new contact matches an existing original (same email /
-  // phone / name+company), mark it as a duplicate immediately so it is hidden
-  // from All Contacts, stats, and reports without waiting for a manual merge.
-  let finalContact = contact;
+  // NOTE (interaction model): scan-time auto-linking as a duplicate was removed —
+  // duplicates are now handled BEFORE creation via the human-in-the-loop 409 flow
+  // above. Every created contact gets a permanent interaction record: either the
+  // originating scan is linked, or a synthetic "manual" interaction is inserted.
+  const finalContact = contact;
   try {
-    const original = await findOriginalContact(
-      companyId,
-      { email: contact.email, mobile: contact.mobile, officePhone: contact.officePhone, fullName: contact.fullName, firstName: contact.firstName, lastName: contact.lastName, contactCompany: contact.contactCompany },
-      contact.id,
-    );
-    if (original) {
-      const linked = await contactsRepo.linkAsDuplicate(contact.id, original.id);
-      if (linked) finalContact = linked;
+    if (scanRow) {
+      await scansRepo.linkScanToContact(companyId, scanRow.id, contact.id, interactionExtra);
+    } else {
+      await scansRepo.insert({ companyId, userId: user.id, contactId: contact.id, status: "completed", imageUrl: null, extractedData: null, captureSource: source ?? "manual", extractionMethod: "manual", ...interactionExtra });
     }
   } catch {
-    // Non-fatal: duplicate detection must never block contact creation.
+    // Non-fatal: the interaction record must never block contact creation.
   }
 
   // Background: AI lead qualification + hot-lead notify. Skip for auto-linked
@@ -222,7 +294,36 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
     })();
   }
 
-  return formatContact(finalContact);
+  return { status: 201, body: formatContact(finalContact) };
+}
+
+/** Permanent interaction (capture) history for a contact — newest first. */
+export async function listContactInteractions(user: AuthUser, contactId: number) {
+  const contact = await contactsRepo.findById(user, contactId);
+  if (!contact) throw new AppError(404, "Contact not found");
+  const rows = await scansRepo.interactionsForContact(contact.companyId, contact.id);
+  return {
+    interactions: rows.map((r) => ({
+      id: r.id,
+      companyId: r.companyId,
+      contactId: r.contactId,
+      userId: r.userId,
+      userName: r.userName,
+      eventId: r.eventId,
+      eventName: r.eventName,
+      captureSource: r.captureSource,
+      extractionMethod: r.extractionMethod,
+      imageUrl: r.imageUrl !== null ? `/api/scans/${r.id}/image` : null,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      gpsAccuracy: r.gpsAccuracy,
+      notes: r.notes,
+      aiSummary: r.aiSummary,
+      ocrData: (() => { try { return r.extractedData ? JSON.parse(r.extractedData) : null; } catch { return null; } })(),
+      occurredAt: r.createdAt,
+    })),
+    total: rows.length,
+  };
 }
 
 export async function contactStats(user: AuthUser) {
@@ -290,38 +391,9 @@ export function nameSimilarity(a: string, b: string): number {
   return 1 - prev[n] / Math.max(m, n);
 }
 
-// Finds the first ORIGINAL contact (duplicateOfId IS NULL) in the same company
-// that matches by email, phone, or name+company. Returns null if no match.
-// Used by POST /contacts to auto-link new duplicates immediately at scan time.
-async function findOriginalContact(
-  companyId: number,
-  fields: {
-    email?: string | null; mobile?: string | null; officePhone?: string | null;
-    fullName?: string | null; firstName?: string | null; lastName?: string | null;
-    contactCompany?: string | null;
-  },
-  excludeId: number,
-): Promise<ContactRow | null> {
-  const candidates = await contactsRepo.originalCandidates(companyId, excludeId);
-
-  const normE = normEmail(fields.email ?? null);
-  const normM = normPhone(fields.mobile ?? null);
-  const normO = normPhone(fields.officePhone ?? null);
-  const fn = (fields.fullName ?? [fields.firstName, fields.lastName].filter(Boolean).join(" ")) || null;
-  const nc = fn ? fn.trim().toLowerCase().replace(/\s+/g, " ") : null;
-  const comp = fields.contactCompany ? fields.contactCompany.trim().toLowerCase().replace(/\s+/g, " ") : null;
-  const normN = nc && comp ? `${nc}|${comp}` : null;
-
-  for (const c of candidates) {
-    if (normE && normE === normEmail(c.email)) return c;
-    const cMobile = normPhone(c.mobile);
-    const cOffice = normPhone(c.officePhone);
-    if (normM && (normM === cMobile || normM === cOffice)) return c;
-    if (normO && (normO === cMobile || normO === cOffice)) return c;
-    if (normN && normN === normName(c)) return c;
-  }
-  return null;
-}
+// NOTE (interaction model): the former findOriginalContact auto-link helper was
+// removed — POST /contacts no longer auto-links duplicates. Detection now runs
+// through the weighted matchExistingContacts + human-in-the-loop 409 flow.
 
 export interface DupeCandidateFields {
   email?: string | null; mobile?: string | null; officePhone?: string | null;
@@ -377,7 +449,29 @@ export interface ContactMatchInput {
   email?: string | null; mobile?: string | null; officePhone?: string | null;
   firstName?: string | null; lastName?: string | null; fullName?: string | null;
   contactCompany?: string | null; website?: string | null; linkedin?: string | null;
+  address?: string | null;
 }
+
+// Weighted 4-tier duplicate-signal model (0-100 confidence per signal):
+//   HIGHEST — email (100), mobile (95): unique personal identifiers.
+//   HIGH    — linkedin (90), office phone (88): strong but occasionally shared.
+//   MEDIUM  — name+company (75), full name alone (65), company alone (55): suggestive, never merge-grade.
+//   LOW     — website (45), address (40): company-level signals only.
+// The human-in-the-loop 409 prompt fires at confidence >= DUPLICATE_PROMPT_THRESHOLD.
+// Nothing is EVER auto-merged — the user always decides.
+export const MATCH_WEIGHTS = {
+  email: 100,
+  mobile: 95,
+  linkedin: 90,
+  officePhone: 88,
+  nameCompany: 75,
+  nameOnly: 65,
+  companyOnly: 55,
+  website: 45,
+  address: 40,
+  fuzzyNameSameCompany: 70,
+} as const;
+export const DUPLICATE_PROMPT_THRESHOLD = 88;
 export interface ContactMatch {
   contactId: number;
   fullName: string | null;
@@ -421,6 +515,7 @@ export async function matchExistingContacts(user: AuthUser, input: ContactMatchI
   const normO = normPhone(input.officePhone ?? null);
   const normL = normUrl(input.linkedin ?? null);
   const normW = normUrl(input.website ?? null);
+  const normA = input.address ? input.address.trim().toLowerCase().replace(/\s+/g, " ") : null;
   const fn = (input.fullName ?? [input.firstName, input.lastName].filter(Boolean).join(" ")) || null;
   const personName = fn ? fn.trim().toLowerCase().replace(/\s+/g, " ") : null;
   const comp = input.contactCompany ? input.contactCompany.trim().toLowerCase().replace(/\s+/g, " ") : null;
@@ -432,18 +527,28 @@ export async function matchExistingContacts(user: AuthUser, input: ContactMatchI
     let confidence = 0;
     const bump = (score: number, reason: string) => { confidence = Math.max(confidence, score); reasons.push(reason); };
 
-    if (normE && normE === normEmail(c.email)) bump(100, "Same email address");
+    // HIGHEST tier — unique personal identifiers.
+    if (normE && normE === normEmail(c.email)) bump(MATCH_WEIGHTS.email, "Same email address");
     const cMobile = normPhone(c.mobile);
     const cOffice = normPhone(c.officePhone);
-    if ((normM && (normM === cMobile || normM === cOffice)) || (normO && (normO === cMobile || normO === cOffice))) bump(95, "Same phone number");
-    if (normL && normL === normUrl(c.linkedin)) bump(95, "Same LinkedIn profile");
-    if (nameCompanyKey && nameCompanyKey === normName(c)) bump(85, "Same name and company");
-    if (normW && normW === normUrl(c.website)) bump(70, "Same website");
+    const mobileInvolved = (normM && (normM === cMobile || normM === cOffice)) || (normO && normO === cMobile);
+    const officeOnly = !mobileInvolved && normO && normO === cOffice;
+    if (mobileInvolved) bump(MATCH_WEIGHTS.mobile, "Same mobile number");
+    // HIGH tier — strong but occasionally shared identifiers.
+    if (normL && normL === normUrl(c.linkedin)) bump(MATCH_WEIGHTS.linkedin, "Same LinkedIn profile");
+    if (officeOnly) bump(MATCH_WEIGHTS.officePhone, "Same office phone");
+    // MEDIUM tier — suggestive; never merge-grade on their own.
+    const cPerson = normPersonName(c);
+    const cComp = normCompany(c);
+    if (nameCompanyKey && nameCompanyKey === normName(c)) bump(MATCH_WEIGHTS.nameCompany, "Same name and company");
+    else if (personName && cPerson === personName) bump(MATCH_WEIGHTS.nameOnly, "Same full name");
+    else if (comp && cComp === comp) bump(MATCH_WEIGHTS.companyOnly, "Same company name");
+    // LOW tier — company-level signals only.
+    if (normW && normW === normUrl(c.website)) bump(MATCH_WEIGHTS.website, "Same website");
+    if (normA && c.address && normA === c.address.trim().toLowerCase().replace(/\s+/g, " ")) bump(MATCH_WEIGHTS.address, "Same address");
     // Fuzzy same-company name (typos / ordering) only when we haven't already matched harder.
-    if (confidence < 85 && personName && comp) {
-      const cPerson = normPersonName(c);
-      const cComp = normCompany(c);
-      if (cPerson && cComp === comp && nameSimilarity(personName, cPerson) >= NAME_SIM_THRESHOLD) bump(55, "Similar name at the same company");
+    if (confidence < MATCH_WEIGHTS.nameCompany && personName && comp) {
+      if (cPerson && cComp === comp && cPerson !== personName && nameSimilarity(personName, cPerson) >= NAME_SIM_THRESHOLD) bump(MATCH_WEIGHTS.fuzzyNameSameCompany, "Similar name at the same company");
     }
 
     if (confidence > 0) {

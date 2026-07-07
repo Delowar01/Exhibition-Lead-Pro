@@ -280,9 +280,12 @@ export async function update(id: number, data: Partial<typeof contactsTable.$inf
   return row;
 }
 
-// Soft-delete. Replicates the prior onDelete cascade EXACTLY:
+// Soft-delete. Replicates the prior onDelete cascade EXACTLY, with one
+// interaction-model exception:
 //  - meetings / follow_ups / contact_status_history (onDelete cascade) → delete
-//  - leads.contactId / tasks.contactId / scans.contactId (onDelete set null) → null
+//  - leads.contactId / tasks.contactId (onDelete set null) → null
+//  - scans (permanent interaction records) → soft-delete alongside the contact,
+//    KEEPING contactId so the interaction history stays intact for restore.
 // then stamps deletedAt.
 export async function softDelete(id: number): Promise<void> {
   await db.transaction(async (tx) => {
@@ -291,7 +294,7 @@ export async function softDelete(id: number): Promise<void> {
     await tx.delete(contactStatusHistoryTable).where(eq(contactStatusHistoryTable.contactId, id));
     await tx.update(leadsTable).set({ contactId: null }).where(eq(leadsTable.contactId, id));
     await tx.update(tasksTable).set({ contactId: null }).where(eq(tasksTable.contactId, id));
-    await tx.update(scansTable).set({ contactId: null }).where(eq(scansTable.contactId, id));
+    await tx.update(scansTable).set({ deletedAt: new Date() }).where(and(eq(scansTable.contactId, id), isNull(scansTable.deletedAt)));
     await tx.update(contactsTable).set({ deletedAt: new Date() }).where(eq(contactsTable.id, id));
   });
 }

@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ContactInputDedupeResolution } from './contactInputDedupeResolution';
 import type { ContactInputStatus } from './contactInputStatus';
 
 export interface ContactInput {
@@ -60,4 +61,19 @@ export interface ContactInput {
   organizationId?: number | null;
   /** @nullable */
   cardImageUrl?: string | null;
+  /**
+     * The scan (interaction) this contact is being created from. When set, the scan is permanently linked to the created (or matched) contact as an interaction record.
+     * @nullable
+     */
+  scanId?: number | null;
+  /**
+     * Explicit human resolution when a probable existing contact is detected. Omitted → the server responds 409 with ExistingContactFound when a high-confidence match exists (no contact is created). "add_interaction" records the capture as a new interaction on the matched contact instead of creating a duplicate. "create_separate" forces creation of a separate contact (manual override). No automatic merging or linking ever occurs.
+     * @nullable
+     */
+  dedupeResolution?: ContactInputDedupeResolution;
+  /**
+     * Required with dedupeResolution=add_interaction — the existing contact to attach the interaction to.
+     * @nullable
+     */
+  matchedContactId?: number | null;
 }

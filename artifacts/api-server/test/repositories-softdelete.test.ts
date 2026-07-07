@@ -122,13 +122,17 @@ describe("DELETE /contacts/:id — soft-delete + read exclusion + cascade parity
     expect(followUps.length).toBe(0);
     expect(history.length).toBe(0);
 
-    // ...set-null children nulled (not deleted).
+    // ...set-null children nulled (not deleted)...
     const [movedLead] = await db.select().from(leadsTable).where(eq(leadsTable.id, lead.id));
-    const [movedScan] = await db.select().from(scansTable).where(eq(scansTable.id, scan.id));
     const [movedTask] = await db.select().from(tasksTable).where(eq(tasksTable.id, task.id));
     expect(movedLead.contactId).toBeNull();
-    expect(movedScan.contactId).toBeNull();
     expect(movedTask.contactId).toBeNull();
+
+    // ...but scans are INTERACTIONS now: they keep the contact link and are
+    // soft-deleted alongside the contact (history preserved, hidden from reads).
+    const [movedScan] = await db.select().from(scansTable).where(eq(scansTable.id, scan.id));
+    expect(movedScan.contactId).toBe(contact.id);
+    expect(movedScan.deletedAt).not.toBeNull();
 
     await db.delete(tasksTable).where(eq(tasksTable.id, task.id));
   });

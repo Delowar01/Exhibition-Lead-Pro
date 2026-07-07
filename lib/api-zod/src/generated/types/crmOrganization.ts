@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { CrmOrganizationRecentEmployeesMetItem } from './crmOrganizationRecentEmployeesMetItem';
 import type { CrmOrganizationStatus } from './crmOrganizationStatus';
 
 export interface CrmOrganization {
@@ -31,5 +32,13 @@ export interface CrmOrganization {
   contactCount: number;
   leadCount: number;
   openLeadValue?: number;
+  /** Total interactions (captures) recorded across this organization's contacts. */
+  interactionCount?: number;
+  /** Distinct events where this organization's contacts were captured. */
+  eventsAttended?: number;
+  /** @nullable */
+  lastInteractionDate?: Date | null;
+  /** This organization's people most recently interacted with. */
+  recentEmployeesMet?: CrmOrganizationRecentEmployeesMetItem[];
   createdAt: Date;
 }

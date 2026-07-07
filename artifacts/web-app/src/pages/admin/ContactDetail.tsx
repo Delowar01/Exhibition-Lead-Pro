@@ -6,6 +6,7 @@ import {
   useDeleteContact,
   useEnrichContact,
   useListCrmOrganizations,
+  useListContactInteractions,
   getGetContactQueryKey,
   ContactStatus,
 } from "@workspace/api-client-react";
@@ -38,6 +39,9 @@ import {
   Award,
   Contact as ContactIcon,
   CheckCircle2,
+  History,
+  Clock,
+  User,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
@@ -104,6 +108,10 @@ export default function AdminContactDetail() {
   const enrich = useEnrichContact();
   const { data: orgData } = useListCrmOrganizations({ status: "active", limit: 200 });
   const organizations = orgData?.organizations ?? [];
+
+  const { data: interactionsData } = useListContactInteractions(contactId);
+  const interactions = interactionsData?.interactions ?? [];
+  const interactionTotal = interactionsData?.total ?? 0;
 
   const handleOrgChange = (val: string) => {
     const organizationId = val === ORG_NONE ? null : Number(val);
@@ -278,6 +286,12 @@ export default function AdminContactDetail() {
               >
                 Notes
               </TabsTrigger>
+              <TabsTrigger
+                value="interactions"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3 shrink-0"
+              >
+                Interactions
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6 mt-0">
@@ -429,6 +443,74 @@ export default function AdminContactDetail() {
                       <div className="text-muted-foreground italic text-center py-12">No notes added.</div>
                     )}
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="interactions" className="mt-0">
+              <Card className="shadow-sm border-border/50">
+                <CardHeader className="pb-3 bg-secondary/30">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <History className="h-4 w-4 text-primary" /> Interaction History
+                    </CardTitle>
+                    <Badge variant="secondary" className="font-mono">
+                      {interactionTotal}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  {interactions.length === 0 ? (
+                    <div className="text-sm text-muted-foreground italic py-8 text-center bg-secondary/10 rounded-md border border-dashed">
+                      No interactions recorded for this contact yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {interactions.map((it) => (
+                        <div key={it.id} className="flex gap-4 p-3 rounded-lg border border-border/40 hover:bg-secondary/5 transition-colors">
+                          <div className="mt-1 text-muted-foreground shrink-0">
+                            <div className="p-2 bg-secondary/30 rounded-full">
+                              <Clock className="h-4 w-4" />
+                            </div>
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {it.captureSource && (
+                                  <Badge variant="outline" className="capitalize text-[10px] h-5">
+                                    {it.captureSource.replace(/_/g, " ")}
+                                  </Badge>
+                                )}
+                                {it.eventName && (
+                                  <span className="text-sm font-semibold">{it.eventName}</span>
+                                )}
+                              </div>
+                              <span className="text-xs text-muted-foreground bg-secondary/20 px-2 py-0.5 rounded-full">
+                                {format(new Date(it.occurredAt), "PPp")}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              {it.userName && (
+                                <span className="flex items-center gap-1.5">
+                                  <User className="h-3.5 w-3.5" /> {it.userName}
+                                </span>
+                              )}
+                              {it.latitude != null && it.longitude != null && (
+                                <span className="flex items-center gap-1.5">
+                                  <MapPin className="h-3.5 w-3.5" /> Captured Location
+                                </span>
+                              )}
+                            </div>
+                            {it.notes && (
+                              <div className="text-sm bg-secondary/20 p-2 rounded border border-border/30 text-foreground/90">
+                                {it.notes}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

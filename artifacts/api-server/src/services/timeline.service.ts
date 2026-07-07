@@ -4,6 +4,7 @@ import * as activitiesRepo from "../repositories/lead_activities.repository.js";
 import * as notesRepo from "../repositories/lead_notes.repository.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
 import * as contactsRepo from "../repositories/contacts.repository.js";
+import * as scansRepo from "../repositories/scans.repository.js";
 
 interface TimelineEntry {
   id: string;
@@ -66,11 +67,36 @@ export async function leadTimeline(user: AuthUser, leadId: number) {
   return merge([...acts.map(activityEntry), ...notes.map(noteEntry)]);
 }
 
+// Permanent interaction (capture) records fold into the contact timeline so the
+// full relationship history — every scan/QR/manual capture — is visible inline.
+function interactionEntry(r: scansRepo.InteractionRow): TimelineEntry {
+  const source = r.captureSource ?? "manual";
+  const where = r.eventName ? ` at ${r.eventName}` : "";
+  return {
+    id: `interaction:${r.id}`,
+    kind: "interaction",
+    type: source,
+    source,
+    title: `Captured via ${source.replace(/_/g, " ")}${where}`,
+    body: r.notes ?? r.aiSummary ?? null,
+    actorId: r.userId ?? null,
+    actorName: r.userName ?? null,
+    leadId: null,
+    contactId: r.contactId ?? null,
+    metadata: { eventId: r.eventId, eventName: r.eventName, latitude: r.latitude, longitude: r.longitude, gpsAccuracy: r.gpsAccuracy },
+    occurredAt: r.createdAt.toISOString(),
+  };
+}
+
 export async function contactTimeline(user: AuthUser, contactId: number) {
   const contact = await contactsRepo.findById(user, contactId);
   if (!contact) throw new AppError(404, "Contact not found");
-  const [acts, notes] = await Promise.all([activitiesRepo.listForContact(user, contactId), notesRepo.listForContact(user, contactId)]);
-  return merge([...acts.map(activityEntry), ...notes.map(noteEntry)]);
+  const [acts, notes, interactions] = await Promise.all([
+    activitiesRepo.listForContact(user, contactId),
+    notesRepo.listForContact(user, contactId),
+    scansRepo.interactionsForContact(contact.companyId, contact.id),
+  ]);
+  return merge([...acts.map(activityEntry), ...notes.map(noteEntry), ...interactions.map(interactionEntry)]);
 }
 
 // Merged activity + note timeline across ALL of an organization's linked leads and

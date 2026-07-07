@@ -113,6 +113,9 @@ beforeAll(async () => {
     lastName: "Ford",
     email: `dana.ford-${SUFFIX}@example.com`,
     mobile: "5550102000",
+    // Intentional near-duplicate fixture: the human-in-the-loop dedupe flow now
+    // 409s on same-email captures, so explicitly resolve as a separate contact.
+    dedupeResolution: "create_separate",
   });
   expect(c2.status).toBe(201);
 

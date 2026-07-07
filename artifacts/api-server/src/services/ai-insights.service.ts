@@ -17,6 +17,7 @@ import {
 import type { AiFeature } from "../ai/types.js";
 import { resolveSettings } from "./ai.service.js";
 import * as insightsRepo from "../repositories/ai_insights.repository.js";
+import * as scansRepo from "../repositories/scans.repository.js";
 import type { EntityType, InsightType, UpsertInsightInput } from "../repositories/ai_insights.repository.js";
 import {
   contactRelationships,
@@ -107,6 +108,26 @@ async function eventName(companyId: number, id: number | null): Promise<string |
   if (id == null) return null;
   const [row] = await db.select({ name: eventsTable.name }).from(eventsTable).where(and(eq(eventsTable.companyId, companyId), eq(eventsTable.id, id))).limit(1);
   return row?.name ?? null;
+}
+
+// Interaction model: every capture of a contact is a permanent interaction record.
+// AI context includes the FULL interaction history (real CRM data only) so insights
+// can reason about relationship depth ("met 3 times, last at GITEX 2026").
+async function interactionHistoryLines(companyId: number, contactId: number): Promise<string[]> {
+  const rows = await scansRepo.interactionsForContact(companyId, contactId);
+  if (rows.length === 0) return [];
+  const lines = [`Interaction history (${rows.length} interaction${rows.length === 1 ? "" : "s"}):`];
+  for (const r of rows.slice(0, 10)) {
+    const parts = [
+      r.createdAt.toISOString().slice(0, 10),
+      `via ${(r.captureSource ?? "manual").replace(/_/g, " ")}`,
+      r.eventName ? `at ${r.eventName}` : null,
+      r.userName ? `by ${r.userName}` : null,
+      r.notes ? `notes: ${r.notes}` : null,
+    ].filter(Boolean);
+    lines.push(`  - ${parts.join(", ")}`);
+  }
+  return lines;
 }
 
 async function buildLeadContext(lead: Lead): Promise<string> {
@@ -388,7 +409,7 @@ export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: 
     const contact = await loadContact(user, id);
     const cid = contact.companyId;
     await loadRuntime(cid);
-    const context = contactLines(contact).join("\n");
+    const context = [...contactLines(contact), ...(await interactionHistoryLines(cid, contact.id))].join("\n");
     await runAi(cid, "contact", id, "contact_intelligence", "contact_intelligence", () => analyzeContactIntelligence(context, ctxOf(cid)));
     await runAi(cid, "contact", id, "smart_classification", "smart_classification", () => classifyEntity(context, ctxOf(cid)));
     await insightsRepo.upsertInsight(detUpsert(cid, "contact", id, "missing_info", missingInfoInsight([

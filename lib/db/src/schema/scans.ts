@@ -1,9 +1,10 @@
-import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, doublePrecision, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
 import { usersTable } from "./users";
 import { contactsTable } from "./contacts";
+import { eventsTable } from "./events";
 
 export const scansTable = pgTable("scans", {
   id: serial("id").primaryKey(),
@@ -25,11 +26,21 @@ export const scansTable = pgTable("scans", {
   validationStatus: text("validation_status"), // JSON deterministic validation summary
   qualityScore: integer("quality_score"), // 0-100 on-device capture-quality heuristic (mobile)
   qualityMeta: text("quality_meta"), // JSON on-device quality signals (brightness/sharpness/coverage)
+  // ── Interaction model (Task: Contact vs Interaction) — every scan/capture is a
+  // permanent interaction attached to a contact. All additive + nullable.
+  eventId: integer("event_id").references(() => eventsTable.id, { onDelete: "set null" }), // exhibition/event where the capture happened
+  latitude: doublePrecision("latitude"), // GPS at capture time (nullable when unavailable)
+  longitude: doublePrecision("longitude"),
+  gpsAccuracy: doublePrecision("gps_accuracy"), // meters
+  notes: text("notes"), // notes entered at capture time
+  aiSummary: text("ai_summary"), // optional AI summary of the interaction
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"), // soft-delete marker (parity with contacts)
 }, (t) => [
   index("scans_company_id_idx").on(t.companyId),
   index("scans_user_id_idx").on(t.userId),
   index("scans_contact_id_idx").on(t.contactId),
+  index("scans_event_id_idx").on(t.eventId),
   index("scans_created_at_idx").on(t.createdAt),
 ]);
 

@@ -1,5 +1,6 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import { type AuthUser } from "../middlewares/requireAuth.js";
+import { refInCompany } from "../lib/tenant.js";
 import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "../lib/ai.js";
 import { streamScanImage, loadScanImageBase64, uploadScanImage } from "../lib/imageStorage.js";
 import * as scansRepo from "../repositories/scans.repository.js";
@@ -80,7 +81,7 @@ export interface CreateScanResult {
   body: Record<string, unknown>;
 }
 
-export async function createScan(user: AuthUser, body: { imageData?: string; eventId?: unknown; appLanguage?: string; captureSource?: string | null; qualityScore?: number | null; qualityMeta?: unknown }): Promise<CreateScanResult> {
+export async function createScan(user: AuthUser, body: { imageData?: string; eventId?: unknown; appLanguage?: string; captureSource?: string | null; qualityScore?: number | null; qualityMeta?: unknown; latitude?: number | null; longitude?: number | null; gpsAccuracy?: number | null; notes?: string | null }): Promise<CreateScanResult> {
   const companyId = user.companyId;
   if (!companyId) throw new AppError(400, "No company context");
   const { imageData, appLanguage } = body;
@@ -89,12 +90,21 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   const captureSource = typeof body.captureSource === "string" && body.captureSource.length > 0 ? body.captureSource : "camera";
   const qualityScore = typeof body.qualityScore === "number" ? body.qualityScore : null;
   const qualityMeta = body.qualityMeta != null ? JSON.stringify(body.qualityMeta) : null;
+  // Interaction context: event + GPS + notes captured at scan time are persisted
+  // on the scan itself so it becomes a permanent interaction record. The eventId
+  // is bound to the scan's own tenant.
+  const eventId = typeof body.eventId === "number" && Number.isInteger(body.eventId) ? body.eventId : null;
+  if (eventId != null && !(await refInCompany("events", companyId, eventId))) throw new AppError(400, "Invalid eventId");
+  const latitude = typeof body.latitude === "number" ? body.latitude : null;
+  const longitude = typeof body.longitude === "number" ? body.longitude : null;
+  const gpsAccuracy = typeof body.gpsAccuracy === "number" ? body.gpsAccuracy : null;
+  const notes = typeof body.notes === "string" && body.notes.trim().length > 0 ? body.notes : null;
 
   // Increment company scans used
   await scansRepo.incrementScansUsed(companyId);
 
   // Create scan record
-  const scan = await scansRepo.insert({ companyId, userId: user.id, status: "processing", imageUrl: null, extractedData: null });
+  const scan = await scansRepo.insert({ companyId, userId: user.id, status: "processing", imageUrl: null, extractedData: null, eventId, latitude, longitude, gpsAccuracy, notes });
 
   // Real AI OCR + extraction (image upload happens after, fire-and-forget in route)
   let ocrResult: Awaited<ReturnType<typeof extractCardData>> | null = null;
