@@ -179,3 +179,9 @@ id = "C6DGq4it_EZVlKNU71HDt"
 uri = "file://docs/stage-5.9-master-plan.md"
 type = "text"
 title = "Stage 5.9 Master Plan — Enterprise UX Audit & Design System Plan"
+
+[[outputs]]
+id = "9Lck4yMxRtQT3LwDrVF7d"
+uri = "file://docs/reports/STAGE_5_COMPLETE_REPORT.md"
+type = "text"
+title = "Stage 5 — Complete Report"
