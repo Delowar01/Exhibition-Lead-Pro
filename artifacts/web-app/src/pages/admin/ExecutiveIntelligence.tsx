@@ -54,6 +54,7 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 
 // Stage 5C — Enterprise AI Executive Intelligence Center (manager-gated).
 // A read-only executive rollup (health, KPIs, revenue trend, forecast, alerts, team
@@ -213,17 +214,8 @@ export default function AdminExecutiveIntelligence() {
   const [periodType, setPeriodType] = React.useState("weekly");
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      <div className="flex items-center gap-2">
-        <LineChartIcon className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Executive Intelligence Center</h1>
-          <p className="text-sm text-muted-foreground">
-            AI-assisted executive rollup — health, trends, forecasts, alerts, and team performance. Advisory only; nothing is written to your CRM.
-          </p>
-        </div>
-      </div>
-
+    <AiWorkspaceLayout activeTab="executive">
+      <div className="space-y-6 max-w-6xl mx-auto pb-10">
       {/* Health */}
       <Card className="shadow-sm">
         <CardHeader className="pb-3">
@@ -603,6 +595,7 @@ export default function AdminExecutiveIntelligence() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </AiWorkspaceLayout>
   );
 }

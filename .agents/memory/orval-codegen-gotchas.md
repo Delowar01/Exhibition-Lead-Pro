@@ -24,3 +24,16 @@ After editing `artifacts/api-server/src/routes/*`, the running dev workflow may 
 serving the OLD handler — runtime smoke tests show missing new fields even though
 `typecheck` passes. Restart the `artifacts/api-server: API Server` workflow before
 curl-smoke-testing new/changed endpoints.
+
+# Orval hooks require explicit queryKey when passing query options
+
+Passing `{ query: { enabled: ... } }` to a generated hook fails typecheck (TS2741:
+`queryKey` missing) — this repo's Orval output makes `queryKey` required in
+UseQueryOptions.
+
+**Why:** the generated wrapper spreads your options over its defaults, and its type
+requires `queryKey` whenever any query options object is supplied.
+
+**How to apply:** always pair options with the generated helper, e.g.
+`{ query: { enabled: !!id, queryKey: getGetXQueryKey(id) } }` (import the
+`get*QueryKey` helper alongside the hook).

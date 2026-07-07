@@ -121,13 +121,25 @@ function DrawerBody({ leadId, stageMap, stages }: { leadId: number; stageMap: St
             {closing || <span className="text-muted-foreground font-normal">{"\u2014"}</span>}
           </Row>
           <Row icon={Sparkles} label="AI lead score">
-            <span className="text-muted-foreground font-normal">{"\u2014"}</span>
+            {(lead as any).aiScore != null || (lead as any).leadScore != null ? (
+              <span className="font-medium">{(lead as any).aiScore ?? (lead as any).leadScore}</span>
+            ) : (
+              <span className="text-muted-foreground font-normal">{"\u2014"}</span>
+            )}
           </Row>
           <Row icon={Activity} label="Last activity">
-            <span className="text-muted-foreground font-normal">{"\u2014"}</span>
+            {(lead as any).lastActivityAt || (lead as any).updatedAt ? (
+              <span>{format(parseISO((lead as any).lastActivityAt ?? (lead as any).updatedAt), "MMM d, yyyy h:mm a")}</span>
+            ) : (
+              <span className="text-muted-foreground font-normal">{"\u2014"}</span>
+            )}
           </Row>
           <Row icon={BellRing} label="Next follow-up">
-            <span className="text-muted-foreground font-normal">{"\u2014"}</span>
+            {(lead as any).nextFollowUp || (lead as any).followUpDate ? (
+              <span>{format(parseISO((lead as any).nextFollowUp ?? (lead as any).followUpDate), "MMM d, yyyy")}</span>
+            ) : (
+              <span className="text-muted-foreground font-normal">{"\u2014"}</span>
+            )}
           </Row>
           {(lead.tags ?? []).length > 0 && (
             <Row icon={TagIcon} label="Tags">

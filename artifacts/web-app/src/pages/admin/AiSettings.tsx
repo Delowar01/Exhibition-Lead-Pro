@@ -37,6 +37,7 @@ import { format, parseISO, subDays } from "date-fns";
 import { Sparkles, Activity, DollarSign, Cpu, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 
 type FeatureKey = "card_extraction" | "lead_scoring" | "contact_enrichment" | "assignee_recommendation";
 
@@ -487,12 +488,9 @@ export default function AdminAiSettings() {
   const { data: settings, isLoading, isError } = useGetAiSettings({ query: { queryKey: getGetAiSettingsQueryKey() } });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">AI Intelligence</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Configure AI features, monitor usage and estimated cost.</p>
-        </div>
+    <AiWorkspaceLayout activeTab="settings">
+      <div className="space-y-6 max-w-5xl mx-auto pb-10">
+      <div className="flex justify-end">
         <Select value={String(rangeDays)} onValueChange={(v) => setRangeDays(parseInt(v))}>
           <SelectTrigger className="w-[150px]">
             <SelectValue />
@@ -521,6 +519,7 @@ export default function AdminAiSettings() {
 
       <HealthCard from={from} to={to} />
       <UsageSection from={from} to={to} />
-    </div>
+      </div>
+    </AiWorkspaceLayout>
   );
 }

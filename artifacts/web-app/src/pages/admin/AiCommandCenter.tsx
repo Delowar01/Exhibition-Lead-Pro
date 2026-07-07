@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, Plus, Trash2, Send, ShieldCheck, Cpu, User, Sparkles, ChevronRight, Loader2 } from "lucide-react";
+import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 import { useToast } from "@/hooks/use-toast";
 
 function formatTs(ts?: string | null): string {
@@ -210,16 +211,8 @@ export default function AiCommandCenter() {
   };
 
   return (
-    <div className="p-6 h-[calc(100vh-0px)] flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Bot className="h-6 w-6" /> AI Command Center
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Ask about your CRM in plain language. Advisory only — the assistant never changes data or sends anything.
-          </p>
-        </div>
+    <AiWorkspaceLayout activeTab="command">
+      <div className="flex justify-end mb-4">
         {suggestions?.provider && (
           <Badge variant="outline" className="gap-1">
             <Cpu className="h-3 w-3" />
@@ -228,7 +221,7 @@ export default function AiCommandCenter() {
         )}
       </div>
 
-      <div className="flex gap-4 flex-1 min-h-0">
+      <div className="flex gap-4 flex-1 min-h-0 h-[calc(100vh-180px)]">
         {/* Conversation list */}
         <Card className="w-64 shrink-0 flex flex-col">
           <CardContent className="p-3 flex flex-col flex-1 min-h-0">
@@ -351,6 +344,6 @@ export default function AiCommandCenter() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </AiWorkspaceLayout>
   );
 }

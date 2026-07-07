@@ -24,6 +24,7 @@ import {
   Trash2,
   Pin,
   PinOff,
+  Building2,
 } from "lucide-react";
 import {
   useDeleteLead,
@@ -189,7 +190,19 @@ export function LeadsTable(props: LeadsTableProps) {
         accessorFn: (l) => companyName(l) ?? "",
         cell: ({ row }) => {
           const c = companyName(row.original);
-          return c ? <span className="truncate text-sm">{c}</span> : <Muted />;
+          const hasOrg = !!row.original.organizationId;
+          return c ? (
+            <div className="flex items-center gap-1.5">
+              {hasOrg && (
+                <span title="Linked to Organization" className="flex-shrink-0">
+                  <Building2 className="h-3 w-3 text-primary" aria-label="Linked to Organization" />
+                </span>
+              )}
+              <span className="truncate text-sm">{c}</span>
+            </div>
+          ) : (
+            <Muted />
+          );
         },
       },
       {
@@ -257,21 +270,41 @@ export function LeadsTable(props: LeadsTableProps) {
         header: "AI Score",
         size: 100,
         enableSorting: false,
-        cell: () => <Muted />,
+        cell: ({ row }) => {
+          const score = (row.original as any).aiScore ?? (row.original as any).leadScore;
+          const temp = (row.original as any).temperature ?? (row.original as any).leadTemperature;
+          if (score == null && !temp) return <Muted />;
+          return (
+            <div className="flex items-center gap-1.5">
+              {score != null && <span className="text-xs font-semibold">{score}</span>}
+              {temp === "hot" && <span className="h-2 w-2 rounded-full bg-destructive" title="Hot" />}
+              {temp === "warm" && <span className="h-2 w-2 rounded-full bg-warning" title="Warm" />}
+              {temp === "cold" && <span className="h-2 w-2 rounded-full bg-info" title="Cold" />}
+            </div>
+          );
+        },
       },
       {
         id: "lastActivity",
         header: "Last Activity",
         size: 140,
         enableSorting: false,
-        cell: () => <Muted />,
+        cell: ({ row }) => {
+          const activity = (row.original as any).lastActivityAt ?? (row.original as any).updatedAt;
+          if (!activity) return <Muted />;
+          return <span className="text-xs">{format(parseISO(activity), "MMM d, yyyy")}</span>;
+        },
       },
       {
         id: "nextFollowUp",
         header: "Next Follow-up",
         size: 140,
         enableSorting: false,
-        cell: () => <Muted />,
+        cell: ({ row }) => {
+          const next = (row.original as any).nextFollowUp ?? (row.original as any).followUpDate;
+          if (!next) return <Muted />;
+          return <span className="text-xs">{format(parseISO(next), "MMM d, yyyy")}</span>;
+        },
       },
       {
         id: "expectedClose",
@@ -564,7 +597,7 @@ export function LeadsTable(props: LeadsTableProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={doDelete} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction onClick={doDelete} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

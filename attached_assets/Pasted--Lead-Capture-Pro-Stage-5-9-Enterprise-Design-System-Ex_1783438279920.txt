@@ -1,0 +1,467 @@
+# Lead Capture Pro
+# Stage 5.9 – Enterprise Design System & Experience Modernization
+# Phase 3B – Enterprise Workspace Modernization
+
+Objective
+
+Stage 5.9 Phase 3A has been completed, reviewed and approved.
+
+Proceed with Phase 3B.
+
+This phase focuses on redesigning the most frequently used workspaces in the application while preserving every existing feature.
+
+This is NOT simply a UI redesign.
+
+The goal is to create a premium Enterprise Workspace experience comparable to Salesforce, HubSpot and Microsoft Dynamics.
+
+=========================================================
+Scope
+=========================================================
+
+Modernize ONLY:
+
+• Lead Detail
+• Company Detail
+• Contact Detail
+• Sales Pipeline
+• AI Intelligence Workspace
+
+Do NOT modify other modules.
+
+=========================================================
+Enterprise Workspace Principle
+=========================================================
+
+Lead Detail
+
+Company Detail
+
+Contact Detail
+
+must belong to ONE Workspace Family.
+
+Do NOT design three completely different pages.
+
+Instead create one reusable Enterprise Workspace layout.
+
+Users should instantly understand every page because they share the same design language and interaction model.
+
+=========================================================
+Workspace Layout
+=========================================================
+
+Every workspace should follow a common structure.
+
+Top Area
+
+• Entity Name
+• Status
+• Company
+• Owner
+• Important Badges
+• Last Activity
+• AI Indicator
+
+Quick Action Bar
+
+Examples
+
+Call
+
+Email
+
+WhatsApp
+
+Schedule Meeting
+
+Assign
+
+Change Stage
+
+Create Follow-up
+
+Generate Proposal
+
+Open AI
+
+These actions should always remain visible.
+
+=========================================================
+Main Workspace
+=========================================================
+
+Primary Content
+
+Overview
+
+Timeline
+
+Activities
+
+Notes
+
+Documents
+
+Interaction History
+
+Related Records
+
+AI Summary
+
+=========================================================
+Right Panel
+=========================================================
+
+Persistent contextual panel.
+
+Examples
+
+Owner
+
+Current Stage
+
+Next Follow-up
+
+Priority
+
+Tags
+
+Recent Meetings
+
+Workflow Alerts
+
+AI Recommendations
+
+Relationship Summary
+
+This panel should remain available without excessive scrolling.
+
+=========================================================
+Lead Detail
+=========================================================
+
+Improve:
+
+• Timeline readability
+
+• Activity Feed
+
+• Follow-up management
+
+• Pipeline visibility
+
+• AI Summary
+
+• Interaction History
+
+• Documents
+
+• Communication shortcuts
+
+• Related Contacts
+
+• Related Companies
+
+=========================================================
+Company Detail
+=========================================================
+
+Improve:
+
+• Company overview
+
+• Active Contacts
+
+• Active Leads
+
+• Documents
+
+• Events
+
+• Interaction History
+
+• AI Summary
+
+• Timeline
+
+• Organization insights
+
+=========================================================
+Contact Detail
+=========================================================
+
+Improve:
+
+• Contact overview
+
+• Communication history
+
+• Business card
+
+• Timeline
+
+• Interaction History
+
+• Related opportunities
+
+• AI Summary
+
+• Documents
+
+=========================================================
+Interaction History
+=========================================================
+
+Use the new interaction model.
+
+A contact remains ONE contact.
+
+Every business card scan becomes an Interaction.
+
+Display:
+
+Event
+
+Scan Date
+
+Employee
+
+Location
+
+Business Card
+
+Notes
+
+AI Summary
+
+Users should clearly understand where and when this person was previously met.
+
+=========================================================
+Sales Pipeline
+=========================================================
+
+Completely modernize.
+
+Preserve functionality.
+
+Improve:
+
+• Enterprise table view
+
+• Kanban
+
+• Filters
+
+• Saved Views
+
+• Bulk Actions
+
+• Stage editing
+
+• Detail Drawer
+
+• Quick Preview
+
+• AI indicators
+
+• Relationship indicators
+
+• Activity indicators
+
+Do NOT use drag-and-drop for stage changes.
+
+Use inline stage selector with optimistic updates.
+
+=========================================================
+AI Intelligence Workspace
+=========================================================
+
+Create one premium AI workspace.
+
+Consolidate:
+
+• AI Command Center
+
+• Lead Intelligence
+
+• Sales Copilot
+
+• Executive Intelligence
+
+• OCR Intelligence
+
+• Workflow Intelligence
+
+The user should experience AI as one integrated platform.
+
+=========================================================
+Enterprise UX Rules
+=========================================================
+
+Every workspace must immediately answer:
+
+1.
+
+Where am I?
+
+2.
+
+What is most important?
+
+3.
+
+What should I do next?
+
+Users should never search for important actions.
+
+=========================================================
+Adaptive UI
+=========================================================
+
+Continue using the existing RBAC.
+
+Do NOT duplicate pages.
+
+The interface should automatically adapt based on:
+
+• Platform Owner
+
+• Company Admin
+
+• Sales Manager
+
+• Employee
+
+Widgets, actions and information should appear only when permitted.
+
+=========================================================
+Design Standards
+=========================================================
+
+Use ONLY:
+
+• Enterprise Design Tokens
+
+• Theme Engine
+
+• Enterprise Component Library
+
+• Typography System
+
+• Motion System
+
+• Responsive Layout System
+
+No legacy components.
+
+No hardcoded colors.
+
+=========================================================
+Accessibility
+=========================================================
+
+Maintain:
+
+• Keyboard Navigation
+
+• Screen Reader Support
+
+• Focus Indicators
+
+• WCAG Compliance
+
+=========================================================
+Performance
+=========================================================
+
+Improve:
+
+• Skeleton Loading
+
+• Lazy Rendering
+
+• Timeline Performance
+
+• Drawer Performance
+
+• Animation Smoothness
+
+=========================================================
+Presentation Requirements
+=========================================================
+
+For EVERY redesigned workspace provide:
+
+1. Before Screenshot
+
+2. UX Problems
+
+3. Design Decisions
+
+4. Business Reasoning
+
+5. After Screenshot
+
+6. Performance Improvements
+
+7. Accessibility Improvements
+
+8. Responsive Verification
+
+9. Dark Mode Verification
+
+10. EN/AR RTL Verification
+
+Explain WHY each UX decision improves productivity.
+
+=========================================================
+Validation
+=========================================================
+
+Run:
+
+• Full Workspace Typecheck
+
+• Complete Regression Suite
+
+Verify:
+
+• Zero API Changes
+
+• Zero Business Logic Changes
+
+• Zero RBAC Changes
+
+• Zero Permission Changes
+
+• Zero Tenant Isolation Changes
+
+=========================================================
+Deliverables
+=========================================================
+
+Provide:
+
+• Before vs After Screenshots
+
+• Workspace Modernization Report
+
+• Pipeline Modernization Report
+
+• AI Workspace Report
+
+• UX Improvement Report
+
+• Accessibility Report
+
+• Performance Report
+
+• Responsive Report
+
+• Files Modified
+
+• Test Results
+
+STOP after Phase 3B.
+
+Do NOT begin Phase 4 (Mobile Modernization) until Phase 3B has been reviewed and approved.

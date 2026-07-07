@@ -1,16 +1,55 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
-import { useGetContact, useUpdateContact, useDeleteContact, useEnrichContact, useListCrmOrganizations, getGetContactQueryKey, ContactStatus } from "@workspace/api-client-react";
+import {
+  useGetContact,
+  useUpdateContact,
+  useDeleteContact,
+  useEnrichContact,
+  useListCrmOrganizations,
+  getGetContactQueryKey,
+  ContactStatus,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Mail, Phone, Building2, Briefcase, Calendar as CalendarIcon, CalendarClock, AlertCircle, Trash2, Sparkles, Flame, Snowflake, Thermometer, Globe, Linkedin, MapPin, MessageSquare, Factory, Award } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ChevronLeft,
+  Mail,
+  Phone,
+  Building2,
+  Briefcase,
+  Calendar as CalendarIcon,
+  CalendarClock,
+  AlertCircle,
+  Trash2,
+  Sparkles,
+  Flame,
+  Snowflake,
+  Thermometer,
+  Globe,
+  Linkedin,
+  MapPin,
+  MessageSquare,
+  Factory,
+  Award,
+  Contact as ContactIcon,
+  CheckCircle2,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
+
+import {
+  WorkspaceShell,
+  WorkspaceHeader,
+  WorkspaceContent,
+  WorkspaceMain,
+  WorkspaceSidebar,
+} from "@/components/ds/workspace";
+
 import { CommunicationHub } from "@/components/CommunicationHub";
 import { AiInsightsPanel } from "@/components/AiInsightsPanel";
 import { SalesCopilotPanel } from "@/components/SalesCopilotPanel";
@@ -19,10 +58,35 @@ import { WorkflowIntelligencePanel } from "@/components/WorkflowIntelligencePane
 const ORG_NONE = "__none__";
 
 const TEMPERATURE_STYLES: Record<string, { label: string; badge: string; bar: string; icon: React.ReactNode }> = {
-  hot: { label: "Hot", badge: "bg-red-100 text-red-700 border-red-200", bar: "bg-red-500", icon: <Flame className="h-4 w-4" /> },
-  warm: { label: "Warm", badge: "bg-amber-100 text-amber-700 border-amber-200", bar: "bg-amber-500", icon: <Thermometer className="h-4 w-4" /> },
-  cold: { label: "Cold", badge: "bg-blue-100 text-blue-700 border-blue-200", bar: "bg-blue-500", icon: <Snowflake className="h-4 w-4" /> },
+  hot: {
+    label: "Hot",
+    badge: "bg-destructive-soft text-destructive border-destructive/25",
+    bar: "bg-destructive",
+    icon: <Flame className="h-4 w-4" />,
+  },
+  warm: {
+    label: "Warm",
+    badge: "bg-warning-soft text-warning border-warning/25",
+    bar: "bg-warning",
+    icon: <Thermometer className="h-4 w-4" />,
+  },
+  cold: {
+    label: "Cold",
+    badge: "bg-info-soft text-info border-info/25",
+    bar: "bg-info",
+    icon: <Snowflake className="h-4 w-4" />,
+  },
 };
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  if (!children) return null;
+  return (
+    <div>
+      <p className="text-sm font-medium text-muted-foreground mb-1">{label}</p>
+      <div className="text-sm font-medium">{children}</div>
+    </div>
+  );
+}
 
 export default function AdminContactDetail() {
   const { id } = useParams();
@@ -32,7 +96,7 @@ export default function AdminContactDetail() {
   const queryClient = useQueryClient();
 
   const { data: contact, isLoading } = useGetContact(contactId, {
-    query: { enabled: !!contactId, queryKey: getGetContactQueryKey(contactId) }
+    query: { enabled: !!contactId, queryKey: getGetContactQueryKey(contactId) },
   });
 
   const updateContact = useUpdateContact();
@@ -43,25 +107,35 @@ export default function AdminContactDetail() {
 
   const handleOrgChange = (val: string) => {
     const organizationId = val === ORG_NONE ? null : Number(val);
-    updateContact.mutate({ id: contactId, data: { organizationId } }, {
-      onSuccess: () => {
-        toast({ title: organizationId ? "Company linked" : "Company unlinked" });
-        queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
-      },
-      onError: () => toast({ title: "Could not update company", variant: "destructive" }),
-    });
+    updateContact.mutate(
+      { id: contactId, data: { organizationId } },
+      {
+        onSuccess: () => {
+          toast({ title: organizationId ? "Company linked" : "Company unlinked" });
+          queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+        },
+        onError: () => toast({ title: "Could not update company", variant: "destructive" }),
+      }
+    );
   };
 
   const handleEnrich = () => {
-    enrich.mutate({ id: contactId }, {
-      onSuccess: () => {
-        toast({ title: "Contact enriched" });
-        queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
-      },
-      onError: () => {
-        toast({ title: "Enrichment failed", description: "The AI service is temporarily unavailable. Please try again.", variant: "destructive" });
-      },
-    });
+    enrich.mutate(
+      { id: contactId },
+      {
+        onSuccess: () => {
+          toast({ title: "Contact enriched" });
+          queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+        },
+        onError: () => {
+          toast({
+            title: "Enrichment failed",
+            description: "The AI service is temporarily unavailable. Please try again.",
+            variant: "destructive",
+          });
+        },
+      }
+    );
   };
 
   const [followUpDate, setFollowUpDate] = useState<string>("");
@@ -70,16 +144,19 @@ export default function AdminContactDetail() {
   }, [contact?.followUpDate]);
 
   const saveFollowUp = (value: string | null) => {
-    updateContact.mutate({ id: contactId, data: { followUpDate: value } }, {
-      onSuccess: () => {
-        toast({ title: value ? "Follow-up scheduled" : "Follow-up cleared" });
-        queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
-      },
-      onError: () => {
-        toast({ title: "Could not update follow-up", variant: "destructive" });
-        setFollowUpDate(contact?.followUpDate ?? "");
+    updateContact.mutate(
+      { id: contactId, data: { followUpDate: value } },
+      {
+        onSuccess: () => {
+          toast({ title: value ? "Follow-up scheduled" : "Follow-up cleared" });
+          queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+        },
+        onError: () => {
+          toast({ title: "Could not update follow-up", variant: "destructive" });
+          setFollowUpDate(contact?.followUpDate ?? "");
+        },
       }
-    });
+    );
   };
 
   const handleClearFollowUp = () => {
@@ -88,288 +165,389 @@ export default function AdminContactDetail() {
   };
 
   const handleStatusChange = (newStatus: ContactStatus) => {
-    updateContact.mutate({ id: contactId, data: { status: newStatus } }, {
-      onSuccess: () => {
-        toast({ title: "Status updated" });
-        queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+    updateContact.mutate(
+      { id: contactId, data: { status: newStatus } },
+      {
+        onSuccess: () => {
+          toast({ title: "Status updated" });
+          queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+        },
       }
-    });
+    );
   };
 
   const handleDelete = () => {
     if (confirm("Are you sure you want to delete this contact?")) {
-      deleteContact.mutate({ id: contactId }, {
-        onSuccess: () => {
-          toast({ title: "Contact deleted" });
-          setLocation("/admin/contacts");
+      deleteContact.mutate(
+        { id: contactId },
+        {
+          onSuccess: () => {
+            toast({ title: "Contact deleted" });
+            setLocation("/admin/contacts");
+          },
         }
-      });
+      );
     }
   };
 
-  if (isLoading) return <div className="p-8 flex justify-center">Loading contact...</div>;
-  if (!contact) return <div className="p-8 flex justify-center">Contact not found</div>;
+  if (isLoading) return <div className="p-8 flex justify-center text-muted-foreground">Loading contact...</div>;
+  if (!contact) return <div className="p-8 flex justify-center text-muted-foreground">Contact not found</div>;
 
   const temp = contact.leadTemperature ? TEMPERATURE_STYLES[contact.leadTemperature] : null;
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const followUpOverdue = !!contact.followUpDate && contact.followUpDate < todayStr;
   const followUpChanged = followUpDate !== (contact.followUpDate ?? "");
 
+  const hasAiData =
+    (contact.leadScore ?? null) !== null ||
+    !!contact.leadTemperature ||
+    !!contact.aiReasoning ||
+    !!contact.enrichmentSummary ||
+    (contact.talkingPoints && contact.talkingPoints.length > 0);
+
+  const headerBadges = (
+    <>
+      <Badge variant="outline" className="capitalize bg-background">
+        {contact.status.replace("_", " ")}
+      </Badge>
+      {temp && (
+        <Badge variant="outline" className={`gap-1 ${temp.badge}`}>
+          {temp.icon} {temp.label}
+        </Badge>
+      )}
+    </>
+  );
+
+  const headerSubtitle = (
+    <>
+      {contact.jobTitle && (
+        <>
+          <Briefcase className="h-4 w-4" />
+          <span>{contact.jobTitle}</span>
+          <span className="text-border">•</span>
+        </>
+      )}
+      {contact.contactCompany && (
+        <>
+          <Building2 className="h-4 w-4" />
+          <span>{contact.contactCompany}</span>
+          <span className="text-border">•</span>
+        </>
+      )}
+      <span>Added {format(new Date(contact.createdAt), "MMM d, yyyy")}</span>
+    </>
+  );
+
+  const headerActions = (
+    <Button variant="destructive" size="sm" onClick={handleDelete}>
+      <Trash2 className="h-4 w-4 mr-2" /> Delete
+    </Button>
+  );
+
+  const fullName = `${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim() || "Unnamed Contact";
+
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => setLocation("/admin/contacts")}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight">{contact.firstName} {contact.lastName}</h1>
-              {temp && (
-                <Badge variant="outline" className={`gap-1 ${temp.badge}`}>
-                  {temp.icon} {temp.label}
-                </Badge>
-              )}
-            </div>
-            {contact.arabicName && (
-              <div className="text-lg text-muted-foreground mt-0.5" dir="rtl">{contact.arabicName}</div>
-            )}
-            <div className="flex items-center gap-2 text-muted-foreground mt-1 text-sm">
-              <Briefcase className="h-4 w-4" /> {contact.jobTitle || "No title"}
-              <span>&bull;</span>
-              <Building2 className="h-4 w-4" /> {contact.contactCompany || "No company"}
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="destructive" size="sm" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4 mr-2" /> Delete
-          </Button>
-        </div>
-      </div>
+    <WorkspaceShell>
+      <WorkspaceHeader
+        title={fullName}
+        subtitle={headerSubtitle}
+        badges={headerBadges}
+        actions={headerActions}
+        onBack={() => setLocation("/admin/contacts")}
+      />
 
-      <div className="grid md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle>Contact Details</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-6">
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Mail className="h-4 w-4" /> Email</div>
-                <div className="font-medium">{contact.email || "-"}</div>
+      <WorkspaceContent>
+        <WorkspaceMain>
+          <Tabs defaultValue="overview" className="w-full">
+            <TabsList className="w-full justify-start border-b border-border rounded-none h-auto p-0 bg-transparent mb-6 overflow-x-auto flex-nowrap shrink-0">
+              <TabsTrigger
+                value="overview"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3 shrink-0"
+              >
+                Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="ai"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3 shrink-0 flex items-center gap-2"
+              >
+                <Sparkles className="h-3 w-3" /> AI Enrichment
+              </TabsTrigger>
+              <TabsTrigger
+                value="notes"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-6 py-3 shrink-0"
+              >
+                Notes
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="space-y-6 mt-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card className="shadow-sm border-border/50">
+                  <CardHeader className="pb-3 bg-secondary/30">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ContactIcon className="h-4 w-4 text-primary" /> Contact Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4 space-y-4">
+                    {!contact.email && !contact.mobile && !contact.linkedin && (
+                      <p className="text-sm text-muted-foreground">No contact details available.</p>
+                    )}
+                    {contact.email && (
+                      <InfoRow label="Email">
+                        <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
+                          {contact.email}
+                        </a>
+                      </InfoRow>
+                    )}
+                    {contact.mobile && (
+                      <InfoRow label="Phone">
+                        <a href={`tel:${contact.mobile}`} className="hover:underline">
+                          {contact.mobile}
+                        </a>
+                      </InfoRow>
+                    )}
+                    {contact.linkedin && (
+                      <InfoRow label="LinkedIn">
+                        <a
+                          href={contact.linkedin}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1"
+                        >
+                          <Linkedin className="h-3 w-3" /> {contact.linkedin}
+                        </a>
+                      </InfoRow>
+                    )}
+                    {contact.website && (
+                      <InfoRow label="Website">
+                        <a
+                          href={contact.website}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1"
+                        >
+                          <Globe className="h-3 w-3" /> {contact.website}
+                        </a>
+                      </InfoRow>
+                    )}
+                    {contact.address && (
+                      <InfoRow label="Address">
+                        <span className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-muted-foreground" /> {contact.address}
+                        </span>
+                      </InfoRow>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {contact.cardImageUrl && (
+                  <Card className="shadow-sm border-border/50 overflow-hidden flex flex-col">
+                    <CardHeader className="pb-3 bg-secondary/30">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-primary" /> Business Card
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1 bg-muted/20 flex items-center justify-center">
+                      <img src={contact.cardImageUrl} alt="Scanned Business Card" className="object-contain w-full h-full max-h-[260px] p-2" />
+                    </CardContent>
+                  </Card>
+                )}
               </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Phone className="h-4 w-4" /> Mobile</div>
-                <div className="font-medium">{contact.mobile || "-"}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><CalendarIcon className="h-4 w-4" /> Date Added</div>
-                <div className="font-medium">{format(new Date(contact.createdAt), 'PPP')}</div>
-              </div>
-              {contact.website && (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Globe className="h-4 w-4" /> Website</div>
-                  <div className="font-medium break-all">{contact.website}</div>
-                </div>
-              )}
-              {contact.linkedin && (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Linkedin className="h-4 w-4" /> LinkedIn</div>
-                  <div className="font-medium break-all">{contact.linkedin}</div>
-                </div>
-              )}
-              {contact.address && (
-                <div className="space-y-1 col-span-2">
-                  <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><MapPin className="h-4 w-4" /> Address</div>
-                  <div className="font-medium">{contact.address}</div>
-                </div>
-              )}
-              {contact.eventName && (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-muted-foreground">Source Event</div>
-                  <div className="font-medium">
-                    <Badge variant="secondary">{contact.eventName}</Badge>
+            </TabsContent>
+
+            <TabsContent value="ai" className="mt-0">
+              <Card className="shadow-sm border-primary/20">
+                <CardHeader className="pb-3 bg-primary/5 border-b border-primary/10">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-primary">
+                      <Sparkles className="h-4 w-4" /> AI Enrichment
+                    </CardTitle>
+                    <Button variant="outline" size="sm" onClick={handleEnrich} disabled={enrich.isPending}>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      {enrich.isPending ? "Enriching..." : contact.enrichedAt ? "Re-run" : "Enrich with AI"}
+                    </Button>
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle>Notes</CardTitle>
-                <Button variant="outline" size="sm">Edit</Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-secondary/30 p-4 rounded-md text-sm min-h-[100px] border border-border">
-                {contact.notes ? contact.notes : <span className="text-muted-foreground italic">No notes added.</span>}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3 bg-secondary/20">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> AI Enrichment</CardTitle>
-                <Button variant="outline" size="sm" onClick={handleEnrich} disabled={enrich.isPending}>
-                  <Sparkles className="h-4 w-4 mr-2" />
-                  {enrich.isPending ? "Enriching..." : contact.enrichedAt ? "Re-run" : "Enrich with AI"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {contact.enrichedAt ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Factory className="h-4 w-4" /> Industry</div>
-                      <div className="font-medium">{contact.industry || "—"}</div>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  {contact.enrichedAt ? (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                            <Factory className="h-4 w-4" /> Industry
+                          </div>
+                          <div className="font-medium text-base">{contact.industry || "—"}</div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                            <Award className="h-4 w-4" /> Seniority
+                          </div>
+                          <div className="font-medium text-base">{contact.seniority || "—"}</div>
+                        </div>
+                      </div>
+                      {contact.enrichmentSummary && (
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium text-muted-foreground">Summary</div>
+                          <p className="text-sm bg-secondary/30 p-4 rounded-md border border-border leading-relaxed">
+                            {contact.enrichmentSummary}
+                          </p>
+                        </div>
+                      )}
+                      {contact.talkingPoints && contact.talkingPoints.length > 0 && (
+                        <div className="space-y-3">
+                          <div className="text-sm font-medium text-muted-foreground">Suggested Talking Points</div>
+                          <ul className="space-y-3">
+                            {contact.talkingPoints.map((p, i) => (
+                              <li key={i} className="flex items-start gap-3 text-sm bg-secondary/20 p-3 rounded-md border border-border/50">
+                                <MessageSquare className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                <span className="leading-relaxed">{p}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Enriched {format(new Date(contact.enrichedAt), "PPp")}
+                      </p>
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Award className="h-4 w-4" /> Seniority</div>
-                      <div className="font-medium">{contact.seniority || "—"}</div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground italic py-8 text-center bg-secondary/20 rounded-md border border-dashed">
+                      No enrichment yet. Run AI enrichment to infer this contact's industry, seniority, and personalized talking points.
                     </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="notes" className="mt-0">
+              <Card className="shadow-sm">
+                <CardContent className="p-0">
+                  <div className="bg-secondary/10 p-6 text-sm min-h-[200px]">
+                    {contact.notes ? (
+                      <div className="whitespace-pre-wrap">{contact.notes}</div>
+                    ) : (
+                      <div className="text-muted-foreground italic text-center py-12">No notes added.</div>
+                    )}
                   </div>
-                  {contact.enrichmentSummary && (
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium text-muted-foreground">Summary</div>
-                      <p className="text-sm bg-secondary/30 p-3 rounded-md border border-border">{contact.enrichmentSummary}</p>
-                    </div>
-                  )}
-                  {contact.talkingPoints && contact.talkingPoints.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-muted-foreground">Suggested Talking Points</div>
-                      <ul className="space-y-2">
-                        {contact.talkingPoints.map((p, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm">
-                            <MessageSquare className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                            <span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">Enriched {format(new Date(contact.enrichedAt), "PPp")}</p>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground italic py-2">
-                  No enrichment yet. Run AI enrichment to infer this contact's industry, seniority, and personalized talking points.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </WorkspaceMain>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader className="pb-3 bg-secondary/20">
-              <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Lead Intelligence</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {contact.leadScore != null ? (
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex items-end justify-between mb-1">
-                      <span className="text-sm font-medium text-muted-foreground">Lead Score</span>
-                      <span className="text-2xl font-bold leading-none">{contact.leadScore}<span className="text-sm font-normal text-muted-foreground">/100</span></span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-                      <div className={`h-full rounded-full ${temp?.bar ?? "bg-primary"}`} style={{ width: `${Math.min(100, Math.max(0, contact.leadScore))}%` }} />
-                    </div>
-                  </div>
-                  {temp && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-muted-foreground">Temperature</span>
-                      <Badge variant="outline" className={`gap-1 ${temp.badge}`}>{temp.icon} {temp.label}</Badge>
-                    </div>
-                  )}
-                  {contact.aiReasoning && (
-                    <div className="space-y-1">
-                      <span className="text-sm font-medium text-muted-foreground">AI Reasoning</span>
-                      <p className="text-sm bg-secondary/30 p-3 rounded-md border border-border">{contact.aiReasoning}</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground italic py-2">No AI score available for this contact.</div>
-              )}
-            </CardContent>
-          </Card>
-
+        <WorkspaceSidebar>
           <CommunicationHub
             entity="contact"
             id={contactId}
             email={contact.email}
             phone={contact.mobile}
-            displayName={`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+            displayName={fullName}
           />
 
+          {hasAiData && (
+            <Card className="shadow-sm border-primary/20 bg-gradient-to-b from-primary/5 to-background">
+              <CardHeader className="pb-3 border-b border-primary/10">
+                <CardTitle className="text-base flex items-center gap-2 text-primary">
+                  <Sparkles className="h-4 w-4" /> Intelligence
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-5">
+                {(contact.leadScore ?? null) !== null && (
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col">
+                      <span className="text-4xl font-bold">{contact.leadScore}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-widest">Lead Score</span>
+                    </div>
+                    {temp && (
+                      <Badge variant="secondary" className={`gap-1 ${temp.badge}`}>
+                        {temp.icon} {temp.label}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                {contact.aiReasoning && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Reasoning
+                    </p>
+                    <p className="text-sm leading-relaxed">{contact.aiReasoning}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <SalesCopilotPanel entityType="contact" id={contactId} />
-
           <WorkflowIntelligencePanel entityType="contact" id={contactId} />
-
           <AiInsightsPanel entityType="contact" id={contactId} />
 
-          <Card>
-            <CardHeader className="pb-3 bg-secondary/20">
-              <CardTitle>Pipeline Status</CardTitle>
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3 border-b border-border mb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" /> CRM Record
+              </CardTitle>
             </CardHeader>
-            <CardContent className="pt-4">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-muted-foreground">Current Stage</div>
-                  <Select 
-                    value={contact.status} 
-                    onValueChange={(val) => handleStatusChange(val as ContactStatus)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.values(ContactStatus).map(s => (
-                        <SelectItem key={s} value={s} className="capitalize">{s.replace("_", " ")}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Company</label>
+                <Select
+                  value={contact.organizationId ? String(contact.organizationId) : ORG_NONE}
+                  onValueChange={handleOrgChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Link to a company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ORG_NONE}>None</SelectItem>
+                    {organizations.map((o) => (
+                      <SelectItem key={o.id} value={String(o.id)}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Pipeline Status</label>
+                <Select value={contact.status} onValueChange={(val) => handleStatusChange(val as ContactStatus)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.values(ContactStatus).map((s) => (
+                      <SelectItem key={s} value={s} className="capitalize">
+                        {s.replace("_", " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3 bg-secondary/20">
-              <CardTitle className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Company (CRM record)</CardTitle>
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3 border-b border-border mb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-primary" /> Follow-up
+              </CardTitle>
             </CardHeader>
-            <CardContent className="pt-4">
-              <Select value={contact.organizationId ? String(contact.organizationId) : ORG_NONE} onValueChange={handleOrgChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Link to a company" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ORG_NONE}>None</SelectItem>
-                  {organizations.map((o) => (
-                    <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3 bg-secondary/20">
-              <CardTitle className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /> Follow-up Reminder</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4 space-y-3">
+            <CardContent className="space-y-4">
               {contact.followUpDate ? (
-                <div className={`flex items-center justify-between rounded-md border p-3 text-sm ${followUpOverdue ? "border-red-200 bg-red-50 text-red-700" : "border-border bg-secondary/30"}`}>
+                <div
+                  className={`flex items-center justify-between rounded-md border p-3 text-sm ${
+                    followUpOverdue
+                      ? "border-destructive/25 bg-destructive-soft text-destructive"
+                      : "border-border bg-secondary/30"
+                  }`}
+                >
                   <span className="flex items-center gap-2 font-medium">
                     {followUpOverdue && <AlertCircle className="h-4 w-4" />}
                     {format(parseISO(contact.followUpDate), "PPP")}
                   </span>
-                  <span className="text-xs font-semibold uppercase tracking-wide">{followUpOverdue ? "Overdue" : "Scheduled"}</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider">
+                    {followUpOverdue ? "Overdue" : "Scheduled"}
+                  </span>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground italic">No follow-up scheduled.</p>
@@ -378,11 +556,21 @@ export default function AdminContactDetail() {
                 <label className="text-sm font-medium text-muted-foreground">Set reminder date</label>
                 <Input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
                 <div className="flex gap-2">
-                  <Button size="sm" className="flex-1" onClick={() => saveFollowUp(followUpDate || null)} disabled={updateContact.isPending || !followUpChanged}>
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => saveFollowUp(followUpDate || null)}
+                    disabled={updateContact.isPending || !followUpChanged}
+                  >
                     Save
                   </Button>
                   {contact.followUpDate && (
-                    <Button size="sm" variant="outline" onClick={handleClearFollowUp} disabled={updateContact.isPending}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleClearFollowUp}
+                      disabled={updateContact.isPending}
+                    >
                       Clear
                     </Button>
                   )}
@@ -391,20 +579,8 @@ export default function AdminContactDetail() {
             </CardContent>
           </Card>
 
-          {contact.cardImageUrl && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle>Scanned Card</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-[4/3] bg-muted rounded-md border flex items-center justify-center overflow-hidden">
-                  <img src={contact.cardImageUrl} alt="Business Card" className="object-contain w-full h-full" />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
-    </div>
+        </WorkspaceSidebar>
+      </WorkspaceContent>
+    </WorkspaceShell>
   );
 }

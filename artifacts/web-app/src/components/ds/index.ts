@@ -10,3 +10,4 @@ export { MetricCard } from "./MetricCard";
 export { EmptyState, ErrorState, TableSkeleton, CardGridSkeleton } from "./StateViews";
 export { Display, SectionTitle, SubsectionTitle, Body, Caption, KpiNumber, OverlineLabel } from "./Typography";
 export { ThemeToggle } from "./ThemeToggle";
+export * from "./workspace";

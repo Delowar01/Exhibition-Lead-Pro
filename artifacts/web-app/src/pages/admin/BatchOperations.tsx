@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Layers, Sparkles, Contact, Building2, BarChart2, CreditCard, Info, Bot } from "lucide-react";
+import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 
 type EntityType = "lead" | "contact" | "organization" | "business_card";
 
@@ -151,16 +152,8 @@ export default function BatchOperations() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Layers className="h-6 w-6 text-primary" /> Batch AI Operations
-        </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Generate AI insights and Copilot drafts across all records of an entity type at once.
-        </p>
-      </div>
-
+    <AiWorkspaceLayout activeTab="batch">
+      <div className="space-y-6 max-w-5xl mx-auto pb-10">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="shadow-sm border-primary/20">
           <CardHeader className="pb-3 border-b border-primary/10">
@@ -283,6 +276,7 @@ export default function BatchOperations() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+    </AiWorkspaceLayout>
   );
 }

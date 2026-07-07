@@ -8,6 +8,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, ShieldCheck, Cpu, ChevronRight } from "lucide-react";
+import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 
 const INSIGHT_LABELS: Record<string, string> = {
   lead_intelligence: "Lead Intelligence",
@@ -108,18 +109,8 @@ export default function AiInsightsReview() {
   const recent = data?.recent ?? [];
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">AI Insights Review</h1>
-          <p className="text-sm text-muted-foreground">
-            Every recommendation is derived from your own CRM data, stays reviewable, and is never applied
-            automatically. Accept or dismiss from each record's page.
-          </p>
-        </div>
-      </div>
-
+    <AiWorkspaceLayout activeTab="insights">
+      <div className="space-y-6 max-w-5xl mx-auto pb-10">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard title="Awaiting review" value={counts.suggested ?? 0} tone="text-amber-600" />
         <StatCard title="Accepted" value={counts.accepted ?? 0} tone="text-emerald-600" />
@@ -142,6 +133,7 @@ export default function AiInsightsReview() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </AiWorkspaceLayout>
   );
 }

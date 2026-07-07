@@ -67,17 +67,7 @@ export function buildAdminNav(user: User | null): NavGroup[] {
       id: "ai",
       label: "AI Intelligence",
       items: [
-        ...(canViewAssistant
-          ? [{ name: "AI Command Center", href: "/admin/ai-command", icon: Bot }]
-          : []),
-        { name: "AI Insights", href: "/admin/ai-insights", icon: Sparkles },
-        { name: "Sales Copilot", href: "/admin/ai-copilot", icon: Briefcase },
-        { name: "Workflow Intelligence", href: "/admin/workflow", icon: Workflow },
-        ...(canViewExecutive
-          ? [{ name: "Executive Intelligence", href: "/admin/executive", icon: LineChart }]
-          : []),
-        { name: "Batch AI", href: "/admin/ai-batch", icon: Layers },
-        { name: "AI Settings", href: "/admin/ai", icon: SlidersHorizontal },
+        { name: "AI Workspace", href: canViewAssistant ? "/admin/ai-command" : "/admin/ai-insights", icon: Sparkles }
       ],
     },
     {

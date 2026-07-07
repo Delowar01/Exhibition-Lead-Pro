@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   FlaskConical,
 } from "lucide-react";
+import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 
 const RISK_TONE: Record<string, string> = {
   critical: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-300/50",
@@ -258,17 +259,8 @@ export default function AdminWorkflow() {
   const bottlenecks = bottlenecksQuery.data;
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      <div className="flex items-center gap-2">
-        <Workflow className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Workflow Intelligence</h1>
-          <p className="text-sm text-muted-foreground">
-            Operational health, SLA risk alerts, pipeline bottlenecks, and scenario simulation across your workspace.
-          </p>
-        </div>
-      </div>
-
+    <AiWorkspaceLayout activeTab="workflow">
+      <div className="space-y-6 max-w-6xl mx-auto pb-10">
       {/* Health dashboard */}
       <Card className="shadow-sm">
         <CardHeader className="pb-3">
@@ -395,6 +387,7 @@ export default function AdminWorkflow() {
       </div>
 
       <SimulationTool candidates={health?.workload ?? []} />
-    </div>
+      </div>
+    </AiWorkspaceLayout>
   );
 }

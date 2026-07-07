@@ -10,6 +10,7 @@ import {
   type PipelineView,
 } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { StageBadge } from "./StageBadge";
 import {
   companyName,
   displayName,
@@ -32,42 +33,12 @@ interface KanbanBoardProps {
 export function KanbanBoard({
   view,
   stages,
+  stageMap,
   selectMode,
   selectedIds,
   onToggleSelect,
   onOpenLead,
 }: KanbanBoardProps) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const updateLead = useUpdateLead();
-  const [draggedLeadId, setDraggedLeadId] = useState<number | null>(null);
-  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
-
-  const handleDrop = (e: React.DragEvent, targetStageKey: string) => {
-    e.preventDefault();
-    setDragOverStage(null);
-    const leadIdStr = e.dataTransfer.getData("leadId");
-    setDraggedLeadId(null);
-    if (!leadIdStr) return;
-    const leadId = parseInt(leadIdStr, 10);
-    if (!leadId) return;
-
-    const key = getGetLeadPipelineQueryKey();
-    const prev = qc.getQueryData<PipelineView>(key);
-    if (prev) qc.setQueryData(key, moveLeadStage(prev, leadId, targetStageKey));
-
-    updateLead.mutate(
-      { id: leadId, data: { stage: targetStageKey as never } },
-      {
-        onError: () => {
-          if (prev) qc.setQueryData(key, prev);
-          toast({ title: "Update failed", description: "Could not move lead.", variant: "destructive" });
-        },
-        onSettled: () => qc.invalidateQueries({ queryKey: key }),
-      }
-    );
-  };
-
   if (stages.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center rounded-xl border-2 border-dashed border-border/50 text-sm text-muted-foreground">
@@ -82,23 +53,13 @@ export function KanbanBoard({
         const data: PipelineStage =
           view.stages.find((s) => s.stage === stage.key) || { stage: stage.key, leads: [], count: 0, value: 0 };
         const color = stage.color || "var(--color-primary)";
-        const isOver = dragOverStage === stage.key;
         return (
           <div
             key={stage.id}
             data-testid={`kanban-column-${stage.key}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              if (dragOverStage !== stage.key) setDragOverStage(stage.key);
-            }}
-            onDragLeave={() => setDragOverStage(null)}
-            onDrop={(e) => handleDrop(e, stage.key)}
-            className={`flex w-80 flex-shrink-0 flex-col rounded-xl border transition-colors ${
-              isOver ? "bg-primary/5 border-primary" : "bg-muted/30 border-border"
-            }`}
+            className="flex w-[340px] flex-shrink-0 flex-col rounded-xl border bg-muted/20 border-border"
           >
-            <div className="flex items-center justify-between rounded-t-xl border-b px-3.5 py-3">
+            <div className="flex items-center justify-between border-b bg-card/50 px-3.5 py-3 rounded-t-xl">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: color }} />
                 <h3 className="truncate text-sm font-semibold">
@@ -115,7 +76,6 @@ export function KanbanBoard({
 
             <div className="min-h-[400px] flex-1 space-y-2.5 overflow-y-auto p-2.5">
               {data.leads.map((lead: Lead) => {
-                const isDragging = draggedLeadId === lead.id;
                 const isSelected = selectedIds.has(lead.id);
                 const pr = lead.priority ? PRIORITY_META[lead.priority] : null;
                 const company = companyName(lead);
@@ -124,64 +84,67 @@ export function KanbanBoard({
                   <div
                     key={lead.id}
                     data-testid={`kanban-card-${lead.id}`}
-                    draggable={!selectMode}
-                    onDragStart={(e) => {
-                      if (selectMode) return;
-                      e.dataTransfer.setData("leadId", lead.id.toString());
-                      e.dataTransfer.effectAllowed = "move";
-                      setDraggedLeadId(lead.id);
-                    }}
-                    onDragEnd={() => {
-                      setDraggedLeadId(null);
-                      setDragOverStage(null);
-                    }}
                     onClick={() => (selectMode ? onToggleSelect(lead.id) : onOpenLead(lead.id))}
-                    className={`group rounded-lg border bg-card p-3 shadow-sm transition-all ${
+                    className={`group relative flex flex-col rounded-xl border bg-card p-3.5 shadow-sm transition-all ${
                       selectMode
                         ? `cursor-pointer ${isSelected ? "border-primary ring-1 ring-primary" : "hover:border-border"}`
                         : "cursor-pointer hover:shadow-md hover:border-primary/50"
-                    } ${isDragging ? "scale-95 opacity-40" : "opacity-100"}`}
+                    }`}
                   >
-                    <div className="mb-1.5 flex items-start justify-between gap-2">
-                      <div className="flex min-w-0 items-start gap-1.5">
-                        {selectMode ? (
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 items-start gap-2">
+                        {selectMode && (
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => onToggleSelect(lead.id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="mt-0.5 flex-shrink-0 accent-primary"
+                            className="mt-1 flex-shrink-0 accent-primary"
                           />
-                        ) : (
-                          <GripVertical className="-ml-1 mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-100" />
                         )}
-                        <span className="line-clamp-2 text-sm font-medium leading-tight">{displayName(lead)}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{displayName(lead)}</div>
+                          {company && (
+                            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                              <span className="truncate">{company}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {pr && <span className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${pr.dot}`} />}
+                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                        {pr && (
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${pr.badge}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${pr.dot}`} />
+                            {pr.label}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    {company && (
-                      <div className="mb-2 flex items-center gap-1.5 pl-5 text-xs text-muted-foreground">
-                        <Building2 className="h-3 w-3 flex-shrink-0" />
-                        <span className="truncate">{company}</span>
-                      </div>
-                    )}
-                    <div className="mt-2 flex items-center justify-between border-t border-border/50 pl-1 pt-2">
-                      <span className="text-sm font-bold text-foreground">
-                        <span>{money ?? "\u2014"}</span>
-                      </span>
-                      {lead.eventName && (
-                        <span className="flex max-w-[120px] items-center gap-1 truncate rounded bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          <CalendarIcon className="h-2.5 w-2.5" />
-                          {lead.eventName}
+
+                    <div className="mt-auto pt-3 flex items-center justify-between border-t border-border/50">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-foreground">
+                          {money ?? "\u2014"}
                         </span>
-                      )}
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {lead.eventName && (
+                          <span className="flex max-w-[120px] items-center gap-1 truncate rounded bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            <CalendarIcon className="h-2.5 w-2.5" />
+                            {lead.eventName}
+                          </span>
+                        )}
+                        <StageBadge lead={lead} stageMap={stageMap} stages={stages} size="sm" className="bg-background shadow-xs hover:bg-muted" />
+                      </div>
                     </div>
                   </div>
                 );
               })}
               {data.leads.length === 0 && (
                 <div className="flex min-h-[100px] items-center justify-center rounded-lg border-2 border-dashed border-border/50 text-xs font-medium text-muted-foreground">
-                  Drop leads here
+                  Empty stage
                 </div>
               )}
             </div>

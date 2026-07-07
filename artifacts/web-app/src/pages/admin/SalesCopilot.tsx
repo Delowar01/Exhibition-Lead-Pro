@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Textarea } from "@/components/ui/textarea";
 import { Bot, ShieldCheck, Cpu, ChevronRight, Copy, Check, X, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 
 const OUTPUT_LABELS: Record<string, string> = {
   email: "Email draft",
@@ -196,17 +197,8 @@ export default function SalesCopilot() {
   const recent = data?.recent ?? [];
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center gap-2">
-        <Bot className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">AI Sales Copilot Overview</h1>
-          <p className="text-sm text-muted-foreground">
-            Review and manage all AI-generated sales drafts, follow-ups, and prep materials.
-          </p>
-        </div>
-      </div>
-
+    <AiWorkspaceLayout activeTab="copilot">
+      <div className="space-y-6 max-w-5xl mx-auto pb-10">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard title="Generated" value={counts.generated ?? 0} tone="text-blue-600" />
         <StatCard title="Edited" value={counts.edited ?? 0} tone="text-purple-600" />
@@ -230,6 +222,7 @@ export default function SalesCopilot() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </AiWorkspaceLayout>
   );
 }
