@@ -167,3 +167,9 @@ id = "52aQhN3OABBeAV5ilHRce"
 uri = "file://docs/reports/stage-5.0-ai-platform-foundation.txt"
 type = "text"
 title = "Stage 5.0 Report — AI Platform Foundation"
+
+[[outputs]]
+id = "G_oJfGcy5VSVBshAB1wpW"
+uri = "file://docs/reports/STAGE_5E_REPORT.md"
+type = "text"
+title = "Stage 5E — Enterprise Intelligent Capture Report"
