@@ -1,0 +1,230 @@
+# Lead Capture Pro
+# Stage 5.9 – Enterprise Design System & Experience Modernization
+# Phase 5 – Enterprise Production Readiness & Final Polish
+
+Objective
+
+Stage 5.9 Phase 4 has been completed and approved.
+
+Proceed with Phase 5.
+
+This is the final quality and production-readiness phase.
+
+Do NOT add new business functionality.
+
+Do NOT redesign additional modules.
+
+Focus on refining, validating and polishing the entire platform.
+
+=========================================================
+
+Preserve
+
+Do NOT modify:
+
+• Business Logic
+• APIs
+• Database
+• RBAC
+• Multi-tenancy
+• Enterprise Privacy
+• AI
+• OCR
+• CRM Logic
+• Workflow Engine
+
+Zero regressions.
+
+=========================================================
+
+Quality Audit
+
+Review the complete application.
+
+Verify consistency of:
+
+• Layout
+• Typography
+• Spacing
+• Colors
+• Icons
+• Buttons
+• Cards
+• Tables
+• Forms
+• Drawers
+• Dialogs
+• Empty States
+• Loading States
+• Error States
+• Toast Notifications
+
+Everything should use the Enterprise Design System.
+
+=========================================================
+
+Zero Legacy UI
+
+Verify there are no remaining legacy UI components.
+
+Confirm:
+
+• No hardcoded colors
+• No duplicate components
+• No legacy buttons
+• No legacy cards
+• No legacy dialogs
+• No legacy tables
+• No inconsistent spacing
+• No inconsistent typography
+
+=========================================================
+
+Accessibility Audit
+
+Verify:
+
+• Keyboard navigation
+• Focus indicators
+• Accessible labels
+• Screen reader support
+• Color contrast
+• Touch targets
+
+=========================================================
+
+Performance Audit
+
+Review and optimize:
+
+• Rendering
+• Skeleton loading
+• Lazy loading
+• Route transitions
+• Virtualization
+• Image loading
+• Memory usage
+• Animation smoothness
+
+=========================================================
+
+Offline Experience
+
+Verify:
+
+• Pending scans
+• Pending uploads
+• Pending OCR
+• Sync indicators
+• Failed sync recovery
+• Last synchronization
+
+=========================================================
+
+Theme Audit
+
+Verify:
+
+• Light
+• Dark
+• System Theme
+
+Ensure all components use semantic design tokens.
+
+=========================================================
+
+Localization
+
+Verify:
+
+• English
+• Arabic
+• RTL
+• Text overflow
+• Pluralization
+• Alignment
+
+=========================================================
+
+Repository Cleanup
+
+Remove or resolve:
+
+• Dead code
+• Duplicate assets
+• Unused styles
+• Temporary files
+• Unused components
+• Untracked files (including the previously noted replit.nix if confirmed unnecessary)
+
+=========================================================
+
+Verification
+
+Instead of generating screenshots:
+
+Perform:
+
+• Full workspace typecheck
+• Full regression suite
+• Component verification
+• Design System compliance verification
+• Theme verification
+• Navigation verification
+• Responsive verification
+• Accessibility verification
+• Mobile verification
+• Web verification
+• Playwright functional verification only where needed to validate workflows (avoid screenshot generation)
+
+=========================================================
+
+Deliverables
+
+Provide a written report containing:
+
+• Enterprise UX Audit
+• Accessibility Audit
+• Performance Audit
+• Design System Compliance Report
+• Repository Cleanup Report
+• Production Readiness Checklist
+• Remaining Recommendations (if any)
+• Files Modified
+• Test Results
+
+Do NOT generate screenshots unless a critical issue cannot be explained without one.
+
+=========================================================
+
+Validation
+
+Run:
+
+• Full workspace typecheck
+• Complete regression suite
+
+Verify:
+
+• Zero API changes
+• Zero business logic changes
+• Zero RBAC changes
+• Zero permission changes
+• Zero tenant isolation changes
+
+=========================================================
+
+STOP
+
+When Phase 5 is complete:
+
+Provide a Final Stage 5.9 Completion Report summarizing:
+
+• What was modernized
+• What improved
+• Design System status
+• Production readiness
+• Remaining known issues (if any)
+• Overall project quality assessment
+
+Wait for approval before proceeding to Stage 5.5 – Enterprise Collaboration & Communication Center.
