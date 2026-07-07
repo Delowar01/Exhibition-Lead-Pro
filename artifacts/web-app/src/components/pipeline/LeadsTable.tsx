@@ -513,7 +513,7 @@ export function LeadsTable(props: LeadsTableProps) {
                       <div
                         onMouseDown={header.getResizeHandler()}
                         onTouchStart={header.getResizeHandler()}
-                        className="absolute right-0 top-0 h-full w-1 cursor-col-resize touch-none select-none bg-white/0 hover:bg-white/40"
+                        className="absolute right-0 top-0 h-full w-1 cursor-col-resize touch-none select-none bg-transparent hover:bg-muted/60"
                       />
                     )}
                   </div>

@@ -213,10 +213,10 @@ export function CopilotSection({ entityType, id }: Props) {
       output.confidence == null
         ? colors.mutedForeground
         : output.confidence >= 80
-          ? "#059669"
+          ? colors.success
           : output.confidence >= 60
-            ? "#d97706"
-            : "#e11d48";
+            ? colors.warning
+            : colors.destructive;
 
     return (
       <View key={output.id} style={[styles.card, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -236,7 +236,7 @@ export function CopilotSection({ entityType, id }: Props) {
               ? t("copilot.confidenceNa")
               : t("copilot.confidence", { value: output.confidence })}
           </Text>
-          <Text style={[styles.statusText, { color: output.status === "used" ? "#059669" : colors.mutedForeground }]}>
+          <Text style={[styles.statusText, { color: output.status === "used" ? colors.success : colors.mutedForeground }]}>
             {t(`copilot.${output.status}`, { defaultValue: humanizeKey(output.status) })}
           </Text>
         </View>
@@ -358,8 +358,8 @@ export function CopilotSection({ entityType, id }: Props) {
       {coachingSignals.length > 0 ? (
         <View style={[styles.panelBlock, { backgroundColor: colors.muted, borderColor: colors.border }]}>
           <View style={styles.panelHeaderRow}>
-            <Feather name="alert-triangle" size={13} color="#d97706" />
-            <Text style={[styles.panelHeader, { color: "#d97706" }]}>{t("copilot.coachingSignals")}</Text>
+            <Feather name="alert-triangle" size={13} color={colors.warning} />
+            <Text style={[styles.panelHeader, { color: colors.warning }]}>{t("copilot.coachingSignals")}</Text>
           </View>
           {coachingSignals.map((s, i) => (
             <Text key={i} style={[styles.valueText, { color: colors.foreground, textAlign }]}>

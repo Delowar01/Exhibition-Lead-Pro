@@ -11,7 +11,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PageHeader, MetricCard, StatusBadge, CardGridSkeleton, TableSkeleton } from "@/components/ds";
+import { PageHeader, MetricCard, StatusBadge, CardGridSkeleton, TableSkeleton, EmptyState } from "@/components/ds";
 
 export default function PlatformDashboard() {
   const { data: stats, isLoading: statsLoading } = useGetPlatformStats();
@@ -214,7 +214,9 @@ export default function PlatformDashboard() {
                   ))}
                   {(!companiesData?.companies || companiesData.companies.length === 0) && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">No companies found.</TableCell>
+                      <TableCell colSpan={5} className="p-4">
+                        <EmptyState icon={Building2} title="No companies found" description="Companies will appear here once they are onboarded." />
+                      </TableCell>
                     </TableRow>
                   )}
                 </TableBody>

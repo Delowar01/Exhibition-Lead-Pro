@@ -602,7 +602,7 @@ function PreviewDialog({
             <iframe
               src={state.url}
               title={state.fileName}
-              className="w-full h-[70vh] bg-white"
+              className="w-full h-[70vh] bg-background"
             />
           )}
           {!loading &&

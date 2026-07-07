@@ -137,10 +137,10 @@ export function AiInsightsSection({ entityType, id }: Props) {
       insight.confidence == null
         ? colors.mutedForeground
         : insight.confidence >= 80
-          ? "#059669"
+          ? colors.success
           : insight.confidence >= 60
-            ? "#d97706"
-            : "#e11d48";
+            ? colors.warning
+            : colors.destructive;
 
     return (
       <View key={insight.id} style={[styles.card, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -161,7 +161,7 @@ export function AiInsightsSection({ entityType, id }: Props) {
               : t("aiInsights.confidence", { value: insight.confidence })}
           </Text>
           {insight.status !== "suggested" ? (
-            <Text style={[styles.statusText, { color: insight.status === "accepted" ? "#059669" : colors.mutedForeground }]}>
+            <Text style={[styles.statusText, { color: insight.status === "accepted" ? colors.success : colors.mutedForeground }]}>
               {t(`aiInsights.${insight.status}`)}
             </Text>
           ) : null}

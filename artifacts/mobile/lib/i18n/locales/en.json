@@ -101,6 +101,8 @@
     "close": "Close",
     "confirm": "Confirm",
     "retry": "Try Again",
+    "errorTitle": "Something went wrong",
+    "errorBody": "We couldn't load this data.",
     "loading": "Loading…",
     "search": "Search",
     "filter": "Filter",
@@ -249,7 +251,9 @@
     "forgotBody": "Password resets are handled by your administrator. Please contact your workspace admin to regain access.",
     "contactAdmin": "Contact your administrator",
     "biometrics": "Biometrics",
-    "rememberMe": "Remember me"
+    "rememberMe": "Remember me",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "home": {
     "greetingMorning": "Good morning",
@@ -1495,7 +1499,8 @@
     "emptyTitle": "Nothing to export",
     "emptyBody": "No {{entity}} match the current filters.",
     "errorTitle": "Export failed",
-    "errorBody": "Could not generate the file. Please try again."
+    "errorBody": "Could not generate the file. Please try again.",
+    "formatChip": "Export as {{format}}"
   },
   "workflowManager": {
     "title": "Workflow Intelligence",

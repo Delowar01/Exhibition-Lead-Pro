@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Layers, Sparkles, Contact, Building2, BarChart2, CreditCard, Info, Bot } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 
 type EntityType = "lead" | "contact" | "organization" | "business_card";
@@ -246,7 +247,11 @@ export default function BatchOperations() {
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
             {insightsLoading ? (
-              <p className="text-sm text-muted-foreground">Loading jobs…</p>
+              <div className="space-y-2" aria-busy="true" aria-label="Loading jobs">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
             ) : insightsJobs.length === 0 ? (
               <div className="flex items-start gap-2 text-sm text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -264,7 +269,11 @@ export default function BatchOperations() {
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
             {copilotLoading ? (
-              <p className="text-sm text-muted-foreground">Loading jobs…</p>
+              <div className="space-y-2" aria-busy="true" aria-label="Loading jobs">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
             ) : copilotJobs.length === 0 ? (
               <div className="flex items-start gap-2 text-sm text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />

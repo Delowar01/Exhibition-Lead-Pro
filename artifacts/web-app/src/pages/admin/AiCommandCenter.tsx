@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, Plus, Trash2, Send, ShieldCheck, Cpu, User, Sparkles, ChevronRight, Loader2 } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
+import { EmptyState } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
 
 function formatTs(ts?: string | null): string {
@@ -237,7 +238,12 @@ export default function AiCommandCenter() {
             <ScrollArea className="flex-1 -mx-1 px-1">
               {convsLoading && <div className="text-xs text-muted-foreground p-2">Loading…</div>}
               {!convsLoading && conversations.length === 0 && (
-                <div className="text-xs text-muted-foreground p-2">No conversations yet.</div>
+                <EmptyState
+                  icon={Bot}
+                  title="No conversations yet"
+                  description="Start a new conversation to begin."
+                  className="px-3 py-8"
+                />
               )}
               <div className="space-y-1">
                 {conversations.map((c) => (

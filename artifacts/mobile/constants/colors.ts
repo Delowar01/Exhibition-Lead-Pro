@@ -11,10 +11,6 @@
 
 const colors = {
   light: {
-    // Legacy aliases
-    text: "#212121",
-    tint: "#FF6B00",
-
     // Core surfaces
     background: "#F8F9FB",
     foreground: "#212121",
@@ -60,10 +56,6 @@ const colors = {
   },
 
   dark: {
-    // Legacy aliases
-    text: "#F8F9FB",
-    tint: "#FF6B00",
-
     // Core surfaces
     background: "#0F1117",
     foreground: "#F8F9FB",

@@ -806,17 +806,17 @@ export default function AdminScan() {
                               {(m.isCustomer || m.isLead || m.isDecisionMaker) && (
                                 <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                                   {m.isCustomer && (
-                                    <Badge className="text-[10px] border bg-emerald-100 text-emerald-700 border-emerald-200">
+                                    <Badge className="text-[10px] border bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900">
                                       Existing customer
                                     </Badge>
                                   )}
                                   {m.isLead && !m.isCustomer && (
-                                    <Badge className="text-[10px] border bg-sky-100 text-sky-700 border-sky-200">
+                                    <Badge className="text-[10px] border bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-900">
                                       Active lead{typeof m.leadCount === "number" && m.leadCount > 1 ? ` ×${m.leadCount}` : ""}
                                     </Badge>
                                   )}
                                   {m.isDecisionMaker && (
-                                    <Badge className="text-[10px] border bg-violet-100 text-violet-700 border-violet-200">
+                                    <Badge className="text-[10px] border bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900">
                                       Decision maker
                                     </Badge>
                                   )}

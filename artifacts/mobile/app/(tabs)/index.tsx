@@ -354,6 +354,14 @@ export default function HomeScreen() {
             onPress={() => {
               router.push("/sync");
             }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              !isOnline
+                ? queuedCount > 0
+                  ? `${t("sync.offline")} — ${t("sync.queuedItems", { count: queuedCount })}`
+                  : t("sync.offline")
+                : t("sync.queuedItems", { count: queuedCount })
+            }
             style={({ pressed }) => [
               styles.offlineBanner,
               {
@@ -395,6 +403,8 @@ export default function HomeScreen() {
             if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             router.push("/card");
           }}
+          accessibilityRole="button"
+          accessibilityLabel={t("card.title")}
           style={({ pressed }) => [
             styles.cta,
             {

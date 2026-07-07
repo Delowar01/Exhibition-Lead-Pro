@@ -79,11 +79,7 @@ const queryClient: QueryClient = new QueryClient({
     },
   },
   mutationCache: new MutationCache({
-    onSuccess: (_data, _vars, _ctx, mutation) => {
-      if (__DEV__) {
-        const key = mutation.options.mutationKey?.join("/") ?? "mutation";
-        console.log(`[CSP/cache] ${key} success → invalidating all queries`);
-      }
+    onSuccess: () => {
       void queryClient.invalidateQueries();
     },
     onError: (error, _vars, _ctx, mutation) => {

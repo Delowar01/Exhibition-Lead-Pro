@@ -66,7 +66,7 @@ export function ExportSheet({ visible, onClose, entityType, filters }: Props) {
           style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPress={(e) => e.stopPropagation()}
         >
-          <View style={styles.handle} />
+          <View style={[styles.handle, { backgroundColor: colors.muted }]} />
           <Text style={[styles.title, { color: colors.foreground, fontFamily: FONT.bold, textAlign: isRTL ? "right" : "left" }]}>
             {t("exportShare.title")}
           </Text>
@@ -80,6 +80,8 @@ export function ExportSheet({ visible, onClose, entityType, filters }: Props) {
                 key={f.value}
                 disabled={!!busy}
                 onPress={() => run(f.value)}
+                accessibilityRole="button"
+                accessibilityLabel={t("exportShare.formatChip", { format: f.label })}
                 style={[
                   styles.option,
                   {

@@ -221,10 +221,10 @@ export function WorkflowSection({ entityType, id }: Props) {
       rec.confidence == null
         ? colors.mutedForeground
         : rec.confidence >= 80
-          ? "#059669"
+          ? colors.success
           : rec.confidence >= 60
-            ? "#d97706"
-            : "#e11d48";
+            ? colors.warning
+            : colors.destructive;
 
     return (
       <View key={rec.id} style={[styles.card, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -247,7 +247,7 @@ export function WorkflowSection({ entityType, id }: Props) {
           <Text
             style={[
               styles.statusText,
-              { color: rec.status === "accepted" ? "#059669" : colors.mutedForeground },
+              { color: rec.status === "accepted" ? colors.success : colors.mutedForeground },
             ]}
           >
             {t(`workflow.${rec.status}`, { defaultValue: humanizeKey(rec.status) })}

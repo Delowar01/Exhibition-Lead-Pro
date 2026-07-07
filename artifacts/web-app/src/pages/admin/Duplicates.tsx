@@ -41,9 +41,9 @@ function contactLabel(c: Contact): string {
 }
 
 function scoreClass(score: number): string {
-  if (score >= 90) return "bg-red-100 text-red-700 border-red-200";
-  if (score >= 70) return "bg-amber-100 text-amber-700 border-amber-200";
-  return "bg-slate-100 text-slate-600 border-slate-200";
+  if (score >= 90) return "bg-red-100 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900";
+  if (score >= 70) return "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900";
+  return "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-700";
 }
 
 function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerged: () => void }) {

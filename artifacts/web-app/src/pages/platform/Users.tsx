@@ -188,7 +188,7 @@ export default function PlatformUsers() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <div className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-500 dark:bg-green-400' : 'bg-red-500 dark:bg-red-400'}`} />
                         <span className="text-sm">{user.isActive ? "Active" : "Suspended"}</span>
                       </div>
                     </TableCell>
@@ -196,7 +196,7 @@ export default function PlatformUsers() {
                       {format(new Date(user.createdAt), "MMM d, yyyy")}
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="User actions">
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </TableCell>

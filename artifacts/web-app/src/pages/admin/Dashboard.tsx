@@ -441,6 +441,7 @@ export default function AdminDashboard() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Delete saved view ${v.name}`}
                       className="h-7 w-7 text-muted-foreground hover:text-destructive"
                       onClick={(e) => {
                         e.preventDefault();
@@ -688,7 +689,7 @@ function DashboardBody({
                             </span>
                           </div>
                           <Button variant="ghost" size="icon" asChild className="h-8 w-8 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Link href={`/admin/contacts/${contact.id}`}><ArrowUpRight className="h-4 w-4" /></Link>
+                            <Link href={`/admin/contacts/${contact.id}`} aria-label="Open contact"><ArrowUpRight className="h-4 w-4" /></Link>
                           </Button>
                         </div>
                       );

@@ -15,6 +15,7 @@ import {
 
 import { ICON, RADIUS, SPACING, TOUCH_TARGET, TYPE } from "@/constants/tokens";
 import { useColors } from "@/hooks/useColors";
+import { useLocale } from "@/hooks/useLocale";
 
 export const FONT = {
   regular: "Inter_400Regular",
@@ -298,19 +299,22 @@ export function EmptyState({
 
 export function ErrorState({ onRetry }: { onRetry: () => void }) {
   const colors = useColors();
+  const { t } = useLocale();
   return (
     <View style={styles.centerState}>
       <View style={[styles.emptyIcon, { backgroundColor: colors.destructive + "1A" }]}>
         <Feather name="alert-triangle" size={26} color={colors.destructive} />
       </View>
       <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-        Something went wrong
+        {t("common.errorTitle")}
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
-        We couldn't load this data.
+        {t("common.errorBody")}
       </Text>
       <Pressable
         onPress={onRetry}
+        accessibilityRole="button"
+        accessibilityLabel={t("common.retry")}
         style={({ pressed }) => [
           styles.retryBtn,
           {
@@ -322,7 +326,7 @@ export function ErrorState({ onRetry }: { onRetry: () => void }) {
       >
         <Feather name="refresh-cw" size={15} color={colors.foreground} />
         <Text style={[styles.retryText, { color: colors.foreground }]}>
-          Retry
+          {t("common.retry")}
         </Text>
       </Pressable>
     </View>

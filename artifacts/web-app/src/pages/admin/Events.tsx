@@ -157,7 +157,7 @@ export default function AdminEvents() {
                           ${revenue > 0 ? (revenue / 1000).toFixed(1) + 'k' : '0'}
                         </TableCell>
                         <TableCell className="text-center">
-                          <Badge variant={isCompleted ? "secondary" : "default"} className={isCompleted ? "" : "bg-blue-500 hover:bg-blue-600 text-white"}>
+                          <Badge variant={isCompleted ? "secondary" : "default"} className={isCompleted ? "" : "bg-blue-500 hover:bg-blue-600 text-white dark:bg-blue-600 dark:hover:bg-blue-500"}>
                             {isCompleted ? "Completed" : "Upcoming"}
                           </Badge>
                         </TableCell>

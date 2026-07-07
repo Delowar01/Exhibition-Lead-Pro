@@ -254,6 +254,8 @@ export default function LoginScreen() {
             <Pressable
               onPress={() => setShowPassword((v) => !v)}
               hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
             >
               <Feather
                 name={showPassword ? "eye-off" : "eye"}
@@ -267,6 +269,9 @@ export default function LoginScreen() {
             <Pressable
               onPress={() => setRememberMe((v) => !v)}
               hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: rememberMe }}
+              accessibilityLabel={t("auth.rememberMe")}
               style={[styles.rememberRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}
             >
               <View

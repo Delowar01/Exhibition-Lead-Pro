@@ -343,7 +343,7 @@ export function CommunicationHub({ entity, id, email, phone, displayName }: Prop
               {t("commHub.scheduleMeeting")}
             </Text>
 
-            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ maxHeight: 440 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
                 {t("commHub.calTitle")}
               </Text>

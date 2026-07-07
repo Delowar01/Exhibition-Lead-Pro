@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 
 import {
@@ -120,7 +121,16 @@ export default function AdminLeadDetail() {
   };
 
   if (isLoading) {
-    return <div className="p-8 flex justify-center">Loading lead details...</div>;
+    return (
+      <div className="space-y-4 p-6" aria-busy="true" aria-label="Loading lead details">
+        <Skeleton className="h-8 w-64" />
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-48 md:col-span-2" />
+          <Skeleton className="h-48" />
+        </div>
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   }
 
   if (!lead) {

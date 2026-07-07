@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChevronLeft,
   Mail,
@@ -198,7 +199,17 @@ export default function AdminContactDetail() {
     }
   };
 
-  if (isLoading) return <div className="p-8 flex justify-center text-muted-foreground">Loading contact...</div>;
+  if (isLoading)
+    return (
+      <div className="space-y-4 p-6" aria-busy="true" aria-label="Loading contact">
+        <Skeleton className="h-8 w-64" />
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-48 md:col-span-2" />
+          <Skeleton className="h-48" />
+        </div>
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   if (!contact) return <div className="p-8 flex justify-center text-muted-foreground">Contact not found</div>;
 
   const temp = contact.leadTemperature ? TEMPERATURE_STYLES[contact.leadTemperature] : null;
