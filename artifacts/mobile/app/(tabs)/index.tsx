@@ -176,7 +176,7 @@ export default function HomeScreen() {
 
   function openContactsWith(patch: Partial<typeof DEFAULT_CONTACT_FILTERS>) {
     setContactFilters({ ...DEFAULT_CONTACT_FILTERS, ...patch });
-    router.push("/(tabs)/contacts");
+    router.push("/contacts");
   }
 
   const insights = buildInsights(t, data);
@@ -214,7 +214,7 @@ export default function HomeScreen() {
       icon: "clock",
       color: "#06B6D4",
       onPress: () => {
-        router.push({ pathname: "/(tabs)/followups", params: { bucket: "due" } });
+        router.push({ pathname: "/followups", params: { bucket: "due" } });
       },
     },
     {
@@ -590,7 +590,7 @@ export default function HomeScreen() {
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground, marginBottom: 0, textAlign }]}>
             {t("home.recentContacts")}
           </Text>
-          <Pressable onPress={() => router.push("/(tabs)/contacts")} hitSlop={8}>
+          <Pressable onPress={() => router.push("/contacts")} hitSlop={8}>
             <Text style={[styles.seeAll, { color: colors.primary, textAlign }]}>{t("common.viewAll")}</Text>
           </Pressable>
         </View>

@@ -62,7 +62,7 @@ export default function CaptureQrScreen() {
         data.company ||
         t("qr.contactFallback");
       enqueueContact(payload, { label, source: "qr", eventId });
-      router.replace("/(tabs)/contacts");
+      router.replace("/contacts");
       return;
     }
     router.replace({

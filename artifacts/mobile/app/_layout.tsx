@@ -173,7 +173,6 @@ function RootLayoutNav() {
       />
       <Stack.Screen name="capture-manual" options={{ title: t("screens.manualEntry") }} />
       <Stack.Screen name="card" options={{ headerShown: false }} />
-      <Stack.Screen name="leads" options={{ headerShown: false }} />
       <Stack.Screen name="events" options={{ headerShown: false }} />
       <Stack.Screen name="meetings" options={{ headerShown: false }} />
       <Stack.Screen name="tasks" options={{ headerShown: false }} />

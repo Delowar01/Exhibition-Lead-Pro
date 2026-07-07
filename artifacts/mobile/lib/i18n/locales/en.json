@@ -172,7 +172,9 @@
     "companies": "Companies",
     "workflowIntel": "Workflow Intelligence",
     "executiveIntel": "Executive Intelligence",
-    "aiAssistant": "AI Command Center"
+    "aiAssistant": "AI Command Center",
+    "scan": "Scan",
+    "notifications": "Notifications"
   },
   "assistant": {
     "title": "AI Command Center",
@@ -1363,7 +1365,15 @@
     "chooseFromLibrary": "Choose from Library",
     "takePhoto": "Take Photo",
     "removePhoto": "Remove Photo",
-    "profilePhoto": "Profile photo"
+    "profilePhoto": "Profile photo",
+    "groupComms": "Communications",
+    "commsTitle": "Communication Center",
+    "commsSoon": "Coming in Stage 5.5",
+    "groupCrm": "CRM",
+    "groupAi": "AI Intelligence",
+    "groupWorkspace": "My Workspace",
+    "groupSettings": "Settings",
+    "followupsSub": "Due and upcoming follow-ups"
   },
   "batch": {
     "backToContacts": "Back to contacts",
@@ -1571,5 +1581,15 @@
       "fair": "Fair",
       "at_risk": "At risk"
     }
+  },
+  "notifCenter": {
+    "title": "Notifications",
+    "subtitle": "Alerts and updates from your workspace",
+    "empty": "No notifications yet",
+    "emptyDesc": "You'll see alerts about your workspace here.",
+    "markAllRead": "Mark all as read",
+    "unread_one": "{{count}} unread",
+    "unread_other": "{{count}} unread",
+    "allCaughtUp": "You're all caught up"
   }
 }

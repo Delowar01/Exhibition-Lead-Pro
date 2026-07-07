@@ -1,75 +1,19 @@
-import React from "react";
-import { Link, useLocation } from "wouter";
-import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart, Columns3, Tags, FolderOpen, Sparkles, Layers, Bot, Workflow } from "lucide-react";
+import React, { useMemo } from "react";
+import { Camera } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
-import { ThemeToggle } from "@/components/ds/ThemeToggle";
+import { buildAdminNav } from "./navigation";
+import { SidebarNav } from "./SidebarNav";
+import { AppHeader } from "./AppHeader";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
-  const { user, logout } = useAuth();
-  const logoutMutation = useLogout();
-  const { data: unreadData } = useGetUnreadCount({ query: { refetchInterval: 60000, queryKey: getGetUnreadCountQueryKey() } });
-  const unreadCount = unreadData?.count ?? 0;
-
-  const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
-  const docPerms = (user?.permissions?.documents as string[] | undefined) ?? [];
-  const canViewDocuments = isFullAccess || docPerms.includes("view");
-  const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
-  const canViewExecutive =
-    user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
-  const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
-  const canViewAssistant =
-    user?.role !== "platform_owner" && (isFullAccess || assistantPerms.includes("view"));
-
-  const handleLogout = () => {
-    logoutMutation.mutate(undefined, {
-      onSettled: () => {
-        logout();
-      }
-    });
-  };
-
-  const navItems = [
-    { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
-    { name: "Contacts", href: "/admin/contacts", icon: Contact },
-    { name: "Companies", href: "/admin/companies", icon: Building2 },
-    { name: "Duplicates", href: "/admin/duplicates", icon: CopyCheck },
-    { name: "Leads Pipeline", href: "/admin/leads", icon: BarChart2 },
-    { name: "Pipeline Settings", href: "/admin/pipeline-settings", icon: Columns3 },
-    { name: "Tags", href: "/admin/tags", icon: Tags },
-    { name: "Events", href: "/admin/events", icon: Calendar },
-    ...(canViewDocuments ? [{ name: "Documents", href: "/admin/documents", icon: FolderOpen }] : []),
-    { name: "Scan Card", href: "/admin/scan", icon: Camera },
-    { name: "Notifications", href: "/admin/notifications", icon: Bell },
-    { name: "Team", href: "/admin/team", icon: Users },
-    { name: "Departments", href: "/admin/departments", icon: Building2 },
-    { name: "Teams", href: "/admin/teams", icon: Network },
-    { name: "Employee Directory", href: "/admin/directory", icon: BookUser },
-    { name: "Org Hierarchy", href: "/admin/org-hierarchy", icon: GitBranch },
-    { name: "Roles & Permissions", href: "/admin/roles", icon: ShieldCheck },
-    { name: "Reports", href: "/admin/reports", icon: BarChart2 },
-    { name: "Executive Dashboard", href: "/admin/analytics", icon: LineChart },
-    ...(canViewAssistant ? [{ name: "AI Command Center", href: "/admin/ai-command", icon: Bot }] : []),
-    { name: "AI Insights", href: "/admin/ai-insights", icon: Sparkles },
-    { name: "Sales Copilot", href: "/admin/ai-copilot", icon: Bot },
-    { name: "Workflow Intelligence", href: "/admin/workflow", icon: Workflow },
-    ...(canViewExecutive ? [{ name: "Executive Intelligence", href: "/admin/executive", icon: LineChart }] : []),
-    { name: "Batch AI", href: "/admin/ai-batch", icon: Layers },
-    { name: "AI Intelligence", href: "/admin/ai", icon: Sparkles },
-    { name: "Organization", href: "/admin/organization", icon: Building2 },
-    { name: "Security", href: "/admin/security", icon: ShieldAlert },
-    { name: "Subscription", href: "/admin/subscription", icon: CreditCard },
-    { name: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
-    { name: "My Profile", href: "/admin/profile", icon: UserCircle },
-    { name: "Settings", href: "/admin/settings", icon: Settings },
-  ];
+  const { user } = useAuth();
+  const navGroups = useMemo(() => buildAdminNav(user), [user]);
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 bg-card text-card-foreground border-r border-border flex flex-col flex-shrink-0 shadow-sm relative z-10">
-        <div className="p-6 border-b border-border">
+        <div className="p-5 border-b border-border">
           <div className="flex items-center gap-2 text-primary">
             <Camera className="h-6 w-6" />
             <span className="font-bold text-lg tracking-tight">Card Scanner Pro</span>
@@ -78,60 +22,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             {user?.companyName || "Company Portal"}
           </div>
         </div>
-        
-        <nav className="flex-1 py-4 flex flex-col gap-1 px-3 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive = location === item.href;
-            const Icon = item.icon;
-            return (
-              <Link 
-                key={item.href} 
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all text-sm font-medium ${
-                  isActive 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
-                }`}
-              >
-                <Icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
-                <span className="flex-1">{item.name}</span>
-                {item.href === "/admin/notifications" && unreadCount > 0 && (
-                  <span className="ml-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-        
-        <div className="p-4 border-t border-border mt-auto">
-          <div className="flex items-center gap-3 mb-4 px-2">
-            <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs">
-              {user?.name?.substring(0, 2).toUpperCase() || "U"}
-            </div>
-            <div className="overflow-hidden flex-1">
-              <p className="text-sm font-medium truncate">{user?.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-            </div>
-            <ThemeToggle />
-          </div>
-          <button 
-            onClick={handleLogout}
-            className="flex items-center justify-center gap-2 w-full py-2 px-3 text-sm font-medium rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </button>
-        </div>
+
+        <SidebarNav groups={navGroups} storageKey="csp_nav_admin" />
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-background">
-        <div className="p-8 max-w-7xl mx-auto min-h-full">
-          {children}
-        </div>
-      </main>
+      {/* Main column */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <AppHeader portal="admin" navGroups={navGroups} />
+        <main className="flex-1 overflow-y-auto bg-background">
+          <div className="p-8 max-w-7xl mx-auto min-h-full">{children}</div>
+        </main>
+      </div>
     </div>
   );
 }

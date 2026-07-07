@@ -535,7 +535,7 @@ export default function CaptureNfcScreen() {
           { ...extractedToContact(data), eventId },
           { label, source: "nfc", eventId },
         );
-        router.replace("/(tabs)/contacts");
+        router.replace("/contacts");
         return;
       }
       router.replace({

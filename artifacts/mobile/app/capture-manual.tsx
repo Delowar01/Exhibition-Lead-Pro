@@ -44,12 +44,12 @@ export default function CaptureManualScreen() {
     const payload = { ...toContactPayload(values), eventId };
     if (!isOnline) {
       enqueueContact(payload, { label: payloadLabel(payload, t("contacts.newContact")), source: "manual", eventId });
-      router.replace("/(tabs)/contacts");
+      router.replace("/contacts");
       return;
     }
     try {
       await createContact.mutateAsync({ data: payload });
-      router.replace("/(tabs)/contacts");
+      router.replace("/contacts");
     } catch {
       // error surfaced below
     }

@@ -1,69 +1,68 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { useEffect, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { setAuthTokenGetter, setOnUnauthorized } from "@workspace/api-client-react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
-// Pages
+// Pages — auth/public pages stay eager (first paint); portal pages are lazy-loaded
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
-import PlatformDashboard from "@/pages/platform/Dashboard";
-import PlatformCompanies from "@/pages/platform/Companies";
-import PlatformUsers from "@/pages/platform/Users";
-import PlatformSubscriptions from "@/pages/platform/Subscriptions";
-import PlatformAnalytics from "@/pages/platform/Analytics";
-import PlatformActivity from "@/pages/platform/Activity";
-import PlatformSettings from "@/pages/platform/Settings";
-import PlatformAiIntelligence from "@/pages/platform/AiIntelligence";
-
-import AdminDashboard from "@/pages/admin/Dashboard";
-import AdminContacts from "@/pages/admin/Contacts";
-import AdminContactNew from "@/pages/admin/ContactNew";
-import AdminContactDetail from "@/pages/admin/ContactDetail";
-import AdminDuplicates from "@/pages/admin/Duplicates";
-import AdminLeads from "@/pages/admin/Leads";
-import AdminLeadDetail from "@/pages/admin/LeadDetail";
-import AdminPipelineSettings from "@/pages/admin/PipelineSettings";
-import AdminTags from "@/pages/admin/Tags";
-import AdminEvents from "@/pages/admin/Events";
-import AdminEventDetail from "@/pages/admin/EventDetail";
-import AdminTeam from "@/pages/admin/Team";
-import AdminDepartments from "@/pages/admin/Departments";
-import AdminTeams from "@/pages/admin/Teams";
-import AdminCompanies from "@/pages/admin/Companies";
-import AdminCompanyDetail from "@/pages/admin/CompanyDetail";
-import AdminDirectory from "@/pages/admin/Directory";
-import AdminOrgHierarchy from "@/pages/admin/OrgHierarchy";
-import AdminRoles from "@/pages/admin/Roles";
-import AdminOrganization from "@/pages/admin/Organization";
-import AdminSecurity from "@/pages/admin/Security";
-import AdminProfile from "@/pages/admin/Profile";
-import AdminReports from "@/pages/admin/Reports";
-import AdminAnalytics from "@/pages/admin/Analytics";
-import AdminAiSettings from "@/pages/admin/AiSettings";
-import AdminAiInsightsReview from "@/pages/admin/AiInsightsReview";
-import AdminSalesCopilot from "@/pages/admin/SalesCopilot";
-import AdminWorkflow from "@/pages/admin/Workflow";
-import AdminAiCommandCenter from "@/pages/admin/AiCommandCenter";
-import AdminDesignSystem from "@/pages/admin/DesignSystem";
-import AdminExecutiveIntelligence from "@/pages/admin/ExecutiveIntelligence";
-import AdminBatchOperations from "@/pages/admin/BatchOperations";
-import AdminSubscription from "@/pages/admin/Subscription";
-import AdminSettings from "@/pages/admin/Settings";
-import AdminScan from "@/pages/admin/Scan";
-import AdminSessions from "@/pages/admin/Sessions";
-import AdminNotifications from "@/pages/admin/Notifications";
-import AdminDocuments from "@/pages/admin/Documents";
 import PublicCard from "@/pages/PublicCard";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import VerifyEmail from "@/pages/VerifyEmail";
 import AcceptInvite from "@/pages/AcceptInvite";
+const PlatformDashboard = lazy(() => import("@/pages/platform/Dashboard"));
+const PlatformCompanies = lazy(() => import("@/pages/platform/Companies"));
+const PlatformUsers = lazy(() => import("@/pages/platform/Users"));
+const PlatformSubscriptions = lazy(() => import("@/pages/platform/Subscriptions"));
+const PlatformAnalytics = lazy(() => import("@/pages/platform/Analytics"));
+const PlatformActivity = lazy(() => import("@/pages/platform/Activity"));
+const PlatformSettings = lazy(() => import("@/pages/platform/Settings"));
+const PlatformAiIntelligence = lazy(() => import("@/pages/platform/AiIntelligence"));
+const AdminDashboard = lazy(() => import("@/pages/admin/Dashboard"));
+const AdminContacts = lazy(() => import("@/pages/admin/Contacts"));
+const AdminContactNew = lazy(() => import("@/pages/admin/ContactNew"));
+const AdminContactDetail = lazy(() => import("@/pages/admin/ContactDetail"));
+const AdminDuplicates = lazy(() => import("@/pages/admin/Duplicates"));
+const AdminLeads = lazy(() => import("@/pages/admin/Leads"));
+const AdminLeadDetail = lazy(() => import("@/pages/admin/LeadDetail"));
+const AdminPipelineSettings = lazy(() => import("@/pages/admin/PipelineSettings"));
+const AdminTags = lazy(() => import("@/pages/admin/Tags"));
+const AdminEvents = lazy(() => import("@/pages/admin/Events"));
+const AdminEventDetail = lazy(() => import("@/pages/admin/EventDetail"));
+const AdminTeam = lazy(() => import("@/pages/admin/Team"));
+const AdminDepartments = lazy(() => import("@/pages/admin/Departments"));
+const AdminTeams = lazy(() => import("@/pages/admin/Teams"));
+const AdminCompanies = lazy(() => import("@/pages/admin/Companies"));
+const AdminCompanyDetail = lazy(() => import("@/pages/admin/CompanyDetail"));
+const AdminDirectory = lazy(() => import("@/pages/admin/Directory"));
+const AdminOrgHierarchy = lazy(() => import("@/pages/admin/OrgHierarchy"));
+const AdminRoles = lazy(() => import("@/pages/admin/Roles"));
+const AdminOrganization = lazy(() => import("@/pages/admin/Organization"));
+const AdminSecurity = lazy(() => import("@/pages/admin/Security"));
+const AdminProfile = lazy(() => import("@/pages/admin/Profile"));
+const AdminReports = lazy(() => import("@/pages/admin/Reports"));
+const AdminAnalytics = lazy(() => import("@/pages/admin/Analytics"));
+const AdminAiSettings = lazy(() => import("@/pages/admin/AiSettings"));
+const AdminAiInsightsReview = lazy(() => import("@/pages/admin/AiInsightsReview"));
+const AdminSalesCopilot = lazy(() => import("@/pages/admin/SalesCopilot"));
+const AdminWorkflow = lazy(() => import("@/pages/admin/Workflow"));
+const AdminAiCommandCenter = lazy(() => import("@/pages/admin/AiCommandCenter"));
+const AdminDesignSystem = lazy(() => import("@/pages/admin/DesignSystem"));
+const AdminExecutiveIntelligence = lazy(() => import("@/pages/admin/ExecutiveIntelligence"));
+const AdminBatchOperations = lazy(() => import("@/pages/admin/BatchOperations"));
+const AdminSubscription = lazy(() => import("@/pages/admin/Subscription"));
+const AdminSettings = lazy(() => import("@/pages/admin/Settings"));
+const AdminScan = lazy(() => import("@/pages/admin/Scan"));
+const AdminSessions = lazy(() => import("@/pages/admin/Sessions"));
+const AdminNotifications = lazy(() => import("@/pages/admin/Notifications"));
+const AdminDocuments = lazy(() => import("@/pages/admin/Documents"));
 
 import { PlatformLayout } from "@/components/layouts/PlatformLayout";
 import { AdminLayout } from "@/components/layouts/AdminLayout";
-import { useEffect } from "react";
 
 // Configure API client — attach JWT from localStorage before every request
 setAuthTokenGetter(() => localStorage.getItem("csp_token"));
@@ -76,6 +75,21 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function RouteFallback() {
+  return (
+    <div className="space-y-4 animate-pulse" aria-busy="true" aria-label="Loading page">
+      <div className="h-8 w-64 rounded-md bg-muted" />
+      <div className="h-4 w-96 max-w-full rounded-md bg-muted" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+        <div className="h-28 rounded-lg bg-muted" />
+        <div className="h-28 rounded-lg bg-muted" />
+        <div className="h-28 rounded-lg bg-muted" />
+      </div>
+      <div className="h-64 rounded-lg bg-muted" />
+    </div>
+  );
+}
 
 function ProtectedRoute({ component: Component, role, layout: Layout }: any) {
   const { user, isLoading } = useAuth();
@@ -99,7 +113,9 @@ function ProtectedRoute({ component: Component, role, layout: Layout }: any) {
 
   return (
     <Layout>
-      <Component />
+      <Suspense fallback={<RouteFallback />}>
+        <Component />
+      </Suspense>
     </Layout>
   );
 }

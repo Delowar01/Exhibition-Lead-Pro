@@ -456,13 +456,15 @@ export default function LeadsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 20 }}>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={10}
-          style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-        >
-          <Feather name={isRTL ? "chevron-right" : "chevron-left"} size={20} color={colors.foreground} />
-        </Pressable>
+        {router.canGoBack() && (
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+            style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            <Feather name={isRTL ? "chevron-right" : "chevron-left"} size={20} color={colors.foreground} />
+          </Pressable>
+        )}
 
         <View style={[styles.headerActions, { top: topPad + 12, right: isRTL ? undefined : 20, left: isRTL ? 20 : undefined, flexDirection: isRTL ? "row-reverse" : "row" }]}>
           <Pressable

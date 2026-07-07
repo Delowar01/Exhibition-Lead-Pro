@@ -107,149 +107,192 @@ export default function MoreScreen() {
     ]);
   }
 
-  const navItems: {
+  type MoreItem = {
     key: string;
     label: string;
     sub: string;
     icon: keyof typeof Feather.glyphMap;
     color: string;
-    onPress: () => void;
+    onPress?: () => void;
     badge?: number;
-  }[] = [
+    disabled?: boolean;
+  };
+  type MoreGroup = { key: string; title: string; items: MoreItem[] };
+
+  const allGroups: MoreGroup[] = [
     {
-      key: "sync",
-      label: t("nav.sync"),
-      sub: isOnline ? t("more.syncManage") : t("more.syncQueued"),
-      icon: "refresh-cw",
-      color: queuedCount > 0 ? "#F59E0B" : "#22C55E",
-      onPress: () => router.push("/sync"),
-      badge: queuedCount,
+      key: "comms",
+      title: t("more.groupComms"),
+      items: [
+        {
+          key: "communications",
+          label: t("more.commsTitle"),
+          sub: t("more.commsSoon"),
+          icon: "message-square" as keyof typeof Feather.glyphMap,
+          color: "#94A3B8",
+          disabled: true,
+        },
+      ],
     },
     {
-      key: "card",
-      label: t("nav.card"),
-      sub: t("card.subtitle"),
-      icon: "credit-card",
-      color: colors.primary,
-      onPress: () => router.push({ pathname: "/card", params: { mode: "edit" } }),
+      key: "crm",
+      title: t("more.groupCrm"),
+      items: [
+        {
+          key: "contacts",
+          label: t("nav.contacts"),
+          sub: t("more.contactsSub"),
+          icon: "users",
+          color: "#06B6D4",
+          onPress: () => router.push("/contacts"),
+        },
+        {
+          key: "companies",
+          label: t("nav.companies"),
+          sub: t("companies.subtitle"),
+          icon: "briefcase",
+          color: "#6366F1",
+          onPress: () => router.push("/companies"),
+        },
+        {
+          key: "followups",
+          label: t("nav.followups"),
+          sub: t("more.followupsSub"),
+          icon: "check-square",
+          color: "#F97316",
+          onPress: () => router.push("/followups"),
+        },
+        {
+          key: "meetings",
+          label: t("nav.meetings"),
+          sub: t("meetings.subtitle"),
+          icon: "video",
+          color: "#0EA5E9",
+          onPress: () => router.push("/meetings"),
+        },
+        {
+          key: "tasks",
+          label: t("nav.tasks"),
+          sub: t("tasks.subtitle"),
+          icon: "check-circle",
+          color: "#10B981",
+          onPress: () => router.push("/tasks"),
+        },
+        {
+          key: "events",
+          label: t("nav.events"),
+          sub: t("events.subtitle"),
+          icon: "calendar",
+          color: "#8B5CF6",
+          onPress: () => router.push("/events"),
+        },
+        {
+          key: "duplicates",
+          label: t("nav.duplicates"),
+          sub: t("duplicates.subtitle"),
+          icon: "copy",
+          color: "#F59E0B",
+          onPress: () => router.push("/duplicates"),
+        },
+      ],
     },
     {
-      key: "my-numbers",
-      label: t("nav.myNumbers"),
-      sub: t("myNumbers.subtitle"),
-      icon: "trending-up",
-      color: "#10B981",
-      onPress: () => router.push("/my-numbers"),
-    },
-    ...(canViewAssistant
-      ? [
-          {
-            key: "assistant",
-            label: t("nav.aiAssistant"),
-            sub: t("assistant.subtitle"),
-            icon: "message-circle" as keyof typeof Feather.glyphMap,
-            color: "#8B5CF6",
-            onPress: () => router.push("/assistant"),
-          },
-        ]
-      : []),
-    {
-      key: "workflow",
-      label: t("nav.workflowIntel"),
-      sub: t("workflowManager.subtitle"),
-      icon: "activity",
-      color: "#F59E0B",
-      onPress: () => router.push("/workflow"),
-    },
-    ...(canViewExecutive
-      ? [
-          {
-            key: "executive",
-            label: t("nav.executiveIntel"),
-            sub: t("executiveManager.subtitle"),
-            icon: "trending-up" as keyof typeof Feather.glyphMap,
-            color: "#6366F1",
-            onPress: () => router.push("/executive"),
-          },
-        ]
-      : []),
-    {
-      key: "pipeline",
-      label: t("nav.leads"),
-      sub: t("leads.subtitle"),
-      icon: "bar-chart-2",
-      color: "#8B5CF6",
-      onPress: () => router.push("/leads"),
+      key: "ai",
+      title: t("more.groupAi"),
+      items: [
+        ...(canViewAssistant
+          ? [
+              {
+                key: "assistant",
+                label: t("nav.aiAssistant"),
+                sub: t("assistant.subtitle"),
+                icon: "message-circle" as keyof typeof Feather.glyphMap,
+                color: "#8B5CF6",
+                onPress: () => router.push("/assistant"),
+              },
+            ]
+          : []),
+        {
+          key: "workflow",
+          label: t("nav.workflowIntel"),
+          sub: t("workflowManager.subtitle"),
+          icon: "activity",
+          color: "#F59E0B",
+          onPress: () => router.push("/workflow"),
+        },
+        ...(canViewExecutive
+          ? [
+              {
+                key: "executive",
+                label: t("nav.executiveIntel"),
+                sub: t("executiveManager.subtitle"),
+                icon: "trending-up" as keyof typeof Feather.glyphMap,
+                color: "#6366F1",
+                onPress: () => router.push("/executive"),
+              },
+            ]
+          : []),
+      ],
     },
     {
-      key: "events",
-      label: t("nav.events"),
-      sub: t("events.subtitle"),
-      icon: "calendar",
-      color: "#8B5CF6",
-      onPress: () => router.push("/events"),
-    },
-    {
-      key: "meetings",
-      label: t("nav.meetings"),
-      sub: t("meetings.subtitle"),
-      icon: "video",
-      color: "#0EA5E9",
-      onPress: () => router.push("/meetings"),
-    },
-    {
-      key: "tasks",
-      label: t("nav.tasks"),
-      sub: t("tasks.subtitle"),
-      icon: "check-circle",
-      color: "#10B981",
-      onPress: () => router.push("/tasks"),
-    },
-    {
-      key: "contacts",
-      label: t("nav.contacts"),
-      sub: t("more.contactsSub"),
-      icon: "users",
-      color: "#06B6D4",
-      onPress: () => router.push("/(tabs)/contacts"),
-    },
-    {
-      key: "companies",
-      label: t("nav.companies"),
-      sub: t("companies.subtitle"),
-      icon: "briefcase",
-      color: "#6366F1",
-      onPress: () => router.push("/companies"),
-    },
-    {
-      key: "duplicates",
-      label: t("nav.duplicates"),
-      sub: t("duplicates.subtitle"),
-      icon: "copy",
-      color: "#F59E0B",
-      onPress: () => router.push("/duplicates"),
+      key: "workspace",
+      title: t("more.groupWorkspace"),
+      items: [
+        {
+          key: "card",
+          label: t("nav.card"),
+          sub: t("card.subtitle"),
+          icon: "credit-card",
+          color: colors.primary,
+          onPress: () => router.push({ pathname: "/card", params: { mode: "edit" } }),
+        },
+        {
+          key: "my-numbers",
+          label: t("nav.myNumbers"),
+          sub: t("myNumbers.subtitle"),
+          icon: "trending-up",
+          color: "#10B981",
+          onPress: () => router.push("/my-numbers"),
+        },
+        {
+          key: "sync",
+          label: t("nav.sync"),
+          sub: isOnline ? t("more.syncManage") : t("more.syncQueued"),
+          icon: "refresh-cw",
+          color: queuedCount > 0 ? "#F59E0B" : "#22C55E",
+          onPress: () => router.push("/sync"),
+          badge: queuedCount,
+        },
+      ],
     },
     {
       key: "settings",
-      label: t("nav.settings"),
-      sub: t("settings.subtitle"),
-      icon: "settings",
-      color: "#67707D",
-      onPress: () => router.push("/settings"),
+      title: t("more.groupSettings"),
+      items: [
+        {
+          key: "settings",
+          label: t("nav.settings"),
+          sub: t("settings.subtitle"),
+          icon: "settings",
+          color: "#67707D",
+          onPress: () => router.push("/settings"),
+        },
+        ...(__DEV__
+          ? [
+              {
+                key: "dev-perf",
+                label: "Dev Performance",
+                sub: "Scan pipeline timings (dev build only)",
+                icon: "activity" as keyof typeof Feather.glyphMap,
+                color: "#8B5CF6",
+                onPress: () => router.push("/dev-perf"),
+              },
+            ]
+          : []),
+      ],
     },
-    ...(__DEV__
-      ? [
-          {
-            key: "dev-perf",
-            label: "Dev Performance",
-            sub: "Scan pipeline timings (dev build only)",
-            icon: "activity" as keyof typeof Feather.glyphMap,
-            color: "#8B5CF6",
-            onPress: () => router.push("/dev-perf"),
-          },
-        ]
-      : []),
   ];
+  const navGroups = allGroups.filter((g) => g.items.length > 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -316,44 +359,55 @@ export default function MoreScreen() {
         ) : null}
 
         {/* Navigation */}
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
-          {t("nav.workspace").toUpperCase()}
-        </Text>
-        <View
-          style={[
-            styles.menuCard,
-            { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
-          ]}
-        >
-          {navItems.map((item, idx) => (
-            <Pressable
-              key={item.key}
-              onPress={() => {
-                item.onPress();
-              }}
-              style={({ pressed }) => [
-                styles.menuRow,
-                { flexDirection: isRTL ? "row-reverse" : "row" },
-                idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-                pressed && { backgroundColor: colors.muted },
+        {navGroups.map((group) => (
+          <View key={group.key}>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
+              {group.title.toUpperCase()}
+            </Text>
+            <View
+              style={[
+                styles.menuCard,
+                { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius + 4 },
               ]}
             >
-              <View style={[styles.menuIcon, { backgroundColor: item.color + "1A" }]}>
-                <Feather name={item.icon} size={18} color={item.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.menuLabel, { color: colors.foreground, textAlign }]}>{item.label}</Text>
-                <Text style={[styles.menuSub, { color: colors.mutedForeground, textAlign }]}>{item.sub}</Text>
-              </View>
-              {item.badge && item.badge > 0 ? (
-                <View style={[styles.countBadge, { backgroundColor: item.color }]}>
-                  <Text style={styles.countBadgeText}>{item.badge}</Text>
-                </View>
-              ) : null}
-              <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
-            </Pressable>
-          ))}
-        </View>
+              {group.items.map((item, idx) => (
+                <Pressable
+                  key={item.key}
+                  disabled={item.disabled}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                  accessibilityState={item.disabled ? { disabled: true } : undefined}
+                  onPress={() => {
+                    item.onPress?.();
+                  }}
+                  style={({ pressed }) => [
+                    styles.menuRow,
+                    { flexDirection: isRTL ? "row-reverse" : "row" },
+                    idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+                    pressed && !item.disabled && { backgroundColor: colors.muted },
+                    item.disabled && { opacity: 0.55 },
+                  ]}
+                >
+                  <View style={[styles.menuIcon, { backgroundColor: item.color + "1A" }]}>
+                    <Feather name={item.icon} size={18} color={item.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.menuLabel, { color: colors.foreground, textAlign }]}>{item.label}</Text>
+                    <Text style={[styles.menuSub, { color: colors.mutedForeground, textAlign }]}>{item.sub}</Text>
+                  </View>
+                  {item.badge && item.badge > 0 ? (
+                    <View style={[styles.countBadge, { backgroundColor: item.color }]}>
+                      <Text style={styles.countBadgeText}>{item.badge}</Text>
+                    </View>
+                  ) : null}
+                  {!item.disabled && (
+                    <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={20} color={colors.mutedForeground} />
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))}
 
         {/* Sign out */}
         <Pressable

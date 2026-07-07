@@ -364,12 +364,12 @@ export default function ScanReviewScreen() {
         longitude: gps.longitude,
         gpsAccuracy: gps.gpsAccuracy,
       });
-      router.replace("/(tabs)/contacts");
+      router.replace("/contacts");
       return;
     }
     try {
       await createContact.mutateAsync({ data: payload });
-      router.replace("/(tabs)/contacts");
+      router.replace("/contacts");
     } catch {
       // mutation error surfaced via createContact.isError below
     }

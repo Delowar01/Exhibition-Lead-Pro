@@ -1,0 +1,297 @@
+# Lead Capture Pro
+# Stage 5.9 – Enterprise Design System & Experience Modernization
+# Phase 2 – Navigation & Information Architecture
+
+Objective
+
+Stage 5.9 Phase 1 (Enterprise Design Foundation) has been successfully completed and approved.
+
+Proceed with Phase 2.
+
+This phase focuses on redesigning the navigation and information architecture across the entire platform.
+
+This is NOT simply moving menu items.
+
+This is a complete UX restructuring to create a modern, intuitive, scalable Enterprise SaaS experience.
+
+=========================================================
+
+Requirements
+
+Preserve:
+
+• Business Logic
+• APIs
+• RBAC
+• Multi-tenancy
+• Enterprise Privacy
+• AI Features
+• CRM Features
+• Workflow Features
+• OCR Features
+• Executive Intelligence
+• AI Command Center
+
+No regressions.
+
+No functionality changes.
+
+No API changes.
+
+=========================================================
+
+Primary Objective
+
+Reduce complexity.
+
+Improve discoverability.
+
+Reduce clicks.
+
+Increase productivity.
+
+Create one consistent navigation system across:
+
+• Platform Owner Portal
+• Company Admin Portal
+• Employee Mobile Application
+
+=========================================================
+
+Phase 2 Deliverables
+
+1. Enterprise Navigation Blueprint
+
+Before implementation, design a complete navigation architecture.
+
+Include:
+
+• Sidebar hierarchy
+• Header actions
+• Breadcrumb structure
+• Quick actions
+• Search flow
+• Notification flow
+• User profile flow
+• AI navigation
+• Mobile navigation
+• Permission-aware navigation
+
+=========================================================
+
+2. Web Navigation
+
+Replace the current flat sidebar.
+
+Create grouped navigation.
+
+Recommended structure:
+
+Dashboard
+
+CRM
+• Leads
+• Pipeline
+• Contacts
+• Companies
+
+Activities
+• Calendar
+• Tasks
+• Events
+• Documents
+
+AI Intelligence
+• AI Command Center
+• Lead Intelligence
+• Sales Copilot
+• Workflow Intelligence
+• Executive Intelligence
+• OCR Intelligence
+• AI Settings
+
+Analytics & Reports
+• Reports
+• Executive Dashboard
+• Performance
+
+Administration
+• Users
+• Roles
+• Company Settings
+• Integrations
+
+Platform-only
+• Companies
+• Platform Analytics
+• Billing
+• Platform Settings
+
+Adjust as needed while preserving permissions and usability.
+
+=========================================================
+
+3. AI Intelligence Hub
+
+Consolidate every AI module under one unified section.
+
+The user should experience AI as one integrated platform rather than separate pages.
+
+=========================================================
+
+4. Header Redesign
+
+Create a modern global header including:
+
+• Global Search
+• Command Palette
+• Notifications
+• User Menu
+• Theme Toggle
+• Language Switch
+• Quick Create
+• AI Shortcut
+
+=========================================================
+
+5. Global Command Palette
+
+Implement a premium command palette.
+
+Support:
+
+• Global Navigation
+• Record Search
+• Commands
+• Quick Create
+• AI Actions
+• Recent Records
+
+Accessible via keyboard shortcut on web and a suitable trigger on mobile.
+
+=========================================================
+
+6. Mobile Navigation
+
+Implement the approved navigation strategy.
+
+Bottom Navigation:
+
+• Home
+• Scan
+• Leads
+• Notifications
+• More
+
+The More section should contain:
+
+• Communications (reserved for future Stage 5.5)
+• Companies
+• Contacts
+• Documents
+• Reports
+• AI Intelligence
+• Executive Intelligence
+• Settings
+
+Maintain EN/AR and RTL support.
+
+=========================================================
+
+7. Information Architecture
+
+Review every page.
+
+Identify:
+
+• Duplicate pages
+• Better grouping
+• Better hierarchy
+• Better naming
+• Better discoverability
+
+Preserve existing functionality.
+
+=========================================================
+
+8. Navigation Consistency
+
+Standardize:
+
+• Icons
+• Labels
+• Section names
+• Breadcrumbs
+• Empty states
+• Navigation patterns
+
+=========================================================
+
+9. Performance
+
+Navigation must feel instant.
+
+Improve:
+
+• Route transitions
+• Prefetch where appropriate
+• Lazy loading
+• Navigation responsiveness
+
+=========================================================
+
+10. Accessibility
+
+Support:
+
+• Keyboard navigation
+• Focus management
+• Screen readers
+• Accessible menus
+• Proper ARIA attributes
+
+=========================================================
+
+Presentation Requirements
+
+Provide before implementation:
+
+• Navigation Blueprint
+• Web Sitemap
+• Mobile Sitemap
+• Permission Matrix
+• Information Architecture Diagram
+
+After implementation provide:
+
+• Before vs After comparison
+• UX improvements
+• Performance impact
+• Accessibility improvements
+• Screenshots (Light & Dark)
+• Mobile screenshots
+• Tablet screenshots
+• Files modified
+• Test results
+
+=========================================================
+
+Validation
+
+Run:
+
+• Full workspace typecheck
+• Complete regression suite
+
+Verify:
+
+• Zero API changes
+• Zero RBAC changes
+• Zero business logic changes
+• Zero tenant isolation changes
+
+=========================================================
+
+STOP after Phase 2.
+
+Do NOT begin Phase 3 (Web Screen Modernization) until Phase 2 has been reviewed and approved.

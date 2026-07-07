@@ -172,7 +172,9 @@
     "companies": "الشركات",
     "workflowIntel": "ذكاء سير العمل",
     "executiveIntel": "الذكاء التنفيذي",
-    "aiAssistant": "مركز قيادة الذكاء الاصطناعي"
+    "aiAssistant": "مركز قيادة الذكاء الاصطناعي",
+    "scan": "مسح",
+    "notifications": "الإشعارات"
   },
   "assistant": {
     "title": "مركز قيادة الذكاء الاصطناعي",
@@ -1363,7 +1365,15 @@
     "chooseFromLibrary": "الاختيار من المعرض",
     "takePhoto": "التقاط صورة",
     "removePhoto": "إزالة الصورة",
-    "profilePhoto": "صورة الملف الشخصي"
+    "profilePhoto": "صورة الملف الشخصي",
+    "groupComms": "الاتصالات",
+    "commsTitle": "مركز الاتصالات",
+    "commsSoon": "قريباً في المرحلة 5.5",
+    "groupCrm": "إدارة العملاء",
+    "groupAi": "الذكاء الاصطناعي",
+    "groupWorkspace": "مساحة عملي",
+    "groupSettings": "الإعدادات",
+    "followupsSub": "المتابعات المستحقة والقادمة"
   },
   "batch": {
     "backToContacts": "العودة إلى جهات الاتصال",
@@ -1571,5 +1581,19 @@
       "fair": "مقبول",
       "at_risk": "معرّض للخطر"
     }
+  },
+  "notifCenter": {
+    "title": "الإشعارات",
+    "subtitle": "التنبيهات والتحديثات من مساحة عملك",
+    "empty": "لا توجد إشعارات بعد",
+    "emptyDesc": "ستظهر هنا التنبيهات المتعلقة بمساحة عملك.",
+    "markAllRead": "تحديد الكل كمقروء",
+    "unread_zero": "{{count}} غير مقروء",
+    "unread_one": "{{count}} غير مقروء",
+    "unread_two": "{{count}} غير مقروءين",
+    "unread_few": "{{count}} غير مقروءة",
+    "unread_many": "{{count}} غير مقروءة",
+    "unread_other": "{{count}} غير مقروءة",
+    "allCaughtUp": "أنت على اطلاع بكل شيء"
   }
 }

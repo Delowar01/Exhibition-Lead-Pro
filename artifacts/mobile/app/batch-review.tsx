@@ -153,7 +153,7 @@ export default function BatchReviewScreen() {
 
   function finish() {
     clearBatchCaptures();
-    router.replace("/(tabs)/contacts");
+    router.replace("/contacts");
   }
 
   function advance() {

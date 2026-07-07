@@ -4,6 +4,8 @@ import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
 import { Feather } from "@/components/icons";
+import { useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 
@@ -53,15 +55,15 @@ function NativeTabLayout() {
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="capture">
         <Icon sf={{ default: "viewfinder", selected: "viewfinder" }} />
-        <Label>{t("nav.capture")}</Label>
+        <Label>{t("nav.scan")}</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="contacts">
-        <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
-        <Label>{t("nav.contacts")}</Label>
+      <NativeTabs.Trigger name="leads">
+        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <Label>{t("nav.leads")}</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="followups">
-        <Icon sf={{ default: "checklist", selected: "checklist" }} />
-        <Label>{t("nav.followups")}</Label>
+      <NativeTabs.Trigger name="notifications">
+        <Icon sf={{ default: "bell", selected: "bell.fill" }} />
+        <Label>{t("nav.notifications")}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="more">
         <Icon sf={{ default: "ellipsis", selected: "ellipsis" }} />
@@ -74,6 +76,15 @@ function NativeTabLayout() {
 function ClassicTabLayout() {
   const colors = useColors();
   const { t } = useLocale();
+  const { user } = useAuth();
+  const { data: unreadData } = useGetUnreadCount({
+    query: {
+      queryKey: getGetUnreadCountQueryKey(),
+      enabled: !!user,
+      refetchInterval: 60000,
+    },
+  });
+  const unreadCount = unreadData?.count ?? 0;
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
@@ -135,22 +146,25 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="capture"
         options={{
-          title: t("nav.capture"),
+          title: t("nav.scan"),
           tabBarIcon: ({ color }) => icon("viewfinder", "maximize", color),
         }}
       />
       <Tabs.Screen
-        name="contacts"
+        name="leads"
         options={{
-          title: t("nav.contacts"),
-          tabBarIcon: ({ color }) => icon("person.2", "users", color),
+          title: t("nav.leads"),
+          tabBarIcon: ({ color }) => icon("chart.bar", "bar-chart-2", color),
         }}
       />
       <Tabs.Screen
-        name="followups"
+        name="notifications"
         options={{
-          title: t("nav.followups"),
-          tabBarIcon: ({ color }) => icon("checklist", "check-square", color),
+          title: t("nav.notifications"),
+          tabBarIcon: ({ color }) => icon("bell", "bell", color),
+          ...(unreadCount > 0
+            ? { tabBarBadge: unreadCount > 99 ? "99+" : unreadCount }
+            : {}),
         }}
       />
       <Tabs.Screen
