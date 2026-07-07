@@ -5093,6 +5093,147 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # AI COMMAND CENTER (Stage 5D) — advisory-only conversational assistant
+  /ai/assistant/conversations:
+    get:
+      operationId: listAiAssistantConversations
+      tags: [ai]
+      summary: List the caller's own assistant conversations (per-user, per-tenant)
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversationListResponse"
+    post:
+      operationId: createAiAssistantConversation
+      tags: [ai]
+      summary: Start a new assistant conversation (optionally anchored to a CRM record)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantConversationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversation"
+
+  /ai/assistant/suggestions:
+    get:
+      operationId: getAiAssistantSuggestions
+      tags: [ai]
+      summary: Context-aware quick prompts, module availability & recent assistant activity
+      parameters:
+        - name: contextType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: lead | contact | organization | event | business_card | document
+        - name: contextId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSuggestionsResponse"
+
+  /ai/assistant/conversations/{id}:
+    get:
+      operationId: getAiAssistantConversation
+      tags: [ai]
+      summary: One conversation with its full message history (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversationDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAiAssistantConversation
+      tags: [ai]
+      summary: Soft-delete a conversation (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/assistant/conversations/{id}/messages:
+    post:
+      operationId: sendAiAssistantMessage
+      tags: [ai]
+      summary: Send a message; returns the stored user message + grounded advisory answer (never writes the CRM)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantMessageInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMessageResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # PUSH NOTIFICATIONS
   /push/register:
     post:
@@ -12252,6 +12393,166 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExecutiveReport"
+
+    AssistantConversation:
+      type: object
+      required: [id, title, lastMessageAt, createdAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        contextType:
+          type: string
+          nullable: true
+          description: lead | contact | organization | event | business_card | document
+        contextId:
+          type: integer
+          nullable: true
+        lastMessageAt:
+          type: string
+        createdAt:
+          type: string
+
+    AssistantConversationListResponse:
+      type: object
+      required: [conversations]
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantConversation"
+
+    AssistantConversationInput:
+      type: object
+      properties:
+        title:
+          type: string
+        contextType:
+          type: string
+          description: lead | contact | organization | event | business_card | document
+        contextId:
+          type: integer
+
+    AssistantMessage:
+      type: object
+      required: [id, conversationId, role, content, createdAt]
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+          description: user | assistant
+        content:
+          type: string
+        intent:
+          type: string
+          nullable: true
+        data:
+          type: object
+          additionalProperties: true
+          nullable: true
+        evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        suggestedActions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        confidence:
+          type: integer
+          nullable: true
+        source:
+          type: string
+          nullable: true
+          description: deterministic | ai (null for user rows — deterministic answers never masquerade as AI)
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptKey:
+          type: string
+          nullable: true
+        promptVersion:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+
+    AssistantConversationDetail:
+      allOf:
+        - $ref: "#/components/schemas/AssistantConversation"
+        - type: object
+          required: [messages]
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/AssistantMessage"
+
+    AssistantMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+        language:
+          type: string
+          description: en | ar
+        contextType:
+          type: string
+          description: per-message screen context override
+        contextId:
+          type: integer
+
+    AssistantMessageResponse:
+      type: object
+      required: [userMessage, assistantMessage]
+      properties:
+        userMessage:
+          $ref: "#/components/schemas/AssistantMessage"
+        assistantMessage:
+          $ref: "#/components/schemas/AssistantMessage"
+
+    AssistantSuggestionsResponse:
+      type: object
+      required: [prompts, modules]
+      properties:
+        context:
+          type: object
+          additionalProperties: true
+          nullable: true
+        prompts:
+          type: array
+          items:
+            type: object
+            required: [label, prompt]
+            properties:
+              label:
+                type: string
+              prompt:
+                type: string
+        modules:
+          type: object
+          additionalProperties: true
+        provider:
+          type: object
+          additionalProperties: true
+          nullable: true
+        recentActivity:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
 
     ExecutiveReportGenerateRequest:
       type: object

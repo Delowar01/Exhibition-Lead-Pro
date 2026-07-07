@@ -4055,6 +4055,92 @@ export interface ExecutiveReportListResponse {
   reports: ExecutiveReport[];
 }
 
+export interface AssistantConversation {
+  id: number;
+  title: string;
+  /** lead | contact | organization | event | business_card | document */
+  contextType?: string | null;
+  contextId?: number | null;
+  lastMessageAt: string;
+  createdAt: string;
+}
+
+export interface AssistantConversationListResponse {
+  conversations: AssistantConversation[];
+}
+
+export interface AssistantConversationInput {
+  title?: string;
+  /** lead | contact | organization | event | business_card | document */
+  contextType?: string;
+  contextId?: number;
+}
+
+export type AssistantMessageData = { [key: string]: unknown } | null;
+
+export type AssistantMessageEvidenceItem = { [key: string]: unknown };
+
+export type AssistantMessageSuggestedActionsItem = { [key: string]: unknown };
+
+export interface AssistantMessage {
+  id: number;
+  conversationId: number;
+  /** user | assistant */
+  role: string;
+  content: string;
+  intent?: string | null;
+  data?: AssistantMessageData;
+  evidence?: AssistantMessageEvidenceItem[] | null;
+  suggestedActions?: AssistantMessageSuggestedActionsItem[] | null;
+  confidence?: number | null;
+  /** deterministic | ai (null for user rows — deterministic answers never masquerade as AI) */
+  source?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  promptKey?: string | null;
+  promptVersion?: number | null;
+  createdAt: string;
+}
+
+export type AssistantConversationDetail = AssistantConversation & {
+  messages: AssistantMessage[];
+};
+
+export interface AssistantMessageInput {
+  content: string;
+  /** en | ar */
+  language?: string;
+  /** per-message screen context override */
+  contextType?: string;
+  contextId?: number;
+}
+
+export interface AssistantMessageResponse {
+  userMessage: AssistantMessage;
+  assistantMessage: AssistantMessage;
+}
+
+export type AssistantSuggestionsResponseContext = { [key: string]: unknown } | null;
+
+export type AssistantSuggestionsResponsePromptsItem = {
+  label: string;
+  prompt: string;
+};
+
+export type AssistantSuggestionsResponseModules = { [key: string]: unknown };
+
+export type AssistantSuggestionsResponseProvider = { [key: string]: unknown } | null;
+
+export type AssistantSuggestionsResponseRecentActivityItem = { [key: string]: unknown };
+
+export interface AssistantSuggestionsResponse {
+  context?: AssistantSuggestionsResponseContext;
+  prompts: AssistantSuggestionsResponsePromptsItem[];
+  modules: AssistantSuggestionsResponseModules;
+  provider?: AssistantSuggestionsResponseProvider;
+  recentActivity?: AssistantSuggestionsResponseRecentActivityItem[];
+}
+
 export interface ExecutiveReportGenerateRequest {
   /** executive_summary | performance | forecast | full */
   reportType: string;
@@ -5775,6 +5861,18 @@ limit?: number;
 
 export type ListAiExecutiveReportsParams = {
 limit?: number;
+};
+
+export type ListAiAssistantConversationsParams = {
+q?: string;
+};
+
+export type GetAiAssistantSuggestionsParams = {
+/**
+ * lead | contact | organization | event | business_card | document
+ */
+contextType?: string;
+contextId?: number;
 };
 
 export type ListFollowUpsParams = {

@@ -42,7 +42,12 @@ export type AiFeature =
   // alerts) computed from real CRM aggregates. The LLM never invents numbers and never
   // executes anything; it soft-degrades to the deterministic core on failure.
   | "executive_summary"
-  | "executive_forecast";
+  | "executive_forecast"
+  // Stage 5D — Enterprise AI Command Center. PHRASES a conversational answer on top of
+  // a deterministic grounded core (intent classification + orchestrated engine results
+  // from real CRM data). The LLM never executes anything, never invents records, and the
+  // deterministic answer survives an AI failure (soft-degrade).
+  | "assistant_answer";
 
 export const AI_FEATURES: AiFeature[] = [
   "card_extraction",
@@ -69,6 +74,7 @@ export const AI_FEATURES: AiFeature[] = [
   "workflow_task",
   "executive_summary",
   "executive_forecast",
+  "assistant_answer",
 ];
 
 export interface AiTextPart {

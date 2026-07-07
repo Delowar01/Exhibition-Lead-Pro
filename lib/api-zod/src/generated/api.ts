@@ -6776,6 +6776,155 @@ export const GetAiExecutiveReportResponse = zod.object({
 
 
 /**
+ * @summary List the caller's own assistant conversations (per-user, per-tenant)
+ */
+export const ListAiAssistantConversationsQueryParams = zod.object({
+  "q": zod.coerce.string().optional()
+})
+
+export const ListAiAssistantConversationsResponse = zod.object({
+  "conversations": zod.array(zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "contextType": zod.string().nullish().describe('lead | contact | organization | event | business_card | document'),
+  "contextId": zod.number().nullish(),
+  "lastMessageAt": zod.string(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Start a new assistant conversation (optionally anchored to a CRM record)
+ */
+export const CreateAiAssistantConversationBody = zod.object({
+  "title": zod.string().optional(),
+  "contextType": zod.string().optional().describe('lead | contact | organization | event | business_card | document'),
+  "contextId": zod.number().optional()
+})
+
+
+/**
+ * @summary Context-aware quick prompts, module availability & recent assistant activity
+ */
+export const GetAiAssistantSuggestionsQueryParams = zod.object({
+  "contextType": zod.coerce.string().optional().describe('lead | contact | organization | event | business_card | document'),
+  "contextId": zod.coerce.number().optional()
+})
+
+export const GetAiAssistantSuggestionsResponse = zod.object({
+  "context": zod.record(zod.string(), zod.unknown()).nullish(),
+  "prompts": zod.array(zod.object({
+  "label": zod.string(),
+  "prompt": zod.string()
+})),
+  "modules": zod.record(zod.string(), zod.unknown()),
+  "provider": zod.record(zod.string(), zod.unknown()).nullish(),
+  "recentActivity": zod.array(zod.record(zod.string(), zod.unknown())).optional()
+})
+
+
+/**
+ * @summary One conversation with its full message history (owner only)
+ */
+export const GetAiAssistantConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAiAssistantConversationResponse = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "contextType": zod.string().nullish().describe('lead | contact | organization | event | business_card | document'),
+  "contextId": zod.number().nullish(),
+  "lastMessageAt": zod.string(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "conversationId": zod.number(),
+  "role": zod.string().describe('user | assistant'),
+  "content": zod.string(),
+  "intent": zod.string().nullish(),
+  "data": zod.record(zod.string(), zod.unknown()).nullish(),
+  "evidence": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "suggestedActions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "confidence": zod.number().nullish(),
+  "source": zod.string().nullish().describe('deterministic | ai (null for user rows — deterministic answers never masquerade as AI)'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "createdAt": zod.string()
+}))
+}))
+
+
+/**
+ * @summary Soft-delete a conversation (owner only)
+ */
+export const DeleteAiAssistantConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteAiAssistantConversationResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Send a message; returns the stored user message + grounded advisory answer (never writes the CRM)
+ */
+export const SendAiAssistantMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SendAiAssistantMessageBody = zod.object({
+  "content": zod.string(),
+  "language": zod.string().optional().describe('en | ar'),
+  "contextType": zod.string().optional().describe('per-message screen context override'),
+  "contextId": zod.number().optional()
+})
+
+export const SendAiAssistantMessageResponse = zod.object({
+  "userMessage": zod.object({
+  "id": zod.number(),
+  "conversationId": zod.number(),
+  "role": zod.string().describe('user | assistant'),
+  "content": zod.string(),
+  "intent": zod.string().nullish(),
+  "data": zod.record(zod.string(), zod.unknown()).nullish(),
+  "evidence": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "suggestedActions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "confidence": zod.number().nullish(),
+  "source": zod.string().nullish().describe('deterministic | ai (null for user rows — deterministic answers never masquerade as AI)'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "createdAt": zod.string()
+}),
+  "assistantMessage": zod.object({
+  "id": zod.number(),
+  "conversationId": zod.number(),
+  "role": zod.string().describe('user | assistant'),
+  "content": zod.string(),
+  "intent": zod.string().nullish(),
+  "data": zod.record(zod.string(), zod.unknown()).nullish(),
+  "evidence": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "suggestedActions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "confidence": zod.number().nullish(),
+  "source": zod.string().nullish().describe('deterministic | ai (null for user rows — deterministic answers never masquerade as AI)'),
+  "provider": zod.string().nullish(),
+  "model": zod.string().nullish(),
+  "promptKey": zod.string().nullish(),
+  "promptVersion": zod.number().nullish(),
+  "createdAt": zod.string()
+})
+})
+
+
+/**
  * @summary Register an Expo push token for the current user's device
  */
 export const RegisterPushTokenBody = zod.object({

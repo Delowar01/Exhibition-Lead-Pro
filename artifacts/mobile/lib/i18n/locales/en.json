@@ -171,7 +171,24 @@
     "sync": "Sync",
     "companies": "Companies",
     "workflowIntel": "Workflow Intelligence",
-    "executiveIntel": "Executive Intelligence"
+    "executiveIntel": "Executive Intelligence",
+    "aiAssistant": "AI Command Center"
+  },
+  "assistant": {
+    "title": "AI Command Center",
+    "subtitle": "Ask about your CRM in plain language.",
+    "disclaimer": "Advisory only — nothing is written to the CRM.",
+    "history": "Conversation history",
+    "newConversation": "New conversation",
+    "noConversations": "No conversations yet.",
+    "emptyTitle": "What would you like to know?",
+    "emptyDesc": "Grounded in your real CRM data, with full provenance on every answer.",
+    "placeholder": "Ask about priorities, risks, forecasts…",
+    "readOnly": "You have read-only access to the AI assistant",
+    "send": "Send",
+    "thinking": "Thinking…",
+    "aiSource": "AI",
+    "deterministicSource": "Real CRM data"
   },
   "companies": {
     "title": "Companies",

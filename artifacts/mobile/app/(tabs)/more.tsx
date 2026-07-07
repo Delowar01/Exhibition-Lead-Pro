@@ -37,6 +37,9 @@ export default function MoreScreen() {
   const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
   const canViewExecutive =
     user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
+  const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
+  const canViewAssistant =
+    user?.role !== "platform_owner" && (isFullAccess || assistantPerms.includes("view"));
 
   async function applyAvatar(source: AvatarSource) {
     try {
@@ -138,6 +141,18 @@ export default function MoreScreen() {
       color: "#10B981",
       onPress: () => router.push("/my-numbers"),
     },
+    ...(canViewAssistant
+      ? [
+          {
+            key: "assistant",
+            label: t("nav.aiAssistant"),
+            sub: t("assistant.subtitle"),
+            icon: "message-circle" as keyof typeof Feather.glyphMap,
+            color: "#8B5CF6",
+            onPress: () => router.push("/assistant"),
+          },
+        ]
+      : []),
     {
       key: "workflow",
       label: t("nav.workflowIntel"),

@@ -49,4 +49,5 @@ export * from "./ai_invocations";
 export * from "./ai_insights";
 export * from "./ai_copilot_outputs";
 export * from "./ai_workflow_recommendations";
+export * from "./ai_conversations";
 export * from "./executive_intelligence";

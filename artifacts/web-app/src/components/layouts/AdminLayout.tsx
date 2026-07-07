@@ -17,6 +17,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
   const canViewExecutive =
     user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
+  const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
+  const canViewAssistant =
+    user?.role !== "platform_owner" && (isFullAccess || assistantPerms.includes("view"));
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
@@ -46,6 +49,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { name: "Roles & Permissions", href: "/admin/roles", icon: ShieldCheck },
     { name: "Reports", href: "/admin/reports", icon: BarChart2 },
     { name: "Executive Dashboard", href: "/admin/analytics", icon: LineChart },
+    ...(canViewAssistant ? [{ name: "AI Command Center", href: "/admin/ai-command", icon: Bot }] : []),
     { name: "AI Insights", href: "/admin/ai-insights", icon: Sparkles },
     { name: "Sales Copilot", href: "/admin/ai-copilot", icon: Bot },
     { name: "Workflow Intelligence", href: "/admin/workflow", icon: Workflow },

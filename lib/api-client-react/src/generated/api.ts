@@ -56,6 +56,13 @@ import type {
   AnalyticsScopeOptions,
   AssignLeadInput,
   AssigneeRecommendation,
+  AssistantConversation,
+  AssistantConversationDetail,
+  AssistantConversationInput,
+  AssistantConversationListResponse,
+  AssistantMessageInput,
+  AssistantMessageResponse,
+  AssistantSuggestionsResponse,
   AttachLeadTagInput,
   AuditLogListResponse,
   AuthResponse,
@@ -142,6 +149,7 @@ import type {
   FollowUpUpdate,
   ForceLogoutResult,
   ForgotPasswordInput,
+  GetAiAssistantSuggestionsParams,
   GetAiExecutiveDashboardParams,
   GetAiPlatformUsageParams,
   GetAiUsageParams,
@@ -187,6 +195,7 @@ import type {
   LeadScorePreview,
   LeadUpdate,
   LeadsByEventItem,
+  ListAiAssistantConversationsParams,
   ListAiExecutiveAlertsParams,
   ListAiExecutiveForecastsParams,
   ListAiExecutiveReportsParams,
@@ -17318,6 +17327,464 @@ export function useGetAiExecutiveReport<TData = Awaited<ReturnType<typeof getAiE
 
 
 
+
+export const getListAiAssistantConversationsUrl = (params?: ListAiAssistantConversationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/assistant/conversations?${stringifiedParams}` : `/api/ai/assistant/conversations`
+}
+
+/**
+ * @summary List the caller's own assistant conversations (per-user, per-tenant)
+ */
+export const listAiAssistantConversations = async (params?: ListAiAssistantConversationsParams, options?: RequestInit): Promise<AssistantConversationListResponse> => {
+
+  return customFetch<AssistantConversationListResponse>(getListAiAssistantConversationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAiAssistantConversationsQueryKey = (params?: ListAiAssistantConversationsParams,) => {
+    return [
+    `/api/ai/assistant/conversations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAiAssistantConversationsQueryOptions = <TData = Awaited<ReturnType<typeof listAiAssistantConversations>>, TError = ErrorType<unknown>>(params?: ListAiAssistantConversationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiAssistantConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiAssistantConversationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiAssistantConversations>>> = ({ signal }) => listAiAssistantConversations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiAssistantConversations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiAssistantConversationsQueryResult = NonNullable<Awaited<ReturnType<typeof listAiAssistantConversations>>>
+export type ListAiAssistantConversationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the caller's own assistant conversations (per-user, per-tenant)
+ */
+
+export function useListAiAssistantConversations<TData = Awaited<ReturnType<typeof listAiAssistantConversations>>, TError = ErrorType<unknown>>(
+ params?: ListAiAssistantConversationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiAssistantConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiAssistantConversationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateAiAssistantConversationUrl = () => {
+
+
+
+
+  return `/api/ai/assistant/conversations`
+}
+
+/**
+ * @summary Start a new assistant conversation (optionally anchored to a CRM record)
+ */
+export const createAiAssistantConversation = async (assistantConversationInput?: AssistantConversationInput, options?: RequestInit): Promise<AssistantConversation> => {
+
+  return customFetch<AssistantConversation>(getCreateAiAssistantConversationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      assistantConversationInput,)
+  }
+);}
+
+
+
+
+export const getCreateAiAssistantConversationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAiAssistantConversation>>, TError,{data?: BodyType<AssistantConversationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAiAssistantConversation>>, TError,{data?: BodyType<AssistantConversationInput>}, TContext> => {
+
+const mutationKey = ['createAiAssistantConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAiAssistantConversation>>, {data?: BodyType<AssistantConversationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAiAssistantConversation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAiAssistantConversationMutationResult = NonNullable<Awaited<ReturnType<typeof createAiAssistantConversation>>>
+    export type CreateAiAssistantConversationMutationBody = BodyType<AssistantConversationInput> | undefined
+    export type CreateAiAssistantConversationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a new assistant conversation (optionally anchored to a CRM record)
+ */
+export const useCreateAiAssistantConversation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAiAssistantConversation>>, TError,{data?: BodyType<AssistantConversationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAiAssistantConversation>>,
+        TError,
+        {data?: BodyType<AssistantConversationInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAiAssistantConversationMutationOptions(options));
+    }
+
+export const getGetAiAssistantSuggestionsUrl = (params?: GetAiAssistantSuggestionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/assistant/suggestions?${stringifiedParams}` : `/api/ai/assistant/suggestions`
+}
+
+/**
+ * @summary Context-aware quick prompts, module availability & recent assistant activity
+ */
+export const getAiAssistantSuggestions = async (params?: GetAiAssistantSuggestionsParams, options?: RequestInit): Promise<AssistantSuggestionsResponse> => {
+
+  return customFetch<AssistantSuggestionsResponse>(getGetAiAssistantSuggestionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiAssistantSuggestionsQueryKey = (params?: GetAiAssistantSuggestionsParams,) => {
+    return [
+    `/api/ai/assistant/suggestions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiAssistantSuggestionsQueryOptions = <TData = Awaited<ReturnType<typeof getAiAssistantSuggestions>>, TError = ErrorType<unknown>>(params?: GetAiAssistantSuggestionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiAssistantSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiAssistantSuggestionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiAssistantSuggestions>>> = ({ signal }) => getAiAssistantSuggestions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiAssistantSuggestions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiAssistantSuggestionsQueryResult = NonNullable<Awaited<ReturnType<typeof getAiAssistantSuggestions>>>
+export type GetAiAssistantSuggestionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Context-aware quick prompts, module availability & recent assistant activity
+ */
+
+export function useGetAiAssistantSuggestions<TData = Awaited<ReturnType<typeof getAiAssistantSuggestions>>, TError = ErrorType<unknown>>(
+ params?: GetAiAssistantSuggestionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiAssistantSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiAssistantSuggestionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiAssistantConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/assistant/conversations/${id}`
+}
+
+/**
+ * @summary One conversation with its full message history (owner only)
+ */
+export const getAiAssistantConversation = async (id: number, options?: RequestInit): Promise<AssistantConversationDetail> => {
+
+  return customFetch<AssistantConversationDetail>(getGetAiAssistantConversationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiAssistantConversationQueryKey = (id: number,) => {
+    return [
+    `/api/ai/assistant/conversations/${id}`
+    ] as const;
+    }
+
+
+export const getGetAiAssistantConversationQueryOptions = <TData = Awaited<ReturnType<typeof getAiAssistantConversation>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiAssistantConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiAssistantConversationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiAssistantConversation>>> = ({ signal }) => getAiAssistantConversation(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiAssistantConversation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiAssistantConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getAiAssistantConversation>>>
+export type GetAiAssistantConversationQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary One conversation with its full message history (owner only)
+ */
+
+export function useGetAiAssistantConversation<TData = Awaited<ReturnType<typeof getAiAssistantConversation>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiAssistantConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiAssistantConversationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getDeleteAiAssistantConversationUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/assistant/conversations/${id}`
+}
+
+/**
+ * @summary Soft-delete a conversation (owner only)
+ */
+export const deleteAiAssistantConversation = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteAiAssistantConversationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteAiAssistantConversationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAiAssistantConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAiAssistantConversation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteAiAssistantConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAiAssistantConversation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteAiAssistantConversation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAiAssistantConversationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAiAssistantConversation>>>
+
+    export type DeleteAiAssistantConversationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Soft-delete a conversation (owner only)
+ */
+export const useDeleteAiAssistantConversation = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAiAssistantConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAiAssistantConversation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteAiAssistantConversationMutationOptions(options));
+    }
+
+export const getSendAiAssistantMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/ai/assistant/conversations/${id}/messages`
+}
+
+/**
+ * @summary Send a message; returns the stored user message + grounded advisory answer (never writes the CRM)
+ */
+export const sendAiAssistantMessage = async (id: number,
+    assistantMessageInput: AssistantMessageInput, options?: RequestInit): Promise<AssistantMessageResponse> => {
+
+  return customFetch<AssistantMessageResponse>(getSendAiAssistantMessageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      assistantMessageInput,)
+  }
+);}
+
+
+
+
+export const getSendAiAssistantMessageMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendAiAssistantMessage>>, TError,{id: number;data: BodyType<AssistantMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendAiAssistantMessage>>, TError,{id: number;data: BodyType<AssistantMessageInput>}, TContext> => {
+
+const mutationKey = ['sendAiAssistantMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendAiAssistantMessage>>, {id: number;data: BodyType<AssistantMessageInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sendAiAssistantMessage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendAiAssistantMessageMutationResult = NonNullable<Awaited<ReturnType<typeof sendAiAssistantMessage>>>
+    export type SendAiAssistantMessageMutationBody = BodyType<AssistantMessageInput>
+    export type SendAiAssistantMessageMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Send a message; returns the stored user message + grounded advisory answer (never writes the CRM)
+ */
+export const useSendAiAssistantMessage = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendAiAssistantMessage>>, TError,{id: number;data: BodyType<AssistantMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendAiAssistantMessage>>,
+        TError,
+        {id: number;data: BodyType<AssistantMessageInput>},
+        TContext
+      > => {
+      return useMutation(getSendAiAssistantMessageMutationOptions(options));
+    }
 
 export const getRegisterPushTokenUrl = () => {
 

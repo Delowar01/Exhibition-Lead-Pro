@@ -88,3 +88,31 @@ export async function backfillAiExecutivePermissions(): Promise<{ admins: number
   }
   return result;
 }
+
+// One-time, idempotent RBAC backfill for the Stage 5D `ai_assistant` permission module
+// (Enterprise AI Command Center). Same rationale + policy as the previous AI backfills:
+// the assistant routes are `requirePermission("ai_assistant", ...)`-gated, so pre-existing
+// admin/employee rows that predate the module would 403 without this. Policy (mirrors the
+// seed): admin => view/use (default-on, the assistant is advisory-only and re-checks each
+// underlying module's permission in-service); employee => view ONLY (`use` — starting
+// conversations/sending messages — is a write and stays deny-by-default). Only touches
+// rows that do NOT already carry an `ai_assistant` key.
+export async function backfillAiAssistantPermissions(): Promise<{ admins: number; employees: number }> {
+  const admins = await db
+    .update(usersTable)
+    .set({ permissions: sql`${usersTable.permissions} || '{"ai_assistant":["view","use"]}'::jsonb` })
+    .where(and(eq(usersTable.role, "admin"), sql`NOT jsonb_exists(${usersTable.permissions}, 'ai_assistant')`))
+    .returning({ id: usersTable.id });
+
+  const employees = await db
+    .update(usersTable)
+    .set({ permissions: sql`${usersTable.permissions} || '{"ai_assistant":["view"]}'::jsonb` })
+    .where(and(eq(usersTable.role, "employee"), sql`NOT jsonb_exists(${usersTable.permissions}, 'ai_assistant')`))
+    .returning({ id: usersTable.id });
+
+  const result = { admins: admins.length, employees: employees.length };
+  if (result.admins || result.employees) {
+    logger.info(result, "Backfilled ai_assistant permissions for pre-existing users");
+  }
+  return result;
+}

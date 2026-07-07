@@ -359,6 +359,7 @@ async function main() {
     ai_copilot: ["view", "generate", "use"],
     ai_workflow: ["view", "generate", "accept"],
     ai_executive: ["view", "generate", "accept"],
+    ai_assistant: ["view", "use"],
   };
   const empPerms: Record<string, string[]> = {
     contacts: ["view", "create", "edit"],
@@ -366,6 +367,7 @@ async function main() {
     ai_copilot: ["view"],
     ai_workflow: ["view"],
     ai_executive: ["view"],
+    ai_assistant: ["view"],
   };
 
   const [sarah] = await db.insert(usersTable).values({ ...uBase, email: "sarah.mitchell@gulfventures.ae", name: "Sarah Mitchell",  phone: "+971501111001", role: "primary_admin", companyId: gvc.id }).returning();

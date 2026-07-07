@@ -10,6 +10,7 @@ import * as copilotBatch from "../services/ai-copilot-batch.service.js";
 import * as workflow from "../services/ai-workflow.service.js";
 import * as workflowBatch from "../services/ai-workflow-batch.service.js";
 import { runWorkflowAlertsForCompany } from "../lib/workflow-alerts.js";
+import * as assistant from "../services/ai-assistant.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -301,6 +302,44 @@ router.get("/ai/workflow/:entityType/:id", requirePermission("ai_workflow", "vie
   const entityType = workflow.assertEntityType(String(req.params.entityType));
   const id = parseInt(String(req.params.id));
   res.json({ recommendations: await workflow.listEntityRecommendations(req.user!, entityType, id) });
+});
+
+// ── Stage 5D: Enterprise AI Command Center (conversational assistant) ──────────
+// Tenant-only (requireTenantUser blocks platform_owner — the assistant operates
+// ONLY on a tenant's own CRM data), cancelled-company read-only respected
+// (blockReadOnlyMutations), every non-GET audited (auditMutations). The assistant
+// is ADVISORY ONLY: sending a message never writes the CRM, never sends anything —
+// answers are grounded read-only orchestrations of the existing AI engines, and
+// each underlying module's permission is re-checked inside the service.
+// Reads gate on ai_assistant.view; conversation/message writes gate on ai_assistant.use.
+router.use("/ai/assistant", requireTenantUser);
+router.use("/ai/assistant", blockReadOnlyMutations);
+router.use("/ai/assistant", auditMutations("ai_assistant"));
+
+router.get("/ai/assistant/conversations", requirePermission("ai_assistant", "view"), async (req: AuthRequest, res) => {
+  const q = req.query.q != null ? String(req.query.q) : undefined;
+  res.json(await assistant.listConversations(req.user!, q));
+});
+
+router.post("/ai/assistant/conversations", requirePermission("ai_assistant", "use"), async (req: AuthRequest, res) => {
+  res.status(201).json(await assistant.createConversation(req.user!, (req.body ?? {}) as Record<string, unknown>));
+});
+
+// Static "suggestions" path BEFORE the /conversations/:id params.
+router.get("/ai/assistant/suggestions", requirePermission("ai_assistant", "view"), async (req: AuthRequest, res) => {
+  res.json(await assistant.getSuggestions(req.user!, { contextType: req.query.contextType, contextId: req.query.contextId }));
+});
+
+router.get("/ai/assistant/conversations/:id", requirePermission("ai_assistant", "view"), async (req: AuthRequest, res) => {
+  res.json(await assistant.getConversation(req.user!, parseInt(String(req.params.id))));
+});
+
+router.delete("/ai/assistant/conversations/:id", requirePermission("ai_assistant", "use"), async (req: AuthRequest, res) => {
+  res.json(await assistant.deleteConversation(req.user!, parseInt(String(req.params.id))));
+});
+
+router.post("/ai/assistant/conversations/:id/messages", requirePermission("ai_assistant", "use"), async (req: AuthRequest, res) => {
+  res.json(await assistant.sendMessage(req.user!, parseInt(String(req.params.id)), (req.body ?? {}) as Record<string, unknown>));
 });
 
 export default router;

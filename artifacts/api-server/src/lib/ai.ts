@@ -29,6 +29,7 @@ import {
   buildWorkflowTaskPrompt,
   buildExecutiveSummaryPrompt,
   buildExecutiveForecastPrompt,
+  buildAssistantAnswerPrompt,
 } from "../ai/prompts.js";
 import type { AiFeature, AiPart, AiRequest } from "../ai/types.js";
 import * as aiService from "../services/ai.service.js";
@@ -962,6 +963,30 @@ export interface ExecutiveForecastResult extends CopilotMeta {
 export async function phraseExecutiveForecast(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<ExecutiveForecastResult> {
   const p = await runExecutive("executive_forecast", buildExecutiveForecastPrompt(appLanguage), context, ctx);
   return { narrative: str(p.narrative), watchouts: strArr(p.watchouts, 3), ...meta(p) };
+}
+
+// ── Stage 5D — Enterprise AI Command Center phrasing runner ───────────────────
+//
+// PHRASES a conversational answer over a deterministically classified intent and its
+// grounded results (real CRM rows / engine outputs rendered into `context` under a
+// "Grounded results" block). Best-effort: callers soft-degrade to the deterministic
+// answer on any failure; only a successful call flips provenance to source="ai".
+// Same gated callJson seam (per-tenant enable/flag/budget + ai_invocations ledger).
+export interface AssistantAnswerResult extends CopilotMeta {
+  answer: string | null;
+  provider: string;
+  model: string;
+  promptVersion: number;
+}
+export async function phraseAssistantAnswer(context: string, appLanguage: AppLanguage = "en", ctx?: AiContext): Promise<AssistantAnswerResult> {
+  const m = await callJsonWithMeta({
+    feature: "assistant_answer",
+    parts: [{ text: `${buildAssistantAnswerPrompt(appLanguage)}\n\nGrounded results:\n${context}` }],
+    timeoutMs: SCORING_TIMEOUT_MS,
+    ctx,
+    confidenceOf: (p) => clampScore(p.confidence),
+  });
+  return { answer: str(m.parsed.answer), provider: m.provider, model: m.model, promptVersion: m.promptVersion, ...meta(m.parsed) };
 }
 
 export function logAiError(context: string, err: unknown): void {
