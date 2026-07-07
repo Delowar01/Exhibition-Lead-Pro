@@ -6,11 +6,12 @@ import {
   useGetPlatformScanTrend, 
   useListCompanies 
 } from "@workspace/api-client-react";
-import { Building2, Users, Camera, DollarSign, Activity, Zap, TrendingUp, CheckCircle2, AlertCircle, Clock } from "lucide-react";
-import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, Legend, BarChart, Bar } from "recharts";
+import { Building2, Users, Camera, DollarSign, Activity, Zap } from "lucide-react";
+import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader, MetricCard, StatusBadge, CardGridSkeleton, TableSkeleton } from "@/components/ds";
 
 export default function PlatformDashboard() {
   const { data: stats, isLoading: statsLoading } = useGetPlatformStats();
@@ -19,7 +20,14 @@ export default function PlatformDashboard() {
   const { data: companiesData, isLoading: companiesLoading } = useListCompanies({ limit: 5 });
 
   if (statsLoading || revenueLoading || scanLoading || companiesLoading) {
-    return <div className="p-8 flex items-center justify-center">Loading platform dashboard...</div>;
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Platform Dashboard" description="Real-time metrics across all tenant instances" />
+        <CardGridSkeleton cards={6} />
+        <CardGridSkeleton cards={2} />
+        <TableSkeleton rows={5} />
+      </div>
+    );
   }
 
   const mrr = stats?.monthlyRevenue || 0;
@@ -27,105 +35,62 @@ export default function PlatformDashboard() {
   const totalCompanies = stats?.totalCompanies || 0;
   const activeCompanies = stats?.activeCompanies || 0;
   
-  // Simulated data
-  const aiRequests = (stats?.totalScans || 0) * 3.4; // rough multiplier
-  
-  const COLORS = ["hsl(var(--primary))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--destructive))"];
+  const COLORS = ["hsl(var(--primary))", "hsl(var(--chart-3))"];
   const subStatusData = [
     { name: "Active", value: activeCompanies },
-    { name: "Trial", value: Math.floor(totalCompanies * 0.15) },
-    { name: "Past Due", value: Math.floor(totalCompanies * 0.05) },
-    { name: "Cancelled", value: totalCompanies - activeCompanies - Math.floor(totalCompanies * 0.2) }
+    { name: "Inactive", value: Math.max(totalCompanies - activeCompanies, 0) },
   ];
 
-  const planDistData = [
-    { name: "Enterprise", value: 12 },
-    { name: "Professional", value: 45 },
-    { name: "Starter", value: 30 },
-    { name: "Free", value: 13 },
-  ];
-
-  // Map revenue data to show growth line
-  const mrrGrowthData = revenueData?.map((item, i) => {
-    // Generate cumulative growth-looking data from trend
-    return { ...item, mrr: item.value * (1 + (i * 0.02)) };
-  }) || [];
+  const mrrGrowthData = revenueData?.map((item) => ({ ...item, mrr: item.value })) || [];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Platform Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Real-time metrics across all tenant instances</p>
-        </div>
-        <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-green-500/20">System Operational</Badge>
-      </div>
+      <PageHeader 
+        title="Platform Dashboard" 
+        description="Real-time metrics across all tenant instances"
+        actions={
+          <StatusBadge tone="success">System Operational</StatusBadge>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Companies</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCompanies.toLocaleString()}</div>
-            <p className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" /> +4 this week
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalUsers.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">Across all tenants</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">MRR</CardTitle>
-            <DollarSign className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">${mrr.toLocaleString()}</div>
-            <p className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" /> +8.2% MoM
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">ARR</CardTitle>
-            <Activity className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">${arr.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">Annual Run Rate</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Leads</CardTitle>
-            <Camera className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalLeads.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">Captured system-wide</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-sidebar text-sidebar-foreground border-sidebar-border shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-sidebar-foreground/70">AI Requests</CardTitle>
-            <Zap className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white">{Math.floor(aiRequests).toLocaleString()}</div>
-            <p className="text-xs text-sidebar-foreground/70 mt-1">API calls this month</p>
-          </CardContent>
-        </Card>
+        <MetricCard
+          label="Total Companies"
+          value={totalCompanies.toLocaleString()}
+          icon={Building2}
+          footer={`${activeCompanies.toLocaleString()} active`}
+        />
+        <MetricCard
+          label="Total Users"
+          value={(stats?.totalUsers || 0).toLocaleString()}
+          icon={Users}
+          footer="Across all tenants"
+        />
+        <MetricCard
+          label="MRR"
+          value={`$${mrr.toLocaleString()}`}
+          icon={DollarSign}
+          footer="Monthly Recurring Revenue"
+        />
+        <MetricCard
+          label="ARR"
+          value={`$${arr.toLocaleString()}`}
+          icon={Activity}
+          footer="Annual Run Rate"
+        />
+        <MetricCard
+          label="Total Leads"
+          value={(stats?.totalLeads || 0).toLocaleString()}
+          icon={Camera}
+          footer="Captured system-wide"
+        />
+        <MetricCard
+          label="Total Scans"
+          value={(stats?.totalScans || 0).toLocaleString()}
+          icon={Zap}
+          className="bg-sidebar text-sidebar-foreground border-sidebar-border"
+          footer={<span className="text-sidebar-foreground/70">Cards captured system-wide</span>}
+        />
       </div>
 
       <div className="grid gap-6 md:grid-cols-7">
@@ -204,8 +169,8 @@ export default function PlatformDashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card className="shadow-sm md:col-span-2">
+      <div className="grid gap-6">
+        <Card className="shadow-sm">
           <CardHeader>
             <div className="flex justify-between items-center">
               <div>
@@ -238,12 +203,9 @@ export default function PlatformDashboard() {
                       </TableCell>
                       <TableCell className="text-right">{company.userCount}</TableCell>
                       <TableCell className="text-center">
-                        <Badge 
-                          variant={company.status === "active" ? "default" : "secondary"} 
-                          className={company.status === "active" ? "bg-green-500 hover:bg-green-600" : ""}
-                        >
+                        <StatusBadge tone={company.status === "active" ? "success" : "neutral"} showDot>
                           {company.status}
-                        </Badge>
+                        </StatusBadge>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground text-sm">
                         {format(new Date(company.createdAt), 'MMM d, yyyy')}
@@ -260,58 +222,6 @@ export default function PlatformDashboard() {
             </div>
           </CardContent>
         </Card>
-
-        <div className="space-y-6 flex flex-col">
-          <Card className="shadow-sm flex-1">
-            <CardHeader className="pb-3">
-              <CardTitle>Support Overview</CardTitle>
-              <CardDescription>Platform support tickets</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center border-b border-border pb-3">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-destructive" />
-                    <span className="text-sm font-medium">Open Tickets</span>
-                  </div>
-                  <span className="font-bold">32</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-border pb-3">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-chart-2" />
-                    <span className="text-sm font-medium">In Progress</span>
-                  </div>
-                  <span className="font-bold">12</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-border pb-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <span className="text-sm font-medium">Resolved Today</span>
-                  </div>
-                  <span className="font-bold">18</span>
-                </div>
-                <div className="flex justify-between items-center pt-1">
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">SLA Compliance</span>
-                  </div>
-                  <span className="font-bold text-green-600">98.2%</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-secondary p-4 rounded-xl border border-border flex flex-col items-center justify-center text-center">
-              <span className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wider">Revenue Growth</span>
-              <span className="text-xl font-bold text-green-600">+14%</span>
-            </div>
-            <div className="bg-secondary p-4 rounded-xl border border-border flex flex-col items-center justify-center text-center">
-              <span className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wider">User Growth</span>
-              <span className="text-xl font-bold text-green-600">+22%</span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -30,7 +30,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { BRAND } from "./utils";
 
 const STRATEGY_LABELS: Record<BulkAssignInputStrategy, string> = {
   manual: "Manual (pick owner)",
@@ -147,24 +146,21 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
   return (
     <div
       data-testid="bulk-bar"
-      className="flex flex-shrink-0 flex-wrap items-center gap-2.5 rounded-xl border p-3 text-white"
-      style={{ backgroundColor: BRAND.navy, borderColor: BRAND.navy }}
+      className="flex flex-shrink-0 flex-wrap items-center gap-2.5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-primary-foreground shadow-sm"
     >
-      <span className="whitespace-nowrap text-sm font-semibold">{count} selected</span>
-      <div className="flex overflow-hidden rounded-md border border-white/20">
+      <span className="whitespace-nowrap text-sm font-semibold text-primary">{count} selected</span>
+      <div className="flex overflow-hidden rounded-md border border-primary/30">
         <button
           type="button"
           onClick={() => setMode("assign")}
-          className={`px-3 py-1 text-xs font-medium ${mode === "assign" ? "text-white" : "text-white/60"}`}
-          style={{ backgroundColor: mode === "assign" ? BRAND.orange : "transparent" }}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors ${mode === "assign" ? "bg-primary text-primary-foreground" : "bg-transparent text-primary hover:bg-primary/20"}`}
         >
           Assign
         </button>
         <button
           type="button"
           onClick={() => setMode("stage")}
-          className={`px-3 py-1 text-xs font-medium ${mode === "stage" ? "text-white" : "text-white/60"}`}
-          style={{ backgroundColor: mode === "stage" ? BRAND.orange : "transparent" }}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors ${mode === "stage" ? "bg-primary text-primary-foreground" : "bg-transparent text-primary hover:bg-primary/20"}`}
         >
           Move stage
         </button>
@@ -173,7 +169,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
       {mode === "assign" ? (
         <>
           <Select value={strategy} onValueChange={(v) => setStrategy(v as BulkAssignInputStrategy)}>
-            <SelectTrigger className="h-8 w-[190px] border-white/20 bg-white/10 text-white">
+            <SelectTrigger className="h-8 w-[190px] border-primary/30 bg-background text-foreground">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -186,7 +182,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
           </Select>
           {strategy === "manual" ? (
             <Select value={owner} onValueChange={setOwner}>
-              <SelectTrigger className="h-8 w-[170px] border-white/20 bg-white/10 text-white">
+              <SelectTrigger className="h-8 w-[170px] border-primary/30 bg-background text-foreground">
                 <SelectValue placeholder="Owner" />
               </SelectTrigger>
               <SelectContent>
@@ -199,7 +195,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
             </Select>
           ) : (
             <Select value={team} onValueChange={setTeam}>
-              <SelectTrigger className="h-8 w-[170px] border-white/20 bg-white/10 text-white">
+              <SelectTrigger className="h-8 w-[170px] border-primary/30 bg-background text-foreground">
                 <SelectValue placeholder={teamRequired ? "Team (required)" : "Team (optional)"} />
               </SelectTrigger>
               <SelectContent>
@@ -215,8 +211,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
             size="sm"
             onClick={runAssign}
             disabled={count === 0 || bulkAssign.isPending}
-            className="h-8 text-white hover:opacity-90"
-            style={{ backgroundColor: BRAND.orange }}
+            className="h-8"
           >
             <UserCheck className="mr-1.5 h-3.5 w-3.5" />
             {bulkAssign.isPending ? "Assigning..." : "Assign"}
@@ -225,7 +220,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
       ) : (
         <>
           <Select value={stageKey} onValueChange={setStageKey}>
-            <SelectTrigger className="h-8 w-[190px] border-white/20 bg-white/10 text-white">
+            <SelectTrigger className="h-8 w-[190px] border-primary/30 bg-background text-foreground">
               <SelectValue placeholder="Target stage" />
             </SelectTrigger>
             <SelectContent>
@@ -240,8 +235,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
             size="sm"
             onClick={runStageChange}
             disabled={count === 0 || working}
-            className="h-8 text-white hover:opacity-90"
-            style={{ backgroundColor: BRAND.orange }}
+            className="h-8"
           >
             <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
             {working ? "Moving..." : "Move"}
@@ -255,7 +249,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
           variant="ghost"
           onClick={() => setConfirmDelete(true)}
           disabled={count === 0 || working}
-          className="h-8 text-white/80 hover:bg-red-500/20 hover:text-white"
+          className="h-8 text-destructive hover:bg-destructive/20 hover:text-destructive"
           data-testid="button-bulk-delete"
         >
           <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -265,7 +259,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
           size="sm"
           variant="ghost"
           onClick={onClear}
-          className="h-8 text-white/80 hover:bg-white/10 hover:text-white"
+          className="h-8 text-muted-foreground hover:bg-muted hover:text-foreground"
           data-testid="button-clear-selection"
         >
           <X className="mr-1.5 h-3.5 w-3.5" />
@@ -284,7 +278,7 @@ export function BulkBar({ selectedIds, users, teams, stages, onClear }: BulkBarP
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={runDelete} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction onClick={runDelete} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

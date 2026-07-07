@@ -1,0 +1,398 @@
+Stage 5.9 Phase 2 (Navigation & Information Architecture) has been successfully completed, reviewed and approved.
+
+Proceed with Stage 5.9 Phase 3A.
+
+This phase begins the complete modernization of the Enterprise Web Experience.
+
+This is NOT simply a UI redesign.
+
+This is a complete Product Experience Modernization.
+
+The objective is to transform Lead Capture Pro into a premium Enterprise SaaS platform comparable to Salesforce, HubSpot and Microsoft Dynamics while preserving all existing enterprise functionality.
+
+=========================================================
+IMPORTANT
+=========================================================
+
+Do NOT redesign screens only.
+
+Redesign the complete user experience.
+
+Every design decision must improve:
+
+• Productivity
+• Simplicity
+• Speed
+• Readability
+• Discoverability
+• Enterprise usability
+
+Every change should have a business reason.
+
+=========================================================
+Preserve
+=========================================================
+
+Do NOT modify:
+
+• Business Logic
+• APIs
+• Database Structure
+• Multi-tenancy
+• RBAC
+• Enterprise Privacy
+• AI Platform
+• OCR
+• CRM Logic
+• Workflow Engine
+• Executive Intelligence
+• AI Command Center
+
+Zero regressions.
+
+=========================================================
+Adaptive Enterprise UI
+=========================================================
+
+Do NOT build separate applications for different user roles.
+
+Instead build ONE unified Enterprise UI.
+
+The interface should automatically adapt using the existing RBAC and Permission System.
+
+Users should only see:
+
+• Pages
+• Widgets
+• Navigation
+• Actions
+• Reports
+• Dashboards
+• AI Features
+• Quick Actions
+
+that they are authorized to access.
+
+Do NOT duplicate screens.
+
+One screen should intelligently adapt depending on:
+
+• Platform Owner
+• Company Admin
+• Sales Manager
+• Employee
+
+This adaptive behavior should apply to:
+
+• Sidebar
+• Dashboard
+• Widgets
+• KPI Cards
+• Quick Actions
+• Search
+• Command Palette
+• Notifications
+• AI Suggestions
+• Reports
+• Empty States
+
+No permission logic should change.
+
+=========================================================
+Scope
+=========================================================
+
+Modernize ONLY:
+
+• Company Admin Dashboard
+• Employee Dashboard
+• Platform Owner Dashboard (visual consistency only)
+• Leads List
+• Companies List
+• Contacts List
+
+=========================================================
+Dashboard Modernization
+=========================================================
+
+Create modern dashboards.
+
+Company Admin should focus on:
+
+• Pipeline
+• Team Performance
+• Executive KPIs
+• Workflow Health
+• AI Recommendations
+• Today's Priorities
+• Recent Activities
+• Quick Actions
+
+Employee Dashboard should focus on:
+
+• My Leads
+• Today's Tasks
+• Follow-ups
+• Meetings
+• AI Recommendations
+• Scan Activity
+• Notifications
+
+Platform Owner Dashboard should remain focused on:
+
+• Platform Health
+• Companies
+• Platform Analytics
+• AI Usage
+• Subscription Overview
+• System Status
+
+All dashboards must share ONE framework and adapt using RBAC.
+
+=========================================================
+Lead List Modernization
+=========================================================
+
+Modernize completely.
+
+Preserve the excellent virtualized grid already implemented.
+
+Enhance:
+
+• Toolbar
+• Search
+• Filters
+• Saved Views
+• Bulk Actions
+• Quick Actions
+• Status Badges
+• Stage Badges
+• Row Preview
+• Detail Drawer
+• Empty States
+• Skeleton Loading
+
+=========================================================
+Companies List
+=========================================================
+
+Modernize using the Enterprise Design System.
+
+Improve:
+
+• Company Cards
+• Relationship Indicators
+• Active Leads
+• Active Contacts
+• AI Summary
+• Recent Activities
+• Company Status
+
+=========================================================
+Contacts List
+=========================================================
+
+Improve:
+
+• Contact Information
+• Company Association
+• Tags
+• Communication Actions
+• Activity Indicators
+• Relationship Summary
+
+=========================================================
+Enterprise UX Rules
+=========================================================
+
+Every page must immediately answer:
+
+1.
+
+Where am I?
+
+2.
+
+What is most important?
+
+3.
+
+What should I do next?
+
+Critical information should always appear first.
+
+Users should never search for high-priority information.
+
+=========================================================
+Design Standards
+=========================================================
+
+Every page must use ONLY:
+
+• Design Tokens
+• Theme Engine
+• Enterprise Component Library
+• Typography System
+• Motion System
+• Responsive Layout System
+
+No legacy components.
+
+No duplicate UI patterns.
+
+=========================================================
+Performance
+=========================================================
+
+Improve:
+
+• Skeleton Loading
+• Lazy Rendering
+• Virtualization
+• Route Performance
+• Rendering Performance
+• Animation Performance
+
+=========================================================
+Accessibility
+=========================================================
+
+Maintain:
+
+• Keyboard Navigation
+• Screen Reader Support
+• Focus Indicators
+• WCAG Compliance
+• Accessible Color Contrast
+
+=========================================================
+Presentation Requirements
+=========================================================
+
+For EVERY redesigned screen provide:
+
+1.
+
+Before Screenshot
+
+2.
+
+UX Problems
+
+3.
+
+Design Decisions
+
+4.
+
+Why each UX decision improves productivity
+
+5.
+
+After Screenshot
+
+6.
+
+Performance Improvements
+
+7.
+
+Accessibility Improvements
+
+8.
+
+Responsive Verification
+
+9.
+
+Dark Mode Verification
+
+10.
+
+EN/AR RTL Verification
+
+=========================================================
+Validation
+=========================================================
+
+Run:
+
+• Full Workspace Typecheck
+
+• Complete Regression Suite
+
+Verify:
+
+• Zero API Changes
+
+• Zero Business Logic Changes
+
+• Zero RBAC Changes
+
+• Zero Permission Changes
+
+• Zero Tenant Isolation Changes
+
+=========================================================
+Deliverables
+=========================================================
+
+Provide:
+
+• Before vs After Screenshots
+
+• Dashboard Modernization Report
+
+• CRM Modernization Report
+
+• UX Improvement Report
+
+• Accessibility Report
+
+• Performance Report
+
+• Responsive Report
+
+• Files Modified
+
+• Test Results
+
+STOP after Phase 3A.
+
+Do NOT begin Phase 3B until Phase 3A has been reviewed and approved.
+
+Phase 3B will cover:
+
+• Lead Detail
+• Company Detail
+• Contact Detail
+• Pipeline
+• AI Intelligence Workspace
+
+=========================================================
+Long-Term Roadmap
+=========================================================
+
+Continue following the approved roadmap:
+
+Stage 5.9 Phase 3A
+
+↓
+
+Stage 5.9 Phase 3B
+
+↓
+
+Stage 5.9 Phase 4 (Mobile Modernization)
+
+↓
+
+Stage 5.9 Phase 5 (Accessibility, Performance & Final Polish)
+
+↓
+
+Stage 5.5 – Enterprise Collaboration & Communication Center
+
+↓
+
+Stage 6

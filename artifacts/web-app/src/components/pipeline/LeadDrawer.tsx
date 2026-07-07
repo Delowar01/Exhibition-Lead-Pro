@@ -22,8 +22,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StageBadge } from "./StageBadge";
+import { StatusBadge } from "@/components/ds";
 import {
-  BRAND,
   companyName,
   displayName,
   formatMoney,
@@ -41,11 +41,11 @@ interface LeadDrawerProps {
 
 function Row({ icon: Icon, label, children }: { icon: typeof Mail; label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3 py-2.5">
+    <div className="flex items-start gap-3 py-3">
       <Icon className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="mt-0.5 text-sm">{children}</div>
+        <div className="mt-0.5 text-sm font-medium">{children}</div>
       </div>
     </div>
   );
@@ -72,34 +72,31 @@ function DrawerBody({ leadId, stageMap, stages }: { leadId: number; stageMap: St
 
   return (
     <div className="flex h-full flex-col">
-      <SheetHeader className="border-b px-6 pb-4" style={{ borderColor: `${BRAND.navy}1a` }}>
-        <SheetTitle className="text-xl" style={{ color: BRAND.navy }}>
-          <span className="dark:text-foreground">{displayName(lead)}</span>
+      <SheetHeader className="border-b px-6 pb-4">
+        <SheetTitle className="text-xl">
+          {displayName(lead)}
         </SheetTitle>
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <StageBadge lead={lead} stageMap={stageMap} stages={stages} size="md" />
-          {pr && <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${pr.badge}`}>{pr.label} priority</span>}
+          {pr && <StatusBadge tone={pr.label === "High" ? "destructive" : pr.label === "Medium" ? "warning" : "info"}>{pr.label} priority</StatusBadge>}
         </div>
       </SheetHeader>
 
-      <div className="flex-1 overflow-y-auto px-6 py-2">
-        <div
-          className="my-4 rounded-xl border p-4"
-          style={{ borderColor: `${BRAND.orange}33`, backgroundColor: BRAND.orangeSoft }}
-        >
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mb-6 rounded-xl border bg-card p-4 shadow-sm">
           <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Deal value</div>
-          <div className="mt-1 text-2xl font-bold" style={{ color: BRAND.navy }}>
-            <span className="dark:text-foreground">{money ?? "\u2014"}</span>
+          <div className="mt-1 text-3xl font-bold tracking-tight text-foreground">
+            {money ?? "\u2014"}
             {lead.probability != null && (
-              <span className="ml-2 text-sm font-medium text-muted-foreground">{lead.probability}% probability</span>
+              <span className="ml-2 text-sm font-medium text-muted-foreground tracking-normal">{lead.probability}% probability</span>
             )}
           </div>
         </div>
 
-        <div className="divide-y">
+        <div className="divide-y divide-border/50">
           {lead.contactEmail && (
             <Row icon={Mail} label="Email">
-              <a href={`mailto:${lead.contactEmail}`} className="hover:underline" style={{ color: BRAND.orange }}>
+              <a href={`mailto:${lead.contactEmail}`} className="text-primary hover:underline">
                 {lead.contactEmail}
               </a>
             </Row>
@@ -110,10 +107,10 @@ function DrawerBody({ leadId, stageMap, stages }: { leadId: number; stageMap: St
             </Row>
           )}
           <Row icon={UserIcon} label="Owner">
-            {lead.assignedToName || <span className="text-muted-foreground">Unassigned</span>}
+            {lead.assignedToName || <span className="text-muted-foreground font-normal">Unassigned</span>}
           </Row>
           <Row icon={Users} label="Team">
-            {lead.teamName || <span className="text-muted-foreground">No team</span>}
+            {lead.teamName || <span className="text-muted-foreground font-normal">No team</span>}
           </Row>
           {lead.eventName && (
             <Row icon={CalendarClock} label="Event">
@@ -121,25 +118,25 @@ function DrawerBody({ leadId, stageMap, stages }: { leadId: number; stageMap: St
             </Row>
           )}
           <Row icon={CalendarClock} label="Expected close">
-            {closing || <span className="text-muted-foreground">{"\u2014"}</span>}
+            {closing || <span className="text-muted-foreground font-normal">{"\u2014"}</span>}
           </Row>
           <Row icon={Sparkles} label="AI lead score">
-            <span className="text-muted-foreground">{"\u2014"}</span>
+            <span className="text-muted-foreground font-normal">{"\u2014"}</span>
           </Row>
           <Row icon={Activity} label="Last activity">
-            <span className="text-muted-foreground">{"\u2014"}</span>
+            <span className="text-muted-foreground font-normal">{"\u2014"}</span>
           </Row>
           <Row icon={BellRing} label="Next follow-up">
-            <span className="text-muted-foreground">{"\u2014"}</span>
+            <span className="text-muted-foreground font-normal">{"\u2014"}</span>
           </Row>
           {(lead.tags ?? []).length > 0 && (
             <Row icon={TagIcon} label="Tags">
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
                 {(lead.tags ?? []).map((t) => (
                   <span
                     key={t.id}
-                    className="rounded-full border px-2 py-0.5 text-xs"
-                    style={{ borderColor: `${t.color || BRAND.navy300}55`, color: t.color || BRAND.navy }}
+                    className="rounded-full border px-2 py-0.5 text-xs font-medium"
+                    style={{ borderColor: `${t.color || "var(--color-primary)"}55`, color: t.color || "var(--color-primary)" }}
                   >
                     {t.name}
                   </span>
@@ -148,20 +145,20 @@ function DrawerBody({ leadId, stageMap, stages }: { leadId: number; stageMap: St
             </Row>
           )}
           {lead.notes && (
-            <div className="py-3">
+            <div className="py-4">
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Notes</div>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{lead.notes}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{lead.notes}</p>
             </div>
           )}
         </div>
       </div>
 
-      <div className="border-t p-4" style={{ borderColor: `${BRAND.navy}1a` }}>
+      <div className="border-t bg-card p-4">
         <Link href={`/admin/leads/${lead.id}`}>
           <Button
             data-testid="button-open-full-record"
-            className="w-full text-white hover:opacity-90"
-            style={{ backgroundColor: BRAND.navy }}
+            className="w-full"
+            variant="default"
           >
             Open full record
             <ExternalLink className="ml-2 h-4 w-4" />

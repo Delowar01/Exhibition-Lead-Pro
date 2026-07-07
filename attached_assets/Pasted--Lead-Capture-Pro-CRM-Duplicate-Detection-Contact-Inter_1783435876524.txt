@@ -1,0 +1,235 @@
+# Lead Capture Pro
+# CRM Duplicate Detection & Contact Interaction Enhancement
+
+We have identified an important CRM data model issue that needs to be corrected.
+
+This is NOT simply a duplicate detection improvement.
+
+It is an enhancement to the CRM contact model.
+
+=========================================================
+
+Problem
+
+Currently the system treats multiple scans of the same person as duplicate contacts.
+
+This causes the loss of valuable exhibition history.
+
+Example:
+
+John Smith
+
+ABC Company
+
+is scanned at:
+
+• LEAP 2026
+• Gitex 2026
+• Intersec 2027
+
+The CRM should NOT create three Contacts.
+
+The CRM should keep ONE Contact.
+
+However, it MUST preserve every exhibition interaction independently.
+
+=========================================================
+
+Required Behavior
+
+Separate the concept of:
+
+Contact
+
+and
+
+Exhibition Interaction (Business Card Scan).
+
+Every business card scan should become a permanent Interaction record.
+
+The Contact remains unique.
+
+=========================================================
+
+Duplicate Detection
+
+Revise duplicate matching.
+
+Do NOT classify records as duplicates using:
+
+• Name
+• Company Website
+
+alone.
+
+Instead use weighted confidence.
+
+Highest confidence:
+
+• Email
+• Mobile Number
+
+High confidence:
+
+• LinkedIn URL
+• Direct Phone
+
+Medium confidence:
+
+• Full Name
+• Company Name
+
+Low confidence:
+
+• Company Website
+• Address
+
+Never automatically merge based only on:
+
+• Same Name
+• Same Company
+• Same Website
+
+=========================================================
+
+Existing Contact Workflow
+
+When an existing contact is detected:
+
+Display:
+
+Existing Contact Found
+
+Show:
+
+• Contact Name
+
+• Company
+
+• Previous Events
+
+• Number of Previous Interactions
+
+• Last Interaction Date
+
+Provide options:
+
+✓ Add New Interaction
+
+✓ Review Existing Contact
+
+✓ Create Separate Contact (manual override)
+
+Never merge automatically.
+
+=========================================================
+
+Interaction History
+
+Create a permanent Interaction History for every contact.
+
+Each interaction should store:
+
+• Event / Exhibition
+
+• Scan Date
+
+• Employee
+
+• Business Card Image
+
+• GPS (if available)
+
+• Notes
+
+• OCR Data
+
+• Source
+
+• AI Summary (if available)
+
+These interactions must appear in the Contact Timeline.
+
+=========================================================
+
+Company View
+
+Company pages should display:
+
+Events Attended
+
+Number of Contacts
+
+Number of Interactions
+
+Last Interaction
+
+Recent Employees Met
+
+=========================================================
+
+Lead & AI Integration
+
+Ensure:
+
+• AI Lead Intelligence
+
+• Sales Copilot
+
+• Executive Intelligence
+
+• Workflow Intelligence
+
+use the complete interaction history instead of only the latest scan.
+
+=========================================================
+
+User Experience
+
+When scanning the same contact at another event:
+
+DO NOT create duplicate contacts.
+
+Instead:
+
+Inform the user:
+
+"This contact already exists.
+
+A new exhibition interaction will be added."
+
+=========================================================
+
+Presentation
+
+Provide:
+
+• Updated CRM data model
+
+• ER diagram
+
+• Updated duplicate detection strategy
+
+• Interaction history workflow
+
+• UI screenshots
+
+• Database changes
+
+• APIs modified
+
+• Test cases
+
+• Regression results
+
+Maintain:
+
+• Multi-tenancy
+
+• RBAC
+
+• Enterprise Privacy
+
+• Zero regressions
+
+• Existing API contracts where possible

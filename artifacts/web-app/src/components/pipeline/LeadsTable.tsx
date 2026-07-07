@@ -32,6 +32,7 @@ import {
   type PipelineStageConfig,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { StatusBadge } from "@/components/ds";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -53,7 +54,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { StageBadge } from "./StageBadge";
 import {
-  BRAND,
   companyName,
   displayName,
   formatMoney,
@@ -172,11 +172,10 @@ export function LeadsTable(props: LeadsTableProps) {
                   e.stopPropagation();
                   props.onOpenLead(l.id);
                 }}
-                className="block max-w-full truncate text-left text-sm font-medium hover:underline"
-                style={{ color: BRAND.navy }}
+                className="block max-w-full truncate text-left text-sm font-medium text-foreground hover:underline"
                 data-testid={`link-lead-${l.id}`}
               >
-                <span className="dark:text-foreground">{displayName(l)}</span>
+                {displayName(l)}
               </button>
               {l.contactEmail && <div className="truncate text-xs text-muted-foreground">{l.contactEmail}</div>}
             </div>
@@ -208,9 +207,7 @@ export function LeadsTable(props: LeadsTableProps) {
         cell: ({ row }) => {
           const m = formatMoney(row.original.value, row.original.currency);
           return m ? (
-            <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>
-              <span className="dark:text-foreground">{m}</span>
-            </span>
+            <span className="text-sm font-semibold text-foreground">{m}</span>
           ) : (
             <Muted />
           );
@@ -297,8 +294,8 @@ export function LeadsTable(props: LeadsTableProps) {
               {tags.slice(0, 2).map((t) => (
                 <span
                   key={t.id}
-                  className="truncate rounded-full border px-1.5 py-0.5 text-[10px]"
-                  style={{ borderColor: `${t.color || BRAND.navy300}55`, color: t.color || BRAND.navy }}
+                  className={t.color ? "truncate rounded-full border px-1.5 py-0.5 text-[10px]" : "truncate rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"}
+                  style={t.color ? { borderColor: `${t.color}55`, color: t.color } : undefined}
                 >
                   {t.name}
                 </span>
@@ -315,13 +312,9 @@ export function LeadsTable(props: LeadsTableProps) {
         accessorFn: (l) => statusOf(l, stageMap),
         cell: ({ row }) => {
           const s = statusOf(row.original, stageMap);
-          const map = {
-            won: { label: "Won", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600" },
-            lost: { label: "Lost", cls: "border-gray-400/40 bg-gray-400/10 text-gray-500" },
-            open: { label: "Open", cls: "border-blue-500/40 bg-blue-500/10 text-blue-600" },
-          } as const;
-          const m = map[s === "all" ? "open" : s];
-          return <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${m.cls}`}>{m.label}</span>;
+          const tone = s === "won" ? "success" : s === "lost" ? "neutral" : "info";
+          const label = s === "all" ? "Open" : s === "won" ? "Won" : s === "lost" ? "Lost" : "Open";
+          return <StatusBadge tone={tone}>{label}</StatusBadge>;
         },
       },
       {
@@ -436,15 +429,13 @@ export function LeadsTable(props: LeadsTableProps) {
     <>
       <div
         ref={scrollRef}
-        className="flex-1 overflow-auto rounded-xl border bg-card"
-        style={{ borderColor: `${BRAND.navy}1a` }}
+        className="flex-1 overflow-auto rounded-xl border border-border bg-card"
         data-testid="leads-table"
       >
         <div style={{ width: totalWidth, minWidth: "100%" }}>
           {/* Header */}
           <div
-            className="sticky top-0 z-10 flex border-b text-white"
-            style={{ backgroundColor: BRAND.navy, borderColor: BRAND.navy }}
+            className="sticky top-0 z-10 flex border-b bg-card text-muted-foreground"
           >
             {table.getHeaderGroups().map((hg) =>
               hg.headers.map((header) => {
@@ -455,7 +446,7 @@ export function LeadsTable(props: LeadsTableProps) {
                   <div
                     key={header.id}
                     className="group relative flex items-center px-3 py-2.5 text-xs font-semibold uppercase tracking-wide"
-                    style={{ width: header.getSize(), ...pinStyle(col), backgroundColor: BRAND.navy }}
+                    style={{ width: header.getSize(), ...pinStyle(col) }}
                   >
                     <div
                       className={`flex items-center gap-1 ${canSort ? "cursor-pointer select-none" : ""}`}
@@ -506,25 +497,23 @@ export function LeadsTable(props: LeadsTableProps) {
                 return (
                   <div
                     key={`g-${item.key}`}
-                    className="absolute left-0 flex items-center border-b"
+                    className="absolute left-0 flex items-center border-b bg-muted/40"
                     style={{
                       top: 0,
                       transform: `translateY(${vi.start}px)`,
                       height: GROUP_H,
                       width: totalWidth,
                       minWidth: "100%",
-                      backgroundColor: BRAND.navySoft,
-                      borderColor: `${BRAND.navy}14`,
                     }}
                   >
                     <div className="sticky left-0 flex items-center gap-2 px-4">
-                      <span className="text-sm font-semibold" style={{ color: BRAND.navy }}>
-                        <span className="dark:text-foreground">{item.label}</span>
+                      <span className="text-sm font-semibold text-foreground">
+                        <span>{item.label}</span>
                       </span>
                       <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground">
                         {item.count}
                       </span>
-                      <span className="text-xs font-medium" style={{ color: BRAND.orange }}>
+                      <span className="text-xs font-medium text-primary">
                         {formatMoney(item.value, undefined, { compact: true })}
                       </span>
                     </div>
@@ -535,14 +524,13 @@ export function LeadsTable(props: LeadsTableProps) {
               return (
                 <div
                   key={row.id}
-                  className="group absolute left-0 flex border-b hover:bg-muted/40"
+                  className="group absolute left-0 flex border-b border-border/60 hover:bg-muted/40"
                   style={{
                     top: 0,
                     transform: `translateY(${vi.start}px)`,
                     height: ROW_H,
                     width: totalWidth,
                     minWidth: "100%",
-                    borderColor: `${BRAND.navy}0f`,
                   }}
                   onClick={() => props.onOpenLead(row.original.id)}
                   data-testid={`row-lead-${row.original.id}`}

@@ -33,8 +33,8 @@ import { LeadsTable } from "@/components/pipeline/LeadsTable";
 import { KanbanBoard } from "@/components/pipeline/KanbanBoard";
 import { LeadDrawer } from "@/components/pipeline/LeadDrawer";
 import { BulkBar } from "@/components/pipeline/BulkBar";
+import { PageHeader, TableSkeleton, CardGridSkeleton } from "@/components/ds";
 import {
-  BRAND,
   EMPTY_FILTERS,
   applyFilters,
   activeFilterCount,
@@ -194,40 +194,33 @@ export default function AdminLeads() {
   const myLeadsActive = user?.id != null && filters.ownerId === user.id;
 
   if (isLoading || stagesLoading) {
-    return <div className="flex h-full items-center justify-center p-8 text-muted-foreground">Loading pipeline...</div>;
+    return (
+      <div className="flex h-full flex-col gap-6 pb-4">
+        <PageHeader title="Lead Pipeline" description="Loading workspace..." />
+        <CardGridSkeleton cards={8} />
+        <TableSkeleton rows={8} />
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-full flex-col gap-4 pb-4">
-      {/* Brand header */}
-      <div className="flex flex-shrink-0 flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-6 w-1.5 rounded-full" style={{ backgroundColor: BRAND.orange }} />
-            <h1 className="text-2xl font-bold tracking-tight" style={{ color: BRAND.navy }}>
-              <span className="dark:text-foreground">Lead Capture Pro</span>
-            </h1>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Enterprise Sales Workspace &middot; {stats.totalCount} leads &middot; Open pipeline{" "}
-            <span className="font-semibold" style={{ color: BRAND.orange }}>
-              {formatMoney(stats.totalPipelineValue, stats.currency, { compact: true })}
-            </span>
-          </p>
-        </div>
-        {viewMode === "kanban" && (
-          <Button
-            variant={selectMode ? "default" : "outline"}
-            onClick={() => (selectMode ? clearSelection() : setSelectMode(true))}
-            data-testid="button-select-mode"
-            style={selectMode ? { backgroundColor: BRAND.navy } : undefined}
-            className={selectMode ? "text-white" : undefined}
-          >
-            {selectMode ? <X className="mr-2 h-4 w-4" /> : <CheckSquare className="mr-2 h-4 w-4" />}
-            {selectMode ? "Cancel" : "Select"}
-          </Button>
-        )}
-      </div>
+    <div className="flex h-full flex-col gap-5 pb-4">
+      <PageHeader
+        title="Lead Pipeline"
+        description={`Enterprise Sales Workspace · ${stats.totalCount} leads · Open pipeline ${formatMoney(stats.totalPipelineValue, stats.currency, { compact: true })}`}
+        actions={
+          viewMode === "kanban" && (
+            <Button
+              variant={selectMode ? "secondary" : "outline"}
+              onClick={() => (selectMode ? clearSelection() : setSelectMode(true))}
+              data-testid="button-select-mode"
+            >
+              {selectMode ? <X className="mr-2 h-4 w-4" /> : <CheckSquare className="mr-2 h-4 w-4" />}
+              {selectMode ? "Cancel Selection" : "Select Multiple"}
+            </Button>
+          )
+        }
+      />
 
       <KpiCards leads={filtered} stageMap={stageMap} />
 
@@ -271,12 +264,11 @@ export default function AdminLeads() {
             type="button"
             data-testid={`preset-${chip.key}`}
             onClick={chip.apply}
-            className="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
-            style={
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
               chip.active
-                ? { backgroundColor: BRAND.orangeSoft, borderColor: BRAND.orange, color: BRAND.orange }
-                : { borderColor: `${BRAND.navy}22` }
-            }
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border hover:bg-muted"
+            }`}
           >
             {chip.label}
           </button>

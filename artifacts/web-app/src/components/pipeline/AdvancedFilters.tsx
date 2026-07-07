@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BRAND, type LeadFilters, type StatusFilter } from "./utils";
+import { type LeadFilters, type StatusFilter } from "./utils";
 
 const ALL = "__all__";
 
@@ -59,9 +59,9 @@ export function AdvancedFilters({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-sm" data-testid="advanced-filters">
-        <SheetHeader className="border-b pb-4" style={{ borderColor: `${BRAND.navy}1a` }}>
-          <SheetTitle style={{ color: BRAND.navy }}>
-            <span className="dark:text-foreground">Advanced filters</span>
+        <SheetHeader className="border-b pb-4">
+          <SheetTitle>
+            Advanced filters
           </SheetTitle>
         </SheetHeader>
 
@@ -75,12 +75,11 @@ export function AdvancedFilters({
                   type="button"
                   data-testid={`filter-status-${s}`}
                   onClick={() => onChange({ status: s })}
-                  className="rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors"
-                  style={
+                  className={`rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors ${
                     filters.status === s
-                      ? { backgroundColor: BRAND.navy, borderColor: BRAND.navy, color: "#fff" }
-                      : { borderColor: `${BRAND.navy}33` }
-                  }
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border hover:bg-muted"
+                  }`}
                 >
                   {s}
                 </button>
@@ -98,14 +97,12 @@ export function AdvancedFilters({
                     key={s.id}
                     type="button"
                     onClick={() => toggleStage(s.key)}
-                    className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
-                    style={
-                      active
-                        ? { backgroundColor: `${s.color || BRAND.navy}1a`, borderColor: s.color || BRAND.navy, color: s.color || BRAND.navy }
-                        : { borderColor: `${BRAND.navy}22` }
-                    }
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      active ? "bg-muted" : "hover:bg-muted border-border"
+                    }`}
+                    style={active ? { borderColor: s.color || "var(--color-primary)" } : {}}
                   >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color || "#94a3b8" }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color || "var(--color-muted-foreground)" }} />
                     {s.name}
                   </button>
                 );
@@ -217,13 +214,12 @@ export function AdvancedFilters({
           </div>
         </div>
 
-        <SheetFooter className="flex-row gap-2 border-t pt-4" style={{ borderColor: `${BRAND.navy}1a` }}>
+        <SheetFooter className="flex-row gap-2 border-t pt-4">
           <Button variant="outline" className="flex-1" onClick={onReset} data-testid="button-reset-filters">
             Reset
           </Button>
           <Button
-            className="flex-1 text-white hover:opacity-90"
-            style={{ backgroundColor: BRAND.orange }}
+            className="flex-1"
             onClick={() => onOpenChange(false)}
           >
             Done

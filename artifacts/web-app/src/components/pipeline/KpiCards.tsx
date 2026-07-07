@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Lead } from "@workspace/api-client-react";
-import { BRAND, computePipelineStats, formatMoney, type StageMap } from "./utils";
+import { computePipelineStats, formatMoney, type StageMap } from "./utils";
+import { MetricCard } from "@/components/ds";
 
 interface KpiCardsProps {
   leads: Lead[];
@@ -42,31 +43,17 @@ export function KpiCards({ leads, stageMap }: KpiCardsProps) {
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
-      {kpis.map((k) => {
-        const Icon = k.icon;
-        return (
-          <div
-            key={k.label}
-            data-testid={`kpi-${k.label.toLowerCase().replace(/\s+/g, "-")}`}
-            className="group relative overflow-hidden rounded-xl border p-3.5 transition-shadow hover:shadow-md"
-            style={{
-              borderColor: k.accent ? `${BRAND.orange}44` : `${BRAND.navy}1f`,
-              backgroundColor: k.accent ? BRAND.orangeSoft : "var(--color-card)",
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {k.label}
-              </span>
-              <Icon className="h-3.5 w-3.5" style={{ color: k.accent ? BRAND.orange : BRAND.navy300 }} />
-            </div>
-            <div className="mt-2 text-xl font-bold tracking-tight" style={{ color: BRAND.navy }}>
-              <span className="dark:text-foreground">{k.value}</span>
-            </div>
-            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{k.hint}</div>
-          </div>
-        );
-      })}
+      {kpis.map((k) => (
+        <div data-testid={`kpi-${k.label.toLowerCase().replace(/\s+/g, "-")}`} key={k.label}>
+           <MetricCard
+             label={k.label}
+             value={k.value}
+             footer={k.hint}
+             icon={k.icon}
+             className={k.accent ? "border-primary/20 bg-primary/5" : undefined}
+           />
+        </div>
+      ))}
     </div>
   );
 }

@@ -39,7 +39,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { BRAND, LEAD_COLUMNS, type GroupBy, type ViewMode } from "./utils";
+import { LEAD_COLUMNS, type GroupBy, type ViewMode } from "./utils";
 
 interface PipelineToolbarProps {
   search: string;
@@ -99,8 +99,7 @@ export function PipelineToolbar(props: PipelineToolbarProps) {
           type="button"
           data-testid="button-view-table"
           onClick={() => props.onViewMode("table")}
-          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${isTable ? "text-white" : "text-muted-foreground hover:bg-muted"}`}
-          style={{ backgroundColor: isTable ? BRAND.navy : "transparent" }}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${isTable ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
         >
           <TableIcon className="h-4 w-4" />
           <span className="hidden sm:inline">Table</span>
@@ -109,8 +108,7 @@ export function PipelineToolbar(props: PipelineToolbarProps) {
           type="button"
           data-testid="button-view-kanban"
           onClick={() => props.onViewMode("kanban")}
-          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${!isTable ? "text-white" : "text-muted-foreground hover:bg-muted"}`}
-          style={{ backgroundColor: !isTable ? BRAND.navy : "transparent" }}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${!isTable ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
         >
           <LayoutGrid className="h-4 w-4" />
           <span className="hidden sm:inline">Board</span>
@@ -143,8 +141,7 @@ export function PipelineToolbar(props: PipelineToolbarProps) {
         Filters
         {props.activeFilterCount > 0 && (
           <span
-            className="ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
-            style={{ backgroundColor: BRAND.orange }}
+            className="ml-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground"
           >
             {props.activeFilterCount}
           </span>
@@ -227,8 +224,7 @@ export function PipelineToolbar(props: PipelineToolbarProps) {
                 />
                 <Button
                   size="sm"
-                  className="w-full text-white hover:opacity-90"
-                  style={{ backgroundColor: BRAND.orange }}
+                  className="w-full"
                   disabled={!viewName.trim()}
                   onClick={() => {
                     props.onSaveView(viewName.trim());
@@ -264,7 +260,7 @@ export function PipelineToolbar(props: PipelineToolbarProps) {
           </Button>
         )}
         <Link href={props.newLeadHref}>
-          <Button data-testid="button-new-lead" className="text-white hover:opacity-90" style={{ backgroundColor: BRAND.orange }}>
+          <Button data-testid="button-new-lead" className="hover:opacity-90">
             <Plus className="mr-2 h-4 w-4" />
             New Lead
           </Button>

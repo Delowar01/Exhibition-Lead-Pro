@@ -11,7 +11,6 @@ import {
 } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import {
-  BRAND,
   companyName,
   displayName,
   formatMoney,
@@ -82,7 +81,7 @@ export function KanbanBoard({
       {stages.map((stage) => {
         const data: PipelineStage =
           view.stages.find((s) => s.stage === stage.key) || { stage: stage.key, leads: [], count: 0, value: 0 };
-        const color = stage.color || BRAND.navy300;
+        const color = stage.color || "var(--color-primary)";
         const isOver = dragOverStage === stage.key;
         return (
           <div
@@ -95,23 +94,21 @@ export function KanbanBoard({
             }}
             onDragLeave={() => setDragOverStage(null)}
             onDrop={(e) => handleDrop(e, stage.key)}
-            className="flex w-80 flex-shrink-0 flex-col rounded-xl border transition-colors"
-            style={{
-              borderColor: isOver ? BRAND.orange : `${BRAND.navy}1a`,
-              backgroundColor: isOver ? BRAND.orangeSoft : BRAND.navySoft,
-            }}
+            className={`flex w-80 flex-shrink-0 flex-col rounded-xl border transition-colors ${
+              isOver ? "bg-primary/5 border-primary" : "bg-muted/30 border-border"
+            }`}
           >
-            <div className="flex items-center justify-between rounded-t-xl border-b px-3.5 py-3" style={{ borderColor: `${BRAND.navy}14` }}>
+            <div className="flex items-center justify-between rounded-t-xl border-b px-3.5 py-3">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: color }} />
-                <h3 className="truncate text-sm font-semibold" style={{ color: BRAND.navy }}>
-                  <span className="dark:text-foreground">{stage.name}</span>
+                <h3 className="truncate text-sm font-semibold">
+                  <span className="text-foreground">{stage.name}</span>
                 </h3>
                 <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground">
                   {data.count}
                 </span>
               </div>
-              <span className="text-xs font-semibold" style={{ color: BRAND.orange }}>
+              <span className="text-xs font-semibold text-primary">
                 {formatMoney(data.value, undefined, { compact: true })}
               </span>
             </div>
@@ -141,13 +138,9 @@ export function KanbanBoard({
                     onClick={() => (selectMode ? onToggleSelect(lead.id) : onOpenLead(lead.id))}
                     className={`group rounded-lg border bg-card p-3 shadow-sm transition-all ${
                       selectMode
-                        ? `cursor-pointer ${isSelected ? "ring-2" : "hover:border-border"}`
-                        : "cursor-pointer hover:shadow-md"
+                        ? `cursor-pointer ${isSelected ? "border-primary ring-1 ring-primary" : "hover:border-border"}`
+                        : "cursor-pointer hover:shadow-md hover:border-primary/50"
                     } ${isDragging ? "scale-95 opacity-40" : "opacity-100"}`}
-                    style={{
-                      borderColor: isSelected ? BRAND.orange : undefined,
-                      boxShadow: isSelected ? `0 0 0 2px ${BRAND.orange}55` : undefined,
-                    }}
                   >
                     <div className="mb-1.5 flex items-start justify-between gap-2">
                       <div className="flex min-w-0 items-start gap-1.5">
@@ -157,8 +150,7 @@ export function KanbanBoard({
                             checked={isSelected}
                             onChange={() => onToggleSelect(lead.id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="mt-0.5 flex-shrink-0"
-                            style={{ accentColor: BRAND.orange }}
+                            className="mt-0.5 flex-shrink-0 accent-primary"
                           />
                         ) : (
                           <GripVertical className="-ml-1 mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -174,8 +166,8 @@ export function KanbanBoard({
                       </div>
                     )}
                     <div className="mt-2 flex items-center justify-between border-t border-border/50 pl-1 pt-2">
-                      <span className="text-sm font-bold" style={{ color: BRAND.navy }}>
-                        <span className="dark:text-foreground">{money ?? "\u2014"}</span>
+                      <span className="text-sm font-bold text-foreground">
+                        <span>{money ?? "\u2014"}</span>
                       </span>
                       {lead.eventName && (
                         <span className="flex max-w-[120px] items-center gap-1 truncate rounded bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">

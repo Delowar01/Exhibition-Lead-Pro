@@ -8,14 +8,13 @@ import {
   useArchiveCrmOrganization,
   useRestoreCrmOrganization,
   getListCrmOrganizationsQueryKey,
-  CrmOrganization,
-  CrmOrganizationInput,
-  CrmOrganizationUpdate,
+  type CrmOrganization,
+  type CrmOrganizationInput,
+  type CrmOrganizationUpdate,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +31,8 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, MoreHorizontal, Pencil, Archive, ArchiveRestore, Trash2, Users, Target } from "lucide-react";
+import { Building2, Plus, MoreHorizontal, Pencil, Archive, ArchiveRestore, Trash2, Users, Target, Search } from "lucide-react";
+import { PageHeader, StatusBadge, EmptyState, TableSkeleton } from "@/components/ds";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
@@ -114,20 +114,20 @@ function CompanyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl sm:rounded-xl">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit Company" : "New Company"}</DialogTitle>
           <DialogDescription>Companies are the organizations your contacts and leads belong to.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+        <div className="space-y-5 max-h-[65vh] overflow-y-auto px-1 py-2">
           <div className="space-y-2">
             <Label htmlFor="org-name">Name <span className="text-destructive">*</span></Label>
-            <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Corp" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="org-industry">Industry</Label>
-              <Input id="org-industry" value={industry} onChange={(e) => setIndustry(e.target.value)} />
+              <Input id="org-industry" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Technology" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="org-size">Company Size</Label>
@@ -137,33 +137,34 @@ function CompanyDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="org-website">Website</Label>
-              <Input id="org-website" value={website} onChange={(e) => setWebsite(e.target.value)} />
+              <Input id="org-website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." />
             </div>
             <div className="space-y-2">
               <Label htmlFor="org-phone">Phone</Label>
-              <Input id="org-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <Input id="org-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 ..." />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="org-email">Email</Label>
-              <Input id="org-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input id="org-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="contact@..." />
             </div>
             <div className="space-y-2">
               <Label htmlFor="org-country">Country</Label>
-              <Input id="org-country" value={country} onChange={(e) => setCountry(e.target.value)} />
+              <Input id="org-country" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="United States" />
             </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="org-address">Address</Label>
-            <Input id="org-address" value={address} onChange={(e) => setAddress(e.target.value)} />
+            <Input id="org-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 Main St..." />
           </div>
           <div className="space-y-2">
             <Label htmlFor="org-notes">Notes</Label>
-            <Textarea id="org-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+            <Textarea id="org-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Additional context..." />
           </div>
         </div>
         <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={onSubmit} disabled={pending}>
             {pending ? "Saving..." : editing ? "Save Changes" : "Create Company"}
           </Button>
@@ -205,112 +206,158 @@ export default function AdminCompanies() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Companies</h1>
-          <p className="text-muted-foreground mt-1">The organizations your contacts and leads belong to.</p>
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      <PageHeader
+        title="Companies"
+        description="Manage the organizations your contacts and leads belong to."
+        actions={
+          <Button onClick={openNew} className="rounded-full shadow-sm hover-elevate">
+            <Plus className="mr-2 h-4 w-4" />
+            New Company
+          </Button>
+        }
+      />
+
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-2 rounded-xl shadow-sm border">
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search companies..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 bg-transparent border-none shadow-none focus-visible:ring-0"
+          />
         </div>
-        <Button onClick={openNew}><Plus className="mr-2 h-4 w-4" />New Company</Button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[160px] bg-transparent border-none shadow-none font-medium">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <Card className="shadow-sm">
-        <CardHeader className="pb-3 border-b border-border mb-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <CardTitle>All Companies</CardTitle>
-              <CardDescription>{data?.total ?? 0} total</CardDescription>
-            </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <Input
-                placeholder="Search companies..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="md:w-64"
-              />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border overflow-hidden">
-            <Table>
-              <TableHeader className="bg-secondary/50">
+      <Card className="overflow-hidden shadow-sm border-border rounded-xl">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-muted/30">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[300px]">Company</TableHead>
+                <TableHead>Industry</TableHead>
+                <TableHead className="text-right">Contacts</TableHead>
+                <TableHead className="text-right">Leads</TableHead>
+                <TableHead className="text-right">Open Pipeline</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="w-[80px] text-right"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
                 <TableRow>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Industry</TableHead>
-                  <TableHead className="text-center">Contacts</TableHead>
-                  <TableHead className="text-center">Leads</TableHead>
-                  <TableHead className="text-right">Open Pipeline</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="w-12"></TableHead>
+                  <TableCell colSpan={7} className="p-4">
+                    <TableSkeleton rows={5} />
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Loading companies...</TableCell></TableRow>
-                ) : organizations.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No companies yet. Create your first one.</TableCell></TableRow>
-                ) : (
-                  organizations.map((o) => (
-                    <TableRow key={o.id} className="hover:bg-muted/50 transition-colors">
-                      <TableCell>
-                        <Link href={`/admin/companies/${o.id}`} className="flex items-center gap-2 font-medium hover:underline">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
+              ) : organizations.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="p-8">
+                    <EmptyState
+                      icon={Building2}
+                      title="No companies found"
+                      description={search ? "Try adjusting your search filters." : "Get started by adding your first company."}
+                      action={
+                        !search && (
+                          <Button onClick={openNew} variant="outline" className="mt-2">
+                            Add Company
+                          </Button>
+                        )
+                      }
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                organizations.map((o) => (
+                  <TableRow key={o.id} className="group hover:bg-muted/30 transition-colors">
+                    <TableCell>
+                      <Link href={`/admin/companies/${o.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md">
+                        <div className="font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
                           {o.name}
-                        </Link>
-                        {o.website && <div className="text-xs text-muted-foreground mt-0.5 ml-6 max-w-xs truncate">{o.website}</div>}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{o.industry ?? "—"}</TableCell>
-                      <TableCell className="text-center">
-                        <span className="inline-flex items-center gap-1 text-sm"><Users className="h-3.5 w-3.5 text-muted-foreground" />{o.contactCount ?? 0}</span>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <span className="inline-flex items-center gap-1 text-sm"><Target className="h-3.5 w-3.5 text-muted-foreground" />{o.leadCount ?? 0}</span>
-                      </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">{formatCurrency(o.openLeadValue ?? 0)}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant={o.status === "active" ? "default" : "secondary"} className="capitalize">{o.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(o)}>
-                              <Pencil className="mr-2 h-4 w-4" /> Edit
+                        </div>
+                        {o.website && (
+                          <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                            {o.website.replace(/^https?:\/\//, '')}
+                          </div>
+                        )}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{o.industry || "—"}</TableCell>
+                    <TableCell className="text-right">
+                      {o.contactCount ? (
+                        <div className="inline-flex items-center gap-1.5 bg-muted px-2 py-0.5 rounded-md text-xs font-medium">
+                          <Users className="h-3 w-3 text-muted-foreground" />
+                          {o.contactCount}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {o.leadCount ? (
+                        <div className="inline-flex items-center gap-1.5 bg-muted px-2 py-0.5 rounded-md text-xs font-medium">
+                          <Target className="h-3 w-3 text-muted-foreground" />
+                          {o.leadCount}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-foreground/80">
+                      {o.openLeadValue ? formatCurrency(o.openLeadValue) : "—"}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <StatusBadge tone={o.status === "active" ? "success" : "neutral"} className="capitalize">
+                        {o.status}
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity focus-visible:opacity-100">
+                            <span className="sr-only">Open menu</span>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[160px]">
+                          <DropdownMenuItem onClick={() => openEdit(o)}>
+                            <Pencil className="mr-2 h-4 w-4 text-muted-foreground" /> Edit
+                          </DropdownMenuItem>
+                          {o.status === "active" ? (
+                            <DropdownMenuItem onClick={() => archive.mutate({ id: o.id }, action("Company archived"))}>
+                              <Archive className="mr-2 h-4 w-4 text-muted-foreground" /> Archive
                             </DropdownMenuItem>
-                            {o.status === "active" ? (
-                              <DropdownMenuItem onClick={() => archive.mutate({ id: o.id }, action("Company archived"))}>
-                                <Archive className="mr-2 h-4 w-4" /> Archive
-                              </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem onClick={() => restore.mutate({ id: o.id }, action("Company restored"))}>
-                                <ArchiveRestore className="mr-2 h-4 w-4" /> Restore
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleting(o)}>
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          ) : (
+                            <DropdownMenuItem onClick={() => restore.mutate({ id: o.id }, action("Company restored"))}>
+                              <ArchiveRestore className="mr-2 h-4 w-4 text-muted-foreground" /> Restore
                             </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleting(o)}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </Card>
 
       <CompanyDialog
@@ -321,11 +368,11 @@ export default function AdminCompanies() {
       />
 
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="sm:rounded-xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {deleting?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the company. Contacts and leads linked to it will be unlinked (not deleted).
+              This removes the company. Contacts and leads linked to it will be unlinked (not deleted). This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
