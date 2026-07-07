@@ -173,3 +173,9 @@ id = "G_oJfGcy5VSVBshAB1wpW"
 uri = "file://docs/reports/STAGE_5E_REPORT.md"
 type = "text"
 title = "Stage 5E — Enterprise Intelligent Capture Report"
+
+[[outputs]]
+id = "C6DGq4it_EZVlKNU71HDt"
+uri = "file://docs/stage-5.9-master-plan.md"
+type = "text"
+title = "Stage 5.9 Master Plan — Enterprise UX Audit & Design System Plan"
