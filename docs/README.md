@@ -16,6 +16,7 @@ gotchas now live in [`gotchas.md`](gotchas.md) (with a summary pointer in
 | [AI & Workflow Architecture](ai-architecture.md) | The shared AI safety contract, the AI Engine internals, and AI/workflow operational notes. Recommend/draft only — never auto-execute or write the source CRM. |
 | [Security & Privacy](security-and-privacy.md) | Tenant-isolation, authorization, FK-integrity, and scope-privacy invariants every route and query must uphold. |
 | [Stage 5.9 Master Plan](stage-5.9-master-plan.md) | Enterprise UX Audit + the phased plan for the Stage 5.9 Enterprise Design System & Experience Modernization (planning-only; implementation after owner approval). |
+| [Design System](design-system/README.md) | The Stage 5.9 enterprise design system: tokens & color, typography, component layer, theming (light/dark/system), motion, responsive & RTL, and accessibility guides. Live showcase at `/admin/design-system`. |
 | [Gotchas](gotchas.md) | Operational, build, runtime, data-integrity, and testing traps found during development. |
 | [Architecture Overview](architecture.md) | Current vs. recommended architecture: the contract-first pipeline, multi-tenant isolation, authorization, audit, logging, and the hardened server foundation. What already meets the enterprise bar and what is deferred to Stage 2. |
 | [Logical Structure Map](structure.md) | How the existing `artifacts/` (apps) and `lib/` (packages) layout already fulfills an apps/packages/services model — with each package mapped to its role, no physical renames. |

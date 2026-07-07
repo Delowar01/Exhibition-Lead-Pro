@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Users, LayoutDashboard, Calendar, CreditCard, Settings, Camera, Contact, BarChart2, LogOut, CopyCheck, MonitorSmartphone, ShieldCheck, Building2, ShieldAlert, UserCircle, Bell, Network, BookUser, GitBranch, LineChart, Columns3, Tags, FolderOpen, Sparkles, Layers, Bot, Workflow } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
+import { ThemeToggle } from "@/components/ds/ThemeToggle";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -109,10 +110,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs">
               {user?.name?.substring(0, 2).toUpperCase() || "U"}
             </div>
-            <div className="overflow-hidden">
+            <div className="overflow-hidden flex-1">
               <p className="text-sm font-medium truncate">{user?.name}</p>
               <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
             </div>
+            <ThemeToggle />
           </div>
           <button 
             onClick={handleLogout}
@@ -125,7 +127,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-[#F8F9FB]">
+      <main className="flex-1 overflow-y-auto bg-background">
         <div className="p-8 max-w-7xl mx-auto min-h-full">
           {children}
         </div>

@@ -1,0 +1,318 @@
+# Lead Capture Pro
+# Stage 5.9 – Enterprise Design System & Experience Modernization
+# Phase 1 – Enterprise Design Foundation
+
+IMPORTANT
+
+Stage 5 has been fully completed and approved.
+
+Stage 5.9 Planning and UX Audit have also been completed and approved.
+
+Proceed with Stage 5.9 Phase 1.
+
+This is NOT a UI refresh.
+
+This is NOT simply changing colors.
+
+This is the creation of a world-class Enterprise SaaS Design System that will become the foundation of the entire platform.
+
+This phase will define the visual identity of Lead Capture Pro.
+
+========================================================
+
+Recommended Working Method
+
+For Stage 5.9, stop thinking like a software developer.
+
+Think like:
+
+• Product Designer
+• UX Architect
+• Enterprise SaaS Designer
+• Design System Engineer
+
+Every decision should improve:
+
+• Usability
+• Simplicity
+• Productivity
+• Consistency
+• Professionalism
+
+The objective is to build a product that Fortune 500 companies would confidently purchase.
+
+========================================================
+
+Core Principles
+
+This phase must NOT modify:
+
+• Business Logic
+• APIs
+• RBAC
+• Permissions
+• Multi-tenancy
+• Security
+• AI Features
+• CRM Features
+
+Only modernize the user experience.
+
+========================================================
+
+Design Goals
+
+The platform should feel comparable to:
+
+• Salesforce Lightning
+• HubSpot
+• Microsoft Dynamics
+• Linear
+• Notion
+• Atlassian
+• Apple
+
+The final product should feel:
+
+• Premium
+• Modern
+• Fast
+• Minimal
+• Enterprise
+• Elegant
+• Consistent
+
+========================================================
+
+Phase 1 Scope
+
+Build the complete Enterprise Design Foundation.
+
+Implement:
+
+1.
+
+Enterprise Design Tokens
+
+• Colors
+• Typography
+• Spacing
+• Radius
+• Shadows
+• Elevation
+• Motion
+• Animation
+• Borders
+• Icon Sizes
+• Layout Sizes
+
+Replace every hardcoded visual value with centralized design tokens.
+
+--------------------------------------------------------
+
+2.
+
+Enterprise Theme Engine
+
+Support:
+
+• Light Theme
+• Dark Theme
+• System Theme
+
+Every component must automatically support all themes.
+
+--------------------------------------------------------
+
+3.
+
+Typography System
+
+Create a professional typography hierarchy for:
+
+• Display
+• H1–H6
+• Titles
+• Body
+• Labels
+• Captions
+• Table Text
+• KPI Numbers
+
+Maintain consistency across Web and Mobile.
+
+--------------------------------------------------------
+
+4.
+
+Icon System
+
+Standardize:
+
+• Icon Library
+• Sizes
+• Colors
+• States
+• Accessibility
+
+--------------------------------------------------------
+
+5.
+
+Enterprise Component Library
+
+Create reusable components for:
+
+• Buttons
+• Inputs
+• Search
+• Filters
+• Cards
+• KPI Cards
+• Tables
+• Data Grid
+• Badges
+• Chips
+• Dialogs
+• Drawers
+• Tabs
+• Timeline
+• Notifications
+• Toasts
+• Empty States
+• Error States
+• Skeleton Loading
+• Loading Indicators
+
+No duplicate component implementations should remain.
+
+--------------------------------------------------------
+
+6.
+
+Layout System
+
+Standardize layouts for:
+
+• Dashboard
+• Lists
+• Detail Pages
+• AI Workspace
+• Reports
+• Settings
+• Authentication
+
+--------------------------------------------------------
+
+7.
+
+Responsive Framework
+
+Desktop
+
+Tablet
+
+Mobile
+
+Support EN/AR and RTL from the design foundation.
+
+--------------------------------------------------------
+
+8.
+
+Accessibility
+
+Follow WCAG best practices.
+
+Implement:
+
+• Keyboard Navigation
+• Screen Reader Labels
+• Proper Focus States
+• Color Contrast
+• Accessible Components
+
+--------------------------------------------------------
+
+9.
+
+Performance
+
+Prepare the UI for:
+
+• Skeleton Loading
+• Virtualized Components
+• Lazy Loading
+• Shared Animations
+• Reduced Re-rendering
+
+========================================================
+
+New Design Rule
+
+Every future screen must use ONLY the Enterprise Design System.
+
+No custom UI components may be introduced unless they become part of the Design System.
+
+========================================================
+
+Documentation
+
+Produce:
+
+• Design Token Guide
+• Color Guide
+• Typography Guide
+• Component Library Guide
+• Theme Guide
+• Motion Guide
+• Responsive Guide
+• Accessibility Guide
+
+========================================================
+
+Presentation Requirements
+
+For every major design decision provide:
+
+• Why this approach was selected
+• Benefits over the previous design
+• Enterprise UX improvements
+• Performance impact
+• Accessibility improvements
+
+========================================================
+
+Deliverables
+
+Provide:
+
+• Design Token Architecture
+• Theme Architecture
+• Typography System
+• Component Library Structure
+• Responsive Strategy
+• Accessibility Report
+• Performance Report
+• Before vs After Design Samples
+• Screenshots of the new reusable components
+• Files Modified
+• Test Results
+
+STOP after Phase 1.
+
+Do NOT begin Phase 2.
+
+Wait for review and approval before continuing.
+
+========================================================
+
+Long-Term Roadmap
+
+After Stage 5.9 is fully completed:
+
+Proceed with:
+
+Stage 5.5 – Enterprise Collaboration & Communication Center
+
+Only after Stage 5.5 has been completed and approved should Stage 6 begin.

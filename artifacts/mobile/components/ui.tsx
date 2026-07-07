@@ -6,10 +6,13 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
+  TextInputProps,
   View,
   ViewStyle,
 } from "react-native";
 
+import { ICON, RADIUS, SPACING, TOUCH_TARGET, TYPE } from "@/constants/tokens";
 import { useColors } from "@/hooks/useColors";
 
 export const FONT = {
@@ -321,6 +324,252 @@ export function ErrorState({ onRetry }: { onRetry: () => void }) {
           Retry
         </Text>
       </Pressable>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stage 5.9 primitives — Card, ListRow, SecondaryButton, IconButton, Input
+// ---------------------------------------------------------------------------
+
+/** Standard elevated card surface. Use instead of ad-hoc View + backgroundColor. */
+export function Card({
+  children,
+  style,
+  padded = true,
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+  padded?: boolean;
+}) {
+  const colors = useColors();
+  return (
+    <View
+      style={[
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderRadius: RADIUS.lg,
+          padding: padded ? SPACING.lg : 0,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** Standard tappable list row: optional leading icon, title/subtitle, right slot, chevron. */
+export function ListRow({
+  icon,
+  title,
+  subtitle,
+  right,
+  onPress,
+  showChevron = !!onPress,
+  style,
+}: {
+  icon?: keyof typeof Feather.glyphMap;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  onPress?: () => void;
+  showChevron?: boolean;
+  style?: ViewStyle;
+}) {
+  const colors = useColors();
+  const content = (
+    <>
+      {icon ? (
+        <View
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: RADIUS.md,
+            backgroundColor: colors.muted,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Feather name={icon} size={ICON.sm + 2} color={colors.mutedForeground} />
+        </View>
+      ) : null}
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text
+          numberOfLines={1}
+          style={{ fontSize: TYPE.body.fontSize, fontFamily: FONT.medium, color: colors.foreground }}
+        >
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.regular, color: colors.mutedForeground }}
+          >
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {right}
+      {showChevron ? (
+        <Feather name="chevron-right" size={ICON.sm + 2} color={colors.mutedForeground} />
+      ) : null}
+    </>
+  );
+  const rowStyle: ViewStyle = {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    minHeight: TOUCH_TARGET,
+    paddingVertical: SPACING.sm + 2,
+  };
+  if (!onPress) return <View style={[rowStyle, style]}>{content}</View>;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      style={({ pressed }) => [rowStyle, { opacity: pressed ? 0.7 : 1 }, style]}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
+/** Outlined secondary button — counterpart to PrimaryButton. */
+export function SecondaryButton({
+  label,
+  onPress,
+  loading,
+  disabled,
+  icon,
+  destructive,
+  style,
+}: {
+  label: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  icon?: keyof typeof Feather.glyphMap;
+  destructive?: boolean;
+  style?: ViewStyle;
+}) {
+  const colors = useColors();
+  const isDisabled = disabled || loading;
+  const fg = destructive ? colors.destructive : colors.foreground;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.primaryBtn,
+        {
+          backgroundColor: "transparent",
+          borderWidth: 1,
+          borderColor: destructive ? colors.destructive : colors.border,
+          borderRadius: colors.radius + 4,
+          opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
+        },
+        style,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={fg} />
+      ) : (
+        <>
+          {icon ? <Feather name={icon} size={18} color={fg} /> : null}
+          <Text style={[styles.primaryBtnText, { color: fg }]}>{label}</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+/** 44pt icon-only tap target with required accessibility label. */
+export function IconButton({
+  icon,
+  onPress,
+  label,
+  color,
+  disabled,
+  style,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  onPress: () => void;
+  /** Accessibility label — required for icon-only controls. */
+  label: string;
+  color?: string;
+  disabled?: boolean;
+  style?: ViewStyle;
+}) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={4}
+      style={({ pressed }) => [
+        {
+          width: TOUCH_TARGET,
+          height: TOUCH_TARGET,
+          borderRadius: RADIUS.md,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
+        },
+        style,
+      ]}
+    >
+      <Feather name={icon} size={ICON.md} color={color ?? colors.foreground} />
+    </Pressable>
+  );
+}
+
+/** Labeled text input with consistent tokens and optional error text. */
+export function Input({
+  label,
+  error,
+  style,
+  ...props
+}: TextInputProps & { label?: string; error?: string; style?: TextInputProps["style"] }) {
+  const colors = useColors();
+  return (
+    <View style={{ gap: SPACING.xs + 2 }}>
+      {label ? (
+        <Text style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.medium, color: colors.foreground }}>
+          {label}
+        </Text>
+      ) : null}
+      <TextInput
+        placeholderTextColor={colors.mutedForeground}
+        accessibilityLabel={label}
+        {...props}
+        style={[
+          {
+            minHeight: TOUCH_TARGET,
+            borderWidth: 1,
+            borderColor: error ? colors.destructive : colors.input,
+            borderRadius: RADIUS.md,
+            paddingHorizontal: SPACING.md,
+            fontSize: TYPE.body.fontSize,
+            fontFamily: FONT.regular,
+            color: colors.foreground,
+            backgroundColor: colors.card,
+          },
+          style,
+        ]}
+      />
+      {error ? (
+        <Text style={{ fontSize: TYPE.caption.fontSize, fontFamily: FONT.regular, color: colors.destructive }}>
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }

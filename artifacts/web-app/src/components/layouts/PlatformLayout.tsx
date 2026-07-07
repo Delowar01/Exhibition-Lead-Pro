@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Building2, Users, CreditCard, BarChart3, Activity, Settings, LayoutDashboard, LogOut, Sparkles } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
+import { ThemeToggle } from "@/components/ds/ThemeToggle";
 
 export function PlatformLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -62,6 +63,9 @@ export function PlatformLayout({ children }: { children: React.ReactNode }) {
         </nav>
         
         <div className="p-4 border-t border-sidebar-border mt-auto">
+          <div className="flex justify-end mb-2">
+            <ThemeToggle variant="sidebar" />
+          </div>
           <button 
             onClick={handleLogout}
             className="flex items-center gap-3 px-3 py-2 w-full rounded-md transition-colors text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
