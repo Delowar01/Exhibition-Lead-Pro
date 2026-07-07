@@ -33,6 +33,14 @@ An enterprise SaaS platform for business card scanning and lead management. Two 
 - `artifacts/web-app/src/pages/admin/` — Company Admin portal pages
 - `artifacts/web-app/src/contexts/AuthContext.tsx` — auth state management
 
+## Roadmap & direction (long-term, per owner directive July 2026)
+
+Current priority: **finish Stage 5** in this order — 1) Stage 5E Enterprise Intelligent Capture, 2) Stage 5F Enterprise Workflow Intelligence, 3) Stage 5D Enterprise AI Assistant. (Product direction may also be referred to as "Lead Capture Pro".)
+
+**Until Stage 5 is complete:** no major UI redesign; do not redesign screens individually; do not introduce multiple design styles; avoid UI decisions that would conflict with a future enterprise design system; keep using the existing UI but prefer clean, reusable components that can later migrate into the design system.
+
+**Immediately after Stage 5 is completed and approved → Stage 5.9 – Enterprise Design System & Experience Modernization** (before Stage 6; remind the owner to begin it). Stage 5.9 introduces NO new business features — it is a full UX/design modernization: complete design system + component library (color, typography, icons, grid/spacing, responsive standards), redesign of navigation, CRM UX, dashboards, AI modules, executive dashboard, OCR workflow, reports, both portals, and the employee mobile app; improved tables/forms/drawers/dialogs/cards/search/filters/empty/loading/error states; better IA, mobile & tablet UX, accessibility, performance-focused UI, and smooth micro-interactions. Design bar: comparable to Salesforce Lightning, HubSpot, Dynamics, Linear, Notion, Atlassian, Apple — premium, modern, clean, professional, enterprise, consistent, fast, easy to use.
+
 ## Architecture decisions
 
 Contract-first (OpenAPI → Orval → React Query + Zod), a 4-tier role hierarchy (`platform_owner → primary_admin → admin → employee`), `company_id` as the sole tenant boundary (cross-tenant access → 404, not 403), fresh-per-request `requireAuth` (loads live role/permissions/status + subscription lifecycle), a writes-only permissions matrix (`platform_owner`/`primary_admin` bypass; empty `{}` = deny-by-default), append-only `audit_logs`, and a plan/subscription model enforced server-side. Full rationale for each decision: **[docs/architecture-decisions.md](docs/architecture-decisions.md)** (Stage-1 current-vs-recommended review in [docs/architecture.md](docs/architecture.md)).
