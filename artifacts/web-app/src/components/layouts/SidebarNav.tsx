@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { NavGroup } from "./navigation";
 
 interface SidebarNavProps {
   groups: NavGroup[];
   storageKey: string;
+  /** Icon-only rail mode (desktop collapse). */
+  mini?: boolean;
 }
 
 function loadCollapsed(storageKey: string): Record<string, boolean> {
@@ -18,7 +21,7 @@ function loadCollapsed(storageKey: string): Record<string, boolean> {
   return {};
 }
 
-export function SidebarNav({ groups, storageKey }: SidebarNavProps) {
+export function SidebarNav({ groups, storageKey, mini = false }: SidebarNavProps) {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() =>
     loadCollapsed(storageKey),
@@ -40,11 +43,14 @@ export function SidebarNav({ groups, storageKey }: SidebarNavProps) {
     setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <nav aria-label="Primary" className="flex-1 py-3 flex flex-col gap-0.5 px-3 overflow-y-auto">
+    <nav
+      aria-label="Primary"
+      className={cn("flex-1 py-3 flex flex-col gap-0.5 overflow-y-auto", mini ? "px-2" : "px-3")}
+    >
       {groups.map((group) => {
         const hasActive = group.items.some((i) => isItemActive(i.href));
         // Active group is always expanded so the current page is never hidden.
-        const isCollapsed = !hasActive && !!collapsed[group.id];
+        const isCollapsed = !mini && !hasActive && !!collapsed[group.id];
         const listId = `nav-group-${group.id}`;
 
         const itemNodes = (
@@ -57,14 +63,18 @@ export function SidebarNav({ groups, storageKey }: SidebarNavProps) {
                   <Link
                     href={item.href}
                     aria-current={isActive ? "page" : undefined}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium ${
+                    title={mini ? item.name : undefined}
+                    className={cn(
+                      "flex items-center rounded-lg transition-colors duration-150 text-sm font-medium",
+                      mini ? "justify-center h-10 w-10 mx-auto" : "gap-3 px-3 py-2",
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
-                    }`}
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground",
+                    )}
                   >
-                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
-                    <span className="flex-1 truncate">{item.name}</span>
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {!mini && <span className="flex-1 truncate">{item.name}</span>}
+                    {mini && <span className="sr-only">{item.name}</span>}
                   </Link>
                 </li>
               );
@@ -72,8 +82,12 @@ export function SidebarNav({ groups, storageKey }: SidebarNavProps) {
           </ul>
         );
 
-        if (!group.label) {
-          return <div key={group.id} className="mb-1">{itemNodes}</div>;
+        if (!group.label || mini) {
+          return (
+            <div key={group.id} className={cn("mb-1", mini && group.label ? "pt-2 mt-1 border-t border-border/60" : "")}>
+              {itemNodes}
+            </div>
+          );
         }
 
         return (

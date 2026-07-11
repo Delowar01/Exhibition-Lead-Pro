@@ -7,6 +7,7 @@ import {
   useListDocuments,
   useGetAiInsights,
   useGetContactStatusHistory,
+  useListContactInteractions,
   useUpdateFollowUp,
   type Contact,
   type TimelineEntry,
@@ -53,6 +54,7 @@ import {
   formatTimestamp,
   initialsOf,
   relativeAge,
+  StatTile,
   TASK_STATUS_META,
   WorkspaceCard,
 } from "./shared";
@@ -108,7 +110,14 @@ export default function OverviewWorkspace({
   const documentsQ = useListDocuments({ entityType: "contact", entityId: contactId, limit: 100 });
   const insightsQ = useGetAiInsights("contact", contactId);
   const historyQ = useGetContactStatusHistory(contactId);
+  const interactionsQ = useListContactInteractions(contactId);
   const updateFollowUp = useUpdateFollowUp();
+
+  const interactions = interactionsQ.data?.interactions ?? [];
+  const eventsMet = useMemo(
+    () => new Set(interactions.map((i) => i.eventName).filter(Boolean)).size,
+    [interactions],
+  );
 
   const entries: TimelineEntry[] = timelineQ.data?.entries ?? [];
   const followUps: FollowUp[] = followUpsQ.data?.followUps ?? [];
@@ -272,6 +281,47 @@ export default function OverviewWorkspace({
         />
       )}
 
+      {/* Snapshot stat strip (real CRM data only) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5" data-testid="overview-stat-strip">
+        <StatTile
+          label="AI Lead Score"
+          value={
+            contact.leadScore != null ? (
+              <span className="text-primary">{contact.leadScore}/100</span>
+            ) : (
+              "Not scored"
+            )
+          }
+          icon={<Bot className="h-3 w-3" aria-hidden />}
+        />
+        <StatTile
+          label="Interactions"
+          value={interactionsQ.isLoading ? "…" : interactionsQ.data?.total ?? 0}
+          icon={<MessagesSquare className="h-3 w-3" aria-hidden />}
+        />
+        <StatTile
+          label="Events Met"
+          value={interactionsQ.isLoading ? "…" : eventsMet}
+          icon={<Milestone className="h-3 w-3" aria-hidden />}
+        />
+        <StatTile
+          label="Last Activity"
+          value={lastInteractionAt ? `${relativeAge(lastInteractionAt)} ago` : "None yet"}
+          icon={<ActivityIcon className="h-3 w-3" aria-hidden />}
+          tone={lastInteractionAt ? "default" : "warning"}
+        />
+        <StatTile
+          label="Next Follow-up"
+          value={
+            primaryFollowUp?.scheduledDate
+              ? formatDay(primaryFollowUp.scheduledDate)
+              : "Not scheduled"
+          }
+          icon={<CalendarClock className="h-3 w-3" aria-hidden />}
+          tone={followUpOverdue ? "destructive" : "default"}
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         {/* 1 — Contact Summary */}
         <WorkspaceCard
@@ -286,6 +336,16 @@ export default function OverviewWorkspace({
             </Button>
           }
         >
+          {contact.enrichmentSummary && (
+            <div className="mb-4 rounded-xl border border-primary/15 bg-primary/5 px-3.5 py-3" data-testid="text-enrichment-summary">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-primary flex items-center gap-1.5 mb-1">
+                <Bot className="h-3.5 w-3.5" aria-hidden /> AI Enrichment Summary
+              </p>
+              <p className="text-sm text-foreground/90 leading-relaxed line-clamp-4">
+                {contact.enrichmentSummary}
+              </p>
+            </div>
+          )}
           <div className="flex items-start gap-4">
             <Avatar className="h-14 w-14 border border-border shrink-0">
               {contact.cardImageUrl && <AvatarImage src={contact.cardImageUrl} alt="" className="object-cover" />}
@@ -578,6 +638,59 @@ export default function OverviewWorkspace({
                 <p className="text-xs text-muted-foreground italic">No open tasks.</p>
               )}
             </div>
+          )}
+        </WorkspaceCard>
+
+        {/* 3b — Interaction History (every capture is a permanent interaction) */}
+        <WorkspaceCard
+          icon={<ScanLine className="h-4 w-4" aria-hidden />}
+          title="Interaction History"
+          subtitle="Where and how you met this contact"
+          testId="card-interaction-history"
+          footer={
+            <Button size="sm" variant="outline" onClick={() => onGoToWorkspace("interactions")} data-testid="button-view-interactions">
+              View All Interactions
+            </Button>
+          }
+        >
+          {interactionsQ.isLoading ? (
+            <CardSkeleton rows={3} />
+          ) : interactionsQ.isError ? (
+            <ErrorState message="Couldn't load interactions." onRetry={() => interactionsQ.refetch()} />
+          ) : interactions.length === 0 ? (
+            <EmptyState
+              icon={<ScanLine className="h-5 w-5" aria-hidden />}
+              headline="No captures recorded"
+              description="Card scans and other captures will appear here."
+            />
+          ) : (
+            <ul className="space-y-1.5">
+              {interactions.slice(0, 4).map((it) => (
+                <li
+                  key={it.id}
+                  className="flex items-center gap-2.5 rounded-lg border border-border/60 px-3 py-2 min-w-0"
+                  data-testid={`overview-interaction-${it.id}`}
+                >
+                  <span className="h-7 w-7 rounded-full bg-primary-soft text-primary flex items-center justify-center shrink-0">
+                    <ScanLine className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium truncate capitalize">
+                      {(it.captureSource ?? "capture").replace(/_/g, " ")}
+                      {it.userName ? ` · ${it.userName}` : ""}
+                    </span>
+                    <span className="block text-xs text-muted-foreground truncate">
+                      {formatTimestamp(it.occurredAt)}
+                    </span>
+                  </span>
+                  {it.eventName && (
+                    <Badge variant="secondary" className="shrink-0 text-[10px] max-w-[140px] truncate">
+                      {it.eventName}
+                    </Badge>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </WorkspaceCard>
 

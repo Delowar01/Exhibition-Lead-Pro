@@ -78,7 +78,7 @@ export default function WorkspaceTabs({ active, onChange, badges }: WorkspaceTab
 
   return (
     <nav
-      className="sticky top-0 z-20 h-14 rounded-2xl border border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 shadow-sm px-2 flex items-center"
+      className="sticky top-0 z-20 h-12 rounded-xl border border-border/60 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90 shadow-sm px-3 flex items-end"
       aria-label="Contact workspaces"
     >
       <div
@@ -86,7 +86,7 @@ export default function WorkspaceTabs({ active, onChange, badges }: WorkspaceTab
         role="tablist"
         aria-label="Workspace tabs"
         onKeyDown={onKeyDown}
-        className="flex items-center gap-1 overflow-x-auto w-full scrollbar-none"
+        className="flex items-end gap-1 overflow-x-auto w-full scrollbar-none h-full"
       >
         {WORKSPACE_IDS.map((id) => {
           const meta = TAB_META[id];
@@ -105,11 +105,11 @@ export default function WorkspaceTabs({ active, onChange, badges }: WorkspaceTab
               data-testid={`tab-${id}`}
               onClick={() => onChange(id)}
               className={cn(
-                "flex items-center justify-center gap-2 min-w-[120px] h-12 px-4 rounded-xl text-sm font-medium whitespace-nowrap shrink-0 transition-colors duration-150",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                "flex items-center justify-center gap-2 h-full px-4 border-b-2 text-sm font-medium whitespace-nowrap shrink-0 transition-colors duration-150",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-t-md",
                 isActive
-                  ? "bg-primary-soft text-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/60",
               )}
             >
               {meta.icon}

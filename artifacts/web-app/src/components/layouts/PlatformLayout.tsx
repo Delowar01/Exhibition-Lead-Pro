@@ -1,60 +1,76 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { LayoutDashboard } from "lucide-react";
 import { useLocation } from "wouter";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import { buildPlatformNav } from "./navigation";
 import { SidebarNav } from "./SidebarNav";
+import { SidebarFooter } from "./SidebarFooter";
 import { AppHeader } from "./AppHeader";
+
+const MINI_KEY = "csp_sidebar_mini_platform";
 
 export function PlatformLayout({ children }: { children: React.ReactNode }) {
   const navGroups = useMemo(() => buildPlatformNav(), []);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mini, setMini] = useState(() => {
+    try {
+      return localStorage.getItem(MINI_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [location] = useLocation();
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location]);
 
-  const brand = (
-    <div className="p-5 border-b border-sidebar-border">
-      <div className="flex items-center gap-2 text-primary">
-        <LayoutDashboard className="h-6 w-6" />
-        <span className="font-bold text-lg tracking-tight">Card Scanner Pro</span>
-      </div>
-      <div className="text-xs text-sidebar-foreground/50 mt-1 uppercase tracking-wider font-semibold">
-        Platform Portal
-      </div>
-    </div>
-  );
+  const toggleMini = () => {
+    setMini((prev) => {
+      try {
+        localStorage.setItem(MINI_KEY, prev ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !prev;
+    });
+  };
 
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden">
-      {/* Sidebar (desktop/tablet) */}
-      <aside className="hidden md:flex w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex-col flex-shrink-0">
-        {brand}
-        <SidebarNav groups={navGroups} storageKey="csp_nav_platform" />
-      </aside>
+    <div className="flex flex-col h-screen w-full bg-background overflow-hidden">
+      <AppHeader
+        portal="platform"
+        navGroups={navGroups}
+        onOpenMobileNav={() => setMobileNavOpen(true)}
+      />
 
-      {/* Sidebar (mobile drawer) */}
-      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent
-          side="left"
-          className="w-72 p-0 flex flex-col md:hidden bg-sidebar text-sidebar-foreground"
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar (desktop/tablet) */}
+        <aside
+          className={cn(
+            "hidden md:flex bg-card text-card-foreground border-r border-border flex-col flex-shrink-0 transition-[width] duration-150",
+            mini ? "w-[68px]" : "w-64",
+          )}
         >
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
-          {brand}
-          <SidebarNav groups={navGroups} storageKey="csp_nav_platform" />
-        </SheetContent>
-      </Sheet>
+          <SidebarNav groups={navGroups} storageKey="csp_nav_platform" mini={mini} />
+          <SidebarFooter
+            companyName="Platform Portal"
+            mini={mini}
+            onToggleMini={toggleMini}
+          />
+        </aside>
 
-      {/* Main column */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <AppHeader
-          portal="platform"
-          navGroups={navGroups}
-          onOpenMobileNav={() => setMobileNavOpen(true)}
-        />
-        <main className="flex-1 overflow-y-auto bg-background">
+        {/* Sidebar (mobile drawer) */}
+        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          <SheetContent side="left" className="w-72 p-0 flex flex-col md:hidden">
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <SidebarNav groups={navGroups} storageKey="csp_nav_platform" />
+            <SidebarFooter companyName="Platform Portal" mini={false} />
+          </SheetContent>
+        </Sheet>
+
+        {/* Main column */}
+        <main className="flex-1 min-w-0 overflow-y-auto bg-background">
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto min-h-full">{children}</div>
         </main>
       </div>

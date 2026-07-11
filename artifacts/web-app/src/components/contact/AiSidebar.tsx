@@ -19,11 +19,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
   AlertCircle,
   Bot,
   Building2,
   CalendarClock,
+  FileText,
   Flame,
+  Mail,
+  MessageSquareText,
+  PhoneCall,
   Snowflake,
   Sparkles,
   Thermometer,
@@ -38,6 +48,15 @@ const TEMP_BADGE: Record<string, { label: string; cls: string; icon: React.React
   warm: { label: "Warm", cls: "bg-warning-soft text-warning border-warning/25", icon: <Thermometer className="h-3.5 w-3.5" aria-hidden /> },
   cold: { label: "Cold", cls: "bg-info-soft text-info border-info/25", icon: <Snowflake className="h-3.5 w-3.5" aria-hidden /> },
 };
+
+// All "Generate" shortcuts open the AI Assistant workspace, which drafts from
+// real CRM data. Labels describe what the AI workspace can help produce.
+const GENERATE_SHORTCUTS: { label: string; icon: React.ReactNode; testId: string }[] = [
+  { label: "Email Draft", icon: <Mail className="h-4 w-4" aria-hidden />, testId: "button-generate-email" },
+  { label: "Call Script", icon: <PhoneCall className="h-4 w-4" aria-hidden />, testId: "button-generate-call" },
+  { label: "Follow-up Msg", icon: <MessageSquareText className="h-4 w-4" aria-hidden />, testId: "button-generate-followup" },
+  { label: "Summary", icon: <FileText className="h-4 w-4" aria-hidden />, testId: "button-generate-summary" },
+];
 
 export default function AiSidebar({
   contact,
@@ -132,7 +151,7 @@ export default function AiSidebar({
 
   return (
     <div className="space-y-5">
-      {/* AI quick access */}
+      {/* AI Assistant */}
       <Card className="rounded-2xl border-primary/20 bg-gradient-to-b from-primary/5 to-background shadow-sm">
         <CardHeader className="p-5 pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-primary">
@@ -158,22 +177,42 @@ export default function AiSidebar({
             <Bot className="h-4 w-4 mr-2" />
             {enrich.isPending ? "Enriching…" : "Enrich with AI"}
           </Button>
+
+          <div className="pt-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Generate with AI
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {GENERATE_SHORTCUTS.map((g) => (
+                <button
+                  key={g.testId}
+                  type="button"
+                  onClick={onAskAi}
+                  data-testid={g.testId}
+                  className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-card px-2 py-3 text-xs font-medium text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="text-primary">{g.icon}</span>
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Intelligence */}
+      {/* AI Insights (score + reasoning from the real scorer) */}
       {hasIntelligence && (
         <Card className="rounded-2xl border-border/60 shadow-sm">
           <CardHeader className="p-5 pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" aria-hidden /> Intelligence
+              <Sparkles className="h-4 w-4 text-primary" aria-hidden /> AI Insights
             </CardTitle>
           </CardHeader>
           <CardContent className="px-5 pb-5 pt-0 space-y-4">
             {(contact.leadScore ?? null) !== null && (
               <div className="flex items-center gap-4">
                 <div className="flex flex-col">
-                  <span className="text-3xl font-bold" data-testid="text-lead-score">
+                  <span className="text-3xl font-bold text-primary" data-testid="text-lead-score">
                     {contact.leadScore}
                   </span>
                   <span className="text-[10px] text-muted-foreground uppercase tracking-widest">
@@ -188,22 +227,26 @@ export default function AiSidebar({
               </div>
             )}
             {contact.aiReasoning && (
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Reasoning
-                </p>
-                <p className="text-xs leading-relaxed">{contact.aiReasoning}</p>
-              </div>
+              <Accordion type="single" collapsible className="w-full">
+                <AccordionItem value="reasoning" className="border-none">
+                  <AccordionTrigger className="py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:no-underline">
+                    Why this score?
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-0">
+                    <p className="text-xs leading-relaxed">{contact.aiReasoning}</p>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* CRM Record */}
+      {/* CRM Context */}
       <Card className="rounded-2xl border-border/60 shadow-sm">
         <CardHeader className="p-5 pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-primary" aria-hidden /> CRM Record
+            <Building2 className="h-4 w-4 text-primary" aria-hidden /> CRM Context
           </CardTitle>
         </CardHeader>
         <CardContent className="px-5 pb-5 pt-0 space-y-4">

@@ -1,0 +1,553 @@
+# Lead Capture Pro Enterprise UX Implementation
+
+
+
+This is an Enterprise UX implementation task.
+
+
+
+You must implement the attached approved UI design inside the existing Lead Capture Pro application.
+
+
+
+This is NOT a redesign.
+
+
+
+This is NOT a feature development task.
+
+
+
+This is NOT a backend task.
+
+
+
+It is purely a frontend UX implementation.
+
+
+
+==================================================
+
+SOURCE OF TRUTH
+
+==================================================
+
+
+
+The attached UI image is the visual source of truth.
+
+
+
+Implement it as closely as possible.
+
+
+
+Do not redesign.
+
+
+
+Do not simplify.
+
+
+
+Do not rearrange sections.
+
+
+
+Do not invent your own layout.
+
+
+
+The goal is that a user looking at the final UI immediately recognizes the approved design.
+
+
+
+==================================================
+
+OBJECTIVE
+
+==================================================
+
+
+
+Replace the existing workspace UI with the approved enterprise design while preserving ALL existing functionality.
+
+
+
+Preserve
+
+
+
+• Existing APIs
+
+
+
+• Authentication
+
+
+
+• Permissions
+
+
+
+• AI integrations
+
+
+
+• OCR
+
+
+
+• Business Logic
+
+
+
+• Database
+
+
+
+• Routing
+
+
+
+• Multi-tenancy
+
+
+
+No backend modifications.
+
+
+
+==================================================
+
+IMPORTANT
+
+==================================================
+
+
+
+If functionality already exists,
+
+
+
+reuse it.
+
+
+
+Do NOT recreate it.
+
+
+
+Do NOT duplicate components.
+
+
+
+Search the existing project first.
+
+
+
+==================================================
+
+DESIGN PRIORITY
+
+==================================================
+
+
+
+The implementation should prioritize
+
+
+
+1. Layout
+
+
+
+2. Visual hierarchy
+
+
+
+3. Spacing
+
+
+
+4. Typography
+
+
+
+5. Card proportions
+
+
+
+6. Responsive behaviour
+
+
+
+Only after those,
+
+
+
+implement animations.
+
+
+
+==================================================
+
+DO NOT CHANGE
+
+==================================================
+
+
+
+Do not
+
+
+
+• change business logic
+
+
+
+• rename APIs
+
+
+
+• modify schemas
+
+
+
+• change routes
+
+
+
+• remove functionality
+
+
+
+• fabricate missing backend features
+
+
+
+If backend support does not exist,
+
+
+
+hide the UI instead of mocking it.
+
+
+
+==================================================
+
+COMPONENT STRATEGY
+
+==================================================
+
+
+
+Reuse existing
+
+
+
+Buttons
+
+
+
+Inputs
+
+
+
+Dialogs
+
+
+
+Drawers
+
+
+
+Tables
+
+
+
+Badges
+
+
+
+Charts
+
+
+
+Cards
+
+
+
+Typography
+
+
+
+Icons
+
+
+
+Theme
+
+
+
+Spacing Tokens
+
+
+
+Create new reusable components only when necessary.
+
+
+
+==================================================
+
+RESPONSIVE
+
+==================================================
+
+
+
+Desktop
+
+
+
+Primary target.
+
+
+
+Tablet
+
+
+
+Fully responsive.
+
+
+
+Mobile
+
+
+
+Fully responsive.
+
+
+
+No horizontal scrolling.
+
+
+
+==================================================
+
+PERFORMANCE
+
+==================================================
+
+
+
+Do not rerender
+
+
+
+Header
+
+
+
+Navigation
+
+
+
+Workspace Hero
+
+
+
+Sidebar
+
+
+
+Switch only the active workspace.
+
+
+
+Lazy load heavy sections.
+
+
+
+Cache workspace state.
+
+
+
+==================================================
+
+ACCESSIBILITY
+
+==================================================
+
+
+
+WCAG AA
+
+
+
+Keyboard Navigation
+
+
+
+RTL
+
+
+
+Visible Focus States
+
+
+
+Touch Targets ≥44px
+
+
+
+Screen Reader Friendly
+
+
+
+==================================================
+
+ANIMATIONS
+
+==================================================
+
+
+
+Use subtle enterprise animations.
+
+
+
+No excessive motion.
+
+
+
+Card Hover
+
+
+
+150ms
+
+
+
+Workspace Transition
+
+
+
+180ms
+
+
+
+Hero Collapse
+
+
+
+200ms
+
+
+
+==================================================
+
+DELIVERABLES
+
+==================================================
+
+
+
+Implement the approved UI.
+
+
+
+Keep all existing functionality working.
+
+
+
+Produce clean reusable code.
+
+
+
+==================================================
+
+FINAL REPORT
+
+==================================================
+
+
+
+When complete provide
+
+
+
+1.
+
+
+
+Components Created
+
+
+
+2.
+
+
+
+Components Reused
+
+
+
+3.
+
+
+
+Files Modified
+
+
+
+4.
+
+
+
+Known Limitations
+
+
+
+5.
+
+
+
+Performance Notes
+
+
+
+6.
+
+
+
+Accessibility Notes
+
+
+
+
+
+
+
+7. 
+
+
+
+Anything intentionally omitted because backend support does not exist.
+
+
+
+==================================================
+
+STOP CONDITION
+
+==================================================
+
+
+
+Do NOT continue redesigning beyond the approved image.
+
+
+
+Your job is implementation, not redesign.
