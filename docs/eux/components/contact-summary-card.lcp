@@ -1,0 +1,485 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : contact-summary-card.lcp
+Version         : 1.1
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component ContactSummaryCard {
+
+    Purpose {
+
+        ContactSummaryCard is the identity card of the relationship.
+
+        It immediately answers:
+
+        • Who is this person?
+
+        • Where do they work?
+
+        • How can I contact them?
+
+        • Who owns this relationship?
+
+        This card should never become a data dump.
+
+        It should display only the information
+        necessary to understand the person.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Header
+
+            Identity
+
+            ContactMethods
+
+            Organization
+
+            Ownership
+
+            Tags
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    DataContract {
+
+        ContactName            <- Contact Profile
+
+        JobTitle               <- Contact Profile
+
+        Department             <- Contact Profile
+
+        Company                <- Company Module
+
+        CompanyLogo            <- Company Module
+
+        Phone                  <- Contact Profile
+
+        Mobile                 <- Contact Profile
+
+        Email                  <- Contact Profile
+
+        LinkedIn               <- Contact Profile
+
+        Website                <- Company Module
+
+        Owner                  <- CRM Assignment
+
+        Tags                   <- CRM Tags
+
+        PreferredLanguage      <- Contact Profile
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : Card
+
+        Width               : Full
+
+        Height              : Auto
+
+        MinimumHeight       : 260
+
+        Padding             : Tokens.Spacing.XXL
+
+        Gap                 : Tokens.Spacing.LG
+
+        Radius              : Tokens.Radius.XL
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    Header {
+
+        Title {
+
+            Contact Summary
+
+        }
+
+        Subtitle {
+
+            Primary relationship information
+
+        }
+
+        Icon {
+
+            User
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Identity {
+
+        Display {
+
+            Avatar
+
+            ContactName
+
+            JobTitle
+
+            Department
+
+        }
+
+        ContactName {
+
+            Typography      : Tokens.Typography.HeadingLG
+
+            Required        : True
+
+            MaxLines        : 2
+
+        }
+
+        JobTitle {
+
+            Optional        : True
+
+        }
+
+        Department {
+
+            Optional        : True
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Organization {
+
+        Display {
+
+            CompanyLogo
+
+            CompanyName
+
+            Website
+
+        }
+
+        CompanyName {
+
+            Clickable       : True
+
+            Navigate        : CompanyWorkspace
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    ContactMethods {
+
+        Display {
+
+            Mobile
+
+            Phone
+
+            Email
+
+            LinkedIn
+
+        }
+
+        PrimaryAction {
+
+            Call
+
+        }
+
+        SecondaryActions {
+
+            WhatsApp
+
+            Email
+
+            SaveContact
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Ownership {
+
+        Display {
+
+            RelationshipOwner
+
+        }
+
+        Clickable : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Tags {
+
+        MaximumVisible : 6
+
+        Overflow       : +N
+
+        Wrap           : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        IndependentLoading      : True
+
+        PreserveHeight          : True
+
+        LazyLoadLogo            : True
+
+        NeverCollapseIdentity   : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Avatar.Click
+
+            -> ViewProfileImage
+
+        Company.Click
+
+            -> OpenCompanyWorkspace
+
+        Mobile.Click
+
+            -> StartCall
+
+        Phone.Click
+
+            -> StartCall
+
+        Email.Click
+
+            -> ComposeEmail
+
+        LinkedIn.Click
+
+            -> OpenLinkedIn
+
+        Website.Click
+
+            -> OpenCompanyWebsite
+
+        Owner.Click
+
+            -> OpenOwnerProfile
+
+        SaveContact.Click
+
+            -> ExportToDeviceContacts
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            CardSkeleton
+
+            AvatarSkeleton
+
+            TextSkeleton
+
+        }
+
+        Empty {
+
+            MissingFieldPlaceholder
+
+            SuggestCompleteProfile
+
+        }
+
+        Error {
+
+            Retry
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteraction
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            TwoColumnInformation
+
+        }
+
+        Tablet {
+
+            CompactGrid
+
+        }
+
+        Mobile {
+
+            SingleColumn
+
+            FullWidthActions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        HighContrast           : Enabled
+
+        RTL                    : Enabled
+
+        TouchTarget            : Tokens.Accessibility.TouchTarget
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        LazyLoadCompanyLogo
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        PreserveLayout
+
+        CachedIdentity
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Contact Name is always the most prominent element.
+
+        }
+
+        Rule {
+
+            Company is always clickable.
+
+        }
+
+        Rule {
+
+            Maximum six visible tags.
+
+        }
+
+        Rule {
+
+            Hide empty fields.
+
+        }
+
+        Rule {
+
+            Never display "N/A".
+
+        }
+
+        Rule {
+
+            Never display internal IDs.
+
+        }
+
+        Rule {
+
+            Never display raw timestamps.
+
+        }
+
+        Rule {
+
+            Contact methods must always remain accessible.
+
+        }
+
+        Rule {
+
+            Contact Summary should fit without internal scrolling.
+
+        }
+
+        Rule {
+
+            The user should understand who this person is
+            within three seconds.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

@@ -1,0 +1,327 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : workspace-body.lcp
+Version         : 1.0
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component WorkspaceBody {
+
+    Purpose {
+
+        WorkspaceBody is the primary working area of every CRM workspace.
+
+        It separates business operations from supporting information.
+
+        The Main Workspace always receives priority.
+
+        The Sidebar always provides contextual assistance.
+
+        Users should never feel distracted by secondary content.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type            : SplitGrid
+
+        Direction       : Horizontal
+
+        Columns         : 70 | 30
+
+        Gap             : Tokens.Spacing.XXL
+
+        PaddingTop      : Tokens.Spacing.XXL
+
+        PaddingBottom   : Tokens.Spacing.XXXL
+
+        Width           : Full
+
+        Height          : RemainingViewport
+
+        Scroll          : Independent
+
+    }
+
+    ----------------------------------------------------------------
+
+    Content {
+
+        MainWorkspace
+
+        WorkspaceSidebar
+
+    }
+
+    ----------------------------------------------------------------
+
+    MainWorkspace {
+
+        Width           : 70%
+
+        Priority        : Highest
+
+        Components {
+
+            WorkspaceTabs
+
+            WorkspaceContent
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    WorkspaceSidebar {
+
+        Width           : 30%
+
+        MaxWidth        : 420
+
+        MinWidth        : 340
+
+        Sticky          : True
+
+        IndependentScroll : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    WorkspaceTabs {
+
+        Position        : Top
+
+        Sticky          : True
+
+        EqualHeight     : True
+
+        Scrollable      : Auto
+
+    }
+
+    ----------------------------------------------------------------
+
+    WorkspaceContent {
+
+        FillRemainingHeight : True
+
+        IndependentLoading  : True
+
+        VirtualizedLists    : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        SidebarAlwaysVisible      : Desktop
+
+        SidebarCollapsible        : Tablet
+
+        SidebarMovesBelowContent  : Mobile
+
+        PreserveScrollPosition    : True
+
+        LazyLoadHiddenTabs        : True
+
+        IndependentRefresh        : True
+
+        NeverReloadHeader         : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Tab.Click              -> ChangeWorkspace
+
+        Sidebar.Action         -> ExecuteAction
+
+        Sidebar.Navigate       -> OpenRelatedView
+
+        Workspace.Scroll       -> PreserveContext
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            WorkspaceSkeleton
+
+            SidebarSkeleton
+
+            PreserveHeader
+
+        }
+
+        Empty {
+
+            EmptyWorkspace
+
+            EmptySidebar
+
+        }
+
+        Error {
+
+            PreserveWorkspace
+
+            RetryCurrentSection
+
+        }
+
+        Success {
+
+            EnableAllInteractions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            Columns : 70 | 30
+
+            Sidebar : Visible
+
+        }
+
+        Tablet {
+
+            Columns : 100
+
+            Sidebar : CollapsiblePanel
+
+        }
+
+        Mobile {
+
+            Layout : Vertical
+
+            Order {
+
+                WorkspaceTabs
+
+                WorkspaceContent
+
+                WorkspaceSidebar
+
+            }
+
+            Sidebar : ExpandableSection
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation : Enabled
+
+        ScreenReader       : Enabled
+
+        FocusOrder         : Logical
+
+        RTL                : Enabled
+
+        HighContrast       : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        LazyLoadTabs            : Enabled
+
+        PreserveScroll          : Enabled
+
+        Virtualization          : Enabled
+
+        SkeletonLoading         : Enabled
+
+        PreventLayoutShift      : Enabled
+
+        IndependentRendering    : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Main Workspace always receives more visual space than Sidebar.
+
+        }
+
+        Rule {
+
+            Sidebar never contains primary business content.
+
+        }
+
+        Rule {
+
+            Workspace Tabs remain visible while navigating.
+
+        }
+
+        Rule {
+
+            Each tab manages its own loading state.
+
+        }
+
+        Rule {
+
+            Slow components must never block the entire workspace.
+
+        }
+
+        Rule {
+
+            Sidebar must never become a second dashboard.
+
+        }
+
+        Rule {
+
+            AI belongs inside the Sidebar unless explicitly designed otherwise.
+
+        }
+
+        Rule {
+
+            Main Workspace always remains the user's focus.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

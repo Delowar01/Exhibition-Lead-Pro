@@ -1,0 +1,354 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : workspace-tabs.lcp
+Version         : 1.1
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component WorkspaceTabs {
+
+    Purpose {
+
+        WorkspaceTabs organize business information
+        into logical workspaces.
+
+        Tabs reduce cognitive overload by presenting
+        only one business context at a time.
+
+        Users should always know
+        where they are
+        and what information they are viewing.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            TabBar
+
+            ActiveTab
+
+            Overflow
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : HorizontalTabs
+
+        Position            : Top
+
+        Height              : 56
+
+        Width               : Full
+
+        Padding             : Tokens.Spacing.LG
+
+        Gap                 : Tokens.Spacing.SM
+
+        Sticky              : True
+
+        Background          : Tokens.Colors.Surface.Primary
+
+        BorderBottom        : Tokens.Border.Primary
+
+    }
+
+    ----------------------------------------------------------------
+
+    Content {
+
+        TabBar {
+
+            Overview
+
+            Timeline
+
+            Activities
+
+            Documents
+
+            Interactions
+
+            AI
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Tab {
+
+        Height              : 44
+
+        MinWidth            : 120
+
+        PaddingHorizontal   : Tokens.Spacing.XL
+
+        Radius              : Tokens.Radius.LG
+
+        Icon                : Optional
+
+        Badge               : Optional
+
+        Closeable           : False
+
+    }
+
+    ----------------------------------------------------------------
+
+    ActiveTab {
+
+        Background          : Tokens.Brand.Orange
+
+        TextColor           : Tokens.Brand.White
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    InactiveTab {
+
+        Background          : Transparent
+
+        TextColor           : Tokens.Text.Secondary
+
+        HoverBackground     : Tokens.Colors.Surface.Secondary
+
+    }
+
+    ----------------------------------------------------------------
+
+    Overflow {
+
+        Enabled             : Auto
+
+        Trigger             : More
+
+        PreserveOrder       : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        OneActiveTab             : True
+
+        PreserveScrollPosition   : True
+
+        RememberLastTab          : True
+
+        LazyLoadHiddenTabs       : True
+
+        KeepHeaderVisible        : True
+
+        IndependentTabLoading    : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Tab.Click
+
+            -> OpenTab
+
+        Tab.DoubleClick
+
+            -> RefreshCurrentTab
+
+        Badge.Click
+
+            -> OpenRelatedContent
+
+        More.Click
+
+            -> OpenOverflowMenu
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            TabSkeleton
+
+        }
+
+        Empty {
+
+            HideBadge
+
+        }
+
+        Error {
+
+            PreserveSelectedTab
+
+            RetryCurrentTab
+
+        }
+
+        Success {
+
+            EnableInteraction
+
+        }
+
+        Disabled {
+
+            PreventNavigation
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            Display         : Horizontal
+
+            Scrollable      : False
+
+        }
+
+        Tablet {
+
+            Display         : Horizontal
+
+            Scrollable      : True
+
+        }
+
+        Mobile {
+
+            Display         : Horizontal
+
+            Scrollable      : True
+
+            SwipeNavigation : Enabled
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ArrowNavigation        : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        RTL                    : Enabled
+
+        HighContrast           : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        LazyLoadTabs               : Enabled
+
+        PreserveScroll             : Enabled
+
+        PreventDuplicateRendering  : Enabled
+
+        CacheVisitedTabs           : Enabled
+
+        IndependentRefresh         : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Only one tab may be active.
+
+        }
+
+        Rule {
+
+            Tabs never change order automatically.
+
+        }
+
+        Rule {
+
+            Switching tabs never reloads
+            the Workspace Header.
+
+        }
+
+        Rule {
+
+            Hidden tabs remain cached
+            until explicitly refreshed.
+
+        }
+
+        Rule {
+
+            AI always remains
+            the last tab.
+
+        }
+
+        Rule {
+
+            Every tab has one
+            business responsibility.
+
+        }
+
+        Rule {
+
+            Tabs never contain dashboards.
+
+        }
+
+        Rule {
+
+            Users must always know
+            which tab is active.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

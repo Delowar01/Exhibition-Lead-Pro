@@ -1,0 +1,413 @@
+# Lead Capture Pro Enterprise UX Implementation
+## Contact Workspace v1.0
+
+This task is a complete UX implementation project.
+
+This is NOT a redesign.
+
+This is NOT a UI improvement task.
+
+Your responsibility is to implement the approved UX exactly as specified.
+
+---
+
+## Source of Truth
+
+Use BOTH:
+
+1. The approved Contact Workspace UI image.
+2. contact-workspace-v1.md (Chapters 1–10)
+
+The image defines the visual layout.
+
+The markdown defines the implementation behaviour.
+
+If there is any difference between them:
+
+The markdown takes priority for behaviour.
+
+The approved image takes priority for visual layout.
+
+---
+
+## IMPORTANT
+
+Do NOT redesign anything.
+
+Do NOT move cards.
+
+Do NOT add new sections.
+
+Do NOT remove existing sections.
+
+Do NOT change spacing without a technical reason.
+
+Do NOT invent your own UX.
+
+Implement exactly as specified.
+
+---
+
+# Objective
+
+Replace the current Contact Workspace UI with the new Enterprise Contact Workspace while preserving ALL existing business functionality.
+
+Existing APIs
+
+Existing database
+
+Existing authentication
+
+Existing permissions
+
+Existing OCR
+
+Existing AI
+
+Existing workflow automation
+
+must continue working.
+
+This is a UX implementation project only.
+
+---
+
+# Preserve
+
+The following functionality MUST remain fully operational.
+
+• Contact CRUD
+
+• Company links
+
+• Activities
+
+• Timeline
+
+• Documents
+
+• AI
+
+• Business Card OCR
+
+• Search
+
+• Permissions
+
+• API integrations
+
+• Offline Queue
+
+• Audit Trail
+
+• Multi-tenancy
+
+Do not break existing business logic.
+
+---
+
+# Build
+
+Implement the Contact Workspace using reusable React components.
+
+Suggested structure
+
+/components/contact/
+
+    ContactHero
+
+    WorkspaceTabs
+
+    OverviewWorkspace
+
+    TimelineWorkspace
+
+    ActivitiesWorkspace
+
+    DocumentsWorkspace
+
+    InteractionsWorkspace
+
+    AIWorkspace
+
+    ContactSidebar
+
+    ContactCard
+
+    EmptyState
+
+    SkeletonLoader
+
+    SectionHeader
+
+Reuse existing components wherever practical.
+
+Avoid duplicate code.
+
+---
+
+# Performance Requirements
+
+Workspace switching
+
+Target
+
+<150ms
+
+Do not rerender
+
+Header
+
+Navigation
+
+Hero
+
+AI Sidebar
+
+Only active workspace changes.
+
+Use lazy loading where appropriate.
+
+Cache previously visited workspace state.
+
+Preserve
+
+Scroll Position
+
+Search
+
+Filters
+
+Sorting
+
+Expanded sections
+
+Selected rows
+
+---
+
+# Responsive
+
+Desktop
+
+Primary implementation target.
+
+Tablet
+
+Fully responsive.
+
+Mobile
+
+Fully responsive.
+
+No horizontal scrolling.
+
+---
+
+# Accessibility
+
+WCAG AA
+
+Keyboard navigation
+
+Screen reader support
+
+RTL support
+
+Minimum touch targets
+
+44px
+
+Visible focus states
+
+---
+
+# Animations
+
+Use subtle motion.
+
+No unnecessary animation.
+
+Workspace switching
+
+Cross fade
+
+180ms
+
+Card hover
+
+150ms
+
+Hero collapse
+
+200ms
+
+Do not animate page loads.
+
+---
+
+# AI
+
+AI is NOT a chatbot.
+
+AI is a Sales Copilot.
+
+AI should never dominate the screen.
+
+Follow the markdown specification.
+
+Only user initiated AI requests should consume AI.
+
+Deterministic calculations should never use AI.
+
+---
+
+# Existing Components
+
+Before creating new components
+
+Search the project.
+
+Reuse existing
+
+Cards
+
+Buttons
+
+Dialogs
+
+Drawers
+
+Inputs
+
+Badges
+
+Tables
+
+Typography
+
+Spacing
+
+Do not duplicate functionality.
+
+---
+
+# Code Quality
+
+Strict TypeScript
+
+Reusable components
+
+No hardcoded colors
+
+No duplicated styling
+
+Use existing design tokens
+
+Use existing theme
+
+Follow current architecture
+
+---
+
+# Deliverables
+
+1.
+
+Implement complete Contact Workspace
+
+2.
+
+Keep all existing functionality working
+
+3.
+
+No regression
+
+4.
+
+Responsive implementation
+
+5.
+
+Reusable components
+
+6.
+
+Clean architecture
+
+---
+
+# Validation
+
+Before considering this task complete
+
+Verify
+
+✓ UI matches approved design
+
+✓ Behaviour matches markdown
+
+✓ Existing functionality preserved
+
+✓ APIs unchanged
+
+✓ Responsive
+
+✓ RTL
+
+✓ Accessibility
+
+✓ No console errors
+
+✓ No TypeScript errors
+
+✓ No broken navigation
+
+✓ No performance regression
+
+---
+
+# Final Report
+
+When implementation is complete provide
+
+1.
+
+Components Created
+
+2.
+
+Components Reused
+
+3.
+
+Files Modified
+
+4.
+
+Performance Improvements
+
+5.
+
+Accessibility Improvements
+
+6.
+
+Known Limitations
+
+7.
+
+Screenshots of
+
+Desktop
+
+Tablet
+
+Mobile
+
+8.
+
+Any assumptions made
+
+Do not skip this report.

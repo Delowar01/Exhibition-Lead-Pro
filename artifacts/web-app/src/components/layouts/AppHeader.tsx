@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Search, Plus, Sparkles, Bell, LogOut, UserCircle, Settings, Contact,
-  Calendar, Camera,
+  Calendar, Camera, Menu,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
@@ -21,9 +21,10 @@ import type { NavGroup } from "./navigation";
 interface AppHeaderProps {
   portal: "admin" | "platform";
   navGroups: NavGroup[];
+  onOpenMobileNav?: () => void;
 }
 
-export function AppHeader({ portal, navGroups }: AppHeaderProps) {
+export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps) {
   const [, navigate] = useLocation();
   const { user, logout } = useAuth();
   const logoutMutation = useLogout();
@@ -61,6 +62,17 @@ export function AppHeader({ portal, navGroups }: AppHeaderProps) {
 
   return (
     <header className="sticky top-0 z-20 h-14 shrink-0 bg-card border-b border-border flex items-center gap-2 px-4">
+      {onOpenMobileNav && (
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          aria-label="Open navigation menu"
+          className="md:hidden inline-flex items-center justify-center h-9 w-9 shrink-0 rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary/60 transition-colors"
+          data-testid="button-mobile-nav"
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setPaletteOpen(true)}

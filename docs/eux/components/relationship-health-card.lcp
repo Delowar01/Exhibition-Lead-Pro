@@ -1,0 +1,387 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : relationship-health-card.lcp
+Version         : 1.0
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component RelationshipHealthCard {
+
+    Purpose {
+
+        RelationshipHealthCard provides an instant,
+        business-focused summary of the current customer relationship.
+
+        It is the first card users should review after
+        identifying the contact.
+
+        The objective is not to display statistics.
+
+        The objective is to answer one question:
+
+        "Is this relationship healthy?"
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Header
+
+            Score
+
+            Indicators
+
+            Alerts
+
+            Footer
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : Card
+
+        Width               : Full
+
+        Height              : Auto
+
+        MinimumHeight       : 220
+
+        Padding             : Tokens.Spacing.XXL
+
+        Gap                 : Tokens.Spacing.LG
+
+        Radius              : Tokens.Radius.XL
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    Header {
+
+        Title {
+
+            Relationship Health
+
+        }
+
+        Subtitle {
+
+            Overall relationship status
+
+        }
+
+        Icon {
+
+            HeartPulse
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Score {
+
+        Display {
+
+            HealthScore
+
+            HealthStatus
+
+        }
+
+        Style {
+
+            LargeNumber
+
+            StatusBadge
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Indicators {
+
+        Display {
+
+            LastInteraction
+
+            RelationshipAge
+
+            EventsVisited
+
+            Meetings
+
+            FollowUpsCompleted
+
+            ResponseRate
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Alerts {
+
+        MaximumVisible      : 3
+
+        PriorityOrder {
+
+            OverdueFollowUp
+
+            NoRecentContact
+
+            HighValueLead
+
+            CustomerInactive
+
+            OpportunityAtRisk
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Footer {
+
+        PrimaryAction {
+
+            View Timeline
+
+        }
+
+        SecondaryAction {
+
+            View Activities
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        Refreshable             : True
+
+        Expandable              : False
+
+        IndependentLoading      : True
+
+        PreserveHeight          : True
+
+        RealTimeUpdates         : False
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Score.Click
+
+            -> OpenRelationshipTimeline
+
+        LastInteraction.Click
+
+            -> OpenTimeline
+
+        EventsVisited.Click
+
+            -> OpenEvents
+
+        Meetings.Click
+
+            -> OpenActivities
+
+        Footer.PrimaryAction.Click
+
+            -> OpenTimeline
+
+        Footer.SecondaryAction.Click
+
+            -> OpenActivities
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            CardSkeleton
+
+        }
+
+        Empty {
+
+            Message {
+
+                Relationship history is not available yet.
+
+            }
+
+            SuggestedAction {
+
+                Record the first interaction.
+
+            }
+
+        }
+
+        Error {
+
+            Retry
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteraction
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            FullCard
+
+        }
+
+        Tablet {
+
+            FullCard
+
+        }
+
+        Mobile {
+
+            StackIndicators
+
+            FooterButtonsVertical
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        HighContrast           : Enabled
+
+        RTL                    : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        CachedMetrics
+
+        NoBlockingRequests
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Relationship Score is always the primary visual element.
+
+        }
+
+        Rule {
+
+            Maximum six indicators.
+
+        }
+
+        Rule {
+
+            Maximum three alerts.
+
+        }
+
+        Rule {
+
+            Never display raw database fields.
+
+        }
+
+        Rule {
+
+            Never display AI-generated scores.
+
+        }
+
+        Rule {
+
+            Health Score must always be calculated deterministically.
+
+        }
+
+        Rule {
+
+            Every alert must have a recommended action.
+
+        }
+
+        Rule {
+
+            The card should answer
+
+            "How healthy is this relationship?"
+
+            within three seconds.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

@@ -1,0 +1,488 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : section-card.lcp
+Version         : 1.0
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component SectionCard {
+
+    Purpose {
+
+        SectionCard is the universal foundation for every
+        enterprise information card throughout Lead Capture Pro.
+
+        It provides one consistent experience for:
+
+        • Contact Workspace
+        • Lead Workspace
+        • Company Workspace
+        • Event Workspace
+        • Opportunity Workspace
+        • Dashboard
+        • Platform Owner Portal
+        • Mobile Application
+
+        Every business card must inherit from SectionCard.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Philosophy {
+
+        A SectionCard represents one business decision.
+
+        One card.
+
+        One responsibility.
+
+        One purpose.
+
+        Never mix unrelated business information
+        inside the same card.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Header
+
+            Toolbar
+
+            Content
+
+            Footer
+
+            EmptyState
+
+            LoadingState
+
+            ErrorState
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : Card
+
+        Width               : Full
+
+        Height              : Auto
+
+        MinimumHeight       : 220
+
+        MaximumHeight       : Unlimited
+
+        Padding             : Tokens.Spacing.XXL
+
+        Gap                 : Tokens.Spacing.XL
+
+        Radius              : Tokens.Radius.XL
+
+        Background          : Tokens.Colors.Surface.Card
+
+        Border              : Tokens.Border.Primary
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    Header {
+
+        Layout {
+
+            Left
+
+            Center
+
+            Right
+
+        }
+
+        Left {
+
+            Icon
+
+            Title
+
+            Subtitle
+
+        }
+
+        Right {
+
+            RefreshButton
+
+            ExpandButton
+
+            MenuButton
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Toolbar {
+
+        Optional : True
+
+        Position : BelowHeader
+
+        Purpose {
+
+            Filtering
+
+            Search
+
+            Sorting
+
+            Context Actions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Content {
+
+        FillRemainingSpace : True
+
+        IndependentScroll  : False
+
+        MaximumSections    : Unlimited
+
+    }
+
+    ----------------------------------------------------------------
+
+    Footer {
+
+        Optional : True
+
+        Layout {
+
+            LeftActions
+
+            RightActions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        Refreshable            : Optional
+
+        Expandable             : Optional
+
+        Collapsible            : Optional
+
+        IndependentLoading     : True
+
+        PreserveHeight         : True
+
+        PreserveWidth          : True
+
+        SkeletonLoading        : True
+
+        AutoResize             : False
+
+        LazyRender             : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            CardSkeleton
+
+            PreserveDimensions
+
+        }
+
+        Empty {
+
+            Illustration
+
+            Title
+
+            Description
+
+            PrimaryAction
+
+            SecondaryAction
+
+        }
+
+        Error {
+
+            Icon
+
+            Message
+
+            RetryButton
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteractions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        RefreshButton.Click
+
+            -> RefreshCard
+
+        ExpandButton.Click
+
+            -> ExpandCard
+
+        MenuButton.Click
+
+            -> OpenContextMenu
+
+    }
+
+    ----------------------------------------------------------------
+
+    Animation {
+
+        InitialLoad {
+
+            Fade
+
+            Duration : Tokens.Animation.Normal
+
+        }
+
+        Refresh {
+
+            CrossFade
+
+            Duration : Tokens.Animation.Fast
+
+        }
+
+        Expand {
+
+            SmoothHeight
+
+            Duration : Tokens.Animation.Normal
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            FullCard
+
+        }
+
+        Tablet {
+
+            FullCard
+
+        }
+
+        Mobile {
+
+            CompactSpacing
+
+            VerticalFooter
+
+            LargeTouchTargets
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        HighContrast           : Enabled
+
+        RTL                    : Enabled
+
+        Localization           : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        IncrementalRefresh
+
+        CachedContent
+
+        NoLayoutShift
+
+        NoDuplicateRequests
+
+    }
+
+    ----------------------------------------------------------------
+
+    DesignStandards {
+
+        HeaderHeight           : Fixed
+
+        IconAlignment          : Left
+
+        ActionAlignment        : Right
+
+        ConsistentSpacing      : Required
+
+        ConsistentTypography   : Required
+
+        ConsistentAnimation    : Required
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            One business purpose per card.
+
+        }
+
+        Rule {
+
+            Every card must have a title.
+
+        }
+
+        Rule {
+
+            Every card must support Loading.
+
+        }
+
+        Rule {
+
+            Every card must support Empty State.
+
+        }
+
+        Rule {
+
+            Every card must support Error State.
+
+        }
+
+        Rule {
+
+            Every card must support Accessibility.
+
+        }
+
+        Rule {
+
+            Every card must use Design Tokens.
+
+        }
+
+        Rule {
+
+            Never hardcode colors.
+
+        }
+
+        Rule {
+
+            Never hardcode spacing.
+
+        }
+
+        Rule {
+
+            Never hardcode typography.
+
+        }
+
+        Rule {
+
+            Cards should not contain internal scrollbars
+            unless displaying long datasets.
+
+        }
+
+        Rule {
+
+            Refresh should never reload the
+            entire workspace.
+
+        }
+
+        Rule {
+
+            Every card should preserve layout
+            during loading.
+
+        }
+
+        Rule {
+
+            Cards should feel identical,
+            regardless of the workspace.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

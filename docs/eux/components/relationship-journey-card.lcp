@@ -1,0 +1,405 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : relationship-journey-card.lcp
+Version         : 1.1
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component RelationshipJourneyCard {
+
+    Purpose {
+
+        RelationshipJourneyCard visualizes the customer's
+        business journey instead of displaying individual activities.
+
+        Timeline answers:
+
+            "What happened?"
+
+        Relationship Journey answers:
+
+            "How did we get here?"
+
+        The card should help salespeople quickly understand
+        the maturity and progression of the relationship.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Header
+
+            JourneyTimeline
+
+            Milestones
+
+            RelationshipStage
+
+            Footer
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    DataContract {
+
+        FirstContact            <- Contact Module
+
+        BusinessCardScans       <- Scan Module
+
+        EventParticipation      <- Event Module
+
+        Meetings                <- Calendar Module
+
+        Calls                   <- Communication Module
+
+        Emails                  <- Communication Module
+
+        Opportunities           <- Sales Module
+
+        Quotations              <- Sales Module
+
+        Proposals               <- Sales Module
+
+        WonDeals                <- Sales Module
+
+        LostDeals               <- Sales Module
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : Card
+
+        Width               : Full
+
+        Height              : Auto
+
+        MinimumHeight       : 300
+
+        Padding             : Tokens.Spacing.XXL
+
+        Gap                 : Tokens.Spacing.LG
+
+        Radius              : Tokens.Radius.XL
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    Header {
+
+        Title {
+
+            Relationship Journey
+
+        }
+
+        Subtitle {
+
+            Evolution of this business relationship
+
+        }
+
+        Icon {
+
+            Route
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    JourneyTimeline {
+
+        Display {
+
+            FirstMet
+
+            FirstEvent
+
+            FirstMeeting
+
+            FirstProposal
+
+            FirstOpportunity
+
+            LatestInteraction
+
+        }
+
+        Style {
+
+            HorizontalJourney
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Milestones {
+
+        MaximumVisible : 6
+
+        Sort {
+
+            Chronological
+
+        }
+
+        Display {
+
+            Icon
+
+            Title
+
+            Date
+
+            Description
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    RelationshipStage {
+
+        Display {
+
+            CurrentStage
+
+            JourneyProgress
+
+            RelationshipAge
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Footer {
+
+        PrimaryAction {
+
+            View Complete Timeline
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        IndependentLoading      : True
+
+        PreserveHeight          : True
+
+        Expandable              : False
+
+        Refreshable             : True
+
+        AutoSort                : Chronological
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Milestone.Click
+
+            -> OpenTimelineEvent
+
+        CurrentStage.Click
+
+            -> OpenRelationshipAnalytics
+
+        ViewCompleteTimeline.Click
+
+            -> OpenTimeline
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            CardSkeleton
+
+            JourneySkeleton
+
+        }
+
+        Empty {
+
+            Message {
+
+                This relationship has just begun.
+
+            }
+
+            SuggestedAction {
+
+                Continue engaging with the customer
+                to build a stronger relationship.
+
+            }
+
+        }
+
+        Error {
+
+            Retry
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteraction
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            HorizontalJourney
+
+        }
+
+        Tablet {
+
+            CompactJourney
+
+        }
+
+        Mobile {
+
+            VerticalJourney
+
+            CollapsibleMilestones
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        RTL                    : Enabled
+
+        HighContrast           : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        CachedJourney
+
+        IncrementalRefresh
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Maximum six milestones.
+
+        }
+
+        Rule {
+
+            Milestones always appear chronologically.
+
+        }
+
+        Rule {
+
+            Journey displays only meaningful events.
+
+        }
+
+        Rule {
+
+            Similar activities are grouped together.
+
+        }
+
+        Rule {
+
+            Relationship Journey never replaces Timeline.
+
+        }
+
+        Rule {
+
+            Every milestone must contribute
+            to the customer's story.
+
+        }
+
+        Rule {
+
+            Decorative milestones are prohibited.
+
+        }
+
+        Rule {
+
+            Users should understand
+            the evolution of the relationship
+            within five seconds.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

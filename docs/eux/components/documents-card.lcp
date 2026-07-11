@@ -1,0 +1,417 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : documents-card.lcp
+Version         : 1.1
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component DocumentsCard {
+
+    Purpose {
+
+        DocumentsCard gives users an immediate
+        understanding of available business documents.
+
+        It is not a document manager.
+
+        It answers one business question:
+
+        "Do I already have everything I need before
+        communicating with this customer?"
+
+        It should encourage preparation,
+        not browsing.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Header
+
+            ReadinessStatus
+
+            RecentDocuments
+
+            MissingDocuments
+
+            Footer
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    DataContract {
+
+        Documents              <- Document Module
+
+        BusinessCards          <- Scan Module
+
+        Quotations             <- Sales Module
+
+        Proposals              <- Sales Module
+
+        Contracts              <- Sales Module
+
+        MeetingNotes           <- Activities Module
+
+        Attachments            <- CRM Attachments
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : Card
+
+        Width               : Full
+
+        Height              : Auto
+
+        MinimumHeight       : 260
+
+        Padding             : Tokens.Spacing.XXL
+
+        Gap                 : Tokens.Spacing.LG
+
+        Radius              : Tokens.Radius.XL
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    Header {
+
+        Title {
+
+            Documents
+
+        }
+
+        Subtitle {
+
+            Files supporting this relationship
+
+        }
+
+        Icon {
+
+            FolderOpen
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    ReadinessStatus {
+
+        Display {
+
+            ReadinessIndicator
+
+            TotalDocuments
+
+            LastUploaded
+
+        }
+
+        States {
+
+            Ready
+
+            Partial
+
+            MissingCriticalDocuments
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    RecentDocuments {
+
+        MaximumVisible : 5
+
+        Sort {
+
+            NewestFirst
+
+        }
+
+        Display {
+
+            FileIcon
+
+            FileName
+
+            Category
+
+            UploadedBy
+
+            UploadDate
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    MissingDocuments {
+
+        Display {
+
+            MissingProposal
+
+            MissingQuotation
+
+            MissingContract
+
+            MissingMeetingNotes
+
+        }
+
+        HideWhenEmpty : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Footer {
+
+        PrimaryAction {
+
+            View All Documents
+
+        }
+
+        SecondaryAction {
+
+            Upload Document
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        IndependentLoading      : True
+
+        PreserveHeight          : True
+
+        Expandable              : False
+
+        Refreshable             : True
+
+        AutoSort                : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Document.Click
+
+            -> OpenDocument
+
+        ViewAllDocuments.Click
+
+            -> OpenDocumentWorkspace
+
+        UploadDocument.Click
+
+            -> UploadNewDocument
+
+        MissingDocument.Click
+
+            -> UploadSuggestedDocument
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            CardSkeleton
+
+            DocumentSkeleton
+
+        }
+
+        Empty {
+
+            Message {
+
+                No documents have been added yet.
+
+            }
+
+            SuggestedAction {
+
+                Upload your first business document.
+
+            }
+
+        }
+
+        Error {
+
+            Retry
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteraction
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            FullCard
+
+        }
+
+        Tablet {
+
+            CompactCard
+
+        }
+
+        Mobile {
+
+            SingleColumn
+
+            FooterVertical
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        HighContrast           : Enabled
+
+        RTL                    : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        CachedDocumentList
+
+        IncrementalRefresh
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Maximum five recent documents.
+
+        }
+
+        Rule {
+
+            Newest document appears first.
+
+        }
+
+        Rule {
+
+            Business Card images count as documents.
+
+        }
+
+        Rule {
+
+            Duplicate document versions
+            are grouped together.
+
+        }
+
+        Rule {
+
+            Missing critical documents
+            are always highlighted.
+
+        }
+
+        Rule {
+
+            Never display internal filenames.
+
+        }
+
+        Rule {
+
+            Never expose storage paths.
+
+        }
+
+        Rule {
+
+            Readiness Status appears
+            before the document list.
+
+        }
+
+        Rule {
+
+            Users should immediately know
+            whether they are prepared
+            for the next customer interaction.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

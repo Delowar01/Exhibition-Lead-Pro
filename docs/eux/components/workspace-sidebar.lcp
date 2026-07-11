@@ -1,0 +1,458 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : workspace-sidebar.lcp
+Version         : 1.1
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component WorkspaceSidebar {
+
+    Purpose {
+
+        WorkspaceSidebar provides contextual intelligence
+        without distracting users from their primary work.
+
+        The Sidebar never replaces the Main Workspace.
+
+        The Sidebar helps users decide
+        what to do next.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Top
+
+            Context
+
+            Intelligence
+
+            Actions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : VerticalStack
+
+        Width               : 380
+
+        MinWidth            : 340
+
+        MaxWidth            : 420
+
+        Gap                 : Tokens.Spacing.XL
+
+        Padding             : Tokens.Spacing.XL
+
+        Sticky              : True
+
+        IndependentScroll   : True
+
+        Background          : Tokens.Colors.Surface.Sidebar
+
+        Radius              : Tokens.Radius.XL
+
+    }
+
+    ----------------------------------------------------------------
+
+    Content {
+
+        Slot Top {
+
+            RelationshipHealthCard
+
+        }
+
+        Slot Context {
+
+            CRMContextCard
+
+        }
+
+        Slot Intelligence {
+
+            AIAssistantCard
+
+        }
+
+        Slot Actions {
+
+            GenerateWithAICard
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    RelationshipHealthCard {
+
+        Purpose {
+
+            Give users an instant understanding of
+            relationship quality.
+
+        }
+
+        Display {
+
+            RelationshipScore
+
+            LastInteraction
+
+            NextFollowUp
+
+            OpenTasks
+
+        }
+
+        Height          : Auto
+
+        Expandable      : False
+
+    }
+
+    ----------------------------------------------------------------
+
+    CRMContextCard {
+
+        Purpose {
+
+            Display important CRM facts.
+
+        }
+
+        Display {
+
+            Owner
+
+            LeadStage
+
+            Priority
+
+            Source
+
+            AssignedTeam
+
+            CurrentOpportunity
+
+        }
+
+        Height          : Auto
+
+        Expandable      : False
+
+    }
+
+    ----------------------------------------------------------------
+
+    AIAssistantCard {
+
+        Purpose {
+
+            Recommend actions.
+
+            Never generate long reports.
+
+        }
+
+        Display {
+
+            Recommendation
+
+            Confidence
+
+            Reason
+
+            SuggestedAction
+
+        }
+
+        MaximumRecommendations : 3
+
+        Expandable             : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    GenerateWithAICard {
+
+        Purpose {
+
+            Generate content only when requested.
+
+        }
+
+        Display {
+
+            Email
+
+            WhatsApp
+
+            MeetingAgenda
+
+            CallPreparation
+
+            ProposalSummary
+
+            FollowUpPlan
+
+        }
+
+        AutoGenerate       : False
+
+        CacheResults       : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        PreserveScrollPosition    : True
+
+        IndependentRefresh        : True
+
+        AIRefreshOnDemand         : True
+
+        NeverAutoGenerate         : True
+
+        StickyWhileScrolling      : Desktop
+
+        CollapseOnTablet          : True
+
+        MoveBelowWorkspace        : Mobile
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        RelationshipHealth.Click
+
+            -> OpenTimeline
+
+        CRMContext.Owner.Click
+
+            -> OpenOwnerProfile
+
+        CRMContext.Opportunity.Click
+
+            -> OpenOpportunity
+
+        AIRecommendation.Click
+
+            -> ViewRecommendation
+
+        Generate.Email.Click
+
+            -> GenerateEmail
+
+        Generate.WhatsApp.Click
+
+            -> GenerateWhatsApp
+
+        Generate.MeetingAgenda.Click
+
+            -> GenerateMeetingAgenda
+
+        Generate.CallPreparation.Click
+
+            -> GenerateCallPreparation
+
+        Generate.ProposalSummary.Click
+
+            -> GenerateProposalSummary
+
+        Generate.FollowUpPlan.Click
+
+            -> GenerateFollowUpPlan
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            SidebarSkeleton
+
+            CardSkeleton
+
+        }
+
+        Empty {
+
+            HideEmptyCards
+
+            ExpandAvailableCards
+
+        }
+
+        Error {
+
+            ShowRetry
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteractions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            Width       : 380
+
+            Sticky      : True
+
+            Visible     : Always
+
+        }
+
+        Tablet {
+
+            Width           : 100%
+
+            Position        : Drawer
+
+            DefaultState    : Collapsed
+
+        }
+
+        Mobile {
+
+            Position        : BottomSection
+
+            Sticky          : False
+
+            FullWidth       : True
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        RTL                    : Enabled
+
+        HighContrast           : Enabled
+
+        TouchTarget            : Tokens.Accessibility.TouchTarget
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        LazyLoadAI                 : Enabled
+
+        IndependentRendering       : Enabled
+
+        SkeletonLoading            : Enabled
+
+        PreserveLayout             : Enabled
+
+        CacheAIResults             : Enabled
+
+        NoDuplicateRequests        : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Maximum four cards.
+
+        }
+
+        Rule {
+
+            Sidebar never becomes a dashboard.
+
+        }
+
+        Rule {
+
+            CRM Context appears before AI.
+
+        }
+
+        Rule {
+
+            AI is always advisory.
+
+        }
+
+        Rule {
+
+            AI content is generated only on demand.
+
+        }
+
+        Rule {
+
+            Relationship Health is always visible.
+
+        }
+
+        Rule {
+
+            Sidebar never contains duplicate actions.
+
+        }
+
+        Rule {
+
+            Sidebar should support,
+            never compete with,
+            the Main Workspace.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

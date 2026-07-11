@@ -1,0 +1,463 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : contact-workspace.lcp
+Version         : 1.0
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Workspace ContactWorkspace {
+
+    Purpose {
+
+        Contact Workspace is the primary CRM interface
+        for managing one business relationship.
+
+        The workspace should help users understand
+
+        • Who this person is
+
+        • Current relationship status
+
+        • What happened previously
+
+        • What requires attention
+
+        • What should happen next
+
+        Everything inside this workspace exists to
+        strengthen customer relationships.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Uses {
+
+            WorkspaceHeader
+
+            WorkspaceBody
+
+            WorkspaceSidebar
+
+            WorkspaceTabs
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type            : Workspace
+
+        Header          : WorkspaceHeader
+
+        Body            : WorkspaceBody
+
+        Sidebar         : WorkspaceSidebar
+
+        Tabs            : WorkspaceTabs
+
+        Responsive      : Enabled
+
+        RTL             : Enabled
+
+        DarkMode        : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Navigation {
+
+        DefaultTab      : Overview
+
+        RememberLastTab : True
+
+        LazyLoadTabs    : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Tabs {
+
+        Overview
+
+        Timeline
+
+        Activities
+
+        Documents
+
+        Interactions
+
+        AI
+
+    }
+
+    ----------------------------------------------------------------
+
+    Overview {
+
+        Component       : overview.lcp
+
+        Purpose {
+
+            Give users a complete understanding
+            of the relationship within five seconds.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Timeline {
+
+        Component       : timeline.lcp
+
+        Purpose {
+
+            Display one continuous relationship
+            history regardless of events,
+            scans or interactions.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Activities {
+
+        Component       : activities.lcp
+
+        Purpose {
+
+            Display operational work
+            assigned to this relationship.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Documents {
+
+        Component       : documents.lcp
+
+        Purpose {
+
+            Display every document related
+            to this relationship.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interactions {
+
+        Component       : interactions.lcp
+
+        Purpose {
+
+            Display all communication history.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    AI {
+
+        Component       : ai-workspace.lcp
+
+        Purpose {
+
+            Support users with recommendations.
+
+            AI never replaces CRM.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    BusinessGoals {
+
+        Goal {
+
+            Understand relationship immediately.
+
+        }
+
+        Goal {
+
+            Minimize navigation.
+
+        }
+
+        Goal {
+
+            Reduce duplicate information.
+
+        }
+
+        Goal {
+
+            Encourage follow-up.
+
+        }
+
+        Goal {
+
+            Support sales productivity.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    UserJourney {
+
+        Step 1 {
+
+            Workspace opens.
+
+        }
+
+        Step 2 {
+
+            Header identifies the contact.
+
+        }
+
+        Step 3 {
+
+            Overview explains the current situation.
+
+        }
+
+        Step 4 {
+
+            User decides what to do.
+
+        }
+
+        Step 5 {
+
+            Timeline or Activities provide
+            additional context.
+
+        }
+
+        Step 6 {
+
+            AI assists only if requested.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        PreserveScrollPosition    : True
+
+        PreserveCurrentTab        : True
+
+        LazyLoadTabs              : Enabled
+
+        IndependentRefresh        : Enabled
+
+        AIOnDemand                : Enabled
+
+        NeverAutoGenerateAI       : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            HeaderLoadsFirst
+
+            OverviewLoadsSecond
+
+            SidebarLoadsThird
+
+            RemainingTabsLazyLoad
+
+        }
+
+        Empty {
+
+            ShowGuidance
+
+            SuggestNextAction
+
+        }
+
+        Error {
+
+            PreserveWorkspace
+
+            RetryFailedSection
+
+        }
+
+        Success {
+
+            EnableAllInteractions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            Header
+
+            Body
+
+            Sidebar
+
+            Visible
+
+        }
+
+        Tablet {
+
+            SidebarCollapsible
+
+        }
+
+        Mobile {
+
+            VerticalWorkspace
+
+            SidebarBelowContent
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation : Enabled
+
+        ScreenReader       : Enabled
+
+        RTL                : Enabled
+
+        Localization       : EN + AR
+
+        HighContrast       : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        PreserveLayout
+
+        LazyLoading
+
+        SkeletonRendering
+
+        Virtualization
+
+        IndependentComponents
+
+        NoDuplicateRendering
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            CRM always occupies more space than AI.
+
+        }
+
+        Rule {
+
+            One contact equals one relationship.
+
+        }
+
+        Rule {
+
+            Multiple event visits never create
+            multiple workspaces.
+
+        }
+
+        Rule {
+
+            Duplicate scans belong to Timeline,
+            not Duplicate Contacts.
+
+        }
+
+        Rule {
+
+            AI is always advisory.
+
+        }
+
+        Rule {
+
+            Every tab has one responsibility.
+
+        }
+
+        Rule {
+
+            Users should understand the relationship
+            within five seconds.
+
+        }
+
+        Rule {
+
+            Every important action should be
+            reachable within two clicks.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

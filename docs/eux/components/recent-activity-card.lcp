@@ -1,0 +1,381 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : recent-activity-card.lcp
+Version         : 1.1
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component RecentActivityCard {
+
+    Purpose {
+
+        RecentActivityCard summarizes the most important
+        relationship changes.
+
+        It does not replace Timeline.
+
+        It answers one business question:
+
+        "What changed recently?"
+
+        Users should understand recent customer activity
+        within three seconds.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Header
+
+            ActivityFeed
+
+            QuickSummary
+
+            Footer
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    DataContract {
+
+        Activities            <- Timeline Module
+
+        Calls                 <- Communication Module
+
+        Emails                <- Communication Module
+
+        WhatsApp              <- Communication Module
+
+        Meetings              <- Calendar Module
+
+        Notes                 <- Activity Module
+
+        Documents             <- Document Module
+
+        EventVisits           <- Event Module
+
+        BusinessCardScans     <- Scan Module
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : Card
+
+        Width               : Full
+
+        Height              : Auto
+
+        MinimumHeight       : 260
+
+        Padding             : Tokens.Spacing.XXL
+
+        Gap                 : Tokens.Spacing.LG
+
+        Radius              : Tokens.Radius.XL
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    Header {
+
+        Title {
+
+            Recent Activity
+
+        }
+
+        Subtitle {
+
+            Latest relationship updates
+
+        }
+
+        Icon {
+
+            History
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    QuickSummary {
+
+        Display {
+
+            LastInteraction
+
+            LastContactMethod
+
+            LastUpdatedBy
+
+            TimeAgo
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    ActivityFeed {
+
+        MaximumVisible : 5
+
+        Sort {
+
+            NewestFirst
+
+        }
+
+        Display {
+
+            ActivityIcon
+
+            ActivityType
+
+            Description
+
+            TimeStamp
+
+            User
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Footer {
+
+        PrimaryAction {
+
+            View Full Timeline
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        IndependentLoading      : True
+
+        PreserveHeight          : True
+
+        Refreshable             : True
+
+        Expandable              : False
+
+        AutoSort                : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Activity.Click
+
+            -> OpenTimelineEvent
+
+        User.Click
+
+            -> OpenUserProfile
+
+        Footer.PrimaryAction.Click
+
+            -> OpenTimeline
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            CardSkeleton
+
+            TimelineSkeleton
+
+        }
+
+        Empty {
+
+            Message {
+
+                No recent activity found.
+
+            }
+
+            SuggestedAction {
+
+                Record your first customer interaction.
+
+            }
+
+        }
+
+        Error {
+
+            Retry
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteraction
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            FullCard
+
+        }
+
+        Tablet {
+
+            CompactCard
+
+        }
+
+        Mobile {
+
+            SingleColumn
+
+            CompactFeed
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        HighContrast           : Enabled
+
+        RTL                    : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        CachedActivities
+
+        IncrementalRefresh
+
+        VirtualizedFeed
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Maximum five visible activities.
+
+        }
+
+        Rule {
+
+            Newest activity always appears first.
+
+        }
+
+        Rule {
+
+            Never display duplicate activities.
+
+        }
+
+        Rule {
+
+            Similar events occurring within a short
+            time period should be grouped together.
+
+        }
+
+        Rule {
+
+            Every activity must display
+            who performed it.
+
+        }
+
+        Rule {
+
+            Every activity must display
+            when it happened.
+
+        }
+
+        Rule {
+
+            Long descriptions must be truncated.
+
+        }
+
+        Rule {
+
+            Timeline remains the source of truth.
+
+        }
+
+        Rule {
+
+            This card summarizes activity,
+            it does not replace Timeline.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

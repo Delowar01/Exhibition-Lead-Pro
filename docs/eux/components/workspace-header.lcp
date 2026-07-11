@@ -1,0 +1,495 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : workspace-header.lcp
+Version         : 1.0
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component WorkspaceHeader {
+
+    Purpose {
+
+        WorkspaceHeader identifies the current record
+        and provides immediate business context.
+
+        Users should understand
+
+        • Who this is
+        • Current business status
+        • What requires attention
+        • What they should do next
+
+        within five seconds.
+
+        WorkspaceHeader is not a dashboard.
+
+        WorkspaceHeader is not an AI report.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type            : Grid
+
+        Columns         : 40 | 35 | 25
+
+        Height          : 160
+
+        MinHeight       : 150
+
+        MaxHeight       : 180
+
+        Padding         : Tokens.Spacing.XXXL
+
+        Gap             : Tokens.Spacing.XXL
+
+        Radius          : Tokens.Radius.XL
+
+        Background      : Tokens.Colors.Surface.Header
+
+        Shadow          : Tokens.Elevation.Low
+
+        Sticky          : True
+
+        FullWidth       : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Content {
+
+        IdentitySection
+
+        MetricsSection
+
+        ActionSection
+
+    }
+
+    ----------------------------------------------------------------
+
+    IdentitySection {
+
+        Width           : 40%
+
+        VerticalAlign   : Center
+
+        Gap             : Tokens.Spacing.LG
+
+        Components {
+
+            Avatar
+
+            ContactName
+
+            JobTitle
+
+            Company
+
+            StatusBadges
+
+            RelationshipIndicator
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Avatar {
+
+        Size            : Tokens.Avatar.XL
+
+        Shape           : Circle
+
+        Border          : Tokens.Border.Primary
+
+        Clickable       : True
+
+        HoverPreview    : True
+
+        Placeholder     : Initials
+
+    }
+
+    ----------------------------------------------------------------
+
+    ContactName {
+
+        Typography      : Tokens.Typography.DisplayLG
+
+        MaxLines        : 2
+
+        Ellipsis        : True
+
+        Required        : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    JobTitle {
+
+        Typography      : Tokens.Typography.BodyLG
+
+        Color           : Tokens.Text.Secondary
+
+        Optional        : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Company {
+
+        Typography      : Tokens.Typography.BodyLG
+
+        Clickable       : True
+
+        Navigate        : CompanyWorkspace
+
+        ShowLogo        : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    StatusBadges {
+
+        MaxVisible      : 5
+
+        Overflow        : +N
+
+        Gap             : Tokens.Spacing.SM
+
+        Wrap            : False
+
+    }
+
+    ----------------------------------------------------------------
+
+    RelationshipIndicator {
+
+        Position        : BelowBadges
+
+        Show {
+
+            FirstMet
+
+            LastInteraction
+
+            EventsVisited
+
+            RelationshipAge
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    MetricsSection {
+
+        Width           : 35%
+
+        Layout          : Horizontal
+
+        EqualWidth      : True
+
+        Components {
+
+            LeadScore
+
+            AIConfidence
+
+            TotalInteractions
+
+            EventsVisited
+
+            LastActivity
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    MetricCard {
+
+        Height          : 88
+
+        Radius          : Tokens.Radius.LG
+
+        Padding         : Tokens.Spacing.LG
+
+        Hover           : Lift
+
+        Clickable       : True
+
+        Loading         : Skeleton
+
+    }
+
+    ----------------------------------------------------------------
+
+    ActionSection {
+
+        Width           : 25%
+
+        Alignment       : Right
+
+        Components {
+
+            Call
+
+            WhatsApp
+
+            Email
+
+            ScheduleMeeting
+
+            MoreMenu
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    MoreMenu {
+
+        Items {
+
+            EditContact
+
+            AssignOwner
+
+            Merge
+
+            Archive
+
+            Export
+
+            Print
+
+            Delete (PermissionBased)
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        IdentityAlwaysVisible     : True
+
+        StickyOnScroll            : True
+
+        PreserveLayout            : True
+
+        AIBlocksRendering         : False
+
+        LazyLoadAvatar            : True
+
+        IndependentRefresh        : Metrics
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        Avatar.Click              -> OpenProfileImage
+
+        Company.Click             -> OpenCompanyWorkspace
+
+        LeadScore.Click           -> OpenLeadDetails
+
+        EventsVisited.Click       -> OpenInteractions
+
+        LastActivity.Click        -> OpenTimeline
+
+        Call.Click                -> StartCall
+
+        WhatsApp.Click            -> OpenWhatsApp
+
+        Email.Click               -> ComposeEmail
+
+        ScheduleMeeting.Click     -> CreateMeeting
+
+        MoreMenu.Click            -> OpenMenu
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            HeaderSkeleton
+
+            MetricSkeleton
+
+            AvatarSkeleton
+
+        }
+
+        Empty {
+
+            HideOptionalFields
+
+            ShowAvailableData
+
+        }
+
+        Error {
+
+            PreserveLayout
+
+            ShowRetry
+
+        }
+
+        Success {
+
+            EnableInteractions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            Columns : 40 | 35 | 25
+
+        }
+
+        Tablet {
+
+            Columns : 60 | 40
+
+            MetricsWrap : True
+
+            ActionsRemainVisible : True
+
+        }
+
+        Mobile {
+
+            Layout : Vertical
+
+            Order {
+
+                Identity
+
+                Metrics
+
+                Actions
+
+                RelationshipIndicator
+
+            }
+
+            Sticky : False
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation : Enabled
+
+        ScreenReader       : Enabled
+
+        FocusRing          : Enabled
+
+        RTL                : Enabled
+
+        HighContrast       : Enabled
+
+        TouchTarget        : Tokens.Accessibility.TouchTarget
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Identity always appears first.
+
+        }
+
+        Rule {
+
+            Maximum five MetricCards.
+
+        }
+
+        Rule {
+
+            Maximum five visible Status Badges.
+
+        }
+
+        Rule {
+
+            Maximum five Primary Actions.
+
+        }
+
+        Rule {
+
+            CRM information always appears before AI.
+
+        }
+
+        Rule {
+
+            No AI-generated paragraphs inside the header.
+
+        }
+
+        Rule {
+
+            No duplicate communication buttons.
+
+        }
+
+        Rule {
+
+            Header must never exceed one viewport height.
+
+        }
+
+        Rule {
+
+            Users must understand the record within five seconds.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

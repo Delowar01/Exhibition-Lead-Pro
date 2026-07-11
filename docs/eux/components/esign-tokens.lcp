@@ -1,0 +1,549 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : design-tokens.lcp
+Version         : 1.0
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component DesignTokens {
+
+    Purpose {
+
+        Define every visual token used throughout Lead Capture Pro.
+
+        No component may use hardcoded values.
+
+        Every color, spacing, typography, animation,
+        radius, shadow and elevation must reference
+        Design Tokens.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Brand {
+
+        Primary {
+
+            Navy         : #151348
+
+            Orange       : #E66C25
+
+            White        : #FFFFFF
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Colors {
+
+        Surface {
+
+            Primary      : surface-primary
+
+            Secondary    : surface-secondary
+
+            Tertiary     : surface-tertiary
+
+            Card         : surface-card
+
+            Sidebar      : surface-sidebar
+
+            Header       : surface-header
+
+        }
+
+        Background {
+
+            App          : background
+
+            Workspace    : background-workspace
+
+            Overlay      : background-overlay
+
+        }
+
+        Text {
+
+            Primary      : text-primary
+
+            Secondary    : text-secondary
+
+            Muted        : text-muted
+
+            Disabled     : text-disabled
+
+            Inverse      : text-inverse
+
+        }
+
+        Border {
+
+            Primary      : border
+
+            Strong       : border-strong
+
+            Focus        : border-focus
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    SemanticColors {
+
+        Success {
+
+            Background   : success-soft
+
+            Border       : success
+
+            Text         : success-text
+
+        }
+
+        Warning {
+
+            Background   : warning-soft
+
+            Border       : warning
+
+            Text         : warning-text
+
+        }
+
+        Danger {
+
+            Background   : danger-soft
+
+            Border       : danger
+
+            Text         : danger-text
+
+        }
+
+        Info {
+
+            Background   : info-soft
+
+            Border       : info
+
+            Text         : info-text
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Typography {
+
+        DisplayXL {
+
+            Size         : 40
+
+            Weight       : 700
+
+            LineHeight   : 48
+
+        }
+
+        DisplayLG {
+
+            Size         : 32
+
+            Weight       : 700
+
+            LineHeight   : 40
+
+        }
+
+        HeadingLG {
+
+            Size         : 24
+
+            Weight       : 600
+
+            LineHeight   : 32
+
+        }
+
+        HeadingMD {
+
+            Size         : 20
+
+            Weight       : 600
+
+            LineHeight   : 28
+
+        }
+
+        HeadingSM {
+
+            Size         : 18
+
+            Weight       : 600
+
+            LineHeight   : 24
+
+        }
+
+        BodyLG {
+
+            Size         : 16
+
+            Weight       : 400
+
+            LineHeight   : 24
+
+        }
+
+        BodyMD {
+
+            Size         : 14
+
+            Weight       : 400
+
+            LineHeight   : 22
+
+        }
+
+        BodySM {
+
+            Size         : 13
+
+            Weight       : 400
+
+            LineHeight   : 20
+
+        }
+
+        Caption {
+
+            Size         : 12
+
+            Weight       : 500
+
+            LineHeight   : 18
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Font {
+
+        Family {
+
+            Primary      : Poppins
+
+            Fallback     : System
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Radius {
+
+        XS             : 4
+
+        SM             : 8
+
+        MD             : 12
+
+        LG             : 16
+
+        XL             : 20
+
+        XXL            : 24
+
+        Round          : 999
+
+    }
+
+    ----------------------------------------------------------------
+
+    Spacing {
+
+        XS             : 4
+
+        SM             : 8
+
+        MD             : 12
+
+        LG             : 16
+
+        XL             : 20
+
+        XXL            : 24
+
+        XXXL           : 32
+
+        Giant          : 40
+
+        Hero           : 48
+
+    }
+
+    ----------------------------------------------------------------
+
+    Elevation {
+
+        None
+
+        Low
+
+        Medium
+
+        High
+
+        Floating
+
+    }
+
+    ----------------------------------------------------------------
+
+    Shadows {
+
+        Card
+
+        Dropdown
+
+        Drawer
+
+        Dialog
+
+        FloatingAction
+
+    }
+
+    ----------------------------------------------------------------
+
+    Icon {
+
+        XS             : 16
+
+        SM             : 18
+
+        MD             : 20
+
+        LG             : 24
+
+        XL             : 28
+
+        XXL            : 32
+
+    }
+
+    ----------------------------------------------------------------
+
+    Avatar {
+
+        XS             : 28
+
+        SM             : 36
+
+        MD             : 48
+
+        LG             : 56
+
+        XL             : 72
+
+        XXL            : 96
+
+    }
+
+    ----------------------------------------------------------------
+
+    Buttons {
+
+        Height {
+
+            Small       : 36
+
+            Medium      : 44
+
+            Large       : 52
+
+        }
+
+        Radius {
+
+            Default     : Radius.MD
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Cards {
+
+        Padding {
+
+            Default     : Spacing.XXL
+
+        }
+
+        Gap {
+
+            Default     : Spacing.XL
+
+        }
+
+        Radius {
+
+            Default     : Radius.XL
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Desktop {
+
+            MaxWidth    : 1600
+
+            Padding     : 24
+
+            Gap         : 24
+
+        }
+
+        Tablet {
+
+            Padding     : 20
+
+        }
+
+        Mobile {
+
+            Padding     : 16
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Animation {
+
+        Fast           : 120
+
+        Normal         : 180
+
+        Slow           : 280
+
+    }
+
+    ----------------------------------------------------------------
+
+    Motion {
+
+        Hover          : Lift
+
+        Click          : Scale
+
+        Drawer         : Slide
+
+        Dialog         : Fade
+
+        Tooltip        : Fade
+
+    }
+
+    ----------------------------------------------------------------
+
+    Breakpoints {
+
+        Mobile         : 0
+
+        Tablet         : 768
+
+        Laptop         : 1024
+
+        Desktop        : 1440
+
+        Ultra          : 1920
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        TouchTarget    : 44
+
+        FocusRing      : Enabled
+
+        RTL            : Enabled
+
+        ScreenReader   : Enabled
+
+        Keyboard       : Enabled
+
+        HighContrast   : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Never use hardcoded colors.
+
+        }
+
+        Rule {
+
+            Never use hardcoded spacing.
+
+        }
+
+        Rule {
+
+            Never use hardcoded typography.
+
+        }
+
+        Rule {
+
+            Never use arbitrary border radius.
+
+        }
+
+        Rule {
+
+            Every component must reference Design Tokens.
+
+        }
+
+        Rule {
+
+            Every future workspace inherits these tokens.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

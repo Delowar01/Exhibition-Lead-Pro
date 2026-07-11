@@ -185,3 +185,27 @@ id = "9Lck4yMxRtQT3LwDrVF7d"
 uri = "file://docs/reports/STAGE_5_COMPLETE_REPORT.md"
 type = "text"
 title = "Stage 5 — Complete Report"
+
+[[outputs]]
+id = "c9ALm_Akjn9bmPGlxltn_"
+uri = "file://docs/reports/CONTACT_WORKSPACE_V1_REPORT.md"
+type = "text"
+title = "Contact Workspace v1.0 — Final Report"
+
+[[outputs]]
+id = "WYtdlD2v3OSuQGGR1HKbZ"
+uri = "file://screenshots/contact-workspace-desktop.jpg"
+type = "image"
+title = "Contact Workspace — Desktop"
+
+[[outputs]]
+id = "mFR1SMmhSLxMGD3OPKAj7"
+uri = "file://screenshots/contact-workspace-tablet.jpg"
+type = "image"
+title = "Contact Workspace — Tablet"
+
+[[outputs]]
+id = "-38AM8pRabjPJp2QZzqyB"
+uri = "file://screenshots/contact-workspace-mobile.jpg"
+type = "image"
+title = "Contact Workspace — Mobile"

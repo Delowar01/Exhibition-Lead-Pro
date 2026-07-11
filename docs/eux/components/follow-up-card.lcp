@@ -1,0 +1,414 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : follow-up-card.lcp
+Version         : 1.1
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Component FollowUpCard {
+
+    Purpose {
+
+        FollowUpCard is the action center of the CRM.
+
+        It answers one business question:
+
+        "What should I do next?"
+
+        The card should reduce the chance of
+        forgetting customers, delaying responses,
+        or missing opportunities.
+
+        It must guide action,
+        not simply display tasks.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Slots {
+
+            Header
+
+            PrimaryTask
+
+            UpcomingTasks
+
+            Alerts
+
+            QuickActions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    DataContract {
+
+        NextFollowUp          <- Activities Module
+
+        UpcomingTasks         <- Activities Module
+
+        OverdueTasks          <- Activities Module
+
+        OpenMeetings          <- Calendar Module
+
+        PendingCalls          <- Communication Module
+
+        PendingEmails         <- Communication Module
+
+        PriorityLevel         <- CRM Priority
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : Card
+
+        Width               : Full
+
+        Height              : Auto
+
+        MinimumHeight       : 240
+
+        Padding             : Tokens.Spacing.XXL
+
+        Gap                 : Tokens.Spacing.LG
+
+        Radius              : Tokens.Radius.XL
+
+        Shadow              : Tokens.Elevation.Low
+
+    }
+
+    ----------------------------------------------------------------
+
+    Header {
+
+        Title {
+
+            Follow-ups
+
+        }
+
+        Subtitle {
+
+            Recommended next actions
+
+        }
+
+        Icon {
+
+            CalendarCheck
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    PrimaryTask {
+
+        Display {
+
+            TaskTitle
+
+            DueDate
+
+            AssignedTo
+
+            Priority
+
+        }
+
+        Highlight : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    UpcomingTasks {
+
+        MaximumVisible : 4
+
+        Sort {
+
+            DueDate
+
+            Priority
+
+        }
+
+        Display {
+
+            TaskName
+
+            DueDate
+
+            Status
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Alerts {
+
+        MaximumVisible : 3
+
+        PriorityOrder {
+
+            Overdue
+
+            DueToday
+
+            DueTomorrow
+
+            HighPriority
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    QuickActions {
+
+        Display {
+
+            Complete
+
+            Reschedule
+
+            AddNote
+
+            CreateTask
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        IndependentLoading      : True
+
+        PreserveHeight          : True
+
+        AutoSort                : True
+
+        CollapseCompleted       : True
+
+        RefreshOnReturn         : True
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        PrimaryTask.Click
+
+            -> OpenTask
+
+        UpcomingTask.Click
+
+            -> OpenTask
+
+        Complete.Click
+
+            -> CompleteTask
+
+        Reschedule.Click
+
+            -> OpenCalendar
+
+        AddNote.Click
+
+            -> CreateActivityNote
+
+        CreateTask.Click
+
+            -> NewTask
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            CardSkeleton
+
+            TaskSkeleton
+
+        }
+
+        Empty {
+
+            Message {
+
+                No follow-ups scheduled.
+
+            }
+
+            SuggestedAction {
+
+                Schedule your next customer touchpoint.
+
+            }
+
+        }
+
+        Error {
+
+            Retry
+
+            PreserveLayout
+
+        }
+
+        Success {
+
+            EnableInteraction
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            FullCard
+
+        }
+
+        Tablet {
+
+            CompactCard
+
+        }
+
+        Mobile {
+
+            StackActions
+
+            VerticalLayout
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation     : Enabled
+
+        ScreenReader           : Enabled
+
+        FocusRing              : Enabled
+
+        HighContrast           : Enabled
+
+        RTL                    : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        CachedTasks
+
+        IncrementalRefresh
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Only one Primary Task.
+
+        }
+
+        Rule {
+
+            Maximum four Upcoming Tasks.
+
+        }
+
+        Rule {
+
+            Maximum three Alerts.
+
+        }
+
+        Rule {
+
+            Tasks are always sorted by urgency.
+
+        }
+
+        Rule {
+
+            Overdue tasks always appear first.
+
+        }
+
+        Rule {
+
+            Every alert must provide an action.
+
+        }
+
+        Rule {
+
+            Empty state must encourage scheduling
+            the next follow-up.
+
+        }
+
+        Rule {
+
+            Never hide overdue work.
+
+        }
+
+        Rule {
+
+            Users should know their next action
+            within two seconds.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================

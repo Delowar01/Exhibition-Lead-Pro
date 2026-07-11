@@ -1,0 +1,490 @@
+====================================================================
+Lead Capture Pro Enterprise UX Language (LCP-EUX)
+====================================================================
+
+File            : overview.lcp
+Version         : 1.0
+Status          : Approved
+Author          : ChatGPT
+Implementation  : Pending
+
+====================================================================
+
+Workspace Overview {
+
+    Purpose {
+
+        Overview is the default landing experience
+        for every Contact Workspace.
+
+        It is not a dashboard.
+
+        It is not a reporting page.
+
+        It is a Decision Workspace.
+
+        Every section must help the user decide
+        the next business action.
+
+        A user should understand the relationship
+        within five seconds.
+
+    }
+
+    ----------------------------------------------------------------
+
+    Composition {
+
+        Uses {
+
+            WorkspaceHeader
+
+            RelationshipHealthCard
+
+            ContactSummaryCard
+
+            RecentActivityCard
+
+            FollowUpCard
+
+            DocumentsCard
+
+            RelationshipJourneyCard
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Layout {
+
+        Type                : SmartGrid
+
+        Columns             : 2
+
+        Gap                 : Tokens.Spacing.XXL
+
+        Padding             : Tokens.Spacing.XXL
+
+        EqualHeight         : False
+
+        Responsive          : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    DecisionArea Identity {
+
+        Question {
+
+            Who is this person?
+
+        }
+
+        Component {
+
+            ContactSummaryCard
+
+        }
+
+        Priority : Highest
+
+    }
+
+    ----------------------------------------------------------------
+
+    DecisionArea Relationship {
+
+        Question {
+
+            How healthy is this relationship?
+
+        }
+
+        Component {
+
+            RelationshipHealthCard
+
+        }
+
+        Priority : Highest
+
+    }
+
+    ----------------------------------------------------------------
+
+    DecisionArea Attention {
+
+        Question {
+
+            What requires my attention today?
+
+        }
+
+        Component {
+
+            FollowUpCard
+
+        }
+
+        Priority : High
+
+    }
+
+    ----------------------------------------------------------------
+
+    DecisionArea Activity {
+
+        Question {
+
+            What happened recently?
+
+        }
+
+        Component {
+
+            RecentActivityCard
+
+        }
+
+        Priority : High
+
+    }
+
+    ----------------------------------------------------------------
+
+    DecisionArea Documents {
+
+        Question {
+
+            What important files exist?
+
+        }
+
+        Component {
+
+            DocumentsCard
+
+        }
+
+        Priority : Medium
+
+    }
+
+    ----------------------------------------------------------------
+
+    DecisionArea Journey {
+
+        Question {
+
+            How has this relationship evolved?
+
+        }
+
+        Component {
+
+            RelationshipJourneyCard
+
+        }
+
+        Priority : Medium
+
+    }
+
+    ----------------------------------------------------------------
+
+    BusinessFlow {
+
+        Step 1 {
+
+            Identify the contact.
+
+        }
+
+        Step 2 {
+
+            Understand relationship health.
+
+        }
+
+        Step 3 {
+
+            Review pending work.
+
+        }
+
+        Step 4 {
+
+            Review latest activity.
+
+        }
+
+        Step 5 {
+
+            Access supporting documents.
+
+        }
+
+        Step 6 {
+
+            Understand the complete relationship journey.
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    ContentPriority {
+
+        Level 1 {
+
+            Contact Identity
+
+            Relationship Health
+
+            Follow-up
+
+        }
+
+        Level 2 {
+
+            Recent Activity
+
+            Documents
+
+        }
+
+        Level 3 {
+
+            Relationship Journey
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Behavior {
+
+        IndependentCardLoading      : Enabled
+
+        PreserveCardPosition        : Enabled
+
+        SkeletonLoading             : Enabled
+
+        ExpandOnDemand              : Enabled
+
+        NoPageRefresh               : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Interaction {
+
+        ContactSummary.Click
+
+            -> OpenProfile
+
+        RelationshipHealth.Click
+
+            -> OpenTimeline
+
+        FollowUp.Click
+
+            -> OpenActivities
+
+        RecentActivity.Click
+
+            -> OpenTimeline
+
+        Documents.Click
+
+            -> OpenDocuments
+
+        Journey.Click
+
+            -> OpenRelationshipTimeline
+
+    }
+
+    ----------------------------------------------------------------
+
+    States {
+
+        Loading {
+
+            SixCardSkeleton
+
+        }
+
+        Empty {
+
+            ExplainWhy
+
+            SuggestNextAction
+
+        }
+
+        Error {
+
+            PreserveLayout
+
+            RetryCurrentCard
+
+        }
+
+        Success {
+
+            EnableAllInteractions
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Responsive {
+
+        Desktop {
+
+            Grid : 2 Columns
+
+        }
+
+        Tablet {
+
+            Grid : 2 Columns
+
+        }
+
+        Mobile {
+
+            Grid : 1 Column
+
+            CardOrder {
+
+                Identity
+
+                Relationship
+
+                Attention
+
+                Activity
+
+                Documents
+
+                Journey
+
+            }
+
+        }
+
+    }
+
+    ----------------------------------------------------------------
+
+    Accessibility {
+
+        KeyboardNavigation : Enabled
+
+        ScreenReader       : Enabled
+
+        RTL                : Enabled
+
+        HighContrast       : Enabled
+
+        FocusRing          : Enabled
+
+    }
+
+    ----------------------------------------------------------------
+
+    Performance {
+
+        IndependentRendering
+
+        SkeletonLoading
+
+        VirtualizedLists
+
+        PreserveLayout
+
+        NoDuplicateRequests
+
+    }
+
+    ----------------------------------------------------------------
+
+    Rules {
+
+        Rule {
+
+            Never show more than six primary cards.
+
+        }
+
+        Rule {
+
+            Every card answers one business question.
+
+        }
+
+        Rule {
+
+            Every card links to its dedicated workspace.
+
+        }
+
+        Rule {
+
+            CRM information always appears before AI.
+
+        }
+
+        Rule {
+
+            AI-generated summaries never replace CRM data.
+
+        }
+
+        Rule {
+
+            Follow-up information always appears above documents.
+
+        }
+
+        Rule {
+
+            Relationship Journey replaces duplicate-contact warnings.
+
+        }
+
+        Rule {
+
+            No card should require vertical scrolling inside itself.
+
+        }
+
+        Rule {
+
+            Empty cards must guide users toward the next action.
+
+        }
+
+        Rule {
+
+            Users should know exactly what to do next within five seconds.
+
+        }
+
+    }
+
+}
+
+====================================================================
+END OF FILE
+====================================================================
