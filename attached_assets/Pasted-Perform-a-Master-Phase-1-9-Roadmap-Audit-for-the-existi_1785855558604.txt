@@ -1,0 +1,765 @@
+Perform a Master Phase 1–9 Roadmap Audit for the existing Lead Capture Pro project.
+
+PURPOSE
+
+Determine the actual implementation status of every approved project phase, stage, sub-stage, module, feature, and promised requirement from Phase 1 through Phase 9.
+
+This audit will be used later to create the final completion plan. Accuracy is more important than speed.
+
+IMPORTANT — AUDIT ONLY
+
+Do not:
+
+- Change any code.
+- Implement or fix anything.
+- Create migrations.
+- Add or modify tests.
+- Modify documentation.
+- Create new planning or audit files.
+- Refactor existing code.
+- Install dependencies.
+- Change configuration.
+- Commit changes.
+- Mark something complete based only on a document, page title, route, placeholder, button, schema column, mock data, or unfinished component.
+- Add requirements that are not part of the approved Phase 1–9 roadmap.
+- Assume a previous completion report is correct without verifying it against the current code.
+
+Return the complete audit in your final response only.
+
+SOURCE OF TRUTH
+
+Inspect the complete repository, including:
+
+- All roadmap documents
+- Phase and stage specifications
+- Sub-stage and batch documents
+- Audit reports
+- Implementation reports
+- Completion reports
+- Handover documents
+- README files
+- docs/
+- attached_assets/
+- Issue and bug reports
+- Frontend routes and pages
+- Backend routes and services
+- Database schema and migrations
+- Shared libraries
+- Authentication and authorization code
+- Tenant-scoping implementation
+- AI infrastructure
+- Mobile application
+- Automated tests
+- Package scripts
+- Environment-variable examples
+- Build configuration
+- Deployment configuration
+- Git history or commit references where available
+
+First identify the most authoritative roadmap documents covering Phase 1 through Phase 9.
+
+ROADMAP CONFLICT RULES
+
+If multiple roadmap documents conflict:
+
+1. Prefer the latest formally approved roadmap or decision.
+2. State the conflict clearly.
+3. Do not silently combine contradictory requirements.
+4. Separate superseded requirements from current approved requirements.
+5. Do not mark a requirement removed unless there is evidence of an approved decision.
+6. If the authoritative version cannot be determined, mark the roadmap source as ambiguous and lower the confidence rating.
+
+AUDIT SCOPE
+
+Audit every requirement under:
+
+- Phase 1
+- Phase 2
+- Phase 3
+- Phase 4
+- Phase 5
+- Phase 6
+- Phase 7
+- Phase 8
+- Phase 9
+
+Include every discovered:
+
+- Stage
+- Sub-stage
+- Batch
+- Module
+- Page
+- Workspace
+- API
+- Service
+- Database requirement
+- Mobile feature
+- AI feature
+- Administrative feature
+- Security requirement
+- Privacy requirement
+- Reporting requirement
+- Integration requirement
+- Automation requirement
+- Tenant requirement
+- Subscription requirement
+- White-label requirement
+- Testing requirement
+- Deployment requirement
+- Performance requirement
+- Accessibility requirement
+- Responsive-design requirement
+
+Do not limit the audit to the most recent project report.
+
+STATUS DEFINITIONS
+
+Use only these statuses:
+
+COMPLETE
+
+Use only when:
+
+- The real implementation exists.
+- Frontend and backend are connected where both are required.
+- Data is persisted correctly where required.
+- Authentication, permissions, tenant isolation, validation, and error handling are present.
+- Relevant tests or reliable verification evidence exist.
+- No important approved requirement remains missing.
+
+PARTIAL
+
+Use when:
+
+- Meaningful implementation exists, but required parts are missing, disconnected, incomplete, untested, or not production-ready.
+
+PENDING
+
+Use when:
+
+- The required implementation is absent.
+- Only a placeholder, mock, static screen, unfinished route, unused schema, or documentation claim exists.
+- The current implementation does not satisfy the approved requirement.
+
+VERIFICATION REQUIRED
+
+Use when:
+
+- The code appears implemented, but completion depends on browser, production, APK, physical-device, payment-provider, DNS, email, webhook, third-party integration, or other external verification that is not proven.
+
+SUPERSEDED / REMOVED BY APPROVED DECISION
+
+Use only when:
+
+- A later explicit approved decision replaced or removed the requirement.
+- Provide exact evidence of that decision.
+
+NOT APPLICABLE
+
+Use only when:
+
+- The requirement genuinely does not apply to the final approved product.
+- Explain why.
+
+EVIDENCE RULES
+
+For every requirement, provide exact evidence where available:
+
+- File paths
+- Component names
+- Route paths
+- API endpoints
+- Service names
+- Database tables and columns
+- Migration files
+- Test files
+- Test names
+- Package scripts
+- Configuration files
+- Line references where practical
+
+Do not rely on completion reports alone.
+
+Verify completion claims against the current code.
+
+Flag unsupported, outdated, contradictory, or misleading completion claims clearly.
+
+Do not count the same requirement more than once.
+
+PHASE-BY-PHASE REVIEW
+
+For each Phase 1–9:
+
+1. State the original purpose of the phase.
+2. List every discovered stage and sub-stage.
+3. List every approved requirement.
+4. Map each requirement to the current code.
+5. Assign a status.
+6. State exactly what is implemented.
+7. State exactly what is missing.
+8. State what verification is still required.
+9. Identify dependencies.
+10. Estimate the phase completion percentage using verified requirements rather than document claims.
+
+SPECIAL AREAS TO CHECK
+
+A. FOUNDATION AND CORE CRM
+
+Check:
+
+- Authentication
+- Login and logout
+- Password reset
+- Session handling
+- User management
+- Tenant isolation
+- Organizations
+- Contacts
+- Leads
+- Companies
+- Pipelines
+- Pipeline stages
+- Activities
+- Interactions
+- Tasks
+- Follow-ups
+- Notes
+- Events
+- Global search
+- Duplicate detection
+- Import
+- Export
+- Permissions
+- Roles
+- Audit logging
+- Validation
+- Error handling
+
+B. DASHBOARDS AND ANALYTICS
+
+Check:
+
+- Role-based dashboards
+- KPI calculations
+- Filters
+- Date ranges
+- Charts
+- Drill-down
+- Saved views if required
+- Export
+- Caching
+- Tenant scoping
+- Permissions
+- Loading states
+- Empty states
+- Error states
+- Responsive behavior
+- Dark mode
+- Mobile behavior
+
+C. ADVANCED CRM AND LEAD LIFECYCLE
+
+Check:
+
+- Lead lifecycle stages
+- Lead scoring
+- Assignment
+- Ownership
+- Conversion
+- Contact and company relationships
+- Communication history
+- Lifecycle rules
+- Capture-event history
+- Deals or opportunities
+- Status transitions
+- Lead-source tracking
+- Tags
+- Follow-up management
+- Task management
+- Duplicate prevention
+- Multi-channel history
+
+D. WORKFLOW AUTOMATION
+
+Clearly distinguish between:
+
+- AI workflow analysis and recommendations
+- A real user-configurable workflow automation engine
+
+Check:
+
+- Workflow definitions
+- Draft, active, and inactive status
+- Triggers
+- Conditions
+- Actions
+- Scheduling
+- Execution engine
+- Idempotency
+- Retry handling
+- Dead-letter handling
+- Execution logs
+- Failure handling
+- Permissions
+- Tenant isolation
+- Audit logging
+- Management UI
+- Trigger accuracy
+- Duplicate-event protection
+
+E. AI INTELLIGENCE
+
+Check every approved Phase 5 stage and sub-stage, including:
+
+- Google Gemini 2.5 Flash
+- Enterprise AI Layer
+- AI provider configuration
+- Gemini Vision OCR
+- AI Copilot
+- Assistant conversations
+- Contact summary
+- Company intelligence or company research
+- Email writer
+- WhatsApp writer
+- Follow-up suggestions
+- Meeting preparation
+- Call preparation
+- Objection handling
+- Proposal generation
+- Executive summaries
+- AI workflow intelligence
+- AI recommendations
+- AI drafts
+- Copy action
+- Regenerate action
+- Save as note
+- Save as draft
+- Error handling
+- Loading states
+- Conversation history
+- User confirmation before sending
+- Token usage tracking
+- Input tokens
+- Output tokens
+- Total tokens
+- Estimated AI cost
+- AI request count
+- Latency
+- Failure tracking
+- Budgets
+- Usage limits
+- Rate limiting
+- Caching
+- Duplicate-request protection
+- Platform Owner AI analytics
+- Tenant-level AI usage visibility
+- AI privacy
+- Tenant isolation
+- Permission-scoped AI context
+
+F. NATIVE MOBILE CAPTURE
+
+Check:
+
+- Business Card
+- Email Signature
+- QR Code
+- LinkedIn QR
+- NFC
+- Manual Entry
+- Camera
+- Gallery or image picker
+- Gemini Vision OCR
+- Image upload
+- Contact creation
+- Review before save
+- Duplicate 409 handling
+- Offline queue
+- Retry handling
+- Network failure handling
+- Permissions
+- Authentication
+- Tenant scoping
+- APK build configuration
+- Android build instructions
+- Physical-device testing
+
+Clearly separate:
+
+1. Implemented in code
+2. Covered by automated tests
+3. APK successfully built
+4. Verified on a physical Android device
+
+Do not claim hardware or device verification without evidence.
+
+G. REPORTS AND BUSINESS INTELLIGENCE
+
+Check:
+
+- All approved report pages
+- Analytics endpoints
+- Executive reports
+- Filters
+- Date ranges
+- Scope controls
+- Drill-down
+- CSV export
+- XLSX export
+- PDF export
+- Scheduled exports
+- Export history
+- Export permissions
+- Tenant isolation
+- Failure handling
+- Download correctness
+- Automated tests
+- Responsive behavior
+- Dark mode
+
+H. CUSTOMER EXPERIENCE AND WHITE LABEL
+
+Check:
+
+- Tenant logo
+- Brand colors
+- Tenant themes
+- Branded login
+- Branded emails
+- Branded customer-facing pages
+- Customer portal if included
+- Custom domains
+- Domain ownership verification
+- Hostname-to-tenant resolution
+- SSL and deployment compatibility
+- Domain status
+- Secure media upload
+- Default-brand fallback
+- Tenant isolation
+- Accessible contrast
+
+I. INTEGRATIONS AND OPEN PLATFORM
+
+Check:
+
+- Public API
+- API documentation if required
+- API keys
+- Hashed key storage
+- Key scopes
+- Revocation
+- Expiration
+- Rate limits
+- Usage logs
+- Webhooks
+- Webhook subscriptions
+- Signing secrets
+- Delivery queue
+- Retry handling
+- Failure logs
+- Disable and re-enable controls
+- Test delivery
+- Integration settings
+- External provider integrations
+- Integration audit logs
+- Tenant isolation
+- Integration tests
+
+J. ENTERPRISE ADMINISTRATION
+
+Check:
+
+- Organization administration
+- Departments
+- Teams
+- Users
+- Roles
+- Permissions
+- Custom roles
+- Permission-subset enforcement
+- Security Center
+- Audit trail
+- Security events
+- Sessions
+- MFA policies
+- IP restrictions
+- Country restrictions
+- Subscription management
+- Plans
+- Upgrade and downgrade
+- Renewal
+- Cancellation
+- Failed-payment handling
+- Billing
+- Invoices
+- Payment webhooks
+- Platform Owner Admin Panel
+- Tenant list
+- Tenant search
+- Tenant details
+- Tenant editing
+- Suspend and reactivate
+- Plan visibility
+- Subscription visibility
+- AI usage visibility
+- Estimated AI cost visibility
+- Tenant usage limits
+- Platform-wide audit logging
+- Cross-tenant controls
+- Platform Owner authorization
+
+K. UX MODERNIZATION
+
+Check every major page and workspace.
+
+Identify:
+
+- Pages using the approved modern design system
+- Pages still using legacy UI patterns
+- Inconsistent page layouts
+- Incomplete dark mode
+- Contrast problems
+- Responsive problems
+- 360px issues
+- 390px issues
+- Tablet issues
+- Desktop issues
+- Horizontal overflow
+- Accessibility gaps
+- Keyboard-navigation gaps
+- Unsupported screenshot or Playwright claims
+- Pages with incomplete loading, empty, or error states
+
+KNOWN COMPLETED BASELINE TO RE-VERIFY
+
+Verify that the following are still intact in the current code:
+
+- Four-page Contact Workspace
+- Overview
+- Timeline
+- Documents
+- AI Copilot
+- URL-backed routes
+- Deep links
+- Page refresh
+- Browser back and forward
+- Timeline consolidation
+- Removal of ActivitiesWorkspace.tsx
+- Removal of InteractionsWorkspace.tsx
+- Full capture-event fidelity
+- Capture source
+- Capturing user
+- Event
+- GPS or location
+- Notes
+- Scan image
+- Extracted OCR data
+- Contact Workspace desktop behavior
+- Contact Workspace 390px mobile behavior
+- Web-app typecheck
+- API test suite currently reported as 566/566
+
+Do not mark these complete only because they were previously reported complete.
+
+Confirm them against the current code and available tests.
+
+MASTER REMAINING-SCOPE IDENTIFICATION
+
+After auditing all requirements under Phase 1 through Phase 9, identify every item that is not fully complete.
+
+For each incomplete requirement, state:
+
+- Phase
+- Stage or sub-stage
+- Requirement
+- Current status
+- What is already implemented
+- What is missing
+- Required verification
+- Dependencies
+- Risk level: Low / Medium / High
+- Estimated implementation size: Small / Medium / Large
+- Exact code evidence
+
+Do not create implementation batches during this audit.
+
+Do not refer to any completion plan that is not present in the repository.
+
+The purpose of this audit is to produce the factual remaining scope. A separate implementation plan will be created after reviewing the audit.
+
+REQUIRED REPORT FORMAT
+
+A. EXECUTIVE SUMMARY
+
+Include:
+
+- Verified overall completion percentage
+- Total approved requirements audited
+- Complete count
+- Partial count
+- Pending count
+- Verification-required count
+- Superseded or removed count
+- Not-applicable count
+- Number of fully complete phases
+- Number of partially complete phases
+- Number of pending phases
+- Overall confidence level
+- Brief explanation of how the percentage was calculated
+
+B. AUTHORITATIVE ROADMAP SOURCES
+
+For each source, include:
+
+- File path
+- Document name
+- Date or version if available
+- Phases covered
+- Why it is considered authoritative
+- Conflicts with older or later documents
+- Confidence
+
+C. MASTER PHASE MATRIX
+
+Use one row for each Phase 1–9:
+
+- Phase
+- Original purpose
+- Stages and sub-stages
+- Verified completion percentage
+- Status
+- Major completed items
+- Major missing items
+- Verification required
+- Dependencies
+- Confidence
+
+D. DETAILED REQUIREMENT MATRIX
+
+For every approved requirement, include:
+
+- Phase
+- Stage or sub-stage
+- Requirement
+- Status
+- Implemented evidence
+- Missing work
+- Verification needed
+- Dependencies
+- Risk
+- Estimated size
+- Confidence
+
+E. CONFIRMED COMPLETE PHASES
+
+List only phases where every approved requirement is:
+
+- Complete
+- Formally superseded
+- Formally removed
+- Genuinely not applicable
+
+Do not include a phase with unresolved verification items.
+
+F. PARTIAL PHASES
+
+For each partial phase, include:
+
+- Completed items
+- Missing items
+- Verification items
+- Blocking dependencies
+- Approximate remaining size
+
+G. CONFIRMED PENDING REQUIREMENTS
+
+List only requirements proven absent or not meaningfully implemented.
+
+Group them by phase and stage.
+
+H. VERIFICATION REQUIRED
+
+Separate verification into:
+
+- Browser and UI verification
+- Dark-mode verification
+- Responsive verification
+- Accessibility verification
+- APK build
+- Physical Android device
+- Production deployment
+- Payment provider
+- DNS and custom domain
+- Email provider
+- Webhook provider
+- Third-party integrations
+- Performance or load testing
+
+I. UNSUPPORTED OR CONTRADICTORY CLAIMS
+
+For each claim, include:
+
+- Claim
+- Source document
+- Why it is unsupported or contradictory
+- Current code evidence
+- Correct current status
+
+J. REMAINING SCOPE BY PHASE
+
+For each Phase 1–9, list:
+
+- Incomplete stages and sub-stages
+- Partially implemented requirements
+- Completely missing requirements
+- Requirements needing external verification
+- Dependencies on other phases
+- Approved requirements that appear abandoned without a documented decision
+
+K. RECOMMENDED COMPLETION ORDER
+
+Provide a dependency-based order for completing the remaining requirements.
+
+Group the work only by:
+
+1. Existing partial features that should be completed first
+2. Verification-only work
+3. High-risk infrastructure work
+4. Net-new modules
+5. External deployment or provider configuration
+
+Do not create detailed batches or implementation prompts.
+
+Do not add features beyond the approved Phase 1–9 roadmap.
+
+L. FINAL CONCLUSION
+
+Answer clearly:
+
+1. Which Phase 1–9 phases are fully complete?
+2. Which phases are partially complete?
+3. Which phases are pending?
+4. What exact requirements remain under each phase?
+5. Which requirements require verification rather than implementation?
+6. Are there conflicting or unsupported roadmap completion claims?
+7. What is the verified current project completion percentage?
+8. What is the safest dependency order for completing the remaining roadmap?
+
+QUALITY RULES
+
+- Be factual.
+- Do not guess.
+- Do not inflate completion.
+- Do not reduce completion unfairly by counting superseded requirements as pending.
+- Do not treat UI presence as functional completion.
+- Do not treat route presence as end-to-end completion.
+- Do not treat schema presence as implementation completion.
+- Do not treat documentation claims as code evidence.
+- Do not count the same requirement multiple times.
+- Do not introduce new features.
+- Do not make code changes.
+- Do not create files.
+- Do not provide implementation prompts.
+- Keep every missing item specific enough to create a safe completion plan later.
+- Clearly state when repository evidence is insufficient.

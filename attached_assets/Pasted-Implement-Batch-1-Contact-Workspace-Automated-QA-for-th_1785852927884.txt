@@ -1,0 +1,237 @@
+Implement Batch 1 — Contact Workspace Automated QA for the existing Lead Capture Pro project.
+
+IMPORTANT
+This is a test-only and documentation-correction task.
+
+Do not:
+- Change Contact Workspace functionality or design.
+- Change backend behavior, database schema, APIs, routes, or production components unless a tiny testability fix is strictly required.
+- Add unrelated tests.
+- create a new testing framework if a suitable one already exists.
+- claim browser or visual coverage without committed executable tests.
+- make unrelated refactors.
+
+CURRENT VERIFIED IMPLEMENTATION
+
+The Contact Workspace has four URL-backed pages:
+
+1. /admin/contacts/:id
+2. /admin/contacts/:id/timeline
+3. /admin/contacts/:id/documents
+4. /admin/contacts/:id/ai
+
+Relevant implementation includes:
+
+- pages/admin/ContactDetail.tsx
+- WorkspaceTabs.tsx
+- TimelineWorkspace.tsx
+- ContactHero
+- Existing Documents workspace
+- Existing AI Copilot workspace
+
+TimelineWorkspace consolidates the previous Activities and Interactions pages and includes:
+
+- Calls
+- Emails
+- WhatsApp
+- Meetings
+- Tasks
+- Follow-ups
+- Notes
+- Capture events
+- System events
+- Filters and live counts
+- Search
+- Stats
+- Detail preview
+- Inline task and follow-up actions
+- Communication hub
+- .ics download
+- Full capture-event detail
+
+The old ActivitiesWorkspace.tsx and InteractionsWorkspace.tsx were removed.
+
+The current API test suite passes 566/566 and web-app typecheck is clean.
+
+OBJECTIVE
+
+Add real automated UI/browser coverage for the four-page Contact Workspace and correct the unsupported Playwright claim in:
+
+docs/reports/CONTACT_WORKSPACE_V1_REPORT.md
+
+STEP 1 — INSPECT FIRST
+
+Before changing anything:
+
+- Inspect the existing test setup, package scripts, routing, authentication helpers, test database strategy, and available browser test dependencies.
+- Reuse the existing testing framework if one exists.
+- If no browser testing framework exists, add the smallest appropriate Playwright setup only for these tests.
+- Do not add Cypress or a second browser framework.
+- Do not create a large shared test architecture.
+
+STEP 2 — ADD CONTACT WORKSPACE TESTS
+
+Create automated tests covering the following.
+
+A. Route access and direct links
+
+Verify each route loads the correct page:
+
+- /admin/contacts/:id
+- /admin/contacts/:id/timeline
+- /admin/contacts/:id/documents
+- /admin/contacts/:id/ai
+
+Confirm:
+
+- Correct active workspace tab
+- Correct page content
+- Contact header remains visible
+- No full application crash
+- Unknown or inaccessible contact behavior follows existing rules
+
+B. Navigation
+
+Verify:
+
+- Clicking each workspace tab changes the URL.
+- Navigation does not cause a full application reload.
+- Browser Back returns to the previous workspace page.
+- Browser Forward restores the next workspace page.
+- Refresh keeps the selected workspace route.
+- Opening a deep link directly loads the correct page.
+
+C. Timeline consolidation
+
+Using reliable seeded or mocked test data, verify the consolidated Timeline displays representative events for:
+
+- Call
+- Email
+- WhatsApp
+- Meeting
+- Task
+- Follow-up
+- Note
+- Capture
+- System event
+
+Verify:
+
+- Search filters the visible events.
+- Event filter chips work.
+- Live counts reflect the available test data.
+- Selecting an event opens or updates the detail preview.
+- Relevant inline task or follow-up actions remain available.
+
+D. Capture-event fidelity regression
+
+Add a specific regression test proving that opening a capture event preserves and displays all available fields:
+
+- Capture source
+- Capturing user
+- Event
+- GPS/location data
+- Notes
+- Scan image or image state
+- Extracted OCR data
+
+Use deterministic test data.
+
+Do not rely only on a screenshot for this assertion.
+
+E. Documents and AI routes
+
+Verify:
+
+- Documents route loads its existing workspace.
+- AI route loads the existing AI Copilot workspace.
+- Existing workspace components are reused.
+- No removed Activities or Interactions tabs appear.
+
+F. Responsive checks
+
+Run the core route/navigation tests at:
+
+- Desktop viewport around 1440px
+- Mobile viewport at 390px
+- Small mobile viewport at 360px
+
+At 390px and 360px verify:
+
+- Workspace tabs remain usable.
+- No full-page horizontal overflow.
+- Contact header remains readable.
+- Main workspace content remains accessible.
+- Timeline detail and filters do not block navigation.
+
+G. Dark mode
+
+Add a dark-mode smoke test covering all four workspace pages.
+
+Verify:
+
+- Each page renders without obvious missing-theme classes or invisible text.
+- Main cards, text, borders, tabs, and right-rail content are present.
+- Theme selection remains active while navigating between workspace pages.
+
+Do not introduce broad pixel-perfect visual snapshots unless the project already uses them.
+
+STEP 3 — AUTHENTICATION AND TEST DATA
+
+- Reuse the project’s existing safe test authentication method.
+- Do not add a production login bypass.
+- Do not restore the deleted temporary screenshot login helper.
+- Keep test users and test data isolated.
+- Respect tenant and permission behavior.
+- Ensure test data cleanup if tests write records.
+
+STEP 4 — DOCUMENTATION CORRECTION
+
+Update:
+
+docs/reports/CONTACT_WORKSPACE_V1_REPORT.md
+
+Correct the unsupported claim that a Playwright walkthrough existed.
+
+After the new tests are committed, replace it with a factual statement that references the actual test files and exact coverage now present.
+
+Do not rewrite the entire report.
+
+STEP 5 — VERIFICATION
+
+Run:
+
+- New Contact Workspace UI/browser tests
+- Existing web-app typecheck
+- Existing API test suite
+- Any existing frontend unit tests relevant to the changed test setup
+
+Confirm the existing API result remains 566/566 unless the repository now contains a different verified total.
+
+Do not mark complete if:
+
+- Tests are skipped
+- Tests only inspect static HTML
+- Tests require manual clicking
+- Deep-link and browser history behavior are not exercised
+- Capture-event fidelity is not asserted
+- Mobile tests only resize after page load without validating the page
+- Dark mode is claimed without an executable test
+
+FINAL REPORT
+
+Return only:
+
+1. Test framework reused or added
+2. Files created or changed
+3. Routes covered
+4. Timeline event types covered
+5. Capture-event fields asserted
+6. Viewports tested
+7. Dark-mode coverage
+8. Documentation correction made
+9. Exact test commands run
+10. Exact pass/fail results
+11. Any genuine limitation
+
+Keep the implementation minimal and focused on this batch only.
