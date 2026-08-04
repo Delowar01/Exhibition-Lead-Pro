@@ -3,7 +3,6 @@ import type { Response } from "express";
 import { requireAuth, normalizeRole, type AuthRequest } from "../middlewares/requireAuth.js";
 import { writeAudit } from "../lib/audit.js";
 import { config } from "../config.js";
-import { signMfaChallenge } from "../lib/tokens.js";
 import { createSession, rotateSession, revokeSession, revokeOtherSessions, listActiveSessions } from "../lib/sessions.js";
 import { getClientIp, getCountry, parseDevice, recordLoginAttempt } from "../lib/security.js";
 import { randomToken, sha256 } from "../lib/crypto.js";
@@ -101,7 +100,7 @@ router.post("/auth/login", validateBody(LoginBody), async (req: AuthRequest, res
   if (mfaNeeded && !trusted) {
     // Password verified; defer success logging until the second factor is
     // satisfied. No operational token is issued here.
-    const mfaToken = signMfaChallenge(user.id);
+    const mfaToken = await auth.issueMfaChallenge(user.id);
     if (user.mfaEnabled) {
       // Enrolled user: challenge for a TOTP / backup code.
       res.json({ mfaRequired: true, mfaToken });

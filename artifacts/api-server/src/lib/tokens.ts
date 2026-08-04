@@ -33,19 +33,22 @@ export function verifyAccessToken(token: string): AccessTokenPayload | null {
 }
 
 // Short-lived token that proves a password was verified and an MFA code is still
-// required. Carries only the user id; useless without a valid TOTP/backup code.
-export function signMfaChallenge(userId: number): string {
-  return jwt.sign({ uid: userId, typ: "mfa" }, SECRET, {
+// required. Carries the user id plus a `jti` bound to a server-side single-use row
+// (verification_tokens, type "mfa_challenge") so a challenge cannot be replayed
+// after it has been consumed by a successful verification. Useless without a valid
+// TOTP/backup code.
+export function signMfaChallenge(userId: number, jti: string): string {
+  return jwt.sign({ uid: userId, jti, typ: "mfa" }, SECRET, {
     expiresIn: config.auth.mfaChallengeTtl as jwt.SignOptions["expiresIn"],
     issuer: config.auth.issuer,
   });
 }
 
-export function verifyMfaChallenge(token: string): number | null {
+export function verifyMfaChallenge(token: string): { uid: number; jti: string } | null {
   try {
-    const decoded = jwt.verify(token, SECRET, { issuer: config.auth.issuer }) as { uid: number; typ?: string };
-    if (decoded.typ !== "mfa") return null;
-    return decoded.uid;
+    const decoded = jwt.verify(token, SECRET, { issuer: config.auth.issuer }) as { uid: number; jti?: string; typ?: string };
+    if (decoded.typ !== "mfa" || typeof decoded.jti !== "string" || !decoded.jti) return null;
+    return { uid: decoded.uid, jti: decoded.jti };
   } catch {
     return null;
   }

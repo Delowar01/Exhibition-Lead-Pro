@@ -1,5 +1,5 @@
-import { db, invitationsTable, usersTable, userRolesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, invitationsTable, usersTable, userRolesTable, rolesTable } from "@workspace/db";
+import { and, eq, inArray } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { normalizeRole } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
@@ -281,7 +281,18 @@ export async function acceptInvitation(input: AcceptInvitationInput) {
       .returning();
 
     if (inv.roleIds.length > 0) {
-      await tx.insert(userRolesTable).values(inv.roleIds.map((roleId) => ({ userId: user.id, roleId })));
+      // Re-validate stored roleIds at accept time: only roles that STILL exist in
+      // the invitation's own company may be attached. Roles deleted, or rows
+      // tampered/created against another tenant since the invite was issued, are
+      // dropped — the base `role` above still applies, so the account is never
+      // over-privileged by a stale or cross-tenant roleId.
+      const validRoles = await tx
+        .select({ id: rolesTable.id })
+        .from(rolesTable)
+        .where(and(inArray(rolesTable.id, inv.roleIds), eq(rolesTable.companyId, inv.companyId)));
+      if (validRoles.length > 0) {
+        await tx.insert(userRolesTable).values(validRoles.map((r) => ({ userId: user.id, roleId: r.id })));
+      }
     }
 
     await tx

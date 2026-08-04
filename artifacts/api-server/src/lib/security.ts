@@ -25,13 +25,14 @@ export function validatePassword(password: unknown): PasswordCheck {
   return { valid: errors.length === 0, errors };
 }
 
-// Best-effort client IP. Trusts the left-most X-Forwarded-For entry (the shared
-// reverse proxy sets it); falls back to the socket address.
+// Client IP resolution. `req.ip` is computed by Express from the `trust proxy`
+// setting (app.ts trusts exactly ONE proxy hop — the platform's reverse proxy),
+// so the value is the LAST X-Forwarded-For entry, i.e. the one appended by our
+// own trusted proxy. Client-supplied (spoofable) XFF entries to its left are
+// ignored, which matters because IP allow-lists and lockouts key on this value.
+// Never parse X-Forwarded-For manually here — the previous left-most-entry parse
+// let a client choose its own IP and bypass IP policy.
 export function getClientIp(req: Request): string | null {
-  const fwd = req.headers["x-forwarded-for"];
-  if (typeof fwd === "string" && fwd.length > 0) {
-    return fwd.split(",")[0]!.trim();
-  }
   return req.ip ?? req.socket?.remoteAddress ?? null;
 }
 

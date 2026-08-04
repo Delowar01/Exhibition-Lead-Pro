@@ -1,0 +1,397 @@
+Implement Batch 4 — RBAC, Tenant Isolation, and Authentication Closure for the existing Lead Capture Pro project.
+
+PURPOSE
+
+Close the remaining authorization, tenant-isolation, MFA, session, IP, and country-policy gaps identified in the Master Phase 1–9 audit.
+
+This is a high-risk security batch. Inspect the current implementation and approved policy before changing authorization behavior.
+
+CURRENT VERIFIED BASELINE
+
+- Batch 3 is complete.
+- API suite currently passes 586/586.
+- Playwright suite currently passes 28/28.
+- Web, API, and mobile typechecks are clean.
+- Password resets revoke sessions.
+- Invitation permission-subset checks exist.
+- Platform Owner and tenant firewall protections already exist in parts of the system.
+- Security Center policies, sessions, MFA, IP restrictions, country restrictions, and audit logging already have partial implementation.
+
+KNOWN AUDIT GAPS
+
+- Platform Owner and Primary Admin currently bypass some generic permission checks.
+- The intended bypass boundaries need to be made explicit and tenant-safe.
+- A broad cross-tenant read/mutation regression sweep is missing.
+- MFA-required login is not fully verified.
+- Mobile 2FA login is incomplete or unverified.
+- IP and country policies lack complete automated coverage.
+- Session and security-policy combinations require closure.
+
+IMPORTANT BOUNDARIES
+
+Do not:
+
+- Redesign authentication.
+- Introduce a new RBAC system.
+- Replace existing roles, permissions, or tenant models.
+- Remove legitimate Primary Admin access within its own tenant.
+- Allow Platform Owner to browse tenant CRM data unless an existing explicitly approved operation requires it.
+- Weaken the existing Platform Owner-to-tenant firewall.
+- Add impersonation.
+- Add SSO or social login.
+- Add full administration to the mobile app.
+- Change the owner-approved mobile scope.
+- Make unrelated UI changes.
+- create duplicate security middleware.
+- change authorization semantics based on assumptions.
+
+If the intended policy is genuinely contradictory or cannot be established from authoritative project documents and current code, stop that specific policy change and report the ambiguity instead of guessing.
+
+STEP 1 — INSPECT FIRST
+
+Inspect:
+
+- Authentication middleware
+- Authorization middleware
+- Tenant-resolution middleware
+- Role and permission definitions
+- Custom-role permission-subset enforcement
+- Platform Owner routes
+- Tenant admin routes
+- Security Center
+- MFA services and routes
+- Web login flow
+- Mobile login flow
+- Session and refresh-token handling
+- Logout
+- Password-reset session revocation
+- IP and country policy enforcement
+- Proxy and client-IP resolution
+- Audit and security-event logging
+- Existing RBAC, governance, auth-security, privacy, and tenant-isolation tests
+
+Identify:
+
+- Every generic role-based bypass
+- Whether each bypass is intentional
+- Whether it remains tenant-scoped
+- Routes relying only on frontend visibility
+- Routes missing backend permission enforcement
+- Routes accepting tenant or organization identifiers from the browser without deriving or validating them server-side
+
+STEP 2 — FORMALIZE AUTHORIZATION BOUNDARIES
+
+Apply the smallest safe correction consistent with the current approved design.
+
+Required policy:
+
+A. Tenant Primary Admin
+
+- May have full administrative access inside its own tenant where currently intended.
+- Must never access another tenant.
+- Must not bypass the Platform Owner firewall.
+- Full access should be explicit and tenant-scoped, not an uncontrolled global permission bypass.
+- Custom roles and delegated administrators must remain limited to their assigned permission subset.
+
+B. Platform Owner
+
+- May access platform-level administration and aggregate platform data.
+- Must not automatically gain access to tenant CRM records, files, contacts, leads, communications, scans, documents, or AI context.
+- Any approved platform operation affecting a tenant must use a dedicated platform route, explicit authorization, audit logging, and minimum required data access.
+- Do not implement tenant impersonation.
+
+C. Normal tenant roles
+
+- Must be denied by default when the required permission is missing.
+- Frontend hiding is not sufficient.
+- Backend permission checks must protect reads, writes, exports, files, AI actions, and administrative actions.
+
+D. Permission-subset enforcement
+
+Verify and close:
+
+- Custom role creation
+- Custom role editing
+- Invitation role assignment
+- User role changes
+- Team or department role assignment where applicable
+- Users cannot grant permissions they do not possess
+- Tenant admins cannot grant Platform Owner permissions
+- Cross-tenant role IDs are rejected
+
+STEP 3 — TENANT-ISOLATION REGRESSION MATRIX
+
+Add a reusable, table-driven automated tenant-isolation test matrix using existing test fixtures.
+
+Cover representative read and mutation operations for:
+
+- Contacts
+- Leads
+- Companies
+- Tasks
+- Follow-ups
+- Events
+- Activities and interactions
+- Captures and scans
+- Documents and downloads
+- Reports and exports
+- AI Copilot and AI Assistant context
+- Organization users, teams, departments, and roles
+- Security and audit records
+
+For each applicable resource, test:
+
+- Tenant A cannot list Tenant B records.
+- Tenant A cannot fetch Tenant B records by guessed ID.
+- Tenant A cannot update Tenant B records.
+- Tenant A cannot delete or restore Tenant B records.
+- Tenant A cannot download Tenant B files or images.
+- Tenant A cannot use Tenant B IDs inside a valid Tenant A request.
+- Tenant A cannot access Tenant B AI context.
+- Platform Owner cannot bypass the approved tenant-data firewall through normal tenant routes.
+
+Use the application’s existing 404-versus-403 convention consistently. Do not leak whether another tenant’s record exists.
+
+Do not duplicate hundreds of nearly identical tests when one table-driven security suite can prove the same boundary.
+
+STEP 4 — MFA-REQUIRED LOGIN CLOSURE
+
+Complete and verify the existing MFA flow.
+
+Web requirements:
+
+- When the organization or user policy requires MFA, password authentication alone must not create a fully authenticated session.
+- Issue the existing MFA challenge state.
+- Validate the TOTP through the current MFA service.
+- Reject invalid, expired, replayed, or malformed challenges.
+- Complete session creation only after successful MFA.
+- Preserve safe generic login errors.
+- Prevent bypass by calling refresh, session, or protected routes before completing MFA.
+- Audit successful and failed MFA attempts where supported.
+- Apply existing rate limiting.
+
+Mobile requirements:
+
+- Wire the mobile login flow to the same MFA challenge contract.
+- Show the MFA verification screen only when required.
+- Complete login only after successful verification.
+- Handle invalid, expired, and network-error states.
+- Do not add mobile Security Center or mobile MFA administration.
+- Keep mobile limited to login verification only.
+
+Do not invent recovery codes, trusted devices, or new MFA methods unless they already exist in the approved implementation.
+
+STEP 5 — SESSION AND TOKEN SECURITY
+
+Verify and correct only confirmed gaps in:
+
+- Access-token validation
+- Refresh-token rotation
+- Reuse detection where already designed
+- Logout revocation
+- Password-reset session revocation
+- Suspended or disabled user session rejection
+- Suspended tenant session rejection
+- MFA-pending sessions
+- Expired sessions
+- Concurrent-session policy
+- Security Center session termination
+
+Requirements:
+
+- A revoked session must not regain access through refresh.
+- A disabled user must lose access.
+- A suspended tenant must be blocked according to existing subscription/security rules.
+- Session and refresh records must remain tenant- and user-scoped.
+- Tokens and secrets must never appear in logs.
+
+Preserve Batch 3 token-path redaction and password-reset protections.
+
+STEP 6 — IP AND COUNTRY POLICY CLOSURE
+
+Verify and harden the current policy implementation.
+
+Requirements:
+
+- Use the current trusted deployment/proxy model to resolve client IP.
+- Do not blindly trust arbitrary forwarded headers.
+- Document in code/config which proxy headers are trusted.
+- Apply allow/deny rules consistently at login and protected-session validation where required by current policy.
+- Apply country restrictions consistently.
+- Produce safe user-facing denial messages.
+- Record security events without exposing secrets.
+- Avoid accidental permanent admin lockout where the existing policy provides a safeguard.
+- If reliable country determination requires a production proxy or geolocation provider unavailable in the environment, keep the code path testable and report production verification as required.
+
+Do not add a new paid geolocation service in this batch.
+
+STEP 7 — AUTH TRANSPORT AND CSRF REVIEW
+
+Inspect the actual authentication transport.
+
+- If state-changing requests use cookie-based authentication, verify the existing CSRF protections and same-site cookie settings.
+- If requests use bearer tokens, do not add irrelevant CSRF infrastructure.
+- Verify secure, httpOnly, sameSite, and production cookie attributes wherever authentication cookies are used.
+- Verify CORS behavior against the approved web and mobile clients.
+- Do not change the transport architecture without a proven vulnerability.
+
+STEP 8 — MINIMAL UI FEEDBACK
+
+Update only existing authentication/security screens where needed.
+
+Cover:
+
+- MFA-required state
+- Invalid MFA code
+- Expired MFA challenge
+- IP or country denial
+- Suspended user or tenant
+- Session expired
+- Permission denied
+
+Requirements:
+
+- No sensitive policy details are exposed.
+- Loading states prevent duplicate submission.
+- Web light/dark themes remain intact.
+- Mobile login remains responsive.
+- Do not redesign Security Center or authentication pages.
+
+STEP 9 — AUTOMATED TESTING
+
+A. RBAC tests
+
+Cover:
+
+- Primary Admin inside its own tenant
+- Primary Admin cross-tenant denial
+- Custom role allowed permission
+- Custom role missing permission
+- Permission-subset enforcement
+- Cross-tenant role assignment
+- Platform Owner platform route access
+- Platform Owner denial through normal tenant-data routes
+- Unauthorized frontend-visible action still rejected by API
+
+B. Tenant-isolation tests
+
+Run the table-driven matrix across the representative resources listed above.
+
+C. MFA tests
+
+Cover:
+
+- MFA not required
+- MFA required
+- Valid TOTP
+- Invalid TOTP
+- Expired challenge
+- Reused challenge
+- Protected-route access before MFA completion
+- Refresh attempt before MFA completion
+- Rate limiting
+- Audit/security events
+
+D. Session tests
+
+Cover:
+
+- Logout
+- Refresh rotation
+- Revoked session
+- Password-reset revocation
+- Disabled user
+- Suspended tenant
+- Session termination from Security Center
+
+E. IP/country tests
+
+Cover:
+
+- Allowed IP
+- Blocked IP
+- Allowed country
+- Blocked country
+- Missing or untrusted proxy header
+- Trusted proxy header
+- Policy combinations
+- Security event creation
+
+F. Browser tests
+
+Reuse Playwright and add focused flows for:
+
+- Web MFA-required login
+- Invalid MFA
+- Successful MFA
+- Permission-denied state
+- Session invalidation
+- IP/country denial where deterministic test configuration supports it
+
+G. Mobile tests
+
+Add focused tests for:
+
+- MFA challenge response handling
+- MFA verification submission
+- Invalid and expired challenge states
+- Successful login completion
+
+Do not claim APK or physical-device verification unless actually performed.
+
+STEP 10 — REGRESSION VERIFICATION
+
+Run:
+
+- API-server typecheck
+- Web-app typecheck
+- Mobile typecheck
+- Relevant unit and integration tests
+- Relevant Playwright tests
+- Mobile tests
+- Full API suite
+- Full Playwright suite
+
+Restart the API server before the full suite if that remains the project convention.
+
+Report the actual new totals. Do not assume they remain 586/586 or 28/28.
+
+COMPLETION CRITERIA
+
+Mark Batch 4 complete only when:
+
+- Authorization bypasses are explicit, intentional, and tenant-safe.
+- Platform Owner cannot access tenant CRM data through normal tenant routes.
+- Primary Admin retains intended access only inside its tenant.
+- Permission-subset enforcement is proven.
+- The cross-tenant regression matrix passes.
+- Web MFA-required login works end-to-end.
+- Mobile MFA login is implemented and tested.
+- MFA-pending sessions cannot access protected resources.
+- Revoked, disabled, or suspended sessions are blocked.
+- IP and country rules are consistently enforced and tested.
+- No secrets or tokens are exposed.
+- Typechecks and full regression suites pass.
+- Any production-only proxy/geolocation verification is clearly reported.
+
+FINAL REPORT
+
+Return only:
+
+1. Authorization policy confirmed
+2. Bypass behavior changed or retained
+3. Tenant-isolation resources tested
+4. MFA web changes
+5. MFA mobile changes
+6. Session-security changes
+7. IP/country policy changes
+8. Files changed
+9. Schema changes, if any
+10. Tests added or changed
+11. Browser and mobile flows verified
+12. Commands run
+13. Exact pass/fail totals
+14. Production-only verification still required
+15. Genuine limitations
+
+Do not begin the next batch or add unrelated recommendations.

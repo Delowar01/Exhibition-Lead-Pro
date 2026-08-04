@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import type { Request } from "express";
 import { and, eq, desc } from "drizzle-orm";
-import { db, sessionsTable, usersTable, type Session } from "@workspace/db";
+import { db, sessionsTable, usersTable, companiesTable, type Session } from "@workspace/db";
 import { config } from "../config.js";
+import { evaluateCompanyAccess } from "./company-access.js";
 import {
   signAccessToken,
   generateRefreshToken,
@@ -122,6 +123,25 @@ export async function rotateSession(rawToken: string, req: Request): Promise<Rot
   if (!user || !user.isActive) {
     await revokeFamily(session.familyId, "user_inactive");
     return { ok: false, status: 401, error: "Account is disabled" };
+  }
+
+  // Tenant lifecycle gate: a suspended/expired tenant must not be able to mint
+  // fresh access tokens via refresh (requireAuth blocks per-request, but a freshly
+  // rotated token would otherwise "work" until its first API call and keeps the
+  // family alive indefinitely). The family is NOT revoked — suspension can be
+  // temporary and lifting it should restore existing sessions.
+  if (user.companyId) {
+    const [company] = await db
+      .select({ status: companiesTable.status, trialEndsAt: companiesTable.trialEndsAt })
+      .from(companiesTable)
+      .where(eq(companiesTable.id, user.companyId))
+      .limit(1);
+    if (company) {
+      const access = evaluateCompanyAccess(company);
+      if (access.blocked) {
+        return { ok: false, status: 403, error: access.reason };
+      }
+    }
   }
 
   const { token: refreshToken, secretHash } = generateRefreshToken(session.familyId);

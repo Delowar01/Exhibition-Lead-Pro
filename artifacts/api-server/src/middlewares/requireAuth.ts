@@ -51,28 +51,11 @@ export function normalizeRole(role: string): string {
   return LEGACY_ROLE_ALIASES[role] ?? role;
 }
 
-export type CompanyAccess =
-  | { blocked: true; reason: string }
-  | { blocked: false; readOnly: boolean };
-
-// Evaluates a company's subscription lifecycle to decide whether a user may sign in
-// or operate. suspended/expired (incl. lapsed trial) block access; cancelled is read-only.
-export function evaluateCompanyAccess(company: Pick<Company, "status" | "trialEndsAt">): CompanyAccess {
-  const status = company.status;
-  if (status === "suspended") {
-    return { blocked: true, reason: "Your company account has been suspended. Please contact support." };
-  }
-  if (status === "expired") {
-    return { blocked: true, reason: "Your subscription has expired. Please renew to continue." };
-  }
-  if (status === "trial" && company.trialEndsAt && company.trialEndsAt.getTime() < Date.now()) {
-    return { blocked: true, reason: "Your free trial has ended. Please choose a plan to continue." };
-  }
-  if (status === "cancelled") {
-    return { blocked: false, readOnly: true };
-  }
-  return { blocked: false, readOnly: false };
-}
+// Implementation lives in lib/company-access.ts so the refresh-rotation path
+// (lib/sessions.ts) can share it without a middleware import cycle. Re-exported
+// here for existing importers.
+import { evaluateCompanyAccess, type CompanyAccess } from "../lib/company-access.js";
+export { evaluateCompanyAccess, type CompanyAccess };
 
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -87,19 +70,21 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       return;
     }
 
-    // Server-side session validation: when the token carries a session id, the
-    // session must still be live (not revoked/expired) so logout and terminate
-    // take effect immediately. Legacy tokens without `sid` skip this for
-    // back-compat (e.g. existing mobile clients).
-    let sessionId: number | null = null;
-    if (typeof payload.sid === "number") {
-      const session = await validateSession(payload.sid);
-      if (!session || session.userId !== payload.id) {
-        res.status(401).json({ error: "Session expired. Please sign in again." });
-        return;
-      }
-      sessionId = session.id;
+    // Server-side session validation: every access token MUST carry a session id
+    // and that session must still be live (not revoked/expired) so logout and
+    // terminate take effect immediately. Legacy sid-less tokens (minted before
+    // sessions existed) are no longer accepted — they bypassed session revocation
+    // entirely; holders simply refresh or re-login and receive a sid-bearing token.
+    if (typeof payload.sid !== "number") {
+      res.status(401).json({ error: "Session expired. Please sign in again." });
+      return;
     }
+    const session = await validateSession(payload.sid);
+    if (!session || session.userId !== payload.id) {
+      res.status(401).json({ error: "Session expired. Please sign in again." });
+      return;
+    }
+    const sessionId: number = session.id;
 
     const [user] = await db
       .select()

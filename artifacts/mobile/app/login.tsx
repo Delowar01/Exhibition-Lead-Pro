@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ApiError, useLogin } from "@workspace/api-client-react";
+import { ApiError, useLogin, useMfaVerifyLogin } from "@workspace/api-client-react";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { FONT, PrimaryButton } from "@/components/ui";
@@ -46,6 +46,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
   const loginMutation = useLogin();
+  const mfaMutation = useMfaVerifyLogin();
   const { t, isRTL, textAlign } = useLocale();
 
   const [email, setEmail] = useState("admin@techcorp.com");
@@ -53,6 +54,11 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
+  // MFA challenge step: set when the server answers a password-verified login
+  // with { mfaRequired, mfaToken } instead of an operational token.
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [pendingEmail, setPendingEmail] = useState("");
   const [bioReady, setBioReady] = useState(false);
   const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
   const [bioBusy, setBioBusy] = useState(false);
@@ -99,8 +105,23 @@ export default function LoginScreen() {
       const res = await loginMutation.mutateAsync({
         data: { email: emailValue, password: passwordValue },
       });
+      if (res.mfaRequired && res.mfaToken) {
+        if (res.mfaEnrollmentRequired) {
+          // Company policy mandates MFA but this account has not enrolled.
+          // Enrollment is a web/admin flow — no mobile MFA administration.
+          setError(t("auth.mfaEnrollRequired"));
+          if (Platform.OS !== "web") {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          }
+          return;
+        }
+        setPendingEmail(emailValue);
+        setMfaCode("");
+        setMfaToken(res.mfaToken);
+        return;
+      }
       if (!res.token || !res.user) {
-        setError(t("auth.mfaWebOnly"));
+        setError(t("auth.signInFailed"));
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }
@@ -128,6 +149,48 @@ export default function LoginScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     }
+  }
+
+  async function handleMfaVerify() {
+    if (!mfaToken || !mfaCode.trim()) return;
+    setError(null);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    try {
+      const res = await mfaMutation.mutateAsync({
+        data: { mfaToken, code: mfaCode.trim(), rememberMe },
+      });
+      if (!res.token || !res.user) {
+        setError(t("auth.signInFailed"));
+        return;
+      }
+      await persistRemember(pendingEmail);
+      await login(res.token, res.user);
+    } catch (err) {
+      let message: string;
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          message = t("auth.mfaInvalidOrExpired");
+        } else if (err.status >= 500) {
+          message = t("errors.generic");
+        } else {
+          message = t("auth.signInFailed");
+        }
+      } else {
+        message = t("errors.network");
+      }
+      setError(message);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    }
+  }
+
+  function cancelMfa() {
+    setMfaToken(null);
+    setMfaCode("");
+    setError(null);
   }
 
   async function handleBiometricLogin() {
@@ -197,6 +260,79 @@ export default function LoginScreen() {
             { backgroundColor: colors.card, borderRadius: colors.radius + 8 },
           ]}
         >
+          {mfaToken ? (
+            <>
+              <View style={{ alignItems: "center", marginBottom: 14 }}>
+                <Feather name="shield" size={28} color={colors.primary} />
+              </View>
+              <Text
+                style={[
+                  styles.fieldLabel,
+                  { color: colors.foreground, fontSize: 16, textAlign: "center" },
+                ]}
+              >
+                {t("auth.mfaTitle")}
+              </Text>
+              <Text
+                style={{
+                  color: colors.mutedForeground,
+                  fontSize: 13,
+                  fontFamily: FONT.regular,
+                  textAlign: "center",
+                  marginTop: 6,
+                  marginBottom: 16,
+                }}
+              >
+                {t("auth.mfaPrompt")}
+              </Text>
+              <View
+                style={[
+                  styles.inputRow,
+                  {
+                    borderColor: colors.border,
+                    borderRadius: colors.radius,
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                  },
+                ]}
+              >
+                <Feather name="key" size={18} color={colors.mutedForeground} />
+                <TextInput
+                  value={mfaCode}
+                  onChangeText={setMfaCode}
+                  placeholder={t("auth.mfaCodePlaceholder")}
+                  placeholderTextColor={colors.mutedForeground}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  onSubmitEditing={handleMfaVerify}
+                  style={[styles.input, { color: colors.foreground, textAlign }]}
+                />
+              </View>
+
+              {error ? (
+                <View style={[styles.errorRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+                  <Feather name="alert-circle" size={14} color={colors.destructive} />
+                  <Text style={[styles.errorText, { color: colors.destructive, textAlign }]}>
+                    {error}
+                  </Text>
+                </View>
+              ) : null}
+
+              <PrimaryButton
+                label={t("auth.mfaVerify")}
+                icon="check"
+                onPress={handleMfaVerify}
+                loading={mfaMutation.isPending}
+                style={{ marginTop: 20 }}
+              />
+              <Pressable onPress={cancelMfa} hitSlop={8} style={{ marginTop: 14, alignSelf: "center" }}>
+                <Text style={[styles.forgotText, { color: colors.primary, textAlign }]}>
+                  {t("auth.backToLogin")}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground, textAlign }]}>
             {t("auth.email")}
           </Text>
@@ -338,6 +474,8 @@ export default function LoginScreen() {
               </Text>
             </Pressable>
           ) : null}
+            </>
+          )}
         </View>
 
         <Text style={styles.demoLabel}>{t("login.demoAccess")}</Text>

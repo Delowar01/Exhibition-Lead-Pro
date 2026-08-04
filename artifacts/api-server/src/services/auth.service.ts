@@ -2,7 +2,7 @@ import { type Company } from "@workspace/db";
 import { hashPassword, comparePassword } from "../lib/auth.js";
 import { evaluateCompanyAccess, normalizeRole } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
-import { verifyMfaChallenge } from "../lib/tokens.js";
+import { signMfaChallenge, verifyMfaChallenge } from "../lib/tokens.js";
 import { revokeSession, revokeOtherSessions } from "../lib/sessions.js";
 import { validatePassword, checkLockout, recordLoginAttempt } from "../lib/security.js";
 import * as securityService from "./security.service.js";
@@ -149,6 +149,22 @@ export async function authenticateLogin(params: {
   return { kind: "ok", user, mfaNeeded };
 }
 
+// Mints a password-verified MFA challenge: a short-lived JWT whose `jti` is backed
+// by a single-use verification_tokens row. verifyMfaLogin consumes the row on the
+// first successful verification, so a captured challenge cannot be replayed to
+// mint a second session. TTL mirrors config.auth.mfaChallengeTtl ("10m").
+const MFA_CHALLENGE_TTL_MS = 10 * 60 * 1000;
+export async function issueMfaChallenge(userId: number): Promise<string> {
+  const jti = randomToken(24);
+  await tokenRepo.insertToken({
+    userId,
+    type: "mfa_challenge",
+    tokenHash: sha256(jti),
+    expiresAt: new Date(Date.now() + MFA_CHALLENGE_TTL_MS),
+  });
+  return signMfaChallenge(userId, jti);
+}
+
 export async function verifyMfaLogin(params: {
   mfaToken?: string;
   code?: unknown;
@@ -157,8 +173,9 @@ export async function verifyMfaLogin(params: {
 }): Promise<{ user: UserRow; usedBackup: boolean }> {
   const { mfaToken, code, ip, userAgent } = params;
   if (!mfaToken || !code) throw new AppError(400, "mfaToken and code are required");
-  const userId = verifyMfaChallenge(mfaToken);
-  if (!userId) throw new AppError(401, "MFA session expired. Please sign in again.");
+  const challenge = verifyMfaChallenge(mfaToken);
+  if (!challenge) throw new AppError(401, "MFA session expired. Please sign in again.");
+  const userId = challenge.uid;
   const user = await authRepo.findUserById(userId);
   if (!user || !user.isActive || !user.mfaEnabled || !user.mfaSecret) throw new AppError(401, "MFA is not available for this account.");
 
@@ -177,6 +194,16 @@ export async function verifyMfaLogin(params: {
   if (!verified) {
     await recordLoginAttempt({ email: user.email, ip, userId: user.id, success: false, reason: "mfa_failed", userAgent });
     throw new AppError(401, "Invalid verification code");
+  }
+
+  // Single-use consumption AFTER the code check (a wrong code must not burn the
+  // challenge — the user may retry with the same mfaToken). The conditional UPDATE
+  // in consumeToken is atomic, so a replayed challenge — even with a fresh valid
+  // TOTP — fails here and cannot mint a second session.
+  const live = await tokenRepo.findLiveToken(sha256(challenge.jti), "mfa_challenge");
+  if (!live || live.userId !== user.id || !(await tokenRepo.consumeToken(live.id))) {
+    await recordLoginAttempt({ email: user.email, ip, userId: user.id, success: false, reason: "mfa_challenge_replayed", userAgent });
+    throw new AppError(401, "MFA session expired. Please sign in again.");
   }
   return { user, usedBackup };
 }

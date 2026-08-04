@@ -1,7 +1,7 @@
 import { db, verificationTokensTable } from "@workspace/db";
 import { and, eq, isNull, gt, lt } from "drizzle-orm";
 
-export type TokenType = "password_reset" | "email_verify";
+export type TokenType = "password_reset" | "email_verify" | "mfa_challenge";
 
 export async function insertToken(values: {
   userId: number;

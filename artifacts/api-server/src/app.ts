@@ -15,6 +15,16 @@ import type { AuthRequest } from "./middlewares/requireAuth.js";
 
 const app: Express = express();
 
+// Trusted-proxy model: this API always runs behind exactly ONE trusted reverse
+// proxy (the platform's shared proxy in dev, the deployment ingress in prod),
+// which appends the real client address as the LAST X-Forwarded-For entry.
+// Trusting exactly one hop makes `req.ip` that entry and discards any
+// client-forged XFF prefix — critical because IP allow-lists, lockouts, and
+// security events key on getClientIp() (lib/security.ts), and `trust proxy: true`
+// would let clients spoof their IP. If the proxy topology ever changes, update
+// this hop count and lib/security.ts together.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,
