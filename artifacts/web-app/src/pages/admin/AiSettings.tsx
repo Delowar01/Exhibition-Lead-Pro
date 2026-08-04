@@ -34,7 +34,16 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, subDays } from "date-fns";
-import { Sparkles, Activity, DollarSign, Cpu, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { Sparkles, Activity, DollarSign, Cpu, AlertTriangle, CheckCircle2, XCircle, Gauge } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as ChartTooltip,
+  CartesianGrid,
+} from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
@@ -390,15 +399,101 @@ function UsageSection({ from, to }: { from: string; to: string }) {
   }
 
   const t = usage.totals;
+  const b = usage.budget;
+  const hasBudget = b.tokenBudget != null || b.costBudgetUsd != null;
+  const pct = b.pctUsed ?? 0;
+  const barColor = pct >= 100 ? "bg-destructive" : pct >= 80 ? "bg-amber-500" : "bg-primary";
 
   return (
     <div className="space-y-6">
+      {hasBudget && (
+        <Card data-testid="card-budget">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Gauge className="h-5 w-5 text-primary" />
+              Monthly AI Budget
+            </CardTitle>
+            <CardDescription>
+              Resets {format(parseISO(b.resetAt), "MMM d, yyyy")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                {b.tokenBudget != null && (
+                  <>Tokens: <span className="font-medium text-foreground">{NUM.format(b.usedTokens)}</span> / {NUM.format(b.tokenBudget)}</>
+                )}
+                {b.tokenBudget != null && b.costBudgetUsd != null && " · "}
+                {b.costBudgetUsd != null && (
+                  <>Cost: <span className="font-medium text-foreground">{formatUsd(b.usedCostUsd)}</span> / {formatUsd(b.costBudgetUsd)}</>
+                )}
+              </span>
+              <Badge variant={pct >= 100 ? "destructive" : pct >= 80 ? "secondary" : "outline"} data-testid="badge-budget-pct">
+                {b.pctUsed == null ? "—" : `${b.pctUsed}% used`}
+              </Badge>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, pct)}%` }} />
+            </div>
+            {pct >= 100 && (
+              <p className="text-xs text-destructive">Budget exhausted — AI requests are paused until the monthly reset.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Requests" value={NUM.format(t.requests)} icon={Activity} hint={`${NUM.format(t.success)} ok · ${NUM.format(t.errors)} errors`} />
         <StatCard title="Est. Cost" value={formatUsd(t.costUsd)} icon={DollarSign} />
-        <StatCard title="Total Tokens" value={NUM.format(t.totalTokens)} icon={Cpu} hint={`${NUM.format(t.inputTokens)} in · ${NUM.format(t.outputTokens)} out`} />
-        <StatCard title="Failure Rate" value={`${Math.round(t.failureRate * 100)}%`} icon={AlertTriangle} hint={`avg ${NUM.format(t.avgLatencyMs)} ms`} />
+        <StatCard
+          title="Total Tokens"
+          value={NUM.format(t.totalTokens)}
+          icon={Cpu}
+          hint={`${NUM.format(t.inputTokens)} in · ${NUM.format(t.outputTokens)} out${t.estimatedRows > 0 ? ` · ${NUM.format(t.estimatedRows)} estimated` : ""}`}
+        />
+        <StatCard
+          title="Failure Rate"
+          value={`${Math.round(t.failureRate * 100)}%`}
+          icon={AlertTriangle}
+          hint={`avg ${NUM.format(t.avgLatencyMs)} ms · ${NUM.format(t.cacheHits + t.dedupReused)} saved · ${NUM.format(t.budgetDenied + t.rateLimited)} denied`}
+        />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Daily Usage</CardTitle>
+          <CardDescription>Provider requests per UTC day. Hover for tokens and estimated cost.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {usage.byDay.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">No AI activity in this range.</div>
+          ) : (
+            <div className="h-52 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={usage.byDay} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={40} />
+                  <ChartTooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const row = payload[0].payload as (typeof usage.byDay)[number];
+                      return (
+                        <div className="rounded-md border bg-popover p-2 text-xs shadow-md">
+                          <div className="font-medium">{String(label)}</div>
+                          <div>{NUM.format(row.requests)} requests · {NUM.format(row.errors)} errors</div>
+                          <div>{NUM.format(row.totalTokens)} tokens · {formatUsd(row.costUsd)}</div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="requests" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

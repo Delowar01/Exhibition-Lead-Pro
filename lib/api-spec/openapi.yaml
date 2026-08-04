@@ -4024,6 +4024,26 @@ paths:
           in: query
           schema:
             type: string
+        - name: companyId
+          in: query
+          schema:
+            type: integer
+        - name: feature
+          in: query
+          schema:
+            type: string
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
       responses:
         "200":
           description: Success
@@ -7088,6 +7108,16 @@ components:
         requestId:
           type: string
           description: Correlates this response with server logs (also returned as the X-Request-Id header).
+        code:
+          type: string
+          description: Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED).
+        retryAfterSeconds:
+          type: integer
+          description: Present on rate-limit responses; mirrors the Retry-After header.
+        context:
+          type: object
+          additionalProperties: true
+          description: Optional safe, machine-readable context for the error code (e.g. budget kind/limits/reset date). Never contains prompt or response content.
         details:
           type: array
           description: Per-field validation issues (present on 400 validation failures).
@@ -11496,6 +11526,11 @@ components:
           success,
           errors,
           failureRate,
+          cacheHits,
+          dedupReused,
+          budgetDenied,
+          rateLimited,
+          estimatedRows,
           inputTokens,
           outputTokens,
           totalTokens,
@@ -11505,12 +11540,29 @@ components:
       properties:
         requests:
           type: integer
+          description: Provider calls only (success + error + timeout).
         success:
           type: integer
         errors:
           type: integer
+          description: Failed provider calls (error + timeout).
         failureRate:
           type: number
+        cacheHits:
+          type: integer
+          description: Requests served from the short-window result cache (no provider call, zero tokens).
+        dedupReused:
+          type: integer
+          description: Concurrent duplicates that shared one in-flight provider call.
+        budgetDenied:
+          type: integer
+          description: Requests denied by the month budget before any provider call.
+        rateLimited:
+          type: integer
+          description: Requests denied by AI rate limiting before any provider call.
+        estimatedRows:
+          type: integer
+          description: Provider calls whose token usage was estimated (no provider metadata).
         inputTokens:
           type: integer
         outputTokens:
@@ -11544,6 +11596,100 @@ components:
               type: string
               nullable: true
 
+    AiDayUsage:
+      allOf:
+        - $ref: "#/components/schemas/AiUsageAgg"
+        - type: object
+          required: [day]
+          properties:
+            day:
+              type: string
+              description: UTC day (YYYY-MM-DD).
+
+    AiTenantBudget:
+      type: object
+      required: [tokenBudget, costBudgetUsd, usedTokens, usedCostUsd, pctUsed, periodStart, resetAt]
+      properties:
+        tokenBudget:
+          type: integer
+          nullable: true
+        costBudgetUsd:
+          type: number
+          nullable: true
+        usedTokens:
+          type: integer
+        usedCostUsd:
+          type: number
+        pctUsed:
+          type: number
+          nullable: true
+          description: Month-to-date percentage of the tightest budget used; null when no budget is set.
+        periodStart:
+          type: string
+        resetAt:
+          type: string
+
+    AiCompanyUsagePage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiCompanyUsage"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    AiFailureCategory:
+      type: object
+      required: [category, count]
+      properties:
+        category:
+          type: string
+          description: timeout | provider_rate_limited | provider_unavailable | invalid_response | network | other
+        count:
+          type: integer
+
+    AiTenantNearLimit:
+      type: object
+      required: [companyId, companyName, pctUsed, usedTokens, usedCostUsd, tokenBudget, costBudgetUsd]
+      properties:
+        companyId:
+          type: integer
+        companyName:
+          type: string
+          nullable: true
+        pctUsed:
+          type: number
+        usedTokens:
+          type: integer
+        usedCostUsd:
+          type: number
+        tokenBudget:
+          type: integer
+          nullable: true
+        costBudgetUsd:
+          type: number
+          nullable: true
+
+    AiPlatformUsageFilters:
+      type: object
+      required: [companyId, feature, model]
+      properties:
+        companyId:
+          type: integer
+          nullable: true
+        feature:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+
     AiRecentInvocation:
       type: object
       required: [id, feature, status, model, totalTokens, costUsd, latencyMs, createdAt]
@@ -11573,7 +11719,7 @@ components:
 
     AiUsageResponse:
       type: object
-      required: [from, to, totals, byFeature, recent]
+      required: [from, to, totals, byFeature, byDay, budget, recent]
       properties:
         from:
           type: string
@@ -11585,6 +11731,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiFeatureUsage"
+        byDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiDayUsage"
+        budget:
+          $ref: "#/components/schemas/AiTenantBudget"
         recent:
           type: array
           items:
@@ -11592,22 +11744,34 @@ components:
 
     AiPlatformUsageResponse:
       type: object
-      required: [from, to, totals, byFeature, byCompany]
+      required: [from, to, filters, totals, byFeature, byDay, byCompany, failureCategories, tenantsNearLimit]
       properties:
         from:
           type: string
         to:
           type: string
+        filters:
+          $ref: "#/components/schemas/AiPlatformUsageFilters"
         totals:
           $ref: "#/components/schemas/AiUsageAgg"
         byFeature:
           type: array
           items:
             $ref: "#/components/schemas/AiFeatureUsage"
-        byCompany:
+        byDay:
           type: array
           items:
-            $ref: "#/components/schemas/AiCompanyUsage"
+            $ref: "#/components/schemas/AiDayUsage"
+        byCompany:
+          $ref: "#/components/schemas/AiCompanyUsagePage"
+        failureCategories:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiFailureCategory"
+        tenantsNearLimit:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiTenantNearLimit"
 
     AiHealthLast24h:
       type: object
@@ -11940,6 +12104,9 @@ components:
         instructions:
           type: string
           description: Optional extra grounding instructions from the user (never overrides safety rules).
+        regenerate:
+          type: boolean
+          description: Set true for an explicit Regenerate action — bypasses duplicate-request protection so a fresh result is always produced.
 
     AiCopilotPanelResponse:
       type: object

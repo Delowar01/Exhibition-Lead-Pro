@@ -4,6 +4,7 @@ import { runFollowUpReminders } from "../followup-scheduler.js";
 import { runMaintenance } from "./maintenance.js";
 import { runDueSchedules } from "../../services/export.service.js";
 import { runWorkflowAlerts } from "../workflow-alerts.js";
+import { runAiUsageAlerts } from "../ai-alerts.js";
 
 // Recurring task scheduler (Phase 2.6). A single mechanism for all periodic work,
 // replacing per-feature setTimeout/setInterval. Tasks run after a first-run delay and
@@ -36,6 +37,9 @@ export function startScheduler(): void {
   registerRecurring("exportSchedules", s.exportFirstDelayMs, s.exportIntervalMs, runDueSchedules);
   // Stage 5F workflow risk alerts: critical/high SLA risks → owner + executive digests.
   registerRecurring("workflowAlerts", s.workflowAlertsFirstDelayMs, s.workflowAlertsIntervalMs, runWorkflowAlerts);
+  // Batch 6 AI usage alerts: spikes, failure rates, ledger-write failures (budget
+  // thresholds are checked inline on the invocation path). Deduped per kind/tenant/day.
+  registerRecurring("aiUsageAlerts", config.ai.alerts.sweepFirstDelayMs, config.ai.alerts.sweepIntervalMs, runAiUsageAlerts);
   logger.info(
     {
       followUpIntervalMs: s.followUpIntervalMs,

@@ -6,11 +6,24 @@ import type { Request, Response, NextFunction } from "express";
  */
 export class AppError extends Error {
   readonly statusCode: number;
+  /** Optional machine-readable error code (e.g. AI_BUDGET_EXCEEDED, AI_RATE_LIMITED). */
+  readonly code?: string;
+  /** Optional safe, JSON-serializable metadata surfaced to the client (never content). */
+  readonly details?: Record<string, unknown>;
+  /** When set, the response carries a Retry-After header with this many seconds. */
+  readonly retryAfterSeconds?: number;
 
-  constructor(statusCode: number, message: string) {
+  constructor(
+    statusCode: number,
+    message: string,
+    opts?: { code?: string; details?: Record<string, unknown>; retryAfterSeconds?: number },
+  ) {
     super(message);
     this.name = "AppError";
     this.statusCode = statusCode;
+    this.code = opts?.code;
+    this.details = opts?.details;
+    this.retryAfterSeconds = opts?.retryAfterSeconds;
     Object.setPrototypeOf(this, AppError.prototype);
   }
 }
@@ -73,5 +86,19 @@ export function errorHandler(
     message = err.message;
   }
 
-  res.status(statusCode).json({ error: message, requestId: requestId(req) });
+  // Additive fields: machine-readable code + safe context (AppError only), so clients
+  // can distinguish e.g. rate-limit vs budget-limit 429s. Existing consumers that only
+  // read `error` are unaffected. NOTE: emitted as `context`, not `details` — `details`
+  // is the established array-of-field-issues contract for 400 validation errors.
+  const extra: Record<string, unknown> = {};
+  if (err instanceof AppError) {
+    if (err.code) extra.code = err.code;
+    if (err.details) extra.context = err.details;
+    if (err.retryAfterSeconds != null && err.retryAfterSeconds > 0) {
+      res.setHeader("Retry-After", String(Math.ceil(err.retryAfterSeconds)));
+      extra.retryAfterSeconds = Math.ceil(err.retryAfterSeconds);
+    }
+  }
+
+  res.status(statusCode).json({ error: message, requestId: requestId(req), ...extra });
 }

@@ -9,4 +9,9 @@
 export type GetAiPlatformUsageParams = {
 from?: string;
 to?: string;
+companyId?: number;
+feature?: string;
+model?: string;
+page?: number;
+pageSize?: number;
 };

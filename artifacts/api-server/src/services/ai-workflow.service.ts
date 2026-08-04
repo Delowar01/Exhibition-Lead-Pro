@@ -334,7 +334,7 @@ async function analyzeLead(user: AuthUser, lead: LeadRow & { companyId: number }
   const cid = lead.companyId;
   const today = localDateStr(new Date());
   const now = new Date();
-  const ctx = { companyId: cid, userId: user.id };
+  const ctx = { companyId: cid, userId: user.id, entityType: "lead", entityId: lead.id };
   const rules = await loadWorkflowRules(cid);
   const lastActivity = await lastActivityForLead(cid, lead.id);
   const lines = leadLines(lead);
@@ -424,7 +424,7 @@ async function analyzeContact(user: AuthUser, contact: ContactRow & { companyId:
   const cid = contact.companyId;
   const today = localDateStr(new Date());
   const now = new Date();
-  const ctx = { companyId: cid, userId: user.id };
+  const ctx = { companyId: cid, userId: user.id, entityType: "contact", entityId: contact.id };
   const lines = contactLinesText(contact);
   const recs: UpsertRecommendationInput[] = [];
 
@@ -462,7 +462,7 @@ async function analyzeContact(user: AuthUser, contact: ContactRow & { companyId:
 
 async function analyzeOrganization(user: AuthUser, org: { id: number; companyId: number; industry: string | null }, language: AppLanguage, runtime: { provider?: string; model?: string }): Promise<void> {
   const cid = org.companyId;
-  const ctx = { companyId: cid, userId: user.id };
+  const ctx = { companyId: cid, userId: user.id, entityType: "organization", entityId: org.id };
   // Count linked contacts to ground the next action (read-only).
   const linked = await db
     .select({ id: contactsTable.id })

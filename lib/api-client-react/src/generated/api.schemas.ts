@@ -56,6 +56,11 @@ export interface SuccessResponse {
   message?: string;
 }
 
+/**
+ * Optional safe, machine-readable context for the error code (e.g. budget kind/limits/reset date). Never contains prompt or response content.
+ */
+export type ErrorResponseContext = { [key: string]: unknown };
+
 export type ErrorResponseDetailsItem = {
   field: string;
   message: string;
@@ -65,6 +70,12 @@ export interface ErrorResponse {
   error: string;
   /** Correlates this response with server logs (also returned as the X-Request-Id header). */
   requestId?: string;
+  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED). */
+  code?: string;
+  /** Present on rate-limit responses; mirrors the Retry-After header. */
+  retryAfterSeconds?: number;
+  /** Optional safe, machine-readable context for the error code (e.g. budget kind/limits/reset date). Never contains prompt or response content. */
+  context?: ErrorResponseContext;
   /** Per-field validation issues (present on 400 validation failures). */
   details?: ErrorResponseDetailsItem[];
 }
@@ -3650,10 +3661,22 @@ export interface UpdateAiSettings {
 }
 
 export interface AiUsageAgg {
+  /** Provider calls only (success + error + timeout). */
   requests: number;
   success: number;
+  /** Failed provider calls (error + timeout). */
   errors: number;
   failureRate: number;
+  /** Requests served from the short-window result cache (no provider call, zero tokens). */
+  cacheHits: number;
+  /** Concurrent duplicates that shared one in-flight provider call. */
+  dedupReused: number;
+  /** Requests denied by the month budget before any provider call. */
+  budgetDenied: number;
+  /** Requests denied by AI rate limiting before any provider call. */
+  rateLimited: number;
+  /** Provider calls whose token usage was estimated (no provider metadata). */
+  estimatedRows: number;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -3669,6 +3692,51 @@ export type AiCompanyUsage = AiUsageAgg & ({
   companyId: number | null;
   companyName: string | null;
 });
+
+export type AiDayUsage = AiUsageAgg & {
+  /** UTC day (YYYY-MM-DD). */
+  day: string;
+};
+
+export interface AiTenantBudget {
+  tokenBudget: number | null;
+  costBudgetUsd: number | null;
+  usedTokens: number;
+  usedCostUsd: number;
+  /** Month-to-date percentage of the tightest budget used; null when no budget is set. */
+  pctUsed: number | null;
+  periodStart: string;
+  resetAt: string;
+}
+
+export interface AiCompanyUsagePage {
+  items: AiCompanyUsage[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AiFailureCategory {
+  /** timeout | provider_rate_limited | provider_unavailable | invalid_response | network | other */
+  category: string;
+  count: number;
+}
+
+export interface AiTenantNearLimit {
+  companyId: number;
+  companyName: string | null;
+  pctUsed: number;
+  usedTokens: number;
+  usedCostUsd: number;
+  tokenBudget: number | null;
+  costBudgetUsd: number | null;
+}
+
+export interface AiPlatformUsageFilters {
+  companyId: number | null;
+  feature: string | null;
+  model: string | null;
+}
 
 export interface AiRecentInvocation {
   id: number;
@@ -3688,15 +3756,21 @@ export interface AiUsageResponse {
   to: string;
   totals: AiUsageAgg;
   byFeature: AiFeatureUsage[];
+  byDay: AiDayUsage[];
+  budget: AiTenantBudget;
   recent: AiRecentInvocation[];
 }
 
 export interface AiPlatformUsageResponse {
   from: string;
   to: string;
+  filters: AiPlatformUsageFilters;
   totals: AiUsageAgg;
   byFeature: AiFeatureUsage[];
-  byCompany: AiCompanyUsage[];
+  byDay: AiDayUsage[];
+  byCompany: AiCompanyUsagePage;
+  failureCategories: AiFailureCategory[];
+  tenantsNearLimit: AiTenantNearLimit[];
 }
 
 export interface AiHealthLast24h {
@@ -3870,6 +3944,8 @@ export interface AiCopilotGenerateRequest {
   variant?: string;
   /** Optional extra grounding instructions from the user (never overrides safety rules). */
   instructions?: string;
+  /** Set true for an explicit Regenerate action — bypasses duplicate-request protection so a fresh result is always produced. */
+  regenerate?: boolean;
 }
 
 export type AiCopilotPanelResponseSuggestedAction = { [key: string]: unknown } | null;
@@ -5976,6 +6052,11 @@ to?: string;
 export type GetAiPlatformUsageParams = {
 from?: string;
 to?: string;
+companyId?: number;
+feature?: string;
+model?: string;
+page?: number;
+pageSize?: number;
 };
 
 export type GetAiWorkflowHealthParams = {

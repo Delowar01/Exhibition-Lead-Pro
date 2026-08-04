@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { logger } from "./logger.js";
 import { config } from "../config.js";
 import { getProvider } from "../ai/providers/index.js";
-import { runAi, extractJson, isTimeoutError, redactError } from "../ai/runner.js";
+import { runAi, extractJson, isTimeoutError, redactError, attemptsOf, categorizeError } from "../ai/runner.js";
 import { estimateCostMicroUsd } from "../ai/pricing.js";
+import { checkAiRateLimit, aiRateLimitError } from "../ai/rate-limit.js";
+import { dedupEligible, dedupKey, getCompleted, setCompleted, getInFlight, setInFlight, clearInFlight } from "../ai/dedup.js";
+import { AppError } from "../middlewares/errorHandler.js";
+import { checkBudgetThresholds } from "./ai-alerts.js";
 import {
   PROMPTS,
   buildExtractionPrompt,
@@ -51,10 +56,15 @@ const SCORING_TIMEOUT_MS = config.ai.scoringTimeoutMs;
 
 // Tenant/user context threaded from the calling service so invocations are attributed
 // and the per-tenant AI gates apply. Omit for system/back-compat calls (no enforcement,
-// ledger row recorded with a null company).
+// ledger row recorded with a null company). Batch 6 additions: optional safe entity
+// linkage (type + numeric id only) for the ledger, and bypassDedup for explicit
+// Regenerate actions (a deliberate regeneration must never be treated as a duplicate).
 export interface AiContext {
   companyId?: number | null;
   userId?: number | null;
+  entityType?: string | null;
+  entityId?: number | null;
+  bypassDedup?: boolean;
 }
 
 export interface ExtractedCardOriginal {
@@ -186,17 +196,33 @@ function readOriginal(value: unknown): ExtractedCardOriginal {
   };
 }
 
-// Central execution seam for all JSON-returning AI features: enforces the per-tenant
-// gates (when ctx has a company), runs the provider call through the shared runner,
-// parses JSON, and records the invocation to the ledger (fire-and-forget; never blocks
-// or fails the result path). Enforcement errors are thrown BEFORE any provider call and
-// are not recorded as failed invocations.
+// Central execution seam for all JSON-returning AI features (Batch 6 pipeline):
+//   1. AI rate limit (single policy source; denied requests never touch Gemini)
+//   2. Tenant gates (enabled/feature flag) + provider/model resolution
+//   3. Duplicate protection + short-window safe result reuse (tenant-scoped hash key;
+//      explicit Regenerate bypasses; assistant chats never reused)
+//   4. Atomic budget reservation (advisory-locked; no check-then-write overspend)
+//   5. Provider call through the shared runner (retries accounted)
+//   6. Reliable, idempotent ledger write (awaited; queued retry on failure) and
+//      reservation release — in that order, so budget accounting stays consistent.
+// Policy rejections (403 gates) are thrown BEFORE any provider call and are not
+// recorded as provider usage; rate-limit/budget denials are recorded as zero-token
+// non-provider rows so operators can see them.
 export interface CallJsonMeta {
   parsed: Record<string, unknown>;
   provider: string;
   model: string;
   latencyMs: number;
   promptVersion: number;
+  requestId: string;
+  cacheHit?: boolean;
+  dedupReused?: boolean;
+}
+
+const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
+function maxOutputTokensFor(feature: AiFeature): number {
+  return config.ai.maxOutputTokensByFeature[feature] ?? config.ai.maxOutputTokens;
 }
 
 async function callJson(opts: {
@@ -220,8 +246,33 @@ async function callJsonWithMeta(opts: {
   confidenceOf?: (parsed: Record<string, unknown>) => number | null;
 }): Promise<CallJsonMeta> {
   const prompt = PROMPTS[opts.feature];
+  const requestId = randomUUID();
 
-  // Provider/model resolution: a tenant's effective ai_settings (validated on write to
+  // 1. AI-specific rate limit — before any tenant gate or provider work.
+  const denial = checkAiRateLimit({
+    companyId: opts.ctx?.companyId,
+    userId: opts.ctx?.userId,
+    feature: opts.feature,
+  });
+  if (denial) {
+    void aiService.recordInvocation({
+      requestId,
+      ctx: opts.ctx,
+      feature: opts.feature,
+      provider: config.ai.provider,
+      model: config.ai.model,
+      promptKey: prompt.key,
+      promptVersion: prompt.version,
+      status: "rate_limited",
+      usage: ZERO_USAGE,
+      costMicroUsd: 0,
+      latencyMs: 0,
+      errorCategory: "rate_limited",
+    });
+    throw aiRateLimitError(denial);
+  }
+
+  // 2. Provider/model resolution: a tenant's effective ai_settings (validated on write to
   // an available provider + non-empty model) win when there is company context; system
   // calls with no tenant fall back to the platform default. This keeps runtime execution
   // consistent with what GET /ai/settings and GET /ai/health report. resolveSettings and
@@ -240,52 +291,231 @@ async function callJsonWithMeta(opts: {
     model,
     parts: opts.parts,
     responseFormat: "json",
-    maxOutputTokens: config.ai.maxOutputTokens,
+    // Feature-specific output cap (Batch 6): structured outputs get tighter, still
+    // generous ceilings; long-form drafts keep the historical 8192.
+    maxOutputTokens: maxOutputTokensFor(opts.feature),
     // gemini-2.5-flash runs "thinking" ON by default (5-15s latency); 0 disables it —
     // a pure speedup for OCR/structured extraction with no measurable quality loss.
     thinkingBudget: config.ai.thinkingBudget,
     timeoutMs: opts.timeoutMs,
   };
 
-  const start = Date.now();
+  // 3. Duplicate protection + safe short-window reuse.
+  const reusable = dedupEligible(opts.feature) && opts.ctx?.bypassDedup !== true;
+  const key = reusable
+    ? dedupKey({
+        companyId: opts.ctx?.companyId,
+        userId: opts.ctx?.userId,
+        feature: opts.feature,
+        entityType: opts.ctx?.entityType,
+        entityId: opts.ctx?.entityId,
+        model,
+        promptVersion: prompt.version,
+        parts: opts.parts,
+      })
+    : null;
+
+  if (key) {
+    const cached = getCompleted(key);
+    if (cached) {
+      // A cached response creates NO provider token usage or cost.
+      void aiService.recordInvocation({
+        requestId,
+        ctx: opts.ctx,
+        feature: opts.feature,
+        provider: providerName,
+        model: cached.model,
+        promptKey: prompt.key,
+        promptVersion: prompt.version,
+        status: "cache_hit",
+        usage: ZERO_USAGE,
+        costMicroUsd: 0,
+        latencyMs: 0,
+      });
+      return { ...cached, requestId, cacheHit: true };
+    }
+    const inflight = getInFlight(key);
+    if (inflight) {
+      const waitStart = Date.now();
+      const shared = await inflight; // failure of the shared call propagates to all waiters
+      void aiService.recordInvocation({
+        requestId,
+        ctx: opts.ctx,
+        feature: opts.feature,
+        provider: providerName,
+        model: shared.model,
+        promptKey: prompt.key,
+        promptVersion: prompt.version,
+        status: "dedup_reused",
+        usage: ZERO_USAGE,
+        costMicroUsd: 0,
+        latencyMs: Date.now() - waitStart,
+      });
+      return { ...shared, requestId, dedupReused: true };
+    }
+  }
+
+  // 4-6. Budget reservation + provider call + reliable accounting, shared with any
+  // concurrent identical requests that arrive while it runs.
+  const exec = executeProviderCall({
+    requestId,
+    feature: opts.feature,
+    promptKey: prompt.key,
+    promptVersion: prompt.version,
+    provider,
+    providerName,
+    model,
+    req,
+    ctx: opts.ctx,
+    confidenceOf: opts.confidenceOf,
+  });
+  if (key) setInFlight(key, exec);
   try {
-    const result = await runAi(provider, req, {
+    const meta = await exec;
+    if (key) setCompleted(key, meta);
+    return meta;
+  } finally {
+    if (key) clearInFlight(key);
+  }
+}
+
+async function executeProviderCall(args: {
+  requestId: string;
+  feature: AiFeature;
+  promptKey: string;
+  promptVersion: number;
+  provider: ReturnType<typeof getProvider>;
+  providerName: string;
+  model: string;
+  req: AiRequest;
+  ctx?: AiContext;
+  confidenceOf?: (parsed: Record<string, unknown>) => number | null;
+}): Promise<CallJsonMeta> {
+  const cid = args.ctx?.companyId;
+
+  // 4. Atomic budget reservation (no-op when the tenant has no budgets configured).
+  let reserved = false;
+  if (cid != null) {
+    try {
+      reserved = await aiService.reserveBudgetIfConfigured(cid, args.requestId, args.model);
+    } catch (err) {
+      if (err instanceof AppError && err.code === "AI_BUDGET_EXCEEDED") {
+        // Denied before contacting Gemini: zero tokens, zero cost, visible in analytics.
+        void aiService.recordInvocation({
+          requestId: args.requestId,
+          ctx: args.ctx,
+          feature: args.feature,
+          provider: args.providerName,
+          model: args.model,
+          promptKey: args.promptKey,
+          promptVersion: args.promptVersion,
+          status: "budget_denied",
+          usage: ZERO_USAGE,
+          costMicroUsd: 0,
+          latencyMs: 0,
+          errorCategory: "budget_denied",
+        });
+      }
+      throw err;
+    }
+  }
+
+  // 5. Provider call (retries accounted; a denied/failed call still releases the
+  // reservation only AFTER its ledger row is written, keeping budget sums consistent).
+  const start = Date.now();
+  let result: Awaited<ReturnType<typeof runAi>>;
+  try {
+    result = await runAi(args.provider, args.req, {
       retries: config.ai.maxRetries,
       backoffMs: config.ai.retryBackoffMs,
     });
-    const latencyMs = Date.now() - start;
-    const parsed = extractJson(result.text) as Record<string, unknown>;
-    void aiService.recordInvocation({
-      ctx: opts.ctx,
-      feature: opts.feature,
-      provider: provider.name,
-      model: result.model,
-      promptKey: prompt.key,
-      promptVersion: prompt.version,
-      status: "success",
-      usage: result.usage,
-      costMicroUsd: estimateCostMicroUsd(result.model, result.usage.inputTokens, result.usage.outputTokens),
-      latencyMs,
-      confidence: opts.confidenceOf ? opts.confidenceOf(parsed) : null,
-    });
-    return { parsed, provider: provider.name, model: result.model, latencyMs, promptVersion: prompt.version };
   } catch (err) {
     const latencyMs = Date.now() - start;
-    void aiService.recordInvocation({
-      ctx: opts.ctx,
-      feature: opts.feature,
-      provider: provider.name,
-      model,
-      promptKey: prompt.key,
-      promptVersion: prompt.version,
+    const durable = await aiService.recordInvocation({
+      requestId: args.requestId,
+      ctx: args.ctx,
+      feature: args.feature,
+      provider: args.providerName,
+      model: args.model,
+      promptKey: args.promptKey,
+      promptVersion: args.promptVersion,
       status: isTimeoutError(err) ? "timeout" : "error",
-      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      usage: ZERO_USAGE,
       costMicroUsd: 0,
       latencyMs,
+      attempts: attemptsOf(err),
       errorMessage: redactError(err),
+      errorCategory: categorizeError(err),
     });
+    if (reserved && durable) await aiService.releaseBudgetReservation(args.requestId);
     throw err;
   }
+
+  const latencyMs = Date.now() - start;
+  const usageCost = estimateCostMicroUsd(result.model, result.usage.inputTokens, result.usage.outputTokens);
+
+  // Parse failures still consumed provider tokens — account them as a failed
+  // invocation WITH the real usage metadata.
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = extractJson(result.text) as Record<string, unknown>;
+  } catch (err) {
+    const durable = await aiService.recordInvocation({
+      requestId: args.requestId,
+      ctx: args.ctx,
+      feature: args.feature,
+      provider: args.provider.name,
+      model: result.model,
+      promptKey: args.promptKey,
+      promptVersion: args.promptVersion,
+      status: "error",
+      usage: result.usage,
+      costMicroUsd: usageCost,
+      latencyMs,
+      attempts: result.attempts,
+      errorMessage: redactError(err),
+      errorCategory: "invalid_response",
+    });
+    if (reserved && durable) await aiService.releaseBudgetReservation(args.requestId);
+    throw err;
+  }
+
+  // 6. Reliable ledger write first, then reservation release (never the reverse).
+  // If the write was NOT durable (DB down AND retry enqueue failed), the reservation
+  // is intentionally kept until its TTL so the unrecorded spend still counts against
+  // budget admission for a while instead of silently reopening headroom.
+  const durable = await aiService.recordInvocation({
+    requestId: args.requestId,
+    ctx: args.ctx,
+    feature: args.feature,
+    provider: args.provider.name,
+    model: result.model,
+    promptKey: args.promptKey,
+    promptVersion: args.promptVersion,
+    status: "success",
+    usage: result.usage,
+    costMicroUsd: usageCost,
+    latencyMs,
+    attempts: result.attempts,
+    confidence: args.confidenceOf ? args.confidenceOf(parsed) : null,
+  });
+  if (reserved) {
+    if (durable) await aiService.releaseBudgetReservation(args.requestId);
+    else logger.warn({ requestId: args.requestId }, "Keeping AI budget reservation until TTL: ledger row not durably recorded");
+    // Budget-threshold alerts (approaching/reached) — async, deduped per day.
+    void checkBudgetThresholds(cid!).catch((err) =>
+      logger.warn({ err, companyId: cid }, "AI budget threshold alert check failed"),
+    );
+  }
+
+  return {
+    parsed,
+    provider: args.provider.name,
+    model: result.model,
+    latencyMs,
+    promptVersion: args.promptVersion,
+    requestId: args.requestId,
+  };
 }
 
 export async function extractCardData(

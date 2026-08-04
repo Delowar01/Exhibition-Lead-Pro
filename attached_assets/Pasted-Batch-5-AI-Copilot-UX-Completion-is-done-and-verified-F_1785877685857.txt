@@ -1,0 +1,33 @@
+Batch 5 — AI Copilot UX Completion is done and verified. Final report:
+
+Architecture reused — All work builds on the existing Enterprise AI Layer (ai.service / ensureAiAllowed, ai-copilot.service upsert model, assistant conversations), the existing lead_activities timeline model, Orval-generated API clients, and the existing toast/i18n systems. No new AI providers, no AI-layer bypass, no second draft system.
+
+Actions per output type (web Copilot panel) — Every output card has Copy (plain-text conversion per type: email → "Subject + body", WhatsApp → message text, structured types → key/value lines), Regenerate (per-card spinner, keeps type + language), and Save as Note (contacts and leads). Copy/Save are disabled while a draft is unavailable.
+
+Save-as-Note routing — Contact context → new POST /contacts/{id}/notes (subject AI draft — <label>, provenance metadata {aiGenerated, aiOutputType}, timeline invalidated); lead context → existing lead activities endpoint. Gated on contacts/leads edit permission (primary_admin/platform_owner bypass).
+
+Deliberate exclusions — Organization entities have no note action (no org-note model; adding one would be a schema change out of scope). The admin AI Command Center has Copy but no Save-as-Note (no entity context to attach a note to).
+
+Save-as-Draft decision — No separate draft store was added: all 8 copilot output types already persist via the upsert model and Edit already persists editedContent; no send endpoint exists to draft against. Building an assistant-chat→draft bridge would have been a second draft system, which the spec forbids.
+
+Regeneration-failure retention — On LLM failure, if the existing row has a usable draft it is returned untouched with a response-only generationFailed: true flag (toast: "Generation failed — previous draft kept"); otherwise the prior soft-degrade placeholder behavior is unchanged (200, never 500).
+
+Web error/retry states — Copilot panel query failure shows an inline error with a working Retry; unavailable drafts show a "Try again" action; AI Assistant (contact workspace and Command Center) now retains a failed send as a visible bubble with the typed message preserved and a Retry button, instead of silently dropping it. Duplicate submissions are prevented via isPending guards.
+
+Mobile — Send errors are classified (network / permission / server) with localized EN + AR messages (RTL-safe), rendered as an alert bubble with Retry; the failed message text is retained. Duplicate sends blocked by mutation-pending guards.
+
+Files (main) — Backend: openapi.yaml, lead_activities.repository/service, routes/contacts.ts, ai-copilot.service.ts. Web: SalesCopilotPanel.tsx, contact/AiWorkspace.tsx, admin/AiCommandCenter.tsx, lib/clipboard.ts, lib/ai-errors.ts. Mobile: app/assistant.tsx, lib/assistant-error.ts, locale files. Tests: test/ai-copilot-ux.test.ts, e2e/j-ai-copilot.spec.ts, lib/assistant-error.test.ts.
+
+Schema — No new tables and no migrations. Notes reuse lead_activities (type "note", metadata jsonb); generationFailed is response-only and never persisted.
+
+Duplicate-note idempotency — Same author + same body within 15 s returns the existing row (200) instead of creating (201). After code review, the check+insert was made atomic (per-contact pg_advisory_xact_lock transaction) so concurrent identical submissions cannot double-insert, and the 200 duplicate response was added to the OpenAPI contract.
+
+Tests added — API: ai-copilot-ux.test.ts 14 tests (notes endpoint incl. permission/tenant/concurrency, regen retention, no-auto-send) using the AI-disabled tenant as a deterministic LLM-failure lever — no live Gemini. Web e2e: j-ai-copilot.spec.ts 6 tests (generate/copy/save, dedupe, regenerate, soft-fail + retry, panel error + retry, no-auto-send). Mobile: assistant-error.test.ts 6 tests (classifier + EN/AR key parity).
+
+Measured results — Typechecks: api-server, web-app, mobile all clean. Full API suite (run once after api-server restart): 37 files, 661/661 passed; after the review fix the affected file re-ran 14/14 (suite total now 662). Full Playwright suite: 37/37 passed (1.7 m). Mobile lib vitest: 63/63 passed (4 files).
+
+Limitations — Mobile coverage is lib-level only (no React Native component-test infra exists, per spec no new harness was added); mobile UI behavior was verified by typecheck + manual code paths. Clipboard e2e asserts the app-level toast contract, not OS clipboard contents. The old-build gotcha: API integration tests hit the live dev server, so it must be restarted after server edits (documented in memory).
+
+Batch 6 confirmation — No token/cost/usage-metering work was started; Batch 6 remains untouched.
+
+A code-review round was run; its two findings (duplicate-window race, missing 200 in the API contract) were fixed and re-verified as described in items 11–13.

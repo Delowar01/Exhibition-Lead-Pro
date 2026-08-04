@@ -573,7 +573,7 @@ export async function recommendAssignee(user: AuthUser, id: number, input: { tea
         notes: existing.notes ?? null,
       },
       candidates,
-      { companyId: existing.companyId, userId: user.id },
+      { companyId: existing.companyId, userId: user.id, entityType: "lead", entityId: existing.id },
     );
     const match = candidates.find((c) => c.id === rec.userId);
     if (match) { chosen = match; reasoning = rec.reasoning || "AI-recommended owner"; }

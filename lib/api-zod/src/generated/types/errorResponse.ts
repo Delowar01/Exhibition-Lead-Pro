@@ -5,12 +5,19 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ErrorResponseContext } from './errorResponseContext';
 import type { ErrorResponseDetailsItem } from './errorResponseDetailsItem';
 
 export interface ErrorResponse {
   error: string;
   /** Correlates this response with server logs (also returned as the X-Request-Id header). */
   requestId?: string;
+  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED). */
+  code?: string;
+  /** Present on rate-limit responses; mirrors the Retry-After header. */
+  retryAfterSeconds?: number;
+  /** Optional safe, machine-readable context for the error code (e.g. budget kind/limits/reset date). Never contains prompt or response content. */
+  context?: ErrorResponseContext;
   /** Per-field validation issues (present on 400 validation failures). */
   details?: ErrorResponseDetailsItem[];
 }

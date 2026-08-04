@@ -100,6 +100,8 @@ export interface AiUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** True when the provider returned no usage metadata (counts are a fallback estimate). */
+  missingMetadata?: boolean;
 }
 
 export interface AiResult {

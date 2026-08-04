@@ -17,4 +17,6 @@ export interface AiCopilotGenerateRequest {
   variant?: string;
   /** Optional extra grounding instructions from the user (never overrides safety rules). */
   instructions?: string;
+  /** Set true for an explicit Regenerate action — bypasses duplicate-request protection so a fresh result is always produced. */
+  regenerate?: boolean;
 }

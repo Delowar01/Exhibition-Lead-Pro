@@ -13,10 +13,10 @@ export interface AiErrorInfo {
 // say something more useful than a generic "failed".
 export function describeAiError(err: unknown, fallbackTitle = "Something went wrong"): AiErrorInfo {
   if (err instanceof ApiError) {
-    const serverMessage =
-      err.data && typeof err.data === "object" && typeof (err.data as Record<string, unknown>).error === "string"
-        ? String((err.data as Record<string, unknown>).error)
-        : "";
+    const body = (err.data && typeof err.data === "object" ? err.data : {}) as Record<string, unknown>;
+    const serverMessage = typeof body.error === "string" ? body.error : "";
+    const code = typeof body.code === "string" ? body.code : "";
+    const retryAfter = typeof body.retryAfterSeconds === "number" ? body.retryAfterSeconds : null;
     if (err.status === 401 || err.status === 403) {
       return {
         title: "Not allowed",
@@ -25,6 +25,28 @@ export function describeAiError(err: unknown, fallbackTitle = "Something went wr
       };
     }
     if (err.status === 429) {
+      // Batch 6: the server distinguishes rate limiting (transient — wait a bit)
+      // from an exhausted monthly budget (hard until reset) via `code`.
+      if (code === "AI_RATE_LIMITED") {
+        const wait = retryAfter != null && retryAfter > 0 ? `Try again in ${retryAfter}s.` : "Try again in a moment.";
+        return {
+          title: "Too many AI requests",
+          description: `You're sending AI requests too quickly. ${wait}`,
+          retryable: true,
+        };
+      }
+      if (code === "AI_BUDGET_EXCEEDED") {
+        const ctx = (body.context && typeof body.context === "object" ? body.context : {}) as Record<string, unknown>;
+        const resetAt = typeof ctx.resetAt === "string" ? new Date(ctx.resetAt) : null;
+        const when = resetAt && !Number.isNaN(resetAt.getTime())
+          ? ` AI features resume on ${resetAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}.`
+          : "";
+        return {
+          title: "Monthly AI budget reached",
+          description: `Your organization's monthly AI budget is used up.${when} An admin can raise the budget in AI Settings.`,
+          retryable: false,
+        };
+      }
       return {
         title: "Limit reached",
         description: serverMessage || "The AI usage limit has been reached. Try again later.",

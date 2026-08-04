@@ -1,0 +1,600 @@
+```text
+Implement Batch 6 — AI Token Usage, Cost, and Limit Enhancement for the existing Lead Capture Pro project.
+
+PURPOSE
+
+Complete and harden the existing AI usage-management system so Gemini usage is accurately tracked, tenant budgets are enforced safely under concurrency, unnecessary AI calls are reduced, and authorized web users can clearly understand token usage and estimated cost.
+
+This batch must enhance the existing Enterprise AI Layer, `ai_invocations` ledger, budget checks, provider adapter, and usage endpoints.
+
+Do not create a second AI metering system.
+
+CURRENT VERIFIED BASELINE
+
+- Batch 5 is complete.
+- API tests currently report 662 total after the final Batch 5 fix.
+- Playwright currently passes 37/37.
+- Mobile tests currently pass 63/63.
+- API, web, and mobile typechecks are clean.
+- Google Gemini 2.5 Flash is the approved and only AI provider.
+- All AI calls must continue through the Enterprise AI Layer.
+- The codebase already has:
+  - An `ai_invocations` usage ledger
+  - Token, cost, latency, and failure fields
+  - Tenant AI settings and budgets
+  - Existing budget-denial behavior
+  - Platform AI usage endpoints
+  - Persisted Copilot outputs
+- Batch 5 completed Copy, Regenerate, Save as Note, and AI error/retry UX.
+
+KNOWN GAPS
+
+The Master Audit identified:
+
+- AI budget enforcement is not atomic and can overspend under concurrent requests.
+- Invocation-ledger writes are fire-and-forget and may be lost.
+- There is no complete AI-specific rate-limiting system.
+- Duplicate-request protection is incomplete.
+- Safe caching and persisted-result reuse are inconsistent.
+- Tenant-level usage visibility is incomplete.
+- Platform Owner usage analytics need enhancement.
+- Automatic or unnecessary AI calls may occur without explicit user action.
+- Existing AI context may include more data than required for some tools.
+- Estimated-cost pricing must be centrally managed and historically reliable.
+
+IMPORTANT BOUNDARIES
+
+Do not:
+
+- Add another AI provider.
+- Call Gemini directly from frontend or feature services.
+- Bypass the Enterprise AI Layer.
+- Create a duplicate invocation or budget table without first proving the existing model cannot be extended safely.
+- Redesign AI Copilot, AI Assistant, Workflow Intelligence, or Executive Intelligence.
+- Change AI prompts or reduce context in a way that damages output quality.
+- Add mobile AI administration or mobile usage dashboards.
+- Restore removed mobile AI Command Center, Workflow Intelligence, or Executive Intelligence screens.
+- Build customer billing based on AI usage.
+- Treat estimated AI cost as an invoice or financial charge.
+- Store prompts, generated responses, OCR images, contact content, documents, or sensitive business data in usage analytics.
+- Hardcode unverified current Gemini pricing in multiple files.
+- Make unrelated CRM, authentication, workflow, reporting, or billing changes.
+- Begin Batch 7 OCR verification.
+
+STEP 1 — INSPECT BEFORE CHANGING
+
+Inspect the complete AI execution path:
+
+- Enterprise AI Layer
+- Gemini provider adapter
+- `ensureAiAllowed`
+- `callJsonWithMeta` or equivalent shared execution method
+- AI runner and retry behavior
+- Copilot services
+- Assistant conversations
+- OCR calls
+- Workflow Intelligence
+- Executive Intelligence
+- AI provider configuration
+- `ai_invocations` schema and repository
+- Tenant AI settings and budgets
+- Existing usage endpoints
+- Platform Owner usage UI
+- Tenant administration/settings pages
+- Current permissions
+- Existing caching
+- Existing request IDs or idempotency support
+- Existing rate-limit infrastructure
+- Existing notification/alert system
+- Existing AI tests
+
+Create a factual internal mapping of every Gemini call site.
+
+Confirm that every retained AI feature passes through the Enterprise AI Layer. If any direct provider call exists, route it through the existing shared layer using the smallest safe correction.
+
+Do not change working prompts unless required for context minimization or token limits.
+
+STEP 2 — CENTRAL INVOCATION ACCOUNTING
+
+Ensure every provider request records, where available:
+
+- Tenant/company ID
+- User ID
+- AI feature or tool
+- Entity type
+- Entity ID only when required and safe
+- Gemini model
+- Logical request ID
+- Provider attempt number where retries occur
+- Input tokens
+- Output tokens
+- Total tokens
+- Request count
+- Start time
+- Duration/latency
+- Success or failure
+- Safe error category
+- Estimated cost
+- Cache-hit status
+- Duplicate-suppressed status
+- Budget-denied status where appropriate
+
+Requirements:
+
+- Use actual Gemini usage metadata when returned.
+- Do not estimate tokens when actual provider metadata is available.
+- If metadata is unavailable, use the smallest existing safe fallback and mark the row as estimated.
+- Do not count the same provider call twice.
+- Provider retries that consume tokens must be included in total usage.
+- A request rejected before contacting Gemini must not be counted as provider token usage.
+- Cached results must not be counted as new provider token usage.
+- Do not store raw prompts, responses, contact data, or hidden context.
+- Logs must not expose prompts or sensitive AI content.
+
+Preserve current historical data.
+
+STEP 3 — RELIABLE LEDGER WRITES
+
+Replace unreliable fire-and-forget accounting with a safe mechanism.
+
+Requirements:
+
+- Successful AI responses must not be lost merely because the usage row failed to write.
+- Usage writes must be retried or safely queued using existing infrastructure.
+- Failed usage writes must be visible in operational logs.
+- A retry must not create duplicate invocation rows.
+- Use a stable invocation/request ID for idempotent ledger persistence.
+- Record provider failures when token metadata is available.
+- Do not delay user responses unnecessarily for noncritical analytics writes.
+- Budget reservations and final usage accounting must remain consistent after process errors.
+
+Do not introduce a large event platform solely for ledger writes.
+
+STEP 4 — CENTRAL PRICING CONFIGURATION
+
+Centralize estimated-cost calculation.
+
+Requirements:
+
+- Use one server-side pricing configuration source.
+- Pricing must be model-specific.
+- Input and output token rates must be separate where applicable.
+- Include a pricing version or effective-date identifier.
+- Store estimated cost at invocation time so historical totals do not change when pricing is updated.
+- Do not calculate cost independently in frontend code.
+- The UI must use totals returned by the backend.
+- If no approved Gemini pricing values exist in the repository or environment, create an owner-configurable server setting rather than guessing current prices.
+- Clearly label amounts as estimated AI cost.
+- Preserve existing configured pricing where valid.
+
+Do not perform currency conversion unless the existing approved design already supports it.
+
+STEP 5 — ATOMIC BUDGET ENFORCEMENT
+
+Harden the existing tenant-budget system against concurrent requests.
+
+Requirements:
+
+- Preserve the current budget period and reset semantics.
+- Enforce limits before contacting Gemini.
+- Concurrent requests must not collectively exceed the approved budget because of a check-then-write race.
+- Use the smallest reliable database transaction, row lock, advisory lock, reservation, or atomic conditional-update mechanism compatible with the current schema.
+- If reservations are used:
+  - Reserve before provider execution.
+  - Finalize with actual usage afterward.
+  - Release unused reservation.
+  - Recover abandoned reservations safely.
+- Provider retries must respect the remaining budget.
+- Cached or duplicate-suppressed responses must not consume provider-token budget.
+- One tenant must never affect another tenant’s budget.
+- Limit denial must use the current safe API status/error contract unless a correction is required.
+- Return enough safe metadata for the UI to show:
+  - Limit reached
+  - Current usage
+  - Allowed limit
+  - Reset date or period
+- Normal users must not see platform-wide cost information.
+
+Do not add automatic overage billing.
+
+STEP 6 — AI-SPECIFIC RATE LIMITING
+
+Add or complete targeted AI rate limiting using the existing rate-limit infrastructure.
+
+Apply limits by an appropriate combination of:
+
+- Tenant
+- User
+- AI feature/tool
+- Time window
+
+Requirements:
+
+- Limits must be configurable from one server-side policy source.
+- Avoid a single broad limit that unfairly blocks an entire tenant because one user misbehaves.
+- High-cost features may have stricter limits than lightweight features.
+- Platform Owner requests must not silently bypass all protection.
+- Return a consistent retry-after response where supported.
+- Record rate-limit events without storing prompt content.
+- Tenant isolation must be preserved.
+- Automated tests must use deterministic limits.
+
+Do not build a large rate-limit administration interface in this batch.
+
+STEP 7 — DUPLICATE REQUEST PROTECTION
+
+Prevent accidental repeated Gemini calls caused by:
+
+- Double-clicks
+- Network retries
+- Repeated mutation submission
+- Browser refresh
+- Multiple identical requests running at the same time
+
+Requirements:
+
+- Reuse existing request IDs where available.
+- Otherwise derive a safe tenant-scoped idempotency key from canonical request metadata or a hash.
+- Never store raw prompt or contact content as the deduplication key.
+- Include tenant, user, feature, entity, tool settings, prompt/config version, and relevant context version where needed.
+- Concurrent identical requests should share or reuse one result when safe.
+- Do not suppress requests that are genuinely different.
+- Do not deduplicate different tenants.
+- Record whether the request was suppressed or reused.
+- Preserve explicit Regenerate behavior: a deliberate regeneration request must be allowed and must not be incorrectly treated as a duplicate.
+
+STEP 8 — SAFE CACHING AND RESULT REUSE
+
+Use caching only where semantically safe.
+
+Requirements:
+
+- Prefer existing persisted Copilot outputs and summaries over a new generic cache.
+- Cache keys must be tenant-scoped.
+- Include feature/tool, entity, language, prompt version, and relevant context version.
+- Invalidate or bypass stale cache when the underlying contact/entity context changes.
+- Do not share cache entries across tenants or users when user permissions affect context.
+- Do not cache assistant chat responses across conversations or turns.
+- Do not cache permission-denied or validation-error responses.
+- A cached response must not create new token usage or estimated provider cost.
+- Record cache hits separately.
+- Keep cache duration conservative and configurable.
+
+Do not add Redis or another external cache unless the existing deployment already uses it or a proven requirement makes it necessary.
+
+STEP 9 — REDUCE UNNECESSARY AI CALLS
+
+Audit retained web and mobile AI surfaces.
+
+Requirements:
+
+- Opening a page must not automatically trigger a new Gemini request solely to populate decorative content.
+- Existing persisted AI output may be loaded on page open.
+- Generation should occur only after:
+  - Explicit user action, or
+  - An already-approved background process with a real business purpose
+- Re-rendering a component must not repeat an AI mutation.
+- Browser refresh must not regenerate content automatically.
+- Polling must not invoke Gemini.
+- Background retries must remain bounded.
+- Explicit Regenerate must continue to work.
+
+Add a regression test proving that opening central AI pages does not make an unnecessary provider call.
+
+STEP 10 — CONTEXT AND OUTPUT TOKEN OPTIMIZATION
+
+Reduce redundant context without lowering expected output quality.
+
+For each AI feature:
+
+- Send only fields needed for that tool.
+- Avoid sending full contact histories when a bounded, relevant subset is sufficient.
+- Use deterministic relevance/date limits for timeline events, activities, and documents.
+- Prefer persisted summaries where they remain current.
+- Avoid duplicate context appearing in multiple prompt sections.
+- Exclude hidden, empty, unrelated, or inaccessible fields.
+- Keep tenant and permission scoping intact.
+- Apply feature-specific maximum output-token limits.
+- Keep enough context for accurate results.
+- Preserve existing language and tone controls.
+
+Do not make arbitrary prompt changes.
+
+When context is truncated:
+
+- Use a deterministic priority order.
+- Record safe truncation metadata such as counts, not content.
+- Avoid cutting required instructions or structured-output schemas.
+
+STEP 11 — TENANT USAGE VISIBILITY
+
+Add or complete a web-only tenant AI usage view for authorized tenant administrators.
+
+Reuse an existing Admin/AI Settings/Usage page when available.
+
+Show:
+
+- Current usage period
+- Input tokens
+- Output tokens
+- Total tokens
+- Request count
+- Successful and failed requests
+- Estimated cost
+- Current budget or limit
+- Percentage used
+- Reset date
+- Usage by AI feature/tool
+- Recent daily trend
+- Limit and high-usage alerts
+
+Requirements:
+
+- Tenant administrators see only their own organization.
+- Normal users see only the minimal limit feedback needed during AI use.
+- Apply an existing permission or add the smallest appropriate permission.
+- Backend authorization remains mandatory.
+- Use the existing design system.
+- Support light/dark themes.
+- Support desktop, tablet, 390px, and 360px.
+- Do not add this administration page to the mobile app.
+
+STEP 12 — PLATFORM OWNER AI USAGE ANALYTICS
+
+Enhance the existing web Platform Owner usage surface rather than creating a duplicate dashboard.
+
+Show:
+
+- Platform-wide tokens
+- Request count
+- Estimated cost
+- Success/failure rate
+- Average latency
+- Usage trend
+- Highest-usage tenants
+- Highest-cost tenants
+- Highest-usage AI features
+- Tenants near or over limits
+- Failed invocation categories
+- Filter by date range, tenant, feature, and model
+
+Requirements:
+
+- Do not show prompts, generated content, OCR images, contact data, or tenant business content.
+- Platform Owner analytics must use aggregate usage data only.
+- Tenant CRM firewall protections remain unchanged.
+- Large queries must be paginated or aggregated efficiently.
+- Add only necessary database indexes after inspecting current indexes.
+- Do not build unnecessary complex charts.
+
+STEP 13 — ALERTS AND LIMIT FEEDBACK
+
+Use the existing notification or alert system where possible.
+
+Support:
+
+- Approaching tenant limit
+- Limit reached
+- Unusual request spike
+- Repeated AI failure rate
+- Ledger persistence failure requiring operator attention
+
+Requirements:
+
+- Thresholds must come from one configurable policy source.
+- Prevent repeated alert spam.
+- Record when an alert was emitted.
+- Tenant alerts must remain tenant-scoped.
+- Platform alerts must remain Platform Owner-only.
+- Do not send external emails unless the existing approved notification system already supports that action.
+- UI messages must clearly distinguish:
+  - Rate limit
+  - Budget limit
+  - Provider unavailable
+  - Permission denial
+  - General request failure
+
+STEP 14 — PRIVACY AND SECURITY
+
+Confirm:
+
+- No raw prompts or outputs are added to usage analytics.
+- No OCR images or extracted card data are included.
+- No contact or company content is exposed in Platform Owner analytics.
+- Entity IDs are returned only where authorized and genuinely required.
+- Usage endpoints are tenant-scoped.
+- Platform Owner aggregate endpoints do not provide tenant CRM access.
+- Request hashes cannot be reversed to recover sensitive content.
+- Logs exclude AI content and provider credentials.
+- Exporting usage data, if already supported, follows existing permissions and tenant isolation.
+
+STEP 15 — AUTOMATED TESTING
+
+Do not use live Gemini calls.
+
+Use the current stub/provider-test infrastructure.
+
+A. Usage-accounting tests
+
+Cover:
+
+- Actual provider token metadata
+- Input/output/total calculations
+- Estimated fallback marked correctly
+- Success accounting
+- Failure accounting
+- Retry usage counted correctly
+- Cached result creates no provider token usage
+- Duplicate-suppressed request creates no duplicate usage
+- Budget-denied request does not record provider tokens
+- No prompt or response content stored
+- Idempotent ledger writes
+
+B. Atomic-budget tests
+
+Cover:
+
+- Under-limit request
+- Exact-limit request
+- Over-limit request
+- Multiple concurrent requests
+- Reservation/finalization behavior if used
+- Failed provider call
+- Retry behavior
+- Tenant separation
+- Period reset
+- No abandoned reservation permanently blocking usage
+
+Use real concurrency tests, not sequential simulations.
+
+C. Rate-limit tests
+
+Cover:
+
+- Per-user limit
+- Per-tenant limit
+- Feature-specific limit
+- Retry-after behavior
+- Window reset
+- Separate tenants
+- Platform Owner behavior
+
+D. Duplicate and cache tests
+
+Cover:
+
+- Concurrent identical requests
+- Repeated network request
+- Different payloads
+- Different tenants
+- Explicit Regenerate bypass
+- Cache hit
+- Context change invalidation
+- Assistant conversations not improperly cached
+
+E. Usage API tests
+
+Cover:
+
+- Tenant administrator own-tenant access
+- Cross-tenant denial
+- Normal-user denial where appropriate
+- Platform Owner aggregate access
+- Platform Owner tenant CRM firewall remains intact
+- Date, tenant, feature, and model filters
+- Pagination and totals
+- Estimated-cost calculations
+
+F. Web tests
+
+Cover:
+
+- Tenant usage page
+- Platform Owner usage page
+- Loading, empty, error, and permission states
+- Limit feedback
+- Responsive layouts
+- Light/dark theme
+- No automatic Gemini invocation on page load
+
+G. Playwright tests
+
+Add focused coverage for:
+
+- Tenant administrator viewing own usage
+- Cross-tenant URL or parameter attempt denied
+- Platform Owner viewing aggregate usage
+- Budget-limit UI
+- Rate-limit UI
+- Page navigation does not trigger a Gemini provider call
+- Existing AI Copilot generation still works
+- Existing AI Assistant still works
+
+H. Mobile tests
+
+Only verify retained behavior:
+
+- Mobile Assistant handles rate-limit and budget-limit responses clearly.
+- No mobile AI usage administration page is added.
+- English and Arabic translations remain in parity.
+
+Do not create a new React Native component-test framework solely for this batch.
+
+STEP 16 — PERFORMANCE AND REGRESSION VERIFICATION
+
+Run:
+
+- API-server typecheck
+- Web-app typecheck
+- Mobile typecheck
+- Relevant AI tests
+- Concurrency tests
+- Usage endpoint tests
+- Web tests
+- Mobile tests
+- Full API suite
+- Full Playwright suite
+- Existing Contact Workspace tests
+- Existing AI Copilot tests
+
+Also inspect query plans or query performance for the main usage aggregation endpoints using representative data.
+
+Do not add a complex aggregation pipeline unless existing queries are genuinely too slow.
+
+Report the actual new test totals. Do not assume they remain 662, 37, or 63.
+
+COMPLETION CRITERIA
+
+Mark Batch 6 complete only when:
+
+- All retained Gemini calls pass through centralized metering.
+- Actual provider tokens are used where available.
+- Estimated cost is calculated from one versioned server configuration.
+- Historical estimated costs remain stable.
+- Invocation records are reliably and idempotently persisted.
+- Budget enforcement is atomic under concurrent requests.
+- AI-specific rate limits work.
+- Duplicate requests do not create duplicate provider calls.
+- Safe cache or persisted-result reuse is implemented where appropriate.
+- AI pages do not create unnecessary calls on page load.
+- Context and output-token limits are feature-appropriate.
+- Tenant administrators can view only their organization’s usage.
+- Platform Owner can view aggregate and per-tenant usage without seeing tenant content.
+- Alerts and limit feedback work without spam.
+- Privacy and tenant isolation tests pass.
+- No mobile administration screens are added.
+- No live Gemini calls are required by automated tests.
+- Typechecks and full regression suites pass.
+- Batch 7 OCR verification was not started.
+
+FINAL REPORT
+
+Return only:
+
+1. Existing AI metering architecture reused
+2. Gemini call sites audited
+3. Usage fields tracked
+4. Ledger reliability changes
+5. Pricing configuration approach
+6. Atomic budget mechanism
+7. AI rate limits
+8. Duplicate-request protection
+9. Caching and persisted-result reuse
+10. Unnecessary calls removed
+11. Context/token optimizations
+12. Tenant usage visibility
+13. Platform Owner usage analytics
+14. Alerts and limit feedback
+15. Privacy protections
+16. Files changed
+17. Schema or migration changes
+18. Tests added or changed
+19. Commands run
+20. Exact pass/fail totals
+21. Performance findings
+22. Genuine limitations
+23. Confirmation that no mobile AI administration was added
+24. Confirmation that Batch 7 OCR scope was not started
+
+Do not begin another batch or recommend unrelated features.
+```

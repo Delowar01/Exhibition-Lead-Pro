@@ -23,6 +23,9 @@ router.use("/ai/settings", requireTenantUser);
 router.use("/ai/settings", blockReadOnlyMutations);
 router.use("/ai/settings", auditMutations("ai"));
 router.use("/ai/usage", requireTenantUser);
+// Batch 6: usage & cost visibility is an ADMIN surface (primary_admin + admin), not
+// an all-tenant-users read — employees have no budget/cost management duties.
+router.use("/ai/usage", requireRole("primary_admin", "admin"));
 router.use("/ai/health", requireTenantUser);
 // Platform-wide AI visibility — platform_owner only.
 router.use("/ai/platform", requireRole("platform_owner"));
@@ -183,6 +186,7 @@ router.post("/ai/copilot/:entityType/:id/:outputType", requirePermission("ai_cop
     messageType?: unknown;
     variant?: unknown;
     instructions?: unknown;
+    regenerate?: unknown;
   };
   res.json(
     await copilot.generateOutput(req.user!, entityType, id, outputType, {
@@ -191,6 +195,7 @@ router.post("/ai/copilot/:entityType/:id/:outputType", requirePermission("ai_cop
       messageType: body.messageType,
       variant: body.variant,
       instructions: body.instructions,
+      regenerate: body.regenerate === true,
     }),
   );
 });

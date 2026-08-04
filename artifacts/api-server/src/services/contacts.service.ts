@@ -273,7 +273,7 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
         const score = await scoreLead(
           { firstName: finalContact.firstName, lastName: finalContact.lastName, jobTitle: finalContact.jobTitle, contactCompany: finalContact.contactCompany, email: finalContact.email, mobile: finalContact.mobile, website: finalContact.website, linkedin: finalContact.linkedin, country: finalContact.country, notes: finalContact.notes },
           eventName,
-          { companyId: finalContact.companyId, userId: ownerId },
+          { companyId: finalContact.companyId, userId: ownerId, entityType: "contact", entityId: finalContact.id },
         );
         const isHot = score.temperature === "hot";
         // Re-target the still-existing, still-original row. If the contact was
@@ -1029,7 +1029,7 @@ export async function enrichContact(user: AuthUser, id: number) {
         contactCompany: c.contactCompany, email: c.email, website: c.website,
         linkedin: c.linkedin, country: c.country, notes: c.notes,
       },
-      { companyId: c.companyId, userId: user.id },
+      { companyId: c.companyId, userId: user.id, entityType: "contact", entityId: c.id },
     );
   } catch (aiErr) {
     if (aiErr instanceof AppError) throw aiErr;

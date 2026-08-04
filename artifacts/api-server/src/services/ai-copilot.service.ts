@@ -359,6 +359,9 @@ export interface GenerateOptions {
   messageType?: unknown;
   variant?: unknown;
   instructions?: unknown;
+  // Batch 6: an explicit Regenerate action bypasses duplicate-request protection —
+  // a deliberate regeneration must never be served a reused result.
+  regenerate?: unknown;
 }
 
 // Fold the optional generation hints (tone / messageType / variant) into the prompt
@@ -421,7 +424,13 @@ export async function generateOutput(
   const instructions = typeof opts.instructions === "string" ? opts.instructions.trim().slice(0, 1000) : "";
   const loaded = await loadEntityContext(user, entityType, id);
   const cid = loaded.companyId;
-  const ctx: AiContext = { companyId: cid, userId: user.id };
+  const ctx: AiContext = {
+    companyId: cid,
+    userId: user.id,
+    entityType,
+    entityId: id,
+    bypassDedup: opts.regenerate === true,
+  };
 
   let runtime: { provider?: string; model?: string } = {};
   try {
@@ -504,6 +513,12 @@ export async function generateOutput(
     }
     return copilotRepo.upsertOutput(buildUpsert(cid, entityType, id, outputType, content, meta, "ai", language, runtime));
   } catch (err) {
+    // Batch 6: rate-limit and budget denials are deliberate pre-provider policy
+    // decisions (no tokens consumed) — surface them as clear 429s with their machine
+    // code instead of soft-degrading, so the client can show the right guidance.
+    if (err instanceof AppError && (err.code === "AI_RATE_LIMITED" || err.code === "AI_BUDGET_EXCEEDED")) {
+      throw err;
+    }
     logAiError(`ai-copilot:${outputType}`, err);
     const message = err instanceof AppError ? err.message : "AI generation is currently unavailable. Please try again.";
     // Regeneration failure must NOT destroy a previously successful draft: if a

@@ -359,7 +359,7 @@ export interface AnalyzeResult {
 
 export async function analyzeEntity(user: AuthUser, entityType: EntityType, id: number): Promise<AnalyzeResult> {
   const aiErrors: Array<{ feature: string; message: string }> = [];
-  const ctxOf = (companyId: number) => ({ companyId, userId: user.id });
+  const ctxOf = (companyId: number) => ({ companyId, userId: user.id, entityType, entityId: id });
 
   // The tenant's effective provider/model at analysis time, stamped onto every AI-sourced
   // insight row so provenance reflects the ACTUAL runtime config (not a hardcoded value)

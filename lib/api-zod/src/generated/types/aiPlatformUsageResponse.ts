@@ -5,14 +5,22 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { AiCompanyUsage } from './aiCompanyUsage';
+import type { AiCompanyUsagePage } from './aiCompanyUsagePage';
+import type { AiDayUsage } from './aiDayUsage';
+import type { AiFailureCategory } from './aiFailureCategory';
 import type { AiFeatureUsage } from './aiFeatureUsage';
+import type { AiPlatformUsageFilters } from './aiPlatformUsageFilters';
+import type { AiTenantNearLimit } from './aiTenantNearLimit';
 import type { AiUsageAgg } from './aiUsageAgg';
 
 export interface AiPlatformUsageResponse {
   from: string;
   to: string;
+  filters: AiPlatformUsageFilters;
   totals: AiUsageAgg;
   byFeature: AiFeatureUsage[];
-  byCompany: AiCompanyUsage[];
+  byDay: AiDayUsage[];
+  byCompany: AiCompanyUsagePage;
+  failureCategories: AiFailureCategory[];
+  tenantsNearLimit: AiTenantNearLimit[];
 }

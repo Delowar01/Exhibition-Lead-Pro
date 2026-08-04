@@ -198,6 +198,27 @@ describe("GET /ai/usage — aggregation, cost & tenant isolation", () => {
     expect(body.totals.requests).toBe(1);
     expect(body.byFeature[0].feature).toBe("contact_enrichment");
   });
+
+  it("403s an employee (usage & cost is an admin surface)", async () => {
+    const res = await api("GET", "/ai/usage", empToken);
+    expect(res.status).toBe(403);
+  });
+
+  it("includes the month budget snapshot and daily trend", async () => {
+    const res = await api("GET", "/ai/usage", adminToken);
+    const body = await res.json();
+    // Budget was set to $25/month in the PATCH test above.
+    expect(body.budget).toBeDefined();
+    expect(body.budget.costBudgetUsd).toBe(25);
+    expect(typeof body.budget.usedCostUsd).toBe("number");
+    expect(body.budget.pctUsed).not.toBeNull();
+    expect(typeof body.budget.resetAt).toBe("string");
+    expect(Array.isArray(body.byDay)).toBe(true);
+    expect(body.byDay.length).toBeGreaterThanOrEqual(1);
+    const day = body.byDay[0];
+    expect(day.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(day.requests).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("GET /ai/health", () => {
@@ -225,9 +246,47 @@ describe("Platform-owner tenant firewall", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.totals.requests).toBeGreaterThanOrEqual(4);
-    const names = body.byCompany.map((c: { companyName: string | null }) => c.companyName);
+    // byCompany is paginated (Batch 6): { items, total, page, pageSize }.
+    expect(body.byCompany.page).toBe(1);
+    expect(body.byCompany.total).toBeGreaterThanOrEqual(2);
+    const names = body.byCompany.items.map((c: { companyName: string | null }) => c.companyName);
     expect(names).toContain(`QA AI ${SUFFIX}`);
     expect(names).toContain(`QA AI B ${SUFFIX}`);
+    expect(Array.isArray(body.byDay)).toBe(true);
+    expect(Array.isArray(body.failureCategories)).toBe(true);
+    expect(Array.isArray(body.tenantsNearLimit)).toBe(true);
+  });
+
+  it("supports company/feature filters and pagination params", async () => {
+    const res = await api(
+      "GET",
+      `/ai/platform/usage?companyId=${companyId}&feature=card_extraction&page=1&pageSize=5`,
+      platformToken,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.filters.companyId).toBe(companyId);
+    expect(body.filters.feature).toBe("card_extraction");
+    // Tenant A has exactly 2 card_extraction provider calls seeded.
+    expect(body.totals.requests).toBe(2);
+    expect(body.byCompany.items.length).toBe(1);
+    expect(body.byCompany.items[0].companyId).toBe(companyId);
+    expect(body.byCompany.pageSize).toBe(5);
+  });
+
+  it("400s an unknown feature filter and bad pagination", async () => {
+    expect((await api("GET", "/ai/platform/usage?feature=nope", platformToken)).status).toBe(400);
+    expect((await api("GET", "/ai/platform/usage?page=0", platformToken)).status).toBe(400);
+    expect((await api("GET", "/ai/platform/usage?pageSize=101", platformToken)).status).toBe(400);
+  });
+
+  it("privacy: analytics never expose prompt/response content or raw error messages", async () => {
+    // The seeded tenant-A error row carries errorMessage "boom" — it must not
+    // appear anywhere in the aggregate analytics payloads.
+    const platformBody = await (await api("GET", "/ai/platform/usage", platformToken)).text();
+    expect(platformBody).not.toContain("boom");
+    const tenantBody = await (await api("GET", "/ai/usage", adminToken)).text();
+    expect(tenantBody).not.toContain("boom");
   });
 
   it("403s a tenant admin on the platform aggregate", async () => {

@@ -194,6 +194,8 @@
     "sendFailed": "The AI could not generate a response. Your message was not sent.",
     "sendFailedNetwork": "No connection — check your internet and try again.",
     "sendFailedPermission": "You don't have permission to use the AI assistant.",
+    "sendFailedRateLimited": "You're sending requests too quickly. Wait a moment and try again.",
+    "sendFailedBudget": "Your organization's monthly AI budget is used up. Ask an admin to raise it in AI Settings.",
     "retry": "Retry"
   },
   "companies": {

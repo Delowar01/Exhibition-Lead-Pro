@@ -129,12 +129,106 @@ export const config = {
     // ESTIMATED provider prices in micro-USD (1e-6 USD) per 1,000 tokens, used for
     // cost VISIBILITY only (never billing). Override via env if prices change; an
     // unknown model resolves to 0 cost (reported as "estimate unavailable").
+    // pricingVersion identifies the pricing configuration in effect; it is stamped on
+    // every ledger row at invocation time so historical totals never change when
+    // prices are updated (bump the version when changing any rate).
+    pricingVersion: process.env.AI_PRICING_VERSION ?? "v1-2025-06-defaults",
     pricing: {
       "gemini-2.5-flash": {
         inputPer1kMicroUsd: numEnv("AI_PRICE_FLASH_INPUT_PER1K_MICROUSD", 300, 0),
         outputPer1kMicroUsd: numEnv("AI_PRICE_FLASH_OUTPUT_PER1K_MICROUSD", 2_500, 0),
       },
+      // Deterministic stub provider models (non-production only; see providers/stub.ts).
+      // Priced like flash so cost-estimation paths are testable without live Gemini.
+      ...(nodeEnv !== "production"
+        ? {
+            "stub-model": { inputPer1kMicroUsd: 300, outputPer1kMicroUsd: 2_500 },
+          }
+        : {}),
     } as Record<string, { inputPer1kMicroUsd: number; outputPer1kMicroUsd: number }>,
+    // Batch 6 — deterministic stub provider for automated tests (never in production).
+    enableStubProvider: nodeEnv !== "production" && process.env.AI_ENABLE_STUB !== "false",
+    // Batch 6 — feature-specific maximum output tokens. Structured JSON outputs
+    // (scores, recommendations) need far fewer tokens than long-form drafts; the
+    // fallback remains the historical 8192 cap. Values are deliberately generous
+    // (≥4x observed output sizes) so quality is never affected.
+    maxOutputTokensByFeature: {
+      card_extraction: 8192, // full OCR payload + per-field originals/confidences
+      lead_scoring: 1024,
+      contact_enrichment: 1024,
+      assignee_recommendation: 1024,
+      lead_intelligence: 4096,
+      company_intelligence: 4096,
+      contact_intelligence: 4096,
+      smart_classification: 2048,
+      opportunity_potential: 2048,
+      email_composer: 4096,
+      whatsapp_composer: 2048,
+      call_preparation: 4096,
+      meeting_preparation: 4096,
+      proposal_assistant: 8192, // longest-form draft
+      followup_suggestions: 2048,
+      sales_coaching: 4096,
+      conversation_summary: 4096,
+      workflow_next_action: 2048,
+      workflow_routing: 2048,
+      workflow_progression: 2048,
+      workflow_reminder: 2048,
+      workflow_task: 2048,
+      executive_summary: 8192,
+      executive_forecast: 8192,
+      assistant_answer: 4096,
+    } as Record<string, number>,
+    // Batch 6 — atomic tenant-budget enforcement. Before each provider call a
+    // reservation of this many tokens (and its cost at current pricing) counts toward
+    // the month budget until the call finalizes; abandoned reservations expire after
+    // reservationTtlMs so a crash can never block a tenant permanently.
+    budget: {
+      reserveTokens: numEnv("AI_BUDGET_RESERVE_TOKENS", 2_000, 0),
+      // Must exceed the worst-case provider call (timeout × retries + backoff) or an
+      // in-flight call's reservation can expire mid-call and reopen budget headroom.
+      reservationTtlMs: numEnv("AI_BUDGET_RESERVATION_TTL_MS", 5 * 60 * 1000, 1_000),
+    },
+    // Batch 6 — duplicate-request protection + conservative safe result reuse at the
+    // Enterprise AI Layer seam. Keys are tenant+user+feature+prompt-hash scoped;
+    // assistant conversations are never reused. TTL is deliberately short.
+    dedup: {
+      resultTtlMs: numEnv("AI_DEDUP_RESULT_TTL_MS", 30_000, 0), // 0 disables reuse window
+      maxEntries: numEnv("AI_DEDUP_MAX_ENTRIES", 500, 10),
+    },
+    // Batch 6 — AI-specific rate limits (single policy source). Fixed one-minute
+    // windows keyed per user, per tenant, and per user+heavy-feature. Deterministic
+    // for tests via env overrides. platform_owner/system calls fall into a shared
+    // "system" bucket keyed by user id, so no caller silently bypasses protection.
+    rateLimits: {
+      windowMs: numEnv("AI_RATE_WINDOW_MS", 60_000, 1_000),
+      perUserMax: numEnv("AI_RATE_USER_MAX", 30, 1),
+      perTenantMax: numEnv("AI_RATE_TENANT_MAX", 90, 1),
+      heavyPerUserMax: numEnv("AI_RATE_HEAVY_USER_MAX", 10, 1),
+      // High-cost long-form features get the stricter heavy per-user ceiling.
+      heavyFeatures: [
+        "proposal_assistant",
+        "executive_summary",
+        "executive_forecast",
+        "meeting_preparation",
+        "call_preparation",
+      ],
+    },
+    // Batch 6 — usage alert policy (single source for all thresholds). Alerts are
+    // delivered through the existing notification system (category "ai") and deduped
+    // to one per kind per tenant per local day.
+    alerts: {
+      approachingBudgetPct: numEnv("AI_ALERT_APPROACHING_PCT", 80, 1),
+      // Spike: today's provider requests exceed multiplier × trailing 7-day daily
+      // average (with a minimum floor so tiny tenants don't false-positive).
+      spikeMultiplier: numEnv("AI_ALERT_SPIKE_MULTIPLIER", 3, 1),
+      spikeMinRequests: numEnv("AI_ALERT_SPIKE_MIN_REQUESTS", 50, 1),
+      // Failure rate over the last hour (with a minimum request floor).
+      failureRatePct: numEnv("AI_ALERT_FAILURE_RATE_PCT", 50, 1),
+      failureMinRequests: numEnv("AI_ALERT_FAILURE_MIN_REQUESTS", 10, 1),
+      sweepFirstDelayMs: numEnv("AI_ALERT_SWEEP_DELAY_MS", 180_000, 0),
+      sweepIntervalMs: numEnv("AI_ALERT_SWEEP_INTERVAL_MS", 60 * 60 * 1000, 1_000),
+    },
   },
 
   objectStorage: {

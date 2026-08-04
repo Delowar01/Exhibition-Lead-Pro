@@ -539,7 +539,10 @@ export function SalesCopilotPanel({
     if (generate.isPending) return;
     setRegeneratingType(output.outputType);
     generate.mutate(
-      { entityType, id, outputType: output.outputType, data: { language: (output.language === "ar" ? "ar" : "en") } },
+      // regenerate: true = explicit user intent for a FRESH draft; bypasses the
+      // server's duplicate-request protection (which would otherwise return the
+      // cached result generated moments ago).
+      { entityType, id, outputType: output.outputType, data: { language: (output.language === "ar" ? "ar" : "en"), regenerate: true } },
       {
         onSuccess: (result) => {
           invalidate();

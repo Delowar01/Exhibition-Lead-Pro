@@ -5,8 +5,10 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { AiDayUsage } from './aiDayUsage';
 import type { AiFeatureUsage } from './aiFeatureUsage';
 import type { AiRecentInvocation } from './aiRecentInvocation';
+import type { AiTenantBudget } from './aiTenantBudget';
 import type { AiUsageAgg } from './aiUsageAgg';
 
 export interface AiUsageResponse {
@@ -14,5 +16,7 @@ export interface AiUsageResponse {
   to: string;
   totals: AiUsageAgg;
   byFeature: AiFeatureUsage[];
+  byDay: AiDayUsage[];
+  budget: AiTenantBudget;
   recent: AiRecentInvocation[];
 }

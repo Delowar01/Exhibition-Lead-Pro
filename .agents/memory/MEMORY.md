@@ -57,4 +57,5 @@
 - [Web e2e Playwright setup](web-e2e-playwright.md) — Nix-store chromium, real-login localStorage auth, direct-DB capture seed (AI-free), no contact-note/system-event APIs.
 - [Authenticated screenshots](authenticated-screenshots.md) — testing subagent returns no screenshot files; use temp dev-only ?demo= auto-login on Login page + screenshot tool, then remove.
 - [AI-disabled test lever](ai-disabled-test-lever.md) — PATCH /ai/settings enabled:false = deterministic LLM failure without live Gemini; regen retention returns response-only generationFailed:true, never persisted.
+- [AI usage metering & budgets](ai-usage-metering.md) — admission denies at >= (reserve not pre-added); release reservation only after durable ledger write; FK 23503 = permanent drop; fail-once stubs must key per prompt, not global parity.
 - [E2E fixture orphans & long runs](e2e-fixture-orphans.md) — aborted Playwright run orphans the seeded contact (409 by constant mobile); run long suites via workflows, not backgrounded shell; use copilot testids not generic "Generate".

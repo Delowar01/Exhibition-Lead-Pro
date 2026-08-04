@@ -7,10 +7,22 @@
  */
 
 export interface AiUsageAgg {
+  /** Provider calls only (success + error + timeout). */
   requests: number;
   success: number;
+  /** Failed provider calls (error + timeout). */
   errors: number;
   failureRate: number;
+  /** Requests served from the short-window result cache (no provider call, zero tokens). */
+  cacheHits: number;
+  /** Concurrent duplicates that shared one in-flight provider call. */
+  dedupReused: number;
+  /** Requests denied by the month budget before any provider call. */
+  budgetDenied: number;
+  /** Requests denied by AI rate limiting before any provider call. */
+  rateLimited: number;
+  /** Provider calls whose token usage was estimated (no provider metadata). */
+  estimatedRows: number;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;

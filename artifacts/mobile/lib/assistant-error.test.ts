@@ -20,8 +20,18 @@ describe("classifySendError", () => {
 
   it("classifies other HTTP errors as server", () => {
     expect(classifySendError({ status: 500, message: "Internal" })).toBe("server");
-    expect(classifySendError({ status: 429, message: "Too many" })).toBe("server");
     expect(classifySendError({ status: 400, message: "Bad request" })).toBe("server");
+  });
+
+  it("classifies 429s by machine-readable code (rate limit vs budget)", () => {
+    // Bare 429 (no code) = generic throttle advice.
+    expect(classifySendError({ status: 429, message: "Too many" })).toBe("rate_limited");
+    expect(
+      classifySendError({ status: 429, data: { error: "Too many AI requests", code: "AI_RATE_LIMITED" } }),
+    ).toBe("rate_limited");
+    expect(
+      classifySendError({ status: 429, data: { error: "Budget exhausted", code: "AI_BUDGET_EXCEEDED" } }),
+    ).toBe("budget_exceeded");
   });
 
   it("falls back to server for unknown errors", () => {
@@ -33,7 +43,7 @@ describe("classifySendError", () => {
   });
 
   it("maps every kind to an existing assistant i18n key in EN and AR", () => {
-    const kinds = ["network", "permission", "server"] as const;
+    const kinds = ["network", "permission", "rate_limited", "budget_exceeded", "server"] as const;
     for (const kind of kinds) {
       const key = sendErrorMessageKey(kind);
       const [section, leaf] = key.split(".");
@@ -51,5 +61,7 @@ describe("classifySendError", () => {
     expect(enKeys).toContain("sendFailed");
     expect(enKeys).toContain("sendFailedNetwork");
     expect(enKeys).toContain("sendFailedPermission");
+    expect(enKeys).toContain("sendFailedRateLimited");
+    expect(enKeys).toContain("sendFailedBudget");
   });
 });

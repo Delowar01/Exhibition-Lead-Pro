@@ -17,7 +17,11 @@ function readUsage(meta: UsageMetadata | undefined): AiUsage {
   const inputTokens = meta?.promptTokenCount ?? 0;
   const outputTokens = meta?.candidatesTokenCount ?? 0;
   const totalTokens = meta?.totalTokenCount ?? inputTokens + outputTokens;
-  return { inputTokens, outputTokens, totalTokens };
+  // Actual provider metadata is used whenever present; when Gemini returns none at
+  // all, flag the row so the ledger can mark usage as estimated (Batch 6).
+  const missingMetadata =
+    meta?.promptTokenCount == null && meta?.candidatesTokenCount == null && meta?.totalTokenCount == null;
+  return { inputTokens, outputTokens, totalTokens, missingMetadata };
 }
 
 export const geminiProvider: AiProvider = {

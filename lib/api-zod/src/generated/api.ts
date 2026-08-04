@@ -5347,10 +5347,15 @@ export const GetAiUsageResponse = zod.object({
   "from": zod.string(),
   "to": zod.string(),
   "totals": zod.object({
-  "requests": zod.number(),
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
   "success": zod.number(),
-  "errors": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
   "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
   "inputTokens": zod.number(),
   "outputTokens": zod.number(),
   "totalTokens": zod.number(),
@@ -5358,10 +5363,15 @@ export const GetAiUsageResponse = zod.object({
   "avgLatencyMs": zod.number()
 }),
   "byFeature": zod.array(zod.object({
-  "requests": zod.number(),
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
   "success": zod.number(),
-  "errors": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
   "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
   "inputTokens": zod.number(),
   "outputTokens": zod.number(),
   "totalTokens": zod.number(),
@@ -5370,6 +5380,33 @@ export const GetAiUsageResponse = zod.object({
 }).and(zod.object({
   "feature": zod.string()
 }))),
+  "byDay": zod.array(zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
+  "success": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
+  "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "day": zod.string().describe('UTC day (YYYY-MM-DD).')
+}))),
+  "budget": zod.object({
+  "tokenBudget": zod.number().nullable(),
+  "costBudgetUsd": zod.number().nullable(),
+  "usedTokens": zod.number(),
+  "usedCostUsd": zod.number(),
+  "pctUsed": zod.number().nullable().describe('Month-to-date percentage of the tightest budget used; null when no budget is set.'),
+  "periodStart": zod.string(),
+  "resetAt": zod.string()
+}),
   "recent": zod.array(zod.object({
   "id": zod.number(),
   "feature": zod.string(),
@@ -5409,17 +5446,32 @@ export const GetAiHealthResponse = zod.object({
  */
 export const GetAiPlatformUsageQueryParams = zod.object({
   "from": zod.coerce.string().optional(),
-  "to": zod.coerce.string().optional()
+  "to": zod.coerce.string().optional(),
+  "companyId": zod.coerce.number().optional(),
+  "feature": zod.coerce.string().optional(),
+  "model": zod.coerce.string().optional(),
+  "page": zod.coerce.number().optional(),
+  "pageSize": zod.coerce.number().optional()
 })
 
 export const GetAiPlatformUsageResponse = zod.object({
   "from": zod.string(),
   "to": zod.string(),
+  "filters": zod.object({
+  "companyId": zod.number().nullable(),
+  "feature": zod.string().nullable(),
+  "model": zod.string().nullable()
+}),
   "totals": zod.object({
-  "requests": zod.number(),
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
   "success": zod.number(),
-  "errors": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
   "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
   "inputTokens": zod.number(),
   "outputTokens": zod.number(),
   "totalTokens": zod.number(),
@@ -5427,10 +5479,15 @@ export const GetAiPlatformUsageResponse = zod.object({
   "avgLatencyMs": zod.number()
 }),
   "byFeature": zod.array(zod.object({
-  "requests": zod.number(),
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
   "success": zod.number(),
-  "errors": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
   "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
   "inputTokens": zod.number(),
   "outputTokens": zod.number(),
   "totalTokens": zod.number(),
@@ -5439,11 +5496,35 @@ export const GetAiPlatformUsageResponse = zod.object({
 }).and(zod.object({
   "feature": zod.string()
 }))),
-  "byCompany": zod.array(zod.object({
-  "requests": zod.number(),
+  "byDay": zod.array(zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
   "success": zod.number(),
-  "errors": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
   "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
+  "inputTokens": zod.number(),
+  "outputTokens": zod.number(),
+  "totalTokens": zod.number(),
+  "costUsd": zod.number(),
+  "avgLatencyMs": zod.number()
+}).and(zod.object({
+  "day": zod.string().describe('UTC day (YYYY-MM-DD).')
+}))),
+  "byCompany": zod.object({
+  "items": zod.array(zod.object({
+  "requests": zod.number().describe('Provider calls only (success + error + timeout).'),
+  "success": zod.number(),
+  "errors": zod.number().describe('Failed provider calls (error + timeout).'),
+  "failureRate": zod.number(),
+  "cacheHits": zod.number().describe('Requests served from the short-window result cache (no provider call, zero tokens).'),
+  "dedupReused": zod.number().describe('Concurrent duplicates that shared one in-flight provider call.'),
+  "budgetDenied": zod.number().describe('Requests denied by the month budget before any provider call.'),
+  "rateLimited": zod.number().describe('Requests denied by AI rate limiting before any provider call.'),
+  "estimatedRows": zod.number().describe('Provider calls whose token usage was estimated (no provider metadata).'),
   "inputTokens": zod.number(),
   "outputTokens": zod.number(),
   "totalTokens": zod.number(),
@@ -5452,7 +5533,24 @@ export const GetAiPlatformUsageResponse = zod.object({
 }).and(zod.object({
   "companyId": zod.number().nullable(),
   "companyName": zod.string().nullable()
-})))
+}))),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number()
+}),
+  "failureCategories": zod.array(zod.object({
+  "category": zod.string().describe('timeout | provider_rate_limited | provider_unavailable | invalid_response | network | other'),
+  "count": zod.number()
+})),
+  "tenantsNearLimit": zod.array(zod.object({
+  "companyId": zod.number(),
+  "companyName": zod.string().nullable(),
+  "pctUsed": zod.number(),
+  "usedTokens": zod.number(),
+  "usedCostUsd": zod.number(),
+  "tokenBudget": zod.number().nullable(),
+  "costBudgetUsd": zod.number().nullable()
+}))
 })
 
 
@@ -5892,7 +5990,8 @@ export const GenerateAiCopilotOutputBody = zod.object({
   "tone": zod.string().optional().describe('Optional tone hint (e.g. formal, friendly).'),
   "messageType": zod.string().optional().describe('Optional sub-type \/ purpose hint (e.g. intro, follow-up, proposal).'),
   "variant": zod.string().optional().describe('Optional variant hint (e.g. short, detailed) to bias phrasing.'),
-  "instructions": zod.string().optional().describe('Optional extra grounding instructions from the user (never overrides safety rules).')
+  "instructions": zod.string().optional().describe('Optional extra grounding instructions from the user (never overrides safety rules).'),
+  "regenerate": zod.boolean().optional().describe('Set true for an explicit Regenerate action — bypasses duplicate-request protection so a fresh result is always produced.')
 })
 
 export const GenerateAiCopilotOutputResponse = zod.object({

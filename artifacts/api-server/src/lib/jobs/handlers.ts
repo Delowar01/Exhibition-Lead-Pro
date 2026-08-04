@@ -4,6 +4,7 @@ import { EMAIL_SEND_JOB, deliverEmailViaWorker } from "../email/index.js";
 import type { EmailMessage } from "../email/provider.js";
 import { getQueue } from "./queue.js";
 import { AI_ANALYZE_ENTITY_JOB, runAiAnalyzeEntityJob, type AiAnalyzeJobPayload } from "../../services/ai-batch.service.js";
+import { AI_LEDGER_RETRY_JOB, runLedgerRetryJob } from "../../services/ai.service.js";
 import { AI_COPILOT_GENERATE_JOB, runAiCopilotGenerateJob, type AiCopilotJobPayload } from "../../services/ai-copilot-batch.service.js";
 import { CAPTURE_ANALYZE_JOB, runCaptureAnalyzeJob, type CaptureAnalyzeJobPayload } from "../../services/capture-batch.service.js";
 import { AI_WORKFLOW_ANALYZE_JOB, runAiWorkflowAnalyzeJob, type AiWorkflowJobPayload } from "../../services/ai-workflow-batch.service.js";
@@ -98,6 +99,13 @@ export function startWorkers(): void {
   // It never throws (marks the row failed internally) — maxAttempts is 1 at enqueue.
   queue.register<ExecutiveReportJobPayload>(EXECUTIVE_REPORT_JOB, async (payload) => {
     await runExecutiveReportJob(payload);
+  });
+
+  // Batch 6 AI ledger retry: re-inserts an ai_invocations row whose inline write
+  // failed. THROWS on failure so the queue's backoff/dead-letter machinery applies;
+  // the insert is idempotent by requestId, so a retry can never duplicate a row.
+  queue.register<Record<string, unknown>>(AI_LEDGER_RETRY_JOB, async (payload) => {
+    await runLedgerRetryJob(payload);
   });
 
   queue.start();
