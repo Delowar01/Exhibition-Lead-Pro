@@ -87,7 +87,7 @@ export interface OverviewWorkspaceProps {
   onEdit: () => void;
   onScheduleFollowUp: () => void;
   onCreateTask: () => void;
-  onGoToWorkspace: (id: "timeline" | "activities" | "documents" | "interactions" | "ai") => void;
+  onGoToWorkspace: (id: "timeline" | "documents" | "ai") => void;
 }
 
 export default function OverviewWorkspace({
@@ -648,7 +648,7 @@ export default function OverviewWorkspace({
           subtitle="Where and how you met this contact"
           testId="card-interaction-history"
           footer={
-            <Button size="sm" variant="outline" onClick={() => onGoToWorkspace("interactions")} data-testid="button-view-interactions">
+            <Button size="sm" variant="outline" onClick={() => onGoToWorkspace("timeline")} data-testid="button-view-interactions">
               View All Interactions
             </Button>
           }

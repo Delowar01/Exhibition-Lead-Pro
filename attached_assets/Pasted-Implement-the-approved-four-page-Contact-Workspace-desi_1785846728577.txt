@@ -1,0 +1,473 @@
+Implement the approved four-page Contact Workspace design in the existing Lead Capture Pro application.
+
+REFERENCE FILE
+Use the attached file:
+
+Lead-Capture-Pro-Contact-Workspace-4-Pages-Final.html
+
+Treat this HTML and the four approved screenshots as the exact UI/UX reference. Study the complete HTML before making changes.
+
+IMPORTANT
+This is an implementation inside the existing Lead Capture Pro project. Do not create a separate application, duplicate dashboard, iframe, static HTML page, or image-based interface.
+
+OBJECTIVE
+Replace the existing six-page Contact Workspace with these four pages only:
+
+1. Overview
+2. Timeline
+3. Documents
+4. AI Copilot
+
+Remove the separate Activities and Interactions workspace tabs. Their functionality must be consolidated into Timeline.
+
+PRESERVE THE EXISTING APPLICATION
+Do not redesign or break:
+
+- Existing authentication
+- Multi-tenant company isolation
+- RBAC and permission checks
+- Existing application routing
+- Main sidebar
+- Top navigation
+- Global search
+- Notifications
+- User menu
+- Existing API client conventions
+- Existing backend services
+- Other Lead Capture Pro pages
+
+Only rebuild the Contact Details Workspace and connect it to the existing application.
+
+DESIGN REQUIREMENTS
+Match the attached HTML closely:
+
+- Dark navy application sidebar and top navigation
+- Orange active states and primary actions
+- Clean white/light workspace
+- Premium enterprise SaaS styling
+- Compact typography with strong hierarchy
+- Rounded cards
+- Subtle borders and shadows
+- Consistent icons
+- Proper spacing and alignment
+- No oversized or unusually small text
+- No overlapping, clipping, or horizontal page overflow
+- Smooth hover, active, focus, loading, and transition states
+- Keep the full contact profile header consistent across all four pages
+
+Do not simplify the approved design or replace it with generic components.
+
+LIGHT AND DARK THEMES
+Implement complete theme parity.
+
+Requirements:
+
+- Every page and component must work in both themes.
+- Text, cards, dropdowns, modals, tables, filters, tags, borders, icons, charts, inputs, and buttons must have proper contrast.
+- Do not leave white cards or dark text incorrectly styled in dark mode.
+- Persist the selected theme using the project’s existing preference system. Use localStorage only when no existing user preference system is available.
+- Follow the exact color approach shown in the attached HTML.
+
+RESPONSIVENESS
+The workspace must work properly on:
+
+- Large desktop
+- Standard desktop
+- Laptop
+- Tablet
+- Mobile
+- Small mobile around 360px width
+
+Responsive behavior must include:
+
+- Collapsible desktop sidebar
+- Mobile sidebar drawer with overlay
+- Horizontally scrollable workspace tabs where necessary
+- Stacked cards on smaller screens
+- Mobile-friendly contact profile
+- Responsive tables with controlled horizontal scrolling inside the table container only
+- Responsive Timeline events
+- Responsive AI chat and composer
+- Touch targets of usable size
+- No full-page horizontal scrolling
+
+CONTACT PROFILE HEADER
+Show the shared profile header across all four pages:
+
+- Contact photo
+- Name
+- Favourite indicator
+- Lead status
+- Job title
+- Company
+- Email
+- Phone
+- Location
+- Contact tags
+- Lead score
+- Score level
+- Contact owner
+- Created date
+- Edit Contact action
+- More-actions menu
+
+Keep the profile information connected to the selected contact’s real data.
+
+The Overview page may also show the main quick actions:
+
+- Call
+- Email
+- WhatsApp
+- Schedule Meeting
+- Add Note
+- More
+
+PAGE 1 — OVERVIEW
+Build the approved Overview layout.
+
+Main content:
+
+- AI Summary
+- Next Best Action
+- Upcoming Follow-up
+- Recent Activity
+- Recent Documents
+
+Right rail:
+
+- AI Assistant
+- Recommended next action
+- Key insights
+- Lead intelligence
+- Quick actions
+- “Ask AI Anything” action
+
+Overview requirements:
+
+- Use real contact, lead, event, activity, task, document, and follow-up data.
+- “View All” actions must navigate to the relevant workspace page or filtered view.
+- Quick communication actions must use the existing application workflows.
+- Do not duplicate large AI dashboards on this page.
+- Keep AI information concise and action-oriented.
+
+PAGE 2 — TIMELINE
+Combine the old Timeline, Activities, and Interactions functionality into one chronological workspace.
+
+Timeline event types:
+
+- Calls
+- Emails
+- WhatsApp
+- Meetings
+- Tasks
+- Notes
+- Documents
+- System events
+
+Add filter chips with event counts:
+
+- All Events
+- Calls
+- Emails
+- WhatsApp
+- Meetings
+- Tasks
+- Notes
+- Documents
+- System
+
+Timeline requirements:
+
+- Sort newest events first.
+- Group events by month or date where appropriate.
+- Show event date and time.
+- Show event icon and channel.
+- Show title, description, owner, outcome/status, and duration where available.
+- Support filtering without a full page reload.
+- Include advanced filters for owner, outcome, date range, channel, and activity type.
+- Include loading, empty, error, and load-more or pagination states.
+- Clicking an event should open its available details or related record.
+- Allow relevant event actions through the existing permission system.
+
+Right rail:
+
+- AI Assistant
+- Next Best Action
+- Key Insights
+- Upcoming Events
+- Key Milestones
+
+Do not recreate separate Activities or Interactions pages.
+
+PAGE 3 — DOCUMENTS
+Implement the approved document management workspace.
+
+Toolbar:
+
+- Category filter
+- File type filter
+- Date filter
+- Search
+- Upload Document
+
+Category navigation:
+
+- All Documents
+- Proposals
+- Contracts
+- Presentations
+- Brochures
+- Invoices
+- Technical
+- Images
+- Other
+
+Document table:
+
+- Document name
+- Description
+- Category
+- File type
+- Size
+- Updated date and time
+- Owner
+- Actions
+
+Document actions:
+
+- Preview
+- Download
+- Open details
+- Share where supported
+- Version history where supported
+- Delete or move to trash where permitted
+
+Requirements:
+
+- Use real document data.
+- Preserve tenant and contact scoping.
+- Upload must use the existing storage and API flow.
+- Validate supported file types and file-size limits.
+- Search and filtering must work.
+- Pagination or rows-per-page must work.
+- Provide loading, empty, error, uploading, and progress states.
+- Never simulate a successful upload or download when the API fails.
+- Show clear success and error messages.
+
+Right rail:
+
+- Document Summary
+- Recent Activity
+- Document Insights
+
+PAGE 4 — AI COPILOT
+Build an interactive AI Copilot, not a static analytics page.
+
+Use the existing Enterprise AI Layer and Google Gemini 2.5 Flash only. Do not connect another AI provider directly from the UI.
+
+AI tools:
+
+- Chat
+- Contact Summary
+- Company Research
+- Email Writer
+- WhatsApp Writer
+- Follow-up Ideas
+- Objection Handler
+- Meeting Preparation
+- Proposal Generator or Proposal Outline
+- Executive Summary where supported
+
+Chat functionality:
+
+- Ask questions about the selected contact.
+- Show user and AI messages.
+- Show a thinking/loading state.
+- Support suggested prompts.
+- Allow copy, regenerate, save as note, save as draft, or use response where appropriate.
+- Keep conversation scroll behavior correct.
+- Disable duplicate submissions while a request is running.
+- Display useful API error messages.
+- Show an AI accuracy disclaimer.
+
+AI context must be tenant-scoped and limited to information the current user is permitted to access, including:
+
+- Contact data
+- Company data
+- Timeline events
+- Activities
+- Interactions
+- Documents and document metadata
+- Deals
+- Follow-ups
+- Lead signals
+
+Do not send unnecessary personal data to Gemini.
+
+Right rail:
+
+- AI Tools
+- AI Confidence
+- Recommended Next Action
+
+AI-generated content must never be automatically sent to the customer. The user must review and explicitly confirm before sending an email or WhatsApp message.
+
+INTERACTIONS AND MODALS
+Implement the approved working interactions instead of decorative buttons.
+
+Required flows where supported by the existing application:
+
+- Edit Contact
+- Manage Tags
+- Add Note
+- Log Call
+- Send or draft Email
+- Send or draft WhatsApp
+- Schedule Meeting
+- Schedule Follow-up
+- Create Task
+- Add Activity
+- Upload Document
+- Preview Document
+- Document version history
+- Timeline filters
+- Global quick-add
+- AI summary
+- AI win or confidence explanation
+
+Modal requirements:
+
+- Close button
+- Escape-key support
+- Outside-click handling where appropriate
+- Focus management
+- Validation
+- Loading state
+- Clear success/error feedback
+- No accidental background submission
+
+DATA AND BACKEND INTEGRATION
+Before coding, inspect the current frontend routes, API hooks, schemas, backend endpoints, and database models.
+
+Reuse existing functionality wherever available.
+
+Do not:
+
+- Create duplicate contacts, activities, interactions, documents, or AI tables without first checking the existing schema.
+- Replace working APIs with hardcoded mock data.
+- bypass React Query or the project’s existing API layer.
+- bypass permission checks.
+- expose records across companies.
+- use the HTML’s demonstration data as production data.
+
+Map the design to real backend data.
+
+Where an approved UI field has no backend support:
+
+1. Reuse the closest existing field when semantically correct.
+2. Add the smallest necessary additive backend change.
+3. Keep changes backward-compatible.
+4. Do not invent unrelated architecture.
+
+ROUTING
+Use the existing Contact Details route.
+
+The four pages can be implemented as nested routes or URL-backed tabs, following the project’s current routing pattern.
+
+Users should be able to:
+
+- Open a direct URL to any of the four pages.
+- Refresh without losing the selected page.
+- Use browser back and forward correctly.
+- Switch pages without a full application reload.
+
+PERMISSIONS AND SECURITY
+Apply existing tenant and RBAC enforcement to every request and action.
+
+The UI must hide or disable actions the current user cannot perform, but backend permission enforcement remains mandatory.
+
+Protect:
+
+- Contact data
+- Timeline events
+- Activities
+- Interactions
+- Documents
+- AI context
+- File downloads
+- Uploads
+- Delete actions
+
+Never trust companyId, contactId, documentId, eventId, or userId supplied only by the browser.
+
+ACCESSIBILITY
+Include:
+
+- Semantic controls
+- Keyboard navigation
+- Visible focus states
+- Proper labels
+- Accessible modal behavior
+- aria-labels for icon-only buttons
+- Adequate contrast
+- Reduced-motion support where appropriate
+
+IMPLEMENTATION QUALITY
+Build reusable components for:
+
+- ContactProfileHeader
+- ContactWorkspaceTabs
+- QuickActions
+- AI summary and action cards
+- TimelineFilters
+- TimelineEvent
+- DocumentToolbar
+- DocumentCategoryList
+- DocumentTable
+- AICopilotChat
+- AIToolSelector
+- RightRailCard
+- Modal and toast feedback
+
+Follow the current project conventions. Do not introduce a second design system or unnecessary dependency.
+
+Remove obsolete six-page Contact Workspace code after the new implementation is working, but do not remove shared components used elsewhere.
+
+VERIFICATION
+Before marking the task complete, test:
+
+1. All four pages with real contact data.
+2. Direct navigation and browser refresh.
+3. Light theme.
+4. Dark theme.
+5. Desktop at 1440px and 1920px.
+6. Laptop around 1280px.
+7. Tablet around 768px.
+8. Mobile around 390px.
+9. Small mobile around 360px.
+10. Sidebar collapse and mobile navigation.
+11. Timeline filters.
+12. Document search, filters, preview, upload and download.
+13. AI chat and every available AI tool.
+14. All quick actions and modals.
+15. Loading, empty, error and permission-denied states.
+16. Tenant isolation.
+17. Existing Contact, Lead, Company and other application pages for regressions.
+18. Full typecheck, build and relevant tests.
+
+Do not mark complete based only on a successful build.
+
+FINAL RESPONSE
+Return a concise implementation report containing:
+
+- Files changed
+- Existing APIs reused
+- Backend or schema changes, if any
+- Four pages implemented
+- Functional interactions completed
+- Responsive testing completed
+- Light and dark theme testing completed
+- Tests and build results
+- Any genuinely unsupported feature that remains
+
+Do not create extra planning documents. Implement the workspace directly.

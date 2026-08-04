@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   useGetContact,
@@ -18,13 +18,11 @@ import { Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 import ContactHero from "@/components/contact/ContactHero";
-import WorkspaceTabs, { type WorkspaceId } from "@/components/contact/WorkspaceTabs";
+import WorkspaceTabs, { WORKSPACE_IDS, type WorkspaceId } from "@/components/contact/WorkspaceTabs";
 import AiSidebar from "@/components/contact/AiSidebar";
 import OverviewWorkspace from "@/components/contact/OverviewWorkspace";
 import TimelineWorkspace from "@/components/contact/TimelineWorkspace";
-import ActivitiesWorkspace from "@/components/contact/ActivitiesWorkspace";
 import DocumentsWorkspace from "@/components/contact/DocumentsWorkspace";
-import InteractionsWorkspace from "@/components/contact/InteractionsWorkspace";
 import AiWorkspace from "@/components/contact/AiWorkspace";
 import {
   EditContactSheet,
@@ -37,9 +35,15 @@ function normalizePhone(p: string): string {
   return p.replace(/[^\d+]/g, "");
 }
 
+function resolveWorkspace(tab: string | undefined): WorkspaceId {
+  if (tab && (WORKSPACE_IDS as readonly string[]).includes(tab)) return tab as WorkspaceId;
+  return "overview";
+}
+
 export default function AdminContactDetail() {
-  const { id } = useParams();
-  const contactId = parseInt(id || "0", 10);
+  const params = useParams<{ id: string; tab?: string }>();
+  const contactId = parseInt(params.id || "0", 10);
+  const active = resolveWorkspace(params.tab);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -59,21 +63,24 @@ export default function AdminContactDetail() {
   const deleteContact = useDeleteContact();
   const logComm = useLogContactCommunication();
 
-  // ── Workspace tab state (mount-on-first-visit; never unmount → no reloads) ─
-  const [active, setActive] = useState<WorkspaceId>("overview");
-  const [mounted, setMounted] = useState<Record<WorkspaceId, boolean>>({
-    overview: true,
-    timeline: false,
-    activities: false,
-    documents: false,
-    interactions: false,
-    ai: false,
-  });
+  // ── Workspace navigation (URL-backed; each page mounts on first visit) ────
+  const [mounted, setMounted] = useState<Record<WorkspaceId, boolean>>(() => ({
+    overview: active === "overview",
+    timeline: active === "timeline",
+    documents: active === "documents",
+    ai: active === "ai",
+  }));
 
   const goTo = (ws: WorkspaceId) => {
-    setActive(ws);
     setMounted((m) => (m[ws] ? m : { ...m, [ws]: true }));
+    setLocation(ws === "overview" ? `/admin/contacts/${contactId}` : `/admin/contacts/${contactId}/${ws}`);
   };
+
+  // Ensure the workspace matching the current URL is marked mounted (covers
+  // direct deep-links and back/forward navigation).
+  useEffect(() => {
+    setMounted((m) => (m[active] ? m : { ...m, [active]: true }));
+  }, [active]);
 
   // ── Dialog state ───────────────────────────────────────────────────────────
   const [editOpen, setEditOpen] = useState(false);
@@ -192,7 +199,7 @@ export default function AdminContactDetail() {
         }
       />
 
-      <WorkspaceTabs active={active} onChange={goTo} />
+      <WorkspaceTabs contactId={contactId} active={active} />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] items-start">
         {/* Workspace content — panels mount on first visit and stay mounted */}
@@ -215,15 +222,6 @@ export default function AdminContactDetail() {
             {mounted.timeline && (
               <TimelineWorkspace
                 contact={contact}
-                onAddNote={() => setEditOpen(true)}
-                onScheduleFollowUp={() => setFollowUpOpen(true)}
-              />
-            )}
-          </div>
-          <div id="workspace-panel-activities" role="tabpanel" aria-labelledby="workspace-tab-activities" hidden={active !== "activities"}>
-            {mounted.activities && (
-              <ActivitiesWorkspace
-                contact={contact}
                 onCreateTask={() => setTaskOpen(true)}
                 onScheduleFollowUp={() => setFollowUpOpen(true)}
               />
@@ -231,9 +229,6 @@ export default function AdminContactDetail() {
           </div>
           <div id="workspace-panel-documents" role="tabpanel" aria-labelledby="workspace-tab-documents" hidden={active !== "documents"}>
             {mounted.documents && <DocumentsWorkspace contact={contact} />}
-          </div>
-          <div id="workspace-panel-interactions" role="tabpanel" aria-labelledby="workspace-tab-interactions" hidden={active !== "interactions"}>
-            {mounted.interactions && <InteractionsWorkspace contact={contact} />}
           </div>
           <div id="workspace-panel-ai" role="tabpanel" aria-labelledby="workspace-tab-ai" hidden={active !== "ai"}>
             {mounted.ai && <AiWorkspace contact={contact} />}

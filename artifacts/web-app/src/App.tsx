@@ -220,6 +220,9 @@ function Router() {
       <Route path="/admin/contacts/:id">
         {() => <ProtectedRoute component={AdminContactDetail} role="admin" layout={AdminLayout} />}
       </Route>
+      <Route path="/admin/contacts/:id/:tab">
+        {() => <ProtectedRoute component={AdminContactDetail} role="admin" layout={AdminLayout} />}
+      </Route>
       <Route path="/admin/duplicates">
         {() => <ProtectedRoute component={AdminDuplicates} role="admin" layout={AdminLayout} />}
       </Route>
