@@ -1,0 +1,164 @@
+Audit the current Lead Capture Pro codebase and provide a factual completion report only.
+
+IMPORTANT
+- Do not change any code.
+- Do not create files, migrations, tests, screenshots, or documentation.
+- Do not implement or fix anything.
+- Inspect the actual current codebase, routes, APIs, database schema, tests, mobile code, and existing project documents.
+- Do not assume a task is complete because a UI, route, file, placeholder, or button exists.
+- Mark a task complete only when the real implementation and integration are present.
+- Keep this audit focused and avoid unrelated recommendations.
+
+Review these areas:
+
+1. Enterprise AI Assistant / AI Copilot
+Check:
+- Gemini 2.5 Flash integration
+- Enterprise AI Layer usage
+- Contact-aware chat
+- Contact summary
+- Company research
+- Email writer
+- WhatsApp writer
+- Follow-up suggestions
+- Objection handling
+- Meeting preparation
+- Proposal or executive summary tools
+- Tenant and permission-scoped AI context
+- Save as note, draft, copy, regenerate, and user-confirmed sending
+- Loading, error, and empty states
+
+2. UX modernization
+Check which major pages or workspaces still use older UI patterns and which have already been modernized.
+
+Do not include the four-page Contact Workspace as pending if it remains complete:
+- Overview
+- Timeline
+- Documents
+- AI Copilot
+
+3. Native mobile capture
+Check the real mobile implementation and available tests for:
+- Business Card
+- Email Signature
+- QR Code
+- LinkedIn QR
+- NFC
+- Manual Entry
+- Gemini Vision OCR
+- Image upload
+- Contact creation
+- Duplicate handling
+- Offline or failure handling
+
+Clearly separate:
+- Implemented in code
+- Covered by automated tests
+- Verified with a built APK
+- Verified on a physical Android device
+
+Do not claim physical-device verification unless evidence exists in the repository or test records.
+
+4. Contact Workspace follow-up QA
+Check:
+- Automated tests for:
+  - /admin/contacts/:id
+  - /admin/contacts/:id/timeline
+  - /admin/contacts/:id/documents
+  - /admin/contacts/:id/ai
+- Deep-link, refresh, and browser back/forward tests
+- Dark-mode visual verification
+- 360px mobile verification
+- Existing 390px mobile verification
+
+5. Reports and Business Intelligence
+Check whether reporting features are complete, partial, or missing, including dashboards, exports, filters, and tenant-scoped reporting.
+
+6. Customer Experience / White Label
+Check whether branding, themes, custom domains, customer-facing settings, and related controls exist and are fully functional.
+
+7. Integrations and Open Platform
+Check available:
+- External integrations
+- APIs
+- Webhooks
+- API keys
+- Integration settings
+- Logs and retry handling
+
+8. Enterprise Administration
+Check:
+- Organization administration
+- Users
+- Roles
+- Permissions
+- Audit logs
+- Security settings
+- Subscription or plan controls
+- Tenant management
+
+9. Workflow Automation
+Check the full current state of workflow automation rather than assuming complete or pending.
+
+Review:
+- Triggers
+- Conditions
+- Actions
+- Scheduling
+- Execution logs
+- Retry or failure handling
+- Tenant isolation
+- UI and backend integration
+
+REPORT FORMAT
+
+Return one concise report with these sections:
+
+A. Executive Summary
+- Overall estimated completion percentage based only on verified code
+- Number of completed areas
+- Number of partially completed areas
+- Number of pending areas
+- Number of areas requiring external or physical-device verification
+
+B. Status Table
+
+For every area, include:
+- Area
+- Status: Complete / Partial / Pending / Verification Required
+- What is implemented
+- What is missing
+- Evidence: exact files, routes, APIs, database tables, tests, or scripts
+- Confidence: High / Medium / Low
+
+C. Confirmed Completed
+List only work proven complete.
+
+D. Partially Completed
+For each item, explain exactly what remains.
+
+E. Confirmed Pending
+List only tasks proven absent or unfinished.
+
+F. Verification Required
+List features implemented in code but not proven through live, production, APK, or physical-device testing.
+
+G. Recommended Next Task
+Identify only one highest-priority next task based on:
+- Existing dependencies
+- Business value
+- Risk
+- Minimal Replit Agent cost
+
+Do not suggest additional features or architecture.
+
+Also confirm these known completed items have not regressed:
+- Four-page Contact Workspace
+- URL-backed contact routes
+- Timeline consolidation
+- Full capture-event fidelity
+- Desktop and 390px mobile behavior
+- Web-app typecheck
+- API test suite
+
+If any previous completion claim is not supported by the current code, flag it clearly.
