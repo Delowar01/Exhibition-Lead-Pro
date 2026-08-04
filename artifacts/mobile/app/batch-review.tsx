@@ -7,10 +7,12 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  ApiError,
   type ExtractedCardData,
   useCreateContact,
   useCreateScan,
 } from "@workspace/api-client-react";
+import { describeScanError } from "@/lib/scan-error";
 
 import {
   ContactForm,
@@ -68,6 +70,8 @@ export default function BatchReviewScreen() {
   const [savedCount, setSavedCount] = useState(0);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState(false);
+  // Batch 7: specific error key (budget/rate-limit/no-card…) for the failure banner.
+  const [ocrErrorKey, setOcrErrorKey] = useState<string | null>(null);
   const [values, setValues] = useState<ContactFormValues | null>(null);
   const formKey = useRef(0);
 
@@ -118,8 +122,19 @@ export default function BatchReviewScreen() {
         // 20 s elapsed and still pending — fall through to sequential OCR.
       }
       // Not started or timed-out: run OCR sequentially now.
+      await runSequentialOcr(item);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [createScan, eventId, language],
+  );
+
+  // Batch 7: sequential per-item OCR, also used by "Retry OCR" on a failed item —
+  // retrying ONE card never reruns the successful ones.
+  const runSequentialOcr = useCallback(
+    async (item: BatchCapture) => {
       setOcrLoading(true);
       setOcrError(false);
+      setOcrErrorKey(null);
       setValues(null);
       try {
         const scan = await createScan.mutateAsync({
@@ -134,7 +149,8 @@ export default function BatchReviewScreen() {
         });
         formKey.current += 1;
         setValues(extractedToValues(scan.extractedData ?? {}));
-      } catch {
+      } catch (e) {
+        if (e instanceof ApiError) setOcrErrorKey(describeScanError(e.status, e.data).key);
         setOcrError(true);
         formKey.current += 1;
         setValues({ ...EMPTY_CONTACT });
@@ -254,9 +270,20 @@ export default function BatchReviewScreen() {
               <View style={styles.errorBox}>
                 <Feather name="alert-circle" size={16} color={colors.destructive} />
                 <Text style={[styles.errorText, { color: colors.destructive }]}>
-                  {t("batch.readError")}
+                  {ocrErrorKey ? t(ocrErrorKey) : t("batch.readError")}
                 </Text>
               </View>
+              <Pressable
+                onPress={() => current && void runSequentialOcr(current)}
+                disabled={ocrLoading || createContact.isPending}
+                style={[styles.retryBtn, { borderColor: colors.destructive + "60" }]}
+                testID="button-batch-retry-ocr"
+              >
+                <Feather name="refresh-cw" size={14} color={colors.destructive} />
+                <Text style={[styles.retryText, { color: colors.destructive }]}>
+                  {t("batch.retryOcr")}
+                </Text>
+              </Pressable>
             </Card>
           ) : null}
 
@@ -314,6 +341,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   errorText: { flex: 1, fontSize: 13, fontFamily: FONT.medium },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginHorizontal: 12,
+    marginBottom: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  retryText: { fontSize: 13, fontFamily: FONT.semibold },
   skipBtn: { alignItems: "center", paddingVertical: 16 },
   skipText: { fontSize: 15, fontFamily: FONT.medium },
 });

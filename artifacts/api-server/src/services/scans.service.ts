@@ -2,6 +2,7 @@ import { AppError } from "../middlewares/errorHandler.js";
 import { type AuthUser } from "../middlewares/requireAuth.js";
 import { refInCompany } from "../lib/tenant.js";
 import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "../lib/ai.js";
+import { validateScanImage, hasReadableCard } from "../lib/image-validation.js";
 import { streamScanImage, loadScanImageBase64, uploadScanImage } from "../lib/imageStorage.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
@@ -84,8 +85,11 @@ export interface CreateScanResult {
 export async function createScan(user: AuthUser, body: { imageData?: string; eventId?: unknown; appLanguage?: string; captureSource?: string | null; qualityScore?: number | null; qualityMeta?: unknown; latitude?: number | null; longitude?: number | null; gpsAccuracy?: number | null; notes?: string | null }): Promise<CreateScanResult> {
   const companyId = user.companyId;
   if (!companyId) throw new AppError(400, "No company context");
-  const { imageData, appLanguage } = body;
-  if (!imageData) throw new AppError(400, "imageData required");
+  const { appLanguage } = body;
+  // Batch 7: validate the actual image bytes (magic numbers, size, emptiness) BEFORE
+  // creating a scan row, incrementing usage, or touching the AI provider. Bad input
+  // is a 400 with a machine code and never records provider token usage.
+  const image = validateScanImage(body.imageData);
   const lang = appLanguage === "ar" ? "ar" : "en";
   const captureSource = typeof body.captureSource === "string" && body.captureSource.length > 0 ? body.captureSource : "camera";
   const qualityScore = typeof body.qualityScore === "number" ? body.qualityScore : null;
@@ -110,21 +114,27 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   let ocrResult: Awaited<ReturnType<typeof extractCardData>> | null = null;
   let ocrErr: unknown = null;
   try {
-    ocrResult = await extractCardData(imageData, lang, { companyId, userId: user.id });
+    ocrResult = await extractCardData(image.dataUrl, lang, { companyId, userId: user.id });
   } catch (err) {
     ocrErr = err;
   }
 
   if (ocrErr !== null) {
-    // Enforcement rejections (AI disabled / budget exhausted) surface with their real
-    // status instead of being masked as a generic "could not read the card" 502.
-    if (ocrErr instanceof AppError) throw ocrErr;
+    // Enforcement rejections (AI disabled / budget exhausted / rate limited) surface
+    // with their real status instead of being masked as a generic 502. The scan row
+    // and usage counter were already written optimistically — reconcile them so a
+    // denied scan never strands a "processing" row or inflates the quota.
+    if (ocrErr instanceof AppError) {
+      await scansRepo.update(scan.id, { status: "failed" });
+      await scansRepo.decrementScansUsed(companyId);
+      throw ocrErr;
+    }
     logAiError("scan-ocr", ocrErr);
     const failed = await scansRepo.update(scan.id, { status: "failed" });
     return {
       scanId: scan.id,
       companyId,
-      imageData,
+      imageData: image.dataUrl,
       status: 502,
       body: {
         ...failed,
@@ -132,6 +142,28 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
         ...parsedScanMeta(failed),
         imageUrl: scanImageApiUrl(scan.id, true),
         error: "Could not read the card. Please retake the photo.",
+      },
+    };
+  }
+
+  // Controlled no-card result: extraction succeeded but the model found none of the
+  // identity fields (name/company/email/phone). The scan is marked failed, the image
+  // is kept (the route still uploads it) so the user can review/replace, and the
+  // client gets an honest 422 instead of an empty "successful" extraction.
+  if (!hasReadableCard(ocrResult!.fields)) {
+    const failed = await scansRepo.update(scan.id, { status: "failed", rawOcr: ocrResult!.rawOcr });
+    return {
+      scanId: scan.id,
+      companyId,
+      imageData: image.dataUrl,
+      status: 422,
+      body: {
+        ...failed,
+        extractedData: null,
+        ...parsedScanMeta(failed),
+        imageUrl: scanImageApiUrl(scan.id, true),
+        code: "SCAN_NO_CARD",
+        error: "No readable business card was found in this image. Please retake the photo.",
       },
     };
   }
@@ -148,7 +180,7 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   return {
     scanId: scan.id,
     companyId,
-    imageData,
+    imageData: image.dataUrl,
     status: 201,
     body: {
       ...updated,
@@ -213,6 +245,11 @@ export async function reprocessScan(user: AuthUser, id: number, body: { appLangu
     throw new AppError(502, "Could not re-read the card. Please try again or replace the image.");
   }
 
+  if (!hasReadableCard(ocr.fields)) {
+    await scansRepo.update(id, { status: "failed", rawOcr: ocr.rawOcr });
+    throw new AppError(422, "No readable business card was found in this image. Replace the image and try again.", { code: "SCAN_NO_CARD" });
+  }
+
   const updated = await scansRepo.update(id, {
     status: "completed",
     extractedData: JSON.stringify(ocr.fields),
@@ -237,12 +274,13 @@ export async function reprocessScan(user: AuthUser, id: number, body: { appLangu
 export async function replaceScanImage(user: AuthUser, id: number, body: { imageData?: string; appLanguage?: string }) {
   const scan = await scansRepo.findById(user, id);
   if (!scan) throw new AppError(404, "Scan not found");
-  if (!body.imageData) throw new AppError(400, "imageData required");
+  // Batch 7: same byte-level validation as scan creation — before storage or AI.
+  const image = validateScanImage(body.imageData);
   const lang = body.appLanguage === "ar" ? "ar" : "en";
 
   let objectKey: string;
   try {
-    objectKey = await uploadScanImage(id, scan.companyId, body.imageData);
+    objectKey = await uploadScanImage(id, scan.companyId, image.dataUrl);
   } catch (err) {
     logAiError("scan-replace-upload", err);
     throw new AppError(502, "Could not store the replacement image. Please try again.");
@@ -251,12 +289,23 @@ export async function replaceScanImage(user: AuthUser, id: number, body: { image
 
   let ocr: Awaited<ReturnType<typeof extractCardData>>;
   try {
-    ocr = await extractCardData(body.imageData, lang, { companyId: user.companyId, userId: user.id });
+    ocr = await extractCardData(image.dataUrl, lang, { companyId: user.companyId, userId: user.id });
   } catch (err) {
-    if (err instanceof AppError) throw err;
+    if (err instanceof AppError) {
+      // The image swap already happened, so any previously extracted data no longer
+      // matches the stored image — mark the scan failed (Reprocess OCR recovers it)
+      // before surfacing the real denial status.
+      await scansRepo.update(id, { status: "failed" });
+      throw err;
+    }
     logAiError("scan-replace-ocr", err);
     await scansRepo.update(id, { status: "failed" });
     throw new AppError(502, "Image replaced, but the card could not be read. Try Reprocess OCR.");
+  }
+
+  if (!hasReadableCard(ocr.fields)) {
+    await scansRepo.update(id, { status: "failed", rawOcr: ocr.rawOcr });
+    throw new AppError(422, "No readable business card was found in the replacement image. Try a clearer photo.", { code: "SCAN_NO_CARD" });
   }
 
   const updated = await scansRepo.update(id, {

@@ -171,6 +171,17 @@ function str(value: unknown): string | null {
   return t.length > 0 && t.toLowerCase() !== "null" ? t : null;
 }
 
+// Safe email casing normalization for DISPLAY values: lowercase the domain part
+// only (domains are case-insensitive by spec; local parts technically are not,
+// so they are preserved as printed). Non-email-shaped strings pass through
+// unchanged — never silently replaced. The `original` object is NEVER normalized.
+function normalizeEmailDisplay(value: string | null): string | null {
+  if (!value) return value;
+  const at = value.lastIndexOf("@");
+  if (at <= 0 || at === value.length - 1 || /\s/.test(value)) return value;
+  return value.slice(0, at + 1) + value.slice(at + 1).toLowerCase();
+}
+
 function clampScore(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -537,13 +548,18 @@ export async function extractCardData(
   });
   const parsed = meta.parsed;
 
+  // Keep the model's email exactly as read BEFORE display normalization — `original`
+  // must stay verbatim, so any fallback into `original` uses this raw value, never
+  // the normalized display value.
+  const rawEmail = str(parsed.email);
+
   const display = {
     firstName: str(parsed.firstName),
     lastName: str(parsed.lastName),
     arabicName: str(parsed.arabicName),
     jobTitle: str(parsed.jobTitle),
     company: str(parsed.company),
-    email: str(parsed.email),
+    email: normalizeEmailDisplay(rawEmail),
     mobile: str(parsed.mobile),
     website: str(parsed.website),
     linkedin: str(parsed.linkedin),
@@ -565,7 +581,7 @@ export async function extractCardData(
     arabicName: originalRaw.arabicName ?? display.arabicName,
     jobTitle: originalRaw.jobTitle,
     company: originalRaw.company,
-    email: originalRaw.email ?? display.email,
+    email: originalRaw.email ?? rawEmail,
     mobile: originalRaw.mobile ?? display.mobile,
     website: originalRaw.website ?? display.website,
     linkedin: originalRaw.linkedin ?? display.linkedin,

@@ -17,7 +17,9 @@ async function decodeAndCompress(imageData: string): Promise<{ buffer: Buffer; c
   const base64 = imageData.startsWith("data:") ? imageData.split(",")[1] : imageData;
   if (!base64) throw new Error("Invalid image data");
   const raw = Buffer.from(base64, "base64");
-  const buffer = await sharp(raw).jpeg({ quality: 80, progressive: true }).toBuffer();
+  // .rotate() with no args applies the EXIF orientation and strips the tag, so the
+  // stored image displays upright everywhere (browsers ignore EXIF in some contexts).
+  const buffer = await sharp(raw).rotate().jpeg({ quality: 80, progressive: true }).toBuffer();
   return { buffer, contentType: "image/jpeg" };
 }
 

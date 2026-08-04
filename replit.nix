@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.noto-fonts
     pkgs.atk
     pkgs.alsa-lib
     pkgs.cairo

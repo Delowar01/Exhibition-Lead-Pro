@@ -15,6 +15,7 @@ import type {
   ExistingContactFound,
 } from "@workspace/api-client-react";
 import { ApiError } from "@workspace/api-client-react";
+import { describeAiError } from "@/lib/ai-errors";
 import { ExistingContactDialog } from "@/components/ExistingContactDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -341,13 +342,16 @@ export default function AdminScan() {
               description: "Review the extracted data and save as a contact.",
             });
           },
-          onError: () => {
+          onError: (err) => {
             setScanning(false);
             setCardImage(null);
+            // Batch 7: surface budget/rate-limit/validation codes honestly instead
+            // of a generic "could not read the card".
+            const info = describeAiError(err, "Scan failed");
             toast({
               variant: "destructive",
-              title: "Scan failed",
-              description: "Could not read the card. Please retake the photo.",
+              title: info.title === "Something went wrong" ? "Scan failed" : info.title,
+              description: info.description || "Could not read the card. Please retake the photo.",
             });
           },
         }
@@ -382,11 +386,12 @@ export default function AdminScan() {
           setScannedData(ex ? fieldsFromExtracted(ex) : emptyFields());
           toast({ title: "OCR re-run", description: "Fields updated from the stored image." });
         },
-        onError: () => {
+        onError: (err) => {
+          const info = describeAiError(err, "Could not reprocess");
           toast({
             variant: "destructive",
-            title: "Could not reprocess",
-            description: "The card could not be re-read. Try replacing the image.",
+            title: info.title === "Something went wrong" ? "Could not reprocess" : info.title,
+            description: info.description || "The card could not be re-read. Try replacing the image.",
           });
         },
       }
@@ -548,6 +553,7 @@ export default function AdminScan() {
         accept="image/*"
         capture="environment"
         className="hidden"
+        data-testid="input-scan-file"
         onChange={handleFileChange}
       />
       <input
@@ -1085,7 +1091,7 @@ export default function AdminScan() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> First Name</Label>
-                      <Input value={scannedData.firstName} onChange={(e) => setScannedData({...scannedData, firstName: e.target.value})} className="font-medium" />
+                      <Input value={scannedData.firstName} onChange={(e) => setScannedData({...scannedData, firstName: e.target.value})} className="font-medium" data-testid="input-scan-first-name" />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> Last Name</Label>
@@ -1115,7 +1121,7 @@ export default function AdminScan() {
 
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" /> Phone Number</Label>
-                    <Input value={scannedData.mobile} onChange={(e) => setScannedData({...scannedData, mobile: e.target.value})} />
+                    <Input value={scannedData.mobile} onChange={(e) => setScannedData({...scannedData, mobile: e.target.value})} data-testid="input-scan-mobile" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -1154,6 +1160,7 @@ export default function AdminScan() {
                       className="w-full h-12 text-base shadow-md"
                       onClick={handleSaveContact}
                       disabled={createContact.isPending}
+                      data-testid="button-scan-save-contact"
                     >
                       <Save className="mr-2 h-5 w-5" />
                       {createContact.isPending ? "Saving & scoring lead..." : "Save to Contacts"}

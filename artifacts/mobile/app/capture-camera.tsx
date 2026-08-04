@@ -27,6 +27,7 @@ import {
 import { FONT, PrimaryButton } from "@/components/ui";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
+import { describeScanError } from "@/lib/scan-error";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import {
@@ -403,18 +404,10 @@ export default function CaptureCameraScreen() {
   const captureErrorMessage = useCallback(
     (err: unknown): string => {
       if (err instanceof ApiError) {
-        const body = err.data;
-        const serverMsg =
-          body && typeof body === "object" && "error" in body
-            ? String((body as { error: unknown }).error)
-            : null;
-        if (err.status === 413) return t("capture.errTooLarge");
-        if (err.status === 502 || err.status === 503 || err.status === 504)
-          return serverMsg || t("capture.errOcr");
-        if (err.status === 400) return serverMsg || t("capture.errInvalid");
-        if (err.status === 401 || err.status === 403) return t("capture.errAuth");
-        if (err.status >= 500) return t("capture.errServer");
-        if (serverMsg) return serverMsg;
+        // Batch 7: shared mapper — adds AI budget/rate-limit (429), AI-disabled
+        // (403 code) and no-readable-card (422) handling on top of the status map.
+        const d = describeScanError(err.status, err.data);
+        return d.serverMessage || t(d.key);
       }
       if (
         err instanceof TypeError ||

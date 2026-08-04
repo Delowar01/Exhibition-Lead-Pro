@@ -1,0 +1,476 @@
+{
+  "ranAt": "2026-08-04T23:01:29.644Z",
+  "provider": "gemini",
+  "model": "gemini-2.5-flash",
+  "results": [
+    {
+      "fixture": "english-clean.jpg",
+      "appLanguage": "en",
+      "httpStatus": 201,
+      "scanStatus": "completed",
+      "code": null,
+      "confidence": 99,
+      "extracted": {
+        "firstName": "Sarah",
+        "lastName": "Mitchell",
+        "arabicName": null,
+        "jobTitle": "Regional Sales Director",
+        "company": "Meridian Gulf Trading LLC",
+        "email": "Sarah.Mitchell@meridiangulf.ae",
+        "mobile": "+971 50 774 2196",
+        "website": "www.meridiangulf.ae",
+        "linkedin": null,
+        "address": null,
+        "city": "Dubai",
+        "country": "United Arab Emirates",
+        "postalCode": null,
+        "original": {
+          "firstName": "Sarah",
+          "lastName": "Mitchell",
+          "arabicName": null,
+          "jobTitle": "Regional Sales Director",
+          "company": "Meridian Gulf Trading LLC",
+          "email": "Sarah.Mitchell@MeridianGulf.ae",
+          "mobile": "+971 50 774 2196",
+          "website": "www.meridiangulf.ae",
+          "linkedin": null,
+          "address": null,
+          "city": "Dubai",
+          "country": "United Arab Emirates",
+          "postalCode": null
+        }
+      },
+      "fieldReport": {
+        "firstName": "OK",
+        "lastName": "OK",
+        "jobTitle": "OK",
+        "company": "OK",
+        "email": "OK",
+        "mobile": "OK",
+        "website": "OK",
+        "city": "OK",
+        "country": "OK"
+      },
+      "arabicPreserved": null,
+      "notes": [
+        "latency 3069ms"
+      ]
+    },
+    {
+      "fixture": "arabic-bilingual.jpg",
+      "appLanguage": "ar",
+      "httpStatus": 201,
+      "scanStatus": "completed",
+      "code": null,
+      "confidence": 99,
+      "extracted": {
+        "firstName": "Khalid",
+        "lastName": "Al Mansouri",
+        "arabicName": "خالد المنصوري",
+        "jobTitle": "General Manager",
+        "company": "Al Noor Industries",
+        "email": "k.almansouri@alnoor-ind.com",
+        "mobile": "+971528834471",
+        "website": null,
+        "linkedin": null,
+        "address": null,
+        "city": "Abu Dhabi",
+        "country": "UAE",
+        "postalCode": null,
+        "original": {
+          "firstName": "Khalid",
+          "lastName": "Al Mansouri",
+          "arabicName": "خالد المنصوري",
+          "jobTitle": "General Manager",
+          "company": "Al Noor Industries",
+          "email": "k.almansouri@alnoor-ind.com",
+          "mobile": "+971 52 883 4471",
+          "website": null,
+          "linkedin": null,
+          "address": null,
+          "city": "Abu Dhabi",
+          "country": "UAE",
+          "postalCode": null
+        }
+      },
+      "fieldReport": {
+        "firstName": "OK",
+        "lastName": "OK",
+        "jobTitle": "OK",
+        "company": "OK",
+        "email": "OK",
+        "mobile": "OK"
+      },
+      "arabicPreserved": true,
+      "notes": [
+        "latency 3398ms"
+      ]
+    },
+    {
+      "fixture": "rotated.jpg",
+      "appLanguage": "en",
+      "httpStatus": 201,
+      "scanStatus": "completed",
+      "code": null,
+      "confidence": 99,
+      "extracted": {
+        "firstName": "Sarah",
+        "lastName": "Mitchell",
+        "arabicName": null,
+        "jobTitle": "Regional Sales Director",
+        "company": "Meridian Gulf Trading LLC",
+        "email": "Sarah.Mitchell@meridiangulf.ae",
+        "mobile": "+971 50 774 2196",
+        "website": "www.meridiangulf.ae",
+        "linkedin": null,
+        "address": null,
+        "city": "Dubai",
+        "country": "United Arab Emirates",
+        "postalCode": null,
+        "original": {
+          "firstName": "Sarah",
+          "lastName": "Mitchell",
+          "arabicName": null,
+          "jobTitle": "Regional Sales Director",
+          "company": "Meridian Gulf Trading LLC",
+          "email": "Sarah.Mitchell@MeridianGulf.ae",
+          "mobile": "+971 50 774 2196",
+          "website": "www.meridiangulf.ae",
+          "linkedin": null,
+          "address": null,
+          "city": "Dubai",
+          "country": "United Arab Emirates",
+          "postalCode": null
+        }
+      },
+      "fieldReport": {
+        "firstName": "OK",
+        "lastName": "OK",
+        "jobTitle": "OK",
+        "company": "OK",
+        "email": "OK",
+        "mobile": "OK",
+        "website": "OK",
+        "city": "OK",
+        "country": "OK"
+      },
+      "arabicPreserved": null,
+      "notes": [
+        "latency 2930ms"
+      ]
+    },
+    {
+      "fixture": "perspective.jpg",
+      "appLanguage": "en",
+      "httpStatus": 201,
+      "scanStatus": "completed",
+      "code": null,
+      "confidence": 100,
+      "extracted": {
+        "firstName": "Sarah",
+        "lastName": "Mitchell",
+        "arabicName": null,
+        "jobTitle": "Regional Sales Director",
+        "company": "Meridian Gulf Trading LLC",
+        "email": "Sarah.Mitchell@meridiangulf.ae",
+        "mobile": "+971 50 774 2196",
+        "website": "www.meridiangulf.ae",
+        "linkedin": null,
+        "address": null,
+        "city": "Dubai",
+        "country": "United Arab Emirates",
+        "postalCode": null,
+        "original": {
+          "firstName": "Sarah",
+          "lastName": "Mitchell",
+          "arabicName": null,
+          "jobTitle": "Regional Sales Director",
+          "company": "Meridian Gulf Trading LLC",
+          "email": "Sarah.Mitchell@MeridianGulf.ae",
+          "mobile": "+971 50 774 2196",
+          "website": "www.meridiangulf.ae",
+          "linkedin": null,
+          "address": null,
+          "city": "Dubai",
+          "country": "United Arab Emirates",
+          "postalCode": null
+        }
+      },
+      "fieldReport": {
+        "firstName": "OK",
+        "lastName": "OK",
+        "jobTitle": "OK",
+        "company": "OK",
+        "email": "OK",
+        "mobile": "OK",
+        "website": "OK",
+        "city": "OK",
+        "country": "OK"
+      },
+      "arabicPreserved": null,
+      "notes": [
+        "latency 3019ms"
+      ]
+    },
+    {
+      "fixture": "low-light.jpg",
+      "appLanguage": "en",
+      "httpStatus": 201,
+      "scanStatus": "completed",
+      "code": null,
+      "confidence": 98,
+      "extracted": {
+        "firstName": "Sarah",
+        "lastName": "Mitchell",
+        "arabicName": null,
+        "jobTitle": "Regional Sales Director",
+        "company": "Meridian Gulf Trading LLC",
+        "email": "Sarah.Mitchell@meridiangulf.ae",
+        "mobile": "+971507742196",
+        "website": "www.meridiangulf.ae",
+        "linkedin": null,
+        "address": null,
+        "city": "Dubai",
+        "country": "United Arab Emirates",
+        "postalCode": null,
+        "original": {
+          "firstName": "Sarah",
+          "lastName": "Mitchell",
+          "arabicName": null,
+          "jobTitle": "Regional Sales Director",
+          "company": "Meridian Gulf Trading LLC",
+          "email": "Sarah.Mitchell@MeridianGulf.ae",
+          "mobile": "+971507742196",
+          "website": "www.meridiangulf.ae",
+          "linkedin": null,
+          "address": null,
+          "city": "Dubai",
+          "country": "United Arab Emirates",
+          "postalCode": null
+        }
+      },
+      "fieldReport": {
+        "firstName": "OK",
+        "lastName": "OK",
+        "jobTitle": "OK",
+        "company": "OK",
+        "email": "OK",
+        "mobile": "OK",
+        "website": "OK",
+        "city": "OK",
+        "country": "OK"
+      },
+      "arabicPreserved": null,
+      "notes": [
+        "latency 4345ms"
+      ]
+    },
+    {
+      "fixture": "low-res.jpg",
+      "appLanguage": "en",
+      "httpStatus": 201,
+      "scanStatus": "completed",
+      "code": null,
+      "confidence": 95,
+      "extracted": {
+        "firstName": "Sarah",
+        "lastName": "Mitchell",
+        "arabicName": null,
+        "jobTitle": "Regional Sales Director",
+        "company": "Meridian Gulf Trading LLC",
+        "email": "Sarah.Mitchell@meridiangulf.ae",
+        "mobile": "+971 50 774 2196",
+        "website": "www.meridiangulf.ae",
+        "linkedin": null,
+        "address": null,
+        "city": "Dubai",
+        "country": "United Arab Emirates",
+        "postalCode": null,
+        "original": {
+          "firstName": "Sarah",
+          "lastName": "Mitchell",
+          "arabicName": null,
+          "jobTitle": "Regional Sales Director",
+          "company": "Meridian Gulf Trading LLC",
+          "email": "Sarah.Mitchell@MeridianGulf.ae",
+          "mobile": "+971 50774 2196",
+          "website": "www.meridiangulf.ae",
+          "linkedin": null,
+          "address": null,
+          "city": "Dubai",
+          "country": "United Arals Emirates",
+          "postalCode": null
+        }
+      },
+      "fieldReport": {
+        "firstName": "OK",
+        "lastName": "OK",
+        "jobTitle": "OK",
+        "company": "OK",
+        "email": "OK",
+        "mobile": "OK",
+        "website": "OK",
+        "city": "OK",
+        "country": "OK"
+      },
+      "arabicPreserved": null,
+      "notes": [
+        "latency 3772ms"
+      ]
+    },
+    {
+      "fixture": "cropped.jpg",
+      "appLanguage": "en",
+      "httpStatus": 201,
+      "scanStatus": "completed",
+      "code": null,
+      "confidence": 99,
+      "extracted": {
+        "firstName": "Sarah",
+        "lastName": "Mitchell",
+        "arabicName": null,
+        "jobTitle": "Regional Sales Director",
+        "company": "Meridian Gulf Trading LLC",
+        "email": "Sarah.Mitchell@meridiangulf.ae",
+        "mobile": "+971507742196",
+        "website": null,
+        "linkedin": null,
+        "address": null,
+        "city": null,
+        "country": null,
+        "postalCode": null,
+        "original": {
+          "firstName": "Sarah",
+          "lastName": "Mitchell",
+          "arabicName": null,
+          "jobTitle": "Regional Sales Director",
+          "company": "Meridian Gulf Trading LLC",
+          "email": "Sarah.Mitchell@MeridianGulf.ae",
+          "mobile": "+971 50 774 2196",
+          "website": null,
+          "linkedin": null,
+          "address": null,
+          "city": null,
+          "country": null,
+          "postalCode": null
+        }
+      },
+      "fieldReport": {
+        "firstName": "OK",
+        "lastName": "OK",
+        "jobTitle": "OK",
+        "company": "OK",
+        "mobile": "OK"
+      },
+      "arabicPreserved": null,
+      "notes": [
+        "latency 2907ms",
+        "unexpected non-null fields: email=Sarah.Mitchell@meridiangulf.ae"
+      ]
+    },
+    {
+      "fixture": "non-card.jpg",
+      "appLanguage": "en",
+      "httpStatus": 422,
+      "scanStatus": "failed",
+      "code": "SCAN_NO_CARD",
+      "confidence": null,
+      "extracted": null,
+      "fieldReport": null,
+      "arabicPreserved": null,
+      "notes": [
+        "latency 2015ms"
+      ]
+    }
+  ],
+  "ledger": [
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2678,
+      "outputTokens": 466,
+      "totalTokens": 3144,
+      "usageSource": null,
+      "latencyMs": 2950
+    },
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2678,
+      "outputTokens": 466,
+      "totalTokens": 3144,
+      "usageSource": null,
+      "latencyMs": 2834
+    },
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2678,
+      "outputTokens": 476,
+      "totalTokens": 3154,
+      "usageSource": null,
+      "latencyMs": 2914
+    },
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2678,
+      "outputTokens": 457,
+      "totalTokens": 3135,
+      "usageSource": null,
+      "latencyMs": 4216
+    },
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2678,
+      "outputTokens": 463,
+      "totalTokens": 3141,
+      "usageSource": null,
+      "latencyMs": 3673
+    },
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2682,
+      "outputTokens": 481,
+      "totalTokens": 3163,
+      "usageSource": null,
+      "latencyMs": 3185
+    },
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2678,
+      "outputTokens": 393,
+      "totalTokens": 3071,
+      "usageSource": null,
+      "latencyMs": 2771
+    },
+    {
+      "status": "success",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "promptVersion": 4,
+      "inputTokens": 2678,
+      "outputTokens": 222,
+      "totalTokens": 2900,
+      "usageSource": null,
+      "latencyMs": 1894
+    }
+  ]
+}
