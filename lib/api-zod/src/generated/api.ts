@@ -2863,6 +2863,49 @@ export const GetContactTimelineResponse = zod.object({
 
 
 /**
+ * Creates a tenant-scoped timeline note for the contact using the existing activity model. Used by AI Copilot/Assistant "Save as Note" — the optional aiGenerated/aiOutputType flags are recorded in the activity metadata for provenance. Never stores prompts or provider internals.
+
+ * @summary Save a note (activity of type "note") on a contact's timeline
+ */
+export const CreateContactNoteParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createContactNoteBodyBodyMax = 20000;
+
+export const createContactNoteBodySubjectMax = 300;
+
+export const createContactNoteBodyAiGeneratedDefault = false;
+export const createContactNoteBodyAiOutputTypeMax = 50;
+
+
+
+export const CreateContactNoteBody = zod.object({
+  "body": zod.string().min(1).max(createContactNoteBodyBodyMax).describe('Note text (plain text; the generated draft content for AI saves).'),
+  "subject": zod.string().max(createContactNoteBodySubjectMax).nullish().describe('Optional short title shown on the timeline entry.'),
+  "aiGenerated": zod.boolean().default(createContactNoteBodyAiGeneratedDefault).describe('Mark the note as AI-generated (stored in activity metadata for provenance).'),
+  "aiOutputType": zod.string().max(createContactNoteBodyAiOutputTypeMax).nullish().describe('Optional AI tool type that produced the content (e.g. email, summary).')
+})
+
+export const CreateContactNoteResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "leadId": zod.number().nullish(),
+  "contactId": zod.number().nullish(),
+  "userId": zod.number().nullish(),
+  "userName": zod.string().nullish(),
+  "type": zod.string(),
+  "source": zod.enum(['manual', 'system']),
+  "subject": zod.string().nullish(),
+  "body": zod.string().nullish(),
+  "outcome": zod.string().nullish(),
+  "metadata": zod.unknown().optional(),
+  "occurredAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date().optional()
+})
+
+
+/**
  * @summary List events
  */
 export const listEventsQueryPageDefault = 1;
@@ -5662,7 +5705,8 @@ export const GetAiCopilotOverviewResponse = zod.object({
   "usedById": zod.number().nullish(),
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "generationFailed": zod.boolean().optional().describe('Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.\n')
 }))
 })
 
@@ -5761,7 +5805,8 @@ export const EditAiCopilotOutputResponse = zod.object({
   "usedById": zod.number().nullish(),
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "generationFailed": zod.boolean().optional().describe('Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.\n')
 })
 
 
@@ -5794,7 +5839,8 @@ export const UseAiCopilotOutputResponse = zod.object({
   "usedById": zod.number().nullish(),
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "generationFailed": zod.boolean().optional().describe('Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.\n')
 })
 
 
@@ -5827,7 +5873,8 @@ export const DismissAiCopilotOutputResponse = zod.object({
   "usedById": zod.number().nullish(),
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "generationFailed": zod.boolean().optional().describe('Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.\n')
 })
 
 
@@ -5870,7 +5917,8 @@ export const GenerateAiCopilotOutputResponse = zod.object({
   "usedById": zod.number().nullish(),
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "generationFailed": zod.boolean().optional().describe('Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.\n')
 })
 
 
@@ -5932,7 +5980,8 @@ export const GetAiCopilotPanelResponse = zod.object({
   "usedById": zod.number().nullish(),
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "generationFailed": zod.boolean().optional().describe('Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.\n')
 }))
 })
 
@@ -5968,7 +6017,8 @@ export const GetAiCopilotOutputsResponse = zod.object({
   "usedById": zod.number().nullish(),
   "usedAt": zod.string().nullish(),
   "createdAt": zod.string().optional(),
-  "updatedAt": zod.string().optional()
+  "updatedAt": zod.string().optional(),
+  "generationFailed": zod.boolean().optional().describe('Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.\n')
 }))
 })
 

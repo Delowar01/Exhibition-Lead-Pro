@@ -190,7 +190,11 @@
     "send": "Send",
     "thinking": "Thinking…",
     "aiSource": "AI",
-    "deterministicSource": "Real CRM data"
+    "deterministicSource": "Real CRM data",
+    "sendFailed": "The AI could not generate a response. Your message was not sent.",
+    "sendFailedNetwork": "No connection — check your internet and try again.",
+    "sendFailedPermission": "You don't have permission to use the AI assistant.",
+    "retry": "Retry"
   },
   "companies": {
     "title": "Companies",

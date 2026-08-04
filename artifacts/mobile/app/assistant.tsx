@@ -32,6 +32,7 @@ import { FONT } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { classifySendError, sendErrorMessageKey, type SendErrorKind } from "@/lib/assistant-error";
 
 export default function AssistantScreen() {
   const colors = useColors();
@@ -49,6 +50,14 @@ export default function AssistantScreen() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [pendingText, setPendingText] = useState<string | null>(null);
+  // A failed send keeps the user's message on screen with an inline error +
+  // retry, so the typed text is never lost. conversationId is null when the
+  // conversation itself could not be created.
+  const [failedSend, setFailedSend] = useState<{
+    conversationId: number | null;
+    content: string;
+    kind: SendErrorKind;
+  } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -77,15 +86,17 @@ export default function AssistantScreen() {
   useEffect(() => {
     const id = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     return () => clearTimeout(id);
-  }, [messages.length, pendingText]);
+  }, [messages.length, pendingText, failedSend]);
 
   const sendTo = (conversationId: number, content: string) => {
     setPendingText(content);
+    setFailedSend(null);
     sendMutation.mutate(
       { id: conversationId, data: { content, language: language === "ar" ? "ar" : "en" } },
       {
         onSuccess: () => {
           setPendingText(null);
+          setFailedSend(null);
           void queryClient.invalidateQueries({
             queryKey: getGetAiAssistantConversationQueryKey(conversationId),
           });
@@ -93,7 +104,10 @@ export default function AssistantScreen() {
             queryKey: getListAiAssistantConversationsQueryKey(undefined),
           });
         },
-        onError: () => setPendingText(null),
+        onError: (err: unknown) => {
+          setPendingText(null);
+          setFailedSend({ conversationId, content, kind: classifySendError(err) });
+        },
       },
     );
   };
@@ -113,8 +127,22 @@ export default function AssistantScreen() {
           setSelectedId(conv.id);
           sendTo(conv.id, content);
         },
+        onError: (err: unknown) => {
+          setFailedSend({ conversationId: null, content, kind: classifySendError(err) });
+        },
       },
     );
+  };
+
+  const handleRetryFailedSend = () => {
+    if (!failedSend || sendMutation.isPending || createMutation.isPending) return;
+    const { conversationId, content } = failedSend;
+    if (conversationId != null) {
+      sendTo(conversationId, content);
+    } else {
+      setFailedSend(null);
+      handleSend(content);
+    }
   };
 
   const handleDelete = (id: number) => {
@@ -194,6 +222,7 @@ export default function AssistantScreen() {
         <Pressable
           onPress={() => {
             setSelectedId(null);
+            setFailedSend(null);
             setShowHistory(false);
           }}
           style={[styles.iconBtn, { borderColor: colors.border }]}
@@ -217,6 +246,7 @@ export default function AssistantScreen() {
                 key={c.id}
                 onPress={() => {
                   setSelectedId(c.id);
+                  setFailedSend(null);
                   setShowHistory(false);
                 }}
                 style={[styles.convRow, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -243,7 +273,7 @@ export default function AssistantScreen() {
           contentContainerStyle={{ flexGrow: 1, padding: 16, gap: 10 }}
           keyboardShouldPersistTaps="handled"
         >
-          {selectedId == null && !pendingText ? (
+          {selectedId == null && !pendingText && !failedSend ? (
             <View style={styles.emptyWrap}>
               <Feather name="message-circle" size={32} color={colors.mutedForeground} />
               <Text style={[styles.emptyTitle, { color: colors.foreground, textAlign: "center" }]}>
@@ -282,6 +312,39 @@ export default function AssistantScreen() {
                     <Text style={[styles.metaText, { color: colors.mutedForeground }]}>
                       {t("assistant.thinking")}
                     </Text>
+                  </View>
+                </>
+              ) : null}
+              {failedSend && !pendingText ? (
+                <>
+                  <View style={[styles.bubble, styles.bubbleUser, { backgroundColor: colors.primary, opacity: 0.8 }]}>
+                    <Text style={[styles.bubbleText, { color: "#fff", textAlign }]}>{failedSend.content}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.bubble,
+                      styles.bubbleAssistant,
+                      { backgroundColor: colors.card, borderColor: colors.destructive, gap: 8 },
+                    ]}
+                    accessibilityRole="alert"
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Feather name="alert-circle" size={14} color={colors.destructive} />
+                      <Text style={[styles.metaText, { color: colors.destructive, fontSize: 12, flexShrink: 1, textAlign }]}>
+                        {t(sendErrorMessageKey(failedSend.kind))}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={handleRetryFailedSend}
+                      disabled={sendMutation.isPending || createMutation.isPending}
+                      style={[styles.retryBtn, { borderColor: colors.border }]}
+                      accessibilityLabel={t("assistant.retry")}
+                    >
+                      <Feather name="refresh-cw" size={13} color={colors.foreground} />
+                      <Text style={[styles.chipText, { color: colors.foreground }]}>
+                        {t("assistant.retry")}
+                      </Text>
+                    </Pressable>
                   </View>
                 </>
               ) : null}
@@ -374,6 +437,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   convTitle: { fontSize: 14, fontFamily: FONT.medium },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",

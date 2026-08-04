@@ -87,6 +87,7 @@ import type {
   Contact,
   ContactInput,
   ContactList,
+  ContactNoteInput,
   ContactStats,
   ContactStatusHistoryList,
   ContactUpdate,
@@ -8673,6 +8674,80 @@ export function useGetContactTimeline<TData = Awaited<ReturnType<typeof getConta
 
 
 
+
+export const getCreateContactNoteUrl = (id: number,) => {
+
+
+
+
+  return `/api/contacts/${id}/notes`
+}
+
+/**
+ * Creates a tenant-scoped timeline note for the contact using the existing activity model. Used by AI Copilot/Assistant "Save as Note" — the optional aiGenerated/aiOutputType flags are recorded in the activity metadata for provenance. Never stores prompts or provider internals.
+
+ * @summary Save a note (activity of type "note") on a contact's timeline
+ */
+export const createContactNote = async (id: number,
+    contactNoteInput: ContactNoteInput, options?: RequestInit): Promise<LeadActivity> => {
+
+  return customFetch<LeadActivity>(getCreateContactNoteUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      contactNoteInput,)
+  }
+);}
+
+
+
+
+export const getCreateContactNoteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContactNote>>, TError,{id: number;data: BodyType<ContactNoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createContactNote>>, TError,{id: number;data: BodyType<ContactNoteInput>}, TContext> => {
+
+const mutationKey = ['createContactNote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createContactNote>>, {id: number;data: BodyType<ContactNoteInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createContactNote(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateContactNoteMutationResult = NonNullable<Awaited<ReturnType<typeof createContactNote>>>
+    export type CreateContactNoteMutationBody = BodyType<ContactNoteInput>
+    export type CreateContactNoteMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save a note (activity of type "note") on a contact's timeline
+ */
+export const useCreateContactNote = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createContactNote>>, TError,{id: number;data: BodyType<ContactNoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createContactNote>>,
+        TError,
+        {id: number;data: BodyType<ContactNoteInput>},
+        TContext
+      > => {
+      return useMutation(getCreateContactNoteMutationOptions(options));
+    }
 
 export const getListEventsUrl = (params?: ListEventsParams,) => {
   const normalizedParams = new URLSearchParams();

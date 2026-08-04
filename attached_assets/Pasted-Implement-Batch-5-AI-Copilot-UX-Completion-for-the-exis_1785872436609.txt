@@ -1,0 +1,337 @@
+Implement Batch 5 — AI Copilot UX Completion for the existing Lead Capture Pro project.
+
+PURPOSE
+
+Complete the remaining user-facing AI Copilot and AI Assistant actions using the existing Gemini 2.5 Flash integration, Enterprise AI Layer, AI services, persisted drafts, contact activity models, and current APIs.
+
+This batch is limited to existing AI UX gaps. Do not redesign the AI architecture or begin AI token/cost enhancements; those belong to the next batch.
+
+CURRENT VERIFIED BASELINE
+
+- Batch 4 is complete.
+- API suite currently passes 648/648.
+- Playwright suite currently passes 31/31.
+- API, web, and mobile typechecks are clean.
+- Gemini 2.5 Flash is the approved and only AI provider.
+- AI requests must continue through the Enterprise AI Layer.
+- Existing AI Copilot supports multiple generation tools.
+- Existing AI drafts can be persisted, edited, used, and dismissed.
+- AI-generated customer communications must never send automatically.
+- The four-page Contact Workspace and its AI Copilot route are already complete.
+
+KNOWN GAPS
+
+The current audit identified these UX gaps:
+
+- Copy action is missing or imported but not rendered in some Copilot surfaces.
+- Explicit Regenerate action is missing in the web UI even though backend support may already exist.
+- Save as Note is missing for Copilot outputs.
+- Save as Draft is incomplete or inconsistent across AI tools.
+- Web Copilot error states are not fully handled.
+- Retry behavior is incomplete.
+- Mobile AI Assistant does not provide reliable send-error feedback.
+- Duplicate submissions must be prevented while an AI request is running.
+
+IMPORTANT BOUNDARIES
+
+Do not:
+
+- Add another AI provider.
+- Call Gemini directly from frontend code.
+- Bypass the Enterprise AI Layer.
+- Create a second AI draft system.
+- Create new tables unless the existing activity, interaction, note, or draft models cannot safely support the required behavior.
+- Rebuild the AI Copilot page.
+- Change AI prompts or generation quality unless required to fix a proven UX defect.
+- Implement AI token analytics, cost tracking, budgets, rate limiting, or caching enhancements in this batch.
+- Change Workflow Intelligence or Executive Intelligence.
+- Restore removed mobile AI Command Center, Workflow Intelligence, or Executive Intelligence screens.
+- Automatically send email, WhatsApp, or any customer communication.
+- Make unrelated UI or backend changes.
+
+STEP 1 — INSPECT BEFORE CHANGING
+
+Inspect the actual current implementation for:
+
+- Contact Workspace AI Copilot page
+- SalesCopilot and other Copilot components
+- AI Assistant conversation UI
+- Mobile AI Assistant screen
+- Existing AI generation endpoints
+- Existing regenerate behavior
+- Persisted AI drafts
+- Contact notes, activities, interactions, and communication records
+- Clipboard utilities
+- Toast and error-feedback components
+- Existing AI tests
+- Existing Playwright setup
+
+Identify which actions already have backend support and reuse them.
+
+For Save as Note:
+
+1. First check whether an existing contact note, contact activity, interaction, or timeline-note endpoint can correctly store the output.
+2. Reuse it when semantically correct.
+3. If no suitable contact-note endpoint exists, add the smallest tenant-scoped endpoint using the existing contact activity or interaction model.
+4. Do not create a new notes table solely for this action.
+
+STEP 2 — COPY ACTION
+
+Add a visible Copy action to relevant generated AI output surfaces.
+
+Requirements:
+
+- Copy the generated output text to the clipboard.
+- Show clear success feedback.
+- Show clear failure feedback when clipboard access fails.
+- Disable Copy when no generated content exists.
+- Preserve formatting as plain text unless the current component already supports rich content.
+- Do not copy internal metadata, prompts, IDs, or hidden context.
+
+Cover at minimum:
+
+- Contact Workspace AI Copilot output
+- SalesCopilot output where applicable
+- AI Assistant generated response actions where the existing design supports them
+
+STEP 3 — REGENERATE ACTION
+
+Add an explicit Regenerate action to generated AI outputs.
+
+Requirements:
+
+- Reuse the existing generation or regeneration API.
+- Preserve the selected tool, contact/entity context, tone, language, and user inputs.
+- Show a loading state while regenerating.
+- Prevent repeated clicks and duplicate requests.
+- Keep the previous output visible until the new output succeeds, unless the current design intentionally uses a loading replacement.
+- If regeneration fails, retain the previous successful output.
+- Show a useful retryable error message.
+- Do not create duplicate draft records unless the user explicitly saves the regenerated version.
+
+STEP 4 — SAVE AS NOTE
+
+Add Save as Note for suitable AI outputs.
+
+Requirements:
+
+- Save a real tenant-scoped note/activity associated with the selected contact or supported entity.
+- Include the generated content.
+- Record the current authenticated user as creator.
+- Record the source as AI-generated through existing metadata/custom fields only if the current model supports it.
+- Do not store hidden prompts, AI context, tokens, or sensitive provider metadata.
+- Prevent duplicate saves caused by repeated clicks.
+- Show success and failure feedback.
+- Refresh the relevant Timeline or activity view after saving.
+- Apply existing RBAC and tenant-isolation checks.
+- If the current user lacks note/activity permission, hide or disable the action and enforce denial on the backend.
+
+Do not fabricate a Save as Note action for outputs that have no valid entity context.
+
+STEP 5 — SAVE AS DRAFT
+
+Complete or normalize Save as Draft where existing draft support is available.
+
+Requirements:
+
+- Reuse the existing AI draft persistence service and schema.
+- Support the relevant communication type, such as email or WhatsApp.
+- Preserve recipient/entity context, subject where applicable, generated content, language, and tool type.
+- Saving a draft must not send anything.
+- Allow the user to review and edit the draft through the existing workflow.
+- Prevent duplicate draft creation from double-clicking.
+- Show clear saved, failed, and already-saving states.
+- Respect permissions and tenant isolation.
+
+Do not add a new generic draft module.
+
+STEP 6 — EXPLICIT USER CONFIRMATION BEFORE SENDING
+
+Review every AI-generated email and WhatsApp action.
+
+Ensure:
+
+- “Use,” “Apply,” or “Open Draft” does not send automatically.
+- The content opens in the existing compose/draft workflow.
+- A separate explicit user action is required to send.
+- While sending, duplicate send attempts are blocked.
+- Existing permission checks remain enforced.
+- Tests prove AI-generated communication is not auto-sent.
+
+Do not redesign the communication composer.
+
+STEP 7 — WEB ERROR, LOADING, AND RETRY STATES
+
+Complete error handling in the web Copilot and relevant AI components.
+
+Requirements:
+
+- Handle query and mutation errors explicitly.
+- Show a useful message without exposing provider internals, prompts, stack traces, or secrets.
+- Provide Retry where the operation is safe to retry.
+- Preserve the user’s inputs after failure.
+- Preserve the last successful output after regeneration failure.
+- Distinguish:
+  - Network error
+  - Permission denial
+  - AI unavailable
+  - Validation error
+  - Usage/budget limit response already supported by the backend
+- Prevent duplicate submissions while loading.
+- Disable actions that depend on output until output exists.
+- Maintain light/dark theme contrast and responsive behavior.
+
+Do not change backend error contracts unless a confirmed gap prevents correct UI handling.
+
+STEP 8 — MOBILE AI ASSISTANT ERROR FEEDBACK
+
+Update only the retained mobile AI Assistant.
+
+Requirements:
+
+- Show a clear error when sending a message fails.
+- Keep the user’s unsent message available for retry.
+- Prevent duplicate sends while a request is running.
+- Provide a Retry action or allow safe resubmission.
+- Do not append a false successful AI response.
+- Maintain conversation state after recoverable errors.
+- Handle network loss and server error states.
+- Keep English and Arabic translations in parity.
+- Do not add removed mobile AI intelligence screens.
+- Do not add full mobile administration.
+
+Do not add new React Native testing infrastructure solely for this batch if none exists. Use existing mobile unit-test capabilities and code-level verification.
+
+STEP 9 — ACCESSIBILITY AND INTERACTION QUALITY
+
+For new actions:
+
+- Use real buttons.
+- Add accessible labels for icon-only actions.
+- Support keyboard navigation.
+- Show visible focus states.
+- Use appropriate disabled and busy states.
+- Avoid relying only on color for status.
+- Ensure small-screen layouts remain usable.
+- Do not introduce horizontal overflow.
+
+STEP 10 — AUTOMATED TESTING
+
+A. API tests
+
+Add or update focused tests only when backend behavior changes.
+
+Cover as applicable:
+
+- Save as Note succeeds for an authorized user.
+- Save as Note is tenant-scoped.
+- Cross-tenant entity IDs are rejected.
+- Missing permission is rejected.
+- Duplicate submission protection.
+- Save as Draft persists without sending.
+- AI-generated content is never automatically sent.
+- Existing regenerate endpoint behavior remains correct.
+
+Use a stubbed AI provider. Do not make real Gemini calls in automated tests.
+
+B. Web component or integration tests
+
+Cover:
+
+- Copy action renders and copies expected text.
+- Copy failure feedback.
+- Regenerate preserves inputs and updates output.
+- Regenerate failure keeps the previous output.
+- Save as Note success and failure.
+- Save as Draft success and failure.
+- Buttons disable while requests are running.
+- Duplicate clicks do not create duplicate records.
+- Permission-denied behavior.
+- Error and Retry states.
+
+C. Playwright tests
+
+Reuse the existing Playwright framework.
+
+Add focused browser coverage for the Contact Workspace AI Copilot route and any other central Copilot surface required.
+
+Verify:
+
+- Generate an output through deterministic stub/test data.
+- Copy action is visible and works.
+- Regenerate works.
+- Save as Note creates a real Timeline/activity entry.
+- Save as Draft creates a real draft where supported.
+- AI-generated communication is not sent automatically.
+- Failed generation shows an error and Retry.
+- Duplicate submission is blocked.
+- Existing four-page Contact Workspace navigation remains intact.
+
+Do not use live Gemini requests in Playwright.
+
+D. Mobile tests
+
+Using the existing test setup, cover where technically possible:
+
+- Failed message request preserves the user message.
+- Loading prevents duplicate send.
+- Retry calls the request again.
+- Error state clears after successful retry.
+- English and Arabic translation keys exist.
+
+Do not claim automated mobile UI coverage if only logic tests are available.
+
+STEP 11 — REGRESSION VERIFICATION
+
+Run:
+
+- API-server typecheck
+- Web-app typecheck
+- Mobile typecheck
+- Relevant AI/API tests
+- Relevant web tests
+- Mobile tests
+- Full API suite if backend or shared AI services changed
+- Full Playwright suite
+- Existing Contact Workspace E2E suite
+
+Report actual totals. Do not assume they remain 648/648 or 31/31.
+
+COMPLETION CRITERIA
+
+Mark Batch 5 complete only when:
+
+- Copy is visible and functional on required Copilot surfaces.
+- Regenerate is explicit, functional, and safe.
+- Save as Note creates a real tenant-scoped contact activity/note.
+- Save as Draft uses existing draft persistence and never sends.
+- AI communications require explicit user confirmation before sending.
+- Web AI errors and retries are handled.
+- Mobile AI Assistant displays send failures and supports safe retry.
+- Duplicate submissions are prevented.
+- Permissions and tenant isolation are enforced.
+- No live Gemini calls are required by tests.
+- Typechecks and regression suites pass.
+- No token/cost-management work from Batch 6 is implemented early.
+
+FINAL REPORT
+
+Return only:
+
+1. Existing AI architecture reused
+2. Copy actions added
+3. Regenerate behavior added
+4. Save as Note implementation
+5. Save as Draft implementation
+6. Confirmation that no AI communication auto-sends
+7. Web error/retry improvements
+8. Mobile Assistant error/retry improvements
+9. Files changed
+10. Schema changes, if any
+11. Tests added or changed
+12. Commands run
+13. Exact pass/fail totals
+14. Genuine limitations
+15. Confirmation that Batch 6 token/cost scope was not implemented
+
+Do not begin the next batch or recommend unrelated features.

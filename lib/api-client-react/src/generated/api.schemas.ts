@@ -3101,6 +3101,29 @@ export interface LeadScorePreview {
   reasoning: string;
 }
 
+export interface ContactNoteInput {
+  /**
+     * Note text (plain text; the generated draft content for AI saves).
+     * @minLength 1
+     * @maxLength 20000
+     */
+  body: string;
+  /**
+     * Optional short title shown on the timeline entry.
+     * @maxLength 300
+     * @nullable
+     */
+  subject?: string | null;
+  /** Mark the note as AI-generated (stored in activity metadata for provenance). */
+  aiGenerated?: boolean;
+  /**
+     * Optional AI tool type that produced the content (e.g. email, summary).
+     * @maxLength 50
+     * @nullable
+     */
+  aiOutputType?: string | null;
+}
+
 /**
  * Communication channel. Maps to an activity type (email→email, phone→call, whatsapp→message, calendar→meeting).
  */
@@ -3820,6 +3843,9 @@ export interface AiCopilotOutput {
   usedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  /** Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.
+   */
+  generationFailed?: boolean;
 }
 
 export interface AiCopilotOutputsListResponse {

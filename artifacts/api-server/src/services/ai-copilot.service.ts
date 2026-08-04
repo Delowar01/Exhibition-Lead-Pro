@@ -313,6 +313,14 @@ function contactCoachingSignals(c: Contact): CoachingSignal[] {
 
 // ── Persistence helper ────────────────────────────────────────────────────────
 
+// A stored output is worth preserving when the user edited it, or when its
+// content is a real draft (not the `{ unavailable: true }` failure placeholder).
+function hasUsableDraft(row: AiCopilotOutput): boolean {
+  if (row.editedContent && typeof row.editedContent === "object") return true;
+  const content = row.content as Record<string, unknown> | null;
+  return !!content && typeof content === "object" && content.unavailable !== true;
+}
+
 function buildUpsert(
   companyId: number,
   entityType: EntityType,
@@ -407,7 +415,7 @@ export async function generateOutput(
   id: number,
   outputType: OutputType,
   opts: GenerateOptions = {},
-): Promise<AiCopilotOutput> {
+): Promise<AiCopilotOutput & { generationFailed?: boolean }> {
   assertApplicable(entityType, outputType);
   const language = normLang(opts.language);
   const instructions = typeof opts.instructions === "string" ? opts.instructions.trim().slice(0, 1000) : "";
@@ -498,6 +506,13 @@ export async function generateOutput(
   } catch (err) {
     logAiError(`ai-copilot:${outputType}`, err);
     const message = err instanceof AppError ? err.message : "AI generation is currently unavailable. Please try again.";
+    // Regeneration failure must NOT destroy a previously successful draft: if a
+    // usable draft (or a human edit) already exists for this slot, keep it and
+    // surface a transient, response-only failure flag instead of overwriting.
+    const existing = await copilotRepo.findForCompanyEntityOutput(cid, entityType, id, outputType);
+    if (existing && hasUsableDraft(existing)) {
+      return { ...existing, generationFailed: true };
+    }
     const content = { unavailable: true, note: message };
     return copilotRepo.upsertOutput(buildUpsert(cid, entityType, id, outputType, content, { confidence: 0, reasoning: message }, "ai", language, runtime));
   }

@@ -140,6 +140,7 @@ export * from './contactInputStatus';
 export * from './contactLeadTemperature';
 export * from './contactList';
 export * from './contactMatch';
+export * from './contactNoteInput';
 export * from './contactStats';
 export * from './contactStatus';
 export * from './contactStatusHistory';

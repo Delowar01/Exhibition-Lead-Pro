@@ -20,10 +20,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, Plus, Trash2, Send, ShieldCheck, Cpu, User, Sparkles, ChevronRight, Loader2 } from "lucide-react";
+import { Bot, Plus, Trash2, Send, ShieldCheck, Cpu, User, Sparkles, ChevronRight, Loader2, Copy, AlertCircle, RefreshCw } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
 import { EmptyState } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
+import { copyTextToClipboard } from "@/lib/clipboard";
+import { describeAiError } from "@/lib/ai-errors";
 
 function formatTs(ts?: string | null): string {
   if (!ts) return "—";
@@ -69,7 +71,7 @@ function ProvenanceBadges({ m }: { m: AssistantMessage }) {
   );
 }
 
-function MessageBubble({ m, onPrompt, onNavigate }: { m: AssistantMessage; onPrompt: (p: string) => void; onNavigate: (path: string) => void }) {
+function MessageBubble({ m, onPrompt, onNavigate, onCopy }: { m: AssistantMessage; onPrompt: (p: string) => void; onNavigate: (path: string) => void; onCopy: (text: string) => void }) {
   const isUser = m.role === "user";
   const evidence = (Array.isArray(m.evidence) ? m.evidence : []) as EvidenceRef[];
   const actions = (Array.isArray(m.suggestedActions) ? m.suggestedActions : []) as SuggestedAction[];
@@ -113,6 +115,19 @@ function MessageBubble({ m, onPrompt, onNavigate }: { m: AssistantMessage; onPro
           </div>
         )}
         {!isUser && <ProvenanceBadges m={m} />}
+        {!isUser && m.content && (
+          <div className="mt-1.5 -mb-1 -ml-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs gap-1 text-muted-foreground"
+              onClick={() => onCopy(m.content ?? "")}
+              data-testid={`button-copy-message-${m.id}`}
+            >
+              <Copy className="h-3 w-3" /> Copy
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -126,6 +141,9 @@ export default function AiCommandCenter() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
+  // A failed send keeps the user's message on screen with an inline error +
+  // Retry; conversationId is null when the conversation itself failed to create.
+  const [failedSend, setFailedSend] = useState<{ conversationId: number | null; content: string; description: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const isFullAccess = user?.role === "primary_admin";
@@ -153,7 +171,7 @@ export default function AiCommandCenter() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length, pendingUserText]);
+  }, [messages.length, pendingUserText, failedSend]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListAiAssistantConversationsQueryKey(undefined) });
@@ -162,17 +180,21 @@ export default function AiCommandCenter() {
 
   const sendTo = (conversationId: number, content: string) => {
     setPendingUserText(content);
+    setFailedSend(null);
     sendMutation.mutate(
       { id: conversationId, data: { content, language: "en" } },
       {
         onSuccess: () => {
           setPendingUserText(null);
+          setFailedSend(null);
           queryClient.invalidateQueries({ queryKey: getGetAiAssistantConversationQueryKey(conversationId) });
           queryClient.invalidateQueries({ queryKey: getListAiAssistantConversationsQueryKey(undefined) });
         },
         onError: (err: unknown) => {
           setPendingUserText(null);
-          toast({ title: "Message failed", description: err instanceof Error ? err.message : "Please try again", variant: "destructive" });
+          const info = describeAiError(err, "Message failed");
+          setFailedSend({ conversationId, content, description: info.description });
+          toast({ title: info.title, description: info.description, variant: "destructive" });
         },
       },
     );
@@ -194,9 +216,33 @@ export default function AiCommandCenter() {
           invalidate();
           sendTo(conv.id, content);
         },
-        onError: () => toast({ title: "Could not start conversation", variant: "destructive" }),
+        onError: (err: unknown) => {
+          const info = describeAiError(err, "Could not start conversation");
+          setFailedSend({ conversationId: null, content, description: info.description });
+          toast({ title: info.title, description: info.description, variant: "destructive" });
+        },
       },
     );
+  };
+
+  const handleRetryFailedSend = () => {
+    if (!failedSend || sendMutation.isPending || createMutation.isPending) return;
+    const { conversationId, content } = failedSend;
+    if (conversationId != null) {
+      sendTo(conversationId, content);
+    } else {
+      setFailedSend(null);
+      handleSend(content);
+    }
+  };
+
+  const handleCopyMessage = async (text: string) => {
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
+      toast({ title: "Copied to clipboard" });
+    } else {
+      toast({ title: "Copy failed", description: "Your browser blocked clipboard access — select the text and copy manually.", variant: "destructive" });
+    }
   };
 
   const handleDelete = (id: number) => {
@@ -229,7 +275,10 @@ export default function AiCommandCenter() {
             <Button
               size="sm"
               className="w-full mb-3"
-              onClick={() => setSelectedId(null)}
+              onClick={() => {
+                setSelectedId(null);
+                setFailedSend(null);
+              }}
               disabled={!canUse}
               data-testid="button-new-conversation"
             >
@@ -250,7 +299,10 @@ export default function AiCommandCenter() {
                   <div
                     key={c.id}
                     className={`group flex items-center gap-1 rounded-md px-2 py-1.5 cursor-pointer text-sm ${selectedId === c.id ? "bg-accent" : "hover:bg-accent/50"}`}
-                    onClick={() => setSelectedId(c.id)}
+                    onClick={() => {
+                      setSelectedId(c.id);
+                      setFailedSend(null);
+                    }}
                     data-testid={`conversation-${c.id}`}
                   >
                     <span className="flex-1 truncate">{c.title}</span>
@@ -299,7 +351,7 @@ export default function AiCommandCenter() {
                 </div>
               )}
               {messages.map((m) => (
-                <MessageBubble key={m.id} m={m} onPrompt={(p) => handleSend(p)} onNavigate={(path) => navigate(path)} />
+                <MessageBubble key={m.id} m={m} onPrompt={(p) => handleSend(p)} onNavigate={(path) => navigate(path)} onCopy={(text) => void handleCopyMessage(text)} />
               ))}
               {pendingUserText && (
                 <>
@@ -311,6 +363,32 @@ export default function AiCommandCenter() {
                   <div className="flex justify-start">
                     <div className="rounded-lg px-4 py-3 bg-muted flex items-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" /> Thinking…
+                    </div>
+                  </div>
+                </>
+              )}
+              {failedSend && !pendingUserText && (
+                <>
+                  <div className="flex justify-end" data-testid="ai-failed-message">
+                    <div className="max-w-[85%] rounded-lg px-4 py-3 bg-primary text-primary-foreground opacity-80">
+                      <div className="text-sm whitespace-pre-wrap">{failedSend.content}</div>
+                    </div>
+                  </div>
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-lg px-4 py-3 bg-destructive/5 border border-destructive/30 text-sm space-y-2" data-testid="ai-send-error">
+                      <p className="flex items-center gap-2 text-destructive">
+                        <AlertCircle className="h-4 w-4 shrink-0" /> Message not sent — {failedSend.description}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRetryFailedSend}
+                        disabled={sendMutation.isPending || createMutation.isPending}
+                        className="gap-1"
+                        data-testid="button-retry-send"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Retry
+                      </Button>
                     </div>
                   </div>
                 </>

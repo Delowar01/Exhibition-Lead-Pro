@@ -17,3 +17,5 @@ The full `@workspace/api-server` `test` suite runs sequentially (`fileParallelis
 **Trap:** a `pnpm test` invocation that times out / returns "-1 no output" at the tool layer STILL fully executed the suite server-side and consumed the limiter. Treat it as a run — restart before the next attempt, don't just re-run.
 
 **Running the suite:** the suite takes >4 min; bash tool calls cap at 2 min and background/`setsid` processes are killed between calls. Run it via the registered `test` workflow (restart_workflow "test") and poll with refresh_all_logs — never via a foreground/backgrounded bash `pnpm test`.
+
+**Stale-build trap:** because the suite hits the LIVE server (which esbuild-bundles at workflow start), any server-code edit made after the last restart is invisible to the tests — a just-written fix can "fail" while the code is correct. Restart `artifacts/api-server: API Server` after server edits before re-running any test file.

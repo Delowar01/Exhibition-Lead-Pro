@@ -5,9 +5,13 @@ import {
   useEditAiCopilotOutput,
   useUseAiCopilotOutput,
   useDismissAiCopilotOutput,
+  useCreateContactNote,
+  useCreateLeadActivity,
   getGetAiCopilotPanelQueryKey,
   getGetAiCopilotOutputsQueryKey,
   getGetAiCopilotOverviewQueryKey,
+  getGetContactTimelineQueryKey,
+  getListLeadActivitiesQueryKey,
   type AiCopilotOutput,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,7 +23,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Sparkles, Check, X, ShieldCheck, Cpu, Copy, Pencil, Info, Mail, MessageCircle, Compass, AlertTriangle, Lightbulb, Languages } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { copyTextToClipboard } from "@/lib/clipboard";
+import { describeAiError } from "@/lib/ai-errors";
+import { Bot, Sparkles, Check, X, ShieldCheck, Cpu, Copy, Pencil, Info, Mail, MessageCircle, Compass, AlertTriangle, Lightbulb, Languages, RefreshCw, StickyNote, AlertCircle } from "lucide-react";
 
 type EntityType = "lead" | "contact" | "organization";
 
@@ -77,6 +84,51 @@ function isMessageField(key: string) {
   return MESSAGE_FIELDS.includes(key);
 }
 
+// Readable plain-text rendering of a structured draft — used for Copy and
+// Save as Note so the saved/copied text matches what the card displays instead
+// of raw JSON. Skips internal flags (insufficientData / unavailable).
+const HIDDEN_KEYS = new Set(["insufficientData", "unavailable"]);
+
+function plainTextValue(value: unknown, indent = ""): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        const rendered = plainTextValue(item, indent + "  ");
+        return rendered ? `${indent}- ${rendered.trimStart()}` : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([k, v]) => !HIDDEN_KEYS.has(k) && v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => {
+        const rendered = plainTextValue(v, indent + "  ");
+        if (!rendered) return "";
+        return rendered.includes("\n")
+          ? `${indent}${humanizeKey(k)}:\n${rendered}`
+          : `${indent}${humanizeKey(k)}: ${rendered}`;
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return String(value);
+}
+
+function plainTextFromContent(content: Record<string, unknown>, outputType: string): string {
+  if (content.unavailable === true) return "";
+  if (outputType === "email") {
+    const subject = typeof content.subject === "string" ? content.subject : "";
+    const body = typeof content.body === "string" ? content.body : "";
+    if (subject || body) return [subject && `Subject: ${subject}`, body].filter(Boolean).join("\n\n");
+  }
+  if (outputType === "whatsapp" && typeof content.message === "string" && content.message) {
+    return content.message;
+  }
+  return plainTextValue(content);
+}
+
 function DataValue({ value }: { value: unknown }) {
   if (Array.isArray(value)) {
     if (value.length === 0) return <span className="text-muted-foreground">None</span>;
@@ -117,11 +169,29 @@ function DataValue({ value }: { value: unknown }) {
   return <ScalarValue value={value} />;
 }
 
-function ContentRenderer({ content }: { content: Record<string, unknown> }) {
+function ContentRenderer({
+  content,
+  onRetry,
+  retrying,
+  onCopyMessageField,
+}: {
+  content: Record<string, unknown>;
+  onRetry?: () => void;
+  retrying?: boolean;
+  onCopyMessageField?: (text: string) => void;
+}) {
   if (content.unavailable === true) {
     return (
-      <div className="bg-secondary/50 border rounded-md p-4 text-sm text-muted-foreground">
-        This draft could not be generated right now — try again.
+      <div className="bg-secondary/50 border rounded-md p-4 text-sm text-muted-foreground flex items-center justify-between gap-3 flex-wrap" data-testid="copilot-draft-unavailable">
+        <span className="flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+          This draft could not be generated right now.
+        </span>
+        {onRetry && (
+          <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying} className="gap-1" data-testid="button-retry-generation">
+            <RefreshCw className={`h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} /> {retrying ? "Retrying…" : "Try again"}
+          </Button>
+        )}
       </div>
     );
   }
@@ -139,15 +209,17 @@ function ContentRenderer({ content }: { content: Record<string, unknown> }) {
               </p>
               <div className="bg-secondary/30 p-3 rounded-md border text-sm whitespace-pre-wrap relative group">
                 {value}
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6"
-                  onClick={() => navigator.clipboard.writeText(value)}
-                  title="Copy to clipboard"
-                >
-                  <Copy className="h-3 w-3" />
-                </Button>
+                {onCopyMessageField && (
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6"
+                    onClick={() => onCopyMessageField(value)}
+                    title="Copy to clipboard"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                )}
               </div>
             </div>
           );
@@ -170,12 +242,22 @@ function CopilotOutputCard({
   onUse,
   onDismiss,
   onEdit,
+  onRegenerate,
+  regenerating,
+  canSaveNote,
+  onSaveNote,
+  savingNote,
   acting,
 }: {
   output: AiCopilotOutput;
   onUse: (id: number) => void;
   onDismiss: (id: number) => void;
   onEdit: (id: number, editedContent: Record<string, unknown>) => void;
+  onRegenerate: (output: AiCopilotOutput) => void;
+  regenerating: boolean;
+  canSaveNote: boolean;
+  onSaveNote: (output: AiCopilotOutput, text: string) => void;
+  savingNote: boolean;
   acting: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -185,6 +267,7 @@ function CopilotOutputCard({
   const label = OUTPUT_LABELS[output.outputType] ?? humanizeKey(output.outputType);
   const isDeterministic = output.source === "deterministic";
   const displayContent = (output.editedContent || output.content) as Record<string, unknown>;
+  const isUnavailable = displayContent.unavailable === true;
 
   // OS handoff: the draft is copied/opened in the user's own mail/WhatsApp app —
   // Copilot NEVER auto-sends. mailto has no recipient so the OS picks the mail app
@@ -195,17 +278,18 @@ function CopilotOutputCard({
   const emailSubject = typeof displayContent.subject === "string" ? displayContent.subject : "";
   const emailBody = typeof displayContent.body === "string" ? displayContent.body : "";
   const waMessage = typeof displayContent.message === "string" ? displayContent.message : "";
-  const copyText =
-    isEmail && (emailSubject || emailBody)
-      ? `${emailSubject}\n\n${emailBody}`.trim()
-      : isWhatsapp && waMessage
-        ? waMessage
-        : JSON.stringify(displayContent, null, 2);
+  const copyText = plainTextFromContent(displayContent, output.outputType);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(copyText);
-    toast({ title: "Copied to clipboard" });
+  const copyToClipboard = async (text: string) => {
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
+      toast({ title: "Copied to clipboard" });
+    } else {
+      toast({ title: "Copy failed", description: "Your browser blocked clipboard access — select the text and copy manually.", variant: "destructive" });
+    }
   };
+
+  const handleCopy = () => void copyToClipboard(copyText);
   const openEmail = () => {
     window.open(`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`, "_blank");
   };
@@ -224,7 +308,7 @@ function CopilotOutputCard({
       onEdit(output.id, parsed);
       setIsEditing(false);
     } catch {
-      alert("Invalid JSON format");
+      toast({ title: "Invalid JSON", description: "Fix the JSON syntax and try saving again.", variant: "destructive" });
     }
   };
 
@@ -258,7 +342,12 @@ function CopilotOutputCard({
         </p>
       )}
 
-      <ContentRenderer content={displayContent} />
+      <ContentRenderer
+        content={displayContent}
+        onRetry={() => onRegenerate(output)}
+        retrying={regenerating}
+        onCopyMessageField={(text) => void copyToClipboard(text)}
+      />
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground pt-2 border-t border-border/60">
         <span>Generated {formatTs(output.generatedAt)}</span>
@@ -270,9 +359,33 @@ function CopilotOutputCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <Button size="sm" variant="ghost" onClick={handleCopy} className="gap-1">
+        <Button size="sm" variant="ghost" onClick={handleCopy} disabled={isUnavailable} className="gap-1" data-testid={`button-copy-${output.outputType}`}>
           <Copy className="h-3.5 w-3.5" /> Copy
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onRegenerate(output)}
+          disabled={acting || regenerating}
+          className="gap-1"
+          title="Generate a fresh draft of this type. If generation fails, your current draft is kept."
+          data-testid={`button-regenerate-${output.outputType}`}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} /> {regenerating ? "Regenerating…" : "Regenerate"}
+        </Button>
+        {canSaveNote && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onSaveNote(output, copyText)}
+            disabled={savingNote || isUnavailable || !copyText}
+            className="gap-1"
+            title="Save this draft as a note on the timeline"
+            data-testid={`button-save-note-${output.outputType}`}
+          >
+            <StickyNote className="h-3.5 w-3.5" /> {savingNote ? "Saving…" : "Save as Note"}
+          </Button>
+        )}
         {isEmail && (emailSubject || emailBody) && (
           <Button size="sm" variant="outline" onClick={openEmail} className="gap-1">
             <Mail className="h-3.5 w-3.5" /> Open in Email
@@ -340,19 +453,32 @@ export function SalesCopilotPanel({
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+  const { user } = useAuth();
+
   const [outputType, setOutputType] = useState<string>("");
   const [instructions, setInstructions] = useState("");
   const [language, setLanguage] = useState<"en" | "ar">("en");
+  const [regeneratingType, setRegeneratingType] = useState<string | null>(null);
+  const [savingNoteType, setSavingNoteType] = useState<string | null>(null);
 
-  const { data, isLoading } = useGetAiCopilotPanel(entityType, id, {
+  const { data, isLoading, isError, refetch } = useGetAiCopilotPanel(entityType, id, {
     query: { queryKey: getGetAiCopilotPanelQueryKey(entityType, id), enabled: id > 0 },
   });
-  
+
   const generate = useGenerateAiCopilotOutput();
   const edit = useEditAiCopilotOutput();
   const markUsed = useUseAiCopilotOutput();
   const dismiss = useDismissAiCopilotOutput();
+  const createContactNote = useCreateContactNote();
+  const createLeadActivity = useCreateLeadActivity();
+
+  // Save as Note reuses the timeline note endpoints (contacts + leads only —
+  // organizations have no note timeline). Gated on the matching edit permission.
+  const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
+  const perms = (user?.permissions ?? {}) as Record<string, string[]>;
+  const canSaveNote =
+    (entityType === "contact" && (isFullAccess || (perms.contacts ?? []).includes("edit"))) ||
+    (entityType === "lead" && (isFullAccess || (perms.leads ?? []).includes("edit")));
 
   const outputs = data?.outputs ?? [];
   const suggestedAction = data?.suggestedAction ?? null;
@@ -366,21 +492,106 @@ export function SalesCopilotPanel({
     queryClient.invalidateQueries({ queryKey: getGetAiCopilotOverviewQueryKey() });
   };
 
+  // Shared outcome handling for generate + regenerate: the API soft-degrades to
+  // HTTP 200, so "failure" arrives either as generationFailed (previous draft was
+  // kept) or as an { unavailable: true } placeholder (no previous draft existed).
+  const reportGenerateOutcome = (result: AiCopilotOutput & { generationFailed?: boolean }, regenerated: boolean) => {
+    if (result.generationFailed) {
+      toast({
+        title: "Generation failed — previous draft kept",
+        description: "The AI could not produce a new draft, so your existing draft was left untouched. Try again in a moment.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const content = (result.content ?? {}) as Record<string, unknown>;
+    if (content.unavailable === true && !result.editedContent) {
+      toast({
+        title: "Draft unavailable",
+        description: "The AI could not generate this draft right now. Use Try again on the card.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({ title: regenerated ? "Draft regenerated" : "Draft generated successfully" });
+  };
+
   const handleGenerate = () => {
-    if (!outputType) return;
+    if (!outputType || generate.isPending) return;
     generate.mutate(
       { entityType, id, outputType, data: { language, instructions: instructions || undefined } },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
           invalidate();
           setInstructions("");
-          toast({ title: "Draft generated successfully" });
+          reportGenerateOutcome(result as AiCopilotOutput & { generationFailed?: boolean }, false);
         },
-        onError: () => {
-          toast({ title: "Generation failed", description: "Please try again.", variant: "destructive" });
+        onError: (err: unknown) => {
+          const info = describeAiError(err, "Generation failed");
+          toast({ title: info.title, description: info.description, variant: "destructive" });
         },
       },
     );
+  };
+
+  // Regenerate keeps the card's own type + language; per-card busy state.
+  const handleRegenerate = (output: AiCopilotOutput) => {
+    if (generate.isPending) return;
+    setRegeneratingType(output.outputType);
+    generate.mutate(
+      { entityType, id, outputType: output.outputType, data: { language: (output.language === "ar" ? "ar" : "en") } },
+      {
+        onSuccess: (result) => {
+          invalidate();
+          reportGenerateOutcome(result as AiCopilotOutput & { generationFailed?: boolean }, true);
+        },
+        onError: (err: unknown) => {
+          const info = describeAiError(err, "Regeneration failed");
+          toast({ title: info.title, description: `${info.description} Your current draft was kept.`, variant: "destructive" });
+        },
+        onSettled: () => setRegeneratingType(null),
+      },
+    );
+  };
+
+  const handleSaveNote = (output: AiCopilotOutput, text: string) => {
+    if (!text || savingNoteType) return;
+    const label = OUTPUT_LABELS[output.outputType] ?? humanizeKey(output.outputType);
+    setSavingNoteType(output.outputType);
+    const onSaved = () => {
+      toast({ title: "Saved to timeline", description: `The ${label.toLowerCase()} was saved as a note.` });
+    };
+    const onFailed = (err: unknown) => {
+      const info = describeAiError(err, "Could not save note");
+      toast({ title: info.title, description: info.description, variant: "destructive" });
+    };
+    if (entityType === "contact") {
+      createContactNote.mutate(
+        { id, data: { body: text, subject: `AI draft — ${label}`, aiGenerated: true, aiOutputType: output.outputType } },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getGetContactTimelineQueryKey(id) });
+            onSaved();
+          },
+          onError: onFailed,
+          onSettled: () => setSavingNoteType(null),
+        },
+      );
+    } else if (entityType === "lead") {
+      createLeadActivity.mutate(
+        { id, data: { type: "note", subject: `AI draft — ${label}`, body: text } },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListLeadActivitiesQueryKey(id) });
+            onSaved();
+          },
+          onError: onFailed,
+          onSettled: () => setSavingNoteType(null),
+        },
+      );
+    } else {
+      setSavingNoteType(null);
+    }
   };
 
   const handleUse = (outputId: number) => {
@@ -441,7 +652,7 @@ export function SalesCopilotPanel({
           </div>
           <div className="flex flex-wrap gap-2">
             <Select value={outputType} onValueChange={setOutputType}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[180px]" data-testid="select-copilot-type">
                 <SelectValue placeholder="Select type..." />
               </SelectTrigger>
               <SelectContent>
@@ -466,7 +677,7 @@ export function SalesCopilotPanel({
               onChange={e => setInstructions(e.target.value)} 
               className="flex-1 min-w-[160px]"
             />
-            <Button size="sm" onClick={handleGenerate} disabled={acting || !outputType} className="gap-1">
+            <Button size="sm" onClick={handleGenerate} disabled={acting || !outputType} className="gap-1" data-testid="button-copilot-generate">
               <Sparkles className="h-3.5 w-3.5" /> {generate.isPending ? "Generating..." : "Generate"}
             </Button>
           </div>
@@ -531,7 +742,16 @@ export function SalesCopilotPanel({
         )}
 
         <div className="space-y-3">
-          {isLoading ? (
+          {isError ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 flex items-center justify-between gap-3 flex-wrap" data-testid="copilot-panel-error">
+              <span className="flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" /> Could not load the Copilot panel.
+              </span>
+              <Button size="sm" variant="outline" onClick={() => void refetch()} className="gap-1" data-testid="button-retry-panel">
+                <RefreshCw className="h-3.5 w-3.5" /> Retry
+              </Button>
+            </div>
+          ) : isLoading ? (
             <p className="text-sm text-muted-foreground">Loading drafts…</p>
           ) : outputs.length === 0 ? (
             <div className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -545,6 +765,11 @@ export function SalesCopilotPanel({
                 onUse={handleUse}
                 onDismiss={handleDismiss}
                 onEdit={handleEdit}
+                onRegenerate={handleRegenerate}
+                regenerating={regeneratingType === output.outputType}
+                canSaveNote={canSaveNote}
+                onSaveNote={handleSaveNote}
+                savingNote={savingNoteType === output.outputType}
                 acting={acting}
               />
             ))

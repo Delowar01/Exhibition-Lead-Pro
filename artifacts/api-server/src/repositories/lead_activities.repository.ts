@@ -1,5 +1,5 @@
 import { db, leadActivitiesTable, usersTable } from "@workspace/db";
-import { eq, desc, or, inArray, type SQL } from "drizzle-orm";
+import { and, eq, desc, gte, isNull, or, inArray, sql, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, exec, type Executor } from "./base.js";
 
@@ -62,6 +62,44 @@ export async function getByIdWithUser(id: number): Promise<LeadActivityWithUser 
 export async function insert(values: typeof leadActivitiesTable.$inferInsert, tx?: Executor): Promise<LeadActivityRow> {
   const [row] = await exec(tx).insert(leadActivitiesTable).values(values).returning();
   return row;
+}
+
+// Advisory-lock namespace for contact-note duplicate-window inserts (must not
+// collide with DOC_VERSION_LOCK_NS 74013 / ALERT_LOCK_NS 5_600_012).
+const CONTACT_NOTE_LOCK_NS = 74021;
+
+// Idempotency guard for rapid double-submits of the same note (e.g. a double-clicked
+// "Save as Note"): atomically checks for a live, identical note by the same author on
+// the same contact created within the last `windowMs`, and inserts only if none exists.
+// The per-contact advisory lock serializes concurrent saves so two identical requests
+// cannot both pass the duplicate check and double-insert.
+export async function insertContactNoteDedup(
+  values: typeof leadActivitiesTable.$inferInsert & { contactId: number; userId: number; body: string },
+  windowMs: number,
+): Promise<{ row: LeadActivityRow; duplicate: boolean }> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${CONTACT_NOTE_LOCK_NS}, ${values.contactId})`);
+    const since = new Date(Date.now() - windowMs);
+    const [existing] = await tx
+      .select()
+      .from(leadActivitiesTable)
+      .where(
+        and(
+          eq(leadActivitiesTable.companyId, values.companyId),
+          eq(leadActivitiesTable.contactId, values.contactId),
+          eq(leadActivitiesTable.userId, values.userId),
+          eq(leadActivitiesTable.type, "note"),
+          eq(leadActivitiesTable.body, values.body),
+          isNull(leadActivitiesTable.deletedAt),
+          gte(leadActivitiesTable.createdAt, since),
+        ),
+      )
+      .orderBy(desc(leadActivitiesTable.id))
+      .limit(1);
+    if (existing) return { row: existing, duplicate: true };
+    const [row] = await tx.insert(leadActivitiesTable).values(values).returning();
+    return { row, duplicate: false };
+  });
 }
 
 export async function updateRow(id: number, data: Partial<typeof leadActivitiesTable.$inferInsert>): Promise<void> {

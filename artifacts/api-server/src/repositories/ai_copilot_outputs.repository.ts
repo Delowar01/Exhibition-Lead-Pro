@@ -87,6 +87,30 @@ export async function upsertOutput(input: UpsertCopilotOutputInput): Promise<AiC
   return row;
 }
 
+// Company-scoped lookup of the stored draft for one (entity, outputType) slot.
+// Used by the generation failure path to decide whether a previous successful
+// draft exists and must be preserved instead of overwritten with a placeholder.
+export async function findForCompanyEntityOutput(
+  companyId: number,
+  entityType: EntityType,
+  entityId: number,
+  outputType: string,
+): Promise<AiCopilotOutput | undefined> {
+  const [row] = await db
+    .select()
+    .from(aiCopilotOutputsTable)
+    .where(
+      and(
+        eq(aiCopilotOutputsTable.companyId, companyId),
+        eq(aiCopilotOutputsTable.entityType, entityType),
+        eq(aiCopilotOutputsTable.entityId, entityId),
+        eq(aiCopilotOutputsTable.outputType, outputType),
+      ),
+    )
+    .limit(1);
+  return row;
+}
+
 export async function listByEntity(user: AuthUser, entityType: EntityType, entityId: number): Promise<AiCopilotOutput[]> {
   return db
     .select()

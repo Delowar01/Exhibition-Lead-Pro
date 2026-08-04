@@ -56,3 +56,5 @@
 - [Email delivery-status honesty](email-delivery-status-honesty.md) — queued≠sent; non-thrown sent:false must throw (retry→failed); redact /token/<x> path segments in request logs; e2e: forgot-password invalidates seeded reset tokens.
 - [Web e2e Playwright setup](web-e2e-playwright.md) — Nix-store chromium, real-login localStorage auth, direct-DB capture seed (AI-free), no contact-note/system-event APIs.
 - [Authenticated screenshots](authenticated-screenshots.md) — testing subagent returns no screenshot files; use temp dev-only ?demo= auto-login on Login page + screenshot tool, then remove.
+- [AI-disabled test lever](ai-disabled-test-lever.md) — PATCH /ai/settings enabled:false = deterministic LLM failure without live Gemini; regen retention returns response-only generationFailed:true, never persisted.
+- [E2E fixture orphans & long runs](e2e-fixture-orphans.md) — aborted Playwright run orphans the seeded contact (409 by constant mobile); run long suites via workflows, not backgrounded shell; use copilot testids not generic "Generate".

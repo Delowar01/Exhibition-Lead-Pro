@@ -39,4 +39,7 @@ export interface AiCopilotOutput {
   usedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  /** Transient response-only flag (never stored): true when a re-generation attempt failed and the previously stored successful draft was kept.
+   */
+  generationFailed?: boolean;
 }

@@ -2534,6 +2534,45 @@ paths:
               schema:
                 $ref: "#/components/schemas/TimelineList"
 
+  /contacts/{id}/notes:
+    post:
+      operationId: createContactNote
+      tags: [contacts]
+      summary: Save a note (activity of type "note") on a contact's timeline
+      description: >
+        Creates a tenant-scoped timeline note for the contact using the existing
+        activity model. Used by AI Copilot/Assistant "Save as Note" — the optional
+        aiGenerated/aiOutputType flags are recorded in the activity metadata for
+        provenance. Never stores prompts or provider internals.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactNoteInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadActivity"
+        "200":
+          description: >
+            Duplicate within the idempotency window — an identical live note by the
+            same author already exists on this contact (created within the last 15
+            seconds); the existing activity is returned instead of creating a new one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadActivity"
+
   # EVENTS
   /events:
     get:
@@ -10473,6 +10512,28 @@ components:
         reasoning:
           type: string
 
+    ContactNoteInput:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: Note text (plain text; the generated draft content for AI saves).
+        subject:
+          type: ["string", "null"]
+          maxLength: 300
+          description: Optional short title shown on the timeline entry.
+        aiGenerated:
+          type: boolean
+          default: false
+          description: Mark the note as AI-generated (stored in activity metadata for provenance).
+        aiOutputType:
+          type: ["string", "null"]
+          maxLength: 50
+          description: Optional AI tool type that produced the content (e.g. email, summary).
+
     CommunicationInput:
       type: object
       required: [channel]
@@ -11833,6 +11894,11 @@ components:
           type: string
         updatedAt:
           type: string
+        generationFailed:
+          type: boolean
+          description: >
+            Transient response-only flag (never stored): true when a re-generation
+            attempt failed and the previously stored successful draft was kept.
 
     AiCopilotOutputsListResponse:
       type: object
