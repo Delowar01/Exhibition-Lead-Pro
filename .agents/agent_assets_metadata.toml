@@ -209,3 +209,10 @@ id = "-38AM8pRabjPJp2QZzqyB"
 uri = "file://screenshots/contact-workspace-mobile.jpg"
 type = "image"
 title = "Contact Workspace — Mobile"
+
+[[outputs]]
+id = "u70UibnX2-IaErWzBXfCn"
+uri = "file://lead-capture-pro-master-phase-1-9-roadmap-audit.md"
+type = "text"
+title = "Lead Capture Pro Master Phase 1–9 Roadmap Audit"
+description = "Complete audit report in Markdown format."
