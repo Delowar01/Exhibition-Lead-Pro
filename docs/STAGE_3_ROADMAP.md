@@ -140,6 +140,8 @@
 
 ## Phase 7 — Customer Experience & White Label
 
+> **Removed by explicit owner decision (August 2026):** Custom Domains — tenant-owned domains, DNS verification, hostname-to-tenant routing, and SSL/domain status management — and any Customer Portal (separate external-customer login, customer-facing dashboard, customer document/self-service portal) are **permanently removed from approved scope**. Future audits must not count these as pending. Tenant branding (logo/colors/themes), email/login branding, localization, and settings/preferences remain in scope.
+
 - **Objective:** Let each tenant brand the product and operate in their language/region.
 - **Business value:** Enterprise/reseller readiness; higher perceived value; broader market reach.
 - **Features:** Company branding (logo/colors), custom domain, themes, email branding, login branding ("Continue with <Company>"), customer/company settings & preferences, localization, multi-language support.
@@ -157,6 +159,8 @@
 ---
 
 ## Phase 8 — Integrations & Open Platform (split into 8A / 8B / 8C)
+
+> **Removed by explicit owner decision (August 2026):** The **Generic Integration Marketplace** — any marketplace/catalogue of generic third-party connectors, and generic CRM, calendar, email, or productivity integrations built **without an approved customer requirement** — is **permanently removed from approved scope** (affects 8A/8B generic-connector scope and the 8C marketplace foundation). **Phase 8C — Developer Platform is removed in its entirety**: public customer API keys, public developer portal, public API access for external developers, generic customer webhook platform, and public API documentation. Payment-provider-specific webhooks required for billing (Phase 9), internal application APIs, and internal backend services are NOT affected. Future audits must not count these removed items as pending.
 
 Phase 8 is split into three **independent** implementation phases that share one integration framework (OAuth connection management, sync engine on the background-jobs queue, field mapping, sync logs). Build the shared framework once (within 8A), then 8B and 8C layer on top and can proceed in any order / in parallel.
 
@@ -192,7 +196,9 @@ Phase 8 is split into three **independent** implementation phases that share one
 - **Risks:** Schema mismatch/field mapping; duplicate creation; per-CRM API quirks + quotas.
 - **Complexity:** High. **Time:** 2–3 weeks. **Mode:** Power.
 
-### Phase 8C — Developer Platform
+### Phase 8C — Developer Platform — REMOVED (owner decision, August 2026)
+
+> **Status: Removed by explicit owner decision.** The section below is retained for historical reference only and is no longer approved scope.
 
 - **Objective:** Open the platform to customers' own developers and automation tools.
 - **Business value:** Extensibility, automation, and future marketplace/ecosystem.
@@ -210,6 +216,8 @@ Phase 8 is split into three **independent** implementation phases that share one
 ---
 
 ## Phase 9 — Enterprise Administration
+
+> **Scope note (owner decision, August 2026):** "API keys" below refers only to internal/tenant administrative security work. Public customer API keys and the customer webhook platform were removed with Phase 8C. Payment-provider webhooks required for billing remain in scope. All Phase 9 admin surfaces are **web-only**: full administration inside the mobile app (organization/users/departments/teams/roles, Security Center, audit logs, subscription & billing management, platform-owner tenant administration, branding/integrations/API-key screens) is **permanently removed from approved scope** by explicit owner decision.
 
 - **Objective:** Complete the platform/tenant administration surface — money, licensing, security, and governance.
 - **Business value:** Monetization + enterprise procurement/compliance readiness; self-serve platform operations.

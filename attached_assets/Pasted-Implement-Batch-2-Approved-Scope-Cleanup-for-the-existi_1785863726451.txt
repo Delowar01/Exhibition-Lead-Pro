@@ -1,0 +1,208 @@
+Implement Batch 2 — Approved Scope Cleanup for the existing Lead Capture Pro project.
+
+PURPOSE
+
+Remove owner-rejected features from the active mobile product scope and update the current roadmap so future audits do not continue counting them as pending.
+
+This batch must remain small and focused. Do not add replacement features.
+
+OWNER-APPROVED PERMANENT SCOPE REMOVALS
+
+Remove permanently from the approved roadmap:
+
+1. Customer Portal
+   - Separate external-customer login
+   - Customer-facing dashboard
+   - Customer document or self-service portal
+
+2. Custom Domains
+   - Tenant-owned domains
+   - DNS verification
+   - Hostname-to-tenant routing
+   - SSL/domain status management
+
+3. Public Developer Platform
+   - Public customer API keys
+   - Public developer portal
+   - Public API access intended for external developers
+   - Generic customer webhook platform
+   - Public API documentation
+
+4. Generic Integration Marketplace
+   - Marketplace or catalogue of generic third-party connectors
+   - Generic CRM, calendar, email, or productivity integrations built without an approved customer requirement
+
+5. Full Administration inside the mobile app
+   - Organization administration
+   - Users
+   - Departments
+   - Teams
+   - Roles and permissions
+   - Security Center
+   - Audit logs
+   - Subscription and billing management
+   - Platform Owner tenant administration
+   - Branding, integrations, API keys, or other web administration screens
+
+6. These AI Intelligence screens inside the mobile app
+   - AI Command Center
+   - Workflow Intelligence
+   - Executive Intelligence
+
+IMPORTANT BOUNDARIES
+
+Do not remove or damage:
+
+- Normal Lead Capture Pro tenant and user login
+- Existing web application administration
+- Existing web Platform Owner panel or future approved web Platform Owner scope
+- Web AI Command Center
+- Web Workflow Intelligence
+- Web Executive Intelligence
+- Web AI Copilot or AI Assistant
+- Google Gemini 2.5 Flash integration
+- Enterprise AI Layer
+- Internal application APIs
+- Internal backend services
+- Payment-provider-specific webhooks required for billing
+- Existing internal event or communication APIs
+- NFC Capture
+- Business Card capture
+- Email Signature capture
+- QR capture
+- LinkedIn QR capture
+- Manual Entry
+- Mobile leads, contacts, tasks, follow-ups, events, review, duplicate handling, offline queue, and essential field workflows
+
+Do not remove shared backend services or components merely because the mobile app no longer exposes a screen.
+
+STEP 1 — INSPECT BEFORE CHANGING
+
+Inspect:
+
+- Mobile navigation
+- Mobile route configuration
+- Mobile screen registry
+- Deep-link configuration
+- Feature flags
+- Mobile dashboard shortcuts
+- Mobile menus
+- Mobile AI screens
+- Mobile administration screens
+- Shared components and services
+- Current authoritative roadmap/status documents
+
+Identify which rejected mobile features:
+
+- Are visible in navigation
+- Have registered routes
+- Have direct deep links
+- Have dedicated mobile-only files
+- Are shared with retained functionality
+- Are only roadmap requirements and have no implementation
+
+Do not guess file names or delete files before checking their usage.
+
+STEP 2 — MOBILE SCOPE CLEANUP
+
+Remove the following from the mobile application:
+
+- AI Command Center navigation, route, screen access, and shortcuts
+- Workflow Intelligence navigation, route, screen access, and shortcuts
+- Executive Intelligence navigation, route, screen access, and shortcuts
+- Any full-administration navigation, routes, shortcuts, or screens listed in the approved removals
+
+Requirements:
+
+- Remove visible menu and navigation entries.
+- Remove route registrations.
+- Remove deep-link access.
+- Remove unused imports and mobile-only dead code.
+- Delete a screen file only when repository search confirms it is used exclusively by the removed mobile feature.
+- If a component or service is shared with the web app or retained mobile features, keep it.
+- Do not replace removed screens with “Coming Soon” pages.
+- Do not leave hidden but directly accessible mobile routes.
+- Do not change backend APIs just because the mobile UI no longer uses them.
+
+Keep the mobile app focused on capture and essential field workflows.
+
+STEP 3 — ROADMAP SCOPE CORRECTION
+
+Update only the current authoritative roadmap or active project-status documents necessary to record these as explicit owner-approved permanent removals.
+
+Record that:
+
+- Customer Portal is removed from approved scope.
+- Custom Domains are removed from approved scope.
+- Public Developer Platform is removed from approved scope.
+- Generic Integration Marketplace is removed from approved scope.
+- Full mobile administration is removed from approved scope.
+- Mobile AI Command Center, Workflow Intelligence, and Executive Intelligence are removed from approved scope.
+- The related web AI and web administration features remain in scope.
+- NFC Capture remains in scope and must not be removed.
+
+Rules:
+
+- Do not rewrite historical completion reports.
+- Do not create a new roadmap document if an authoritative current roadmap already exists.
+- Do not change unrelated requirements.
+- Do not mark retained features complete.
+- Use a status such as “Removed by explicit owner decision” so future audits do not count these items as pending.
+
+STEP 4 — CLEANUP VALIDATION
+
+Verify through repository search that:
+
+- Removed mobile navigation labels no longer appear in active mobile navigation.
+- Removed mobile routes are no longer registered.
+- Removed mobile screens cannot be reached through deep links.
+- Retained mobile capture routes still exist.
+- Retained web AI pages still exist.
+- Retained web administration routes still exist.
+- Normal login still works.
+- NFC Capture remains present.
+- No shared backend or web code was accidentally removed.
+
+STEP 5 — TESTING
+
+Run the smallest relevant verification:
+
+- Mobile typecheck
+- Mobile unit tests relevant to navigation or routing
+- Mobile build/config validation using the project’s existing command
+- Web-app typecheck to confirm shared code was not broken
+
+Run the full API suite only if backend or shared server files were changed. Do not spend time rerunning unrelated backend tests when no backend code changed.
+
+Do not claim APK or physical-device verification in this batch unless actually performed.
+
+COMPLETION CRITERIA
+
+Mark Batch 2 complete only when:
+
+- The three rejected mobile AI screens are no longer visible or reachable.
+- Full mobile administration is no longer visible or reachable.
+- Core mobile capture and field workflows remain intact.
+- NFC remains intact.
+- Web AI and web administration remain intact.
+- The four roadmap areas and mobile exclusions are recorded as owner-approved permanent removals.
+- Relevant typechecks and tests pass.
+- No unnecessary backend, schema, or architecture changes were made.
+
+FINAL REPORT
+
+Return a concise report containing:
+
+1. Mobile features removed
+2. Navigation and routes removed
+3. Files deleted
+4. Files changed
+5. Shared files deliberately retained
+6. Roadmap documents updated
+7. Confirmation that web AI/admin features remain
+8. Confirmation that NFC and core capture remain
+9. Commands run
+10. Exact pass/fail results
+11. Any genuine limitation
+
+Do not recommend additional features or start the next batch.

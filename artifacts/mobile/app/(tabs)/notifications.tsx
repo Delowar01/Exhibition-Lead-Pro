@@ -47,7 +47,6 @@ function mapLinkToMobileRoute(link: string | null | undefined): string | null {
   if (lead) return `/pipeline/${lead[1]}`;
   const contact = link.match(/^\/admin\/contacts\/(\d+)/);
   if (contact) return `/contact/${contact[1]}`;
-  if (link.startsWith("/admin/workflow")) return "/workflow";
   if (link.startsWith("/admin/leads")) return "/leads";
   if (link.startsWith("/admin/contacts")) return "/contacts";
   return null;

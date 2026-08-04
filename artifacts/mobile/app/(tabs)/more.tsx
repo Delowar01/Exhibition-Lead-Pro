@@ -34,9 +34,6 @@ export default function MoreScreen() {
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
   const isFullAccess = user?.role === "primary_admin" || user?.role === "platform_owner";
-  const execPerms = (user?.permissions?.ai_executive as string[] | undefined) ?? [];
-  const canViewExecutive =
-    user?.role !== "platform_owner" && (isFullAccess || execPerms.includes("view"));
   const assistantPerms = (user?.permissions?.ai_assistant as string[] | undefined) ?? [];
   const canViewAssistant =
     user?.role !== "platform_owner" && (isFullAccess || assistantPerms.includes("view"));
@@ -195,26 +192,6 @@ export default function MoreScreen() {
                 icon: "message-circle" as keyof typeof Feather.glyphMap,
                 color: "#8B5CF6",
                 onPress: () => router.push("/assistant"),
-              },
-            ]
-          : []),
-        {
-          key: "workflow",
-          label: t("nav.workflowIntel"),
-          sub: t("workflowManager.subtitle"),
-          icon: "activity",
-          color: "#F59E0B",
-          onPress: () => router.push("/workflow"),
-        },
-        ...(canViewExecutive
-          ? [
-              {
-                key: "executive",
-                label: t("nav.executiveIntel"),
-                sub: t("executiveManager.subtitle"),
-                icon: "trending-up" as keyof typeof Feather.glyphMap,
-                color: "#6366F1",
-                onPress: () => router.push("/executive"),
               },
             ]
           : []),
