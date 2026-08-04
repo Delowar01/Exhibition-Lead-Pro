@@ -24,8 +24,24 @@ export default function ResetPassword() {
   const [done, setDone] = React.useState(false);
   const reset = useResetPassword();
 
+  // Mirror the server's password policy client-side for immediate feedback; the
+  // server remains the authority.
+  const clientPasswordErrors = (pw: string): string[] => {
+    const errs: string[] = [];
+    if (pw.length < 8) errs.push("at least 8 characters");
+    if (!/[a-z]/.test(pw)) errs.push("a lowercase letter");
+    if (!/[A-Z]/.test(pw)) errs.push("an uppercase letter");
+    if (!/[0-9]/.test(pw)) errs.push("a number");
+    return errs;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const errs = clientPasswordErrors(password);
+    if (errs.length > 0) {
+      toast({ title: "Password too weak", description: `Password needs ${errs.join(", ")}.`, variant: "destructive" });
+      return;
+    }
     if (password !== confirm) {
       toast({ title: "Passwords do not match", variant: "destructive" });
       return;

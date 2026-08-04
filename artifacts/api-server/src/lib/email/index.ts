@@ -39,6 +39,12 @@ export function isEmailConfigured(): boolean {
   return getEmailProvider().isConfigured();
 }
 
+// Test-only escape hatch: swaps the memoized provider so the worker/retry/outcome
+// paths can be exercised with a stub transport. Pass null to restore lazy selection.
+export function __setEmailProviderForTests(p: EmailProvider | null): void {
+  provider = p;
+}
+
 // Synchronous send wrapper (Phase 2.5 path / Phase 2.6 rollback). NEVER throws to the
 // caller — a transport failure is logged and reported as `sent:false` so a flaky mail
 // server can never 500 a request or break a flow (password reset, invite, etc.). Used
@@ -64,20 +70,34 @@ export async function deliverEmailViaWorker(message: EmailMessage): Promise<Send
   return await p.send(message);
 }
 
+// Records the outcome of a synchronous send on the owning record (invitations only
+// today). The async path records outcomes in the worker (lib/jobs/handlers.ts).
+async function recordSyncOutcome(message: EmailMessage, result: SendResult): Promise<SendResult> {
+  const invitationId = message.meta?.invitationId;
+  if (invitationId != null) {
+    const { recordEmailOutcome } = await import("../../repositories/invitations.repository.js");
+    const status = result.sent ? "sent" : result.skippedReason?.includes("not_configured") || result.skippedReason?.includes("smtp") ? "skipped" : "failed";
+    await recordEmailOutcome(invitationId, status, result.sent ? null : result.skippedReason ?? "send_failed").catch(() => {});
+  }
+  return result;
+}
+
 // Producer entry point. Enqueues delivery when async is enabled (returns immediately,
 // keeping it off the request path), otherwise sends synchronously (rollback). Enqueue
 // failures degrade gracefully to a synchronous send so a queue problem never silently
-// drops a transactional email.
+// drops a transactional email. IMPORTANT (Batch 3): an enqueue is reported as
+// `{ sent:false, queued:true }` — queueing is NOT delivery; the worker records the
+// real outcome.
 function dispatch(message: EmailMessage): Promise<SendResult> {
   if (!config.jobs.asyncEmail) {
-    return safeSend(message);
+    return safeSend(message).then((r) => recordSyncOutcome(message, r));
   }
   return getQueue()
     .enqueue(EMAIL_SEND_JOB, message)
-    .then(() => ({ sent: true }) as SendResult)
+    .then(() => ({ sent: false, queued: true }) as SendResult)
     .catch((err) => {
       logger.error({ err, to: message.to, subject: message.subject }, "Email enqueue failed; sending synchronously");
-      return safeSend(message);
+      return safeSend(message).then((r) => recordSyncOutcome(message, r));
     });
 }
 
@@ -95,8 +115,12 @@ export function sendInvitationEmail(params: {
   companyName: string;
   link: string;
   expiresAt: Date;
+  invitationId?: number;
 }): Promise<SendResult> {
-  return dispatch(templates.invitationEmail(params));
+  const { invitationId, ...tpl } = params;
+  const message = templates.invitationEmail(tpl);
+  if (invitationId != null) message.meta = { invitationId };
+  return dispatch(message);
 }
 
 export function sendWelcomeEmail(params: { to: string; name?: string | null; companyName?: string | null }): Promise<SendResult> {

@@ -51,5 +51,6 @@
 - [Background job AuthUser rebuild](background-job-authuser.md) — async workers must rebuild the full AuthUser via loadAuthUserById; a partial {id,companyId,role} breaks tenant-scoped reads (accessibleCompanies.length).
 - [Workflow alert dedup & deep links](workflow-alert-dedup.md) — daily digest sweeps need pg_advisory_xact_lock around check+insert; notification links must match real client routes (assert in tests).
 - [Interaction model & dedupe](interaction-model-dedupe.md) — every contact create writes a scans interaction row; scan enumerators must filter synthetic rows; POST /contacts 409 flow never auto-merges; contact soft-delete keeps scans.contactId.
+- [Email delivery-status honesty](email-delivery-status-honesty.md) — queued≠sent; non-thrown sent:false must throw (retry→failed); redact /token/<x> path segments in request logs; e2e: forgot-password invalidates seeded reset tokens.
 - [Web e2e Playwright setup](web-e2e-playwright.md) — Nix-store chromium, real-login localStorage auth, direct-DB capture seed (AI-free), no contact-note/system-event APIs.
 - [Authenticated screenshots](authenticated-screenshots.md) — testing subagent returns no screenshot files; use temp dev-only ?demo= auto-login on Login page + screenshot tool, then remove.

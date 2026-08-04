@@ -413,7 +413,10 @@ export const ListInvitationsResponse = zod.object({
   "invitedByUserId": zod.number().nullish(),
   "expiresAt": zod.coerce.date(),
   "acceptedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "emailStatus": zod.enum(['queued', 'sent', 'failed', 'skipped']).optional().describe('Delivery state of the last invitation email. \"queued\" means enqueued only — not proof of delivery.'),
+  "emailError": zod.string().nullish(),
+  "emailUpdatedAt": zod.coerce.date().nullish()
 }))
 })
 
@@ -448,7 +451,10 @@ export const ResendInvitationResponse = zod.object({
   "invitedByUserId": zod.number().nullish(),
   "expiresAt": zod.coerce.date(),
   "acceptedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "emailStatus": zod.enum(['queued', 'sent', 'failed', 'skipped']).optional().describe('Delivery state of the last invitation email. \"queued\" means enqueued only — not proof of delivery.'),
+  "emailError": zod.string().nullish(),
+  "emailUpdatedAt": zod.coerce.date().nullish()
 })
 })
 
@@ -471,7 +477,10 @@ export const CancelInvitationResponse = zod.object({
   "invitedByUserId": zod.number().nullish(),
   "expiresAt": zod.coerce.date(),
   "acceptedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "emailStatus": zod.enum(['queued', 'sent', 'failed', 'skipped']).optional().describe('Delivery state of the last invitation email. \"queued\" means enqueued only — not proof of delivery.'),
+  "emailError": zod.string().nullish(),
+  "emailUpdatedAt": zod.coerce.date().nullish()
 })
 })
 

@@ -1,3 +1,5 @@
+import { db, invitationsTable, usersTable, userRolesTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { normalizeRole } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
@@ -33,6 +35,10 @@ function publicView(inv: invitationsRepo.Invitation) {
     expiresAt: inv.expiresAt,
     acceptedAt: inv.acceptedAt,
     createdAt: inv.createdAt,
+    // Honest delivery state for the management UI: queued ≠ delivered.
+    emailStatus: inv.emailStatus,
+    emailError: inv.emailError,
+    emailUpdatedAt: inv.emailUpdatedAt,
   };
 }
 
@@ -122,15 +128,20 @@ export async function createInvitation(user: AuthUser, input: CreateInvitationIn
   });
 
   const companyName = (await usersRepo.companyName(companyId)) ?? "your team";
-  await sendInvitationEmail({
+  const sendResult = await sendInvitationEmail({
     to: email,
     inviterName: user.name ?? null,
     companyName,
     link: `${config.email.appBaseUrl.replace(/\/$/, "")}/accept-invite/${raw}`,
     expiresAt,
+    invitationId: inv.id,
   });
 
-  return { invitation: publicView(inv) };
+  // Sync-path outcomes (or an immediate skip) are recorded by the email layer;
+  // re-read so the response reflects the freshest delivery state instead of the
+  // optimistic "queued" default.
+  const fresh = sendResult.queued ? inv : ((await invitationsRepo.findById(inv.id)) ?? inv);
+  return { invitation: publicView(fresh) };
 }
 
 export async function listInvitations(
@@ -160,18 +171,29 @@ export async function resendInvitation(user: AuthUser, id: number) {
   const raw = randomToken();
   const tokenHash = sha256(raw);
   const expiresAt = new Date(Date.now() + config.tokens.invitationTtlDays * 24 * 60 * 60 * 1000);
-  const updated = await invitationsRepo.update(id, { tokenHash, expiresAt, status: "pending" });
+  // Resend supersedes the previous token (overwrite) and resets the delivery state
+  // to queued — the previous outcome no longer describes the new email.
+  const updated = await invitationsRepo.update(id, {
+    tokenHash,
+    expiresAt,
+    status: "pending",
+    emailStatus: "queued",
+    emailError: null,
+    emailUpdatedAt: new Date(),
+  });
 
   const companyName = (await usersRepo.companyName(inv.companyId)) ?? "your team";
-  await sendInvitationEmail({
+  const sendResult = await sendInvitationEmail({
     to: inv.email,
     inviterName: user.name ?? null,
     companyName,
     link: `${config.email.appBaseUrl.replace(/\/$/, "")}/accept-invite/${raw}`,
     expiresAt,
+    invitationId: id,
   });
 
-  return { invitation: publicView(updated!) };
+  const fresh = sendResult.queued ? updated! : ((await invitationsRepo.findById(id)) ?? updated!);
+  return { invitation: publicView(fresh) };
 }
 
 export async function cancelInvitation(user: AuthUser, id: number) {
@@ -232,21 +254,43 @@ export async function acceptInvitation(input: AcceptInvitationInput) {
   const pw = validatePassword(password);
   if (!pw.valid) throw new AppError(400, pw.errors.join(". "));
 
-  const created = await usersRepo.insert({
-    email: inv.email,
-    passwordHash: hashPassword(password),
-    name,
-    role: inv.role,
-    companyId: inv.companyId,
-    isActive: true,
-    emailVerifiedAt: new Date(),
+  // Atomic acceptance (Batch 3): claim the invitation, create the user, and assign
+  // roles in ONE transaction so a mid-flight failure can never leave a user without
+  // roles, an accepted invitation without a user, or a double-accepted invitation.
+  // The row lock on the invitation serializes concurrent accepts of the same token.
+  const created = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select()
+      .from(invitationsTable)
+      .where(eq(invitationsTable.id, inv.id))
+      .for("update");
+    if (!locked || locked.status !== "pending") throw new AppError(409, "This invitation is no longer active");
+    if (locked.expiresAt.getTime() < Date.now()) throw new AppError(410, "This invitation has expired");
+
+    const [user] = await tx
+      .insert(usersTable)
+      .values({
+        email: inv.email,
+        passwordHash: hashPassword(password),
+        name,
+        role: inv.role,
+        companyId: inv.companyId,
+        isActive: true,
+        emailVerifiedAt: new Date(),
+      })
+      .returning();
+
+    if (inv.roleIds.length > 0) {
+      await tx.insert(userRolesTable).values(inv.roleIds.map((roleId) => ({ userId: user.id, roleId })));
+    }
+
+    await tx
+      .update(invitationsTable)
+      .set({ status: "accepted", acceptedAt: new Date(), acceptedUserId: user.id, updatedAt: new Date() })
+      .where(eq(invitationsTable.id, inv.id));
+
+    return user;
   });
-
-  if (inv.roleIds.length > 0) {
-    await rbacRepo.setUserRoles(created.id, inv.roleIds);
-  }
-
-  await invitationsRepo.update(inv.id, { status: "accepted", acceptedAt: new Date(), acceptedUserId: created.id });
 
   const companyName = await usersRepo.companyName(inv.companyId);
   await sendWelcomeEmail({ to: inv.email, name, companyName });

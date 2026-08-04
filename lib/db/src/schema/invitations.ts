@@ -21,6 +21,12 @@ export const invitationsTable = pgTable("invitations", {
   invitedByUserId: integer("invited_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   tokenHash: text("token_hash").notNull(),
   status: text("status").notNull().default("pending"), // pending | accepted | rejected | cancelled | expired
+  // Delivery state of the LAST invitation email (Batch 3). queued → sent | failed |
+  // skipped (provider unconfigured). Admin-facing honesty: "queued" must never be
+  // presented as "delivered". emailError carries sanitized provider error metadata.
+  emailStatus: text("email_status").notNull().default("queued"), // queued | sent | failed | skipped
+  emailError: text("email_error"),
+  emailUpdatedAt: timestamp("email_updated_at"),
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   acceptedUserId: integer("accepted_user_id").references(() => usersTable.id, { onDelete: "set null" }),

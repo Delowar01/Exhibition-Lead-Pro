@@ -98,6 +98,19 @@ export const InvitationStatus = {
   expired: 'expired',
 } as const;
 
+/**
+ * Delivery state of the last invitation email. "queued" means enqueued only — not proof of delivery.
+ */
+export type InvitationEmailStatus = typeof InvitationEmailStatus[keyof typeof InvitationEmailStatus];
+
+
+export const InvitationEmailStatus = {
+  queued: 'queued',
+  sent: 'sent',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
 export interface Invitation {
   id: number;
   companyId: number;
@@ -109,6 +122,10 @@ export interface Invitation {
   expiresAt: string;
   acceptedAt?: string | null;
   createdAt: string;
+  /** Delivery state of the last invitation email. "queued" means enqueued only — not proof of delivery. */
+  emailStatus?: InvitationEmailStatus;
+  emailError?: string | null;
+  emailUpdatedAt?: string | null;
 }
 
 export interface InvitationResponse {

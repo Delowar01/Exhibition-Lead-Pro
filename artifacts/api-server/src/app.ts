@@ -8,7 +8,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { config } from "./config.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
-import { authRateLimiter, loginRateLimiter } from "./middlewares/rateLimit.js";
+import { authRateLimiter, loginRateLimiter, forgotPasswordRateLimiter } from "./middlewares/rateLimit.js";
 import { bustCacheOnWrite } from "./middlewares/microCache.js";
 import { metricsMiddleware } from "./lib/metrics.js";
 import type { AuthRequest } from "./middlewares/requireAuth.js";
@@ -28,10 +28,14 @@ app.use(
     },
     serializers: {
       req(req) {
+        // Strip the query string AND redact secret path segments (e.g. the raw
+        // invitation token in GET /invitations/token/:token) so bearer-style
+        // secrets never persist in request logs.
+        const path = req.url?.split("?")[0];
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          url: path?.replace(/(\/token\/)[^/]+/gi, "$1[REDACTED]"),
         };
       },
       res(res) {
@@ -110,6 +114,9 @@ app.use(bustCacheOnWrite);
 // applies regardless of which base path the client uses.
 app.use(["/api/v1/auth/login", "/api/auth/login"], loginRateLimiter);
 app.use(["/api/v1/auth/mfa/verify-login", "/api/auth/mfa/verify-login"], loginRateLimiter);
+// Targeted anti-mail-bomb guard on the public forgot-password endpoint (keyed by
+// IP + target email; see middlewares/rateLimit.ts).
+app.use(["/api/v1/auth/forgot-password", "/api/auth/forgot-password"], forgotPasswordRateLimiter);
 app.use(["/api/v1/auth", "/api/auth"], authRateLimiter);
 
 // API versioning. `/api/v1` is the canonical, versioned base path; the legacy `/api`

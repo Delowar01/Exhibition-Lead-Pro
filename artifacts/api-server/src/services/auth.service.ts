@@ -348,16 +348,23 @@ export async function requestPasswordReset(email?: string): Promise<void> {
 }
 
 // POST /auth/reset-password — consumes a live reset token, sets the new password,
-// marks the token used, and revokes ALL sessions (no session to preserve here).
-export async function resetPassword(token?: string, newPassword?: string): Promise<void> {
+// and revokes ALL sessions (no session to preserve here). The token is consumed
+// ATOMICALLY (conditional UPDATE) before the password is written, so a token can
+// never be redeemed twice — even by two concurrent requests. Returns the user so
+// the route can write an audit entry.
+export async function resetPassword(token?: string, newPassword?: string) {
   if (!token || !newPassword) throw new AppError(400, "token and newPassword are required");
   const pw = validatePassword(newPassword);
   if (!pw.valid) throw new AppError(400, pw.errors.join(". "));
   const row = await tokenRepo.findLiveToken(sha256(token), "password_reset");
   if (!row) throw new AppError(400, "This reset link is invalid or has expired. Please request a new one.");
+  const consumed = await tokenRepo.consumeToken(row.id);
+  if (!consumed) throw new AppError(400, "This reset link is invalid or has expired. Please request a new one.");
   await authRepo.updateUser(row.userId, { passwordHash: hashPassword(newPassword), updatedAt: new Date() });
-  await tokenRepo.markUsed(row.id);
+  // Belt-and-braces: kill any other outstanding reset tokens for this user too.
+  await tokenRepo.invalidateOutstanding(row.userId, "password_reset");
   await revokeOtherSessions(row.userId, -1, "password_reset");
+  return authRepo.findUserById(row.userId);
 }
 
 // POST /auth/resend-verification (authed) — issues a fresh verification token and

@@ -1,4 +1,5 @@
 import { Feather } from "@/components/icons";
+import { useForgotPassword } from "@workspace/api-client-react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -30,6 +31,7 @@ export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const forgot = useForgotPassword();
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
@@ -39,7 +41,16 @@ export default function ForgotPasswordScreen() {
       setError(t("validation.invalidEmail"));
       return;
     }
-    setSubmitted(true);
+    // Actually request the reset from the API. The server always answers 200
+    // (enumeration-safe), so success just means "if that account exists, an email
+    // was sent" — mirror that with the generic confirmation screen.
+    forgot.mutate(
+      { data: { email: email.trim() } },
+      {
+        onSuccess: () => setSubmitted(true),
+        onError: () => setError(t("common.errorTitle")),
+      },
+    );
   }
 
   return (
@@ -142,6 +153,7 @@ export default function ForgotPasswordScreen() {
                 label={t("common.confirm")}
                 icon="send"
                 onPress={handleSubmit}
+                loading={forgot.isPending}
                 style={{ marginTop: 20 }}
               />
 

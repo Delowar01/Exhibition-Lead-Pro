@@ -87,6 +87,8 @@ export const config = {
     rateLimitWindowMs: Number(process.env.AUTH_RATE_WINDOW_MS ?? 15 * 60 * 1000),
     rateLimitMax: Number(process.env.AUTH_RATE_MAX ?? (nodeEnv === "production" ? 100 : 100_000)),
     loginRateLimitMax: Number(process.env.LOGIN_RATE_MAX ?? 20),
+    // Per IP+email ceiling for forgot-password requests (anti mail-bomb).
+    forgotPasswordRateLimitMax: Number(process.env.FORGOT_PASSWORD_RATE_MAX ?? 5),
     // Minimum password length; complexity is enforced in validatePassword.
     minPasswordLength: Number(process.env.MIN_PASSWORD_LENGTH ?? 8),
     // Secure cookie flag — on in production (https), off in dev (http preview).

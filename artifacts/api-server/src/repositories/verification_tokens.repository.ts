@@ -35,6 +35,24 @@ export async function markUsed(id: number): Promise<void> {
   await db.update(verificationTokensTable).set({ usedAt: new Date() }).where(eq(verificationTokensTable.id, id));
 }
 
+// Atomically consumes a token: the conditional UPDATE only succeeds while the row is
+// still unused + unexpired, so two concurrent resets with the same token cannot both
+// pass — exactly one caller gets the row back, the other gets undefined.
+export async function consumeToken(id: number) {
+  const [row] = await db
+    .update(verificationTokensTable)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(verificationTokensTable.id, id),
+        isNull(verificationTokensTable.usedAt),
+        gt(verificationTokensTable.expiresAt, new Date()),
+      ),
+    )
+    .returning();
+  return row;
+}
+
 // Invalidates any outstanding tokens of a type for a user (e.g. before issuing a new
 // reset link, or after a successful reset) so only the latest link is ever live.
 export async function invalidateOutstanding(userId: number, type: TokenType): Promise<void> {

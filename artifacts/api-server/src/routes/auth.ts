@@ -271,9 +271,21 @@ router.post("/auth/forgot-password", validateBody(ForgotPasswordBody), async (re
 });
 
 // POST /auth/reset-password — public. Consumes a single-use token + sets new password.
+// A completed reset is a security-relevant credential change → audit it (the token
+// itself is never logged).
 router.post("/auth/reset-password", validateBody(ResetPasswordBody), async (req: AuthRequest, res) => {
   const { token, newPassword } = req.body ?? {};
-  await auth.resetPassword(token, newPassword);
+  const user = await auth.resetPassword(token, newPassword);
+  if (user) {
+    await writeAudit(req, {
+      action: "user.password_reset",
+      userId: user.id,
+      userName: user.email,
+      companyId: user.companyId,
+      entityType: "user",
+      entityId: user.id,
+    });
+  }
   res.json({ success: true, message: "Your password has been reset. Please sign in with your new password." });
 });
 

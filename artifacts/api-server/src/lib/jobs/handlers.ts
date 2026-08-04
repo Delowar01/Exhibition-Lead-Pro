@@ -1,4 +1,5 @@
 import { logger } from "../logger.js";
+import * as invitationsRepo from "../../repositories/invitations.repository.js";
 import { EMAIL_SEND_JOB, deliverEmailViaWorker } from "../email/index.js";
 import type { EmailMessage } from "../email/provider.js";
 import { getQueue } from "./queue.js";
@@ -8,25 +9,64 @@ import { CAPTURE_ANALYZE_JOB, runCaptureAnalyzeJob, type CaptureAnalyzeJobPayloa
 import { AI_WORKFLOW_ANALYZE_JOB, runAiWorkflowAnalyzeJob, type AiWorkflowJobPayload } from "../../services/ai-workflow-batch.service.js";
 import { EXECUTIVE_REPORT_JOB, runExecutiveReportJob, type ExecutiveReportJobPayload } from "../../services/executive-intelligence.service.js";
 
+// Registers the email delivery handler on a queue. Split out from startWorkers so
+// tests can exercise the delivery/retry/outcome-recording path on an isolated queue
+// with fast backoff instead of the process-global one.
+export function registerEmailHandler(queue: ReturnType<typeof getQueue>): void {
+  queue.register<EmailMessage>(EMAIL_SEND_JOB, async (message, job) => {
+    const invitationId = message.meta?.invitationId;
+    const record = async (status: "sent" | "failed" | "skipped", error?: string | null) => {
+      if (invitationId == null) return;
+      // Outcome recording must never break delivery or the retry loop.
+      await invitationsRepo.recordEmailOutcome(invitationId, status, error ?? null).catch((err) => {
+        logger.error({ err, invitationId }, "Failed to record invitation email outcome");
+      });
+    };
+    try {
+      const result = await deliverEmailViaWorker(message);
+      if (!result.sent && result.skippedReason === "not_configured") {
+        // No provider configured — a soft skip, not a failure (no retry). WARN (not
+        // debug) so a misconfigured environment cannot silently drop required
+        // invitation/reset emails without an operational trace.
+        logger.warn(
+          { to: message.to, subject: message.subject },
+          "Email skipped: provider not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS)",
+        );
+        await record("skipped", "Email provider is not configured");
+        return;
+      }
+      if (!result.sent) {
+        // Provider reported non-delivery without throwing (soft failure). Treat it
+        // like a transport error so the queue retries and the final outcome is
+        // recorded as failed — never misreport an undelivered email as sent.
+        throw new Error(result.skippedReason ? `Email not delivered: ${result.skippedReason}` : "Email not delivered");
+      }
+      logger.info(
+        { to: message.to, subject: message.subject, messageId: result.messageId, attempt: job.attempts },
+        "Email delivered",
+      );
+      await record("sent", null);
+    } catch (err) {
+      // Transport error: rethrow so the queue retries with backoff. On the FINAL
+      // attempt, persist the failure so it is visible to administrators instead of
+      // dying silently in an in-memory dead-letter counter. Error text is provider
+      // metadata only — message bodies/links/tokens are never logged or stored.
+      if (job.attempts >= job.maxAttempts) {
+        const msg = err instanceof Error ? err.message.slice(0, 500) : "Email delivery failed";
+        await record("failed", msg);
+      }
+      throw err;
+    }
+  });
+}
+
 // Registers all job handlers on the process queue and starts the workers. Called once
 // at startup (index.ts). Producers (e.g. lib/email) only enqueue; the actual work runs
 // here so a transient failure is retried with backoff instead of breaking a request.
 export function startWorkers(): void {
   const queue = getQueue();
 
-  queue.register<EmailMessage>(EMAIL_SEND_JOB, async (message, job) => {
-    const result = await deliverEmailViaWorker(message);
-    if (!result.sent && result.skippedReason === "not_configured") {
-      // No provider configured — a soft skip, not a failure (no retry).
-      logger.debug({ to: message.to, subject: message.subject }, "Email skipped: provider not configured");
-      return;
-    }
-    logger.info(
-      { to: message.to, subject: message.subject, messageId: result.messageId, attempt: job.attempts },
-      "Email delivered",
-    );
-    // Any thrown transport error propagates to the queue for retry/backoff.
-  });
+  registerEmailHandler(queue);
 
   // Stage 5A batch AI analysis: one job per entity. The handler records per-entity
   // failures on the batch job as soft failures and never throws, so a failing entity

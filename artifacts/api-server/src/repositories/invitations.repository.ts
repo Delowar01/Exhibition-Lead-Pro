@@ -81,6 +81,20 @@ export async function findPendingForEmail(companyId: number, email: string): Pro
   return row;
 }
 
+// Records the delivery outcome of the last invitation email (Batch 3). Called from
+// the email worker/sync-send path; never throws (a status write must not break a
+// send or retry loop). `error` must already be sanitized (no tokens/secrets).
+export async function recordEmailOutcome(
+  id: number,
+  emailStatus: "queued" | "sent" | "failed" | "skipped",
+  error?: string | null,
+): Promise<void> {
+  await db
+    .update(invitationsTable)
+    .set({ emailStatus, emailError: error ?? null, emailUpdatedAt: new Date(), updatedAt: new Date() })
+    .where(eq(invitationsTable.id, id));
+}
+
 export async function update(id: number, data: Partial<typeof invitationsTable.$inferInsert>): Promise<Invitation | undefined> {
   const [row] = await db
     .update(invitationsTable)

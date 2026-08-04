@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvitationEmailStatus } from './invitationEmailStatus';
 import type { InvitationStatus } from './invitationStatus';
 
 export interface Invitation {
@@ -18,4 +19,8 @@ export interface Invitation {
   expiresAt: Date;
   acceptedAt?: Date | null;
   createdAt: Date;
+  /** Delivery state of the last invitation email. "queued" means enqueued only — not proof of delivery. */
+  emailStatus?: InvitationEmailStatus;
+  emailError?: string | null;
+  emailUpdatedAt?: Date | null;
 }

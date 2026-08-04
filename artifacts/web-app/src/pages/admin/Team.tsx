@@ -202,12 +202,27 @@ function InviteByEmailDialog({ companyId, onSaved }: { companyId?: number | null
     create.mutate(
       { data },
       {
-        onSuccess: () => {
-          toast({ title: "Invitation sent" });
+        onSuccess: (res) => {
+          // Honest delivery messaging: creation ≠ delivery. Reflect the actual
+          // email status reported by the server.
+          const status = res?.invitation?.emailStatus;
+          if (status === "skipped") {
+            toast({
+              title: "Invitation created — email not sent",
+              description: "The email service is not configured. Share the invitation link manually or configure SMTP.",
+              variant: "destructive",
+            });
+          } else if (status === "failed") {
+            toast({ variant: "destructive", title: "Invitation created — email failed to send", description: "You can retry with Resend." });
+          } else if (status === "sent") {
+            toast({ title: "Invitation email sent" });
+          } else {
+            toast({ title: "Invitation created", description: "Email queued for delivery." });
+          }
           setOpen(false);
           onSaved();
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to send invitation" }),
+        onError: () => toast({ variant: "destructive", title: "Failed to create invitation" }),
       },
     );
   };
@@ -251,14 +266,32 @@ function InviteByEmailDialog({ companyId, onSaved }: { companyId?: number | null
   );
 }
 
+const EMAIL_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  queued: { label: "Email queued", className: "bg-secondary text-secondary-foreground" },
+  sent: { label: "Email sent", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" },
+  failed: { label: "Email failed", className: "bg-destructive/10 text-destructive" },
+  skipped: { label: "Email not configured", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" },
+};
+
+const RESEND_COOLDOWN_MS = 30_000;
+
 function PendingInvitations({ companyId }: { companyId?: number | null }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data, isLoading } = useListInvitations({
-    companyId: companyId ?? undefined,
-  });
+  const { data, isLoading } = useListInvitations(
+    { companyId: companyId ?? undefined },
+    // Keep delivery status fresh while the async email worker updates rows.
+    { query: { refetchInterval: 15_000, queryKey: getListInvitationsQueryKey({ companyId: companyId ?? undefined }) } },
+  );
   const resend = useResendInvitation();
   const cancel = useCancelInvitation();
+  // Per-invitation resend cooldown so the button can't be hammered into a mail flood.
+  const [resentAt, setResentAt] = React.useState<Record<number, number>>({});
+  const [, forceTick] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => {
+    const t = setInterval(forceTick, 5_000);
+    return () => clearInterval(t);
+  }, []);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListInvitationsQueryKey() });
 
@@ -278,15 +311,20 @@ function PendingInvitations({ companyId }: { companyId?: number | null }) {
               <TableRow>
                 <TableHead>Invitee</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>Expires</TableHead>
                 <TableHead className="w-12"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Loading invitations...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Loading invitations...</TableCell></TableRow>
               ) : (
-                invitations.map((inv: Invitation) => (
+                invitations.map((inv: Invitation) => {
+                  const expired = new Date(inv.expiresAt).getTime() < Date.now();
+                  const emailBadge = EMAIL_STATUS_BADGE[inv.emailStatus ?? "queued"] ?? EMAIL_STATUS_BADGE.queued;
+                  const cooldownLeft = Math.max(0, (resentAt[inv.id] ?? 0) + RESEND_COOLDOWN_MS - Date.now());
+                  return (
                   <TableRow key={inv.id}>
                     <TableCell>
                       <div className="font-medium">{inv.name || "—"}</div>
@@ -295,16 +333,30 @@ function PendingInvitations({ companyId }: { companyId?: number | null }) {
                     <TableCell>
                       <Badge variant="secondary" className="capitalize">{inv.role.replace("_", " ")}</Badge>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{fmt(inv.expiresAt)}</TableCell>
+                    <TableCell>
+                      <Badge className={emailBadge.className} title={inv.emailError ?? undefined}>{emailBadge.label}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {expired ? <Badge className="bg-destructive/10 text-destructive">Expired</Badge> : fmt(inv.expiresAt)}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Resend"
-                          disabled={resend.isPending}
+                          title={cooldownLeft > 0 ? `Resent — wait ${Math.ceil(cooldownLeft / 1000)}s` : "Resend"}
+                          disabled={resend.isPending || cooldownLeft > 0}
                           onClick={() => resend.mutate({ id: inv.id }, {
-                            onSuccess: () => { toast({ title: "Invitation resent" }); refresh(); },
+                            onSuccess: (res) => {
+                              setResentAt((m) => ({ ...m, [inv.id]: Date.now() }));
+                              const status = res?.invitation?.emailStatus;
+                              if (status === "skipped") {
+                                toast({ variant: "destructive", title: "Invitation renewed — email not sent", description: "The email service is not configured." });
+                              } else {
+                                toast({ title: "Invitation resent", description: status === "sent" ? "Email sent." : "Email queued for delivery." });
+                              }
+                              refresh();
+                            },
                             onError: () => toast({ variant: "destructive", title: "Failed to resend" }),
                           })}
                         >
@@ -325,7 +377,8 @@ function PendingInvitations({ companyId }: { companyId?: number | null }) {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

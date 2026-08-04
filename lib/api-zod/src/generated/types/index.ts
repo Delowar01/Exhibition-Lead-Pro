@@ -322,6 +322,7 @@ export * from './importValidateResult';
 export * from './interaction';
 export * from './interactionList';
 export * from './invitation';
+export * from './invitationEmailStatus';
 export * from './invitationListResponse';
 export * from './invitationResponse';
 export * from './invitationStatus';

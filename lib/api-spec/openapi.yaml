@@ -7128,6 +7128,17 @@ components:
         createdAt:
           type: string
           format: date-time
+        emailStatus:
+          type: string
+          enum: [queued, sent, failed, skipped]
+          description: Delivery state of the last invitation email. "queued" means enqueued only — not proof of delivery.
+        emailError:
+          type: string
+          nullable: true
+        emailUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
 
     InvitationResponse:
       type: object

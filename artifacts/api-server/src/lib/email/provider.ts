@@ -7,12 +7,19 @@ export interface EmailMessage {
   subject: string;
   html: string;
   text: string;
+  // Optional delivery-tracking metadata (Batch 3). Never sent to the provider; the
+  // worker uses it to record the delivery outcome on the owning record. Must never
+  // contain tokens or secrets.
+  meta?: { invitationId?: number };
 }
 
 export interface SendResult {
   // false when the provider is not configured (no-op) — callers must treat this as a
   // soft outcome, never an error.
   sent: boolean;
+  // true when the message was enqueued for async delivery — enqueueing is NOT
+  // delivery; the worker records the final outcome.
+  queued?: boolean;
   messageId?: string;
   skippedReason?: string;
 }
