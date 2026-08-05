@@ -118,10 +118,13 @@ export default function ContactDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t } = useLocale();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
   const contactId = Number(id);
 
-  const [tab, setTab] = useState<"overview" | "timeline" | "documents">("overview");
+  // Optional ?tab= deep link (e.g. from notifications or external links).
+  const initialTab =
+    tabParam === "timeline" || tabParam === "documents" ? tabParam : "overview";
+  const [tab, setTab] = useState<"overview" | "timeline" | "documents">(initialTab);
 
   const queryClient = useQueryClient();
   const query = useGetContact(contactId);
@@ -532,11 +535,18 @@ export default function ContactDetailScreen() {
       ) : query.isError || !contact ? (
         <ErrorState onRetry={() => query.refetch()} />
       ) : (
+        // Device round #2: the quick-action bar must stay visible while any
+        // tab scrolls. The outer wrapper eats the top safe-area inset so the
+        // sticky bar (stickyHeaderIndices=[1]) pins BELOW the status bar, and
+        // horizontal padding moved from the scroll container into per-section
+        // wrappers (a padded scroll container mis-positions sticky children).
+        <View style={{ flex: 1, paddingTop: insets.top }}>
         <ScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40, flexGrow: 1 }}
+          stickyHeaderIndices={[1]}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 40, flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={{ paddingTop: insets.top }}>
+          <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
             <WorkspaceHeader
               title={contactName(contact, t("common.unnamedContact"))}
               subtitle={[contact.jobTitle, contact.contactCompany].filter(Boolean).join(" · ")}
@@ -559,15 +569,30 @@ export default function ContactDetailScreen() {
             />
           </View>
 
-          <QuickActionsBar
-            actions={[
-              { key: "call", icon: "phone", label: t("contacts.callMobile"), disabled: !contact.mobile, onPress: handleCall },
-              { key: "whatsapp", icon: "message-circle", label: t("contacts.whatsapp"), disabled: !contact.mobile, onPress: handleWhatsApp },
-              { key: "email", icon: "mail", label: t("contacts.sendEmail"), disabled: !contact.email, onPress: handleEmail },
-              { key: "website", icon: "globe", label: t("contacts.openWebsite"), disabled: !contact.website, onPress: handleWebsite },
-            ]}
-          />
+          {/* Sticky quick actions — opaque background + bottom hairline so tab
+              content scrolls cleanly beneath while Call/WhatsApp/Email/Website
+              stay reachable in Overview, Timeline, and Documents. */}
+          <View
+            style={{
+              backgroundColor: colors.background,
+              paddingHorizontal: 16,
+              paddingTop: 10,
+              paddingBottom: 10,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: colors.border,
+            }}
+          >
+            <QuickActionsBar
+              actions={[
+                { key: "call", icon: "phone", label: t("contacts.callMobile"), disabled: !contact.mobile, onPress: handleCall },
+                { key: "whatsapp", icon: "message-circle", label: t("contacts.whatsapp"), disabled: !contact.mobile, onPress: handleWhatsApp },
+                { key: "email", icon: "mail", label: t("contacts.sendEmail"), disabled: !contact.email, onPress: handleEmail },
+                { key: "website", icon: "globe", label: t("contacts.openWebsite"), disabled: !contact.website, onPress: handleWebsite },
+              ]}
+            />
+          </View>
 
+          <View style={{ paddingHorizontal: 16, flexGrow: 1 }}>
           <WorkspaceTabs
             tabs={[
               { key: "overview", label: t("workspace.overview") },
@@ -860,7 +885,7 @@ export default function ContactDetailScreen() {
             )}
 
             {tab === "documents" && (
-              <View style={{ marginTop: 24 }}>
+              <View style={{ marginTop: 16 }}>
                 <View
                   style={[
                     styles.sectionBody,
@@ -868,7 +893,7 @@ export default function ContactDetailScreen() {
                       backgroundColor: colors.card,
                       borderColor: colors.border,
                       borderRadius: colors.radius + 4,
-                      padding: 16,
+                      padding: 12,
                     },
                   ]}
                 >
@@ -876,8 +901,10 @@ export default function ContactDetailScreen() {
                 </View>
               </View>
             )}
+          </View>
 
           </ScrollView>
+        </View>
       )}
 
       {/* Assign modal */}

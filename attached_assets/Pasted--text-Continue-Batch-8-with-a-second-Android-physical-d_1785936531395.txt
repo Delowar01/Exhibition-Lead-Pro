@@ -1,0 +1,208 @@
+```text
+Continue Batch 8 with a second Android physical-device UI correction round.
+
+Fix only the issues below, then provide a new preview APK for physical-device retesting. Do not start Batch 9.
+
+1. Replace Notifications in bottom navigation with Follow-ups
+
+The bottom navigation must become:
+
+- Home
+- Scan
+- Contacts
+- Follow-ups
+- More
+
+Requirements:
+
+- Replace the current Notifications item with Follow-ups.
+- Use the existing Follow-ups list and route.
+- Use a suitable follow-up/task icon.
+- Keep all five labels fully visible on common Android widths.
+- Do not delete the Notifications feature.
+
+2. Move Notifications into More
+
+Add Notifications as a clear item inside the existing More menu.
+
+Requirements:
+
+- Show the unread count badge where supported.
+- Tapping it must open the existing full Notification Center.
+- Preserve all existing notification behavior, filtering, read status, and deep links.
+
+3. Add a header notification bell
+
+Add a notification bell in the top trailing corner of the main mobile header:
+
+- Top-right in English/LTR
+- Top-left in Arabic/RTL
+
+Requirements:
+
+- Show an unread-count badge.
+- Tapping the bell opens a small mobile-friendly notification panel or sheet.
+- Show only the latest 3 notifications.
+- Each notification must remain clickable and follow its existing deep link.
+- Include a clear “View all notifications” action.
+- “View all notifications” must open the full Notification Center inside More.
+- Support empty, loading, error, and unread states.
+- Do not create a second notification API or duplicate notification state.
+- Prevent the panel from overflowing narrow Android screens.
+
+4. Restore Pipeline inside More
+
+Pipeline was correctly removed from the bottom navigation, but it must remain accessible from the More menu.
+
+Requirements:
+
+- Add Pipeline to the existing More options list.
+- Route it to the existing mobile Pipeline screen.
+- Do not delete Pipeline functionality or backend APIs.
+- Ensure Pipeline and Notifications are both visible and logically positioned in More.
+
+5. Fix Contact Workspace responsive UI
+
+Use the attached Android screenshot as the physical-device reference.
+
+The mobile Contact Workspace must continue to contain exactly:
+
+1. Overview
+2. Timeline
+3. Documents
+
+Do not restore Activities, Interactions, Intelligence, Workflow Intelligence, Discussion, AI Copilot, or other removed mobile tabs.
+
+Current visible issues include:
+
+- Document filter chips extend beyond the screen.
+- “Signed Agreement” is clipped.
+- Horizontal content does not fit safely.
+- Documents header and Upload button consume excessive width.
+- Spacing and control sizing are inconsistent.
+- Empty-state card and surrounding panel need better mobile spacing.
+- Contact quick-action buttons are partially cut off.
+- Full-page horizontal overflow is possible.
+
+Fix the layout as follows:
+
+- Ensure Overview, Timeline, and Documents tabs fit within the screen.
+- Keep all labels visible without clipping.
+- Make document filters wrap across multiple rows or use an intentional horizontal scroll area with fully visible labels.
+- Never cut off filter text.
+- Keep the Upload action accessible without making the header overflow.
+- Reduce oversized margins, padding, buttons, and empty spaces where required.
+- Maintain accessible touch-target sizes.
+- Keep every panel and card inside the screen margins.
+- Remove accidental full-page horizontal scrolling.
+- Support long English and Arabic labels.
+- Support English/LTR and Arabic/RTL.
+- Support light and dark themes.
+
+6. Make Contact quick actions sticky
+
+Inside the Contact Workspace, these buttons must remain visible while the user scrolls:
+
+- Call
+- WhatsApp
+- Email
+- Website
+
+Requirements:
+
+- Create a sticky quick-action bar inside the Contact Workspace.
+- Position it below the contact summary/header and above the workspace content.
+- The quick-action bar must remain visible while scrolling Overview, Timeline, or Documents.
+- It must not overlap the workspace tabs, document content, bottom navigation, keyboard, or Android safe areas.
+- Keep all four buttons accessible on common Android widths.
+- Prefer a compact responsive four-button layout.
+- If four equal-width buttons cannot fit safely at 360px, use a deliberate horizontally scrollable sticky row with visible affordance, not clipped controls.
+- Do not allow the Website button or any other button to remain partially hidden.
+- Preserve the existing Call, WhatsApp, Email, and Website actions and permission behavior.
+- Disable or hide an action only when the corresponding contact value is genuinely unavailable.
+- Keep icon and text alignment consistent.
+- Keep labels readable in English and Arabic.
+- Ensure RTL order and alignment are correct.
+- Preserve sticky behavior in Overview, Timeline, and Documents.
+- Test scrolling with long Timeline content and long Documents content.
+- Do not create page-level horizontal overflow.
+
+7. Fix Contact Workspace Documents tab UI
+
+Specifically verify and fix:
+
+- Documents title and Upload button alignment
+- Filter-chip wrapping or horizontal-scroll behavior
+- Complete visibility of “Business Card,” “Signed Agreement,” and other filter labels
+- Empty-state panel sizing
+- Card margins and internal padding
+- Upload button sizing
+- Long document-name handling
+- Loading and error states
+- No horizontal clipping
+- No overlap with the sticky contact quick-action bar
+- No overlap with the bottom navigation
+
+8. Responsive verification widths
+
+Verify the complete Contact Workspace at:
+
+- 360px
+- 390px
+- 412px
+- The actual Android device width used for testing
+
+Test:
+
+- Overview
+- Timeline with enough entries to require scrolling
+- Documents with empty state
+- Documents with several files
+- English/LTR
+- Arabic/RTL
+- Light theme
+- Dark theme
+- Keyboard open where applicable
+
+9. Regression requirements
+
+Confirm:
+
+- Bottom navigation shows Follow-ups instead of Notifications.
+- Notifications appears inside More.
+- Pipeline appears inside More.
+- Header bell shows the latest 3 notifications.
+- “View all notifications” opens the full Notification Center.
+- Notification deep links still work.
+- Contact Workspace contains only Overview, Timeline, and Documents.
+- Call, WhatsApp, Email, and Website remain sticky while scrolling.
+- All four contact actions are fully visible and usable.
+- Sticky actions do not cover content or navigation.
+- Documents filters and buttons are not clipped.
+- No horizontal overflow exists.
+- Web Contact Workspace remains unchanged.
+
+Run:
+
+- Mobile typecheck
+- Mobile unit tests
+- Relevant API tests only if notification APIs change
+- Web typecheck
+- Full API and Playwright suites only if shared or backend code changes
+- Build a new preview APK
+
+Final report:
+
+1. Root cause of each issue
+2. Exact UI and routing fixes
+3. Sticky-action implementation details
+4. Files changed
+5. Tests added or updated
+6. Exact test results
+7. New APK install link
+8. Screenshots from the corrected Android UI
+9. Any genuine limitation
+
+Do not restore removed mobile AI or administration features.
+Do not start Batch 9.
+```

@@ -1428,6 +1428,8 @@
     "groupWorkspace": "My Workspace",
     "groupSettings": "Settings",
     "followupsSub": "Due and upcoming follow-ups",
+    "pipelineSub": "Track deals through stages",
+    "notificationsSub": "Alerts and updates from your workspace",
     "devPerf": "Dev Performance",
     "devPerfSub": "Scan pipeline timings"
   },
@@ -1526,6 +1528,8 @@
     "markAllRead": "Mark all as read",
     "unread_one": "{{count}} unread",
     "unread_other": "{{count}} unread",
-    "allCaughtUp": "You're all caught up"
+    "allCaughtUp": "You're all caught up",
+    "viewAll": "View all notifications",
+    "loadFailed": "Couldn't load notifications"
   }
 }

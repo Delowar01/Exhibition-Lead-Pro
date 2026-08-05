@@ -23,46 +23,10 @@ import {
   type Notification,
 } from "@workspace/api-client-react";
 
-import { FONT, Card, SecondaryButton, EmptyState } from "@/components/ui";
+import { FONT, Card, EmptyState } from "@/components/ui";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
-
-const CATEGORY_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
-  security: "shield",
-  billing: "credit-card",
-  invitations: "user-plus",
-  reports: "bar-chart-2",
-  ai: "zap",
-  subscription: "credit-card",
-  events: "calendar",
-  user_mgmt: "users",
-  mentions: "at-sign",
-};
-
-// Server notification links are web-portal paths; map the ones with a mobile
-// counterpart and safely ignore the rest (never open external/unknown links).
-function mapLinkToMobileRoute(link: string | null | undefined): string | null {
-  if (!link || !link.startsWith("/admin")) return null;
-  const lead = link.match(/^\/admin\/leads\/(\d+)/);
-  if (lead) return `/pipeline/${lead[1]}`;
-  const contact = link.match(/^\/admin\/contacts\/(\d+)/);
-  if (contact) return `/contact/${contact[1]}`;
-  if (link.startsWith("/admin/leads")) return "/leads";
-  if (link.startsWith("/admin/contacts")) return "/contacts";
-  return null;
-}
-
-function timeAgo(iso: string, locale: string): string {
-  const then = new Date(iso).getTime();
-  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-  if (mins < 60) return rtf.format(-mins, "minute");
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return rtf.format(-hours, "hour");
-  const days = Math.round(hours / 24);
-  if (days < 30) return rtf.format(-days, "day");
-  return new Date(iso).toLocaleDateString(locale);
-}
+import { CATEGORY_ICONS, mapLinkToMobileRoute, timeAgo } from "@/lib/notification-center";
 
 export default function NotificationsScreen() {
   const colors = useColors();
@@ -188,8 +152,44 @@ export default function NotificationsScreen() {
                 marginBottom: 4,
               }}
             >
-              <Text style={[styles.heading, { color: colors.foreground, textAlign }]}>
-                {t("nav.notifications")}
+              <View style={{ flexDirection: isRTL ? "row-reverse" : "row", alignItems: "center", gap: 10, flex: 1 }}>
+                <Pressable
+                  onPress={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)/more"))}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("common.back")}
+                  style={({ pressed }) => [
+                    styles.backBtn,
+                    { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.6 : 1 },
+                  ]}
+                >
+                  <Feather
+                    name="arrow-left"
+                    size={20}
+                    color={colors.foreground}
+                    style={isRTL ? { transform: [{ scaleX: -1 }] } : undefined}
+                  />
+                </Pressable>
+                <Text numberOfLines={1} style={[styles.heading, { color: colors.foreground, textAlign, flex: 1 }]}>
+                  {t("nav.notifications")}
+                </Text>
+              </View>
+            </View>
+            {/* Second row: unread summary + "Mark all as read" — keeping the
+                action out of the title row so the heading never truncates at
+                360dp (it competed with the wide button before). */}
+            <View
+              style={{
+                flexDirection: isRTL ? "row-reverse" : "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <Text style={[styles.subtitle, { color: colors.mutedForeground, textAlign, flexShrink: 1 }]}>
+                {unreadCount > 0
+                  ? t("notifCenter.unread", { count: unreadCount })
+                  : t("notifCenter.allCaughtUp")}
               </Text>
               {unreadCount > 0 ? (
                 <Pressable
@@ -209,11 +209,6 @@ export default function NotificationsScreen() {
                 </Pressable>
               ) : null}
             </View>
-            <Text style={[styles.subtitle, { color: colors.mutedForeground, textAlign }]}>
-              {unreadCount > 0
-                ? t("notifCenter.unread", { count: unreadCount })
-                : t("notifCenter.allCaughtUp")}
-            </Text>
           </View>
         }
         ListEmptyComponent={
@@ -242,9 +237,17 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   heading: {
-    fontSize: 32,
+    fontSize: 28,
     fontFamily: FONT.bold,
     letterSpacing: -0.5,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   subtitle: {
     fontSize: 15,

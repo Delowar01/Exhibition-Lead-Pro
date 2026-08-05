@@ -31,6 +31,7 @@ import {
   LoadingState,
   prettyLabel,
 } from "@/components/ui";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { DEFAULT_CONTACT_FILTERS, useSettings } from "@/contexts/SettingsContext";
@@ -345,6 +346,10 @@ export default function HomeScreen() {
               ) : null}
             </View>
           </View>
+          {/* Device round #2: header bell (trailing corner — right in LTR,
+              left in RTL via the parent row-reverse). Opens a compact panel
+              with the latest 3 notifications. */}
+          <NotificationBell />
           <Avatar name={user?.name} color={colors.primary} size={48} uri={user?.avatarUrl} />
         </View>
 

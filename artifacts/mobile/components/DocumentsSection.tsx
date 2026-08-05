@@ -10,7 +10,9 @@
  * as alerts, and an empty/loading/error state is always shown.
  */
 
-import { Feather } from "@expo/vector-icons";
+// SVG icons (NOT the @expo/vector-icons font — icon fonts render as tofu
+// boxes on Android/Expo Go; see components/icons.tsx).
+import { Feather } from "@/components/icons";
 import { useQueryClient } from "@tanstack/react-query";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -75,7 +77,7 @@ export function DocumentsSection({
   entityId: number;
 }) {
   const colors = useColors();
-  const { t, textAlign, writingDirection } = useLocale();
+  const { t, textAlign, writingDirection, isRTL } = useLocale();
   const queryClient = useQueryClient();
 
   const [category, setCategory] = useState<string | null>(null);
@@ -326,17 +328,30 @@ export function DocumentsSection({
 
   return (
     <View style={{ gap: 12 }}>
-      {/* Header */}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <Text style={{ fontFamily: FONT.semibold, fontSize: 16, color: colors.foreground, textAlign }}>
+      {/* Header — title shrinks (flex) so the Upload action never pushes the
+          row past the screen edge on narrow Android widths. */}
+      <View
+        style={{
+          flexDirection: isRTL ? "row-reverse" : "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, minWidth: 0, fontFamily: FONT.semibold, fontSize: 16, color: colors.foreground, textAlign }}
+        >
           {t("documents.title")}
           {documents.length > 0 ? `  (${documents.length})` : ""}
         </Text>
         <Pressable
           onPress={openUploadPicker}
           disabled={busy}
+          accessibilityRole="button"
+          accessibilityLabel={t("documents.upload")}
           style={({ pressed }) => ({
-            flexDirection: "row",
+            flexDirection: isRTL ? "row-reverse" : "row",
             alignItems: "center",
             gap: 6,
             paddingVertical: 8,
@@ -353,9 +368,12 @@ export function DocumentsSection({
         </Pressable>
       </View>
 
-      {/* Category filter chips */}
+      {/* Category filter chips — device round #2: chips WRAP across rows
+          instead of horizontally scrolling, so long labels ("Signed
+          Agreement", Arabic equivalents) are always fully visible and nothing
+          clips at the screen edge. */}
       {catalog.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        <View style={{ flexDirection: isRTL ? "row-reverse" : "row", flexWrap: "wrap", gap: 8 }}>
           <FilterChip
             label={t("documents.allCategories")}
             active={category === null}
@@ -375,7 +393,7 @@ export function DocumentsSection({
             onPress={() => setShowDeleted((v) => !v)}
             icon="trash-2"
           />
-        </ScrollView>
+        </View>
       ) : null}
 
       {/* List */}
@@ -441,7 +459,7 @@ export function DocumentsSection({
                   setRenameValue(doc.name);
                 }}
                 style={({ pressed }) => ({
-                  flexDirection: "row",
+                  flexDirection: isRTL ? "row-reverse" : "row",
                   alignItems: "center",
                   gap: 12,
                   padding: 12,
@@ -486,7 +504,7 @@ export function DocumentsSection({
                     {deleted ? ` · ${t("documents.deletedTag")}` : ""}
                   </Text>
                 </View>
-                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                <Feather name={isRTL ? "chevron-left" : "chevron-right"} size={18} color={colors.mutedForeground} />
               </Pressable>
             );
           })}
@@ -575,7 +593,7 @@ export function DocumentsSection({
                 <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: colors.mutedForeground, textAlign }}>
                   {t("documents.category")}
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                <View style={{ flexDirection: isRTL ? "row-reverse" : "row", flexWrap: "wrap", gap: 8 }}>
                   {catalog.map((c) => (
                     <FilterChip
                       key={c}
@@ -584,7 +602,7 @@ export function DocumentsSection({
                       onPress={() => setUploadCategory(c)}
                     />
                   ))}
-                </ScrollView>
+                </View>
               </View>
             ) : null}
 
@@ -664,11 +682,12 @@ function FilterChip({
   icon?: keyof typeof Feather.glyphMap;
 }) {
   const colors = useColors();
+  const { isRTL } = useLocale();
   return (
     <Pressable
       onPress={onPress}
       style={{
-        flexDirection: "row",
+        flexDirection: isRTL ? "row-reverse" : "row",
         alignItems: "center",
         gap: 5,
         paddingVertical: 6,

@@ -1,10 +1,9 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Feather } from "@/components/icons";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { FONT } from "@/components/ui";
-import { RADIUS } from "@/constants/tokens";
 
 export type QuickActionItem = {
   key: string;
@@ -14,26 +13,29 @@ export type QuickActionItem = {
   disabled?: boolean;
 };
 
+/**
+ * Compact, equal-width quick-action row for the contact workspace.
+ *
+ * Device round #2: the previous horizontally-scrolling pill row clipped the
+ * trailing buttons on real Android widths (Website was half-hidden at 360dp).
+ * Four flex:1 buttons with a stacked icon+label always fit — at 360dp each
+ * button gets ~76dp, enough for the longest label ("WhatsApp" / Arabic
+ * equivalents) at fontSize 11 with no clipping in LTR or RTL.
+ */
 export function QuickActionsBar({ actions }: { actions: QuickActionItem[] }) {
   const colors = useColors();
-  const { isRTL, textAlign } = useLocale();
+  const { isRTL } = useLocale();
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{
-        flexDirection: isRTL ? "row-reverse" : "row",
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        gap: 12,
-      }}
-    >
+    <View style={[styles.row, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
       {actions.map((action) => (
         <Pressable
           key={action.key}
           onPress={action.onPress}
           disabled={action.disabled}
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          accessibilityState={{ disabled: !!action.disabled }}
           style={({ pressed }) => [
             styles.actionBtn,
             {
@@ -43,28 +45,39 @@ export function QuickActionsBar({ actions }: { actions: QuickActionItem[] }) {
             },
           ]}
         >
-          <Feather name={action.icon} size={20} color={colors.primary} />
-          <Text style={[styles.actionLabel, { color: colors.foreground, textAlign }]}>
+          <Feather name={action.icon} size={18} color={colors.primary} />
+          <Text
+            numberOfLines={1}
+            allowFontScaling={false}
+            style={[styles.actionLabel, { color: colors.foreground }]}
+          >
             {action.label}
           </Text>
         </Pressable>
       ))}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
+  row: {
     gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: RADIUS.full,
+  },
+  actionBtn: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    borderRadius: 14,
     borderWidth: 1,
+    minHeight: 56,
   },
   actionLabel: {
-    fontSize: 14,
+    fontSize: 11,
     fontFamily: FONT.medium,
+    textAlign: "center",
   },
 });

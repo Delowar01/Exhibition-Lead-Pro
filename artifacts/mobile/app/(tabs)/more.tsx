@@ -13,7 +13,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useUpdateOwnProfile } from "@workspace/api-client-react";
+import {
+  useUpdateOwnProfile,
+  useGetUnreadCount,
+  getGetUnreadCountQueryKey,
+} from "@workspace/api-client-react";
 
 import { Avatar, Badge, Card, FONT, ListRow, prettyLabel } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,6 +34,16 @@ export default function MoreScreen() {
   const { user, logout, updateUser } = useAuth();
   const { queuedCount, isOnline } = useOffline();
   const updateProfile = useUpdateOwnProfile();
+  // Unread badge for the Notifications entry (Notifications moved here from
+  // the bottom tab bar in device round #2 — the feature itself is unchanged).
+  const { data: unreadData } = useGetUnreadCount({
+    query: {
+      queryKey: getGetUnreadCountQueryKey(),
+      enabled: !!user,
+      refetchInterval: 60000,
+    },
+  });
+  const unreadCount = unreadData?.count ?? 0;
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -138,6 +152,14 @@ export default function MoreScreen() {
           onPress: () => router.push("/companies"),
         },
         {
+          key: "pipeline",
+          label: t("nav.leads"),
+          sub: t("more.pipelineSub"),
+          icon: "bar-chart-2",
+          color: "#EC4899",
+          onPress: () => router.push("/leads"),
+        },
+        {
           key: "followups",
           label: t("nav.followups"),
           sub: t("more.followupsSub"),
@@ -201,6 +223,15 @@ export default function MoreScreen() {
       key: "workspace",
       title: t("more.groupWorkspace"),
       items: [
+        {
+          key: "notifications",
+          label: t("nav.notifications"),
+          sub: t("more.notificationsSub"),
+          icon: "bell",
+          color: "#F59E0B",
+          onPress: () => router.push("/notifications"),
+          badge: unreadCount,
+        },
         {
           key: "card",
           label: t("nav.card"),

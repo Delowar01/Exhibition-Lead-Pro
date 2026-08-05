@@ -576,7 +576,7 @@
     "details": "تفاصيل جهة الاتصال",
     "callMobile": "اتصال",
     "sendEmail": "بريد إلكتروني",
-    "openWebsite": "الموقع الإلكتروني",
+    "openWebsite": "الموقع",
     "addNote": "إضافة ملاحظة",
     "notes": "الملاحظات",
     "addFollowUp": "إضافة متابعة",
@@ -1428,6 +1428,8 @@
     "groupWorkspace": "مساحة عملي",
     "groupSettings": "الإعدادات",
     "followupsSub": "المتابعات المستحقة والقادمة",
+    "pipelineSub": "تتبّع الصفقات عبر المراحل",
+    "notificationsSub": "التنبيهات والتحديثات من مساحة عملك",
     "devPerf": "أداء المطور",
     "devPerfSub": "توقيتات خط أنابيب المسح"
   },
@@ -1530,6 +1532,8 @@
     "unread_few": "{{count}} غير مقروءة",
     "unread_many": "{{count}} غير مقروءة",
     "unread_other": "{{count}} غير مقروءة",
-    "allCaughtUp": "أنت على اطلاع بكل شيء"
+    "allCaughtUp": "أنت على اطلاع بكل شيء",
+    "viewAll": "عرض كل الإشعارات",
+    "loadFailed": "تعذّر تحميل الإشعارات"
   }
 }

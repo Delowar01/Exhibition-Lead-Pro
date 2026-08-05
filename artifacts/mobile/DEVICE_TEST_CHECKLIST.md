@@ -46,6 +46,19 @@ Post-build APK content scan (done on the built APK): no Gemini/API keys,
 no SESSION_SECRET, no database or SMTP strings, no Expo token — only the
 public staging URL is baked in. ✔
 
+## 0b. Fix round 2 — retest these (no new APK built yet; owner builds after review)
+
+| # | Change → what to verify | Result | Notes |
+| --- | --- | --- | --- |
+| G | Bottom nav is now Home / Scan / Contacts / Follow-Ups / More (Notifications replaced by Follow-Ups). All 5 labels fully visible on your device width, EN and AR | | |
+| H | Notifications now lives in More → Workspace group with an unread-count badge; opening it shows the full Notification Center and deep links still work | | |
+| I | Home header shows a notification bell (right in EN, left in AR) with unread badge; tapping opens a small panel with the latest 3 notifications; tapping an item marks it read + deep-links; "View all notifications" opens the full Center; panel fits on-screen at your device width | | |
+| J | More → CRM group shows Pipeline again and it opens the pipeline list | | |
+| K | Contact Workspace: Call / WhatsApp / Email / Website bar shows 4 equal buttons, none clipped at the right edge (EN + AR, light + dark); buttons with missing data (no mobile/email/website) look disabled and do nothing | | |
+| L | The quick-action bar stays pinned below the header while scrolling Overview, Timeline AND Documents | | |
+| M | Documents tab: category chips wrap onto multiple lines with full labels (no "Signed Agreemen…" clipping); title and Upload button aligned on one row; long file names truncate cleanly; empty state is compact | | |
+| N | No page-level horizontal scrolling anywhere in the Contact Workspace, including with the keyboard open | | |
+
 ## 1. Install & core flows
 
 | # | Flow | Result | Notes |

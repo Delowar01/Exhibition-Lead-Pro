@@ -4,8 +4,6 @@ import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
 import { Feather } from "@/components/icons";
-import { useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
-import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 
@@ -61,9 +59,9 @@ function NativeTabLayout() {
         <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
         <Label>{t("nav.contacts")}</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="notifications">
-        <Icon sf={{ default: "bell", selected: "bell.fill" }} />
-        <Label>{t("nav.notifications")}</Label>
+      <NativeTabs.Trigger name="followups">
+        <Icon sf={{ default: "checkmark.square", selected: "checkmark.square.fill" }} />
+        <Label>{t("nav.followups")}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="more">
         <Icon sf={{ default: "ellipsis", selected: "ellipsis" }} />
@@ -76,15 +74,6 @@ function NativeTabLayout() {
 function ClassicTabLayout() {
   const colors = useColors();
   const { t } = useLocale();
-  const { user } = useAuth();
-  const { data: unreadData } = useGetUnreadCount({
-    query: {
-      queryKey: getGetUnreadCountQueryKey(),
-      enabled: !!user,
-      refetchInterval: 60000,
-    },
-  });
-  const unreadCount = unreadData?.count ?? 0;
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
@@ -110,10 +99,10 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
-        // Device round #1: labels must never clip/ellipsize on narrow Android
-        // widths (360dp → ~72dp per tab; "Notifications" is the long pole).
-        // Slightly smaller font + zero item padding + no font scaling keeps
-        // every label on one full line across 360/390/412dp.
+        // Device round #1/#2: labels must never clip/ellipsize on narrow
+        // Android widths (360dp → ~72dp per tab; "Follow-Ups" is the long
+        // pole). Slightly smaller font + zero item padding + no font scaling
+        // keeps every label on one full line across 360/390/412dp.
         tabBarLabelStyle: { fontFamily: "Inter_500Medium", fontSize: 10 },
         tabBarAllowFontScaling: false,
         tabBarItemStyle: { paddingHorizontal: 0 },
@@ -164,13 +153,10 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="notifications"
+        name="followups"
         options={{
-          title: t("nav.notifications"),
-          tabBarIcon: ({ color }) => icon("bell", "bell", color),
-          ...(unreadCount > 0
-            ? { tabBarBadge: unreadCount > 99 ? "99+" : unreadCount }
-            : {}),
+          title: t("nav.followups"),
+          tabBarIcon: ({ color }) => icon("checkmark.square", "check-square", color),
         }}
       />
       <Tabs.Screen
