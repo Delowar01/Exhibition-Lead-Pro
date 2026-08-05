@@ -49,10 +49,6 @@ import {
   useListUsers,
   useUpdateContact,
 } from "@workspace/api-client-react";
-import { CommunicationHub } from "@/components/CommunicationHub";
-import { CopilotSection } from "@/components/CopilotSection";
-import { WorkflowSection } from "@/components/WorkflowSection";
-import { AiInsightsSection } from "@/components/AiInsightsSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import {
@@ -125,9 +121,7 @@ export default function ContactDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const contactId = Number(id);
 
-  const [tab, setTab] = useState<
-    "overview" | "timeline" | "activities" | "documents" | "interactions" | "ai" | "discussion"
-  >("overview");
+  const [tab, setTab] = useState<"overview" | "timeline" | "documents">("overview");
 
   const queryClient = useQueryClient();
   const query = useGetContact(contactId);
@@ -577,12 +571,8 @@ export default function ContactDetailScreen() {
           <WorkspaceTabs
             tabs={[
               { key: "overview", label: t("workspace.overview") },
-              { key: "timeline", label: t("workspace.timeline"), count: history.length },
-              { key: "activities", label: t("workspace.activities") },
+              { key: "timeline", label: t("workspace.timeline"), count: history.length + interactions.length },
               { key: "documents", label: t("workspace.documents") },
-              { key: "interactions", label: t("workspace.interactions"), count: interactions.length },
-              { key: "ai", label: t("workspace.intelligence") },
-              { key: "discussion", label: t("workspace.discussion"), disabled: true },
             ]}
             activeTab={tab}
             onChange={(k) => setTab(k as any)}
@@ -847,11 +837,8 @@ export default function ContactDetailScreen() {
                     </View>
                   </Section>
                 ) : null}
-              </>
-            )}
 
-            {tab === "interactions" && (
-              <>
+                {/* Interactions — consolidated into the Timeline feed */}
                 {interactions.length > 0 ? (
                   <Section title={t("contacts.sectionInteractions")}>
                     <View style={{ padding: 8, gap: 14 }}>
@@ -864,9 +851,11 @@ export default function ContactDetailScreen() {
                       ))}
                     </View>
                   </Section>
-                ) : (
+                ) : null}
+
+                {history.length === 0 && interactions.length === 0 ? (
                   <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t("workspace.noInteractions")}</Text>
-                )}
+                ) : null}
               </>
             )}
 
@@ -885,27 +874,6 @@ export default function ContactDetailScreen() {
                 >
                   <DocumentsSection entityType="contact" entityId={contact.id} />
                 </View>
-              </View>
-            )}
-
-            {tab === "activities" && (
-              <View style={{ gap: 24 }}>
-                <CommunicationHub
-                  entity="contact"
-                  id={contactId}
-                  email={contact.email}
-                  phone={contact.mobile}
-                  displayName={contactName(contact, t("contacts.newContact"))}
-                />
-
-                <WorkflowSection entityType="contact" id={contactId} />
-              </View>
-            )}
-
-            {tab === "ai" && (
-              <View style={{ gap: 24 }}>
-                <AiInsightsSection entityType="contact" id={contactId} />
-                <CopilotSection entityType="contact" id={contactId} />
               </View>
             )}
 

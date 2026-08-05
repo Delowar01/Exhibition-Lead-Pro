@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -37,6 +38,8 @@ import {
   setBatchOcrResult,
 } from "@/lib/batch-store";
 import { addScanMetric } from "@/lib/scan-perf";
+import { mapFrameToPhotoCrop, type Rect } from "@/lib/capture-crop";
+import { computeCaptureQuality, type CaptureQuality } from "@/lib/capture-quality";
 
 // Dev-only diagnostics for the capture → OCR → save pipeline. Stripped in
 // production builds (guarded by __DEV__) so it never leaks to end users.
@@ -117,57 +120,10 @@ function pickCaptureSize(sizes: string[]): string | undefined {
   return (adequate ?? parsed[parsed.length - 1]).s;
 }
 
-// On-device capture-quality heuristic (Stage 5E). BEST-EFFORT and purely
-// JS/cross-platform: it derives a quality score from the JPEG detail density
-// (bytes per pixel) of the already-captured, resized image. A well-lit, in-focus
-// card produces more high-frequency detail → a larger JPEG; a dark/blurry
-// capture compresses smaller. No native-only APIs are used, so it degrades
-// gracefully on web/Expo Go — if dimensions/payload are unavailable it returns
-// null and the indicator is simply hidden. Advisory only; never blocks capture.
-interface CaptureQuality {
-  score: number;
-  meta: {
-    heuristic: string;
-    bytesPerPixel: number;
-    payloadKb: number;
-    width: number;
-    height: number;
-  };
-}
-
-function computeCaptureQuality(
-  imageData: string,
-  srcW: number,
-  srcH: number,
-  outW: number,
-): CaptureQuality | null {
-  try {
-    if (!imageData.startsWith("data:image")) return null;
-    const commaIdx = imageData.indexOf(",");
-    const b64 = commaIdx >= 0 ? imageData.slice(commaIdx + 1) : "";
-    if (!b64 || !srcW || !srcH || !outW) return null;
-    const bytes = Math.round(b64.length * 0.75);
-    const outH = Math.round(outW * (srcH / srcW));
-    const pixels = outW * outH;
-    if (pixels <= 0) return null;
-    const bpp = bytes / pixels;
-    const LO = 0.12;
-    const HI = 0.55;
-    const score = Math.max(0, Math.min(100, Math.round(((bpp - LO) / (HI - LO)) * 100)));
-    return {
-      score,
-      meta: {
-        heuristic: "jpeg-detail-density",
-        bytesPerPixel: Math.round(bpp * 1000) / 1000,
-        payloadKb: Math.round(bytes / 1024),
-        width: outW,
-        height: outH,
-      },
-    };
-  } catch {
-    return null;
-  }
-}
+// Quality-analysis thumbnail width. The cropped card is downscaled to this and
+// pixel-analyzed in lib/capture-quality (exposure + edge sharpness). Small
+// enough that the JS-side decode is a few milliseconds.
+const QUALITY_THUMB_WIDTH = 160;
 
 export default function CaptureCameraScreen() {
   const colors = useColors();
@@ -231,7 +187,30 @@ export default function CaptureCameraScreen() {
     srcW: number;
     srcH: number;
     outW: number;
+    outH: number;
+    cropped: boolean;
+    // Small JPEG of the (cropped) card for pixel-level quality analysis.
+    qualityThumb: string | null;
   } | null>(null);
+  // Guide-frame position, measured at capture time so the crop math always
+  // reflects the CURRENT layout (rotation, insets, font-scale) — never
+  // hardcoded coordinates.
+  const frameRef = useRef<View>(null);
+  const { width: winW, height: winH } = useWindowDimensions();
+
+  const measureFrame = useCallback((): Promise<Rect | null> => {
+    return new Promise((resolve) => {
+      const node = frameRef.current;
+      if (!node || Platform.OS === "web") return resolve(null);
+      try {
+        node.measureInWindow((x, y, width, height) => {
+          resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -283,15 +262,54 @@ export default function CaptureCameraScreen() {
     const captureRawMs = Date.now() - tCap;
     if (photo?.uri) {
       try {
+        const tProc = Date.now();
+        // Crop to the guide frame (#5, device round): the preview shows the
+        // photo with cover scaling, so the on-screen frame rect is mapped into
+        // photo pixels by lib/capture-crop (pure math, unit-tested — handles
+        // cover offsets, orientation-swapped Android dims, margin, clamping).
+        // If measurement or mapping fails, we fall back to the full frame.
+        const frame = await measureFrame();
+        const crop =
+          frame && photo.width && photo.height
+            ? mapFrameToPhotoCrop({
+                previewW: winW,
+                previewH: winH,
+                photoW: photo.width,
+                photoH: photo.height,
+                frame,
+              })
+            : null;
+        const baseWidth = crop?.width ?? photo.width ?? 0;
         // Clamp the target to the source width so a small capture is never
         // UPSCALED (which would inflate the payload + encode for no OCR gain).
-        const targetWidth = photo.width ? Math.min(UPLOAD_LONG_EDGE, photo.width) : UPLOAD_LONG_EDGE;
-        const tProc = Date.now();
-        const resized = await ImageManipulator.manipulateAsync(
-          photo.uri,
-          [{ resize: { width: targetWidth } }],
-          { compress: UPLOAD_JPEG_QUALITY, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-        );
+        const targetWidth = baseWidth ? Math.min(UPLOAD_LONG_EDGE, baseWidth) : UPLOAD_LONG_EDGE;
+        const actions: ImageManipulator.Action[] = [];
+        if (crop) {
+          actions.push({
+            crop: { originX: crop.originX, originY: crop.originY, width: crop.width, height: crop.height },
+          });
+        }
+        actions.push({ resize: { width: targetWidth } });
+        const resized = await ImageManipulator.manipulateAsync(photo.uri, actions, {
+          compress: UPLOAD_JPEG_QUALITY,
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true,
+        });
+        // Tiny thumbnail of the SAME (cropped) image for pixel-level quality
+        // analysis — computed on the card itself, so the dark surround can no
+        // longer deflate the score (#6). Best-effort; quality falls back to
+        // the byte-density heuristic without it.
+        let qualityThumb: string | null = null;
+        try {
+          const thumb = await ImageManipulator.manipulateAsync(
+            resized.uri,
+            [{ resize: { width: QUALITY_THUMB_WIDTH } }],
+            { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+          );
+          qualityThumb = thumb.base64 ?? null;
+        } catch {
+          /* advisory only */
+        }
         // Per-stage profiling: store in ref so handleCapture can assemble the
         // full metric once upload + OCR + contact timings are also known.
         const perfProcessMs = Date.now() - tProc;
@@ -300,14 +318,18 @@ export default function CaptureCameraScreen() {
           processMs: perfProcessMs,
           srcW: photo.width ?? 0,
           srcH: photo.height ?? 0,
-          outW: targetWidth,
+          outW: resized.width ?? targetWidth,
+          outH: resized.height ?? 0,
+          cropped: !!crop,
+          qualityThumb,
         };
         scanLog("capture pipeline", {
           captureRawMs,
           processMs: perfProcessMs,
           srcW: photo.width,
           srcH: photo.height,
-          outW: targetWidth,
+          outW: resized.width ?? targetWidth,
+          cropped: !!crop,
         });
         if (resized.base64) return `data:image/jpeg;base64,${resized.base64}`;
       } catch {
@@ -321,7 +343,7 @@ export default function CaptureCameraScreen() {
       skipProcessing: true,
     });
     return raw?.base64 ? `data:image/jpeg;base64,${raw.base64}` : "card";
-  }, []);
+  }, [measureFrame, winW, winH]);
 
   // #3 Rapid — OCR + save happen in the background so the camera frees instantly.
   //
@@ -435,10 +457,20 @@ export default function CaptureCameraScreen() {
       scanLog("image captured", { mode, source, captureMs, payloadKb, pictureSize });
       const gps = { ...gpsRef.current };
 
-      // On-device capture-quality heuristic (advisory). Surfaced as a transient
+      // On-device capture quality (advisory). Pixel analysis of the CROPPED
+      // card thumbnail (exposure + edge sharpness) — surfaced as a transient
       // indicator and attached to the scan; never gates the capture.
       const ct = capturePerfRef.current;
-      const quality = ct ? computeCaptureQuality(imageData, ct.srcW, ct.srcH, ct.outW) : null;
+      const quality =
+        ct && ct.outW && ct.outH
+          ? computeCaptureQuality({
+              imageData,
+              width: ct.outW,
+              height: ct.outH,
+              thumbnail: ct.qualityThumb,
+              cropped: ct.cropped,
+            })
+          : null;
       setLastQuality(quality);
 
       // #4 Batch — capture image and start background OCR immediately so results
@@ -753,7 +785,7 @@ export default function CaptureCameraScreen() {
 
       {/* Frame guide */}
       <View style={styles.frameWrap} pointerEvents="none">
-        <View style={[styles.frame, { borderColor: "rgba(255,255,255,0.4)" }]}>
+        <View ref={frameRef} style={[styles.frame, { borderColor: "rgba(255,255,255,0.4)" }]}>
           <View style={[styles.corner, styles.tl, { borderColor: colors.primary }]} />
           <View style={[styles.corner, styles.tr, { borderColor: colors.primary }]} />
           <View style={[styles.corner, styles.bl, { borderColor: colors.primary }]} />

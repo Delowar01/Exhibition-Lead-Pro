@@ -1,0 +1,171 @@
+These are valid **physical-device findings**, so Batch 8 should remain open until they are fixed and retested.
+
+One scope clarification: the mobile **AI Command Center is already out of scope**, so Replit should remove any remaining Command Center entry instead of spending time repairing it. The separate retained mobile **AI Assistant** should remain working.
+
+Send this prompt to Replit:
+
+```text
+Continue Batch 8 with a focused Android physical-device fix round.
+
+Do not close Batch 8 yet. Fix only the issues reported from the installed APK and provide a new APK for retesting.
+
+1. Bottom navigation
+
+Replace the mobile bottom-navigation item:
+
+Pipeline → Contacts
+
+Requirements:
+
+- Use the existing Contacts list route.
+- Use an appropriate contacts icon.
+- Keep Home, Scan, Notifications, and More unchanged.
+- Remove the Pipeline bottom-nav entry only; do not delete the underlying web/backend pipeline functionality.
+- Ensure labels are not clipped or shown with ellipsis on common Android widths.
+
+2. Simplify the mobile Contact Workspace
+
+The mobile Contact Workspace must have exactly 3 sections:
+
+1. Overview
+2. Timeline
+3. Documents
+
+Remove from the mobile Contact Workspace:
+
+- Activities
+- Interactions
+- Intelligence
+- Workflow Intelligence
+- Discussion
+- AI Copilot
+- Any other AI or duplicate activity tab
+
+Timeline must remain the consolidated activity/history feed.
+
+Update mobile routes, navigation, deep links, unused imports, permissions, i18n keys, and tests as needed.
+
+Do not change the four-tab web Contact Workspace.
+
+3. Fix Contact Workspace Android UI
+
+Using the attached physical-device screenshots as reference, fix:
+
+- Tab alignment
+- Tab sizing
+- Uneven spacing
+- Text clipping
+- Incorrect element positions
+- Horizontal overflow
+- Oversized or undersized controls
+- Safe-area and bottom-navigation spacing
+- Light/dark contrast
+- English and Arabic RTL layout
+
+Verify at minimum on 360px, 390px, and 412px Android widths.
+
+4. Mobile AI scope and error
+
+The mobile AI Command Center is permanently out of scope.
+
+- Remove any remaining AI Command Center menu item, route, deep link, or screen.
+- Do not rebuild or repair the Command Center.
+- Keep the separate retained mobile AI Assistant.
+- Verify the retained AI Assistant can send a message through the existing Enterprise AI Layer and staging API.
+- If the reported “The AI could not generate a response” error comes from the retained AI Assistant, identify and fix the actual configuration/API/error-handling defect.
+- Do not add AI to the mobile Contact Workspace.
+
+5. Crop camera captures to the marked card frame
+
+Currently the application sends the entire camera image.
+
+Change the capture flow so only the business-card area inside the visible guide frame is used for OCR and storage.
+
+Requirements:
+
+- Calculate the crop using the actual preview size, image resolution, orientation, aspect-fill scaling, and device pixel ratio.
+- Do not use hardcoded crop coordinates for one device.
+- Crop before creating the scan payload where practical.
+- Ensure the saved private scan image also represents the cropped card.
+- Preserve enough resolution for OCR.
+- Verify portrait Android devices with different screen ratios.
+- Batch capture must use the same correct crop behavior.
+
+6. Fix false low-quality warning
+
+The application currently shows:
+
+“Capture quality: Low quality — improve lighting”
+
+even under proper lighting.
+
+Inspect the current quality algorithm.
+
+Requirements:
+
+- Measure quality from the cropped card region, not the entire dark camera frame.
+- Check exposure, blur/sharpness, and card visibility separately.
+- Tune the thresholds using realistic test images.
+- Do not simply disable the warning.
+- Normal well-lit cards must not show a low-quality warning.
+- Dark, severely blurred, or unreadable cards should still show a warning.
+- Avoid rapidly changing or flickering warnings.
+
+7. Overall mobile UI polish
+
+Polish the retained mobile experience without redesigning it:
+
+- Bottom navigation
+- Contact list
+- Contact Workspace
+- Camera and card guide
+- Scan review
+- Batch review
+- Buttons, spacing, typography, and loading states
+- Android keyboard behavior
+- Safe-area handling
+- English and Arabic RTL
+- Light and dark themes
+
+Do not add new features.
+
+Testing required:
+
+- Mobile typecheck
+- Mobile unit tests
+- Relevant API tests if backend code changes
+- Full API suite if shared/backend files change
+- Web typecheck to confirm the web Contact Workspace is unaffected
+- Existing Playwright suite if shared APIs or web files change
+- Build a new preview APK
+- Install and retest on a real Android device
+
+Physically verify:
+
+- Contacts replaces Pipeline
+- Contact Workspace shows only Overview, Timeline, Documents
+- Contact tabs are aligned and usable
+- No mobile Contact AI/Intelligence tabs remain
+- AI Command Center is absent
+- Retained AI Assistant sends successfully
+- Captured image contains only the marked card region
+- Properly lit card does not receive a false warning
+- Dark/blurred card still receives an appropriate warning
+- Single and batch OCR still work
+- English/Arabic and light/dark UI remain usable
+
+Final report must include:
+
+1. Root cause of each issue
+2. Exact fix for each issue
+3. Files changed
+4. Tests added or updated
+5. Exact test totals
+6. New APK install link
+7. Device model and Android version used for retesting
+8. Screenshots showing the corrected navigation, Contact Workspace, and cropped capture
+9. Any genuine limitation
+
+Do not start Batch 9.
+Do not restore removed mobile administration or AI intelligence features.
+```

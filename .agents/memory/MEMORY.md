@@ -61,4 +61,6 @@
 - [E2E fixture orphans & long runs](e2e-fixture-orphans.md) — aborted Playwright run orphans the seeded contact (409 by constant mobile); run long suites via workflows, not backgrounded shell; use copilot testids not generic "Generate".
 - [HEIC not decodable](heic-not-decodable.md) — sharp/libheif here has no HEVC plugin (metadata OK, decode fails); reject HEIC pre-provider on EVERY image path incl. batch-analyze items; mobile always sends JPEG.
 - [OCR scan pipeline hardening](ocr-scan-hardening.md) — original stays verbatim (fallbacks use RAW pre-normalization values); policy denials must settle optimistic scan row/usage writes; AI cache bypasses budget (test with fresh images); validateBody rejects {}.
+- [Capture crop & quality heuristics](capture-quality-crop-heuristics.md) — crop to guide frame via cover-math inversion; score quality on cropped card with top-tail gradient sharpness, never whole-frame bpp.
+- [Prod schema drift breaks mobile AI](prod-schema-drift-mobile-ai.md) — device-only 500s vs working dev = stale published schema (missing ai_* tables); fix is republish, never hand-migration.
 - [Arabic fixture rendering](arabic-fixture-rendering.md) — librsvg: text-anchor="end"+direction="rtl" pushes Arabic off-canvas (looks like an OCR bug); fonts via google/fonts raw TTFs into ~/.fonts + fc-cache; always VIEW rendered fixtures.

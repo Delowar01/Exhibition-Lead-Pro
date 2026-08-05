@@ -57,9 +57,9 @@ function NativeTabLayout() {
         <Icon sf={{ default: "viewfinder", selected: "viewfinder" }} />
         <Label>{t("nav.scan")}</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="leads">
-        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
-        <Label>{t("nav.leads")}</Label>
+      <NativeTabs.Trigger name="contacts">
+        <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
+        <Label>{t("nav.contacts")}</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="notifications">
         <Icon sf={{ default: "bell", selected: "bell.fill" }} />
@@ -110,7 +110,13 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
-        tabBarLabelStyle: { fontFamily: "Inter_500Medium", fontSize: 11 },
+        // Device round #1: labels must never clip/ellipsize on narrow Android
+        // widths (360dp → ~72dp per tab; "Notifications" is the long pole).
+        // Slightly smaller font + zero item padding + no font scaling keeps
+        // every label on one full line across 360/390/412dp.
+        tabBarLabelStyle: { fontFamily: "Inter_500Medium", fontSize: 10 },
+        tabBarAllowFontScaling: false,
+        tabBarItemStyle: { paddingHorizontal: 0 },
         tabBarStyle: {
           position: "absolute",
           backgroundColor: isIOS ? "transparent" : colors.background,
@@ -151,10 +157,10 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="leads"
+        name="contacts"
         options={{
-          title: t("nav.leads"),
-          tabBarIcon: ({ color }) => icon("chart.bar", "bar-chart-2", color),
+          title: t("nav.contacts"),
+          tabBarIcon: ({ color }) => icon("person.2", "users", color),
         }}
       />
       <Tabs.Screen

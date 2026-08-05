@@ -24,10 +24,23 @@ a note). Use safe test-card data only — never real customer data.
 | Package name | com.elitemarcom.cardscannerpro |
 | Build profile | preview (internal distribution, APK) — Expo SDK 54 |
 | Staging API | https://contact-aggregator--DelowarHossain1.replit.app |
-| Build timestamp | 2026-08-05 ~01:10 UTC (EAS build a68f6101) |
-| Git commit | e22f304 |
-| Build page | https://expo.dev/accounts/elite-marcom/projects/mobile/builds/a68f6101-9aec-4239-b9fc-8dcf9a328c1a |
-| Direct APK download | https://expo.dev/artifacts/eas/CAfYgxfmTcmj348yWqSwwN67wrcqKDLFI-CUH67jtQU.apk |
+| Build timestamp | 2026-08-05 (fix round 1, EAS build 61f65ee3, finished 13:03 UTC) |
+| Build page | https://expo.dev/accounts/elite-marcom/projects/mobile/builds/61f65ee3-8e36-46a7-86fa-f94f7d5d0c64 |
+| Direct APK download | https://expo.dev/artifacts/eas/o3Uust0Rq5HloMuZI6_Jo2tD6D4G_kT1SJAL4uuQT0Q.apk |
+
+Previous build (superseded): a68f6101 —
+https://expo.dev/artifacts/eas/CAfYgxfmTcmj348yWqSwwN67wrcqKDLFI-CUH67jtQU.apk
+
+## 0. Fix round 1 — retest these first (from your device findings)
+
+| # | Finding → fix | Result | Notes |
+| --- | --- | --- | --- |
+| A | Bottom nav shows Home / Scan / Contacts / Notifications / More (Pipeline moved out; still reachable from Home quick actions). All labels fully visible — no "…" — on your device width | | |
+| B | Contact Workspace shows exactly 3 tabs: Overview, Timeline, Documents (evenly divided, no scrolling tab strip). Timeline includes interactions + status history | | |
+| C | Workspace tabs look correct in AR/RTL (order mirrored, labels fit) and in dark mode | | |
+| D | Capture: saved scan image is cropped to the card guide frame (not the full camera view), single AND batch modes | | |
+| E | A normal, well-lit card capture does NOT show a low-quality warning; a genuinely blurry/dark capture still does | | |
+| F | AI Assistant (More → AI Assistant): sending a message returns a real answer. NOTE: requires the app to be REPUBLISHED first — the production database is missing the AI tables, which is the root cause of "The AI could not generate a response" | | |
 
 Post-build APK content scan (done on the built APK): no Gemini/API keys,
 no SESSION_SECRET, no database or SMTP strings, no Expo token — only the

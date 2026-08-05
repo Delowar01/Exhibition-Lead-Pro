@@ -172,12 +172,12 @@
     "workspace": "Workspace",
     "sync": "Sync",
     "companies": "Companies",
-    "aiAssistant": "AI Command Center",
+    "aiAssistant": "AI Assistant",
     "scan": "Scan",
     "notifications": "Notifications"
   },
   "assistant": {
-    "title": "AI Command Center",
+    "title": "AI Assistant",
     "subtitle": "Ask about your CRM in plain language.",
     "disclaimer": "Advisory only — nothing is written to the CRM.",
     "history": "Conversation history",
