@@ -20,13 +20,18 @@ a note). Use safe test-card data only — never real customer data.
 | Field | Value |
 | --- | --- |
 | App version | 1.0.0 |
-| Build number (versionCode) | |
+| Build number (versionCode) | 1 |
 | Package name | com.elitemarcom.cardscannerpro |
-| Build profile | preview (internal distribution, APK) |
+| Build profile | preview (internal distribution, APK) — Expo SDK 54 |
 | Staging API | https://contact-aggregator--DelowarHossain1.replit.app |
-| Build timestamp | |
-| Git commit | |
-| Build URL / artifact | |
+| Build timestamp | 2026-08-05 ~01:10 UTC (EAS build a68f6101) |
+| Git commit | e22f304 |
+| Build page | https://expo.dev/accounts/elite-marcom/projects/mobile/builds/a68f6101-9aec-4239-b9fc-8dcf9a328c1a |
+| Direct APK download | https://expo.dev/artifacts/eas/CAfYgxfmTcmj348yWqSwwN67wrcqKDLFI-CUH67jtQU.apk |
+
+Post-build APK content scan (done on the built APK): no Gemini/API keys,
+no SESSION_SECRET, no database or SMTP strings, no Expo token — only the
+public staging URL is baked in. ✔
 
 ## 1. Install & core flows
 
