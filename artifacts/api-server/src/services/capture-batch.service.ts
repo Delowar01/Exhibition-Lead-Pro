@@ -6,6 +6,7 @@ import { getQueue } from "../lib/jobs/queue.js";
 import { analyzeCapture, type CaptureAnalysis } from "./capture-intelligence.service.js";
 import type { CaptureFields } from "../lib/capture-validation.js";
 import { extractCardData } from "../lib/ai.js";
+import { validateScanImage } from "../lib/image-validation.js";
 
 // Batch runner for Stage 5E intelligent capture. It lets a tenant analyze MANY captured
 // cards at once (e.g. a mobile batch-scan session) without holding the request open.
@@ -131,8 +132,12 @@ export async function runCaptureAnalyzeJob(payload: CaptureAnalyzeJobPayload): P
     // explicitly supplied fields override them (a reviewer's edits win over raw OCR).
     let fields = payload.fields;
     if (typeof payload.imageData === "string" && payload.imageData.length > 0) {
+      // Same pre-provider contract as POST /scans (Batch 8): bad bytes — empty,
+      // disguised, oversized, or HEIC (undecodable here) — fail THIS item with the
+      // structured validation message before any provider call or token usage.
+      const image = validateScanImage(payload.imageData);
       const lang = payload.appLanguage === "ar" ? "ar" : "en";
-      const ocr = await extractCardData(payload.imageData, lang, {
+      const ocr = await extractCardData(image.dataUrl, lang, {
         companyId: payload.user.companyId ?? undefined,
         userId: payload.user.id,
       });

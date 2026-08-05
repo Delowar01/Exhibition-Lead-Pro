@@ -7,6 +7,8 @@ description: Aborted e2e runs orphan the seeded contact and 409 the next run; ho
 
 **Cleanup:** soft-delete the orphan (`UPDATE contacts SET deleted_at = now() WHERE mobile = '+971500009988' AND deleted_at IS NULL`), delete seeded scan rows (`image_url = 'e2e/seeded/qr-card.png'`), and `rm artifacts/web-app/e2e/.auth/state.json`. Duplicate detection ignores soft-deleted rows.
 
-**Why runs abort:** background processes spawned from the agent shell (even `setsid nohup ... & disown`) are killed when the shell session ends. For anything longer than ~4 minutes (full API suite ≈ 5–6 min), run it via a configured workflow (e.g. restart the `test` workflow) and poll its logs — never via a backgrounded shell command.
+**Why runs abort:** background processes spawned from the agent shell (even `setsid nohup ... & disown`) are killed when the shell session ends — confirmed again: a detached full-suite run vanished (log file gone, no process) and 42 orphaned fixture contacts had accumulated from prior aborts. For anything longer than ~4 minutes (full API suite ≈ 5–6 min), run it via a configured workflow (e.g. restart the `test` workflow) and poll its logs — never via a backgrounded shell command.
+
+**Playwright full suite without a workflow:** run it in FOREGROUND chunks of ~4 spec files (`pnpm exec playwright test e2e/a-*.spec.ts ... --reporter=line`); each chunk finishes in ~45s, comfortably inside the shell timeout, and workers=1 keeps chunked totals equivalent to one run.
 
 **Locator trap:** the AI workspace has suggested-action buttons like "Generate WhatsApp Message" that substring-match `getByRole("button", { name: "Generate" })` before the copilot's real Generate button — silently driving the assistant instead. Use the data-testids (`select-copilot-type`, `button-copilot-generate`) for copilot controls.

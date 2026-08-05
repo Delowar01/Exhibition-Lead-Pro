@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { promises as fs } from "node:fs";
 import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import {
@@ -44,6 +45,7 @@ let otherToken = "";
 
 let jpegDataUrl = "";
 let pngDataUrl = "";
+let heicDataUrl = ""; // genuine HEVC-encoded HEIC (Batch 8 — must be REJECTED pre-provider)
 
 function headers(token: string) {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
@@ -133,6 +135,11 @@ beforeAll(async () => {
     .png()
     .toBuffer();
   pngDataUrl = `data:image/png;base64,${png.toString("base64")}`;
+  // Genuine HEVC HEIC (Nokia HEIF conformance suite) — sharp CANNOT be used to
+  // fabricate this (the runtime lacks an HEVC encoder AND decoder, which is the
+  // very reason HEIC is rejected). Kept as a binary fixture.
+  const heic = await fs.readFile(new URL("./fixtures/genuine-hevc.heic", import.meta.url));
+  heicDataUrl = `data:image/heic;base64,${heic.toString("base64")}`;
 });
 
 afterAll(async () => {
@@ -182,6 +189,48 @@ describe("Test A — pre-provider image validation (400 + code, no scan row, no 
       expect(typeof body.error).toBe("string");
     });
   }
+
+  // Batch 8 — HEIC end-to-end: the runtime's libheif has no HEVC decoder plugin
+  // (verified against this genuine fixture: metadata sniffs OK, decode fails), so
+  // accepting HEIC would strand uploads at the later compression step. It must be
+  // rejected up front with a dedicated code the clients translate ("use JPEG").
+  it("rejects a genuine HEVC HEIC (declared image/heic) with 400 SCAN_IMAGE_HEIC_UNSUPPORTED", async () => {
+    const res = await postScan(adminToken, heicDataUrl);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("SCAN_IMAGE_HEIC_UNSUPPORTED");
+    expect(body.error).toMatch(/JPEG/);
+  });
+
+  it("rejects the same HEIC bytes disguised as image/jpeg (sniffing is authoritative)", async () => {
+    const b64 = heicDataUrl.slice(heicDataUrl.indexOf(",") + 1);
+    const res = await postScan(adminToken, `data:image/jpeg;base64,${b64}`);
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("SCAN_IMAGE_HEIC_UNSUPPORTED");
+  });
+
+  it("batch-analyze applies the same pre-provider validation: a HEIC item soft-fails with the structured message", async () => {
+    const start = await fetch(`${BASE}/scans/batch-analyze`, {
+      method: "POST",
+      headers: headers(adminToken),
+      body: JSON.stringify({ items: [{ key: "heic-item", fields: {}, imageData: heicDataUrl, appLanguage: "en" }] }),
+    });
+    expect(start.status).toBe(202);
+    const { id } = await start.json();
+    let job: { status: string; failed: number; succeeded: number; errors: Array<{ key: string; message: string }> } | null = null;
+    for (let i = 0; i < 40; i++) {
+      const poll = await fetch(`${BASE}/scans/batch/${id}`, { headers: headers(adminToken) });
+      expect(poll.status).toBe(200);
+      job = await poll.json();
+      if (job && (job.status === "completed" || job.status === "failed")) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    expect(job?.status).toBe("completed");
+    expect(job?.succeeded).toBe(0);
+    expect(job?.failed).toBe(1);
+    expect(job?.errors[0]?.key).toBe("heic-item");
+    expect(job?.errors[0]?.message).toMatch(/HEIC/);
+  }, 20_000);
 
   it("rejects an oversized (>10MB decoded) image with 400 SCAN_IMAGE_TOO_LARGE", async () => {
     const big = Buffer.alloc(MAX_SCAN_IMAGE_BYTES + 1, 0x20);

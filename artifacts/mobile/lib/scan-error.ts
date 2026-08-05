@@ -31,6 +31,8 @@ export function describeScanError(status: number, data: unknown): ScanErrorDescr
   if (code === "AI_DISABLED") return { key: "capture.errAiDisabled", serverMessage: null };
   if (code === "SCAN_NO_CARD" || status === 422) return { key: "capture.errNoCard", serverMessage: null };
   if (code === "SCAN_IMAGE_TOO_LARGE" || status === 413) return { key: "capture.errTooLarge", serverMessage: null };
+  // Batch 8 — HEIC (HEVC) cannot be decoded server-side; tell the user to use JPEG.
+  if (code === "SCAN_IMAGE_HEIC_UNSUPPORTED") return { key: "capture.errHeic", serverMessage: null };
 
   if (status === 429) return { key: "capture.errRateLimit", serverMessage: null };
   if (status === 502 || status === 503 || status === 504) return { key: "capture.errOcr", serverMessage: error };

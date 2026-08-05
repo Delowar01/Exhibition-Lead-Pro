@@ -12,7 +12,14 @@ import { AppError } from "../middlewares/errorHandler.js";
 export const MAX_SCAN_IMAGE_BYTES = 10 * 1024 * 1024;
 
 /** Formats Gemini Vision accepts and we allow. SVG and any non-raster/executable
- * content are rejected by design (never reaches the provider or storage). */
+ * content are rejected by design (never reaches the provider or storage).
+ *
+ * HEIC/HEIF (HEVC) is sniffed but REJECTED with a dedicated code (Batch 8):
+ * the runtime's prebuilt sharp/libheif has no HEVC decoder plugin (patent
+ * licensing), so genuine iPhone HEIC files would pass validation and then fail
+ * later during server-side compression/storage. Rejecting up front with a
+ * clear "convert to JPEG" message is the honest behavior. (Mobile capture and
+ * gallery picks are converted to JPEG on-device and never send HEIC.) */
 const SNIFFERS: Array<{ mime: string; test: (b: Buffer) => boolean }> = [
   { mime: "image/jpeg", test: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   { mime: "image/png", test: (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
@@ -47,7 +54,8 @@ function fail(code: string, message: string): never {
 /**
  * Validate a scan image payload (data-URL or raw base64) from real file bytes.
  * Throws AppError(400) with a machine code on any problem:
- *   SCAN_IMAGE_EMPTY | SCAN_IMAGE_INVALID | SCAN_IMAGE_UNSUPPORTED | SCAN_IMAGE_TOO_LARGE
+ *   SCAN_IMAGE_EMPTY | SCAN_IMAGE_INVALID | SCAN_IMAGE_UNSUPPORTED |
+ *   SCAN_IMAGE_TOO_LARGE | SCAN_IMAGE_HEIC_UNSUPPORTED
  */
 export function validateScanImage(imageData: string | undefined | null): ValidatedScanImage {
   if (typeof imageData !== "string" || imageData.trim().length === 0) {
@@ -62,7 +70,7 @@ export function validateScanImage(imageData: string | undefined | null): Validat
     // Non-image declarations (text/html, image/svg+xml is handled by sniffing anyway,
     // application/*) are rejected up front with an honest message.
     if (!declared.startsWith("image/") || declared.includes("svg")) {
-      fail("SCAN_IMAGE_UNSUPPORTED", "Unsupported file type. Upload a JPEG, PNG, WebP, or HEIC photo.");
+      fail("SCAN_IMAGE_UNSUPPORTED", "Unsupported file type. Upload a JPEG, PNG, or WebP photo.");
     }
     base64 = match[2];
   }
@@ -89,7 +97,15 @@ export function validateScanImage(imageData: string | undefined | null): Validat
   }
   const sniffed = SNIFFERS.find((s) => s.test(buf));
   if (!sniffed) {
-    fail("SCAN_IMAGE_UNSUPPORTED", "Unsupported or unreadable file type. Upload a JPEG, PNG, WebP, or HEIC photo.");
+    fail("SCAN_IMAGE_UNSUPPORTED", "Unsupported or unreadable file type. Upload a JPEG, PNG, or WebP photo.");
+  }
+  if (sniffed.mime === "image/heic") {
+    // Detected from the ACTUAL bytes, so a HEIC disguised as image/jpeg is
+    // caught too. See the SNIFFERS comment for why HEIC cannot be processed.
+    fail(
+      "SCAN_IMAGE_HEIC_UNSUPPORTED",
+      "This HEIC image cannot be processed. Please use or convert it to JPEG.",
+    );
   }
   return {
     data: base64,

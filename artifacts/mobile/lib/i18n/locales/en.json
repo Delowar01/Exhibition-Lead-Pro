@@ -365,6 +365,7 @@
     "errOcr": "Couldn't read the card. Retake the photo with better lighting.",
     "errTooLarge": "Image is too large. Move back slightly and retake.",
     "errInvalid": "That image couldn't be processed. Please retake the photo.",
+    "errHeic": "This HEIC image cannot be processed. Please use or convert it to JPEG.",
     "errRateLimit": "Too many scans at once. Wait a moment and try again.",
     "errBudget": "Your organization's monthly AI budget is used up. Ask an admin to raise it.",
     "errNoCard": "No readable business card was found. Please retake the photo.",

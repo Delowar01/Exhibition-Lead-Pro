@@ -35,6 +35,15 @@ describe("describeScanError", () => {
     expect(describeScanError(400, { code: "SCAN_IMAGE_TOO_LARGE" }).key).toBe("capture.errTooLarge");
   });
 
+  it("maps HEIC rejection (400 SCAN_IMAGE_HEIC_UNSUPPORTED) to the convert-to-JPEG message", () => {
+    const d = describeScanError(400, {
+      code: "SCAN_IMAGE_HEIC_UNSUPPORTED",
+      error: "This HEIC image cannot be processed. Please use or convert it to JPEG.",
+    });
+    expect(d.key).toBe("capture.errHeic");
+    expect(d.serverMessage).toBeNull(); // localized key preferred over server text
+  });
+
   it("keeps server-localized messages for 400 validation and 502 OCR failures", () => {
     const bad = describeScanError(400, { error: "The uploaded image file is empty." });
     expect(bad.key).toBe("capture.errInvalid");
@@ -57,6 +66,7 @@ describe("describeScanError", () => {
       "capture.errAiDisabled",
       "capture.errTooLarge",
       "capture.errInvalid",
+      "capture.errHeic",
       "capture.errOcr",
       "capture.errAuth",
       "capture.errServer",
