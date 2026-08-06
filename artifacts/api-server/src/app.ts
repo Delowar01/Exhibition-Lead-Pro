@@ -11,19 +11,26 @@ import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 import { authRateLimiter, loginRateLimiter, forgotPasswordRateLimiter } from "./middlewares/rateLimit.js";
 import { bustCacheOnWrite } from "./middlewares/microCache.js";
 import { metricsMiddleware } from "./lib/metrics.js";
+import {
+  buildCorsOptions,
+  parseCorsOrigins,
+  parseTrustProxy,
+  resolveCorsOrigin,
+} from "./lib/httpPolicy.js";
 import type { AuthRequest } from "./middlewares/requireAuth.js";
 
 const app: Express = express();
 
-// Trusted-proxy model: this API always runs behind exactly ONE trusted reverse
-// proxy (the platform's shared proxy in dev, the deployment ingress in prod),
-// which appends the real client address as the LAST X-Forwarded-For entry.
-// Trusting exactly one hop makes `req.ip` that entry and discards any
+// Trusted-proxy model: by default this API runs behind exactly ONE trusted
+// reverse proxy (the platform's shared proxy in dev, the deployment ingress in
+// prod), which appends the real client address as the LAST X-Forwarded-For
+// entry. Trusting exactly one hop makes `req.ip` that entry and discards any
 // client-forged XFF prefix — critical because IP allow-lists, lockouts, and
 // security events key on getClientIp() (lib/security.ts), and `trust proxy: true`
-// would let clients spoof their IP. If the proxy topology ever changes, update
-// this hop count and lib/security.ts together.
-app.set("trust proxy", 1);
+// would let clients spoof their IP. Behind a different topology (extra CDN /
+// load-balancer hops), set TRUST_PROXY to the real hop count or subnet list —
+// see lib/httpPolicy.ts for the accepted forms.
+app.set("trust proxy", parseTrustProxy(config.http.trustProxy));
 
 app.use(
   pinoHttp({
@@ -104,7 +111,19 @@ app.use(
     crossOriginEmbedderPolicy: false,
   }),
 );
-app.use(cors());
+// Cross-origin policy (lib/httpPolicy.ts): CORS_ORIGINS drives the allow-list.
+// Unset → development allows every origin (historical behavior behind the
+// Replit proxy, where the Expo web client is served from a different domain);
+// production emits NO cross-origin headers unless origins are explicitly
+// configured. Same-origin browsers and native mobile clients never need CORS,
+// so an unset production value changes nothing for the deployed web app or APK.
+app.use(
+  cors(
+    buildCorsOptions(
+      resolveCorsOrigin(parseCorsOrigins(config.http.corsOrigins), config.isProduction),
+    ),
+  ),
+);
 // gzip/deflate response bodies. Large JSON analytics payloads (reports, lists)
 // compress well; small bodies fall under compression's default threshold and are
 // sent uncompressed. Additive: changes transport encoding only, never the body.

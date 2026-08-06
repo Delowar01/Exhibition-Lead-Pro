@@ -106,23 +106,33 @@ All optional (`config.email`, `config.ts` 260–277). Without SMTP the email ser
 
 Note: the public card-share URL path (`/c/:token`) has **no** `APP_BASE_URL` override; it derives the origin from `REPLIT_DOMAINS` or the forwarded request headers. If you serve the API behind a proxy on a custom host, set `REPLIT_DOMAINS=your.host` (a plain domain list is accepted) **or** guarantee correct `X-Forwarded-*` headers.
 
-### 1.8 Trust-proxy assumption — exactly one proxy hop
+### 1.8 Trust-proxy hops — `TRUST_PROXY` (env var, no code edit)
 
-| Package/module | File | Line | Symbol/key | Current behavior | Environment | Why change | Verification |
-|---|---:|---|---|---|---|---|---|
-| api app | `artifacts/api-server/src/app.ts` | 26 | `app.set("trust proxy", 1)` | Trusts **exactly one** reverse-proxy hop; `req.ip` = last `X-Forwarded-For` entry. IP allow-lists, lockouts, and security events key on `getClientIp()` in `lib/security.ts` | all · api | If your topology has a different number of trusted hops (e.g. CDN → LB → app = 2, or app directly exposed = 0), the wrong client IP is recorded and IP rules break | After adjusting, hit an auth endpoint through your full proxy chain and confirm the logged/allow-listed IP is the real client IP, not a proxy IP |
+| Package/module | File | Symbol/key | Current behavior | Env var | Environment | Verification |
+|---|---|---|---|---|---|---|
+| api app | `artifacts/api-server/src/lib/httpPolicy.ts` (consumed in `src/app.ts`) | `parseTrustProxy` → `app.set("trust proxy", …)` | Default (unset) trusts **exactly one** reverse-proxy hop; `req.ip` = last `X-Forwarded-For` entry. IP allow-lists, lockouts, and security events key on `getClientIp()` in `lib/security.ts` | `TRUST_PROXY` | all · api | Hit an auth endpoint through your full proxy chain and confirm the logged/allow-listed IP is the real client IP, not a proxy IP (covered by `test/http-policy.test.ts`) |
 
-- **Replace from:** `app.set("trust proxy", 1)`.
-- **Replace to:** the actual number of trusted proxy hops in your deployment (a non-negative integer), **and** review `getClientIp()` in `artifacts/api-server/src/lib/security.ts` in tandem (the code comment at `app.ts` 24–25 requires updating both together). This is a **code edit**, not an env var.
+Accepted values: a non-negative integer hop count (`1`, `2`), `true`/`false`, or an address/subnet list (`10.0.0.0/8,172.16.0.0/12`, `loopback`).
 
-### 1.9 CORS — currently fully open (hardening note)
+- **Local (no proxy, directly exposed):** `TRUST_PROXY=false`
+- **Replit / any single reverse proxy (default):** unset, or `TRUST_PROXY=1`
+- **Staging/production behind CDN → LB → app:** `TRUST_PROXY=2` (count only hops you control)
 
-| Package/module | File | Line | Symbol/key | Current behavior | Environment | Why change | Verification |
-|---|---:|---|---|---|---|---|---|
-| api app | `artifacts/api-server/src/app.ts` | 107 | `app.use(cors())` | Open CORS (any origin) — deliberate for the cross-origin web+mobile clients | prod · api | For a production web deployment you may want to restrict allowed origins to your web app host(s) | After restricting, confirm the web app (its origin) still succeeds and an unlisted origin is rejected in the browser network tab |
+**SECURITY:** trusting more hops than actually exist lets clients spoof their IP with a forged `X-Forwarded-For` prefix. Keep the value equal to the real number of trusted proxies.
 
-- **Replace from:** `app.use(cors())`.
-- **Replace to (optional hardening):** `app.use(cors({ origin: ["https://app.example.com"], credentials: true }))` or an env-driven allow-list. Code edit; no env var exists today. Mobile clients send no browser `Origin`, so restricting origins affects the web app only.
+### 1.9 CORS — `CORS_ORIGINS` (env var, no code edit)
+
+| Package/module | File | Symbol/key | Current behavior | Env var | Environment | Verification |
+|---|---|---|---|---|---|---|
+| api app | `artifacts/api-server/src/lib/httpPolicy.ts` (consumed in `src/app.ts`) | `parseCorsOrigins` / `resolveCorsOrigin` → `cors(...)` | Unset: **development allows every origin** (historical behavior behind the Replit proxy, where the Expo web client runs on a different domain); **production emits no cross-origin headers** | `CORS_ORIGINS` | all · api | Allowed origin gets `Access-Control-Allow-Origin`; unlisted origin gets none (browser blocks). Covered by `test/http-policy.test.ts` |
+
+Accepted values: a comma-separated list of **exact** origins, or `*` for explicitly open.
+
+- **Local dev:** unset (open by default in development).
+- **Staging (browser client on a separate host):** `CORS_ORIGINS=https://staging-app.example.com` — e.g. for the current Replit staging deployment, `CORS_ORIGINS=https://contact-aggregator--DelowarHossain1.replit.app` would allow that origin from another host.
+- **Production, standard single-host setup (web served same-origin behind the same proxy, native mobile apps):** leave unset — same-origin requests and non-browser clients never need CORS, so the default-deny changes nothing and blocks foreign websites from making credentialed reads.
+- **Production with browser clients on other origins:** `CORS_ORIGINS=https://app.example.com,https://admin.example.com`. An explicit allow-list also enables `Access-Control-Allow-Credentials` (needed for the cookie-based refresh flow cross-origin).
+- **Restore the legacy fully open behavior:** `CORS_ORIGINS=*` (avoid in production unless the API is intentionally public).
 
 ### 1.10 Web dev server PORT / BASE_PATH vs. env-free build
 
@@ -175,6 +185,8 @@ These are **account-specific identifiers, not secrets**. Change them only when b
 
 The literal demo password value is intentionally **not reproduced here**; see the audit §2 for its handling. These are *seed-data* passwords, not infrastructure secrets.
 
+**Audit status (2026-08-06):** all three demo accounts are **active in both the development and production databases**, and the published demo password was verified (by offline hash comparison — never displayed) to still work on **all three production accounts**. In development the accounts are deliberately retained: the API integration suite and the Playwright E2E suite authenticate with them (`artifacts/web-app/e2e/fixtures/seed-values.ts`, multiple `artifacts/api-server/test/*.test.ts`), so rotating them in dev breaks the test infrastructure. **Production rotation is a required manual action before/at public launch** — change the three passwords directly in the production DB (or via the password-reset flow) after export.
+
 ---
 
 ## 3. Cross-references
@@ -190,7 +202,7 @@ The literal demo password value is intentionally **not reproduced here**; see th
 3. `GEMINI_API_KEY` for AI (leave `AI_INTEGRATIONS_GEMINI_*` unset) — else AI degrades gracefully (§1.4).
 4. `DEFAULT_OBJECT_STORAGE_BUCKET_ID` + `PUBLIC_OBJECT_SEARCH_PATHS` + `PRIVATE_OBJECT_DIR` + `GOOGLE_APPLICATION_CREDENTIALS` (signBlob) for uploads (§1.5).
 5. SMTP vars + `APP_BASE_URL` (web app URL) for real email + correct links (§1.3, §1.6).
-6. Ensure reverse proxy sets `X-Forwarded-*`; set `REPLIT_DOMAINS`/host as needed for public card-share URLs (§1.7); reconcile `trust proxy` hop count with your topology (§1.8).
+6. Ensure reverse proxy sets `X-Forwarded-*`; set `REPLIT_DOMAINS`/host as needed for public card-share URLs (§1.7); set `TRUST_PROXY` to your real trusted-hop count (§1.8) and `CORS_ORIGINS` if any browser client lives on another origin (§1.9).
 7. Web: `PORT` + `BASE_PATH` only for the dev server; `vite build` is env-free and served behind a proxy that forwards `/api` (§1.10).
 8. Mobile: edit `eas.json` `EXPO_PUBLIC_API_URL` (both profiles) and `app.json` owner/projectId/package before building under a different Expo account (§2.1, §2.2); optionally `EXPO_PUBLIC_EAS_PROJECT_ID` + server `EXPO_ACCESS_TOKEN` for push (§2.3).
 9. Rotate/remove seeded demo passwords before public launch (§2.4).

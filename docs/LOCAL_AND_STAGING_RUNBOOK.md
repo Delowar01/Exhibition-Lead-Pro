@@ -48,7 +48,16 @@ export PORT=5000            # API listen port (REQUIRED at runtime — see note 
 export NODE_ENV=development
 # Gemini (optional — AI features degrade gracefully when unset):
 # export GEMINI_API_KEY="..."          # direct Google Gemini API key
+
+# HTTP edge policy (optional — see .env.example §1b and PORTABLE_ENVIRONMENT_SETUP §1.8/§1.9):
+# export TRUST_PROXY=false            # local direct exposure (no reverse proxy in front)
+# export CORS_ORIGINS=                # local: leave unset — development allows every origin
 ```
+
+> **CORS / trust-proxy defaults:** unset `CORS_ORIGINS` means *open CORS in development* but *no cross-origin access in production* (same-origin web + native mobile need none). Unset `TRUST_PROXY` trusts exactly **1** reverse-proxy hop (the Replit topology).
+> - **Local (API hit directly, no proxy):** `TRUST_PROXY=false`; `CORS_ORIGINS` unset.
+> - **Staging (e.g. a browser client on another host calling `https://contact-aggregator--DelowarHossain1.replit.app`):** set `CORS_ORIGINS=https://your-staging-web-host` on the API; `TRUST_PROXY` unset (1 hop behind the Replit ingress).
+> - **Production:** leave `CORS_ORIGINS` unset for the standard same-origin setup, or list your web origins explicitly (`CORS_ORIGINS=https://app.example.com`); set `TRUST_PROXY` to your real hop count (e.g. `2` for CDN → LB → app).
 
 > **PORT note:** the API server's `config.resolvePort()` throws if `PORT` is unset when the HTTP listener starts. The `dev` script exports `NODE_ENV=development` for you but **not** `PORT` — export `PORT` yourself (default convention is `5000`).
 

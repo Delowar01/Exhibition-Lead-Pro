@@ -103,6 +103,13 @@ export const config = {
   http: {
     // Raised limit so base64 card images embedded in JSON bodies are accepted.
     bodyLimit: "15mb",
+    // CORS_ORIGINS: comma-separated exact origins, "*" for allow-all, unset for
+    // the environment default (dev: allow-all, production: no cross-origin).
+    // Parsed/resolved by lib/httpPolicy.ts (see that file for the full contract).
+    corsOrigins: process.env.CORS_ORIGINS,
+    // TRUST_PROXY: Express `trust proxy` value — hop count, boolean, or subnet
+    // list. Unset defaults to 1 (single trusted reverse proxy = Replit topology).
+    trustProxy: process.env.TRUST_PROXY,
   },
 
   ai: {

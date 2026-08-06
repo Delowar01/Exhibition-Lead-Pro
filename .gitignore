@@ -47,3 +47,8 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Export packages / archives — never commit build or export archives
+*.zip
+*.apk
+EXPORT_PACKAGE_INFO.md
