@@ -109,6 +109,16 @@ export const config = {
     // Active AI provider (Stage 5.0). Gemini is the sole active provider; the
     // abstraction layer (src/ai/) supports adding more without touching callers.
     provider: process.env.AI_PROVIDER ?? "gemini",
+    // Gemini credentials — either the Replit AI integration proxy pair
+    // (AI_INTEGRATIONS_GEMINI_API_KEY + AI_INTEGRATIONS_GEMINI_BASE_URL) or a
+    // direct Google Gemini API key (GEMINI_API_KEY, portable/self-hosted).
+    // The client itself lives in @workspace/integrations-gemini-ai; this only
+    // centralizes the "is it configured?" signal.
+    gemini: {
+      apiKey:
+        process.env.AI_INTEGRATIONS_GEMINI_API_KEY ?? process.env.GEMINI_API_KEY,
+      baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+    },
     model: "gemini-2.5-flash",
     extractionTimeoutMs: 30_000,
     scoringTimeoutMs: 20_000,

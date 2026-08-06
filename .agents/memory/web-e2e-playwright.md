@@ -10,3 +10,6 @@ description: How the web-app Playwright suite auths, seeds, and runs on this Nix
 - Filter-chip tests must assert kind-exclusive content + count parity, not "some event visible" (no-op-test trap flagged by review).
 
 **Toast assertions:** toast text matches TWICE (ToastTitle div + the aria-live `role="status"` announcer) → strict-mode violation that only surfaces in some runs. Always assert toast text with `getByText("...", { exact: true })` (the announcer concatenates "Notification " + title + description, so exact match hits only the title).
+
+## e2e workflow (added 2026-08-06)
+A persistent `e2e` workflow now runs the full suite (`pnpm --filter @workspace/web-app run test:e2e`). Use it instead of foreground/backgrounded shell runs — it survives >5min runs and avoids aborted-run fixture orphans. Collect results via RefreshAllLogs after it reaches FINISHED.

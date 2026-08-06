@@ -1,0 +1,711 @@
+Prepare the Lead Capture Pro project for a clean, portable export from Replit.
+
+This is a code-polish, portability, documentation, and export-readiness task.
+
+Do not add new features, begin Batch 9, build an APK, spend EAS credits, deploy, or change approved product scope.
+
+CURRENT VERIFIED BASELINE
+
+- Batch 8 is complete.
+- Physical-device testing passed on Honor Magic V5, Android 16.
+- Latest verified results:
+  - API: 705/705
+  - Playwright: 43/43
+  - Mobile: 107/107
+  - API, web, and mobile typechecks clean
+- Mobile scope removals must remain unchanged.
+- Gemini 2.5 Flash remains the only approved AI provider.
+- All AI calls must continue through the Enterprise AI Layer.
+
+PURPOSE
+
+Before exporting the project, ensure:
+
+1. The codebase is polished and clean.
+2. The exported project does not depend on Replit Secrets or Replit-only runtime behavior.
+3. No real secret exists in source code, documentation, generated files, or committed configuration.
+4. All required environment variables are documented.
+5. Every value that must be replaced after export is documented with exact file paths, line numbers, symbols, and replacement instructions.
+6. A complete technical brief explains what the application does, how it works, what has been completed, and where every important implementation is located.
+7. A developer can open the exported repository outside Replit and understand how to configure, run, test, and maintain it.
+
+Do not expose, print, copy, or document any real secret value.
+
+## 1. AUDIT BEFORE CHANGING
+
+Inspect the complete repository:
+
+- Root configuration
+- API server
+- Web application
+- Mobile application
+- Shared packages
+- Database schema and migrations
+- Generated API clients
+- Authentication and sessions
+- Tenant isolation and RBAC
+- Gemini and Enterprise AI Layer
+- OCR and image storage
+- SMTP/email
+- Notifications
+- Background jobs
+- Expo/EAS configuration
+- Replit workflows and deployment files
+- Test infrastructure
+- Documentation
+- Git-tracked generated files
+
+Identify all:
+
+- Replit-specific environment variables
+- Replit development URLs
+- Replit deployment URLs
+- Replit workspace paths
+- Replit-only headers or metadata
+- Replit-only storage or authentication helpers
+- Hardcoded localhost URLs
+- Hardcoded staging URLs
+- Hardcoded production URLs
+- Embedded credentials, tokens, passwords, keys, or connection strings
+- Dead code
+- Unused imports
+- Obsolete routes
+- Stale comments
+- Misleading documentation
+- Temporary testing code
+- Debug logging
+
+Report and fix only confirmed issues.
+
+## 2. REMOVE REPLIT SECRET DEPENDENCY
+
+The exported application must not depend on the Replit Secrets interface or any Replit-specific secret-reading mechanism.
+
+All configuration must work through standard environment variables.
+
+Audit references including:
+
+- `REPL_ID`
+- `REPL_SLUG`
+- `REPL_OWNER`
+- `REPLIT_*`
+- `REPLIT_DOMAINS`
+- `REPLIT_DEPLOYMENT`
+- `X_REPLIT_*`
+- Replit development-domain URLs
+- Replit deployment-domain URLs
+- Replit-only storage helpers
+- Replit-only authentication helpers
+- `.replit`
+- `replit.nix`
+- Replit workflow configuration
+
+For each dependency:
+
+- Mark it as required, optional, removable, or replaceable.
+- Replace runtime dependencies with standard environment variables where required.
+- The API, web app, and mobile app must not fail because Replit metadata variables are absent.
+- Replit configuration files may remain only for optional Replit development or hosting.
+- Replit configuration must not be required to run the exported repository elsewhere.
+
+Do not remove useful Replit hosting support when it can remain optional and isolated.
+
+## 3. PORTABLE ENVIRONMENT CONFIGURATION
+
+Create or update:
+
+`.env.example`
+
+Requirements:
+
+- Variable names only
+- Fake placeholder values only
+- No real secrets
+- Required versus optional clearly marked
+- Package using each variable identified
+- Local, staging, and production usage explained
+- Public frontend variables clearly separated from server-only secrets
+
+Document only variables actually used by the project.
+
+Cover where applicable:
+
+- Database connection
+- Authentication secrets
+- JWT/session configuration
+- Web application URL
+- API URL
+- Mobile API URL
+- CORS origins
+- Trusted proxy configuration
+- Gemini credential
+- Gemini model configuration
+- AI pricing configuration
+- AI limits and budgets
+- SMTP/email configuration
+- Private image storage/GCS
+- Notification configuration
+- Background-job configuration
+- Expo/EAS public configuration
+- Test configuration
+
+Validate required environment variables through the existing configuration system.
+
+Missing required variables must produce clear startup errors without printing their values.
+
+## 4. EXACT POST-EXPORT REPLACEMENT MAP
+
+Create:
+
+`docs/PORTABLE_ENVIRONMENT_SETUP.md`
+
+For every value that must be configured or replaced after export, provide:
+
+- Package/module
+- Exact file path
+- Current line number
+- Stable function, constant, component, schema, or configuration name
+- Current behavior
+- “Replace from”
+- “Replace to”
+- Environment-variable name
+- Safe example placeholder
+- Why the change is required
+- Whether it applies to local, staging, production, web, mobile, API, or all
+- Exact verification command or procedure
+
+Use both line numbers and stable symbol names because line numbers may move later.
+
+Include when present:
+
+- API base URL
+- Web base URL
+- Mobile API URL
+- Staging URL
+- Production URL
+- CORS origins
+- Invitation URL
+- Password-reset URL
+- Email callback links
+- Trusted proxy settings
+- Database URL
+- Authentication secrets
+- Gemini credentials
+- SMTP credentials
+- Storage credentials
+- Expo account/project identifiers
+- Android package identifier
+- EAS configuration
+- Country-header/CDN configuration
+- Background-job settings
+
+Example format:
+
+| File | Line | Symbol | Replace from | Replace to | Environment variable | Environment |
+|---|---:|---|---|---|---|---|
+
+Do not include actual secret values.
+
+## 5. SECRET AND CREDENTIAL AUDIT
+
+Audit:
+
+- Current tracked working tree
+- Git-tracked files
+- Generated files
+- Logs and reports
+- Test fixtures
+- Documentation
+- Git history where practical
+
+Search for:
+
+- Gemini/API keys
+- Database URLs
+- SMTP credentials
+- JWT/session secrets
+- Expo tokens
+- EAS tokens
+- Cloud-storage credentials
+- Private keys
+- Bearer tokens
+- Passwords
+- Real `.env` files
+- Credentials embedded in screenshots, logs, reports, or generated output
+
+Requirements:
+
+- Never display discovered secret values.
+- Report only:
+  - File location
+  - Secret type
+  - Whether it is current or historical
+  - Remediation status
+- Remove secrets from tracked files.
+- Add unsafe local files to `.gitignore`.
+- Replace committed examples with fake placeholders.
+- If a real secret was committed historically, mark it as requiring rotation.
+- Do not automatically rewrite Git history without approval.
+- Do not treat Replit Secrets storage as sufficient portability.
+
+Create:
+
+`docs/SECRET_AND_PORTABILITY_AUDIT.md`
+
+Include:
+
+- Checks performed
+- Findings
+- Files corrected
+- Secrets requiring rotation
+- Replit-specific dependencies removed
+- Replit-specific files intentionally retained
+- Remaining manual actions
+
+## 6. CODE POLISH
+
+Polish the existing code without broad redesign.
+
+Remove or correct:
+
+- Unused imports
+- Dead code
+- Unreachable routes
+- Obsolete mobile tabs
+- Duplicate helpers
+- Stale comments
+- Misleading TODOs
+- Debug logs
+- Temporary test code
+- Hardcoded development URLs
+- Inconsistent configuration access
+- Obvious formatting problems
+- Obvious type problems
+- Obsolete current-status statements
+
+Requirements:
+
+- Preserve all working functionality.
+- Preserve all approved scope removals.
+- Do not refactor stable systems only for style.
+- Do not introduce unnecessary abstractions.
+- Do not change database behavior unless a confirmed issue requires it.
+- Do not add packages unless essential.
+- Do not delete useful historical reports.
+- Keep authoritative current documentation accurate.
+
+## 7. COMPLETE PROJECT TECHNICAL BRIEF
+
+Create one authoritative document:
+
+`docs/PROJECT_TECHNICAL_BRIEF.md`
+
+The document must allow a new developer to understand the project without access to previous Replit conversations.
+
+Include:
+
+### A. Product overview
+
+- What Lead Capture Pro does
+- Target users
+- Multi-tenant SaaS model
+- Platform Owner responsibilities
+- Tenant-user responsibilities
+- Web application responsibilities
+- Mobile application responsibilities
+- Permanently removed scope
+
+### B. Current project status
+
+- Completed batches
+- Major completed modules
+- Latest test totals
+- Physical-device verification results
+- Current limitations
+- Next approved work area
+- Features that must not be reintroduced
+
+### C. Technology architecture
+
+- Monorepo structure
+- API stack
+- Web stack
+- Mobile stack
+- Database and ORM
+- Authentication
+- Session management
+- Storage
+- Email
+- AI provider
+- OCR
+- Background jobs
+- Testing tools
+- Current deployment environments
+
+### D. Package and folder map
+
+For every important package or folder, explain:
+
+- Exact path
+- Purpose
+- Main entry point
+- Important files
+- Main routes/services/components
+- Dependency relationship with other packages
+
+At minimum cover:
+
+- API server
+- Web app
+- Mobile app
+- Shared database/schema package
+- Generated API clients
+- AI layer
+- OCR/scans
+- Authentication
+- RBAC
+- Tenant isolation
+- Contacts
+- Leads
+- Companies
+- Timeline/activities
+- Documents
+- Notifications
+- Reports/exports
+- Tests
+- Scripts
+- Database migrations
+
+### E. Core runtime flows
+
+Document step by step:
+
+- Login
+- MFA login
+- Session refresh
+- Logout
+- Invitation
+- Password reset
+- Tenant resolution
+- Permission enforcement
+- Contact creation
+- Lead lifecycle
+- Business-card capture
+- Gemini OCR
+- Scan review
+- Contact save
+- AI Copilot
+- AI Assistant
+- AI usage metering
+- Budget admission
+- Rate limiting
+- Notifications
+- File/image access
+- Email delivery
+- Background jobs
+
+For each flow, include primary file paths, route names, services, repositories, and important functions.
+
+### F. Data model
+
+Explain:
+
+- Main tables
+- Tenant ownership fields
+- Important relationships
+- Soft-delete behavior
+- Users and roles
+- Sessions
+- Invitation/reset tokens
+- AI invocation ledger
+- AI usage reservations
+- Scans
+- Contacts
+- Leads
+- Activities/timeline
+- Documents
+- Notifications
+- Important indexes and constraints
+
+Reference actual schema file paths.
+
+### G. API map
+
+List major API route groups with:
+
+- Base route
+- Route file
+- Service
+- Repository
+- Required permission
+- Tenant-isolation behavior
+- Main web/mobile consumer
+
+Do not reproduce the full OpenAPI specification.
+
+### H. Web application map
+
+Document:
+
+- Main router
+- Authentication shell
+- Tenant admin shell
+- Platform Owner pages
+- Contact Workspace
+- AI pages
+- Reports
+- Notification Center
+- Generated hooks
+- Main layouts
+
+### I. Mobile application map
+
+Document:
+
+- Expo Router structure
+- Bottom navigation
+- More menu
+- Notification bell
+- Contact Workspace
+- Sticky contact actions
+- Capture modes
+- Camera crop logic
+- Scan review
+- Batch capture
+- Manual capture
+- QR
+- NFC
+- Notifications
+- MFA login
+- API/environment configuration
+- Permanently excluded mobile features
+
+### J. AI and OCR architecture
+
+Document:
+
+- Gemini 2.5 Flash-only rule
+- Enterprise AI Layer
+- Provider adapter
+- Prompt files
+- AI invocation metering
+- Pricing versioning
+- Budgets and reservations
+- Rate limiting
+- Duplicate protection
+- Caching rules
+- OCR validation
+- Image privacy
+- Live OCR verification script
+- Privacy restrictions
+
+### K. Testing and verification
+
+Document:
+
+- All test commands
+- Required server restart before integration tests
+- Current test totals
+- Playwright setup
+- Stub-provider behavior
+- Live Gemini verification procedure
+- Mobile unit-test limitations
+- Physical-device checklist
+- How normal tests avoid live Gemini calls
+
+### L. Local setup
+
+Provide exact commands for:
+
+- Required software versions
+- Installing dependencies
+- Creating environment files
+- Database setup
+- Applying migrations
+- Starting API
+- Starting web
+- Starting mobile
+- Running all tests
+- Running typechecks
+- Running production builds
+
+Use the real project package-manager commands.
+
+### M. Staging and production
+
+Explain:
+
+- Current hosting arrangement
+- Current staging arrangement
+- Current production arrangement
+- Required environment configuration
+- How local development connects to staging
+- Which configuration remains provider-specific
+- How to verify staging
+- How production deployment currently works
+- Which deployment tasks remain manual
+
+### N. Future-development guardrails
+
+Include:
+
+- Work one approved batch at a time
+- Do not add unnecessary features
+- No direct Gemini calls
+- No second AI system
+- No second email system
+- No second OCR system
+- No second draft system
+- No full mobile administration
+- No mobile AI Command Center
+- No mobile Workflow Intelligence
+- No mobile Executive Intelligence
+- No Contact AI on mobile
+- Keep NFC
+- Preserve tenant isolation
+- Never use production customer data in tests
+- Never auto-send AI-generated communication
+- Never claim provider or device verification unless actually performed
+
+## 8. PROJECT FILE MAP
+
+Create:
+
+`docs/PROJECT_FILE_MAP.md`
+
+Provide a searchable table containing:
+
+- Feature/module
+- Main file paths
+- API route
+- Service
+- Repository
+- Schema/table
+- Web page/component
+- Mobile screen/component
+- Main tests
+
+Use actual current paths and filenames.
+
+## 9. LOCAL AND STAGING RUNBOOK
+
+Create:
+
+`docs/LOCAL_AND_STAGING_RUNBOOK.md`
+
+Include exact instructions for:
+
+- First local startup
+- Environment setup
+- Database connection
+- Database migrations
+- Starting each package
+- Running all typechecks
+- Running the full API suite
+- Running Playwright
+- Running mobile tests
+- Running OCR live verification safely
+- Connecting mobile to staging
+- Common errors and fixes
+- Provider-specific steps that are optional
+- Steps still performed manually
+- Safe shutdown and restart procedures
+
+## 10. PORTABILITY VERIFICATION
+
+Test the application with Replit-specific metadata variables absent where safe.
+
+Confirm:
+
+- API starts without Replit metadata variables.
+- Web starts without Replit metadata variables.
+- Mobile configuration resolves from standard environment variables.
+- Tests do not require Replit Secrets.
+- Production code does not import a Replit-only secret mechanism.
+- No production code depends on a temporary Replit development URL.
+- Standard environment variables are sufficient.
+- Replit configuration remains optional.
+
+Required secrets may be supplied through:
+
+- Local `.env`
+- Shell environment
+- CI secret store
+- Hosting-provider secret store
+- Standard deployment environment variables
+
+## 11. VERIFICATION COMMANDS
+
+Run:
+
+- API typecheck
+- Web typecheck
+- Mobile typecheck
+- Mobile tests
+- Full API suite
+- Full Playwright suite
+- Secret scanning
+- Repository audit
+- Production builds that do not consume paid external credits
+
+Do not:
+
+- Build a new Expo APK
+- Run an EAS build
+- Spend EAS credits
+- Call live Gemini unnecessarily
+- Deploy
+- Modify production data
+- Begin Batch 9
+
+Report actual final totals.
+
+## 12. FINAL EXPORT STATE
+
+Before completion:
+
+- Ensure only intentional files are changed.
+- Provide the final branch name.
+- Provide the final commit hash.
+- Identify the exact commit the exported package should use.
+- List untracked files.
+- Explain whether each untracked file should be included or excluded.
+- Confirm generated clients match the OpenAPI specification.
+- Confirm database schema and migrations are synchronized.
+- Confirm no real secret is included.
+- Confirm no Replit Secret dependency remains.
+- Confirm no paid APK build was started.
+- Confirm no deployment was started.
+
+FINAL REPORT
+
+Return only:
+
+1. Code-polish work completed
+2. Replit-specific dependencies found
+3. Replit-specific dependencies removed
+4. Replit-specific files intentionally retained
+5. Required environment variables
+6. Secret audit result
+7. Secrets requiring rotation, without displaying values
+8. Exact files changed
+9. Documentation created
+10. Exact replacement-map location
+11. Portable startup result
+12. API typecheck result
+13. Web typecheck result
+14. Mobile typecheck result
+15. API test result
+16. Playwright result
+17. Mobile test result
+18. Build results performed
+19. Final branch name
+20. Final commit hash
+21. Exact export commit
+22. Known limitations
+23. Manual actions required after export
+24. Confirmation that no paid APK build was run
+25. Confirmation that no deployment was started
+26. Confirmation that Batch 9 was not started
+
+Do not begin any platform migration. Complete only the code-polish, portability, documentation, and export-readiness work.

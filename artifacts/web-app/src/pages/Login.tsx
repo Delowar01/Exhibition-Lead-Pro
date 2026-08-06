@@ -195,27 +195,31 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="space-y-4 pt-6 border-t border-border">
-              <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider text-center mb-4">Quick Demo Login</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => handleDemoLogin("admin")}
-                  type="button"
-                  className="text-xs"
-                >
-                  Company Admin
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleDemoLogin("platform")}
-                  type="button"
-                  className="text-xs"
-                >
-                  Platform Owner
-                </Button>
+            {/* Demo quick-login against seeded dev/staging accounts. Rendered in
+                development builds only — production bundles exclude it entirely. */}
+            {import.meta.env.DEV && (
+              <div className="space-y-4 pt-6 border-t border-border">
+                <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider text-center mb-4">Quick Demo Login</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleDemoLogin("admin")}
+                    type="button"
+                    className="text-xs"
+                  >
+                    Company Admin
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleDemoLogin("platform")}
+                    type="button"
+                    className="text-xs"
+                  >
+                    Platform Owner
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </>
         ) : (
           <>

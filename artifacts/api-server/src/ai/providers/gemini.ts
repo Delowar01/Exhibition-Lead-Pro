@@ -1,4 +1,4 @@
-import { ai } from "@workspace/integrations-gemini-ai";
+import { ai, isGeminiConfigured } from "@workspace/integrations-gemini-ai";
 import type { AiProvider, AiRequest, AiResult, AiUsage } from "../types.js";
 import { withTimeout } from "../runner.js";
 
@@ -28,9 +28,9 @@ export const geminiProvider: AiProvider = {
   name: "gemini",
 
   isConfigured(): boolean {
-    return Boolean(
-      process.env.AI_INTEGRATIONS_GEMINI_API_KEY && process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-    );
+    // Accepts either the Replit AI integration proxy pair or a direct
+    // GEMINI_API_KEY (portable). Resolution lives in the integrations package.
+    return isGeminiConfigured();
   },
 
   async generate(req: AiRequest): Promise<AiResult> {

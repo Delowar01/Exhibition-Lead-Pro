@@ -32,6 +32,19 @@ export function getEmailProvider(): EmailProvider {
       "Email provider is not configured — transactional emails (reset, verification, invitations) will be skipped. Set SMTP_HOST, SMTP_USER, and SMTP_PASS to enable delivery.",
     );
   }
+  // Misconfiguration guard: email IS configured but link building fell back to
+  // the localhost default (APP_BASE_URL and REPLIT_DOMAINS both unset in
+  // production) — reset/invite links in outgoing mail would point at localhost.
+  if (
+    provider.isConfigured() &&
+    config.isProduction &&
+    config.email.appBaseUrl.includes("localhost")
+  ) {
+    logger.warn(
+      { appBaseUrl: config.email.appBaseUrl },
+      "APP_BASE_URL is not set in production — links in outgoing emails (password reset, invitations, verification) will point at localhost. Set APP_BASE_URL to the public web application URL.",
+    );
+  }
   return provider;
 }
 

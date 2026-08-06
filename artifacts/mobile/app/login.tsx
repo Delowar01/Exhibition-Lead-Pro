@@ -49,8 +49,10 @@ export default function LoginScreen() {
   const mfaMutation = useMfaVerifyLogin();
   const { t, isRTL, textAlign } = useLocale();
 
-  const [email, setEmail] = useState("admin@techcorp.com");
-  const [password, setPassword] = useState("Admin123!");
+  // Dev builds prefill the seeded staging admin for fast iteration; release
+  // builds (__DEV__ === false) start with empty credentials.
+  const [email, setEmail] = useState(__DEV__ ? "admin@techcorp.com" : "");
+  const [password, setPassword] = useState(__DEV__ ? "Admin123!" : "");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
@@ -478,31 +480,37 @@ export default function LoginScreen() {
           )}
         </View>
 
-        <Text style={styles.demoLabel}>{t("login.demoAccess")}</Text>
-        <View style={[styles.demoRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-          {DEMO_ACCOUNTS.map((acc) => (
-            <Pressable
-              key={acc.email}
-              onPress={() => {
-                setEmail(acc.email);
-                setPassword("Admin123!");
-                handleLogin(acc.email, "Admin123!");
-              }}
-              disabled={loginMutation.isPending}
-              style={({ pressed }) => [
-                styles.demoChip,
-                {
-                  borderRadius: colors.radius,
-                  opacity: pressed ? 0.7 : 1,
-                  flexDirection: isRTL ? "row-reverse" : "row",
-                },
-              ]}
-            >
-              <Feather name="zap" size={14} color="#FFFFFF" />
-              <Text style={styles.demoChipText}>{acc.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        {/* Demo quick-login against seeded dev/staging accounts. Rendered in
+            development builds only — release builds exclude it entirely. */}
+        {__DEV__ && (
+          <>
+            <Text style={styles.demoLabel}>{t("login.demoAccess")}</Text>
+            <View style={[styles.demoRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
+              {DEMO_ACCOUNTS.map((acc) => (
+                <Pressable
+                  key={acc.email}
+                  onPress={() => {
+                    setEmail(acc.email);
+                    setPassword("Admin123!");
+                    handleLogin(acc.email, "Admin123!");
+                  }}
+                  disabled={loginMutation.isPending}
+                  style={({ pressed }) => [
+                    styles.demoChip,
+                    {
+                      borderRadius: colors.radius,
+                      opacity: pressed ? 0.7 : 1,
+                      flexDirection: isRTL ? "row-reverse" : "row",
+                    },
+                  ]}
+                >
+                  <Feather name="zap" size={14} color="#FFFFFF" />
+                  <Text style={styles.demoChipText}>{acc.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
       </KeyboardAwareScrollViewCompat>
     </View>
   );

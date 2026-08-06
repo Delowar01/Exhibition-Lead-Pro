@@ -65,3 +65,4 @@
 - [Capture crop & quality heuristics](capture-quality-crop-heuristics.md) — crop to guide frame via cover-math inversion; score quality on cropped card with top-tail gradient sharpness, never whole-frame bpp.
 - [Prod schema drift breaks mobile AI](prod-schema-drift-mobile-ai.md) — device-only 500s vs working dev = stale published schema (missing ai_* tables); fix is republish, never hand-migration.
 - [Arabic fixture rendering](arabic-fixture-rendering.md) — librsvg: text-anchor="end"+direction="rtl" pushes Arabic off-canvas (looks like an OCR bug); fonts via google/fonts raw TTFs into ~/.fonts + fc-cache; always VIEW rendered fixtures.
+- [Portability/export lessons](portability-export.md) — no import-time env throws (lazy client + isConfigured gate); composite lib/* need `tsc -b` after src edits or dependents fail typecheck; Gemini proxy needs httpOptions.apiVersion:"".
