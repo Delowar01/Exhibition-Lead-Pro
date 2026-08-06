@@ -1,0 +1,145 @@
+Create a safe ZIP backup of the current Lead Capture Pro project exactly as it exists now.
+
+This is a backup/export task only.
+
+Do not:
+
+- Modify application code
+- Refactor or polish files
+- Install or update packages
+- Run database migrations
+- Modify development or production data
+- Deploy anything
+- Build an APK
+- Run EAS Build
+- Commit or push changes
+- Begin any new development work
+
+## 1. Inspect the current project state
+
+Report:
+
+- Current Git branch
+- Current commit hash
+- Working-tree status
+- Modified files
+- Untracked files
+- Whether the repository contains uncommitted application changes
+
+Do not discard, reset, or modify any file.
+
+## 2. Create the ZIP package
+
+Create:
+
+`Lead-Capture-Pro-Current-Package.zip`
+
+Include the complete source package required to restore and continue development:
+
+- API server
+- Web application
+- Mobile application
+- Shared packages
+- Database schema
+- Database migrations
+- OpenAPI specification
+- Generated API clients required by the project
+- Tests
+- Scripts
+- Documentation
+- Package configuration
+- Lockfiles
+- Expo configuration
+- Replit configuration files
+- Gitignore files
+- Environment example files containing fake placeholders only
+- Intentional uncommitted source changes currently present in the working directory
+
+## 3. Exclude unsafe or unnecessary files
+
+Exclude:
+
+- `.git`
+- `node_modules`
+- Build output
+- Build caches
+- Test reports and screenshots
+- APK files
+- Temporary files
+- Log files
+- Uploaded business-card images
+- Customer files
+- Database dumps
+- Production data
+- `.env`
+- `.env.local`
+- Any environment file containing real values
+- API keys
+- Access tokens
+- Database credentials
+- SMTP credentials
+- Gemini credentials
+- Expo or EAS tokens
+- Cloud-storage credentials
+- Signing keys
+- Private keys
+- Replit Secret values
+
+Do not print or expose any detected secret value.
+
+## 4. Add backup information
+
+Add this file to the root of the ZIP:
+
+`CURRENT_PACKAGE_INFO.md`
+
+Include:
+
+- Backup creation date and time
+- Current branch
+- Current commit hash
+- Whether uncommitted changes are included
+- List of included uncommitted files
+- List of intentionally excluded file categories
+- Package-manager and runtime versions
+- Basic installation command
+- Basic startup commands
+- Test commands
+- Known environment files that must be created after extraction
+- Statement that secret values are not included
+
+Do not include real environment values.
+
+## 5. Verify package integrity
+
+After creating the ZIP:
+
+- Confirm the ZIP opens successfully.
+- Confirm major source directories are present.
+- Confirm package and lockfiles are present.
+- Confirm database schema and migrations are present.
+- Confirm the OpenAPI file and generated clients are present.
+- Confirm no `.env` file with real values is included.
+- Confirm no secret, credential, private key, customer file, or production data is included.
+- Generate a SHA-256 checksum for the ZIP.
+
+## Final response
+
+Return only:
+
+1. Current branch
+2. Current commit hash
+3. Working-tree status
+4. Whether uncommitted changes were included
+5. ZIP filename
+6. Exact ZIP file path
+7. Downloadable link or artifact attachment
+8. ZIP size
+9. SHA-256 checksum
+10. Main directories included
+11. Files and categories excluded
+12. Secret-scan result without displaying secret values
+13. Confirmation that the ZIP was opened and verified
+14. Confirmation that no project file, database, deployment, or Git history was modified
+
+Stop after providing the verified ZIP package.

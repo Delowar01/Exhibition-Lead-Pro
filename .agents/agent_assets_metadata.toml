@@ -216,3 +216,10 @@ uri = "file://lead-capture-pro-master-phase-1-9-roadmap-audit.md"
 type = "text"
 title = "Lead Capture Pro Master Phase 1–9 Roadmap Audit"
 description = "Complete audit report in Markdown format."
+
+[[outputs]]
+id = "Be3RGomed7NRXFwA3STti"
+uri = "file://Lead-Capture-Pro-Current-Package.zip"
+type = "unspecified"
+title = "Lead Capture Pro — Current Package Backup"
+description = "Full source backup (API, web, mobile, shared libs, schema, docs, configs) at commit 6f3ae65 — no secrets, no node_modules, no git history. SHA-256: dfaf0af23d3060ed5c1dbbcdf43f79c9bf12f5cd9a9e9e6d69567b14a27f71be"
