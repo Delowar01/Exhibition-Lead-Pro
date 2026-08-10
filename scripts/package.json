@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "dev-gateway": "tsx ./src/dev-gateway.ts",
     "seed-demo": "tsx ./src/seed-demo.ts",
     "backfill-organizations": "tsx ./src/backfill-organizations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
