@@ -63,11 +63,14 @@ PREV_GOOD=""
 log "checking out $SHA (previous known-good: ${PREV_GOOD:-none})"
 git -c advice.detachedHead=false checkout --quiet --detach "$SHA"
 
-# ── 3. Compose safety guard: only api + web may resolve ─────────────────────
+# ── 3. Compose safety guard: only api + postgres + web may resolve ──────────
+# postgres is the bundled development database (profile local-db, internal
+# network only, data in the named pgdata volume — never deleted by this
+# script). Redis and every other optional service must not resolve.
 cd docker
 services="$(compose config --services | sort | tr '\n' ' ' | sed 's/ $//')"
-[ "$services" = "api web" ] \
-  || fail "compose would start unexpected services: '$services' (check COMPOSE_PROFILES= in $ENV_FILE)"
+[ "$services" = "api postgres web" ] \
+  || fail "compose would start unexpected services: '$services' (expected 'api postgres web' — check COMPOSE_PROFILES=local-db in $ENV_FILE)"
 
 # ── 4. Build + start (api and web only, never postgres/redis) ───────────────
 # Sequential builds: the VPS has 2 vCPUs and hosts another live website, so
@@ -77,7 +80,13 @@ log "building api image for $SHA"
 compose build api
 log "building web image for $SHA"
 compose build web
-log "starting containers"
+# Explicit safe startup order: bring postgres up FIRST and block until its
+# healthcheck passes (--wait exits non-zero on failure, aborting the deploy).
+# An already-running healthy postgres is a no-op — app deployments never
+# rebuild/recreate the postgres container and never touch the pgdata volume.
+log "ensuring postgres is up and healthy"
+compose up -d --wait --wait-timeout 120 postgres
+log "starting api + web"
 compose up -d --no-deps api web
 
 # ── 5. Health checks through the loopback gateway ───────────────────────────
@@ -117,7 +126,12 @@ if [ -n "$PREV_GOOD" ] && [ "$PREV_GOOD" != "$SHA" ] && [ "${NO_AUTO_ROLLBACK:-0
   cd "$APP_DIR"
   git -c advice.detachedHead=false checkout --quiet --detach "$PREV_GOOD"
   cd docker
-  compose build api web >&2
+  # Rollback rebuilds/restarts ONLY the application (api/web) at the previous
+  # SHA. The same postgres container and pgdata volume are kept — database
+  # contents are never reset, restored, or rolled back automatically.
+  compose build api >&2
+  compose build web >&2
+  compose up -d --wait --wait-timeout 120 postgres >&2
   compose up -d --no-deps api web >&2
   if wait_healthy; then
     echo "[deploy] rollback to $PREV_GOOD is healthy — deployment of $SHA still FAILED" >&2

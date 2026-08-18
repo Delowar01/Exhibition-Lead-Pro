@@ -18,14 +18,17 @@ Browser ── https://dev.kaptnow.com
         api container :8080            ← internal to the Docker network,
               │                          never published on the host
               ▼
-        Neon PostgreSQL (external, development branch)
+        postgres container :5432       ← bundled PostgreSQL 16 (profile
+                                         local-db), internal Docker network
+                                         only, data in the named pgdata volume
 ```
 
 - Compose files: `docker/docker-compose.yml` + `docker/compose.vps.yml`
   (override pins `web` to `127.0.0.1:18080:80` and removes the `api` port).
 - Bundled PostgreSQL, Redis and the `migrate` one-shot stay behind compose
-  profiles; the VPS env keeps `COMPOSE_PROFILES=` **empty**, and the deploy
-  script refuses to run if anything beyond `api web` would start.
+  profiles; the VPS env sets `COMPOSE_PROFILES=local-db` (bundled dev
+  PostgreSQL on, Redis and everything else off), and the deploy script
+  refuses to run if anything beyond `api postgres web` would start.
 - VPS paths: app checkout `/opt/lead-capture-pro/app` (branch `develop`,
   deploy user `leadpro`), runtime env `/opt/lead-capture-pro/env/.env`.
 
@@ -70,8 +73,10 @@ secrets are **never** stored in GitHub.
 - Symlink (so the existing compose reads it unchanged):
   `ln -s /opt/lead-capture-pro/env/.env /opt/lead-capture-pro/app/docker/.env`
 - Template with every supported variable: `docker/.env.vps.example`
-  (placeholders only). Key values: `COMPOSE_PROFILES=` (empty),
-  `DATABASE_URL` (Neon dev, `sslmode=require`), `SESSION_SECRET`,
+  (placeholders only). Key values: `COMPOSE_PROFILES=local-db`,
+  `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` (strong generated
+  password), `DATABASE_URL=postgresql://…@postgres:5432/…` (internal compose
+  network, credentials matching `POSTGRES_*`), `SESSION_SECRET`,
   `APP_BASE_URL=https://dev.kaptnow.com` (the primary base-URL source in
   `config.ts` — email/reset/invite links), `TRUST_PROXY=2` (CloudPanel nginx +
   stack nginx), CORS unset (same-origin production default). **No `REPLIT_*`
@@ -126,8 +131,13 @@ that evidence (e.g. an unexpected extra internal proxy ⇒ 3), then re-verify.
 `bash docker/scripts/deploy-vps.sh <git-sha> [branch=develop]` — fail-fast
 (`set -euo pipefail`), and in order: precondition checks (env file, perms,
 untracked), fetch + verify the SHA is on `origin/<branch>`, refuse a dirty
-tree, detach-checkout the exact SHA, **compose service guard** (only `api web`
-may resolve), `compose build api web`, `compose up -d --no-deps api web`,
+tree, detach-checkout the exact SHA, **compose service guard** (exactly
+`api postgres web` may resolve — anything else aborts), sequential
+`compose build api` / `compose build web`, then the explicit safe startup
+order: `compose up -d --wait --wait-timeout 120 postgres` (blocks until the
+postgres healthcheck passes; a failure aborts the deploy; an already-healthy
+postgres is a no-op — app deploys never rebuild/recreate it), then
+`compose up -d --no-deps api web`,
 then health checks through the loopback gateway with retries:
 
 - `http://127.0.0.1:18080/healthz` — web nginx alive
@@ -156,20 +166,83 @@ is one command:
 bash docker/scripts/deploy-vps.sh "$(cat /opt/lead-capture-pro/env/previous-deploy.sha)" develop
 ```
 
-## 7. Neon development database
+## 7. Bundled PostgreSQL development database
 
-- Create a **dedicated development** Neon project/branch (never production
-  data, never CloudPanel's MySQL). Use the pooled connection string with
-  `sslmode=require` as `DATABASE_URL`.
-- Before the first schema push: prove the URL is the dev database (host and
-  database name only — never print credentials), then get explicit approval.
-- Schema sync uses the project's existing command, via the existing one-shot
-  compose profile on the VPS:
-  `docker compose -f docker-compose.yml -f compose.vps.yml --profile migrate run --rm migrate`
-  (equivalent of `pnpm --filter @workspace/db run push`). Not run during
-  infrastructure preparation.
-- The API/e2e suites additionally expect the four verification tenants of
-  `docs/LOCALHOST_DEVELOPMENT.md` §4 if suites are ever pointed at this DB.
+The repo's existing `postgres:16-alpine` compose service (profile `local-db`)
+**is** the development database — no external provider, no CloudPanel MySQL,
+no PostgreSQL installed directly on Ubuntu, no second database architecture.
+
+- **Network:** internal Docker network only. `compose.vps.yml` removes the
+  base file's host port publication, so there is no `0.0.0.0:5432` and no
+  host-side 5432 at all; the API connects as `postgres:5432`.
+- **Persistence:** data lives in the existing named volume (`pgdata`,
+  project-scoped as `card-scanner-pro_pgdata`) and survives container
+  restarts, image rebuilds, normal deployments and compose updates. The
+  deploy script never runs `down -v`, never prunes, never touches volumes.
+- **Credentials:** `POSTGRES_USER` / `POSTGRES_PASSWORD` (strong, generated)
+  / `POSTGRES_DB` in the VPS env file only, mirrored exactly in
+  `DATABASE_URL` — development data only, never production/customer data.
+  **Initialization-only behavior:** the official PostgreSQL image applies
+  these three values only when the database volume is **first created**.
+  Changing them later does **not** modify an already-initialized database
+  (the API would simply fail to authenticate). Treat them as stable
+  deployment credentials unless a deliberate credential-rotation procedure
+  (`ALTER ROLE … PASSWORD` inside the container, then update the env file)
+  is performed.
+
+### First database initialization (explicit approval required)
+
+Before the **first** schema synchronization, on the VPS:
+
+1. Confirm the target: `docker compose -f docker-compose.yml -f compose.vps.yml exec -T postgres sh -c 'echo "$POSTGRES_DB"'`
+   must print the new development database name.
+2. Confirm it is empty / brand-new (no production or customer data):
+   `… exec -T postgres sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB" -tAc "select count(*) from pg_tables where schemaname='"'"'public'"'"'"'` → `0`.
+3. Get explicit owner approval, then run the project's existing one-shot:
+   `docker compose -f docker-compose.yml -f compose.vps.yml --profile migrate run --rm migrate`
+   (the containerized `pnpm --filter @workspace/db run push`).
+4. Seed as desired (`seed-demo`; the API/e2e suites additionally expect the
+   four verification tenants of `docs/LOCALHOST_DEVELOPMENT.md` §4 if suites
+   are ever pointed at this DB).
+
+Not run during infrastructure preparation.
+
+### Backups (`docker/scripts/backup-postgres.sh`)
+
+`bash docker/scripts/backup-postgres.sh` (as `leadpro`) dumps the database
+with `pg_dump` **inside** the postgres container (local socket as
+`POSTGRES_USER` — the password is never read or printed), gzips it to
+`/opt/lead-capture-pro/backups/postgres/leadcapture-<timestamp>.sql.gz`
+(directory `700`, files `600`, outside the database volume), sanity-checks
+the size, keeps the newest 7 and fails loudly otherwise. Suggested daily
+cron (install manually, not automated here):
+
+```
+15 3 * * * bash /opt/lead-capture-pro/app/docker/scripts/backup-postgres.sh >> /opt/lead-capture-pro/backups/postgres/backup.log 2>&1
+```
+
+> **Off-host copies are required for real protection.** A backup stored only
+> on this VPS does not survive total VPS loss — periodically copy
+> `/opt/lead-capture-pro/backups/postgres/` off the machine (any existing
+> mechanism; no new cloud provider is added by this task).
+
+### Restore procedure (documented — never run casually)
+
+```bash
+cd /opt/lead-capture-pro/app/docker
+# stop the API so nothing writes during restore (web can stay up; postgres stays up)
+docker compose -f docker-compose.yml -f compose.vps.yml stop api
+# restore INTO the existing database from a chosen backup
+gunzip -c /opt/lead-capture-pro/backups/postgres/leadcapture-<timestamp>.sql.gz \
+  | docker compose -f docker-compose.yml -f compose.vps.yml exec -T postgres \
+      sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose -f docker-compose.yml -f compose.vps.yml start api
+curl -fsS http://127.0.0.1:18080/api/readyz   # verify
+```
+
+For a clean-slate restore (drop + recreate the database first), do it
+deliberately inside the container with `dropdb`/`createdb` as
+`POSTGRES_USER` before piping the dump — never by deleting the volume.
 
 ## 8. GCS development bucket (closes the 27 storage-gated tests)
 
@@ -227,7 +300,9 @@ Add exactly one record — do not touch `@`, `www`, or any other record:
 ## 11. Existing-website safety rules (permanent)
 
 - This stack publishes **only** `127.0.0.1:18080`. Never bind 80/443/8443,
-  never use 18000, never `0.0.0.0:18080`.
+  never use 18000, never `0.0.0.0:18080`. The api and postgres services are
+  never published on the host at all (internal Docker network only — no
+  host-side 5432).
 - Never modify CloudPanel global config, the existing site's vhost, MySQL,
   the VPS Redis, or `elite-marcom.service`; never stop nginx; never restart
   CloudPanel without explicit approval.
@@ -242,8 +317,9 @@ Add exactly one record — do not touch `@`, `www`, or any other record:
 2. On the VPS as `leadpro`: create `/opt/lead-capture-pro/env/.env` from
    `docker/.env.vps.example` (real values, `chmod 600`) + the `docker/.env`
    symlink.
-3. Create the Neon development database; set `DATABASE_URL`; approve and run
-   the first schema sync (§7); bootstrap demo/verification data as desired.
+3. First deploy brings up the bundled postgres service; verify it is the
+   fresh empty development database, get approval, and run the first schema
+   sync + seeding (§7). Set up the backup cron (§7) when ready.
 4. Add the DNS record (§10); create the CloudPanel reverse-proxy site + SSL
    (§9).
 5. Push to `develop` (or run the workflow manually) and watch the Actions

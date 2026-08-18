@@ -10,10 +10,13 @@
 #            network and is reached exclusively through the web container's
 #            /api proxy (API_UPSTREAM=http://api:8080).
 #
-# The bundled postgres / redis / migrate services are governed by compose
-# profiles exactly as in docker-compose.yml — the VPS env file keeps
-# COMPOSE_PROFILES empty, so only api + web ever start. The database is an
-# external Neon PostgreSQL supplied via DATABASE_URL.
+#   - postgres → the repo's bundled postgres:16-alpine IS the development
+#            database (COMPOSE_PROFILES=local-db in the VPS env file), but its
+#            host port publication is removed: it is reachable ONLY on the
+#            internal Docker network as postgres:5432. Data persists in the
+#            existing named volume (pgdata) across restarts/rebuilds/deploys.
+#
+# Redis and every other optional service stay disabled (profiles).
 #
 # Usage (from /opt/lead-capture-pro/app/docker — see scripts/deploy-vps.sh):
 #   docker compose -f docker-compose.yml -f compose.vps.yml up -d --build api web
@@ -33,3 +36,7 @@ services:
   web:
     ports: !override
       - "127.0.0.1:18080:80"
+
+  postgres:
+    # Internal-only: no host binding at all (base file publishes 5432).
+    ports: !override []
