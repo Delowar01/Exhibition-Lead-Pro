@@ -4,6 +4,17 @@
 # (envsubst). All other $-variables below are nginx runtime variables and are
 # preserved because NGINX_ENVSUBST_FILTER only allows API_UPSTREAM.
 
+# Client-facing protocol across chained proxies: when an edge proxy (e.g. the
+# VPS CloudPanel nginx terminating TLS) already supplies X-Forwarded-Proto,
+# pass it through unchanged; otherwise (direct self-hosting, this container is
+# the first hop) fall back to this server's own $scheme. Header trust is
+# enforced where it belongs — the API only honors forwarded headers from the
+# hops allowed by TRUST_PROXY — so an untrusted value never reaches app logic.
+map $http_x_forwarded_proto $client_proto {
+    ""      $scheme;
+    default $http_x_forwarded_proto;
+}
+
 server {
     listen 80;
     server_name _;
@@ -26,7 +37,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $client_proto;
         proxy_read_timeout 60s;
         # Card images are sent as base64 JSON bodies (API accepts up to 15mb).
         client_max_body_size 20m;

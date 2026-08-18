@@ -114,8 +114,14 @@ Center / Workflow Intelligence / Executive Intelligence.
 
 ## Localhost workflow (details: docs/LOCALHOST_DEVELOPMENT.md)
 
-Development happens on localhost (not Replit/Vercel/Railway), against an
-isolated dev Postgres — never production. The web app and API must share one
+Development happens on localhost (not Replit), against an isolated dev
+Postgres — never production. A hosted **development environment** exists at
+`https://dev.kaptnow.com`: pushes to `develop` auto-deploy the Docker stack
+to the Hostinger VPS via GitHub Actions (`.github/workflows/deploy-dev-vps.yml`
+→ `docker/scripts/deploy-vps.sh`, web bound to `127.0.0.1:18080` behind
+CloudPanel — see docs/HOSTINGER_VPS_DEPLOYMENT.md). Only `develop` deploys;
+never deploy `export-ready`/`main`/feature branches, and never store app
+runtime secrets in GitHub. The web app and API must share one
 origin: run the dev gateway on **:80** (`/api/*` → API on **:8080**, everything
 else → web dev server on **:3000**); the test suites hard-code
 `http://localhost:80`.

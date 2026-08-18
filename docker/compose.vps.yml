@@ -1,0 +1,35 @@
+# Hostinger VPS override — dev.kaptnow.com development deployment.
+#
+# Layered on top of the existing self-hosting stack; it changes ONLY how ports
+# are published on the shared VPS (which also hosts an unrelated CloudPanel
+# website on 80/443/8443):
+#
+#   - web  → published on loopback only (127.0.0.1:18080). CloudPanel's nginx
+#            reverse-proxies https://dev.kaptnow.com → http://127.0.0.1:18080.
+#   - api  → NOT published on the host at all; it stays internal to the compose
+#            network and is reached exclusively through the web container's
+#            /api proxy (API_UPSTREAM=http://api:8080).
+#
+# The bundled postgres / redis / migrate services are governed by compose
+# profiles exactly as in docker-compose.yml — the VPS env file keeps
+# COMPOSE_PROFILES empty, so only api + web ever start. The database is an
+# external Neon PostgreSQL supplied via DATABASE_URL.
+#
+# Usage (from /opt/lead-capture-pro/app/docker — see scripts/deploy-vps.sh):
+#   docker compose -f docker-compose.yml -f compose.vps.yml up -d --build api web
+#
+# The `!override` tag (Compose >= 2.24) REPLACES the base list instead of
+# merging, which is the only way an override file can remove a port binding.
+
+services:
+  api:
+    ports: !override []
+    # To enable Google Cloud Storage later (needed for private card images and
+    # the 27 storage-gated API tests), mount the service-account key read-only
+    # and set GOOGLE_APPLICATION_CREDENTIALS in the VPS env file to match:
+    # volumes:
+    #   - /opt/lead-capture-pro/env/gcs-service-account.json:/secrets/gcs-service-account.json:ro
+
+  web:
+    ports: !override
+      - "127.0.0.1:18080:80"

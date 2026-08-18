@@ -52,3 +52,7 @@ Thumbs.db
 *.zip
 *.apk
 EXPORT_PACKAGE_INFO.md
+
+# Runtime environment files (secrets) — never commit. Matches .env at any
+# depth (docker/.env, etc.); .env.example / .env.vps.example stay tracked.
+.env

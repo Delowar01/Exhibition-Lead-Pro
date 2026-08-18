@@ -1,0 +1,111 @@
+# =============================================================================
+# Deploy the development environment (dev.kaptnow.com) to the Hostinger VPS.
+# =============================================================================
+# Trigger:  push to `develop`, or manual workflow_dispatch.
+# Guard:    the deploy job only ever runs for the `develop` ref — feature
+#           branches, export-ready and main are never deployed automatically.
+#
+# Verification gates run first (typechecks, mobile unit suite, production
+# builds). The API integration suite and the Playwright e2e suite are
+# DELIBERATELY not run here: they are integration tests against a live,
+# seeded stack (Postgres + the running API at localhost:80 + Chromium + GCS
+# for the storage subset) which this hosted runner does not provide. They
+# remain the pre-merge gate on a developer machine — see
+# docs/HOSTINGER_VPS_DEPLOYMENT.md. Do not fake them here.
+#
+# Secrets used (already configured in the repository):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+# Application runtime secrets (DATABASE_URL, SESSION_SECRET, …) live ONLY in
+# the VPS env file (/opt/lead-capture-pro/env/.env) — never in GitHub.
+
+name: deploy-dev-vps
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Typecheck, unit tests, builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version pinned by package.json "packageManager"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build lib declarations
+        run: pnpm run typecheck:libs
+
+      - name: API typecheck
+        run: pnpm --filter @workspace/api-server run typecheck
+
+      - name: Web typecheck
+        run: pnpm --filter @workspace/web-app run typecheck
+
+      - name: Mobile typecheck
+        run: pnpm --filter @workspace/mobile run typecheck
+
+      - name: Mobile unit tests (107 expected)
+        run: pnpm --filter @workspace/mobile run test
+
+      - name: API production build
+        run: pnpm --filter @workspace/api-server run build
+
+      - name: Web production build
+        run: pnpm --filter @workspace/web-app run build
+
+  deploy:
+    name: Deploy to VPS (127.0.0.1:18080)
+    needs: verify
+    # Never auto-deploy anything except the develop ref.
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy exact commit over SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          # Host-key verification is mandatory: the pinned key from
+          # VPS_KNOWN_HOSTS is the only accepted identity. Never use
+          # StrictHostKeyChecking=no here.
+          ssh -i ~/.ssh/deploy_key \
+              -p "$VPS_PORT" \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o IdentitiesOnly=yes \
+              "$VPS_USER@$VPS_HOST" \
+              "set -euo pipefail; \
+               cd '$VPS_DEPLOY_PATH'; \
+               git fetch --quiet origin develop; \
+               git -c advice.detachedHead=false checkout --quiet --detach '$GITHUB_SHA'; \
+               DEPLOY_PATH='$VPS_DEPLOY_PATH' bash docker/scripts/deploy-vps.sh '$GITHUB_SHA' develop"
