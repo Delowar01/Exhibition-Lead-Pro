@@ -27,11 +27,13 @@
 services:
   api:
     ports: !override []
-    # To enable Google Cloud Storage later (needed for private card images and
-    # the 27 storage-gated API tests), mount the service-account key read-only
-    # and set GOOGLE_APPLICATION_CREDENTIALS in the VPS env file to match:
-    # volumes:
-    #   - /opt/lead-capture-pro/env/gcs-service-account.json:/secrets/gcs-service-account.json:ro
+    # Google Cloud Storage (private card images / documents / export
+    # artifacts): the development service-account key lives ONLY on the VPS,
+    # outside Git, and is mounted read-only into the api container alone.
+    # GOOGLE_APPLICATION_CREDENTIALS in the VPS env file points at the
+    # container path; OBJECT_STORAGE_AUTH=google selects standard Google auth.
+    volumes:
+      - /opt/lead-capture-pro/env/gcs-service-account.json:/secrets/gcs-service-account.json:ro
 
   web:
     ports: !override

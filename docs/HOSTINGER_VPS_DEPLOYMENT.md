@@ -246,32 +246,34 @@ deliberately inside the container with `dropdb`/`createdb` as
 
 ## 8. GCS development bucket (closes the 27 storage-gated tests)
 
-Configure later, with a **dedicated development bucket** (no production
-bucket, no public bucket, no second storage implementation). Least privilege
-for the chosen credential method:
+The VPS uses **standard Google service-account JSON auth** against a
+**dedicated, private development bucket** (no production bucket, no public
+bucket, no second storage implementation):
 
-1. Create the bucket + a dedicated development service account. Grant
-   **only** `roles/storage.objectAdmin` **scoped to that one bucket** — the
-   application creates, reads, overwrites and deletes objects (card images,
-   documents/versions, export artifacts), so full object CRUD on the bucket
-   is the actual requirement. No project-wide roles, no bucket-admin role.
-2. Credential method here is a **service-account JSON key mounted read-only**
-   (`GOOGLE_APPLICATION_CREDENTIALS`). With a local private key, the storage
-   SDK signs V4 signed URLs **locally** — `iam.serviceAccounts.signBlob` /
-   `roles/iam.serviceAccountTokenCreator` is **not required** and must not be
-   granted for this path. That role is needed only by keyless setups (ADC via
-   metadata server or impersonation, e.g. the Replit sidecar path), which
-   this deployment does not use. Never grant permissions the chosen
-   implementation does not exercise.
-3. Put the JSON key at `/opt/lead-capture-pro/env/gcs-service-account.json`
-   (`chmod 600`), uncomment the read-only volume mount in
-   `docker/compose.vps.yml`, and set in the VPS env file:
-   `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, `PUBLIC_OBJECT_SEARCH_PATHS`
-   (`/<bucket>/public`), `PRIVATE_OBJECT_DIR` (`/<bucket>/.private`),
-   `GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcs-service-account.json`.
-4. `readyz` then reports storage `ok`; the API baseline target returns to a
-   literal **728/728** (storage failures are fixed by configuration, never by
-   skipping tests).
+- **Credential:** a development service-account JSON key stored **outside
+  Git** on the VPS only, at `/opt/lead-capture-pro/env/gcs-service-account.json`
+  (`leadpro`-owned, `chmod 600`), mounted **read-only into the api container
+  only** (`compose.vps.yml` → `/secrets/gcs-service-account.json:ro`; never
+  mounted into web or postgres).
+- **Auth mode:** `OBJECT_STORAGE_AUTH=google` +
+  `GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcs-service-account.json` in the
+  VPS env file, plus `DEFAULT_OBJECT_STORAGE_BUCKET_ID`,
+  `PUBLIC_OBJECT_SEARCH_PATHS` (`/<bucket>/public`) and `PRIVATE_OBJECT_DIR`
+  (`/<bucket>/.private`) — see `docker/.env.vps.example` for the exact
+  contract (generic placeholders; the real bucket name lives only in the
+  VPS-only env file).
+- **IAM (least privilege):** grant **only** `roles/storage.objectAdmin`
+  **scoped to the development bucket** — the application creates, reads,
+  overwrites and deletes objects (card images, document versions, export
+  artifacts), so per-bucket object CRUD is the entire requirement. No
+  project-wide roles, no bucket-admin role. With a local private-key JSON
+  credential the storage SDK signs V4 URLs **locally**, so
+  `iam.serviceAccounts.signBlob` / `roles/iam.serviceAccountTokenCreator`
+  is **not required and must not be granted** (those exist only for keyless
+  ADC/impersonation setups, which this deployment does not use).
+- **Result:** `readyz` reports storage `ok`; the API baseline target returns
+  to a literal **728/728** (storage failures are fixed by configuration,
+  never by skipping tests).
 
 ## 9. CloudPanel reverse proxy (manual, after approval)
 
