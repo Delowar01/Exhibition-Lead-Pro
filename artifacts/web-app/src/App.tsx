@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
 import { useEffect, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -91,24 +91,24 @@ function RouteFallback() {
   );
 }
 
+// Authorization is decided AT RENDER TIME: a wrong-role or unauthenticated
+// request returns <Redirect> immediately, so the protected Layout/Component
+// is never mounted — not even for one frame. (The previous useEffect-based
+// redirect ran only after the wrong page had already rendered.)
 function ProtectedRoute({ component: Component, role, layout: Layout }: any) {
   const { user, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
 
-  useEffect(() => {
-    if (!isLoading) {
-      if (!user) {
-        setLocation("/login");
-      } else if (role === "platform" && user.role !== "platform_owner") {
-        setLocation("/admin");
-      } else if (role === "admin" && user.role === "platform_owner") {
-        setLocation("/platform");
-      }
-    }
-  }, [user, isLoading, setLocation, role]);
-
-  if (isLoading || !user) {
+  if (isLoading) {
     return <div className="flex h-screen w-screen items-center justify-center">Loading...</div>;
+  }
+  if (!user) {
+    return <Redirect to="/login" replace />;
+  }
+  if (role === "platform" && user.role !== "platform_owner") {
+    return <Redirect to="/admin" replace />;
+  }
+  if (role === "admin" && user.role === "platform_owner") {
+    return <Redirect to="/platform" replace />;
   }
 
   return (
