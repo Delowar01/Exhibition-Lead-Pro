@@ -1,5 +1,10 @@
 import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
-import { resolvePortalHost, CUSTOMER_PORTAL_URL, PLATFORM_PORTAL_URL } from "@/lib/portal-host";
+import {
+  resolvePortalHost,
+  retiredHostRedirectUrl,
+  CUSTOMER_PORTAL_URL,
+  PLATFORM_PORTAL_URL,
+} from "@/lib/portal-host";
 import { useEffect, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -361,6 +366,15 @@ function Router() {
 }
 
 function App() {
+  // dev.kaptnow.com is retired from interactive use: every browser request
+  // leaves immediately for the same path on the real portal, before any
+  // provider, router, or layout mounts — so no portal UI ever renders there.
+  // Health endpoints (/healthz, /api/healthz, /api/readyz) are unaffected:
+  // they are served by nginx/the API, not by this SPA.
+  if (resolvePortalHost() === "retired") {
+    return <ExternalRedirect href={retiredHostRedirectUrl()} />;
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

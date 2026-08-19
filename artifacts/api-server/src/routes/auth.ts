@@ -73,8 +73,10 @@ type UserRow = Parameters<typeof auth.buildUserResponse>[0];
 async function completeLogin(req: AuthRequest, res: Response, user: UserRow, rememberMe: boolean, status = 200) {
   // Split-portal hosts: refuse a role/host mismatch BEFORE any session is
   // created, so no authenticated session ever exists on the wrong subdomain.
-  // Mixed hosts (dev.kaptnow.com, localhost, tests) accept every role. This
-  // is UX separation only — requireRole/requireTenantUser stay authoritative.
+  // The retired dev host refuses every login; mixed hosts (localhost, tests)
+  // accept every role. Reached by both the password and the MFA-completed
+  // branches. This is UX separation only — requireRole/requireTenantUser
+  // stay authoritative.
   const refusal = portalLoginRefusal(
     resolvePortalHost(req.hostname),
     normalizeRole(user.role) === "platform_owner",

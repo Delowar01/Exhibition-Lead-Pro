@@ -10,7 +10,10 @@ import type { Page } from "@playwright/test";
  *
  *   admin.kaptnow.com — customer portal only; /platform never renders
  *   elite.kaptnow.com — Platform Owner portal only; /admin never renders
- *   dev.kaptnow.com   — mixed staging behavior (both roles)
+ *   localhost         — mixed development behavior (both roles)
+ *
+ * dev.kaptnow.com is retired from interactive use — its redirect-only
+ * behavior is covered in p-dev-retired.spec.ts.
  */
 
 const RESOLVER =
@@ -26,7 +29,7 @@ test.use({
 
 const ADMIN_HOST = "http://admin.kaptnow.com";
 const ELITE_HOST = "http://elite.kaptnow.com";
-const DEV_HOST = "http://dev.kaptnow.com";
+const LOCAL_HOST = "http://localhost";
 
 const CUSTOMER = { email: "admin@techcorp.com", password: "Admin123!" };
 const OWNER = { email: "admin@cardscannerpro.com", password: "Admin123!" };
@@ -102,7 +105,8 @@ test("admin host: /platform never renders and exits to elite.kaptnow.com", async
 
 test("admin host: Platform Owner login is refused and persists nothing", async ({ page }) => {
   await uiLogin(page, ADMIN_HOST, OWNER);
-  await expect(page.getByText(/Platform Owner access is available at elite\.kaptnow\.com/)).toBeVisible();
+  // .first(): the toast text is duplicated into an aria-live status region.
+  await expect(page.getByText(/Platform Owner access is available at elite\.kaptnow\.com/).first()).toBeVisible();
   expect(page.url()).toContain("/login");
   const auth = await storedAuth(page);
   expect(auth.token).toBeNull();
@@ -141,21 +145,22 @@ test("elite host: /admin never renders and exits to admin.kaptnow.com", async ({
 
 test("elite host: customer login is refused and persists nothing", async ({ page }) => {
   await uiLogin(page, ELITE_HOST, CUSTOMER);
-  await expect(page.getByText(/Customer access is available at admin\.kaptnow\.com/)).toBeVisible();
+  // .first(): the toast text is duplicated into an aria-live status region.
+  await expect(page.getByText(/Customer access is available at admin\.kaptnow\.com/).first()).toBeVisible();
   expect(page.url()).toContain("/login");
   const auth = await storedAuth(page);
   expect(auth.token).toBeNull();
   expect(auth.user).toBeNull();
 });
 
-test("dev host keeps mixed behavior: both roles log in to their portals", async ({ page, browser }) => {
-  await uiLogin(page, DEV_HOST, CUSTOMER);
-  await page.waitForURL(`${DEV_HOST}/admin`);
+test("localhost keeps mixed development behavior: both roles log in to their portals", async ({ page, browser }) => {
+  await uiLogin(page, LOCAL_HOST, CUSTOMER);
+  await page.waitForURL(`${LOCAL_HOST}/admin`);
 
   const ownerCtx = await browser.newContext();
   const p2 = await ownerCtx.newPage();
-  await uiLogin(p2, DEV_HOST, OWNER);
-  await p2.waitForURL(`${DEV_HOST}/platform`);
+  await uiLogin(p2, LOCAL_HOST, OWNER);
+  await p2.waitForURL(`${LOCAL_HOST}/platform`);
   await ownerCtx.close();
 });
 

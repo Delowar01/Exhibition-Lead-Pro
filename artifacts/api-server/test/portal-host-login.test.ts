@@ -1,10 +1,11 @@
 // Split-portal login enforcement (routes/auth.ts completeLogin +
-// lib/portal-host.ts): a role/host mismatch is refused BEFORE any session is
-// created. Hostname is UX separation only — requireRole/requireTenantUser
-// remain the security boundary (covered elsewhere).
+// lib/portal-host.ts): a role/host mismatch — and ANY login on the retired
+// dev.kaptnow.com host — is refused BEFORE any session is created. Hostname is
+// UX separation only — requireRole/requireTenantUser remain the security
+// boundary (covered elsewhere).
 //
 // Live API via the DIRECT port with an explicit Host header (node:http —
-// fetch forbids overriding Host). Mixed hosts (localhost/dev) accept all
+// fetch forbids overriding Host). Mixed hosts (localhost and tests) accept all
 // roles, which is also why the rest of the suite is unaffected.
 import { describe, it, expect, beforeAll } from "vitest";
 import http from "node:http";
@@ -15,17 +16,20 @@ import { resolvePortalHost, portalLoginRefusal } from "../src/lib/portal-host.js
 const PORT = Number(process.env.API_DIRECT_PORT ?? 8080);
 const TENANT = { email: "admin@techcorp.com", password: "Admin123!" };
 const OWNER = { email: "admin@cardscannerpro.com", password: "Admin123!" };
+const RETIRED_REFUSAL = "Please sign in at admin.kaptnow.com or elite.kaptnow.com";
 
-function loginWithHost(host: string, creds: { email: string; password: string }) {
-  const payload = JSON.stringify(creds);
+function requestWithHost(host: string, path: string, method: "GET" | "POST", payload?: string) {
   return new Promise<{ status: number; body: any }>((resolve, reject) => {
     const req = http.request(
       {
         host: "127.0.0.1",
         port: PORT,
-        path: "/api/auth/login",
-        method: "POST",
-        headers: { "Content-Type": "application/json", Host: host },
+        path,
+        method,
+        headers: {
+          ...(payload ? { "Content-Type": "application/json" } : {}),
+          Host: host,
+        },
       },
       (res) => {
         let data = "";
@@ -38,6 +42,10 @@ function loginWithHost(host: string, creds: { email: string; password: string })
   });
 }
 
+function loginWithHost(host: string, creds: { email: string; password: string }) {
+  return requestWithHost(host, "/api/auth/login", "POST", JSON.stringify(creds));
+}
+
 async function sessionCount(email: string): Promise<number> {
   const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email));
   if (!user) throw new Error(`missing test user ${email}`);
@@ -48,11 +56,13 @@ describe("resolver + refusal truth table (pure)", () => {
   it("maps hostnames to portals", () => {
     expect(resolvePortalHost("admin.kaptnow.com")).toBe("customer");
     expect(resolvePortalHost("elite.kaptnow.com")).toBe("platform");
-    expect(resolvePortalHost("dev.kaptnow.com")).toBe("mixed");
+    expect(resolvePortalHost("dev.kaptnow.com")).toBe("retired");
     expect(resolvePortalHost("localhost")).toBe("mixed");
     expect(resolvePortalHost(undefined)).toBe("mixed");
   });
-  it("refuses only mismatches; mixed allows all", () => {
+  it("retired refuses every role; portal hosts refuse only mismatches; mixed allows all", () => {
+    expect(portalLoginRefusal("retired", true)).toBe(RETIRED_REFUSAL);
+    expect(portalLoginRefusal("retired", false)).toBe(RETIRED_REFUSAL);
     expect(portalLoginRefusal("customer", true)).toContain("elite.kaptnow.com");
     expect(portalLoginRefusal("platform", false)).toContain("admin.kaptnow.com");
     expect(portalLoginRefusal("customer", false)).toBeNull();
@@ -98,8 +108,34 @@ describe("live login enforcement by Host header", () => {
     expect(await sessionCount(TENANT.email)).toBe(before);
   });
 
-  it("dev.kaptnow.com keeps mixed behavior: both roles allowed", async () => {
-    expect((await loginWithHost("dev.kaptnow.com", TENANT)).status).toBe(200);
-    expect((await loginWithHost("dev.kaptnow.com", OWNER)).status).toBe(200);
+  it("dev.kaptnow.com (retired) + tenant user → refused, no session, no token", async () => {
+    const before = await sessionCount(TENANT.email);
+    const res = await loginWithHost("dev.kaptnow.com", TENANT);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe(RETIRED_REFUSAL);
+    expect(res.body.token).toBeUndefined();
+    expect(await sessionCount(TENANT.email)).toBe(before);
+  });
+
+  it("dev.kaptnow.com (retired) + platform_owner → refused, no session, no token", async () => {
+    const before = await sessionCount(OWNER.email);
+    const res = await loginWithHost("dev.kaptnow.com", OWNER);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe(RETIRED_REFUSAL);
+    expect(res.body.token).toBeUndefined();
+    expect(await sessionCount(OWNER.email)).toBe(before);
+  });
+
+  it("localhost keeps mixed development behavior: both roles allowed", async () => {
+    expect((await loginWithHost("localhost", TENANT)).status).toBe(200);
+    expect((await loginWithHost("localhost", OWNER)).status).toBe(200);
+  });
+
+  it("/api/readyz is unaffected by the retired host", async () => {
+    const viaDev = await requestWithHost("dev.kaptnow.com", "/api/readyz", "GET");
+    const viaLocal = await requestWithHost("localhost", "/api/readyz", "GET");
+    expect(viaDev.status).toBe(viaLocal.status);
+    expect(viaDev.body).toEqual(viaLocal.body);
+    expect(viaDev.body.checks.database).toBe("ok");
   });
 });
