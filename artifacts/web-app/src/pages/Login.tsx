@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Redirect, useLocation } from "wouter";
+import { resolvePortalHost } from "@/lib/portal-host";
 import { Camera, ShieldCheck, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,11 +48,22 @@ export default function Login() {
   });
 
   // An already-authenticated visitor never sees /login: they are routed
-  // straight to their portal (customer -> /admin, platform owner -> /platform).
-  // Render-time, after all hooks, and inert during an in-flight MFA challenge
-  // (user is only set once authentication fully completes).
+  // straight to their portal. Dedicated portal hosts pin the destination
+  // (wrong-role leftovers are then walked to the right subdomain by
+  // ProtectedRoute); mixed hosts route by role. Render-time, after all hooks,
+  // and inert during an in-flight MFA challenge (user is only set once
+  // authentication fully completes).
   if (user) {
-    return <Redirect to={user.role === UserRole.platform_owner ? "/platform" : "/admin"} replace />;
+    const portalHost = resolvePortalHost();
+    const target =
+      portalHost === "customer"
+        ? "/admin"
+        : portalHost === "platform"
+          ? "/platform"
+          : user.role === UserRole.platform_owner
+            ? "/platform"
+            : "/admin";
+    return <Redirect to={target} replace />;
   }
 
   const completeAuth = (response: AuthResponse) => {

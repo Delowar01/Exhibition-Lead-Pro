@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Response } from "express";
 import { requireAuth, normalizeRole, type AuthRequest } from "../middlewares/requireAuth.js";
 import { notFoundHandler } from "../middlewares/errorHandler.js";
+import { resolvePortalHost, portalLoginRefusal } from "../lib/portal-host.js";
 import { writeAudit } from "../lib/audit.js";
 import { config } from "../config.js";
 import { createSession, rotateSession, revokeSession, revokeOtherSessions, listActiveSessions } from "../lib/sessions.js";
@@ -70,6 +71,19 @@ type UserRow = Parameters<typeof auth.buildUserResponse>[0];
 // Issues a fresh session and writes auth cookies. Shared by the password-only
 // and the MFA-completed login branches.
 async function completeLogin(req: AuthRequest, res: Response, user: UserRow, rememberMe: boolean, status = 200) {
+  // Split-portal hosts: refuse a role/host mismatch BEFORE any session is
+  // created, so no authenticated session ever exists on the wrong subdomain.
+  // Mixed hosts (dev.kaptnow.com, localhost, tests) accept every role. This
+  // is UX separation only — requireRole/requireTenantUser stay authoritative.
+  const refusal = portalLoginRefusal(
+    resolvePortalHost(req.hostname),
+    normalizeRole(user.role) === "platform_owner",
+  );
+  if (refusal) {
+    res.status(403).json({ error: refusal });
+    return;
+  }
+
   await auth.markLoggedIn(user.id);
   const { accessToken, refreshToken, expiresAt } = await createSession(
     { id: user.id, email: user.email, role: normalizeRole(user.role), companyId: user.companyId },

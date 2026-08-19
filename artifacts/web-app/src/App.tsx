@@ -1,4 +1,5 @@
 import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
+import { resolvePortalHost, CUSTOMER_PORTAL_URL, PLATFORM_PORTAL_URL } from "@/lib/portal-host";
 import { useEffect, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -91,12 +92,31 @@ function RouteFallback() {
   );
 }
 
-// Authorization is decided AT RENDER TIME: a wrong-role or unauthenticated
-// request returns <Redirect> immediately, so the protected Layout/Component
-// is never mounted — not even for one frame. (The previous useEffect-based
-// redirect ran only after the wrong page had already rendered.)
+// Full-page navigation to the other portal subdomain (different origin, so
+// wouter cannot route there). Renders nothing, so the wrong-host layout/page
+// never mounts — not even for one frame.
+function ExternalRedirect({ href }: { href: string }) {
+  useEffect(() => {
+    window.location.replace(href);
+  }, [href]);
+  return null;
+}
+
+// Authorization is decided AT RENDER TIME: a wrong-host, wrong-role, or
+// unauthenticated request returns a redirect immediately, so the protected
+// Layout/Component is never mounted — not even for one frame. Host separation
+// comes first (the whole route family is foreign on a dedicated portal host);
+// it is UX separation only — server-side RBAC stays authoritative.
 function ProtectedRoute({ component: Component, role, layout: Layout }: any) {
   const { user, isLoading } = useAuth();
+  const portalHost = resolvePortalHost();
+
+  if (portalHost === "customer" && role === "platform") {
+    return <ExternalRedirect href={PLATFORM_PORTAL_URL} />;
+  }
+  if (portalHost === "platform" && role === "admin") {
+    return <ExternalRedirect href={CUSTOMER_PORTAL_URL} />;
+  }
 
   if (isLoading) {
     return <div className="flex h-screen w-screen items-center justify-center">Loading...</div>;
@@ -158,12 +178,21 @@ function Router() {
 
   useEffect(() => {
     if (window.location.pathname === "/") {
-      if (user?.role === "platform_owner") {
-        setLocation("/platform");
-      } else if (user) {
-        setLocation("/admin");
-      } else {
+      if (!user) {
         setLocation("/login");
+        return;
+      }
+      // Dedicated portal hosts pin the root to their own portal; a wrong-role
+      // account is then walked to the other subdomain by ProtectedRoute.
+      const portalHost = resolvePortalHost();
+      if (portalHost === "customer") {
+        setLocation("/admin");
+      } else if (portalHost === "platform") {
+        setLocation("/platform");
+      } else if (user.role === "platform_owner") {
+        setLocation("/platform");
+      } else {
+        setLocation("/admin");
       }
     }
   }, [user, setLocation]);
