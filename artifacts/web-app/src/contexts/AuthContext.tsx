@@ -1,5 +1,23 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { User } from "@workspace/api-client-react";
+
+// localStorage is synchronous, so the stored session is restored DURING the
+// very first render (lazy useState initializer) instead of in a post-render
+// effect. An authenticated user opening a new tab / reloading is therefore
+// never observable as "logged out" — not even for one frame — which is what
+// previously allowed protected routes to bounce a live session to /login.
+function readStoredAuth(): { user: User | null; token: string | null } {
+  try {
+    const token = localStorage.getItem("csp_token");
+    const rawUser = localStorage.getItem("csp_user");
+    if (token && rawUser) {
+      return { user: JSON.parse(rawUser) as User, token };
+    }
+  } catch (error) {
+    console.error("Failed to load auth state", error);
+  }
+  return { user: null, token: null };
+}
 
 interface AuthContextType {
   user: User | null;
@@ -12,25 +30,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    try {
-      const storedToken = localStorage.getItem("csp_token");
-      const storedUser = localStorage.getItem("csp_user");
-      
-      if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      }
-    } catch (error) {
-      console.error("Failed to load auth state", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const [initialAuth] = useState(readStoredAuth);
+  const [user, setUser] = useState<User | null>(initialAuth.user);
+  const [token, setToken] = useState<string | null>(initialAuth.token);
+  // Hydration is synchronous now, so there is no loading phase. The flag is
+  // kept (always false) so consumers like ProtectedRoute keep their contract.
+  const isLoading = false;
 
   const login = (newUser: User, newToken: string, refreshToken?: string | null) => {
     setUser(newUser);

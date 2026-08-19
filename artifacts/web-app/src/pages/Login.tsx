@@ -2,7 +2,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useLocation } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { Camera, ShieldCheck, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const { toast } = useToast();
   const loginMutation = useLogin();
   const verifyMfaMutation = useMfaVerifyLogin();
@@ -43,7 +43,16 @@ export default function Login() {
       email: "",
       password: "",
     },
+    // (authenticated visitors never see this form — see the Redirect below)
   });
+
+  // An already-authenticated visitor never sees /login: they are routed
+  // straight to their portal (customer -> /admin, platform owner -> /platform).
+  // Render-time, after all hooks, and inert during an in-flight MFA challenge
+  // (user is only set once authentication fully completes).
+  if (user) {
+    return <Redirect to={user.role === UserRole.platform_owner ? "/platform" : "/admin"} replace />;
+  }
 
   const completeAuth = (response: AuthResponse) => {
     if (!response.token || !response.user) return;
