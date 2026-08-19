@@ -32,6 +32,13 @@ services:
     # outside Git, and is mounted read-only into the api container alone.
     # GOOGLE_APPLICATION_CREDENTIALS in the VPS env file points at the
     # container path; OBJECT_STORAGE_AUTH=google selects standard Google auth.
+    #
+    # The runtime container runs as the non-root `app` user, and the key on
+    # the VPS is leadpro:leadpro mode 640 — the api process gains read access
+    # solely through this supplemental numeric group (leadpro's primary gid,
+    # supplied at runtime via the VPS env file, never hardcoded in Git).
+    group_add:
+      - "${GCS_CREDENTIAL_GID:?GCS_CREDENTIAL_GID is required}"
     volumes:
       - /opt/lead-capture-pro/env/gcs-service-account.json:/secrets/gcs-service-account.json:ro
 

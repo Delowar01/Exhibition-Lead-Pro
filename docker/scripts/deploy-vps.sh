@@ -80,6 +80,15 @@ log "building api image for $SHA"
 compose build api
 log "building web image for $SHA"
 compose build web
+# Fail fast on GCS credential readability BEFORE touching the running stack:
+# a one-off api container (fully merged config: ro bind mount + group_add,
+# no dependencies, entrypoint overridden) must be able to read the key as the
+# non-root app user. Prints nothing about the credential itself.
+log "verifying GCS credential is readable inside the api container"
+compose run --rm --no-deps --entrypoint "" api \
+  sh -c 'test -r "$GOOGLE_APPLICATION_CREDENTIALS"' \
+  || fail "GCS credential not readable by the api container — check owner leadpro:leadpro, mode 640, and GCS_CREDENTIAL_GID (leadpro's numeric primary gid) in $ENV_FILE"
+
 # Explicit safe startup order: bring postgres up FIRST and block until its
 # healthcheck passes (--wait exits non-zero on failure, aborting the deploy).
 # An already-running healthy postgres is a no-op — app deployments never

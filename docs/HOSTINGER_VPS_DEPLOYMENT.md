@@ -251,10 +251,24 @@ The VPS uses **standard Google service-account JSON auth** against a
 bucket, no second storage implementation):
 
 - **Credential:** a development service-account JSON key stored **outside
-  Git** on the VPS only, at `/opt/lead-capture-pro/env/gcs-service-account.json`
-  (`leadpro`-owned, `chmod 600`), mounted **read-only into the api container
-  only** (`compose.vps.yml` → `/secrets/gcs-service-account.json:ro`; never
-  mounted into web or postgres).
+  Git** on the VPS only, at `/opt/lead-capture-pro/env/gcs-service-account.json`,
+  mounted **read-only into the api container only** (`compose.vps.yml` →
+  `/secrets/gcs-service-account.json:ro`; never mounted into web or postgres).
+- **Permission model (non-root container, no world-readable key):** the
+  runtime image runs as the non-root `app` user, and a direct bind mount
+  preserves host permissions, so:
+  - `/opt/lead-capture-pro/env/` directory stays `700`;
+  - `/opt/lead-capture-pro/env/.env` stays `600`;
+  - the GCS JSON is **`leadpro:leadpro`, mode `640`** (not 600 — the
+    container user is not leadpro and must read via the group bit);
+  - `GCS_CREDENTIAL_GID` in the VPS env file is **leadpro's numeric primary
+    gid** (`id -g leadpro`), and `compose.vps.yml` grants it as a
+    supplemental group (`group_add`) to the **api service alone** — web and
+    postgres receive neither the mount nor the group. The value is required
+    at deploy time and never hardcoded in Git.
+  - The deploy script fail-fasts before touching the running stack by
+    verifying, in a one-off api container, that the key is readable
+    (`test -r` only — nothing about the credential is printed).
 - **Auth mode:** `OBJECT_STORAGE_AUTH=google` +
   `GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcs-service-account.json` in the
   VPS env file, plus `DEFAULT_OBJECT_STORAGE_BUCKET_ID`,
