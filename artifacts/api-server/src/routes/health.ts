@@ -18,7 +18,14 @@ router.get("/healthz", (_req, res) => {
 // Real object-storage reachability probe (closes tech-debt M2). Bounded so a slow or
 // unreachable bucket can't hang readiness: a ~2s race returns "error" instead of blocking.
 // Returns "not_configured" when no bucket is set (storage is optional in some envs).
-async function checkStorageReachable(): Promise<"ok" | "error" | "not_configured"> {
+//
+// Least privilege: the probe is a single-object LIST (storage.objects.list), which the
+// deployment's bucket-scoped Storage Object Admin grant permits. bucket().exists() is
+// deliberately NOT used — it needs bucket-level storage.buckets.get, which the service
+// account intentionally lacks. The probe never creates, reads, or deletes objects; an
+// empty result still proves reachability (only a rejected call is an error).
+// Exported for the focused unit tests in test/unit-health-storage.test.ts.
+export async function checkStorageReachable(): Promise<"ok" | "error" | "not_configured"> {
   const bucketId = config.objectStorage.bucketId;
   if (!bucketId) return "not_configured";
   let timer: NodeJS.Timeout | undefined;
@@ -28,10 +35,10 @@ async function checkStorageReachable(): Promise<"ok" | "error" | "not_configured
     });
     const probe = objectStorageClient
       .bucket(bucketId)
-      .exists()
-      .then(([exists]) => exists);
-    const exists = await Promise.race([probe, timeout]);
-    return exists ? "ok" : "error";
+      // autoPaginate:false caps the probe at exactly one API request.
+      .getFiles({ maxResults: 1, prefix: ".private/", autoPaginate: false });
+    await Promise.race([probe, timeout]);
+    return "ok";
   } catch {
     return "error";
   } finally {

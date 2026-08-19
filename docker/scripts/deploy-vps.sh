@@ -48,7 +48,11 @@ fi
 
 # ── 2. Git: fetch, verify, pin the exact commit ─────────────────────────────
 log "fetching origin/$BRANCH"
-git fetch --quiet origin "$BRANCH"
+# Explicit refspec: a bare `git fetch origin <branch>` only writes FETCH_HEAD
+# and does NOT update refs/remotes/origin/<branch> in every checkout layout,
+# which broke the ancestry check on the first manual deployment. This form
+# always creates/updates the remote-tracking ref the guard below verifies.
+git fetch --quiet origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
 
 git cat-file -e "${SHA}^{commit}" 2>/dev/null || fail "commit $SHA not found after fetch"
 git merge-base --is-ancestor "$SHA" "origin/$BRANCH" \
