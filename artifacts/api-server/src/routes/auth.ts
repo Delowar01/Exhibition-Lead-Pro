@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Response } from "express";
 import { requireAuth, normalizeRole, type AuthRequest } from "../middlewares/requireAuth.js";
+import { notFoundHandler } from "../middlewares/errorHandler.js";
 import { writeAudit } from "../lib/audit.js";
 import { config } from "../config.js";
 import { createSession, rotateSession, revokeSession, revokeOtherSessions, listActiveSessions } from "../lib/sessions.js";
@@ -177,8 +178,22 @@ router.post("/auth/refresh", async (req: AuthRequest, res) => {
   res.json({ token: result.tokens.accessToken, refreshToken: result.tokens.refreshToken });
 });
 
+// Public self-registration is outside product scope. When disabled (ALWAYS in
+// production — config.auth.enableRegistration, no env override there) the
+// route answers exactly like an unmatched path via notFoundHandler, BEFORE
+// body validation or any provisioning, so no company/user/subscription/
+// session/audit/activity row can ever be created. Dev/test keeps the route
+// (the suites provision throwaway tenants through it).
+function requireRegistrationEnabled(req: AuthRequest, res: Response, next: () => void): void {
+  if (!config.auth.enableRegistration) {
+    notFoundHandler(req, res);
+    return;
+  }
+  next();
+}
+
 // POST /auth/register
-router.post("/auth/register", validateBody(RegisterBody), async (req: AuthRequest, res) => {
+router.post("/auth/register", requireRegistrationEnabled, validateBody(RegisterBody), async (req: AuthRequest, res) => {
   const { user, company } = await auth.registerCompany(req.body ?? {});
   await writeAudit(req, { action: "company.register", userId: user.id, userName: user.email, companyId: company.id, entityType: "company", entityId: company.id, metadata: { companyName: company.name } });
   const { accessToken, refreshToken, expiresAt } = await createSession(

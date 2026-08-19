@@ -1,5 +1,16 @@
 const nodeEnv = process.env.NODE_ENV ?? "development";
 
+// Public self-registration is OUTSIDE product scope: in production the
+// /auth/register endpoint is unconditionally disabled — no environment
+// variable can enable it there (the && makes the override powerless when
+// nodeEnv is "production"). Outside production it defaults ON because the
+// API test suites provision throwaway tenants through it;
+// AUTH_ENABLE_REGISTRATION=false turns it off explicitly. Exported as a pure
+// function so the truth table is unit-testable (test/registration-lockdown.test.ts).
+export function resolveEnableRegistration(env: string, override: string | undefined): boolean {
+  return env !== "production" && override !== "false";
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -68,6 +79,8 @@ export const config = {
     // SESSION_SECRET when unset so no new required env is introduced.
     mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
     issuer: "card-scanner-pro",
+    // See resolveEnableRegistration above: always false in production.
+    enableRegistration: resolveEnableRegistration(nodeEnv, process.env.AUTH_ENABLE_REGISTRATION),
   },
 
   security: {
