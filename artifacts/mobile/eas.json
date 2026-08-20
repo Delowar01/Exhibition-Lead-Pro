@@ -17,13 +17,13 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://contact-aggregator--DelowarHossain1.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://admin.kaptnow.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://contact-aggregator--DelowarHossain1.replit.app"
+        "EXPO_PUBLIC_API_URL": "https://admin.kaptnow.com"
       }
     }
   },

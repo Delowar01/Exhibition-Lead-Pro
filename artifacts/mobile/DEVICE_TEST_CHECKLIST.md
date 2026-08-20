@@ -23,7 +23,7 @@ a note). Use safe test-card data only — never real customer data.
 | Build number (versionCode) | 1 |
 | Package name | com.elitemarcom.cardscannerpro |
 | Build profile | preview (internal distribution, APK) — Expo SDK 54 |
-| Staging API | https://contact-aggregator--DelowarHossain1.replit.app |
+| Staging API | https://contact-aggregator--DelowarHossain1.replit.app (retired Replit backend — historical record of this build only; new builds target https://admin.kaptnow.com per eas.json) |
 | Build timestamp | 2026-08-05 (fix round 1, EAS build 61f65ee3, finished 13:03 UTC) |
 | Build page | https://expo.dev/accounts/elite-marcom/projects/mobile/builds/61f65ee3-8e36-46a7-86fa-f94f7d5d0c64 |
 | Direct APK download | https://expo.dev/artifacts/eas/o3Uust0Rq5HloMuZI6_Jo2tD6D4G_kT1SJAL4uuQT0Q.apk |

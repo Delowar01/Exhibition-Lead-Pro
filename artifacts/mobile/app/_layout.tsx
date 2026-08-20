@@ -30,26 +30,27 @@ import { useLocale } from "@/hooks/useLocale";
 import { CardProvider } from "@/contexts/CardContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
+import { resolveApiUrl } from "@/lib/api-url";
 import { getCachedToken } from "@/lib/auth-storage";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 // Wire the API client once, at module load, before any request fires.
-// Resolution order:
-//   1. EXPO_PUBLIC_API_URL — explicit production URL baked in at EAS build time
-//      (e.g. "https://my-app.replit.app"). Set this in eas.json env or as a
-//      Replit Secret named EXPO_PUBLIC_API_URL before running eas build.
-//   2. EXPO_PUBLIC_DOMAIN  — Replit dev domain injected by the local workflow
-//      (no protocol; https:// is prepended automatically).
+// Resolution order (lib/api-url.ts):
+//   1. EXPO_PUBLIC_API_URL — explicit server ORIGIN baked in at build time via
+//      eas.json env. Preview/production point at https://admin.kaptnow.com
+//      (the hosted customer API). Origin only — the generated client paths
+//      already start with /api, so never append /api here.
+//   2. EXPO_PUBLIC_DOMAIN  — bare domain injected by the local dev/build
+//      workflow (no protocol; https:// is prepended automatically).
 // If neither resolves, the base URL stays null. The app still boots to the
 // login screen and shows auth/network errors rather than crashing — which
 // surfaces the config problem without a hard stop.
-const apiUrl =
-  process.env.EXPO_PUBLIC_API_URL ??
-  (process.env.EXPO_PUBLIC_DOMAIN
-    ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-    : null);
+const apiUrl = resolveApiUrl({
+  EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+  EXPO_PUBLIC_DOMAIN: process.env.EXPO_PUBLIC_DOMAIN,
+});
 if (apiUrl) {
   setBaseUrl(apiUrl);
 } else {
