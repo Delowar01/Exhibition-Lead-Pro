@@ -384,6 +384,8 @@ export * from './listDocumentsEntityType';
 export * from './listDocumentsParams';
 export * from './listEmployeeDirectoryParams';
 export * from './listEventsParams';
+export * from './listExportRunsEntityType';
+export * from './listExportRunsParams';
 export * from './listFollowUpsOrder';
 export * from './listFollowUpsParams';
 export * from './listFollowUpsSort';

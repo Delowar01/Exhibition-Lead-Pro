@@ -5,10 +5,12 @@ import * as archiverNs from "archiver";
 import archiverZipEncrypted from "archiver-zip-encrypted";
 import { AppError } from "../middlewares/errorHandler.js";
 
-// @types/archiver v8 omits the top-level factory (`create`) and `registerFormat`,
-// though both exist at runtime. Narrow shim so we keep types for the Archiver
-// instance while reaching the untyped module functions.
-const archiverModule = archiverNs as unknown as {
+// archiver is a CJS module whose `create`/`registerFormat` live on the
+// exported vending function. Under ESM those assignments are not statically
+// detectable, so the namespace surfaces them only via `default` — unwrap it
+// (falling back to the namespace itself for CJS/test loaders). The shim also
+// papers over @types/archiver omitting both factory functions.
+const archiverModule = ((archiverNs as { default?: unknown }).default ?? archiverNs) as {
   create(format: string, options?: unknown): archiverNs.Archiver;
   registerFormat(format: string, module: unknown): void;
 };

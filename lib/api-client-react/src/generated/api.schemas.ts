@@ -6328,6 +6328,21 @@ export const ListDocumentsEntityType = {
   event: 'event',
 } as const;
 
+export type ListExportRunsParams = {
+entityType?: ListExportRunsEntityType;
+scheduleId?: number;
+page?: number;
+limit?: number;
+};
+
+export type ListExportRunsEntityType = typeof ListExportRunsEntityType[keyof typeof ListExportRunsEntityType];
+
+
+export const ListExportRunsEntityType = {
+  contact: 'contact',
+  lead: 'lead',
+} as const;
+
 export type ListCustomFieldDefinitionsParams = {
 entityType?: ListCustomFieldDefinitionsEntityType;
 };

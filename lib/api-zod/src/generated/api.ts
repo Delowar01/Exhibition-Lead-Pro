@@ -8652,6 +8652,13 @@ export const CreateExportBody = zod.object({
 /**
  * @summary List past export runs (on-demand and scheduled)
  */
+export const ListExportRunsQueryParams = zod.object({
+  "entityType": zod.enum(['contact', 'lead']).optional(),
+  "scheduleId": zod.coerce.number().optional(),
+  "page": zod.coerce.number().optional(),
+  "limit": zod.coerce.number().optional()
+})
+
 export const ListExportRunsResponse = zod.object({
   "runs": zod.array(zod.object({
   "id": zod.number(),

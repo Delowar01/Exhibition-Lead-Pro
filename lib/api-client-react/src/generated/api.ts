@@ -212,6 +212,7 @@ import type {
   ListDocumentsParams,
   ListEmployeeDirectoryParams,
   ListEventsParams,
+  ListExportRunsParams,
   ListFollowUpsParams,
   ListInvitationsParams,
   ListLeadsParams,
@@ -22122,20 +22123,27 @@ export const useCreateExport = <TError = ErrorType<unknown>,
       return useMutation(getCreateExportMutationOptions(options));
     }
 
-export const getListExportRunsUrl = () => {
+export const getListExportRunsUrl = (params?: ListExportRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/exports/runs`
+  return stringifiedParams.length > 0 ? `/api/exports/runs?${stringifiedParams}` : `/api/exports/runs`
 }
 
 /**
  * @summary List past export runs (on-demand and scheduled)
  */
-export const listExportRuns = async ( options?: RequestInit): Promise<ExportRunList> => {
+export const listExportRuns = async (params?: ListExportRunsParams, options?: RequestInit): Promise<ExportRunList> => {
 
-  return customFetch<ExportRunList>(getListExportRunsUrl(),
+  return customFetch<ExportRunList>(getListExportRunsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -22148,23 +22156,23 @@ export const listExportRuns = async ( options?: RequestInit): Promise<ExportRunL
 
 
 
-export const getListExportRunsQueryKey = () => {
+export const getListExportRunsQueryKey = (params?: ListExportRunsParams,) => {
     return [
-    `/api/exports/runs`
+    `/api/exports/runs`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListExportRunsQueryOptions = <TData = Awaited<ReturnType<typeof listExportRuns>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListExportRunsQueryOptions = <TData = Awaited<ReturnType<typeof listExportRuns>>, TError = ErrorType<unknown>>(params?: ListExportRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListExportRunsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListExportRunsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listExportRuns>>> = ({ signal }) => listExportRuns({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listExportRuns>>> = ({ signal }) => listExportRuns(params, { signal, ...requestOptions });
 
 
 
@@ -22182,11 +22190,11 @@ export type ListExportRunsQueryError = ErrorType<unknown>
  */
 
 export function useListExportRuns<TData = Awaited<ReturnType<typeof listExportRuns>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListExportRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listExportRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListExportRunsQueryOptions(options)
+  const queryOptions = getListExportRunsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
