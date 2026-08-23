@@ -113,7 +113,7 @@ beforeAll(async () => {
   const contactId = (await c1.json()).id;
   const l1 = await api("POST", "/leads", adminToken, {
     contactId,
-    stage: "new",
+    stage: "prospect",
     title: "QA assistant opportunity",
     value: 12000,
     currency: "USD",

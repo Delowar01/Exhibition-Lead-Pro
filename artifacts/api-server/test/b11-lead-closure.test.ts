@@ -401,3 +401,76 @@ describe("custom terminal stages (isWon/isLost flags authoritative)", () => {
     expect(totalValue).toBe(500); // reopened leadC1 back in the open pipeline
   });
 });
+
+// ── Final correction: strict stage-key resolution ────────────────────────────
+// A supplied stage key must resolve to a LIVE configured stage (400 otherwise,
+// nothing written); legacy rows with a NULL stageId still classify by flags
+// when their key matches a live stage; a soft-deleted stage stops supplying
+// authoritative flags (literal won/lost fallback only). Uses a fresh contact
+// in tenant B; the pipeline there currently has leadC1 (prospect, 500) open
+// and everything else closed.
+describe("strict stage-key resolution & legacy classification", () => {
+  let contactDId = 0;
+  let leadV = 0; // → closed_success, then stageId NULLed, then stage deleted
+  let leadW = 0; // stays open
+
+  it("create with an unknown stage key → 400 and no lead is created", async () => {
+    const [d] = await db
+      .insert(contactsTable)
+      .values([{ companyId: companyBId, fullName: "B11 Contact D", contactCompany: "Umbrella" }])
+      .returning({ id: contactsTable.id });
+    contactDId = d.id;
+
+    const bad = await createLead(adminBToken, { contactId: contactDId, stage: "no_such_stage_b11", value: 400, currency: "USD" });
+    expect(bad.status).toBe(400);
+
+    // Proof nothing was created: an open lead would make this second create
+    // 409 under the one-open-opportunity rule — it succeeds instead.
+    const ok = await createLead(adminBToken, { contactId: contactDId, stage: "prospect", value: 400, currency: "USD" });
+    expect(ok.status).toBe(201);
+    leadV = (await ok.json()).id;
+  });
+
+  it("update with an unknown stage key → 400; stage, history and activities untouched", async () => {
+    const before = await leadSnapshot(adminBToken, leadV);
+    const res = await setStage(adminBToken, leadV, "totally_bogus_stage");
+    expect(res.status).toBe(400);
+    expect(await leadSnapshot(adminBToken, leadV)).toEqual(before);
+  });
+
+  it("a legacy lead with stageId NULL still counts as CLOSED when its key matches a live custom terminal stage", async () => {
+    expect((await setStage(adminBToken, leadV, "closed_success")).status).toBe(200);
+    // Simulate a legacy/stale row: key kept, FK link lost.
+    await db.update(leadsTable).set({ stageId: null }).where(eq(leadsTable.id, leadV));
+
+    // The one-open-opportunity check must treat leadV as closed via the live
+    // closed_success flags — so a new opportunity for the contact is allowed.
+    const res = await createLead(adminBToken, { contactId: contactDId, stage: "prospect", value: 300, currency: "USD" });
+    expect(res.status).toBe(201);
+    leadW = (await res.json()).id;
+
+    // Consistent with getPipeline: leadV (400) stays excluded from the open
+    // total and still shows in its stage column despite the NULL stageId.
+    const { totalValue, stages } = await pipelineTotal(adminBToken);
+    expect(totalValue).toBe(800); // leadC1 500 + leadW 300
+    expect(stages.find((s: any) => s.stage === "closed_success").leads.map((l: any) => l.id)).toContain(leadV);
+  });
+
+  it("a soft-deleted terminal stage no longer supplies isWon/isLost flags (literal fallback only)", async () => {
+    const { stages } = await api("GET", "/pipeline/stages", adminBToken).then((r) => r.json());
+    const successStage = stages.find((s: any) => s.key === "closed_success");
+    expect(successStage).toBeTruthy();
+    expect((await api("DELETE", `/pipeline/stages/${successStage.id}`, adminBToken)).status).toBe(200);
+
+    // "closed_success" now resolves to no live stage; the literal fallback does
+    // not treat it as closed, so leadV counts as OPEN again — blocking a new
+    // opportunity for the contact…
+    const res = await createLead(adminBToken, { contactId: contactDId, stage: "prospect", value: 50, currency: "USD" });
+    expect(res.status).toBe(409);
+    expect([leadV, leadW]).toContain((await res.json()).existingId);
+
+    // …and getPipeline agrees: leadV's 400 re-enters the open total.
+    const { totalValue } = await pipelineTotal(adminBToken);
+    expect(totalValue).toBe(1200); // leadC1 500 + leadW 300 + leadV 400
+  });
+});

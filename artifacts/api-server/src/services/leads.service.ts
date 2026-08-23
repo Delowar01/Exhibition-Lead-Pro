@@ -239,16 +239,20 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
 
   // Keep the legacy text `stage` and the configurable `stageId` consistent: a
   // provided stageId wins and drives the text; otherwise resolve stageId from
-  // the stage key. Seed defaults first so key resolution succeeds.
+  // the stage key. Seed defaults first so key resolution succeeds. A supplied
+  // stage/stageId MUST resolve to a live configured stage for this company —
+  // unknown keys and soft-deleted stages are rejected, nothing is written.
   await ensureStages(companyId);
   let stageText = stage ?? "prospect";
   let resolvedStageId = stageId ?? null;
   if (stageId != null) {
     const s = await leadsRepo.stageInfo(stageId);
-    if (s) stageText = s.key;
+    if (!s) throw new AppError(400, "Invalid stageId");
+    stageText = s.key;
   } else {
     const s = await pipelineRepo.findByKey(companyId, stageText);
-    resolvedStageId = s?.id ?? null;
+    if (!s) throw new AppError(400, `Unknown stage "${stageText}" — it must match a configured pipeline stage`);
+    resolvedStageId = s.id;
   }
 
   const lead = await leadsRepo.insert({
@@ -348,24 +352,25 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
 
   // Stage sync: the configurable `stageId` and the legacy text `stage` are kept
   // consistent. A provided stageId wins and drives the text; a bare stage text
-  // resolves back to a stageId (or null when no matching stage is configured).
-  // The resolved stage row is kept so lifecycle decisions below use its
-  // configured isWon/isLost flags, not the literal key text.
+  // resolves back to its stageId. Either form MUST resolve to a live configured
+  // stage for this company — unknown keys and soft-deleted stages are rejected
+  // before anything is written. The resolved stage row is kept so lifecycle
+  // decisions below use its configured isWon/isLost flags, not the key text.
   let newStageRow: StageOutcomeFlags | null = null;
   if (stageId !== undefined) {
     updateData.stageId = stageId;
     if (stageId != null) {
       const s = await leadsRepo.stageInfo(stageId);
-      if (s) {
-        updateData.stage = s.key;
-        newStageRow = s;
-      }
+      if (!s) throw new AppError(400, "Invalid stageId");
+      updateData.stage = s.key;
+      newStageRow = s;
     }
   } else if (stage !== undefined) {
-    updateData.stage = stage;
     const s = await pipelineRepo.findByKey(existing.companyId, String(stage));
-    updateData.stageId = s?.id ?? null;
-    newStageRow = s ?? null;
+    if (!s) throw new AppError(400, `Unknown stage "${String(stage)}" — it must match a configured pipeline stage`);
+    updateData.stage = stage;
+    updateData.stageId = s.id;
+    newStageRow = s;
   }
 
   if (Object.keys(updateData).length === 0) throw new AppError(400, "No valid fields to update");
@@ -380,7 +385,11 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
   // the closed lead, its history, and its activities completely untouched.
   let newOutcome = stageOutcome(newStageRow, String(newStage));
   if (stageChanged) {
-    const oldRow = existing.stageId != null ? await leadsRepo.stageInfo(existing.stageId) : null;
+    // Resolve the OLD stage like every other consumer: live stage by id first,
+    // then live stage by key (legacy rows with a NULL/stale stageId), then the
+    // literal won/lost fallback inside stageOutcome.
+    let oldRow: StageOutcomeFlags | undefined = existing.stageId != null ? await leadsRepo.stageInfo(existing.stageId) : undefined;
+    if (!oldRow) oldRow = await pipelineRepo.findByKey(existing.companyId, existing.stage);
     const oldOutcome = stageOutcome(oldRow ?? null, existing.stage);
     if (oldOutcome.closed && !newOutcome.closed && existing.contactId != null) {
       const openId = await leadsRepo.activeLeadIdForContact(existing.companyId, existing.contactId, id);

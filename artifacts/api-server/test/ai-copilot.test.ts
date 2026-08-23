@@ -127,7 +127,7 @@ beforeAll(async () => {
   // A lead on tenant A.
   const l1 = await api("POST", "/leads", adminToken, {
     contactId,
-    stage: "new",
+    stage: "prospect",
     title: "QA opportunity",
     value: 5000,
     currency: "USD",
@@ -169,7 +169,7 @@ beforeAll(async () => {
   });
   expect(cb.status).toBe(201);
   foreignContactId = (await cb.json()).id;
-  const lb = await api("POST", "/leads", adminBToken, { contactId: foreignContactId, stage: "new", title: "Foreign lead" });
+  const lb = await api("POST", "/leads", adminBToken, { contactId: foreignContactId, stage: "prospect", title: "Foreign lead" });
   expect(lb.status).toBe(201);
   foreignLeadId = (await lb.json()).id;
 });

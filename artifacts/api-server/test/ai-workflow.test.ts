@@ -130,7 +130,7 @@ beforeAll(async () => {
   // A lead on tenant A, assigned to the admin so routing/workload engines have an owner.
   const l1 = await api("POST", "/leads", adminToken, {
     contactId,
-    stage: "new",
+    stage: "prospect",
     title: "QA opportunity",
     value: 5000,
     currency: "USD",
@@ -155,7 +155,7 @@ beforeAll(async () => {
   const cb = await api("POST", "/contacts", adminBToken, { firstName: "Bob", lastName: "Foreign", email: `bob-${SUFFIX}@example.com` });
   expect(cb.status).toBe(201);
   const foreignContactId = (await cb.json()).id;
-  const lb = await api("POST", "/leads", adminBToken, { contactId: foreignContactId, stage: "new", title: "Foreign lead" });
+  const lb = await api("POST", "/leads", adminBToken, { contactId: foreignContactId, stage: "prospect", title: "Foreign lead" });
   expect(lb.status).toBe(201);
   foreignLeadId = (await lb.json()).id;
 });
@@ -379,7 +379,7 @@ describe("Org-scoped read-only rollups (health / sla-risks / bottlenecks)", () =
     // Seed a guaranteed risk: a lead whose closing date is already in the past.
     const overdue = await api("POST", "/leads", adminToken, {
       contactId: overdueContactId,
-      stage: "new",
+      stage: "prospect",
       title: `Overdue QA lead ${SUFFIX}`,
       value: 1000,
       currency: "USD",

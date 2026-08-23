@@ -106,10 +106,13 @@ export async function findById(user: AuthUser, id: number): Promise<LeadRow | un
 // in this company? Returns the existing open lead id, else undefined.
 //
 // CLOSED is determined by the tenant's CONFIGURED stage flags (isWon/isLost) —
-// custom terminal stages like "closed_success" count as closed. The literal
-// "won"/"lost" text is only a fallback for legacy rows whose stageId does not
-// resolve to a live configured stage. `excludeLeadId` lets the reopen check
-// ignore the lead being reopened itself.
+// custom terminal stages like "closed_success" count as closed. Stages are
+// resolved by the lead's stage KEY against the live (non-deleted) configured
+// stages — the same rule getPipeline uses — so legacy rows with a NULL or
+// stale stageId still classify by flags when their key matches a live stage.
+// The literal "won"/"lost" text is only a fallback for keys that resolve to no
+// live configured stage (including soft-deleted ones). `excludeLeadId` lets
+// the reopen check ignore the lead being reopened itself.
 export async function activeLeadIdForContact(
   companyId: number,
   contactId: number,
@@ -131,7 +134,11 @@ export async function activeLeadIdForContact(
     .from(leadsTable)
     .leftJoin(
       pipelineStagesTable,
-      and(eq(pipelineStagesTable.id, leadsTable.stageId), notDeleted(pipelineStagesTable.deletedAt)),
+      and(
+        eq(pipelineStagesTable.companyId, leadsTable.companyId),
+        eq(pipelineStagesTable.key, leadsTable.stage),
+        notDeleted(pipelineStagesTable.deletedAt),
+      ),
     )
     .where(and(...conds))
     .limit(1);
@@ -217,6 +224,9 @@ export async function softDelete(id: number, tx?: Executor): Promise<void> {
 }
 
 // ── Configurable-stage + team enrichment lookups (additive).
+// Both resolve LIVE stages only: a soft-deleted stage is not a configured
+// stage, so it must never supply authoritative isWon/isLost flags (callers
+// fall back to the legacy literal won/lost rule when nothing resolves).
 export async function stageInfo(stageId: number) {
   const [r] = await db
     .select({
@@ -227,7 +237,7 @@ export async function stageInfo(stageId: number) {
       isLost: pipelineStagesTable.isLost,
     })
     .from(pipelineStagesTable)
-    .where(eq(pipelineStagesTable.id, stageId))
+    .where(and(eq(pipelineStagesTable.id, stageId), notDeleted(pipelineStagesTable.deletedAt)))
     .limit(1);
   return r;
 }
@@ -237,7 +247,7 @@ export async function stageInfosByIds(ids: number[]) {
   return db
     .select({ id: pipelineStagesTable.id, name: pipelineStagesTable.name, key: pipelineStagesTable.key })
     .from(pipelineStagesTable)
-    .where(inArray(pipelineStagesTable.id, ids));
+    .where(and(inArray(pipelineStagesTable.id, ids), notDeleted(pipelineStagesTable.deletedAt)));
 }
 
 export async function teamName(teamId: number) {

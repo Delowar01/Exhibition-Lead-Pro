@@ -122,7 +122,7 @@ beforeAll(async () => {
   // One lead per contact — the pipeline enforces a single active lead per contact (409 otherwise).
   const l1 = await api("POST", "/leads", adminToken, { contactId, stage: "won", title: "Won deal", value: 12000, currency: "USD" });
   expect(l1.status).toBe(201);
-  const l2 = await api("POST", "/leads", adminToken, { contactId: contact2Id, stage: "new", title: "Open deal", value: 8000, currency: "USD" });
+  const l2 = await api("POST", "/leads", adminToken, { contactId: contact2Id, stage: "prospect", title: "Open deal", value: 8000, currency: "USD" });
   expect(l2.status).toBe(201);
 
   // --- Tenant B (cross-tenant isolation) ---

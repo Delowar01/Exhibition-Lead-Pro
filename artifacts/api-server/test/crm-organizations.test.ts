@@ -224,7 +224,7 @@ describe("Contact + lead linking (organizationId FK)", () => {
   it("creates a lead linked to the organization and enriches organizationName", async () => {
     const res = await api("POST", "/leads", orgToken, {
       contactId,
-      stage: "new",
+      stage: "prospect",
       title: "Globex opportunity",
       value: 1000,
       currency: "USD",
@@ -361,7 +361,7 @@ describe("Company Detail aggregate (events/notes/documents/timeline)", () => {
 
     const lead = await api("POST", "/leads", orgToken, {
       contactId,
-      stage: "new",
+      stage: "prospect",
       title: `Aggregate Lead ${SUFFIX}`,
       organizationId: orgId,
     });

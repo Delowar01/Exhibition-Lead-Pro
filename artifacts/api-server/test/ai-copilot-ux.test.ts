@@ -122,7 +122,7 @@ beforeAll(async () => {
   expect(c1.status).toBe(201);
   contactId = (await c1.json()).id;
 
-  const l1 = await api("POST", "/leads", adminToken, { contactId, stage: "new", title: "QA UX opportunity", value: 900, currency: "USD" });
+  const l1 = await api("POST", "/leads", adminToken, { contactId, stage: "prospect", title: "QA UX opportunity", value: 900, currency: "USD" });
   expect(l1.status).toBe(201);
   leadId = (await l1.json()).id;
 
