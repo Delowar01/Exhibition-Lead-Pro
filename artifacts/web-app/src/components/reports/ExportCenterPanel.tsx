@@ -17,12 +17,14 @@ import { Download, Lock, Loader2, RotateCcw, FileDown, AlertTriangle } from "luc
 import {
   FORMAT_OPTIONS,
   ExportFilterFields,
+  EncryptionMethodSelector,
   cleanFilters,
   humanFileSize,
   triggerDownload,
   type ExportEntity,
   type ExportFileFormat,
   type FilterValues,
+  type ZipEncryptionMethod,
 } from "./export-shared";
 
 // On-demand Export Center. The optional password lives ONLY in transient
@@ -41,6 +43,7 @@ export function ExportCenterPanel() {
   const [filters, setFilters] = useState<FilterValues>({});
   const [protect, setProtect] = useState(false);
   const [password, setPassword] = useState("");
+  const [encMethod, setEncMethod] = useState<ZipEncryptionMethod>("aes256");
   const [result, setResult] = useState<ExportRunWithUrl | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -65,6 +68,8 @@ export function ExportCenterPanel() {
       filters: cleanFilters(filters),
       passwordProtected: protect,
       password: protect ? password : null,
+      // Transient, only meaningful alongside a password; AES-256 is the default.
+      ...(protect ? { encryptionMethod: encMethod } : {}),
     };
     createExport.mutate(
       { data: body },
@@ -72,6 +77,7 @@ export function ExportCenterPanel() {
         onSuccess: (run) => {
           setPassword(""); // never keep the password after completion
           setProtect(false);
+          setEncMethod("aes256");
           queryClient.invalidateQueries({ queryKey: getListExportRunsQueryKey() });
           if (run.status === "failed") {
             setFailed(true);
@@ -157,18 +163,21 @@ export function ExportCenterPanel() {
               </Label>
             </div>
             {protect && (
-              <div className="pl-6 space-y-1 max-w-sm">
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="At least 6 characters"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  data-testid="export-password"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Delivered as an encrypted ZIP. The password is used once and never stored — keep it safe.
-                </p>
+              <div className="pl-6 space-y-3 max-w-md">
+                <div className="space-y-1 max-w-sm">
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="At least 6 characters"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    data-testid="export-password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Delivered as an encrypted ZIP. The password is used once and never stored — keep it safe.
+                  </p>
+                </div>
+                <EncryptionMethodSelector value={encMethod} onChange={setEncMethod} />
               </div>
             )}
           </div>

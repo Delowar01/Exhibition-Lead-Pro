@@ -31,6 +31,73 @@ export const FORMAT_OPTIONS: { value: ExportFileFormat; label: string; hint: str
 
 export type FilterValues = Record<string, string>;
 
+// Password-protection flavor for on-demand exports. AES-256 stays the strong
+// recommended default; ZipCrypto ("zip20") exists purely so Windows File
+// Explorer can open the file. Transient request field — never persisted.
+export type ZipEncryptionMethod = "aes256" | "zip20";
+
+const ENCRYPTION_OPTIONS: {
+  value: ZipEncryptionMethod;
+  label: string;
+  badge?: string;
+  hint: string;
+}[] = [
+  {
+    value: "aes256",
+    label: "Strong protection (AES-256)",
+    badge: "Recommended",
+    hint: "Recommended. Requires 7-Zip, WinRAR, WinZip or another AES-compatible ZIP application.",
+  },
+  {
+    value: "zip20",
+    label: "Windows compatible",
+    hint: "Works with Windows File Explorer. Uses standard ZIP password protection with weaker encryption.",
+  },
+];
+
+/** Compact protection-method picker, shown only while password protection is on. */
+export function EncryptionMethodSelector({
+  value,
+  onChange,
+}: {
+  value: ZipEncryptionMethod;
+  onChange: (v: ZipEncryptionMethod) => void;
+}) {
+  return (
+    <div role="radiogroup" aria-label="Protection method" className="space-y-1.5" data-testid="export-encryption-method">
+      {ENCRYPTION_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          role="radio"
+          aria-checked={value === opt.value}
+          data-testid={`export-enc-${opt.value}`}
+          onClick={() => onChange(opt.value)}
+          className={`w-full rounded-lg border p-2.5 text-left transition-colors ${
+            value === opt.value ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:bg-muted/50"
+          }`}
+        >
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <span
+              aria-hidden
+              className={`h-3 w-3 rounded-full border ${
+                value === opt.value ? "border-primary bg-primary" : "border-muted-foreground/40"
+              }`}
+            />
+            {opt.label}
+            {opt.badge && (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                {opt.badge}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 block pl-5 text-xs text-muted-foreground">{opt.hint}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Drop empty / "all" sentinel values so only real filters reach the API. */
 export function cleanFilters(filters: Record<string, string | undefined>): FilterValues {
   const out: FilterValues = {};

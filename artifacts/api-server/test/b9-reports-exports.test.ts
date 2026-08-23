@@ -272,6 +272,109 @@ describe("on-demand exports", () => {
   });
 });
 
+// ── 4b. Encryption-method contract (Batch 9 Windows-compatibility) ───────────
+describe("on-demand export encryption methods", () => {
+  it("rejects unknown encryptionMethod values (400)", async () => {
+    const res = await api("POST", "/exports", tcToken, {
+      entityType: "contact",
+      format: "csv",
+      passwordProtected: true,
+      password: "long-enough-pass",
+      encryptionMethod: "des",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("encryptionMethod cannot bypass password validation (400)", async () => {
+    // Selecting a method never weakens the password rules.
+    const short = await api("POST", "/exports", tcToken, {
+      entityType: "contact",
+      format: "csv",
+      passwordProtected: true,
+      password: "short",
+      encryptionMethod: "zip20",
+    });
+    expect(short.status).toBe(400);
+    const missing = await api("POST", "/exports", tcToken, {
+      entityType: "contact",
+      format: "csv",
+      passwordProtected: true,
+      encryptionMethod: "zip20",
+    });
+    expect(missing.status).toBe(400);
+  });
+
+  it("zip20 password is never persisted in export_runs either", async () => {
+    const password = "B9-Zip20-Secret-7301";
+    const res = await api("POST", "/exports", tcToken, {
+      entityType: "contact",
+      format: "csv",
+      passwordProtected: true,
+      password,
+      encryptionMethod: "zip20",
+    });
+    expect([201, 502]).toContain(res.status);
+    const rows = await db.select().from(exportRunsTable);
+    expect(JSON.stringify(rows)).not.toContain(password);
+  });
+
+  it("encryptionMethod without password protection leaves the export unencrypted", async () => {
+    const res = await api("POST", "/exports", tcToken, {
+      entityType: "contact",
+      format: "csv",
+      encryptionMethod: "aes256",
+    });
+    expect([201, 502]).toContain(res.status);
+    const runs = await api("GET", "/exports/runs?limit=1", tcToken).then((r) => r.json());
+    expect(String(runs.runs[0].fileName)).toMatch(/\.csv$/);
+    expect(runs.runs[0].passwordProtected).toBe(false);
+  });
+
+  it("schedules still refuse password protection, method or not (400)", async () => {
+    const res = await api("POST", "/exports/schedules", tcToken, {
+      name: "B9 smuggled protection",
+      entityType: "contact",
+      format: "csv",
+      frequency: "daily",
+      passwordProtected: true,
+      encryptionMethod: "zip20",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  describe.runIf(STORAGE)("with object storage (completed encrypted files)", () => {
+    it("zip20 produces a completed protected ZIP", async () => {
+      const res = await api("POST", "/exports", tcToken, {
+        entityType: "contact",
+        format: "csv",
+        passwordProtected: true,
+        password: "explorer-pass-1",
+        encryptionMethod: "zip20",
+      });
+      expect(res.status).toBe(201);
+      const run = await res.json();
+      expect(run.status).toBe("completed");
+      expect(run.passwordProtected).toBe(true);
+      expect(String(run.fileName)).toMatch(/\.zip$/);
+    });
+
+    it("explicit aes256 produces a completed protected ZIP", async () => {
+      const res = await api("POST", "/exports", tcToken, {
+        entityType: "contact",
+        format: "csv",
+        passwordProtected: true,
+        password: "strong-pass-001",
+        encryptionMethod: "aes256",
+      });
+      expect(res.status).toBe(201);
+      const run = await res.json();
+      expect(run.status).toBe("completed");
+      expect(run.passwordProtected).toBe(true);
+      expect(String(run.fileName)).toMatch(/\.zip$/);
+    });
+  });
+});
+
 // ── 5. Export history + signed download tenancy ──────────────────────────────
 describe("export history and signed downloads", () => {
   let nxRunId = 0;

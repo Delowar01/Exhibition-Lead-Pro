@@ -8639,13 +8639,15 @@ export const CommitImportResponse = zod.object({
  * @summary Generate an on-demand export and return its run plus a signed download URL
  */
 export const createExportBodyPasswordProtectedDefault = false;
+export const createExportBodyEncryptionMethodDefault = `aes256`;
 
 export const CreateExportBody = zod.object({
   "entityType": zod.enum(['contact', 'lead']),
   "format": zod.enum(['csv', 'excel', 'pdf', 'json']),
   "filters": zod.record(zod.string(), zod.unknown()).optional(),
   "passwordProtected": zod.boolean().default(createExportBodyPasswordProtectedDefault),
-  "password": zod.string().nullish()
+  "password": zod.string().nullish(),
+  "encryptionMethod": zod.enum(['aes256', 'zip20']).default(createExportBodyEncryptionMethodDefault).describe('Only applies when passwordProtected is true; never persisted. aes256 (default) produces a strong AES-256 ZIP that needs an AES-capable tool (7-Zip, WinRAR, WinZip). zip20 produces a standard ZipCrypto ZIP that Windows File Explorer can open, at the cost of much weaker encryption.')
 })
 
 

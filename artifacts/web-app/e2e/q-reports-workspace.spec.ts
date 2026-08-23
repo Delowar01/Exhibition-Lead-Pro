@@ -74,13 +74,26 @@ test("on-demand export: password rules, generation outcome, and history entry", 
   await page.goto("/admin/reports");
   await page.getByTestId("tab-export").click();
 
-  // Password gate: too-short password disables Generate; unchecking re-enables.
+  // Protection-method selector exists ONLY while password protection is on.
   await page.getByTestId("export-format-json").click();
+  await expect(page.getByTestId("export-encryption-method")).toHaveCount(0);
+
   await page.locator("#export-protect").click();
+  await expect(page.getByTestId("export-encryption-method")).toBeVisible();
+  // AES-256 is the recommended default; Windows-compatible is selectable.
+  await expect(page.getByTestId("export-enc-aes256")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("export-enc-zip20")).toHaveAttribute("aria-checked", "false");
+  await page.getByTestId("export-enc-zip20").click();
+  await expect(page.getByTestId("export-enc-zip20")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("export-enc-aes256")).toHaveAttribute("aria-checked", "false");
+
+  // Password gate: too-short password disables Generate; unchecking re-enables
+  // and hides the method selector again.
   await page.getByTestId("export-password").fill("abc");
   await expect(page.getByTestId("export-generate")).toBeDisabled();
   await page.getByTestId("export-password").fill("");
   await page.locator("#export-protect").click();
+  await expect(page.getByTestId("export-encryption-method")).toHaveCount(0);
   await expect(page.getByTestId("export-generate")).toBeEnabled();
 
   await page.getByTestId("export-generate").click();

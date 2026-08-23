@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { format as formatDate, parseISO } from "date-fns";
 import { Download, Lock, Trash2, Play, Clock, FileDown, Loader2 } from "lucide-react";
+import { EncryptionMethodSelector, type ZipEncryptionMethod } from "@/components/reports/export-shared";
 
 type EntityType = "contact" | "lead";
 type ExportFormat = "csv" | "excel" | "pdf" | "json";
@@ -118,6 +119,7 @@ function ExportNowPanel({
   const [fmt, setFmt] = useState<ExportFormat>("csv");
   const [protect, setProtect] = useState(false);
   const [password, setPassword] = useState("");
+  const [encMethod, setEncMethod] = useState<ZipEncryptionMethod>("aes256");
 
   const passwordInvalid = protect && password.length < 6;
 
@@ -129,11 +131,16 @@ function ExportNowPanel({
       filters: cleanFilters(filters),
       passwordProtected: protect,
       password: protect ? password : null,
+      // Transient, only meaningful alongside a password; AES-256 is the default.
+      ...(protect ? { encryptionMethod: encMethod } : {}),
     };
     createExport.mutate(
       { data: body },
       {
         onSuccess: (run) => {
+          setPassword(""); // never keep the password after completion
+          setProtect(false);
+          setEncMethod("aes256");
           queryClient.invalidateQueries({ queryKey: getListExportRunsQueryKey() });
           if (run.status === "failed") {
             toast({ title: "Export failed", description: run.error ?? "Could not generate the file.", variant: "destructive" });
@@ -149,7 +156,10 @@ function ExportNowPanel({
             toast({ title: "Export ready", description: "No download URL was returned." });
           }
         },
-        onError: () => toast({ title: "Export failed", variant: "destructive" }),
+        onError: () => {
+          setPassword(""); // never keep the password after failure
+          toast({ title: "Export failed", variant: "destructive" });
+        },
       },
     );
   };
@@ -183,16 +193,19 @@ function ExportNowPanel({
           </Label>
         </div>
         {protect && (
-          <div className="pl-6 space-y-1">
-            <Input
-              type="password"
-              placeholder="At least 6 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              The file is delivered as an encrypted ZIP. Keep this password safe — it cannot be recovered.
-            </p>
+          <div className="pl-6 space-y-3">
+            <div className="space-y-1">
+              <Input
+                type="password"
+                placeholder="At least 6 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                The file is delivered as an encrypted ZIP. Keep this password safe — it cannot be recovered.
+              </p>
+            </div>
+            <EncryptionMethodSelector value={encMethod} onChange={setEncMethod} />
           </div>
         )}
       </div>

@@ -20,7 +20,9 @@ import {
   fileExtension,
   contentType,
   isExportFormat,
+  isEncryptionMethod,
   type ExportFormat,
+  type EncryptionMethod,
 } from "../lib/export-generate.js";
 import { uploadExportBuffer, exportDownloadURL } from "../lib/exportStorage.js";
 
@@ -57,6 +59,14 @@ function assertFrequency(v: unknown): "daily" | "weekly" | "monthly" {
 
 function assertPassword(v: unknown): string {
   if (typeof v !== "string" || v.length < 6) throw new AppError(400, "password must be at least 6 characters");
+  return v;
+}
+
+// Transient request field — never persisted. Omitted/null keeps the strong
+// AES-256 default so all existing callers are unchanged.
+export function resolveEncryptionMethod(v: unknown): EncryptionMethod {
+  if (v == null) return "aes256";
+  if (!isEncryptionMethod(v)) throw new AppError(400, "encryptionMethod must be aes256 or zip20");
   return v;
 }
 
@@ -143,6 +153,7 @@ interface ProduceInput {
   filters: Filters;
   passwordProtected: boolean;
   password: string | null;
+  encryptionMethod: EncryptionMethod;
   scheduleId: number | null;
   createdById: number | null;
 }
@@ -170,7 +181,7 @@ async function produceAndStore(user: AuthUser, companyId: number, input: Produce
   const encrypted = input.passwordProtected && !!input.password;
   let fileName = `${baseName}.${fileExtension(format, false)}`;
   if (encrypted) {
-    buffer = await encryptZip(buffer, fileName, input.password!);
+    buffer = await encryptZip(buffer, fileName, input.password!, input.encryptionMethod);
     fileName = `${baseName}.zip`;
   }
   const ct = contentType(format, encrypted);
@@ -259,12 +270,15 @@ function safeParseFilters(json: string): Filters {
 // ── On-demand export ─────────────────────────────────────────────────────────
 export async function createExport(
   user: AuthUser,
-  body: { entityType?: unknown; format?: unknown; filters?: unknown; passwordProtected?: unknown; password?: unknown },
+  body: { entityType?: unknown; format?: unknown; filters?: unknown; passwordProtected?: unknown; password?: unknown; encryptionMethod?: unknown },
 ) {
   const companyId = requireCompany(user);
   const entityType = assertEntityType(body.entityType);
   const format = assertFormat(body.format);
   const passwordProtected = body.passwordProtected === true;
+  // Validated regardless of protection (bad values are never silently accepted),
+  // but only consulted when a password is actually applied.
+  const encryptionMethod = resolveEncryptionMethod(body.encryptionMethod);
   const password = passwordProtected ? assertPassword(body.password) : null;
   const filters = normalizeFilters(body.filters);
 
@@ -274,6 +288,7 @@ export async function createExport(
     filters,
     passwordProtected,
     password,
+    encryptionMethod,
     scheduleId: null,
     createdById: user.id,
   });
@@ -398,6 +413,7 @@ export async function runScheduleNow(user: AuthUser, id: number) {
     filters: s.filters ? safeParseFilters(s.filters) : {},
     passwordProtected: false,
     password: null,
+    encryptionMethod: "aes256",
     scheduleId: s.id,
     createdById: user.id,
   });
@@ -440,6 +456,7 @@ export async function runDueSchedules(): Promise<{ processed: number }> {
         filters: s.filters ? safeParseFilters(s.filters) : {},
         passwordProtected: false,
         password: null,
+        encryptionMethod: "aes256",
         scheduleId: s.id,
         createdById: s.createdById,
       });

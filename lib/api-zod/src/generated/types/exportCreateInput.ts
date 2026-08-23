@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { ExportCreateInputEncryptionMethod } from './exportCreateInputEncryptionMethod';
 import type { ExportCreateInputEntityType } from './exportCreateInputEntityType';
 import type { ExportCreateInputFilters } from './exportCreateInputFilters';
 import type { ExportCreateInputFormat } from './exportCreateInputFormat';
@@ -16,4 +17,6 @@ export interface ExportCreateInput {
   passwordProtected?: boolean;
   /** @nullable */
   password?: string | null;
+  /** Only applies when passwordProtected is true; never persisted. aes256 (default) produces a strong AES-256 ZIP that needs an AES-capable tool (7-Zip, WinRAR, WinZip). zip20 produces a standard ZipCrypto ZIP that Windows File Explorer can open, at the cost of much weaker encryption. */
+  encryptionMethod?: ExportCreateInputEncryptionMethod;
 }

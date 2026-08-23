@@ -14282,6 +14282,16 @@ components:
           default: false
         password:
           type: ["string", "null"]
+        encryptionMethod:
+          type: string
+          enum: [aes256, zip20]
+          default: aes256
+          description: >-
+            Only applies when passwordProtected is true; never persisted.
+            aes256 (default) produces a strong AES-256 ZIP that needs an
+            AES-capable tool (7-Zip, WinRAR, WinZip). zip20 produces a
+            standard ZipCrypto ZIP that Windows File Explorer can open, at
+            the cost of much weaker encryption.
 
     ExportRun:
       type: object

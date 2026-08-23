@@ -254,6 +254,7 @@ export * from './executiveTrend';
 export * from './existingContactFound';
 export * from './existingContactFoundCode';
 export * from './exportCreateInput';
+export * from './exportCreateInputEncryptionMethod';
 export * from './exportCreateInputEntityType';
 export * from './exportCreateInputFilters';
 export * from './exportCreateInputFormat';

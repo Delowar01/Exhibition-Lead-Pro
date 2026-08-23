@@ -5354,6 +5354,17 @@ export const ExportCreateInputFormat = {
 
 export type ExportCreateInputFilters = { [key: string]: unknown };
 
+/**
+ * Only applies when passwordProtected is true; never persisted. aes256 (default) produces a strong AES-256 ZIP that needs an AES-capable tool (7-Zip, WinRAR, WinZip). zip20 produces a standard ZipCrypto ZIP that Windows File Explorer can open, at the cost of much weaker encryption.
+ */
+export type ExportCreateInputEncryptionMethod = typeof ExportCreateInputEncryptionMethod[keyof typeof ExportCreateInputEncryptionMethod];
+
+
+export const ExportCreateInputEncryptionMethod = {
+  aes256: 'aes256',
+  zip20: 'zip20',
+} as const;
+
 export interface ExportCreateInput {
   entityType: ExportCreateInputEntityType;
   format: ExportCreateInputFormat;
@@ -5361,6 +5372,8 @@ export interface ExportCreateInput {
   passwordProtected?: boolean;
   /** @nullable */
   password?: string | null;
+  /** Only applies when passwordProtected is true; never persisted. aes256 (default) produces a strong AES-256 ZIP that needs an AES-capable tool (7-Zip, WinRAR, WinZip). zip20 produces a standard ZipCrypto ZIP that Windows File Explorer can open, at the cost of much weaker encryption. */
+  encryptionMethod?: ExportCreateInputEncryptionMethod;
 }
 
 export type ExportRunStatus = typeof ExportRunStatus[keyof typeof ExportRunStatus];

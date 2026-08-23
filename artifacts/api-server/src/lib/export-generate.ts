@@ -25,6 +25,15 @@ export function isExportFormat(v: unknown): v is ExportFormat {
   return v === "csv" || v === "excel" || v === "pdf" || v === "json";
 }
 
+// Password-protection flavors for on-demand exports (never persisted):
+//   aes256 — strong encryption; needs an AES-capable tool (7-Zip/WinRAR/WinZip).
+//   zip20  — legacy ZipCrypto; opens in Windows File Explorer but is weak.
+export type EncryptionMethod = "aes256" | "zip20";
+
+export function isEncryptionMethod(v: unknown): v is EncryptionMethod {
+  return v === "aes256" || v === "zip20";
+}
+
 // Register the encrypted-zip format exactly once per process.
 let zipEncryptedRegistered = false;
 function ensureZipEncrypted(): void {
@@ -170,14 +179,21 @@ export async function generateFile(input: GenerateInput): Promise<Buffer> {
   }
 }
 
-// Wrap a produced buffer in a single-entry AES-256 encrypted ZIP.
-export async function encryptZip(buffer: Buffer, innerName: string, password: string): Promise<Buffer> {
+// Wrap a produced buffer in a single-entry password-protected ZIP. The method
+// defaults to AES-256 so existing callers keep strong encryption; "zip20"
+// (ZipCrypto) trades strength for Windows File Explorer compatibility.
+export async function encryptZip(
+  buffer: Buffer,
+  innerName: string,
+  password: string,
+  method: EncryptionMethod = "aes256",
+): Promise<Buffer> {
   ensureZipEncrypted();
   return new Promise<Buffer>((resolve, reject) => {
     // The encrypted format is registered dynamically; options are passed through.
     const archive = archiverModule.create("zip-encrypted", {
       zlib: { level: 9 },
-      encryptionMethod: "aes256",
+      encryptionMethod: method,
       password,
     });
     const chunks: Buffer[] = [];
