@@ -37,6 +37,7 @@ import {
   useGetLeadsByEvent,
   getGetLeadsByEventQueryKey,
   useListSavedSearches,
+  getListSavedSearchesQueryKey,
   useCreateSavedSearch,
   useDeleteSavedSearch,
   type UnifiedDashboard,
@@ -138,7 +139,7 @@ function csvCell(value: string | number): string {
 
 function buildDashboardCsv(d: UnifiedDashboard): string {
   const rows: string[][] = [];
-  rows.push(["Card Scanner Pro — Dashboard Summary"]);
+  rows.push(["Lead Capture Pro — Dashboard Summary"]);
   rows.push(["Scope", d.scope.name]);
   rows.push(["Date range", `${d.dateRange.from} to ${d.dateRange.to}`]);
   rows.push(["Headcount", String(d.headcount)]);
@@ -275,10 +276,13 @@ export default function AdminDashboard() {
   });
 
   // Saved dashboard views (reuse saved_searches: entityType "dashboard", kind "view").
-  const { data: savedViewsData } = useListSavedSearches({ entityType: "dashboard", kind: "view" });
+  const viewsParams = { entityType: "dashboard", kind: "view" as const };
+  const { data: savedViewsData, refetch: refetchViews } = useListSavedSearches(viewsParams, {
+    query: { queryKey: getListSavedSearchesQueryKey(viewsParams) },
+  });
   const savedViews = savedViewsData?.savedSearches;
-  const createView = useCreateSavedSearch();
-  const deleteView = useDeleteSavedSearch();
+  const createView = useCreateSavedSearch({ mutation: { onSuccess: () => void refetchViews() } });
+  const deleteView = useDeleteSavedSearch({ mutation: { onSuccess: () => void refetchViews() } });
 
   const applyView = (payload: unknown) => {
     const p = (payload ?? {}) as ViewPayload;
@@ -358,10 +362,26 @@ export default function AdminDashboard() {
     );
   };
 
+  // Scope-aware header: "My Dashboard" only when viewing your OWN employee
+  // scope — a manager drilling into a department/team/other employee sees the
+  // scope kind, not "My".
+  const pageTitle =
+    isManager && scopeKind === "company"
+      ? "Command Center"
+      : scopeKind === "employee"
+        ? scopeId === user?.id
+          ? "My Dashboard"
+          : "Employee Dashboard"
+        : scopeKind === "department"
+          ? "Department Dashboard"
+          : scopeKind === "team"
+            ? "Team Dashboard"
+            : "Dashboard";
+
   return (
-    <div className="space-y-6">
-      <PageHeader 
-        title={isManager && scopeKind === 'company' ? "Command Center" : "My Dashboard"}
+    <div className="space-y-6" data-testid="dashboard-page">
+      <PageHeader
+        title={pageTitle}
         description={
           data 
             ? `${data.scope.name} · ${data.headcount} ${data.headcount === 1 ? "person" : "people"} · ${format(parseISO(data.dateRange.from), "MMM d")} – ${format(parseISO(data.dateRange.to), "MMM d, yyyy")}`
@@ -370,7 +390,7 @@ export default function AdminDashboard() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Select value={currentScopeValue} onValueChange={handleScopeChange}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[200px]" data-testid="dashboard-scope">
                 <SelectValue placeholder="Select scope" />
               </SelectTrigger>
               <SelectContent>
@@ -409,7 +429,7 @@ export default function AdminDashboard() {
             </Select>
 
             <Select value={String(rangeDays)} onValueChange={(v) => setRangeDays(parseInt(v))}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-[140px]" data-testid="dashboard-range">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -423,7 +443,7 @@ export default function AdminDashboard() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5">
+                <Button variant="outline" size="sm" className="gap-1.5" data-testid="dashboard-views">
                   <Bookmark className="h-4 w-4" />
                   Views
                 </Button>
@@ -460,7 +480,7 @@ export default function AdminDashboard() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={exportCsv} disabled={!data}>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={exportCsv} disabled={!data} data-testid="dashboard-export">
               <Download className="h-4 w-4" />
               Export
             </Button>
@@ -542,12 +562,11 @@ function DashboardBody({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {isCommandCenter ? (
           <>
-            <MetricCard 
-              label="Pipeline Value" 
-              value={formatUsd(data.kpis.pipelineValue)} 
-              icon={DollarSign} 
-              delta={data.deltas.pipelineValue ?? undefined} 
-              deltaLabel="vs prior period" 
+            <MetricCard
+              label="Pipeline Value"
+              value={formatUsd(data.kpis.pipelineValue)}
+              icon={DollarSign}
+              footer="Open pipeline · point-in-time"
             />
             <MetricCard 
               label="Won Revenue" 
@@ -573,11 +592,11 @@ function DashboardBody({
           </>
         ) : (
           <>
-            <MetricCard 
-              label="My Leads" 
-              value={k.total.toLocaleString()} 
-              icon={Target} 
-              footer={`${k.today} new today`} 
+            <MetricCard
+              label={scopeKind === "employee" ? "My Leads" : "Leads"}
+              value={k.total.toLocaleString()}
+              icon={Target}
+              footer={`${k.today} new today`}
             />
             <MetricCard 
               label="Follow-ups Due" 
@@ -828,10 +847,12 @@ function DashboardBody({
                     return (
                       <div key={x.source}>
                         <div className="mb-1.5 flex items-center justify-between text-sm">
-                          <span className="font-medium capitalize flex items-center gap-2">
-                            {x.source === 'scan' && <ScanLine className="h-3.5 w-3.5 text-muted-foreground" />}
-                            {x.source === 'manual' && <ContactIcon className="h-3.5 w-3.5 text-muted-foreground" />}
-                            {x.source === 'import' && <Download className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span className="font-medium flex items-center gap-2">
+                            {x.source === "Business Card" ? (
+                              <ScanLine className="h-3.5 w-3.5 text-muted-foreground" />
+                            ) : (
+                              <ContactIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
                             {x.source}
                           </span>
                           <span className="text-muted-foreground">

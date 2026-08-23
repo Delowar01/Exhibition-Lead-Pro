@@ -46,9 +46,9 @@ import {
   DollarSign,
   Trophy,
   CalendarClock,
-  Users,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { PageHeader, ErrorState } from "@/components/ds";
 
 type ScopeKind = "company" | "department" | "team" | "employee";
 
@@ -87,12 +87,14 @@ function KpiCard({
   title,
   value,
   delta,
+  deltaUnit = "%",
   icon: Icon,
   hint,
 }: {
   title: string;
   value: string;
   delta?: number | null;
+  /** "%" for percentage change; "pt" for percentage-POINT differences (rates). */
   deltaUnit?: "%" | "pt";
   icon: React.ElementType;
   hint?: string;
@@ -106,7 +108,7 @@ function KpiCard({
         </div>
         <div className="mt-2 text-2xl font-bold tracking-tight">{value}</div>
         <div className="mt-1 flex items-center gap-2">
-          {delta !== undefined && <Delta value={delta ?? null} />}
+          {delta !== undefined && <Delta value={delta ?? null} unit={deltaUnit} />}
           {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
         </div>
       </CardContent>
@@ -146,6 +148,7 @@ function DashboardBody({ data }: { data: ScopedAnalytics }) {
           title="Conversion Rate"
           value={`${kpis.conversionRate}%`}
           delta={deltas.conversionRate}
+          deltaUnit="pt"
           icon={Trophy}
           hint={`${kpis.wonCount}W / ${kpis.lostCount}L`}
         />
@@ -298,27 +301,43 @@ function DashboardBody({ data }: { data: ScopedAnalytics }) {
           </CardContent>
         </Card>
 
-        {/* Recent activity */}
-        <Card>
+        {/* Follow-up performance — the analysis view of follow-up discipline.
+            (Operational recent-activity lives on the Dashboard command center;
+            it is intentionally NOT duplicated here.) */}
+        <Card data-testid="analytics-followup">
           <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
+            <CardTitle>Follow-up Performance</CardTitle>
           </CardHeader>
-          <CardContent>
-            {data.recentActivity.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">No recent activity</div>
-            ) : (
-              <div className="space-y-3">
-                {data.recentActivity.map((a) => (
-                  <div key={a.id} className="flex items-start gap-3">
-                    <div className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-primary" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{a.title}</div>
-                      {a.subtitle && <div className="truncate text-xs text-muted-foreground">{a.subtitle}</div>}
-                    </div>
-                    <span className="whitespace-nowrap text-xs text-muted-foreground">{format(parseISO(a.at), "MMM d")}</span>
-                  </div>
-                ))}
+          <CardContent className="space-y-5">
+            <div>
+              <div className="flex items-end justify-between">
+                <span className="text-sm text-muted-foreground">On-time adherence</span>
+                <span className="text-3xl font-bold tracking-tight tabular-nums">{data.kpis.followUpAdherence}%</span>
               </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full ${data.kpis.followUpAdherence >= 80 ? "bg-emerald-500" : data.kpis.followUpAdherence >= 50 ? "bg-amber-500" : "bg-rose-500"}`}
+                  style={{ width: `${Math.max(0, Math.min(100, data.kpis.followUpAdherence))}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Share of scheduled follow-ups that are not overdue.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">Due (today or earlier)</div>
+                <div className="mt-1 text-xl font-semibold tabular-nums">{data.kpis.followUpsDueCount}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">Overdue</div>
+                <div className={`mt-1 text-xl font-semibold tabular-nums ${data.kpis.followUpsOverdueCount > 0 ? "text-rose-600" : ""}`}>
+                  {data.kpis.followUpsOverdueCount}
+                </div>
+              </div>
+            </div>
+            {data.kpis.followUpsDueCount === 0 && data.kpis.followUpsOverdueCount === 0 && (
+              <p className="text-xs text-muted-foreground">No follow-ups are due — nothing is slipping in this scope.</p>
             )}
           </CardContent>
         </Card>
@@ -396,15 +415,18 @@ export default function AdminAnalytics() {
   const currentScopeValue = scopeKind === "company" ? "company" : `${scopeKind}:${scopeId}`;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Executive Dashboard</h1>
-          {data && <p className="mt-1 text-sm text-muted-foreground">{data.scope.name} · {data.headcount} {data.headcount === 1 ? "person" : "people"}</p>}
-        </div>
+    <div className="space-y-6" data-testid="analytics-page">
+      <PageHeader
+        title="Performance Analytics"
+        description={
+          data
+            ? `Deep-dive analysis · ${data.scope.name} · ${data.headcount} ${data.headcount === 1 ? "person" : "people"} · ${format(parseISO(data.dateRange.from), "MMM d")} – ${format(parseISO(data.dateRange.to), "MMM d, yyyy")}`
+            : "Compare performance across scopes and time ranges."
+        }
+        actions={
         <div className="flex flex-wrap items-center gap-3">
           <Select value={currentScopeValue} onValueChange={handleScopeChange}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-[220px]" data-testid="analytics-scope">
               <SelectValue placeholder="Select scope" />
             </SelectTrigger>
             <SelectContent>
@@ -445,7 +467,7 @@ export default function AdminAnalytics() {
           </Select>
 
           <Select value={String(rangeDays)} onValueChange={(v) => setRangeDays(parseInt(v))}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[150px]" data-testid="analytics-range">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -457,15 +479,14 @@ export default function AdminAnalytics() {
             </SelectContent>
           </Select>
         </div>
-      </div>
+        }
+      />
 
       {active.isError ? (
-        <Card>
-          <CardContent className="flex items-center gap-3 py-10 text-sm text-muted-foreground">
-            <Users className="h-5 w-5" />
-            You do not have access to this view, or it could not be loaded.
-          </CardContent>
-        </Card>
+        <ErrorState
+          title="Access Denied"
+          description="You do not have access to this view, or it could not be loaded."
+        />
       ) : active.isLoading || !data ? (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

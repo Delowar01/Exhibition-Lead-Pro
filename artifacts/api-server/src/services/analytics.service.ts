@@ -409,6 +409,10 @@ async function resolveDashboardScope(
   if (scopeType === "department" && id != null) return resolveDepartment(user, id);
   if (scopeType === "team" && id != null) return resolveTeam(user, id);
   if (scopeType === "employee" && id != null) return resolveEmployee(user, id);
+  // An EXPLICIT company request is authoritative: resolveOverview 403s
+  // non-managers (matching /analytics/overview) instead of silently
+  // downgrading them to their own employee scope.
+  if (scopeType === "company") return resolveOverview(user);
   if (isManager(user.role)) return resolveOverview(user);
   return resolveEmployee(user, user.id);
 }
