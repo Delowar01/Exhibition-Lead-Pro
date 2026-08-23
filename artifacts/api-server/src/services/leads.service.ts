@@ -13,7 +13,33 @@ import { parseListQuery } from "../lib/list-query.js";
 import { convertCurrency } from "../lib/currency.js";
 import { recommendAssignee as aiRecommendAssignee, logAiError } from "../lib/ai.js";
 
+// Legacy default stage order — kept only as a fallback when a tenant somehow
+// has no configured stages (getPipeline now honours the configured list).
 const PIPELINE_STAGES = ["prospect", "qualified", "proposal_sent", "negotiation", "won", "lost"];
+
+// ── Canonical closed-stage semantics ─────────────────────────────────────────
+// Terminal ("closed") status comes from the CONFIGURED stage flags isWon/isLost;
+// the literal keys "won"/"lost" are only a fallback for legacy rows that do not
+// resolve to a live configured stage. Every consumer (create conflict, reopen
+// conflict, lifecycle activities, pipeline totals, import dedup) shares this.
+export interface StageOutcomeFlags {
+  isWon?: boolean | null;
+  isLost?: boolean | null;
+}
+
+export function stageOutcome(
+  flags: StageOutcomeFlags | null | undefined,
+  stageKey: string | null | undefined,
+): { closed: boolean; won: boolean; lost: boolean } {
+  if (flags) {
+    const won = flags.isWon === true;
+    const lost = flags.isLost === true;
+    return { closed: won || lost, won, lost };
+  }
+  const won = stageKey === "won";
+  const lost = stageKey === "lost";
+  return { closed: won || lost, won, lost };
+}
 
 type ContactSummary = { firstName: string | null; lastName: string | null; fullName: string | null; email: string | null; contactCompany: string | null };
 type LeadHistoryItem = { id: number; leadId: number; changedBy: number | null; changedByName: string | null; fieldName: string; oldValue: string | null; newValue: string | null; changedAt: string };
@@ -203,7 +229,7 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
   if (teamId != null && !(await refInCompany("teams", companyId, teamId))) throw new AppError(400, "Invalid teamId");
   if (organizationId != null && !(await refInCompany("organizations", companyId, organizationId))) throw new AppError(400, "Invalid organizationId");
 
-  // 409 if this contact already has a non-lost lead in this company
+  // 409 if this contact already has an OPEN (non-terminal-stage) lead here
   if (contactId != null) {
     const existingId = await leadsRepo.activeLeadIdForContact(companyId, contactId);
     if (existingId !== undefined) {
@@ -250,8 +276,23 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
 }
 
 export async function getPipeline(user: AuthUser) {
+  const companyId = user.companyId;
   const allLeads = await leadsRepo.pipelineLeads(user);
   const enriched = await enrichLeads(allLeads);
+
+  // The pipeline honours the tenant's CONFIGURED stages (custom stages never
+  // disappear), in sortOrder; default tenants keep the exact legacy six. Any
+  // orphan stage key still present on leads is appended so no lead is hidden.
+  let configured: Array<{ key: string; isWon: boolean; isLost: boolean }> = [];
+  if (companyId) {
+    await ensureStages(companyId);
+    configured = (await pipelineRepo.listForCompany(user)).map((s) => ({ key: s.key, isWon: s.isWon, isLost: s.isLost }));
+  }
+  const flagsByKey = new Map(configured.map((s) => [s.key, s]));
+  const stageKeys = configured.length > 0 ? configured.map((s) => s.key) : [...PIPELINE_STAGES];
+  for (const l of enriched) {
+    if (l.stage && !stageKeys.includes(l.stage)) stageKeys.push(l.stage);
+  }
 
   // Cross-currency aggregation: convert each lead's value to USD (the server
   // base) BEFORE summing — never add raw amounts across currencies. Per-lead
@@ -259,14 +300,16 @@ export async function getPipeline(user: AuthUser) {
   const usdValue = (l: { value: number | null; currency: string }) =>
     convertCurrency(l.value ?? 0, l.currency, "USD");
 
-  const stages = PIPELINE_STAGES.map((stage) => {
+  const stages = stageKeys.map((stage) => {
     const stageLeads = enriched.filter(l => l.stage === stage);
     const value = stageLeads.reduce((sum, l) => sum + usdValue(l), 0);
     return { stage, leads: stageLeads, count: stageLeads.length, value };
   });
 
+  // Open pipeline = every lead whose stage is not a configured terminal stage
+  // (isWon/isLost), with the literal won/lost fallback for unconfigured keys.
   const totalValue = enriched
-    .filter(l => l.stage !== "won" && l.stage !== "lost")
+    .filter((l) => !stageOutcome(flagsByKey.get(l.stage) ?? null, l.stage).closed)
     .reduce((sum, l) => sum + usdValue(l), 0);
   return { stages, totalValue };
 }
@@ -306,16 +349,23 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
   // Stage sync: the configurable `stageId` and the legacy text `stage` are kept
   // consistent. A provided stageId wins and drives the text; a bare stage text
   // resolves back to a stageId (or null when no matching stage is configured).
+  // The resolved stage row is kept so lifecycle decisions below use its
+  // configured isWon/isLost flags, not the literal key text.
+  let newStageRow: StageOutcomeFlags | null = null;
   if (stageId !== undefined) {
     updateData.stageId = stageId;
     if (stageId != null) {
       const s = await leadsRepo.stageInfo(stageId);
-      if (s) updateData.stage = s.key;
+      if (s) {
+        updateData.stage = s.key;
+        newStageRow = s;
+      }
     }
   } else if (stage !== undefined) {
     updateData.stage = stage;
     const s = await pipelineRepo.findByKey(existing.companyId, String(stage));
     updateData.stageId = s?.id ?? null;
+    newStageRow = s ?? null;
   }
 
   if (Object.keys(updateData).length === 0) throw new AppError(400, "No valid fields to update");
@@ -323,6 +373,20 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
   const newStage = (updateData.stage as string | undefined) ?? existing.stage;
   const stageChanged = updateData.stage !== undefined && newStage !== existing.stage;
   const assigneeChanged = assignedToId !== undefined && assignedToId !== existing.assignedToId;
+
+  // Reopen guard: moving a CLOSED lead back to an OPEN stage while the same
+  // contact already has another open opportunity conflicts (one open
+  // opportunity per contact — same rule as createLead). Rejected reopens leave
+  // the closed lead, its history, and its activities completely untouched.
+  let newOutcome = stageOutcome(newStageRow, String(newStage));
+  if (stageChanged) {
+    const oldRow = existing.stageId != null ? await leadsRepo.stageInfo(existing.stageId) : null;
+    const oldOutcome = stageOutcome(oldRow ?? null, existing.stage);
+    if (oldOutcome.closed && !newOutcome.closed && existing.contactId != null) {
+      const openId = await leadsRepo.activeLeadIdForContact(existing.companyId, existing.contactId, id);
+      if (openId !== undefined) return { conflict: true as const, existingId: openId };
+    }
+  }
 
   // Write history rows for tracked fields
   const trackedFields: Array<{ field: string; oldVal: string | null; newVal: string | null }> = [];
@@ -346,16 +410,18 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
 
   if (!lead) throw new AppError(404, "Lead not found");
 
-  // Emit system lifecycle activities for stage moves (won/lost/generic) and reassignment.
+  // Emit system lifecycle activities for stage moves (won/lost/generic) and
+  // reassignment. Won/lost come from the CONFIGURED stage flags, so custom
+  // terminal stages (e.g. "closed_success") emit the same lifecycle types.
   if (stageChanged) {
-    const type = newStage === "won" ? "won" : newStage === "lost" ? "lost" : "stage_change";
+    const type = newOutcome.won ? "won" : newOutcome.lost ? "lost" : "stage_change";
     await emitSystemActivity(lead, user.id, type, `Stage changed to ${newStage}`, { from: existing.stage, to: newStage });
   }
   if (assigneeChanged) {
     await emitSystemActivity(lead, user.id, "assignment", "Owner changed", { from: existing.assignedToId, to: assignedToId ?? null });
   }
 
-  return await enrichLead(lead, true);
+  return { conflict: false as const, lead: await enrichLead(lead, true) };
 }
 
 export async function deleteLead(user: AuthUser, id: number) {

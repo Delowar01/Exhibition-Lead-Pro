@@ -5,10 +5,10 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { LeadUpdateStage } from './leadUpdateStage';
 
 export interface LeadUpdate {
-  stage?: LeadUpdateStage;
+  /** Pipeline stage key. Stages are tenant-configurable (custom keys allowed); the legacy default keys remain valid. */
+  stage?: string;
   /** @nullable */
   source?: string | null;
   /** @nullable */

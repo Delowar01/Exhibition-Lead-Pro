@@ -23,8 +23,6 @@ import {
   getListCrmOrganizationsQueryKey,
   getListEventsQueryKey,
   getListUsersQueryKey,
-  LeadInputStage,
-  LeadUpdateStage,
   useCreateLead,
   useGetContact,
   useGetLead,
@@ -228,11 +226,11 @@ export default function PipelineFormScreen() {
     };
     try {
       if (isEdit) {
-        const updated = await updateLead.mutateAsync({ id: editId, data: { ...basePayload, stage: stage as LeadUpdateStage } });
+        const updated = await updateLead.mutateAsync({ id: editId, data: { ...basePayload, stage } });
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace(`/pipeline/${updated.id}`);
       } else {
-        const created = await createLead.mutateAsync({ data: { ...basePayload, stage: stage as LeadInputStage } });
+        const created = await createLead.mutateAsync({ data: { ...basePayload, stage } });
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace(`/pipeline/${created.id}`);
       }

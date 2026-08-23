@@ -5,12 +5,12 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { LeadInputStage } from './leadInputStage';
 
 export interface LeadInput {
   /** @nullable */
   contactId?: number | null;
-  stage?: LeadInputStage;
+  /** Pipeline stage key. Stages are tenant-configurable (custom keys allowed); the legacy default keys remain valid. */
+  stage?: string;
   /** @nullable */
   source?: string | null;
   /** @nullable */

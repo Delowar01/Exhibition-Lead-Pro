@@ -30,7 +30,6 @@ import {
   type Tag,
   type TimelineEntry,
   LeadActivityInputType,
-  LeadUpdateStage,
   AssignLeadInputStrategy,
   type AssigneeRecommendation,
   useAttachLeadTag,
@@ -447,7 +446,7 @@ export default function PipelineDetailScreen() {
   function moveStage(newStage: string) {
     if (!lead || updateLead.isPending) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    updateLead.mutate({ id: lead.id, data: { stage: newStage as LeadUpdateStage } });
+    updateLead.mutate({ id: lead.id, data: { stage: newStage } });
   }
 
   function confirmMarkWon() {

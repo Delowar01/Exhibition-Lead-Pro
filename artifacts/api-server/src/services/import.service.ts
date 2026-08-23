@@ -10,6 +10,7 @@ import * as subscriptionsRepo from "../repositories/subscriptions.repository.js"
 import { buildContactDupeMatcher } from "./contacts.service.js";
 import * as customFields from "./custom_fields.service.js";
 import { ensureStages } from "./pipeline.service.js";
+import { stageOutcome } from "./leads.service.js";
 import type { CustomFieldDefinitionRow } from "../repositories/custom_fields.repository.js";
 import {
   standardFields,
@@ -153,6 +154,9 @@ interface BuildContext {
   rows: Record<string, string>[];
   mapping: MappingInput;
   customDefs: CustomFieldDefinitionRow[];
+  // Configured stage flags (key → isWon/isLost) so lead-import dedup shares the
+  // CANONICAL open/closed rule (custom terminal stages count as closed too).
+  configuredStageFlags: Map<string, { isWon: boolean; isLost: boolean }>;
 }
 
 function normalizeMapping(raw: unknown): MappingInput {
@@ -280,13 +284,13 @@ async function buildRows(ctx: BuildContext): Promise<{ built: BuiltRow[]; unmapp
       const email = record.contactEmail ? record.contactEmail.trim().toLowerCase() : null;
       const cid = email ? leadContactByEmail.get(email) ?? null : null;
       if (cid != null) {
-        // "Active" must mean exactly what leadsRepo.activeLeadIdForContact enforces
-        // (OPEN = neither won nor lost). Normalize this row's stage the SAME way
-        // commitLeads does — a closed (won/lost) row creates no open opportunity, so
-        // it neither conflicts with an existing open lead nor blocks a later row for
-        // the same contact.
+        // "Active" must mean exactly what leadsRepo.activeLeadIdForContact enforces:
+        // OPEN = the stage is not a configured terminal stage (isWon/isLost), with
+        // the literal won/lost fallback for unconfigured keys. A closed row creates
+        // no open opportunity, so it neither conflicts with an existing open lead
+        // nor blocks a later row for the same contact.
         const stageText = (record.stage ?? "prospect").trim().toLowerCase() || "prospect";
-        if (stageText !== "lost" && stageText !== "won") {
+        if (!stageOutcome(ctx.configuredStageFlags.get(stageText) ?? null, stageText).closed) {
           if (leadContactsWithActive.has(cid) || seenActiveLeadContacts.has(cid)) {
             duplicateReason = "contact already has an active lead";
             duplicateOfExistingId = cid;
@@ -330,8 +334,17 @@ export async function validate(user: AuthUser, body: { entityType?: unknown; fil
   const { rows } = parseWorkbook(String(body.file ?? ""));
   const mapping = normalizeMapping(body.mapping);
   const customDefs = await loadCustomDefs(companyId, entityType);
-  const { built, unmappedRequiredCustom } = await buildRows({ entityType, companyId, rows, mapping, customDefs });
+  const configuredStageFlags = await loadStageFlags(companyId, entityType);
+  const { built, unmappedRequiredCustom } = await buildRows({ entityType, companyId, rows, mapping, customDefs, configuredStageFlags });
   return summarize(built, unmappedRequiredCustom);
+}
+
+// Stage flags feed the lead-import open/closed rule; contacts don't need them.
+async function loadStageFlags(companyId: number, entityType: ImportEntityType): Promise<Map<string, { isWon: boolean; isLost: boolean }>> {
+  if (entityType !== "lead") return new Map();
+  await ensureStages(companyId);
+  const rows = await pipelineRepo.stageFlagsByCompany(companyId);
+  return new Map(rows.map((s) => [s.key, { isWon: s.isWon, isLost: s.isLost }]));
 }
 
 export interface CommitResult {
@@ -352,8 +365,9 @@ export async function commit(
   const mapping = normalizeMapping(body.mapping);
   const skipDuplicates = body.skipDuplicates !== false; // default: skip duplicates
   const customDefs = await loadCustomDefs(companyId, entityType);
+  const configuredStageFlags = await loadStageFlags(companyId, entityType);
 
-  const { built, unmappedRequiredCustom } = await buildRows({ entityType, companyId, rows, mapping, customDefs });
+  const { built, unmappedRequiredCustom } = await buildRows({ entityType, companyId, rows, mapping, customDefs, configuredStageFlags });
 
   // Fatal: a required custom field mapped to no column would leave every row
   // invalid. Reject the whole batch rather than importing broken rows.

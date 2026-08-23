@@ -29,6 +29,15 @@ export async function insertMany(rows: Array<typeof pipelineStagesTable.$inferIn
   await exec(tx).insert(pipelineStagesTable).values(rows);
 }
 
+// Configured stage flags for one company (companyId-scoped read; used by the
+// import pipeline where queries are keyed by the already-authorized company).
+export async function stageFlagsByCompany(companyId: number): Promise<Array<{ key: string; isWon: boolean; isLost: boolean }>> {
+  return db
+    .select({ key: pipelineStagesTable.key, isWon: pipelineStagesTable.isWon, isLost: pipelineStagesTable.isLost })
+    .from(pipelineStagesTable)
+    .where(and(eq(pipelineStagesTable.companyId, companyId), notDeleted(pipelineStagesTable.deletedAt)));
+}
+
 export async function listForCompany(user: AuthUser): Promise<PipelineStageRow[]> {
   const where = activeScope(user, pipelineStagesTable.companyId, pipelineStagesTable.deletedAt);
   return db.select().from(pipelineStagesTable).where(where).orderBy(asc(pipelineStagesTable.sortOrder), asc(pipelineStagesTable.id));

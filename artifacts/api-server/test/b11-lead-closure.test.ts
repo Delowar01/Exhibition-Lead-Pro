@@ -1,10 +1,13 @@
 // Batch 11 — Lead Conversion & Opportunity Closure. The Lead IS the sales
-// opportunity: open = any stage other than won/lost. This suite proves the
-// full lifecycle against the live API: the one-open-opportunity-per-contact
-// rule (won and lost both UNBLOCK a new opportunity — the Batch 11 fix),
+// opportunity: open = any stage that is not a configured terminal stage
+// (isWon/isLost flags; the literal keys "won"/"lost" only as legacy fallback).
+// This suite proves the full lifecycle against the live API: the ONE open
+// opportunity per contact rule on create AND on reopen (a closed lead cannot
+// reopen while the contact has another open lead — 409 with existingId),
 // Closed Won / Closed Lost transitions with history + system activities,
 // reopening with preserved history, open-pipeline math (currency-normalized,
-// won/lost excluded, reopen restores), and tenant isolation.
+// terminal stages excluded, reopen restores), configurable custom terminal
+// stages (closed_success/closed_failure), and tenant isolation.
 //
 // All fixtures live in throwaway tenants torn down in afterAll.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -77,6 +80,15 @@ async function activities(token: string, leadId: number): Promise<any[]> {
   expect(res.status).toBe(200);
   const body = await res.json();
   return body.activities ?? body;
+}
+
+// Full lead snapshot (stage + history) for no-mutation-on-rejection checks.
+async function leadSnapshot(token: string, leadId: number): Promise<{ stage: string; historyCount: number; activityCount: number }> {
+  const res = await api("GET", `/leads/${leadId}`, token);
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  const acts = await activities(token, leadId);
+  return { stage: body.stage, historyCount: (body.history ?? []).length, activityCount: acts.length };
 }
 
 beforeAll(async () => {
@@ -218,8 +230,41 @@ describe("open-pipeline math (currency-normalized; won/lost excluded)", () => {
   });
 });
 
-describe("reopening a closed opportunity", () => {
-  it("won → open: transition recorded, previous history preserved", async () => {
+describe("reopening a closed opportunity (one open per contact enforced)", () => {
+  it("cannot reopen a WON lead while the contact has another open opportunity (409 + existingId)", async () => {
+    const before = await leadSnapshot(adminToken, lead1);
+    expect(before.stage).toBe("won");
+
+    const res = await setStage(adminToken, lead1, "qualified");
+    expect(res.status).toBe(409);
+    expect((await res.json()).existingId).toBe(lead3);
+
+    // The rejected reopen must be a pure no-op: stage, history, and
+    // activities of the closed lead are completely untouched.
+    const after = await leadSnapshot(adminToken, lead1);
+    expect(after).toEqual(before);
+  });
+
+  it("cannot reopen a LOST lead in the same situation either", async () => {
+    const before = await leadSnapshot(adminToken, lead2);
+    expect(before.stage).toBe("lost");
+    const res = await setStage(adminToken, lead2, "negotiation");
+    expect(res.status).toBe(409);
+    expect((await res.json()).existingId).toBe(lead3);
+    expect(await leadSnapshot(adminToken, lead2)).toEqual(before);
+  });
+
+  it("open → open moves on the open lead itself remain allowed", async () => {
+    const res = await setStage(adminToken, lead3, "negotiation");
+    expect(res.status).toBe(200);
+    expect((await res.json()).stage).toBe("negotiation");
+  });
+
+  it("after the open opportunity closes, reopen succeeds with history preserved", async () => {
+    // Close the blocking open lead…
+    expect((await setStage(adminToken, lead3, "lost")).status).toBe(200);
+
+    // …now the won lead can reopen: transition recorded, prior history kept.
     const res = await setStage(adminToken, lead1, "qualified");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -233,21 +278,17 @@ describe("reopening a closed opportunity", () => {
     expect(acts.some((a: any) => a.type === "stage_change" && a.metadata?.from === "won" && a.metadata?.to === "qualified")).toBe(true);
   });
 
-  it("lost → open: same guarantees", async () => {
-    const res = await setStage(adminToken, lead2, "negotiation");
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    const stageRows = body.history.filter((h: any) => h.fieldName === "stage");
-    expect(stageRows.some((h: any) => h.oldValue === "prospect" && h.newValue === "lost")).toBe(true);
-    expect(stageRows.some((h: any) => h.oldValue === "lost" && h.newValue === "negotiation")).toBe(true);
-    const acts = await activities(adminToken, lead2);
-    expect(acts.some((a: any) => a.type === "lost")).toBe(true);
+  it("the reopened lead returns to the open pipeline total", async () => {
+    const { totalValue } = await pipelineTotal(adminToken);
+    // Open: reopened lead1 (1000 USD) + leadB (7500 SAR = 2000 USD) = 3000.
+    // lead2 (lost) and lead3 (now lost) stay excluded.
+    expect(totalValue).toBe(3000);
   });
 
-  it("reopened opportunities return to the open pipeline total", async () => {
-    const { totalValue } = await pipelineTotal(adminToken);
-    // 5000 + reopened lead1 (1000) + reopened lead2 (2000) = 8000.
-    expect(totalValue).toBe(8000);
+  it("the reopened lead now blocks reopening the other closed lead (409 + existingId)", async () => {
+    const res = await setStage(adminToken, lead2, "negotiation");
+    expect(res.status).toBe(409);
+    expect((await res.json()).existingId).toBe(lead1);
   });
 });
 
@@ -278,5 +319,85 @@ describe("tenant isolation for the lifecycle", () => {
     expect((await setStage(adminBToken, idB, "won")).status).toBe(200);
     const { totalValue } = await pipelineTotal(adminBToken);
     expect(totalValue).toBe(0); // their only lead is won — open pipeline empty
+  });
+});
+
+// ── Configurable terminal stages ─────────────────────────────────────────────
+// Tenant-configured isWon/isLost flags are authoritative for closed semantics;
+// the literal "won"/"lost" keys (exercised by every block above) remain only a
+// legacy fallback. Runs in tenant B, whose only prior lead is won.
+describe("custom terminal stages (isWon/isLost flags authoritative)", () => {
+  let leadC1 = 0; // → closed_success (custom won)
+  let leadC2 = 0; // → closed_failure (custom lost)
+  let leadC3 = 0; // stays open to force the reopen conflict
+
+  it("creates custom closed_success (isWon) and closed_failure (isLost) stages", async () => {
+    const won = await api("POST", "/pipeline/stages", adminBToken, { name: "Closed Success", key: "closed_success", isWon: true });
+    expect(won.status).toBe(201);
+    const lost = await api("POST", "/pipeline/stages", adminBToken, { name: "Closed Failure", key: "closed_failure", isLost: true });
+    expect(lost.status).toBe(201);
+  });
+
+  it("closing into a custom WON stage emits a 'won' system activity", async () => {
+    const created = await createLead(adminBToken, { contactId: contactB2Id, stage: "prospect", value: 500, currency: "USD" });
+    expect(created.status).toBe(201);
+    leadC1 = (await created.json()).id;
+
+    const res = await setStage(adminBToken, leadC1, "closed_success");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.stage).toBe("closed_success");
+    expect(body.history.some((h: any) => h.fieldName === "stage" && h.oldValue === "prospect" && h.newValue === "closed_success")).toBe(true);
+
+    const acts = await activities(adminBToken, leadC1);
+    const wonAct = acts.find((a: any) => a.type === "won");
+    expect(wonAct).toBeTruthy();
+    expect(wonAct.source).toBe("system");
+  });
+
+  it("the custom terminal stage stays visible in the pipeline but is excluded from the open total", async () => {
+    const { totalValue, stages } = await pipelineTotal(adminBToken);
+    const successStage = stages.find((s: any) => s.stage === "closed_success");
+    expect(successStage).toBeTruthy(); // custom stage must not disappear
+    expect(successStage.leads.map((l: any) => l.id)).toContain(leadC1);
+    expect(totalValue).toBe(0); // 500 sits in a flag-won stage → not open value
+  });
+
+  it("a custom-WON opportunity does not block a new one for the contact", async () => {
+    const res = await createLead(adminBToken, { contactId: contactB2Id, stage: "prospect", value: 800, currency: "USD" });
+    expect(res.status).toBe(201);
+    leadC2 = (await res.json()).id;
+  });
+
+  it("closing into a custom LOST stage emits a 'lost' activity and unblocks the contact", async () => {
+    const res = await setStage(adminBToken, leadC2, "closed_failure");
+    expect(res.status).toBe(200);
+    const acts = await activities(adminBToken, leadC2);
+    expect(acts.some((a: any) => a.type === "lost" && a.source === "system")).toBe(true);
+
+    const { totalValue, stages } = await pipelineTotal(adminBToken);
+    expect(stages.find((s: any) => s.stage === "closed_failure").leads.map((l: any) => l.id)).toContain(leadC2);
+    expect(totalValue).toBe(0); // custom lost excluded from open value too
+
+    const next = await createLead(adminBToken, { contactId: contactB2Id, stage: "qualified", value: 600, currency: "USD" });
+    expect(next.status).toBe(201);
+    leadC3 = (await next.json()).id;
+  });
+
+  it("reopen conflict applies to custom terminals: 409 while another open lead exists", async () => {
+    const before = await leadSnapshot(adminBToken, leadC1);
+    expect(before.stage).toBe("closed_success");
+    const res = await setStage(adminBToken, leadC1, "prospect");
+    expect(res.status).toBe(409);
+    expect((await res.json()).existingId).toBe(leadC3);
+    expect(await leadSnapshot(adminBToken, leadC1)).toEqual(before); // untouched
+  });
+
+  it("after closing the open lead via a custom terminal, reopen succeeds and restores open value", async () => {
+    expect((await setStage(adminBToken, leadC3, "closed_failure")).status).toBe(200);
+    const res = await setStage(adminBToken, leadC1, "prospect");
+    expect(res.status).toBe(200);
+    const { totalValue } = await pipelineTotal(adminBToken);
+    expect(totalValue).toBe(500); // reopened leadC1 back in the open pipeline
   });
 });

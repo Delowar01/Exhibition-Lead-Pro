@@ -7,7 +7,6 @@
  */
 import type { LeadHistory } from './leadHistory';
 import type { LeadPriority } from './leadPriority';
-import type { LeadStage } from './leadStage';
 import type { Tag } from './tag';
 
 export interface Lead {
@@ -21,7 +20,8 @@ export interface Lead {
   contactEmail?: string | null;
   /** @nullable */
   contactCompany?: string | null;
-  stage: LeadStage;
+  /** Pipeline stage key. Stages are tenant-configurable (custom keys allowed); the legacy default keys remain valid. */
+  stage: string;
   /** @nullable */
   source?: string | null;
   /** @nullable */

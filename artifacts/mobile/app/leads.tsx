@@ -26,7 +26,6 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import {
   type Lead,
-  type LeadUpdateStage,
   type PipelineView,
   BulkAssignInputStrategy,
   getGetLeadPipelineQueryKey,
@@ -327,7 +326,7 @@ export default function LeadsScreen() {
       }
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       updateLead.mutate(
-        { id: leadId, data: { stage: toStage as LeadUpdateStage } },
+        { id: leadId, data: { stage: toStage } },
         {
           onError: () => {
             if (prev) queryClient.setQueryData(key, prev);

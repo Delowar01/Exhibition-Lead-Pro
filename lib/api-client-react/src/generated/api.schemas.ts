@@ -1705,22 +1705,6 @@ export interface MakeOriginalRequest {
   groupOriginalId: number;
 }
 
-export type LeadStage = typeof LeadStage[keyof typeof LeadStage];
-
-
-export const LeadStage = {
-  prospect: 'prospect',
-  qualified: 'qualified',
-  proposal_sent: 'proposal_sent',
-  negotiation: 'negotiation',
-  won: 'won',
-  lost: 'lost',
-  new: 'new',
-  contacted: 'contacted',
-  meeting_scheduled: 'meeting_scheduled',
-  archived: 'archived',
-} as const;
-
 /**
  * @nullable
  */
@@ -1771,7 +1755,8 @@ export interface Lead {
   contactEmail?: string | null;
   /** @nullable */
   contactCompany?: string | null;
-  stage: LeadStage;
+  /** Pipeline stage key. Stages are tenant-configurable (custom keys allowed); the legacy default keys remain valid. */
+  stage: string;
   /** @nullable */
   source?: string | null;
   /** @nullable */
@@ -1822,26 +1807,11 @@ export interface LeadList {
   total: number;
 }
 
-export type LeadInputStage = typeof LeadInputStage[keyof typeof LeadInputStage];
-
-
-export const LeadInputStage = {
-  prospect: 'prospect',
-  qualified: 'qualified',
-  proposal_sent: 'proposal_sent',
-  negotiation: 'negotiation',
-  won: 'won',
-  lost: 'lost',
-  new: 'new',
-  contacted: 'contacted',
-  meeting_scheduled: 'meeting_scheduled',
-  archived: 'archived',
-} as const;
-
 export interface LeadInput {
   /** @nullable */
   contactId?: number | null;
-  stage?: LeadInputStage;
+  /** Pipeline stage key. Stages are tenant-configurable (custom keys allowed); the legacy default keys remain valid. */
+  stage?: string;
   /** @nullable */
   source?: string | null;
   /** @nullable */
@@ -1872,24 +1842,9 @@ export interface LeadInput {
   organizationId?: number | null;
 }
 
-export type LeadUpdateStage = typeof LeadUpdateStage[keyof typeof LeadUpdateStage];
-
-
-export const LeadUpdateStage = {
-  prospect: 'prospect',
-  qualified: 'qualified',
-  proposal_sent: 'proposal_sent',
-  negotiation: 'negotiation',
-  won: 'won',
-  lost: 'lost',
-  new: 'new',
-  contacted: 'contacted',
-  meeting_scheduled: 'meeting_scheduled',
-  archived: 'archived',
-} as const;
-
 export interface LeadUpdate {
-  stage?: LeadUpdateStage;
+  /** Pipeline stage key. Stages are tenant-configurable (custom keys allowed); the legacy default keys remain valid. */
+  stage?: string;
   /** @nullable */
   source?: string | null;
   /** @nullable */

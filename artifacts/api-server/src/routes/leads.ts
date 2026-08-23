@@ -159,7 +159,14 @@ router.get("/leads/:id", async (req: AuthRequest, res) => {
 
 // PATCH /leads/:id
 router.patch("/leads/:id", requirePermission("leads", "edit"), validateBody(UpdateLeadBody), async (req: AuthRequest, res) => {
-  res.json(await leads.updateLead(req.user!, parseInt(String(req.params.id)), req.body ?? {}));
+  const result = await leads.updateLead(req.user!, parseInt(String(req.params.id)), req.body ?? {});
+  if (result.conflict) {
+    // Reopening a closed lead while the contact already has another open
+    // opportunity — same contract as the create-lead conflict.
+    res.status(409).json({ error: "Contact already has an open pipeline opportunity", existingId: result.existingId });
+    return;
+  }
+  res.json(result.lead);
 });
 
 // DELETE /leads/:id

@@ -1,5 +1,5 @@
 import { db, leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable, pipelineStagesTable, teamsTable, assignmentCursorsTable } from "@workspace/db";
-import { eq, and, count, ne, desc, asc, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, count, ne, desc, asc, inArray, sql } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, notDeleted, type Executor } from "./base.js";
 
@@ -102,15 +102,38 @@ export async function findById(user: AuthUser, id: number): Promise<LeadRow | un
   return row;
 }
 
-// 409 conflict check: does this contact already have an OPEN (non-won, non-lost,
-// non-deleted) lead in this company? Returns the existing lead id, else undefined.
-// Won and lost are both CLOSED outcomes — a contact with a closed opportunity may
-// always start a new one; only a second simultaneous open opportunity conflicts.
-export async function activeLeadIdForContact(companyId: number, contactId: number): Promise<number | undefined> {
+// 409 conflict check: does this contact already have an OPEN, non-deleted lead
+// in this company? Returns the existing open lead id, else undefined.
+//
+// CLOSED is determined by the tenant's CONFIGURED stage flags (isWon/isLost) —
+// custom terminal stages like "closed_success" count as closed. The literal
+// "won"/"lost" text is only a fallback for legacy rows whose stageId does not
+// resolve to a live configured stage. `excludeLeadId` lets the reopen check
+// ignore the lead being reopened itself.
+export async function activeLeadIdForContact(
+  companyId: number,
+  contactId: number,
+  excludeLeadId?: number,
+): Promise<number | undefined> {
+  const closedExpr = sql<boolean>`CASE
+    WHEN ${pipelineStagesTable.id} IS NOT NULL THEN (${pipelineStagesTable.isWon} OR ${pipelineStagesTable.isLost})
+    ELSE ${leadsTable.stage} IN ('won', 'lost')
+  END`;
+  const conds = [
+    eq(leadsTable.contactId, contactId),
+    eq(leadsTable.companyId, companyId),
+    notDeleted(leadsTable.deletedAt),
+    sql`NOT (${closedExpr})`,
+  ];
+  if (excludeLeadId != null) conds.push(ne(leadsTable.id, excludeLeadId));
   const [row] = await db
     .select({ id: leadsTable.id })
     .from(leadsTable)
-    .where(and(eq(leadsTable.contactId, contactId), eq(leadsTable.companyId, companyId), notInArray(leadsTable.stage, ["won", "lost"]), notDeleted(leadsTable.deletedAt)))
+    .leftJoin(
+      pipelineStagesTable,
+      and(eq(pipelineStagesTable.id, leadsTable.stageId), notDeleted(pipelineStagesTable.deletedAt)),
+    )
+    .where(and(...conds))
     .limit(1);
   return row?.id;
 }
@@ -196,7 +219,13 @@ export async function softDelete(id: number, tx?: Executor): Promise<void> {
 // ── Configurable-stage + team enrichment lookups (additive).
 export async function stageInfo(stageId: number) {
   const [r] = await db
-    .select({ id: pipelineStagesTable.id, name: pipelineStagesTable.name, key: pipelineStagesTable.key })
+    .select({
+      id: pipelineStagesTable.id,
+      name: pipelineStagesTable.name,
+      key: pipelineStagesTable.key,
+      isWon: pipelineStagesTable.isWon,
+      isLost: pipelineStagesTable.isLost,
+    })
     .from(pipelineStagesTable)
     .where(eq(pipelineStagesTable.id, stageId))
     .limit(1);

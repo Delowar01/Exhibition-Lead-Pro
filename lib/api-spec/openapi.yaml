@@ -9106,7 +9106,9 @@ components:
           type: ["string", "null"]
         stage:
           type: string
-          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled, archived]
+          description: >-
+            Pipeline stage key. Stages are tenant-configurable (custom keys
+            allowed); the legacy default keys remain valid.
         source:
           type: ["string", "null"]
         title:
@@ -9178,7 +9180,9 @@ components:
           type: ["integer", "null"]
         stage:
           type: string
-          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled, archived]
+          description: >-
+            Pipeline stage key. Stages are tenant-configurable (custom keys
+            allowed); the legacy default keys remain valid.
           default: prospect
         source:
           type: ["string", "null"]
@@ -9214,7 +9218,9 @@ components:
       properties:
         stage:
           type: string
-          enum: [prospect, qualified, proposal_sent, negotiation, won, lost, new, contacted, meeting_scheduled, archived]
+          description: >-
+            Pipeline stage key. Stages are tenant-configurable (custom keys
+            allowed); the legacy default keys remain valid.
         source:
           type: ["string", "null"]
         title:
