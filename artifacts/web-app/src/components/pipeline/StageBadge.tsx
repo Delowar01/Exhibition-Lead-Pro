@@ -15,6 +15,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { moveLeadStage, stageColor, stageLabel, type StageMap } from "./utils";
@@ -35,6 +45,26 @@ export function StageBadge({ lead, stageMap, stages, size = "sm", className }: S
 
   const color = stageColor(lead.stage, stageMap);
   const label = stageLabel(lead, stageMap);
+  const displayLabel = lead.contactName || lead.title || "This lead";
+
+  // Closing (→ won/lost) and reopening (won/lost → open) are confirmed first;
+  // ordinary open→open moves stay immediate. Same rule as Lead Detail.
+  const [confirmStage, setConfirmStage] = useState<PipelineStageConfig | null>(null);
+
+  const isClosedKey = (key: string): boolean => {
+    const s = stages.find((x) => x.key === key);
+    return s ? s.isWon || s.isLost : key === "won" || key === "lost";
+  };
+
+  const requestStage = (toStage: string) => {
+    if (toStage === lead.stage) return;
+    const target = stages.find((s) => s.key === toStage);
+    if (target && (target.isWon || target.isLost || isClosedKey(lead.stage))) {
+      setConfirmStage(target);
+      return;
+    }
+    changeStage(toStage);
+  };
 
   const changeStage = (toStage: string) => {
     if (toStage === lead.stage) return;
@@ -90,7 +120,7 @@ export function StageBadge({ lead, stageMap, stages, size = "sm", className }: S
           <DropdownMenuItem
             key={s.id}
             data-testid={`stage-option-${lead.id}-${s.key}`}
-            onClick={() => changeStage(s.key)}
+            onClick={() => requestStage(s.key)}
             className="gap-2"
           >
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color || "#94a3b8" }} />
@@ -99,6 +129,43 @@ export function StageBadge({ lead, stageMap, stages, size = "sm", className }: S
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
+
+      <AlertDialog open={confirmStage !== null} onOpenChange={(o) => !o && setConfirmStage(null)}>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()} data-testid={`stage-confirm-${lead.id}`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmStage?.isWon
+                ? "Mark this opportunity as Won?"
+                : confirmStage?.isLost
+                  ? "Mark this opportunity as Lost?"
+                  : "Reopen this opportunity?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmStage?.isWon &&
+                `${displayLabel} moves to ${confirmStage.name} and is recorded as Closed Won. History and the linked contact stay intact.`}
+              {confirmStage?.isLost &&
+                `${displayLabel} moves to ${confirmStage?.name} and is recorded as Closed Lost, leaving the open pipeline total.`}
+              {confirmStage && !confirmStage.isWon && !confirmStage.isLost &&
+                `${displayLabel} returns to the ${confirmStage.name} stage and counts toward the open pipeline again. Win/loss history is preserved.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid={`stage-confirm-cancel-${lead.id}`}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid={`stage-confirm-ok-${lead.id}`}
+              onClick={() => {
+                if (confirmStage) changeStage(confirmStage.key);
+                setConfirmStage(null);
+              }}
+              className={
+                confirmStage?.isLost ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined
+              }
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DropdownMenu>
   );
 }

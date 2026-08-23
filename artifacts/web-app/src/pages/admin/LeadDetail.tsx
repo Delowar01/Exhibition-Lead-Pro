@@ -6,9 +6,12 @@ import {
   useGetContact,
   useListPipelineStages,
   useListCrmOrganizations,
+  useCreateLeadActivity,
   getGetLeadQueryKey,
   getGetContactQueryKey,
   getGetLeadPipelineQueryKey,
+  getGetLeadTimelineQueryKey,
+  getListLeadsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -27,6 +30,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 
 import {
@@ -104,20 +118,87 @@ export default function AdminLeadDetail() {
     );
   };
 
-  const handleStageChange = (stageKey: string) => {
+  // ── Closure lifecycle (Batch 11) ─────────────────────────────────────────
+  // Won/Lost/Reopen go through ONE confirmation dialog; ordinary open→open
+  // stage moves stay immediate. All paths use the existing stage mutation.
+  type PendingChange = { kind: "won" | "lost" | "reopen" | "move"; stageKey: string; stageName: string };
+  const [pendingChange, setPendingChange] = React.useState<PendingChange | null>(null);
+  const [closeNote, setCloseNote] = React.useState("");
+  const createActivity = useCreateLeadActivity();
+
+  const invalidateLifecycle = () => {
+    queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(id) });
+    queryClient.invalidateQueries({ queryKey: getGetLeadPipelineQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetLeadTimelineQueryKey(id) });
+    queryClient.invalidateQueries({ queryKey: getListLeadsQueryKey() });
+  };
+
+  const applyStageChange = (change: PendingChange, note: string) => {
+    if (updateLead.isPending) return; // no duplicate requests
     updateLead.mutate(
-      { id, data: { stage: stageKey as any } },
+      { id, data: { stage: change.stageKey as any } },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetLeadQueryKey(id) });
-          queryClient.invalidateQueries({ queryKey: getGetLeadPipelineQueryKey() });
-          toast({ title: "Lead stage updated" });
+          // Optional close note rides on the EXISTING lead-activity architecture
+          // (no schema change): a user-authored note tied to this lead.
+          const trimmed = note.trim();
+          if ((change.kind === "won" || change.kind === "lost") && trimmed) {
+            createActivity.mutate(
+              {
+                id,
+                data: {
+                  type: "note",
+                  subject: change.kind === "won" ? "Closed Won — note" : "Closed Lost — note",
+                  body: trimmed,
+                },
+              },
+              { onSettled: invalidateLifecycle },
+            );
+          } else {
+            invalidateLifecycle();
+          }
+          toast({
+            title:
+              change.kind === "won"
+                ? "Opportunity marked as Won"
+                : change.kind === "lost"
+                  ? "Opportunity marked as Lost"
+                  : change.kind === "reopen"
+                    ? "Opportunity reopened"
+                    : "Lead stage updated",
+            description:
+              change.kind === "reopen" ? `Back in the ${change.stageName} stage and open pipeline.` : undefined,
+          });
+          setPendingChange(null);
+          setCloseNote("");
         },
         onError: () => {
-          toast({ title: "Update failed", variant: "destructive" });
+          toast({ title: "Update failed", description: "The stage was not changed.", variant: "destructive" });
         },
-      }
+      },
     );
+  };
+
+  // Route a requested stage move: closures + reopens confirm first.
+  const handleStageChange = (stageKey: string, stageList?: Array<{ key: string; name: string; isWon: boolean; isLost: boolean }>) => {
+    const all = stageList ?? [];
+    const currentKey = lead?.stageKey ?? lead?.stage ?? null;
+    if (!lead || stageKey === currentKey || updateLead.isPending) return;
+    const target = all.find((s) => s.key === stageKey);
+    const targetName = target?.name ?? stageKey;
+    const targetClosed = target ? target.isWon || target.isLost : stageKey === "won" || stageKey === "lost";
+    const cur = all.find((s) => s.key === currentKey);
+    const currentClosed = cur ? cur.isWon || cur.isLost : currentKey === "won" || currentKey === "lost";
+
+    if (target?.isWon || (!target && stageKey === "won")) {
+      setPendingChange({ kind: "won", stageKey, stageName: targetName });
+    } else if (target?.isLost || (!target && stageKey === "lost")) {
+      setPendingChange({ kind: "lost", stageKey, stageName: targetName });
+    } else if (currentClosed && !targetClosed) {
+      setPendingChange({ kind: "reopen", stageKey, stageName: targetName });
+    } else {
+      applyStageChange({ kind: "move", stageKey, stageName: targetName }, "");
+    }
   };
 
   if (isLoading) {
@@ -142,6 +223,12 @@ export default function AdminLeadDetail() {
     (s) => (lead.stageKey ? s.key === lead.stageKey : s.key === lead.stage)
   );
   const wonStage = stages.find((s) => s.isWon);
+  const lostStage = stages.find((s) => s.isLost);
+  const firstOpenStage = stages.find((s) => !s.isWon && !s.isLost);
+  const currentStage = currentIndex >= 0 ? stages[currentIndex] : undefined;
+  const isClosed = currentStage
+    ? currentStage.isWon || currentStage.isLost
+    : lead.stage === "won" || lead.stage === "lost";
 
   const email = (lead.contactEmail ?? contact?.email) || null;
   const phone = (contact?.mobile ?? contact?.officePhone) || null;
@@ -205,13 +292,42 @@ export default function AdminLeadDetail() {
     </>
   );
 
-  const headerActions = wonStage && !stages[currentIndex]?.isWon && (
-    <Button
-      onClick={() => handleStageChange(wonStage.key)}
-      className="bg-success hover:bg-success/90 text-success-foreground"
-    >
-      Mark as Won
-    </Button>
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      {!isClosed && wonStage && (
+        <Button
+          onClick={() => setPendingChange({ kind: "won", stageKey: wonStage.key, stageName: wonStage.name })}
+          disabled={updateLead.isPending}
+          className="bg-success hover:bg-success/90 text-success-foreground"
+          data-testid="lead-mark-won"
+        >
+          Mark as Won
+        </Button>
+      )}
+      {!isClosed && lostStage && (
+        <Button
+          variant="outline"
+          onClick={() => setPendingChange({ kind: "lost", stageKey: lostStage.key, stageName: lostStage.name })}
+          disabled={updateLead.isPending}
+          className="border-destructive/40 text-destructive hover:bg-destructive-soft hover:text-destructive"
+          data-testid="lead-mark-lost"
+        >
+          Mark as Lost
+        </Button>
+      )}
+      {isClosed && firstOpenStage && (
+        <Button
+          variant="outline"
+          onClick={() =>
+            setPendingChange({ kind: "reopen", stageKey: firstOpenStage.key, stageName: firstOpenStage.name })
+          }
+          disabled={updateLead.isPending}
+          data-testid="lead-reopen"
+        >
+          Reopen Opportunity
+        </Button>
+      )}
+    </div>
   );
 
   return (
@@ -243,7 +359,7 @@ export default function AdminLeadDetail() {
                         className="flex flex-col items-center gap-2 bg-card px-2 min-w-[70px]"
                       >
                         <button
-                          onClick={() => handleStageChange(stage.key)}
+                          onClick={() => handleStageChange(stage.key, stages)}
                           className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors ${
                             isCurrent
                               ? "border-primary bg-primary text-primary-foreground"
@@ -522,6 +638,79 @@ export default function AdminLeadDetail() {
           </Card>
         </WorkspaceSidebar>
       </WorkspaceContent>
+
+      {/* Won / Lost / Reopen confirmation — cancel performs no mutation. */}
+      <AlertDialog
+        open={pendingChange !== null}
+        onOpenChange={(open) => {
+          if (!open && !updateLead.isPending) {
+            setPendingChange(null);
+            setCloseNote("");
+          }
+        }}
+      >
+        <AlertDialogContent data-testid="lead-close-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingChange?.kind === "won" && "Mark this opportunity as Won?"}
+              {pendingChange?.kind === "lost" && "Mark this opportunity as Lost?"}
+              {pendingChange?.kind === "reopen" && "Reopen this opportunity?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingChange?.kind === "won" &&
+                `The lead moves to the ${pendingChange.stageName} stage and is recorded as Closed Won. Its contact, documents, notes and full history stay intact, and you can reopen it later.`}
+              {pendingChange?.kind === "lost" &&
+                `The lead moves to the ${pendingChange.stageName} stage and is recorded as Closed Lost. It leaves the open pipeline total but remains fully available, and this contact can get a new opportunity afterwards.`}
+              {pendingChange?.kind === "reopen" &&
+                `The lead returns to the ${pendingChange.stageName} stage and counts toward the open pipeline again. All previous win/loss history is preserved.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {(pendingChange?.kind === "won" || pendingChange?.kind === "lost") && (
+            <div className="space-y-1.5">
+              <Label htmlFor="close-note" className="text-xs text-muted-foreground">
+                Closing note (optional)
+              </Label>
+              <Textarea
+                id="close-note"
+                data-testid="lead-close-note"
+                placeholder={
+                  pendingChange.kind === "won" ? "e.g. Signed a 12-month contract…" : "e.g. Went with a competitor…"
+                }
+                value={closeNote}
+                onChange={(e) => setCloseNote(e.target.value)}
+                rows={3}
+              />
+              <p className="text-[11px] text-muted-foreground">Saved to this lead's activity timeline.</p>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateLead.isPending} data-testid="lead-close-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={updateLead.isPending}
+              data-testid="lead-close-confirm"
+              onClick={(e) => {
+                e.preventDefault(); // keep the dialog open until the request settles
+                if (pendingChange) applyStageChange(pendingChange, closeNote);
+              }}
+              className={
+                pendingChange?.kind === "lost"
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : undefined
+              }
+            >
+              {updateLead.isPending
+                ? "Saving…"
+                : pendingChange?.kind === "won"
+                  ? "Mark as Won"
+                  : pendingChange?.kind === "lost"
+                    ? "Mark as Lost"
+                    : "Reopen"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </WorkspaceShell>
   );
 }

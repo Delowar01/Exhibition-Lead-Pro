@@ -1,5 +1,5 @@
 import { db, leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable, pipelineStagesTable, teamsTable, assignmentCursorsTable } from "@workspace/db";
-import { eq, and, count, ne, desc, asc, inArray, sql } from "drizzle-orm";
+import { eq, and, count, ne, desc, asc, inArray, notInArray, sql } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, notDeleted, type Executor } from "./base.js";
 
@@ -102,13 +102,15 @@ export async function findById(user: AuthUser, id: number): Promise<LeadRow | un
   return row;
 }
 
-// 409 conflict check: does this contact already have a non-lost, non-deleted lead
-// in this company? Returns the existing lead id, else undefined.
+// 409 conflict check: does this contact already have an OPEN (non-won, non-lost,
+// non-deleted) lead in this company? Returns the existing lead id, else undefined.
+// Won and lost are both CLOSED outcomes — a contact with a closed opportunity may
+// always start a new one; only a second simultaneous open opportunity conflicts.
 export async function activeLeadIdForContact(companyId: number, contactId: number): Promise<number | undefined> {
   const [row] = await db
     .select({ id: leadsTable.id })
     .from(leadsTable)
-    .where(and(eq(leadsTable.contactId, contactId), eq(leadsTable.companyId, companyId), ne(leadsTable.stage, "lost"), notDeleted(leadsTable.deletedAt)))
+    .where(and(eq(leadsTable.contactId, contactId), eq(leadsTable.companyId, companyId), notInArray(leadsTable.stage, ["won", "lost"]), notDeleted(leadsTable.deletedAt)))
     .limit(1);
   return row?.id;
 }

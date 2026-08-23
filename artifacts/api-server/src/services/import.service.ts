@@ -281,11 +281,12 @@ async function buildRows(ctx: BuildContext): Promise<{ built: BuiltRow[]; unmapp
       const cid = email ? leadContactByEmail.get(email) ?? null : null;
       if (cid != null) {
         // "Active" must mean exactly what leadsRepo.activeLeadIdForContact enforces
-        // (non-lost). Normalize this row's stage the SAME way commitLeads does — a
-        // "lost" row creates no active lead, so it neither conflicts with an existing
-        // active lead nor blocks a later row for the same contact.
+        // (OPEN = neither won nor lost). Normalize this row's stage the SAME way
+        // commitLeads does — a closed (won/lost) row creates no open opportunity, so
+        // it neither conflicts with an existing open lead nor blocks a later row for
+        // the same contact.
         const stageText = (record.stage ?? "prospect").trim().toLowerCase() || "prospect";
-        if (stageText !== "lost") {
+        if (stageText !== "lost" && stageText !== "won") {
           if (leadContactsWithActive.has(cid) || seenActiveLeadContacts.has(cid)) {
             duplicateReason = "contact already has an active lead";
             duplicateOfExistingId = cid;

@@ -75,7 +75,7 @@ export function buildAdminNav(user: User | null): NavGroup[] {
       label: "Analytics & Reports",
       items: [
         { name: "Reports", href: "/admin/reports", icon: BarChart2 },
-        { name: "Executive Dashboard", href: "/admin/analytics", icon: PieChart },
+        { name: "Performance Analytics", href: "/admin/analytics", icon: PieChart },
       ],
     },
     {
