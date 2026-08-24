@@ -9,11 +9,14 @@ import {
   useGetContactStatusHistory,
   useListContactInteractions,
   useUpdateFollowUp,
+  getGetContactQueryKey,
+  getGetContactTimelineQueryKey,
   type Contact,
   type TimelineEntry,
   type FollowUp,
   type Task,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -102,6 +105,7 @@ export default function OverviewWorkspace({
 }: OverviewWorkspaceProps) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const contactId = contact.id;
 
   const timelineQ = useGetContactTimeline(contactId);
@@ -129,9 +133,18 @@ export default function OverviewWorkspace({
   const lastInteractionAt = entries.length > 0 ? entries[0].occurredAt : null;
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
+  // Nearest upcoming first — same rule as the server-side contact mirror:
+  // scheduled rows before unscheduled ones, earliest date first, earliest time
+  // breaking same-day ties (no time sorts after concrete times).
   const pendingFollowUps = followUps
     .filter((f) => f.status === "pending")
-    .sort((a, b) => (a.scheduledDate ?? "").localeCompare(b.scheduledDate ?? ""));
+    .sort((a, b) => {
+      if (!a.scheduledDate || !b.scheduledDate) return a.scheduledDate ? -1 : b.scheduledDate ? 1 : 0;
+      const byDate = a.scheduledDate.localeCompare(b.scheduledDate);
+      if (byDate !== 0) return byDate;
+      if (!a.scheduledTime || !b.scheduledTime) return a.scheduledTime ? -1 : b.scheduledTime ? 1 : 0;
+      return a.scheduledTime.localeCompare(b.scheduledTime);
+    });
   const primaryFollowUp = pendingFollowUps[0] ?? null;
   const openTasks = tasks.filter((t) => t.status === "pending" || t.status === "in_progress" || t.status === "overdue");
   const overdueTasks = openTasks.filter(
@@ -242,6 +255,10 @@ export default function OverviewWorkspace({
         onSuccess: () => {
           toast({ title: "Follow-up completed" });
           followUpsQ.refetch();
+          // Refresh the contact (its next-follow-up mirror moved) and the
+          // Timeline feed (a completion event was recorded).
+          queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contact.id) });
+          queryClient.invalidateQueries({ queryKey: getGetContactTimelineQueryKey(contact.id) });
         },
         onError: () => toast({ title: "Could not complete follow-up", variant: "destructive" }),
       },

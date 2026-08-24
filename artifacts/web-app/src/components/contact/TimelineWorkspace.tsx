@@ -13,6 +13,7 @@ import {
   useListContactInteractions,
   getListContactCommunicationsQueryKey,
   getGetContactTimelineQueryKey,
+  getGetContactQueryKey,
   getListContactInteractionsQueryKey,
   type Contact,
   type TimelineEntry,
@@ -631,6 +632,9 @@ export default function TimelineWorkspace({
     tasksQ.refetch();
     followUpsQ.refetch();
     interactionsQ.refetch();
+    // The contact row mirrors the nearest pending follow-up (followUpDate/Time),
+    // so completing/rescheduling/deleting must refresh it too.
+    queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
   };
 
   const mutationPending =

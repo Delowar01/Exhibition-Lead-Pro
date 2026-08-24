@@ -9,6 +9,8 @@ import {
   getGetContactTimelineQueryKey,
   getListContactCommunicationsQueryKey,
   getGetContactQueryKey,
+  getListTasksQueryKey,
+  getListFollowUpsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -88,6 +90,17 @@ export default function AdminContactDetail() {
   const [taskOpen, setTaskOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [aiSheetOpen, setAiSheetOpen] = useState(false);
+
+  // After a task/follow-up is created from the workspace dialogs, refresh every
+  // consumer without a reload: the Timeline feed, the task/follow-up lists the
+  // Overview and Timeline tabs read, and the contact itself (its followUpDate/
+  // followUpTime mirror the nearest pending follow-up server-side).
+  const refreshCrmLifecycle = () => {
+    queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(contactId) });
+    queryClient.invalidateQueries({ queryKey: getGetContactTimelineQueryKey(contactId) });
+    queryClient.invalidateQueries({ queryKey: getListTasksQueryKey({ contactId }) });
+    queryClient.invalidateQueries({ queryKey: getListFollowUpsQueryKey({ contactId }) });
+  };
 
   // ── Quick actions (hero) — preserved Communication Hub behavior ───────────
   const doLog = (channel: "email" | "phone" | "whatsapp", subject: string) => {
@@ -274,8 +287,14 @@ export default function AdminContactDetail() {
         contactId={contactId}
         open={followUpOpen}
         onOpenChange={setFollowUpOpen}
+        onCreated={refreshCrmLifecycle}
       />
-      <CreateTaskDialog contactId={contactId} open={taskOpen} onOpenChange={setTaskOpen} />
+      <CreateTaskDialog
+        contactId={contactId}
+        open={taskOpen}
+        onOpenChange={setTaskOpen}
+        onCreated={refreshCrmLifecycle}
+      />
       <DeleteContactDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}

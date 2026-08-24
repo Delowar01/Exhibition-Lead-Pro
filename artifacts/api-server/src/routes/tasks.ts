@@ -8,6 +8,7 @@ import { validateBody } from "../middlewares/validate.js";
 import { CreateTaskBody, UpdateTaskBody } from "@workspace/api-zod";
 import { refAccessible } from "../lib/tenant.js";
 import { parseListQuery } from "../lib/list-query.js";
+import * as activitiesRepo from "../repositories/lead_activities.repository.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -30,6 +31,42 @@ type Row = typeof tasksTable.$inferSelect;
 // Only admins/leads may assign tasks to other users.
 function canAssignToOthers(role: string): boolean {
   return role === "platform_owner" || role === "primary_admin" || role === "admin";
+}
+
+// Ownership rule for task mutations: admins manage any company task; a normal
+// tenant user may only touch tasks assigned to THEM. Non-admins also cannot
+// list other users' tasks (GET forces scope=mine), so an inaccessible task is
+// answered exactly like a missing one — 404, never a hint that the id exists.
+function canMutateTask(user: { id: number; role: string }, task: { assignedToId: number | null }): boolean {
+  return canAssignToOthers(user.role) || task.assignedToId === user.id;
+}
+
+// Surface meaningful task lifecycle in the linked contact's Timeline via the
+// shared lead_activities feed (leadId stays null — contact-scoped events).
+// Tasks without a contact have no timeline home and emit nothing.
+// Never throws: timeline logging must not break the underlying mutation.
+async function emitTaskActivity(
+  task: { id: number; companyId: number; contactId: number | null; title: string; dueDate: string | null; dueTime: string | null },
+  userId: number,
+  type: "task_created" | "task_status_change" | "task_completed",
+  subject: string,
+  metadata?: Record<string, unknown>,
+) {
+  if (task.contactId == null) return;
+  try {
+    await activitiesRepo.insert({
+      companyId: task.companyId,
+      leadId: null,
+      contactId: task.contactId,
+      userId,
+      type,
+      source: "system",
+      subject,
+      metadata: { taskId: task.id, title: task.title, dueDate: task.dueDate, dueTime: task.dueTime, ...metadata },
+    });
+  } catch {
+    // swallow — see above
+  }
 }
 
 async function enrich(rows: Row[]) {
@@ -108,6 +145,9 @@ router.post("/tasks", validateBody(CreateTaskBody), async (req: AuthRequest, res
       companyId, title, type: type ?? "custom", status: "pending", contactId: contactId ?? null,
       dueDate: dueDate ?? null, dueTime: dueTime ?? null, notes: notes ?? null, assignedToId: targetUser, assignedById: req.user!.id,
     }).returning();
+    await emitTaskActivity(row, req.user!.id, "task_created",
+      `Task created: ${row.title}`,
+      { assignedToId: row.assignedToId });
     res.status(201).json((await enrich([row]))[0]);
   } catch (err) {
     req.log.error(err);
@@ -120,7 +160,9 @@ router.patch("/tasks/:id", validateBody(UpdateTaskBody), async (req: AuthRequest
   try {
     const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(tasksTable).where(eq(tasksTable.id, id)).limit(1);
-    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Task not found" }); return; }
+    if (!existing || !canAccessCompany(req.user, existing.companyId) || !canMutateTask(req.user!, existing)) {
+      res.status(404).json({ error: "Task not found" }); return;
+    }
     const { title, type, status, contactId, dueDate, dueTime, notes, assignedToId } = req.body ?? {};
     if (assignedToId !== undefined && assignedToId !== existing.assignedToId && !canAssignToOthers(req.user!.role)) {
       res.status(403).json({ error: "You cannot reassign this task" }); return;
@@ -131,6 +173,16 @@ router.patch("/tasks/:id", validateBody(UpdateTaskBody), async (req: AuthRequest
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
     if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const [row] = await db.update(tasksTable).set(updateData as Partial<typeof tasksTable.$inferInsert>).where(eq(tasksTable.id, id)).returning();
+    // Meaningful status transitions land in the linked contact's Timeline.
+    if (status !== undefined && status !== existing.status) {
+      if (status === "completed") {
+        await emitTaskActivity(row, req.user!.id, "task_completed", `Task completed: ${row.title}`, { from: existing.status });
+      } else {
+        await emitTaskActivity(row, req.user!.id, "task_status_change",
+          status === "in_progress" ? `Task started: ${row.title}` : `Task marked ${status.replace(/_/g, " ")}: ${row.title}`,
+          { from: existing.status, to: status });
+      }
+    }
     res.json((await enrich([row]))[0]);
   } catch (err) {
     req.log.error(err);
@@ -142,8 +194,10 @@ router.patch("/tasks/:id", validateBody(UpdateTaskBody), async (req: AuthRequest
 router.delete("/tasks/:id", async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));
-    const [existing] = await db.select({ companyId: tasksTable.companyId }).from(tasksTable).where(eq(tasksTable.id, id)).limit(1);
-    if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Task not found" }); return; }
+    const [existing] = await db.select({ companyId: tasksTable.companyId, assignedToId: tasksTable.assignedToId }).from(tasksTable).where(eq(tasksTable.id, id)).limit(1);
+    if (!existing || !canAccessCompany(req.user, existing.companyId) || !canMutateTask(req.user!, existing)) {
+      res.status(404).json({ error: "Task not found" }); return;
+    }
     await db.delete(tasksTable).where(eq(tasksTable.id, id));
     res.json({ success: true, message: "Task deleted" });
   } catch (err) {

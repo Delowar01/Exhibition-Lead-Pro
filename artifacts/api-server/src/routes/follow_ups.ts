@@ -1,13 +1,14 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { followUpsTable, contactsTable, usersTable } from "@workspace/db";
-import { eq, and, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
+import { eq, and, inArray, asc, desc, ilike, isNotNull, sql, type SQL, type AnyColumn } from "drizzle-orm";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateFollowUpBody, UpdateFollowUpBody } from "@workspace/api-zod";
 import { refAccessible } from "../lib/tenant.js";
 import { parseListQuery } from "../lib/list-query.js";
+import * as activitiesRepo from "../repositories/lead_activities.repository.js";
 
 const router = Router();
 
@@ -35,13 +36,55 @@ async function enrich(rows: Row[]) {
   return rows.map(r => ({ ...r, contactName: cName.get(r.contactId) ?? null, assignedToName: r.assignedToId != null ? (uName.get(r.assignedToId) ?? null) : null }));
 }
 
-// Keep contacts.followUpDate/followUpTime denormalized to the most recent pending
-// follow-up so existing push-notification scheduling keeps working.
-async function syncContactFollowUp(contactId: number) {
+// Keep contacts.followUpDate/followUpTime mirroring the NEAREST upcoming pending
+// scheduled follow-up (reminder scheduling and the AI copilot both read it):
+// earliest scheduledDate wins, earliest scheduledTime breaks same-day ties (a
+// row with no time sorts after concrete times), and pending rows WITHOUT a
+// scheduled date never occupy the mirror. When no scheduled pending follow-up
+// remains the mirror is cleared. companyId keeps the lookup tenant-pinned.
+async function syncContactFollowUp(companyId: number, contactId: number) {
   const [next] = await db.select().from(followUpsTable)
-    .where(and(eq(followUpsTable.contactId, contactId), eq(followUpsTable.status, "pending")))
-    .orderBy(desc(followUpsTable.scheduledDate)).limit(1);
-  await db.update(contactsTable).set({ followUpDate: next?.scheduledDate ?? null, followUpTime: next?.scheduledTime ?? null }).where(eq(contactsTable.id, contactId));
+    .where(and(
+      eq(followUpsTable.companyId, companyId),
+      eq(followUpsTable.contactId, contactId),
+      eq(followUpsTable.status, "pending"),
+      isNotNull(followUpsTable.scheduledDate),
+    ))
+    .orderBy(
+      asc(followUpsTable.scheduledDate),
+      sql`${followUpsTable.scheduledTime} ASC NULLS LAST`,
+      asc(followUpsTable.id),
+    )
+    .limit(1);
+  await db.update(contactsTable)
+    .set({ followUpDate: next?.scheduledDate ?? null, followUpTime: next?.scheduledTime ?? null })
+    .where(and(eq(contactsTable.id, contactId), eq(contactsTable.companyId, companyId)));
+}
+
+// Surface follow-up lifecycle in the contact's existing Timeline via the shared
+// lead_activities feed (leadId stays null — these are contact-scoped events).
+// Never throws: timeline logging must not break the underlying mutation.
+async function emitFollowUpActivity(
+  row: { id: number; companyId: number; contactId: number; scheduledDate: string | null; scheduledTime: string | null },
+  userId: number,
+  type: "follow_up_scheduled" | "follow_up_completed" | "follow_up_rescheduled" | "follow_up_cancelled",
+  subject: string,
+  metadata?: Record<string, unknown>,
+) {
+  try {
+    await activitiesRepo.insert({
+      companyId: row.companyId,
+      leadId: null,
+      contactId: row.contactId,
+      userId,
+      type,
+      source: "system",
+      subject,
+      metadata: { followUpId: row.id, scheduledDate: row.scheduledDate, scheduledTime: row.scheduledTime, ...metadata },
+    });
+  } catch {
+    // swallow — see above
+  }
 }
 
 // GET /follow-ups
@@ -91,7 +134,10 @@ router.post("/follow-ups", validateBody(CreateFollowUpBody), async (req: AuthReq
       companyId: contact.companyId, contactId, scheduledDate: scheduledDate ?? null, scheduledTime: scheduledTime ?? null,
       notes: notes ?? null, status: "pending", assignedToId: assignedToId ?? null, createdById: req.user!.id,
     }).returning();
-    await syncContactFollowUp(contactId);
+    await syncContactFollowUp(contact.companyId, contactId);
+    await emitFollowUpActivity(row, req.user!.id, "follow_up_scheduled",
+      row.scheduledDate ? `Follow-up scheduled for ${row.scheduledDate}${row.scheduledTime ? ` ${row.scheduledTime}` : ""}` : "Follow-up scheduled",
+      row.notes ? { notes: row.notes } : undefined);
     res.status(201).json((await enrich([row]))[0]);
   } catch (err) {
     req.log.error(err);
@@ -107,8 +153,18 @@ router.patch("/follow-ups/:id", validateBody(UpdateFollowUpBody), async (req: Au
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Follow-up not found" }); return; }
     const { status, comment, scheduledDate, scheduledTime, notes } = req.body ?? {};
 
+    // Lifecycle actions (complete / reschedule / cancel) are only valid on a
+    // PENDING row: terminal rows are the follow-up history and re-running an
+    // action on one would corrupt it (e.g. a double-reschedule would spawn a
+    // second "same reschedule" pending row).
+    if ((status === "completed" || status === "rescheduled" || status === "cancelled") && existing.status !== "pending") {
+      res.status(400).json({ error: `Only a pending follow-up can be ${status}` });
+      return;
+    }
+
     if (status === "rescheduled") {
-      // Close the current row and open a new pending one (history preserved as rows).
+      // Close the current row and open a new pending one (history preserved as
+      // rows) — atomically, so a failure can never leave a half-applied reschedule.
       const newRow = await db.transaction(async (tx) => {
         await tx.update(followUpsTable).set({ status: "rescheduled", comment: comment ?? null, updatedAt: new Date() }).where(eq(followUpsTable.id, id));
         const [created] = await tx.insert(followUpsTable).values({
@@ -118,7 +174,10 @@ router.patch("/follow-ups/:id", validateBody(UpdateFollowUpBody), async (req: Au
         }).returning();
         return created;
       });
-      await syncContactFollowUp(existing.contactId);
+      await syncContactFollowUp(existing.companyId, existing.contactId);
+      await emitFollowUpActivity(newRow, req.user!.id, "follow_up_rescheduled",
+        newRow.scheduledDate ? `Follow-up rescheduled to ${newRow.scheduledDate}${newRow.scheduledTime ? ` ${newRow.scheduledTime}` : ""}` : "Follow-up rescheduled",
+        { previousFollowUpId: existing.id, previousDate: existing.scheduledDate, previousTime: existing.scheduledTime, ...(comment ? { comment } : {}) });
       res.json((await enrich([newRow]))[0]);
       return;
     }
@@ -127,7 +186,16 @@ router.patch("/follow-ups/:id", validateBody(UpdateFollowUpBody), async (req: Au
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
     if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }
     const [row] = await db.update(followUpsTable).set(updateData as Partial<typeof followUpsTable.$inferInsert>).where(eq(followUpsTable.id, id)).returning();
-    await syncContactFollowUp(existing.contactId);
+    await syncContactFollowUp(existing.companyId, existing.contactId);
+    if (status === "completed" && existing.status === "pending") {
+      await emitFollowUpActivity(row, req.user!.id, "follow_up_completed",
+        row.scheduledDate ? `Follow-up completed (was scheduled for ${row.scheduledDate})` : "Follow-up completed",
+        comment ? { comment } : undefined);
+    } else if (status === "cancelled" && existing.status === "pending") {
+      await emitFollowUpActivity(row, req.user!.id, "follow_up_cancelled",
+        row.scheduledDate ? `Follow-up cancelled (was scheduled for ${row.scheduledDate})` : "Follow-up cancelled",
+        comment ? { comment } : undefined);
+    }
     res.json((await enrich([row]))[0]);
   } catch (err) {
     req.log.error(err);
@@ -143,7 +211,7 @@ router.delete("/follow-ups/:id", async (req: AuthRequest, res) => {
     const [existing] = await db.select({ companyId: followUpsTable.companyId, contactId: followUpsTable.contactId }).from(followUpsTable).where(eq(followUpsTable.id, id)).limit(1);
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Follow-up not found" }); return; }
     await db.delete(followUpsTable).where(eq(followUpsTable.id, id));
-    await syncContactFollowUp(existing.contactId);
+    await syncContactFollowUp(existing.companyId, existing.contactId);
     res.json({ success: true, message: "Follow-up deleted" });
   } catch (err) {
     req.log.error(err);
