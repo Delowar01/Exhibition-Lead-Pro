@@ -19,6 +19,7 @@ import { eq, like, inArray } from "drizzle-orm";
 import {
   db,
   companiesTable,
+  userCompanyAccessTable,
   usersTable,
   contactsTable,
   followUpsTable,
@@ -35,6 +36,7 @@ const SUFFIX = Date.now();
 const DOMAIN = `b12qa-${SUFFIX}.test`;
 const DOMAIN_B = `b12qab-${SUFFIX}.test`;
 
+let platformToken = "";
 let companyId = 0;
 let companyBId = 0;
 let adminToken = "";
@@ -90,7 +92,7 @@ async function timelineEntries(token: string, contactId: number): Promise<any[]>
 }
 
 beforeAll(async () => {
-  const platformToken = await loginToken(PLATFORM);
+  platformToken = await loginToken(PLATFORM);
 
   const co = await api("POST", "/companies", platformToken, { name: `B12 QA ${SUFFIX}`, plan: "professional" });
   expect(co.status).toBe(201);
@@ -421,5 +423,118 @@ describe("contact timeline reflects CRM lifecycle", () => {
     // Lifecycle events from the previous tests are still present.
     expect(entries.some((e) => e.type === "task_completed")).toBe(true);
     expect(entries.some((e) => e.type === "follow_up_scheduled")).toBe(true);
+  });
+});
+
+// ── Final correction: terminal rows immutable + multi-company FK invariant ──
+describe("terminal follow-up history is immutable", () => {
+  let contactT = 0;
+  let fuCompleted = 0;
+  let fuCancelled = 0;
+  let fuRescheduled = 0; // the OLD row of a reschedule
+
+  const snapshot = async () => {
+    const list = await (await api("GET", `/follow-ups?contactId=${contactT}`, adminToken)).json();
+    const statuses = Object.fromEntries(list.followUps.map((f: any) => [f.id, f.status]));
+    const pendingCount = list.followUps.filter((f: any) => f.status === "pending").length;
+    const mirror = await contactMirror(adminToken, contactT);
+    const timelineCount = (await timelineEntries(adminToken, contactT)).length;
+    return { statuses, pendingCount, mirror, timelineCount };
+  };
+
+  beforeAll(async () => {
+    const c = await api("POST", "/contacts", adminToken, { fullName: "B12 Terminal Contact", contactCompany: "Acme" });
+    expect(c.status).toBe(201);
+    contactT = (await c.json()).id;
+
+    fuCompleted = (await (await createFollowUp(adminToken, { contactId: contactT, scheduledDate: "2026-12-20" })).json()).id;
+    expect((await api("PATCH", `/follow-ups/${fuCompleted}`, adminToken, { status: "completed" })).status).toBe(200);
+
+    fuCancelled = (await (await createFollowUp(adminToken, { contactId: contactT, scheduledDate: "2026-12-21" })).json()).id;
+    expect((await api("PATCH", `/follow-ups/${fuCancelled}`, adminToken, { status: "cancelled" })).status).toBe(200);
+
+    fuRescheduled = (await (await createFollowUp(adminToken, { contactId: contactT, scheduledDate: "2026-12-01" })).json()).id;
+    expect((await api("PATCH", `/follow-ups/${fuRescheduled}`, adminToken, { status: "rescheduled", scheduledDate: "2026-12-05" })).status).toBe(200);
+    // State now: completed + cancelled + old rescheduled row + ONE active pending (the reschedule target).
+  });
+
+  it("completed → pending is rejected", async () => {
+    expect((await api("PATCH", `/follow-ups/${fuCompleted}`, adminToken, { status: "pending" })).status).toBe(400);
+  });
+
+  it("cancelled → pending is rejected", async () => {
+    expect((await api("PATCH", `/follow-ups/${fuCancelled}`, adminToken, { status: "pending" })).status).toBe(400);
+  });
+
+  it("an old rescheduled row cannot reopen — and can never yield two active pending rows", async () => {
+    const before = await snapshot();
+    expect(before.pendingCount).toBe(1); // only the reschedule target is active
+
+    const res = await api("PATCH", `/follow-ups/${fuRescheduled}`, adminToken, { status: "pending" });
+    expect(res.status).toBe(400);
+
+    // The rejected reopen is a pure no-op: statuses, active-pending count,
+    // contact mirror and timeline activities are all untouched.
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("terminal → other terminal transitions are rejected too", async () => {
+    expect((await api("PATCH", `/follow-ups/${fuCompleted}`, adminToken, { status: "rescheduled", scheduledDate: "2026-12-30" })).status).toBe(400);
+    expect((await api("PATCH", `/follow-ups/${fuCancelled}`, adminToken, { status: "completed" })).status).toBe(400);
+    expect((await api("PATCH", `/follow-ups/${fuRescheduled}`, adminToken, { status: "completed" })).status).toBe(400);
+    expect((await api("PATCH", `/follow-ups/${fuRescheduled}`, adminToken, { status: "cancelled" })).status).toBe(400);
+  });
+
+  it("pending → completed/cancelled/rescheduled still works", async () => {
+    const id = (await (await createFollowUp(adminToken, { contactId: contactT, scheduledDate: "2027-01-05" })).json()).id;
+    expect((await api("PATCH", `/follow-ups/${id}`, adminToken, { status: "completed", comment: "done" })).status).toBe(200);
+  });
+});
+
+describe("multi-company access does not allow cross-company FK binding", () => {
+  let dualToken = "";
+  let dualId = 0;
+  let dualTaskId = 0;
+
+  beforeAll(async () => {
+    // A user whose HOME company is A with a legitimate access grant to B.
+    const res = await api("POST", "/users", platformToken, {
+      email: `qa-dual@${DOMAIN}`, name: "B12 Dual Access", role: "admin", password: PW, companyId,
+    });
+    expect(res.status).toBe(201);
+    dualId = (await res.json()).id;
+    await db.insert(userCompanyAccessTable).values({ userId: dualId, companyId: companyBId });
+    dualToken = await loginToken({ email: `qa-dual@${DOMAIN}`, password: PW });
+
+    // Premise: the dual user really CAN read both companies' records.
+    expect((await api("GET", `/contacts/${contact1}`, dualToken)).status).toBe(200);
+    expect((await api("GET", `/contacts/${contactB1}`, dualToken)).status).toBe(200);
+  });
+
+  it("a company-A task cannot bind a company-B contact or assignee on create", async () => {
+    expect((await api("POST", "/tasks", dualToken, { title: "cross contact", contactId: contactB1 })).status).toBe(400);
+    expect((await api("POST", "/tasks", dualToken, { title: "cross assignee", assignedToId: adminBId })).status).toBe(400);
+  });
+
+  it("a company-A task cannot be updated to point at company-B records", async () => {
+    const created = await api("POST", "/tasks", dualToken, { title: "B12 dual own task" });
+    expect(created.status).toBe(201);
+    dualTaskId = (await created.json()).id;
+
+    expect((await api("PATCH", `/tasks/${dualTaskId}`, dualToken, { contactId: contactB1 })).status).toBe(400);
+    expect((await api("PATCH", `/tasks/${dualTaskId}`, dualToken, { assignedToId: adminBId })).status).toBe(400);
+  });
+
+  it("a company-A follow-up cannot bind a company-B assignee", async () => {
+    const res = await createFollowUp(dualToken, { contactId: contact1, scheduledDate: "2027-01-10", assignedToId: adminBId });
+    expect(res.status).toBe(400);
+  });
+
+  it("legitimate same-company references still work", async () => {
+    const task = await api("POST", "/tasks", dualToken, { title: "B12 legit task", contactId: contact1, assignedToId: emp1Id });
+    expect(task.status).toBe(201);
+    expect((await api("PATCH", `/tasks/${dualTaskId}`, dualToken, { contactId: contact1, assignedToId: emp1Id })).status).toBe(200);
+    const fu = await createFollowUp(dualToken, { contactId: contact1, scheduledDate: "2027-01-12", assignedToId: emp1Id });
+    expect(fu.status).toBe(201);
   });
 });

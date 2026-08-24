@@ -6,7 +6,7 @@ import { requireAuth, requireTenantUser, blockReadOnlyMutations, canAccessCompan
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateTaskBody, UpdateTaskBody } from "@workspace/api-zod";
-import { refAccessible } from "../lib/tenant.js";
+import { refAccessible, refInCompany } from "../lib/tenant.js";
 import { parseListQuery } from "../lib/list-query.js";
 import * as activitiesRepo from "../repositories/lead_activities.repository.js";
 
@@ -139,8 +139,13 @@ router.post("/tasks", validateBody(CreateTaskBody), async (req: AuthRequest, res
     if (targetUser !== req.user!.id && !canAssignToOthers(req.user!.role)) {
       res.status(403).json({ error: "You can only assign tasks to yourself" }); return;
     }
+    // Caller-scoped checks PLUS the same-company FK invariant: everything the
+    // task binds to must live in the task's own company — a multi-company
+    // caller must not point a company-A task at company-B records.
     if (!(await refAccessible(req.user, "users", targetUser))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
+    if (!(await refInCompany("users", companyId, targetUser))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     if (contactId != null && !(await refAccessible(req.user, "contacts", contactId))) { res.status(400).json({ error: "Invalid contactId" }); return; }
+    if (!(await refInCompany("contacts", companyId, contactId ?? null))) { res.status(400).json({ error: "Invalid contactId" }); return; }
     const [row] = await db.insert(tasksTable).values({
       companyId, title, type: type ?? "custom", status: "pending", contactId: contactId ?? null,
       dueDate: dueDate ?? null, dueTime: dueTime ?? null, notes: notes ?? null, assignedToId: targetUser, assignedById: req.user!.id,
@@ -167,8 +172,12 @@ router.patch("/tasks/:id", validateBody(UpdateTaskBody), async (req: AuthRequest
     if (assignedToId !== undefined && assignedToId !== existing.assignedToId && !canAssignToOthers(req.user!.role)) {
       res.status(403).json({ error: "You cannot reassign this task" }); return;
     }
+    // Same-company FK invariant on update too: supplied refs must belong to the
+    // task's own company (existing.companyId), not merely one the caller can access.
     if (assignedToId !== undefined && !(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
+    if (assignedToId !== undefined && !(await refInCompany("users", existing.companyId, assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     if (contactId !== undefined && contactId != null && !(await refAccessible(req.user, "contacts", contactId))) { res.status(400).json({ error: "Invalid contactId" }); return; }
+    if (contactId !== undefined && !(await refInCompany("contacts", existing.companyId, contactId ?? null))) { res.status(400).json({ error: "Invalid contactId" }); return; }
     const updateData: Record<string, unknown> = { title, type, status, contactId, dueDate, dueTime, notes, assignedToId, updatedAt: new Date() };
     Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
     if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "No valid fields to update" }); return; }

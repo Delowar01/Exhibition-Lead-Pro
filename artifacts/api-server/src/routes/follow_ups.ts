@@ -6,7 +6,7 @@ import { requireAuth, requireTenantUser, blockReadOnlyMutations, canAccessCompan
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateFollowUpBody, UpdateFollowUpBody } from "@workspace/api-zod";
-import { refAccessible } from "../lib/tenant.js";
+import { refAccessible, refInCompany } from "../lib/tenant.js";
 import { parseListQuery } from "../lib/list-query.js";
 import * as activitiesRepo from "../repositories/lead_activities.repository.js";
 
@@ -129,7 +129,11 @@ router.post("/follow-ups", validateBody(CreateFollowUpBody), async (req: AuthReq
     if (typeof contactId !== "number") { res.status(400).json({ error: "contactId required" }); return; }
     const [contact] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, contactId)).limit(1);
     if (!contact || !canAccessCompany(req.user, contact.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
+    // Caller-scoped check PLUS the same-company FK invariant: the assignee must
+    // belong to the CONTACT's company — a multi-company caller must not bind a
+    // company-A follow-up to a company-B user.
     if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
+    if (!(await refInCompany("users", contact.companyId, assignedToId ?? null))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
     const [row] = await db.insert(followUpsTable).values({
       companyId: contact.companyId, contactId, scheduledDate: scheduledDate ?? null, scheduledTime: scheduledTime ?? null,
       notes: notes ?? null, status: "pending", assignedToId: assignedToId ?? null, createdById: req.user!.id,
@@ -153,12 +157,15 @@ router.patch("/follow-ups/:id", validateBody(UpdateFollowUpBody), async (req: Au
     if (!existing || !canAccessCompany(req.user, existing.companyId)) { res.status(404).json({ error: "Follow-up not found" }); return; }
     const { status, comment, scheduledDate, scheduledTime, notes } = req.body ?? {};
 
-    // Lifecycle actions (complete / reschedule / cancel) are only valid on a
-    // PENDING row: terminal rows are the follow-up history and re-running an
-    // action on one would corrupt it (e.g. a double-reschedule would spawn a
-    // second "same reschedule" pending row).
-    if ((status === "completed" || status === "rescheduled" || status === "cancelled") && existing.status !== "pending") {
-      res.status(400).json({ error: `Only a pending follow-up can be ${status}` });
+    // Once a follow-up leaves `pending` it is immutable HISTORY: no status
+    // write is accepted at all — not back to pending (which would reopen
+    // history and, after a reschedule, could recreate multiple active pending
+    // rows), not to another terminal state, and not even a restated
+    // "rescheduled" (that is the reschedule ACTION and would spawn a second
+    // pending copy of the same reschedule). Only pending → completed/
+    // rescheduled/cancelled remains valid; a rejected request writes nothing.
+    if (status !== undefined && existing.status !== "pending") {
+      res.status(400).json({ error: `This follow-up is ${existing.status} — its status can no longer change` });
       return;
     }
 
