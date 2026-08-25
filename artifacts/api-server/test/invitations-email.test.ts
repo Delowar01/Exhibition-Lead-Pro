@@ -266,13 +266,16 @@ describe("email worker: delivery outcomes + retry (isolated queue, stub transpor
     await q.stop();
   });
 
-  it("marks the invitation failed after exhausting retries", async () => {
+  it("marks the invitation failed after exhausting retries — with a SANITIZED error", async () => {
     const inv = await insertBareInvitation(invEmail("worker-fail"));
     let calls = 0;
+    // Worst case: the transport error embeds message-derived material (a
+    // recipient address and a token-bearing URL). None of it may be persisted.
+    const SENTINEL = `leak-${Date.now()}@example.test https://x.test/invite?token=SECRET`;
     __setEmailProviderForTests(
       stub(async () => {
         calls++;
-        throw new Error("SMTP connection refused");
+        throw new Error(`SMTP connection refused for ${SENTINEL}`);
       }),
     );
     const q = makeQueue();
@@ -280,7 +283,9 @@ describe("email worker: delivery outcomes + retry (isolated queue, stub transpor
     expect(await pollEmailStatus(inv.id, "failed", 3000)).toBe("failed");
     expect(calls).toBe(3); // maxAttempts respected
     const [row] = await db.select().from(invitationsTable).where(eq(invitationsTable.id, inv.id));
-    expect(row.emailError).toContain("SMTP connection refused");
+    expect(row.emailError).toBe("Email delivery failed (Error)"); // fixed message + class only
+    expect(row.emailError).not.toContain("SMTP");
+    expect(JSON.stringify(row)).not.toContain(SENTINEL);
     await q.stop();
   });
 

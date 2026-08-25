@@ -66,7 +66,7 @@ async function safeSend(message: EmailMessage): Promise<SendResult> {
   try {
     return await getEmailProvider().send(message);
   } catch (err) {
-    logger.error({ err, to: message.to, subject: message.subject }, "Email send failed");
+    logger.error({ err, invitationId: message.meta?.invitationId ?? null }, "Email send failed");
     return { sent: false, skippedReason: "send_error" };
   }
 }
@@ -109,7 +109,7 @@ function dispatch(message: EmailMessage): Promise<SendResult> {
     .enqueue(EMAIL_SEND_JOB, message)
     .then(() => ({ sent: false, queued: true }) as SendResult)
     .catch((err) => {
-      logger.error({ err, to: message.to, subject: message.subject }, "Email enqueue failed; sending synchronously");
+      logger.error({ err, invitationId: message.meta?.invitationId ?? null }, "Email enqueue failed; sending synchronously");
       return safeSend(message).then((r) => recordSyncOutcome(message, r));
     });
 }

@@ -53,11 +53,13 @@ export function registerEmailHandler(queue: ReturnType<typeof getQueue>): void {
     } catch (err) {
       // Transport error: rethrow so the queue retries with backoff. On the FINAL
       // attempt, persist the failure so it is visible to administrators instead of
-      // dying silently in an in-memory dead-letter counter. Error text is provider
-      // metadata only — message bodies/links/tokens are never logged or stored.
+      // dying silently in a dead-letter counter. Only a fixed message plus the
+      // error CLASS is persisted — raw transport error text can embed recipient
+      // addresses, server banners or other message-derived material, and the
+      // invitation row must never become a secondary leak channel.
       if (job.attempts >= job.maxAttempts) {
-        const msg = err instanceof Error ? err.message.slice(0, 500) : "Email delivery failed";
-        await record("failed", msg);
+        const cls = err instanceof Error ? err.constructor.name : "Error";
+        await record("failed", `Email delivery failed (${cls})`);
       }
       throw err;
     }
