@@ -138,3 +138,62 @@ test("dark mode keeps core shell controls present and visible", async ({ page })
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(bg).not.toBe("rgb(255, 255, 255)");
 });
+
+test("tablet 1024×768: shell, contacts, pipeline and workspace stay usable with no overflow", async ({ page }) => {
+  const TABLET = { width: 1024, height: 768 };
+  await page.setViewportSize(TABLET);
+  await seedAuth(page);
+
+  // /admin — shell renders with the desktop/tablet sidebar (not the mobile
+  // drawer), and the header controls neither overlap nor overflow.
+  await page.goto("/admin");
+  await expect(page.getByTestId("link-brand")).toBeVisible();
+  await expect(page.getByTestId("button-global-search")).toBeVisible();
+  await expect(page.getByTestId("button-quick-create")).toBeVisible();
+  await expect(page.getByTestId("button-user-menu")).toBeVisible();
+  await expect(page.getByTestId("button-mobile-nav")).toBeHidden(); // md+ uses the sidebar
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await expect(nav).toBeVisible();
+  const headerOverflow = await page
+    .locator("header")
+    .first()
+    .evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(headerOverflow, "header controls overflow/overlap").toBeLessThanOrEqual(1);
+  const search = await page.getByTestId("button-global-search").boundingBox();
+  const userMenu = await page.getByTestId("button-user-menu").boundingBox();
+  expect(search && userMenu && search.x + search.width <= userMenu.x, "search overlaps user controls").toBe(true);
+  expect(await pageOverflow(page)).toBeLessThanOrEqual(1);
+
+  // Sidebar is usable: a nav link navigates.
+  await nav.getByRole("link", { name: "Contacts" }).click();
+  await expect(page).toHaveURL(/\/admin\/contacts/);
+
+  // /admin/contacts — actions + search/filter toolbar reachable, no overflow.
+  await expect(page.getByTestId("link-add-contact")).toBeVisible();
+  const contactSearch = page.getByTestId("input-contact-search");
+  await expect(contactSearch).toBeVisible();
+  await contactSearch.fill("tablet-check");
+  await expect(contactSearch).toHaveValue("tablet-check");
+  await expect(page.getByRole("button", { name: /advanced filters/i })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  expect(await pageOverflow(page), "overflow on /admin/contacts").toBeLessThanOrEqual(1);
+
+  // /admin/leads — pipeline controls usable in both views without page overflow.
+  await page.goto("/admin/leads");
+  await expect(page.getByTestId("button-view-table")).toBeVisible();
+  await expect(page.getByTestId("leads-table")).toBeVisible();
+  expect(await pageOverflow(page), "overflow on /admin/leads (table)").toBeLessThanOrEqual(1);
+  await page.getByTestId("button-view-kanban").click();
+  await expect(page.locator('[data-testid^="kanban-column-"]').first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  expect(await pageOverflow(page), "overflow on /admin/leads (kanban)").toBeLessThanOrEqual(1);
+
+  // Contact Workspace — tabs reachable and switchable, no overflow.
+  await page.goto(`/admin/contacts/${state.contact.id}`);
+  const tablist = page.getByRole("tablist", { name: "Workspace tabs" });
+  await expect(tablist).toBeVisible();
+  await tablist.getByRole("tab", { name: /timeline/i }).click();
+  await expect(page).toHaveURL(new RegExp(`/admin/contacts/${state.contact.id}/timeline`));
+  await page.waitForLoadState("networkidle");
+  expect(await pageOverflow(page), "overflow on contact workspace").toBeLessThanOrEqual(1);
+});
