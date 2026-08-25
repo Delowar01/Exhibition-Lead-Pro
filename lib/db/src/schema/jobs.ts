@@ -1,5 +1,4 @@
 import { pgTable, serial, text, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 
 // Durable background-job queue (Batch 14). PostgreSQL is the durable transport
 // behind the provider-agnostic JobQueue abstraction: once a job row is inserted,
@@ -50,10 +49,11 @@ export const jobQueueTable = pgTable(
     // Lease-recovery sweep: running rows by lease expiry.
     index("job_queue_lease_idx").on(t.status, t.leaseExpiresAt),
     index("job_queue_name_idx").on(t.name),
-    // DB-enforced idempotent enqueue: one ACTIVE row per dedupe key.
-    uniqueIndex("job_queue_dedupe_active_ux")
-      .on(t.dedupeKey)
-      .where(sql`${t.dedupeKey} IS NOT NULL AND ${t.status} IN ('pending', 'running')`),
+    // DB-enforced idempotent enqueue: a retained row reserves its dedupe key in
+    // EVERY state (pending/running/completed/dead) — standard unique-index NULL
+    // semantics leave keyless jobs unconstrained. Keys of historical terminal
+    // rows are freed only when retention deletes those rows.
+    uniqueIndex("job_queue_dedupe_ux").on(t.dedupeKey),
   ],
 );
 

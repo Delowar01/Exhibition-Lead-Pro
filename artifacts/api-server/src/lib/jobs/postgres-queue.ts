@@ -24,6 +24,16 @@ export interface PostgresQueueConfig {
 
 type Db = typeof defaultDb;
 
+// Handler errors may interpolate DECRYPTED payload values (links, tokens, email
+// bodies) into their message. Persisting or logging raw handler error text
+// would leak that material, so only a fixed message plus the error CLASS is
+// ever stored — queue-internal conditions (decryption failure, lease expiry,
+// missing handler) use their own fixed strings.
+function safeHandlerError(err: unknown): string {
+  const cls = err instanceof Error ? err.constructor.name : typeof err;
+  return `Handler failed (${cls})`;
+}
+
 // PostgreSQL-backed durable job queue (Batch 14). Same JobQueue contract as the
 // in-process driver, but rows survive restarts: enqueue INSERTs, workers claim
 // atomically with FOR UPDATE SKIP LOCKED (attempt incremented in the same
@@ -71,16 +81,16 @@ export class PostgresQueue implements JobQueue {
       availableAt,
       dedupeKey: opts?.dedupeKey ?? null,
     };
-    // Idempotent enqueue: the partial unique index on ACTIVE rows makes the
-    // insert itself the race-free dedupe check — a second enqueue with the same
-    // key while the first is pending/running inserts nothing.
+    // Idempotent enqueue: the unique index on dedupe_key (standard PostgreSQL
+    // NULL semantics — keyless jobs are unconstrained) makes the insert itself
+    // the race-free dedupe check. A retained row reserves its key in EVERY
+    // state — pending, running, completed and dead — so the same logical job is
+    // never accepted twice; retention eventually frees keys of historical
+    // terminal rows per the configured windows.
     const inserted = await this.db
       .insert(jobQueueTable)
       .values(values)
-      .onConflictDoNothing({
-        target: jobQueueTable.dedupeKey,
-        where: sql`${jobQueueTable.dedupeKey} IS NOT NULL AND ${jobQueueTable.status} IN ('pending', 'running')`,
-      })
+      .onConflictDoNothing({ target: jobQueueTable.dedupeKey })
       .returning({ id: jobQueueTable.id });
     if (inserted.length > 0) this.counters.enqueued++;
   }
@@ -319,7 +329,7 @@ export class PostgresQueue implements JobQueue {
         await this.markCompleted(row.id);
       } catch (err) {
         this.counters.failed++;
-        const msg = (err instanceof Error ? err.message : "Job failed").slice(0, 500);
+        const msg = safeHandlerError(err);
         if (row.attempts < row.maxAttempts) {
           const delay = Math.min(row.backoffBaseMs * Math.pow(2, row.attempts - 1), this.cfg.backoffMaxMs);
           logger.warn(
@@ -375,8 +385,9 @@ export class PostgresQueue implements JobQueue {
     const rows = await this.db
       .update(jobQueueTable)
       .set({ status: "dead", deadAt: new Date(), lastError, leaseExpiresAt: null })
-      .where(and(eq(jobQueueTable.id, id), eq(jobQueueTable.status, "running")))
+      .where(and(eq(jobQueueTable.id, id), eq(jobQueueTable.workerId, this.workerId), eq(jobQueueTable.status, "running")))
       .returning({ id: jobQueueTable.id });
     if (rows.length > 0) this.counters.deadLettered++;
+    else logger.warn({ id, workerId: this.workerId }, "Dead-letter skipped: lease no longer held");
   }
 }

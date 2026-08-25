@@ -9,13 +9,14 @@
 // put, crashed workers are recovered via lease expiry, healthy workers are
 // protected by heartbeat, dedupe keys are DB-enforced, and payloads are stored
 // only as AES-256-GCM envelopes — never plaintext.
-import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, vi } from "vitest";
 import { and, eq, gte, like, or, sql } from "drizzle-orm";
 import { db, jobQueueTable } from "@workspace/db";
 import { PostgresQueue, type PostgresQueueConfig } from "../src/lib/jobs/postgres-queue.js";
 import { dispatchRecurring, RECURRING_SWEEP_JOB } from "../src/lib/jobs/scheduler.js";
 import { registerEmailHandler } from "../src/lib/jobs/handlers.js";
 import { EMAIL_SEND_JOB } from "../src/lib/email/index.js";
+import { logger } from "../src/lib/logger.js";
 
 const KEY_A = "b14-test-key-aaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const KEY_B = "b14-test-key-bbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -136,7 +137,7 @@ describe("retry persistence (database time is authoritative)", () => {
     expect(row.status).toBe("pending");
     expect(row.attempts).toBe(1);
     expect(row.availableAt.getTime()).toBeGreaterThan(Date.now() - 1000);
-    expect(row.lastError).toContain("transient failure");
+    expect(row.lastError).toBe("Handler failed (Error)"); // raw handler text is never persisted
 
     // Fresh "process": the job becomes runnable when available_at arrives.
     const w2 = makeQueue();
@@ -165,7 +166,7 @@ describe("dead-letter", () => {
     const row = await rowByName(name);
     expect(row.attempts).toBe(2);
     expect(row.deadAt).not.toBeNull();
-    expect(row.lastError).toContain("permanent failure");
+    expect(row.lastError).toBe("Handler failed (Error)"); // sanitized: class only, no handler text
     expect(row.lastError).not.toContain("not-in-error");
     // No further automatic executions — including across a worker restart.
     const before = executions;
@@ -330,28 +331,175 @@ describe("payload security", () => {
   });
 });
 
+describe("handler errors never leak payload material (final correction)", () => {
+  it("a handler error interpolating the decrypted payload leaves no trace in row or logs", async () => {
+    const SENTINEL = `leak-sentinel-${RUN}-TOKEN`;
+    const name = jobName("error-leak");
+
+    // Capture every queue-generated log line for the duration of the test.
+    const captured: unknown[][] = [];
+    const spies = (["info", "warn", "error", "debug"] as const).map((level) =>
+      vi.spyOn(logger, level).mockImplementation(((...args: unknown[]) => {
+        captured.push(args);
+      }) as never),
+    );
+    try {
+      const q = makeQueue();
+      q.register<{ link: string }>(name, async (p) => {
+        // Worst case: the handler throws with the decrypted payload in the message.
+        throw new Error(`could not deliver ${p.link}`);
+      });
+      await q.enqueue(name, { link: `https://example.test/reset?token=${SENTINEL}` }, { maxAttempts: 2, backoffBaseMs: 50 });
+      q.start();
+      await until(async () => (await rowByName(name))?.status === "dead", 8_000, "retried then dead-lettered");
+
+      const row = await rowByName(name);
+      expect(row.attempts).toBe(2); // retry happened, then dead-letter
+      expect(row.payload).not.toContain(SENTINEL); // encrypted at rest
+      expect(row.lastError).toBe("Handler failed (Error)"); // sanitized
+      expect(JSON.stringify(row)).not.toContain(SENTINEL); // whole-row sweep
+      const logDump = JSON.stringify(captured);
+      expect(logDump).not.toContain(SENTINEL); // queue logs never echo it
+      expect(logDump).not.toContain("could not deliver");
+    } finally {
+      spies.forEach((sp) => sp.mockRestore());
+    }
+  });
+});
+
 describe("recurring dispatch dedupe", () => {
-  it("two dispatchers in the same cadence bucket create one durable sweep", async () => {
+  it("a cadence bucket dispatches once — even after its sweep already completed", async () => {
     const q = makeQueue();
     const now = Date.now();
     const task = `b14task${RUN}`;
     const interval = 60 * 60 * 1000;
     await Promise.all([
       dispatchRecurring(q, task, interval, now),
-      dispatchRecurring(q, task, interval, now + 10), // same bucket
+      dispatchRecurring(q, task, interval, now + 10), // same bucket, concurrent dispatcher
     ]);
-    const count = async () => {
-      const [row] = await db
-        .select({ n: sql<number>`count(*)::int` })
+    const rows = async () =>
+      db
+        .select()
         .from(jobQueueTable)
         .where(and(eq(jobQueueTable.name, RECURRING_SWEEP_JOB), like(jobQueueTable.dedupeKey, `recurring:${task}:%`)));
-      return row.n;
-    };
-    expect(await count()).toBe(1);
-    // The NEXT cadence bucket dispatches a fresh sweep.
+    expect((await rows()).length).toBe(1);
+
+    // Execute/complete the sweep, then dispatch the SAME bucket again: the
+    // completed row still reserves the key — no duplicate sweep is created.
+    let sweeps = 0;
+    q.register(RECURRING_SWEEP_JOB, async () => {
+      sweeps++;
+    });
+    q.start();
+    await until(async () => (await rows())[0]?.status === "completed", 8_000, "sweep completed");
+    expect(sweeps).toBe(1);
+    await dispatchRecurring(q, task, interval, now + 20); // same bucket, post-completion
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await rows()).length).toBe(1);
+    expect(sweeps).toBe(1); // no re-execution
+
+    // The NEXT cadence bucket still dispatches a fresh sweep.
     await dispatchRecurring(q, task, interval, now + interval);
-    expect(await count()).toBe(2);
+    expect((await rows()).length).toBe(2);
+    await q.stop();
     await db.delete(jobQueueTable).where(like(jobQueueTable.dedupeKey, `recurring:${task}:%`));
+  });
+});
+
+describe("stale-worker lease ownership (final correction)", () => {
+  it("a worker that lost its lease cannot dead-letter a row reclaimed by another worker", async () => {
+    const name = jobName("stale-dead");
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    // Worker A: single attempt, handler blocks until released, then fails —
+    // driving A straight into its markDead path.
+    const wA = makeQueue();
+    wA.register(name, async () => {
+      await gate;
+      throw new Error("late terminal failure");
+    });
+    await wA.enqueue(name, {}, { maxAttempts: 1 });
+    wA.start();
+    await until(async () => (await rowByName(name))?.status === "running", 8_000, "A claimed the job");
+    const claimed = await rowByName(name);
+    expect(claimed.workerId).toBe(wA.workerId);
+
+    // A's lease expires and the row is reclaimed by worker B (simulated
+    // deterministically: ownership transferred, fresh lease).
+    await db
+      .update(jobQueueTable)
+      .set({ workerId: "b14-worker-B", leaseExpiresAt: new Date(Date.now() + 60_000), attempts: 2, maxAttempts: 2 })
+      .where(eq(jobQueueTable.name, name));
+
+    // Stale A now reaches its terminal-failure write — it must be a no-op.
+    release!();
+    await new Promise((r) => setTimeout(r, 300));
+    const after = await rowByName(name);
+    expect(after.status).toBe("running"); // NOT dead
+    expect(after.deadAt).toBeNull();
+    expect(after.workerId).toBe("b14-worker-B"); // B remains authoritative
+    await wA.stop();
+
+    // …and the job can still be processed to completion by a live worker.
+    await db
+      .update(jobQueueTable)
+      .set({ status: "pending", workerId: null, leaseExpiresAt: null, availableAt: new Date(), attempts: 0 })
+      .where(eq(jobQueueTable.name, name));
+    const wB = makeQueue();
+    wB.register(name, async () => {});
+    wB.start();
+    await until(async () => (await rowByName(name))?.status === "completed", 8_000, "B completed the job");
+  });
+});
+
+describe("dedupe persists across terminal states (final correction)", () => {
+  it("a COMPLETED job's dedupe key still rejects a re-enqueue", async () => {
+    const name = jobName("dedupe-completed");
+    const key = `b14:${RUN}:dedupe-completed-X`;
+    const q = makeQueue();
+    q.register(name, async () => {});
+    await q.enqueue(name, { n: 1 }, { dedupeKey: key });
+    q.start();
+    await until(async () => (await rowByName(name))?.status === "completed", 8_000, "first job completed");
+
+    await q.enqueue(name, { n: 2 }, { dedupeKey: key });
+    await new Promise((r) => setTimeout(r, 300));
+    const [count] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(jobQueueTable)
+      .where(eq(jobQueueTable.name, name));
+    expect(count.n).toBe(1); // no second row accepted
+    expect((await rowByName(name)).status).toBe("completed"); // original untouched
+  });
+
+  it("a DEAD job's key rejects re-enqueue; requeueDead revives the ORIGINAL row", async () => {
+    const name = jobName("dedupe-dead");
+    const key = `b14:${RUN}:dedupe-dead-Y`;
+    let failing = true;
+    const q = makeQueue();
+    q.register(name, async () => {
+      if (failing) throw new Error("fail until requeued");
+    });
+    await q.enqueue(name, { n: 1 }, { dedupeKey: key, maxAttempts: 1 });
+    q.start();
+    await until(async () => (await rowByName(name))?.status === "dead", 8_000, "job dead-lettered");
+    const dead = await rowByName(name);
+
+    await q.enqueue(name, { n: 2 }, { dedupeKey: key });
+    await new Promise((r) => setTimeout(r, 300));
+    const [count] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(jobQueueTable)
+      .where(eq(jobQueueTable.name, name));
+    expect(count.n).toBe(1); // dead row reserves the key
+
+    // Deliberate requeue revives the SAME row and it runs to completion.
+    failing = false;
+    expect(await q.requeueDead(dead.id)).toBe(true);
+    await until(async () => (await rowByName(name))?.status === "completed", 8_000, "requeued original ran");
+    expect((await rowByName(name)).id).toBe(dead.id);
   });
 });
 

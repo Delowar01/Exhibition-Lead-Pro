@@ -30,8 +30,10 @@ export function registerEmailHandler(queue: ReturnType<typeof getQueue>): void {
         // No provider configured — a soft skip, not a failure (no retry). WARN (not
         // debug) so a misconfigured environment cannot silently drop required
         // invitation/reset emails without an operational trace.
+        // Safe metadata only — recipient/subject derive from the (decrypted)
+        // payload and never belong in durable-worker logs.
         logger.warn(
-          { to: message.to, subject: message.subject },
+          { jobId: job.id, invitationId: invitationId ?? null },
           "Email skipped: provider not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS)",
         );
         await record("skipped", "Email provider is not configured");
@@ -44,7 +46,7 @@ export function registerEmailHandler(queue: ReturnType<typeof getQueue>): void {
         throw new Error(result.skippedReason ? `Email not delivered: ${result.skippedReason}` : "Email not delivered");
       }
       logger.info(
-        { to: message.to, subject: message.subject, messageId: result.messageId, attempt: job.attempts },
+        { jobId: job.id, messageId: result.messageId, attempt: job.attempts, invitationId: invitationId ?? null },
         "Email delivered",
       );
       await record("sent", null);
