@@ -1,11 +1,31 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startWorkers } from "./lib/jobs/handlers";
-import { startScheduler } from "./lib/jobs/scheduler";
+import { getQueue } from "./lib/jobs/queue";
+import { startScheduler, stopScheduler } from "./lib/jobs/scheduler";
 import { backfillAiCopilotPermissions, backfillAiWorkflowPermissions, backfillAiExecutivePermissions, backfillAiAssistantPermissions } from "./lib/permission-backfill";
 import { config } from "./config.js";
 
 const port = config.port;
+
+// Graceful shutdown (Batch 14): on container replacement (SIGTERM) or Ctrl-C,
+// stop dispatching recurring work and stop claiming new jobs, then allow a
+// short bounded drain of active handlers. Queued durable work is never
+// deleted; any handler that cannot finish in time keeps its row in `running`
+// and is recovered by lease expiry after restart.
+let shuttingDown = false;
+function shutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "Shutting down: draining background workers");
+  stopScheduler();
+  getQueue()
+    .stop()
+    .catch((err) => logger.error({ err }, "Queue drain failed"))
+    .finally(() => process.exit(0));
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 app.listen(port, (err) => {
   if (err) {

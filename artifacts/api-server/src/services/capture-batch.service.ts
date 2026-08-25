@@ -113,7 +113,7 @@ export async function startCaptureBatch(user: AuthUser, items: CaptureBatchItem[
     void queue.enqueue<CaptureAnalyzeJobPayload>(
       CAPTURE_ANALYZE_JOB,
       { jobId: job.id, key: item.key, fields: item.fields, imageData: item.imageData ?? null, appLanguage: item.appLanguage, user },
-      { maxAttempts: 1 },
+      { maxAttempts: 1, dedupeKey: `capture:${job.id}:${item.key}` },
     );
   }
   return snapshot(job);

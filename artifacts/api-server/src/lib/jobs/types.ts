@@ -10,6 +10,15 @@ export interface JobOptions {
   // Base backoff in ms for the first retry; subsequent retries grow exponentially up
   // to the queue's backoffMaxMs. Defaults to the queue's backoffBaseMs.
   backoffBaseMs?: number;
+  // Delayed availability (Batch 14): the job becomes runnable this many ms in the
+  // future. The durable driver persists it as available_at; the in-process driver
+  // approximates with a timer (non-durable by nature).
+  delayMs?: number;
+  // Stable idempotency key (Batch 14): while a job with this key is ACTIVE
+  // (pending/running), another enqueue with the same key is a no-op. Enforced by a
+  // partial unique index in the postgres driver (race-free); the in-process driver
+  // ignores it (single-process test/dev semantics).
+  dedupeKey?: string;
 }
 
 export interface Job<T = unknown> {

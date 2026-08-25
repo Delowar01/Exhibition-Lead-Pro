@@ -317,6 +317,15 @@ export const config = {
     maxAttempts: numEnv("JOBS_MAX_ATTEMPTS", 5, 1),
     backoffBaseMs: numEnv("JOBS_BACKOFF_BASE_MS", 2_000, 0),
     backoffMaxMs: numEnv("JOBS_BACKOFF_MAX_MS", 5 * 60 * 1000, 0),
+    // Durable (postgres) driver — Batch 14. Payloads are encrypted at rest with a
+    // DEDICATED key (required when JOBS_DRIVER=postgres; no fallback secret).
+    payloadEncryptionKey: process.env.JOBS_PAYLOAD_ENCRYPTION_KEY,
+    // Worker poll cadence for ready durable jobs.
+    pollIntervalMs: numEnv("JOBS_POLL_INTERVAL_MS", 1_000, 25),
+    // Lease per claim/heartbeat; a dead worker's jobs recover after at most this.
+    leaseMs: numEnv("JOBS_LEASE_MS", 60_000, 1_000),
+    // Bounded drain window for graceful shutdown.
+    shutdownGraceMs: numEnv("JOBS_SHUTDOWN_GRACE_MS", 10_000, 0),
     // Recurring maintenance cadence + first-run delays (ms). Generous initial delays
     // keep boot light and avoid interfering with short-lived processes/tests.
     schedule: {
@@ -340,6 +349,10 @@ export const config = {
       // Audit-log retention is OPT-IN. audit_logs is append-only by design; only a
       // positive value enables deletion of rows older than that many days.
       auditDays: numEnv("JOBS_AUDIT_RETENTION_DAYS", 0, 0),
+      // Durable queue rows (Batch 14): completed jobs are diagnostic exhaust and
+      // rotate quickly; dead-lettered jobs are kept LONGER for diagnosis. 0 disables.
+      queueCompletedDays: numEnv("JOBS_QUEUE_COMPLETED_RETENTION_DAYS", 7, 0),
+      queueDeadDays: numEnv("JOBS_QUEUE_DEAD_RETENTION_DAYS", 30, 0),
     },
   },
 

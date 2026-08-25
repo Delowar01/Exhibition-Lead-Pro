@@ -134,7 +134,7 @@ export async function startBatch(user: AuthUser, entityTypeRaw: string): Promise
     void queue.enqueue<AiAnalyzeJobPayload>(
       AI_ANALYZE_ENTITY_JOB,
       { jobId: job.id, entityType, entityId: id, user },
-      { maxAttempts: 1 },
+      { maxAttempts: 1, dedupeKey: `ai-analyze:${job.id}:${entityType}:${id}` },
     );
   }
   return snapshot(job);

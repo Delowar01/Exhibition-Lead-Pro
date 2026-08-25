@@ -49,8 +49,16 @@ export class InProcessQueue implements JobQueue {
       enqueuedAt: Date.now(),
     };
     this.counters.enqueued++;
-    this.ready.push(job as Job);
-    if (this.running) this.pump();
+    // delayMs (Batch 14): approximate delayed availability with a timer. This
+    // driver is explicitly non-durable — see the class caveat. dedupeKey is
+    // ignored here (no shared store to enforce it against).
+    const delay = Math.max(0, opts?.delayMs ?? 0);
+    if (delay > 0) {
+      this.scheduleRetry(job as Job, delay);
+    } else {
+      this.ready.push(job as Job);
+      if (this.running) this.pump();
+    }
     return Promise.resolve();
   }
 

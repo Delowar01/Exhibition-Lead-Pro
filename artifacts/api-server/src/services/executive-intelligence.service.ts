@@ -762,7 +762,7 @@ export async function generateReport(user: AuthUser, opts: GenerateReportOpts) {
   await getQueue().enqueue<ExecutiveReportJobPayload>(
     EXECUTIVE_REPORT_JOB,
     { companyId: user.companyId!, reportId: row.id, scopeType: resolved.scope.type, scopeId, reportType, periodType, format, userId: user.id },
-    { maxAttempts: 1 },
+    { maxAttempts: 1, dedupeKey: `exec-report:${row.id}` },
   );
   return toReportResponse(row);
 }

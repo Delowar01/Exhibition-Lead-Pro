@@ -292,7 +292,11 @@ export async function recordInvocation(params: RecordInvocationParams): Promise<
     ledgerWriteFailures += 1;
     logger.error({ err, feature: params.feature, requestId: params.requestId }, "Failed to record AI invocation; queueing retry");
     try {
-      await getQueue().enqueue(AI_LEDGER_RETRY_JOB, { ...values, createdAt: values.createdAt.toISOString() });
+      await getQueue().enqueue(
+        AI_LEDGER_RETRY_JOB,
+        { ...values, createdAt: values.createdAt.toISOString() },
+        { dedupeKey: `ai-ledger:${params.requestId}` },
+      );
       return true;
     } catch (enqueueErr) {
       logger.error({ err: enqueueErr, requestId: params.requestId }, "Failed to queue AI ledger retry");

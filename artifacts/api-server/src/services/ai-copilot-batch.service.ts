@@ -131,7 +131,7 @@ export async function startBatch(user: AuthUser, entityTypeRaw: string, outputTy
     void queue.enqueue<AiCopilotJobPayload>(
       AI_COPILOT_GENERATE_JOB,
       { jobId: job.id, entityType, entityId: id, outputType, user },
-      { maxAttempts: 1 },
+      { maxAttempts: 1, dedupeKey: `ai-copilot:${job.id}:${entityType}:${id}:${outputType}` },
     );
   }
   return snapshot(job);

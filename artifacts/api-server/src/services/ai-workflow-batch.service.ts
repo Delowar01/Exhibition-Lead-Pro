@@ -116,7 +116,7 @@ export async function startBatch(user: AuthUser, entityTypeRaw: string): Promise
     void queue.enqueue<AiWorkflowJobPayload>(
       AI_WORKFLOW_ANALYZE_JOB,
       { jobId: job.id, entityType, entityId: id, user },
-      { maxAttempts: 1 },
+      { maxAttempts: 1, dedupeKey: `ai-workflow:${job.id}:${entityType}:${id}` },
     );
   }
   return snapshot(job);

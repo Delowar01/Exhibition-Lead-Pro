@@ -5,6 +5,7 @@ import {
   notificationsTable,
   invitationsTable,
   auditLogsTable,
+  jobQueueTable,
 } from "@workspace/db";
 import { config } from "../../config.js";
 import { logger } from "../logger.js";
@@ -85,6 +86,30 @@ export async function cleanupOldAuditLogs(): Promise<number> {
   return rows.length;
 }
 
+// Durable-queue retention (Batch 14): completed rows rotate quickly; dead-lettered
+// rows are kept LONGER for diagnosis. Only terminal rows are ever deleted —
+// pending/running work is never touched. 0 disables either window.
+export async function cleanupQueueJobs(): Promise<number> {
+  let removed = 0;
+  const completedDays = config.jobs.retention.queueCompletedDays;
+  if (completedDays > 0) {
+    const rows = await db
+      .delete(jobQueueTable)
+      .where(and(eq(jobQueueTable.status, "completed"), lt(jobQueueTable.completedAt, cutoff(completedDays))))
+      .returning({ id: jobQueueTable.id });
+    removed += rows.length;
+  }
+  const deadDays = config.jobs.retention.queueDeadDays;
+  if (deadDays > 0) {
+    const rows = await db
+      .delete(jobQueueTable)
+      .where(and(eq(jobQueueTable.status, "dead"), lt(jobQueueTable.deadAt, cutoff(deadDays))))
+      .returning({ id: jobQueueTable.id });
+    removed += rows.length;
+  }
+  return removed;
+}
+
 // Runs every maintenance task, isolating failures so one bad task never blocks the
 // others. Returns a per-task summary for logging.
 export async function runMaintenance(): Promise<Record<string, number | "error">> {
@@ -94,6 +119,7 @@ export async function runMaintenance(): Promise<Record<string, number | "error">
     ["expiredInvitations", expireStaleInvitations],
     ["oldNotifications", cleanupOldNotifications],
     ["oldAuditLogs", cleanupOldAuditLogs],
+    ["queueJobs", cleanupQueueJobs],
   ];
   const summary: Record<string, number | "error"> = {};
   for (const [name, fn] of tasks) {

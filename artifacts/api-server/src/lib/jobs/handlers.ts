@@ -9,6 +9,7 @@ import { AI_COPILOT_GENERATE_JOB, runAiCopilotGenerateJob, type AiCopilotJobPayl
 import { CAPTURE_ANALYZE_JOB, runCaptureAnalyzeJob, type CaptureAnalyzeJobPayload } from "../../services/capture-batch.service.js";
 import { AI_WORKFLOW_ANALYZE_JOB, runAiWorkflowAnalyzeJob, type AiWorkflowJobPayload } from "../../services/ai-workflow-batch.service.js";
 import { EXECUTIVE_REPORT_JOB, runExecutiveReportJob, type ExecutiveReportJobPayload } from "../../services/executive-intelligence.service.js";
+import { registerRecurringHandler } from "./scheduler.js";
 
 // Registers the email delivery handler on a queue. Split out from startWorkers so
 // tests can exercise the delivery/retry/outcome-recording path on an isolated queue
@@ -107,6 +108,10 @@ export function startWorkers(): void {
   queue.register<Record<string, unknown>>(AI_LEDGER_RETRY_JOB, async (payload) => {
     await runLedgerRetryJob(payload);
   });
+
+  // Batch 14: recurring sweeps dispatched by the scheduler run as durable jobs
+  // on this worker pool instead of inside the timer callback.
+  registerRecurringHandler(queue);
 
   queue.start();
 }
