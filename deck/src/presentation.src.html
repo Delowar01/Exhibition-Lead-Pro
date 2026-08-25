@@ -78,6 +78,7 @@
    2. Base
    ========================================================================== */
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%}
 body{
   margin:0;
@@ -217,6 +218,8 @@ b,strong{font-weight:750}
 .grid.three{grid-template-columns:repeat(3,1fr)}
 .grid.four{grid-template-columns:repeat(4,1fr)}
 .body-area{margin-top:26px}
+.body-area.fill{display:flex;flex-direction:column;min-height:0}
+.body-area.fill > .card{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
 
 .card{
   border:1px solid var(--line);border-radius:26px;
@@ -289,28 +292,6 @@ b,strong{font-weight:750}
 .footer-note .num{
   font-variant-numeric:tabular-nums;letter-spacing:.1em;color:var(--orange-pale);
   font-weight:800;padding-right:18px;border-right:1px solid var(--line);
-}
-
-/* «CONFIRM» — must read as an obvious fill-in, never as a real figure */
-.confirm{
-  display:inline-flex;align-items:center;gap:6px;
-  border:1.5px dashed rgba(229,108,37,.85);
-  background:repeating-linear-gradient(135deg,rgba(229,108,37,.16) 0 8px,rgba(229,108,37,.06) 8px 16px);
-  color:#FFD3B0;
-  border-radius:8px;padding:1px 8px 2px;
-  font-size:.86em;font-weight:800;letter-spacing:.08em;
-  font-variant-numeric:tabular-nums;
-  white-space:nowrap;
-}
-.confirm.block{display:flex;justify-content:center;padding:14px 18px;font-size:20px;letter-spacing:.1em;border-radius:14px}
-.confirm-key{
-  display:inline-flex;align-items:center;gap:10px;
-  font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
-}
-.confirm-key i{
-  width:16px;height:16px;border-radius:4px;flex:0 0 16px;
-  border:1.5px dashed rgba(229,108,37,.85);
-  background:repeating-linear-gradient(135deg,rgba(229,108,37,.16) 0 6px,rgba(229,108,37,.06) 6px 12px);
 }
 
 /* SAR conversions travel with every USD figure */
@@ -441,18 +422,20 @@ b,strong{font-weight:750}
 
 /* --- 5: audience + return funnel ------------------------------------------ */
 .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-top:22px}
-.kpi-row .card{min-height:150px;display:flex;flex-direction:column;justify-content:center;padding:22px 24px}
-.kpi-row .kpi{font-size:50px}
-.funnel{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px;align-items:stretch}
+.kpi-row .card{min-height:214px;display:flex;flex-direction:column;justify-content:center;padding:26px 28px}
+.kpi-row .kpi{font-size:62px}
+.funnel{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:18px;align-items:stretch;flex:1 1 auto;min-height:0}
 .funnel-step{
-  position:relative;padding:20px 22px;border-radius:22px;
+  position:relative;padding:24px 26px;border-radius:22px;
   background:var(--fill-sub);border:1px solid var(--line);
-  display:flex;flex-direction:column;gap:8px;
+  display:flex;flex-direction:column;justify-content:center;gap:12px;
 }
+.fn-title{font-size:24px;font-weight:800;line-height:1.14;letter-spacing:-.02em;color:var(--ink)}
+.funnel-step.final .fn-title{color:var(--orange-pale)}
 .funnel-step.final{border-color:rgba(229,108,37,.55);background:linear-gradient(145deg,rgba(229,108,37,.15),rgba(255,255,255,.03))}
 .funnel-step .stage{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
 .funnel-step .val{font-size:32px;font-weight:850;letter-spacing:-.03em;line-height:1.05;color:var(--ink)}
-.funnel-step .desc{font-size:15px;line-height:1.38;color:var(--muted)}
+.funnel-step .desc{font-size:17px;line-height:1.44;color:var(--muted)}
 .funnel-step .ratio{margin-top:auto;padding-top:8px}
 .funnel-step::after{
   content:"";position:absolute;right:-12px;top:50%;width:14px;height:14px;z-index:2;
@@ -593,8 +576,16 @@ b,strong{font-weight:750}
 .cost-table tr.pick td.total{color:var(--orange-pale)}
 .build-block{padding:24px 26px;border-radius:26px;display:flex;flex-direction:column;justify-content:center}
 .build-block h3{font-size:23px}
+/* shown only when DECK_CONFIG.buildRatePerSqm is supplied */
 .build-rate{
-  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:14px 0 4px;
+  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  margin:14px 0 6px;padding:14px 18px;border-radius:16px;
+  border:1px solid rgba(229,108,37,.45);background:var(--fill-orange);
+}
+.build-rate b{font-size:26px;font-weight:850;letter-spacing:-.03em;color:var(--orange-bright)}
+.build-rate span{font-size:15px;color:var(--muted)}
+.row-suffix{
+  font-size:15px;font-weight:750;letter-spacing:.02em;color:var(--orange-pale);white-space:nowrap;
 }
 .total-range{display:grid;gap:10px;margin-top:14px}
 .total-range .row{
@@ -607,20 +598,35 @@ b,strong{font-weight:750}
 .total-range .row.pick{border-color:rgba(229,108,37,.5);background:linear-gradient(90deg,rgba(229,108,37,.18),rgba(255,255,255,.03))}
 
 /* --- 11: timeline --------------------------------------------------------- */
-.timeline-wrap{position:relative;margin-top:30px;display:flex;flex-direction:column;justify-content:center;gap:24px}
+.tl-lede-row{display:flex;align-items:center;justify-content:space-between;gap:36px;margin-bottom:0}
+.countdown{
+  display:flex;align-items:center;gap:20px;flex:0 0 auto;
+  padding:22px 30px;border-radius:26px;
+  border:1px solid rgba(229,108,37,.55);background:var(--fill-orange);
+  box-shadow:0 0 0 1px rgba(229,108,37,.14),0 26px 74px rgba(1,1,14,.4);
+}
+.cd-num{
+  font-size:76px;font-weight:850;line-height:.9;letter-spacing:-.05em;
+  color:var(--orange-bright);font-variant-numeric:tabular-nums;
+}
+.cd-copy{display:flex;flex-direction:column;gap:6px;max-width:262px}
+.cd-copy b{font-size:20px;font-weight:800;line-height:1.15;color:var(--ink)}
+.cd-copy span{font-size:14px;line-height:1.35;color:var(--muted)}
+
+.timeline-wrap{position:relative;margin-top:30px;display:flex;flex-direction:column;justify-content:center;gap:34px}
 /* phase band groups the nine steps into the four things that actually happen */
 .phase-band{display:grid;grid-template-columns:repeat(9,1fr);gap:10px}
 .phase{
-  display:flex;flex-direction:column;justify-content:center;gap:4px;
-  padding:12px 16px;border-radius:16px;border:1px solid var(--line-soft);background:var(--fill-sub);
+  display:flex;flex-direction:column;justify-content:center;gap:6px;
+  padding:18px 20px;border-radius:18px;border:1px solid var(--line-soft);background:var(--fill-sub);
 }
-.phase b{font-size:16px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
-.phase span{font-size:13px;color:var(--muted);line-height:1.3}
+.phase b{font-size:18px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+.phase span{font-size:14.5px;color:var(--muted);line-height:1.34}
 .phase.warm{border-color:rgba(229,108,37,.34);background:var(--fill-orange)}
 .phase.warm b{color:var(--orange-pale)}
 .timeline-body{position:relative}
 .timeline-rail{
-  position:absolute;left:0;right:0;top:89px;height:4px;border-radius:999px;z-index:1;
+  position:absolute;left:0;right:0;top:117px;height:4px;border-radius:999px;z-index:1;
   background:linear-gradient(90deg,var(--navy-lift) 0%,rgba(120,110,190,.8) 26%,var(--orange) 74%,var(--orange) 100%);
   transform-origin:left center;
 }
@@ -628,24 +634,31 @@ b,strong{font-weight:750}
 .tl-step{display:flex;flex-direction:column;align-items:center;text-align:center}
 .tl-date{
   font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
-  min-height:38px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:10px;
+  min-height:44px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:10px;
 }
 .tl-node{
   width:26px;height:26px;border-radius:50%;background:var(--bg-mid);
   border:5px solid var(--navy-lift);box-shadow:0 0 0 6px rgba(11,10,114,.35);
-  margin:30px 0 22px;flex:0 0 26px;
+  margin:52px 0 30px;flex:0 0 26px;
 }
 .tl-step.warm .tl-node{border-color:var(--orange);box-shadow:0 0 0 6px rgba(229,108,37,.18)}
 .tl-step.show .tl-node{background:var(--orange);border-color:#fff;box-shadow:0 0 0 7px rgba(229,108,37,.30)}
-.tl-title{font-size:18px;font-weight:800;line-height:1.2;color:var(--ink);margin-bottom:10px;min-height:44px}
+.tl-title{font-size:20px;font-weight:800;line-height:1.2;color:var(--ink);margin-bottom:12px;min-height:76px}
 .tl-step.show .tl-title{color:var(--orange-pale)}
-.tl-dur{font-size:14px;line-height:1.34;color:var(--muted)}
-.tl-fixed{
-  display:inline-flex;border:1px solid rgba(229,108,37,.6);background:rgba(229,108,37,.18);
-  color:#FFD3B0;border-radius:8px;padding:2px 9px;font-size:13px;font-weight:800;letter-spacing:.06em;
+.tl-dur{font-size:16px;line-height:1.42;color:var(--muted)}
+.tl-seq{
+  display:inline-flex;border:1px solid var(--line);background:rgba(255,255,255,.07);
+  color:var(--muted);border-radius:8px;padding:2px 10px;
+  font-size:13px;font-weight:800;letter-spacing:.1em;font-variant-numeric:tabular-nums;
+}
+.tl-seq.fixed{border-color:rgba(229,108,37,.6);background:rgba(229,108,37,.18);color:var(--orange-pale)}
+/* lead times render only when DECK_CONFIG.leadTimes supplies them */
+.tl-lead{
+  display:block;margin-bottom:6px;font-size:13px;font-weight:800;letter-spacing:.04em;
+  color:var(--orange-pale);
 }
 .timeline-foot{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;margin-top:34px}
-.deadline-card{display:flex;align-items:center;gap:18px;padding:22px 26px;border-radius:24px}
+.deadline-card{display:flex;align-items:center;gap:18px;padding:26px 30px;border-radius:24px}
 .deadline-card .big{font-size:34px;font-weight:850;letter-spacing:-.03em;line-height:1;white-space:nowrap}
 
 /* --- 12: booth plan ------------------------------------------------------- */
@@ -689,12 +702,17 @@ b,strong{font-weight:750}
 .proof-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:20px}
 .proof-item{padding:16px 18px;border-radius:20px;background:var(--fill-sub);border:1px solid var(--line-soft);text-align:center}
 .proof-item .lbl{display:block;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin-bottom:9px}
+.proof-item b{display:block;font-size:17px;font-weight:800;line-height:1.24;color:var(--ink)}
 
 /* --- 15: decision --------------------------------------------------------- */
 .decide-grid{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:22px;align-items:stretch}
+.decide-grid > .card{display:flex;flex-direction:column;min-height:0}
+.decide-grid .checklist,.decide-grid .action-list{flex:1 1 auto;align-content:stretch;min-height:0}
+.decide-grid .check{align-items:flex-start}
 .action-list{display:grid;gap:11px;margin-top:14px}
+.decide-grid .action-item{align-content:center}
 .action-item{
-  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  display:grid;grid-template-columns:auto 1fr;align-items:center;gap:14px;
   padding:14px 18px;border-radius:18px;background:var(--fill-sub);border:1px solid var(--line-soft);
 }
 .action-item .step-n{
@@ -923,7 +941,7 @@ body.blacked .blackout{display:block}
   /* Chrome rasterises every gradient layer into the PDF, which multiplies the
      file size for no visible gain at print scale. Flattening the large neutral
      washes to their average colour keeps the deck looking the same and keeps
-     the emailed PDF small. Brand accents and the «CONFIRM» hatch stay as-is. */
+     the emailed PDF small. Brand accents are left alone. */
   :root{
     --fill-card:rgba(255,255,255,.058);
     --fill-sub:rgba(255,255,255,.045);
@@ -1037,7 +1055,7 @@ body.blacked .blackout{display:block}
 <div class="card"><div class="kpi">02</div><h3>Audience &#8212; and the return</h3><p class="mini">Who attends, and what Beez should expect back: footfall past the zone, conversations, qualified leads, cost per lead.</p><div class="slide-ref">Slide 5</div></div>
 <div class="card"><div class="kpi">03</div><h3>Raw space vs. shell scheme</h3><p class="mini">The two ways to take part, why we recommend raw space for a first Beez appearance, and what each one allows.</p><div class="slide-ref">Slide 6</div></div>
 <div class="card"><div class="kpi">04</div><h3>Floor plan &amp; shortlisted spots</h3><p class="mini">The live sales plan, the zone Beez belongs in, and three specific stand positions with the reason for each.</p><div class="slide-ref">Slides 7&#8211;8</div></div>
-<div class="card recommend"><div class="kpi">05</div><h3>What it costs</h3><p class="mini">Worked organizer totals for every size in USD and SAR, plus the indicative build cost and the total investment range.</p><div class="slide-ref">Slides 9&#8211;10</div></div>
+<div class="card recommend"><div class="kpi">05</div><h3>What it costs</h3><p class="mini">Worked organizer totals for every size in USD and SAR, what the build quotation covers, and how the two add up.</p><div class="slide-ref">Slides 9&#8211;10</div></div>
 <div class="card"><div class="kpi">06</div><h3>Timeline, roles, decision</h3><p class="mini">The dates working back from 9 November, who does what, and the two things we need Beez to confirm today.</p><div class="slide-ref">Slides 11&#8211;15</div></div>
 </div>
 <div class="footer-note"><span class="num" data-num></span><span>Six steps, ending in a decision</span></div>
@@ -1099,30 +1117,26 @@ body.blacked .blackout{display:block}
 <div class="funnel">
 <div class="funnel-step">
 <span class="stage">Step 1</span>
-<span class="val"><span class="confirm">&#171;% of 14K&#187;</span></span>
+<b class="fn-title">Footfall past the zone</b>
 <span class="desc">Estimated footfall passing the Home Delivery zone over the two days.</span>
-<span class="ratio confirm-key"><i aria-hidden="true"></i>ratio to confirm</span>
 </div>
 <div class="funnel-step">
 <span class="stage">Step 2</span>
-<span class="val"><span class="confirm">&#171;% stop&#187;</span></span>
+<b class="fn-title">Visitors who stop</b>
 <span class="desc">Visitors who stop at the stand &#8212; driven by the cold-chain demo and the tracking wall.</span>
-<span class="ratio confirm-key"><i aria-hidden="true"></i>ratio to confirm</span>
 </div>
 <div class="funnel-step">
 <span class="stage">Step 3</span>
-<span class="val"><span class="confirm">&#171;% qualify&#187;</span></span>
+<b class="fn-title">Qualified leads</b>
 <span class="desc">Badge-scanned contacts that qualify: retailers, marketplaces and brands with a real cold-chain need.</span>
-<span class="ratio confirm-key"><i aria-hidden="true"></i>ratio to confirm</span>
 </div>
 <div class="funnel-step final">
 <span class="stage">Result</span>
-<span class="val"><span class="confirm">&#171;$ / lead&#187;</span></span>
+<b class="fn-title">Cost per qualified lead</b>
 <span class="desc">Organizer cost divided by qualified leads &#8212; the number to judge the whole exercise on.</span>
-<span class="ratio confirm-key"><i aria-hidden="true"></i>USD and SAR to confirm</span>
 </div>
 </div>
-<p class="mini" style="margin:16px 0 0">Every ratio above is filled in with Beez before the organizer is approached, so the cost per lead is agreed rather than discovered afterwards. Badge scanning is included in the exhibition package (slide 9), so lead counting is measured, not estimated.</p>
+<p class="mini" style="margin:16px 0 0">Conversion targets are agreed with Beez against the stand objective, and become the measure the stand is judged on after the show. Badge scanning is included in the exhibition package (slide 9), so every stage above is counted rather than estimated.</p>
 </div>
 </div>
 <div class="footer-note"><span class="num" data-num></span><span>Supply-side numbers, and the return side</span></div>
@@ -1184,7 +1198,7 @@ body.blacked .blackout{display:block}
 <p class="mini" style="margin:0">This block puts Beez beside the freight and fulfilment names buyers already compare &#8212; Aramex, Asyad Express, Trident Freight, Logsquare and Saudi Post logistics &#8212; and directly across the aisle from the retailers, marketplaces and commerce platforms that need cold chain.</p>
 </div>
 <div class="card flush" style="padding:20px 24px;border-color:rgba(229,108,37,.34);background:linear-gradient(145deg,rgba(229,108,37,.14),rgba(255,255,255,.02))">
-<p class="mini" style="margin:0;color:var(--ink-soft)"><b>Availability moves weekly.</b> All three positions must be reconfirmed with the organizer before booking, and block sizes shown are the organizer&#8217;s current units &#8212; final area is subject to subdivision: <span class="confirm">&#171;SIZE — CONFIRM&#187;</span></p>
+<p class="mini" style="margin:0;color:var(--ink-soft)"><b>Availability moves weekly.</b> All three positions must be reconfirmed with the organizer before booking, and block sizes shown are the organizer&#8217;s current units &#8212; final area is subject to subdivision.</p>
 </div>
 </div>
 </div>
@@ -1267,7 +1281,7 @@ body.blacked .blackout{display:block}
 <h3 style="font-size:23px">Included in the package</h3>
 <div class="feature-list">
 <div class="feature-item"><span class="tick" aria-hidden="true">&#10003;</span><span>Logo and company listing on the event website</span></div>
-<div class="feature-item"><span class="tick" aria-hidden="true">&#10003;</span><span>Exhibition passes for the Beez team &#8212; <b>5 to 20 by stand size</b>. At 36 sqm this falls into the <span class="confirm">&#171;PASS TIER — CONFIRM&#187;</span> band</span></div>
+<div class="feature-item"><span class="tick" aria-hidden="true">&#10003;</span><span>Exhibition passes for the Beez team &#8212; <b>5 to 20 by stand size</b>, allocated by the organizer against the contracted area</span></div>
 <div class="feature-item"><span class="tick" aria-hidden="true">&#10003;</span><span>Event app access and attendee directory</span></div>
 <div class="feature-item"><span class="tick" aria-hidden="true">&#10003;</span><span>Virtual booth listing</span></div>
 <div class="feature-item"><span class="tick" aria-hidden="true">&#10003;</span><span><b>Badge scanning</b> &#8212; every lead captured is counted, which is what makes the cost-per-lead figure on slide 5 measurable</span></div>
@@ -1310,36 +1324,40 @@ body.blacked .blackout{display:block}
 <div class="cost-foot">
 <p class="mini" style="margin:0">Fees are the $495 administration fee plus the $195 event app fee, and do not change with size. Riyal figures converted at USD 1 = SAR 3.75.</p>
 <p class="mini" style="margin:10px 0 0"><b>Not included here:</b> stand design and build (block 2), plus Beez travel, stand staff and giveaways.</p>
-<div class="confirm-key" style="margin-top:14px"><i aria-hidden="true"></i>Hatched figures are placeholders to be completed before the meeting</div>
 </div>
 </div>
 <div class="cost-side">
 <div class="card build-block">
-<h3>2 &#183; Custom build &#8212; indicative</h3>
-<div class="build-rate">
-<span class="confirm block" style="flex:1">&#171;BUILD RATE &#8212; CONFIRM&#187;</span>
-</div>
-<p class="mini" style="margin:6px 0 0">A per-square-metre band covering design, fabrication, branding, flooring, lighting, furniture, AV, installation and dismantling. <b>Indicative only and subject to the final design</b> &#8212; a cold-chain demo and a tracking wall sit at the upper end of the band.</p>
+<h3>2 &#183; Custom build &#8212; what it covers</h3>
+<div class="build-rate" data-build-rate hidden></div>
+<p class="mini" style="margin:6px 0 0">A single quotation covering design, fabrication, branding, flooring, lighting, furniture, AV, installation and dismantling. A cold-chain demo and a live tracking wall sit at the upper end of what a stand this size carries.</p>
+<p class="mini" style="margin:10px 0 0;color:var(--ink-soft)"><b>Quoted as a firm figure once the size is confirmed and the design is approved.</b></p>
 </div>
 <div class="card build-block">
 <h3>3 &#183; Total participation investment</h3>
 <div class="total-range">
-<div class="row"><div class="row-head"><b>18&#8211;24 sqm</b><span class="confirm">&#171;TOTAL &#8212; CONFIRM&#187;</span></div><div class="row-sub">Organizer <span class="money">$12,390&#8211;$16,290</span> <span class="sar">/ SAR 46,463&#8211;61,088</span> + build</div></div>
-<div class="row pick"><div class="row-head"><b>36 sqm</b><span class="confirm">&#171;TOTAL &#8212; CONFIRM&#187;</span></div><div class="row-sub">Organizer <span class="money">$24,090</span> <span class="sar">/ SAR 90,338</span> + build</div></div>
-<div class="row"><div class="row-head"><b>48&#8211;64 sqm</b><span class="confirm">&#171;TOTAL &#8212; CONFIRM&#187;</span></div><div class="row-sub">Organizer <span class="money">$31,890&#8211;$42,290</span> <span class="sar">/ SAR 119,588&#8211;158,588</span> + build</div></div>
+<div class="row"><div class="row-head"><b>18&#8211;24 sqm</b><span class="row-suffix" data-total-row data-sqm="18,24">+ build</span></div><div class="row-sub">Organizer <span class="money">$12,390&#8211;$16,290</span> <span class="sar">/ SAR 46,463&#8211;61,088</span></div></div>
+<div class="row pick"><div class="row-head"><b>36 sqm</b><span class="row-suffix" data-total-row data-sqm="36">+ build</span></div><div class="row-sub">Organizer <span class="money">$24,090</span> <span class="sar">/ SAR 90,338</span></div></div>
+<div class="row"><div class="row-head"><b>48&#8211;64 sqm</b><span class="row-suffix" data-total-row data-sqm="48,64">+ build</span></div><div class="row-sub">Organizer <span class="money">$31,890&#8211;$42,290</span> <span class="sar">/ SAR 119,588&#8211;158,588</span></div></div>
 </div>
-<p class="mini" style="margin:12px 0 0">Once Beez confirms a size, the build rate is fixed against a real design and these three lines become firm numbers in USD and SAR.</p>
+<p class="mini" style="margin:12px 0 0">The organizer cost above is firm. The build quotation follows design approval and completes each of these three lines.</p>
 </div>
 </div>
 </div>
-<div class="footer-note"><span class="num" data-num></span><span>Organizer cost is firm &#183; build cost is indicative</span></div>
+<div class="footer-note"><span class="num" data-num></span><span>Organizer cost is firm &#183; build cost is quoted on design</span></div>
 <div class="notes" hidden>This is the slide the meeting turns on, so slow down. Take the table left to right once on the 36 sqm row: 36 times $650 is $23,400, plus the same $690 in fees everyone pays, so $24,090 &#8212; about SAR 90,000 &#8212; and that number is fixed, not an estimate. Then be straight about the second box: the build cost depends on what we design, so it is a per-sqm band we fix once a size is chosen, and the cold-chain demo sits at the top of it. Beez does not have to name a budget from nothing; they only have to pick a row.</div>
 </section>
 <section class="slide" data-title="Timeline">
 <div class="slide-head"><span class="logo logo-elite" role="img" aria-label="Elite Marcom"></span><span class="x" aria-hidden="true">&#215;</span><span class="logo logo-beez" role="img" aria-label="Beez"></span></div>
 <div class="eyebrow">Timeline &amp; deadlines</div>
 <h2>Working backwards from <span class="accent">9 November 2026</span></h2>
-<p class="lede" style="max-width:1300px;margin-bottom:0">The show date cannot move, so every step behind it is fixed by it. The only variable is when Beez confirms the space &#8212; everything downstream shifts with that one decision.</p>
+<div class="tl-lede-row">
+<p class="lede" style="max-width:1180px;margin-bottom:0">The show date cannot move, so every step behind it is fixed by it. The only variable is when Beez confirms the space &#8212; everything downstream shifts with that one decision.</p>
+<div class="countdown" data-countdown hidden>
+<span class="cd-num" data-weeks-left></span>
+<span class="cd-copy"><b data-weeks-label>weeks until the doors open</b><span data-days-left></span></span>
+</div>
+</div>
 <div class="timeline-wrap fill">
 <div class="phase-band">
 <div class="phase" style="grid-column:span 2"><b>1 &#183; Commit</b><span>Beez decides; the space is contracted and paid against the organizer schedule.</span></div>
@@ -1351,58 +1369,58 @@ body.blacked .blackout{display:block}
 <div class="timeline-rail" aria-hidden="true"></div>
 <div class="timeline-grid">
 <div class="tl-step">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">01</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Space booking &amp; contract</div>
-<div class="tl-dur"><span class="confirm">&#171;DURATION&#187;</span><br/><span style="color:var(--faint)">Beez confirms size; we hold the position and sign</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="booking" hidden></span><span style="color:var(--faint)">Beez confirms size; we hold the position and sign</span></div>
 </div>
 <div class="tl-step">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">02</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Organizer payment milestones</div>
-<div class="tl-dur"><span class="confirm">&#171;SCHEDULE&#187;</span><br/><span style="color:var(--faint)">Deposit and balance against the organizer schedule</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="payment" hidden></span><span style="color:var(--faint)">Deposit and balance against the organizer schedule</span></div>
 </div>
 <div class="tl-step">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">03</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Design development</div>
-<div class="tl-dur"><span class="confirm">&#171;DURATION&#187;</span><br/><span style="color:var(--faint)">Concept, 3D visuals and revisions with Beez</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="design" hidden></span><span style="color:var(--faint)">Concept, 3D visuals and revisions with Beez</span></div>
 </div>
 <div class="tl-step warm">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">04</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Stand-design approval</div>
-<div class="tl-dur"><span class="confirm">&#171;DURATION&#187;</span><br/><span style="color:var(--faint)">Organizer technical sign-off on the drawings</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="approval" hidden></span><span style="color:var(--faint)">Organizer technical sign-off on the drawings</span></div>
 </div>
 <div class="tl-step warm">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">05</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Fabrication</div>
-<div class="tl-dur"><span class="confirm">&#171;DURATION&#187;</span><br/><span style="color:var(--faint)">Production, print and finishing in the workshop</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="fabrication" hidden></span><span style="color:var(--faint)">Production, print and finishing in the workshop</span></div>
 </div>
 <div class="tl-step warm">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">06</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Shipping &amp; logistics</div>
-<div class="tl-dur"><span class="confirm">&#171;DURATION&#187;</span><br/><span style="color:var(--faint)">Transport to Riyadh Front and onsite delivery</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="shipping" hidden></span><span style="color:var(--faint)">Transport to Riyadh Front and onsite delivery</span></div>
 </div>
 <div class="tl-step warm">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">07</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Installation</div>
-<div class="tl-dur"><span class="confirm">&#171;DURATION&#187;</span><br/><span style="color:var(--faint)">Build-up, branding, AV and final handover</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="installation" hidden></span><span style="color:var(--faint)">Build-up, branding, AV and final handover</span></div>
 </div>
 <div class="tl-step show">
-<div class="tl-date"><span class="tl-fixed">9 Nov 2026</span></div>
+<div class="tl-date"><span class="tl-seq fixed">08</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Show days</div>
 <div class="tl-dur"><b class="accent">9&#8211;10 Nov 2026</b><br/><span style="color:var(--faint)">Beez is live on the floor</span></div>
 </div>
 <div class="tl-step warm">
-<div class="tl-date"><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="tl-date"><span class="tl-seq">09</span></div>
 <div class="tl-node" aria-hidden="true"></div>
 <div class="tl-title">Dismantling</div>
-<div class="tl-dur"><span class="confirm">&#171;DURATION&#187;</span><br/><span style="color:var(--faint)">Break-down, storage and return of assets</span></div>
+<div class="tl-dur"><span class="tl-lead" data-lead="dismantle" hidden></span><span style="color:var(--faint)">Break-down, storage and return of assets</span></div>
 </div>
 </div>
 </div>
@@ -1413,11 +1431,11 @@ body.blacked .blackout{display:block}
 <div><b style="font-size:20px;display:block;margin-bottom:4px">The decision that sets the whole schedule</b><span class="mini">Space has to be contracted before design can start, and the organizer approval window sits between design and fabrication. A late booking compresses fabrication, not the show date.</span></div>
 </div>
 <div class="card deadline-card navy">
-<div><span class="confirm-key" style="margin-bottom:8px"><i aria-hidden="true"></i>every duration to confirm</span><div class="mini" style="margin-top:8px">Durations and deadline dates are confirmed against the organizer&#8217;s exhibitor manual once the space is contracted.</div></div>
+<div><b style="font-size:18px;display:block;margin-bottom:6px">The sequence is the commitment</b><span class="mini">Exact deadlines are issued in the organizer&#8217;s exhibitor manual on contracting. The sequence and its dependencies do not change.</span></div>
 </div>
 </div>
 <div class="footer-note"><span class="num" data-num></span><span>Back-planned from the show date</span></div>
-<div class="notes" hidden>Beez has never done this, so the instinct will be that November 2026 is a long way off. Walk the rail right to left instead: the show is fixed, installation happens in the days before it, fabrication needs weeks before that, and fabrication cannot start until the organizer approves the drawings &#8212; which cannot happen until the design exists, which cannot start until the space is contracted. That chain is why a decision today is worth more than the same decision in two months. Say plainly that a late booking does not move the show, it just squeezes the build.</div>
+<div class="notes" hidden>Beez has never done this, so the instinct will be that November 2026 is a long way off. Walk the rail right to left instead: the show is fixed, installation happens in the days before it, fabrication needs weeks before that, and fabrication cannot start until the organizer approves the drawings &#8212; which cannot happen until the design exists, which cannot start until the space is contracted. That chain is why a decision today is worth more than the same decision in two months. Point at the weeks-remaining figure at the top and say it out loud &#8212; that is the whole argument. Say plainly that a late booking does not move the show, it just squeezes the build.</div>
 </section>
 <section class="slide" data-title="Booth Direction">
 <div class="slide-head"><span class="logo logo-elite" role="img" aria-label="Elite Marcom"></span><span class="x" aria-hidden="true">&#215;</span><span class="logo logo-beez" role="img" aria-label="Beez"></span></div>
@@ -1620,15 +1638,21 @@ body.blacked .blackout{display:block}
 <div class="image-frame"><img src="{{asset:stand-07.jpg}}" alt="Exhibition stand with a product wall, meeting tables and backlit graphics"/></div>
 </div>
 </div>
-<div class="proof-strip">
-<div class="proof-item"><span class="lbl">Years operating</span><span class="confirm">&#171;CONFIRM&#187;</span></div>
-<div class="proof-item"><span class="lbl">Stands delivered</span><span class="confirm">&#171;CONFIRM&#187;</span></div>
-<div class="proof-item"><span class="lbl">Markets covered</span><span class="confirm">&#171;CONFIRM&#187;</span></div>
-<div class="proof-item"><span class="lbl">Named clients</span><span class="confirm">&#171;CONFIRM&#187;</span></div>
-<div class="proof-item"><span class="lbl">KSA credentials</span><span class="confirm">&#171;LICENCE + RIYADH FRONT&#187;</span></div>
+<div class="proof-strip" data-proof-strip>
+<div class="proof-item"><span class="lbl">Based in</span><b>Riyadh + Dubai</b></div>
+<div class="proof-item"><span class="lbl">Scope</span><b>Design to dismantle</b></div>
+<div class="proof-item"><span class="lbl">Disciplines</span><b>Exhibitions &#183; Events &#183; Interiors</b></div>
+<div class="proof-item"><span class="lbl">Stand types</span><b>Raw space &amp; shell scheme</b></div>
+<div class="proof-item"><span class="lbl">Organizer coordination</span><b>Included</b></div>
+</div>
+<div class="proof-strip" data-proof-numeric hidden>
+<div class="proof-item"><span class="lbl">Years operating</span><b data-proof="yearsOperating"></b></div>
+<div class="proof-item"><span class="lbl">Stands delivered</span><b data-proof="standsDelivered"></b></div>
+<div class="proof-item"><span class="lbl">Markets covered</span><b data-proof="marketsCovered"></b></div>
+<div class="proof-item"><span class="lbl">Named clients</span><b data-proof="namedClients"></b></div>
 </div>
 <div class="footer-note"><span class="num" data-num></span><span>Riyadh &#8226; Dubai &#8226; Worldwide</span></div>
-<div class="notes" hidden>The photographs are our work, so let them carry the design argument on their own. Spend the time on the proof strip instead &#8212; years, stands delivered, markets, clients, and specifically the Saudi contractor licensing and prior Riyadh Front experience, because that is what determines whether the organizer approves our drawings without friction.</div>
+<div class="notes" hidden>The photographs are our work, so let them carry the design argument on their own. Spend the time on the strip along the bottom instead: two offices, every discipline in house, and organizer coordination carried by us rather than billed to Beez &#8212; that last one is what determines whether our drawings clear technical approval without friction.</div>
 </section>
 <section class="slide" data-title="Decision">
 <div class="slide-head"><span class="logo logo-elite" role="img" aria-label="Elite Marcom"></span><span class="x" aria-hidden="true">&#215;</span><span class="logo logo-beez" role="img" aria-label="Beez"></span></div>
@@ -1646,12 +1670,12 @@ body.blacked .blackout{display:block}
 <div class="card large-card recommend">
 <h3>What Elite Marcom does next</h3>
 <div class="action-list">
-<div class="action-item"><span class="step-n" aria-hidden="true">1</span><span class="what">Reconfirm availability on the three shortlisted positions</span><span class="confirm">&#171;DATE&#187;</span></div>
-<div class="action-item"><span class="step-n" aria-hidden="true">2</span><span class="what">Issue booking documents and the organizer payment schedule</span><span class="confirm">&#171;DATE&#187;</span></div>
-<div class="action-item"><span class="step-n" aria-hidden="true">3</span><span class="what">Deliver the stand concept and 3D visuals for the chosen size</span><span class="confirm">&#171;DATE&#187;</span></div>
-<div class="action-item"><span class="step-n" aria-hidden="true">4</span><span class="what">Submit the build quotation and the production timeline</span><span class="confirm">&#171;DATE&#187;</span></div>
+<div class="action-item"><span class="step-n" aria-hidden="true">1</span><span class="what">Reconfirm availability on the three shortlisted positions</span></div>
+<div class="action-item"><span class="step-n" aria-hidden="true">2</span><span class="what">Issue booking documents and the organizer payment schedule</span></div>
+<div class="action-item"><span class="step-n" aria-hidden="true">3</span><span class="what">Deliver the stand concept and 3D visuals for the chosen size</span></div>
+<div class="action-item"><span class="step-n" aria-hidden="true">4</span><span class="what">Submit the build quotation and the production timeline</span></div>
 </div>
-<p class="mini" style="margin:14px 0 0">Dates are set against the back-planned schedule on slide 11 and confirmed the day the size is agreed.</p>
+<p class="mini" style="margin:14px 0 0">Dates are issued against the back-planned schedule the day the size is agreed.</p>
 </div>
 </div>
 <div class="card outcome-card">
@@ -1711,6 +1735,105 @@ body.blacked .blackout{display:block}
 <script>
 (function(){
   "use strict";
+
+  /* ==========================================================================
+     DECK CONFIGURATION
+
+     Fill any of these to upgrade the deck from process copy to hard figures.
+     Leave as null and the deck renders finished copy that needs no number.
+     Neither state ever shows a blank or a placeholder — the copy on the slide
+     is written to stand on its own, and a supplied figure simply replaces it.
+     ========================================================================== */
+  var DECK_CONFIG = {
+    buildRatePerSqm:   null,   // e.g. { low: 1400, high: 2200, currency: 'SAR' }
+    leadTimes:         null,   // e.g. { booking: '1 week', payment: 'per organizer schedule',
+                               //        design: '2-3 weeks', approval: '2-3 weeks',
+                               //        fabrication: '4-5 weeks', shipping: '1 week',
+                               //        installation: '3 days', dismantle: '2 days' }
+    proof: {
+      yearsOperating:  null,   // e.g. 12
+      standsDelivered: null,   // e.g. '450+'
+      marketsCovered:  null,   // e.g. 9
+      namedClients:    null    // e.g. 'ACES \u00b7 SAPIN \u00b7 Virgo'
+    }
+  };
+
+  /* 9 November 2026 — the one date in this deck that cannot move. */
+  var SHOW_DATE = new Date(2026, 10, 9);
+
+  var fmtNum = function(n){ return Number(n).toLocaleString('en-US'); };
+
+  /* Weeks remaining, computed live so the slide is never stale. */
+  function renderCountdown(){
+    var box = document.querySelector('[data-countdown]');
+    if(!box) return;
+    var num   = box.querySelector('[data-weeks-left]');
+    var label = box.querySelector('[data-weeks-label]');
+    var sub   = box.querySelector('[data-days-left]');
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var days  = Math.round((SHOW_DATE - today) / 86400000);
+
+    if(days > 0){
+      num.textContent = Math.ceil(days / 7);
+      box.hidden = false;
+      label.textContent = days > 7 ? 'weeks until the doors open' : 'week until the doors open';
+      sub.textContent = days + (days === 1 ? ' day' : ' days') +
+        ' to design, approve, fabricate, ship and install.';
+    } else if(days === 0){
+      num.textContent = '0';
+      box.hidden = false;
+      label.textContent = 'the doors open today';
+      sub.textContent = 'Beez is live on the floor at Riyadh Front.';
+    }                                        // after the show the anchor simply stays out
+  }
+
+  /* Lead times: a chip appears only where a real figure was supplied. */
+  function renderLeadTimes(){
+    var lt = DECK_CONFIG.leadTimes;
+    if(!lt) return;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lead]'), function(el){
+      var v = lt[el.dataset.lead];
+      if(v){ el.textContent = v; el.hidden = false; }
+    });
+  }
+
+  /* Build rate: replaces the process copy with a per-sqm band and completes
+     the three total-investment rows. */
+  function renderBuildRate(){
+    var cfg = DECK_CONFIG.buildRatePerSqm;
+    var box = document.querySelector('[data-build-rate]');
+    if(!cfg || !box || cfg.low == null || cfg.high == null) return;
+    var cur = cfg.currency || 'SAR';
+    box.innerHTML = '<b>' + cur + ' ' + fmtNum(cfg.low) + '\u2013' + fmtNum(cfg.high) + '</b>' +
+                    '<span>per sqm, design through dismantling</span>';
+    box.hidden = false;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-total-row]'), function(el){
+      var sizes = (el.dataset.sqm || '').split(',').map(Number).filter(function(n){ return n > 0; });
+      if(!sizes.length) return;
+      var lo = sizes[0] * cfg.low, hi = sizes[sizes.length - 1] * cfg.high;
+      el.textContent = '+ ' + cur + ' ' + fmtNum(lo) +
+                       (lo !== hi ? '\u2013' + fmtNum(hi) : '') + ' build';
+    });
+  }
+
+  /* Proof figures: the capability strip stands in until real numbers exist. */
+  function renderProof(){
+    var p = DECK_CONFIG.proof || {};
+    var keys = ['yearsOperating', 'standsDelivered', 'marketsCovered', 'namedClients'];
+    var supplied = keys.filter(function(k){ return p[k] != null && p[k] !== ''; });
+    if(!supplied.length) return;
+    var capability = document.querySelector('[data-proof-strip]');
+    var numeric    = document.querySelector('[data-proof-numeric]');
+    if(!capability || !numeric) return;
+    Array.prototype.forEach.call(numeric.querySelectorAll('[data-proof]'), function(el){
+      var v = p[el.dataset.proof];
+      if(v == null || v === '') el.closest('.proof-item').remove();
+      else el.textContent = v;
+    });
+    numeric.style.gridTemplateColumns = 'repeat(' + supplied.length + ',1fr)';
+    capability.hidden = true;
+    numeric.hidden = false;
+  }
 
   var deck      = document.getElementById('deck');
   var slides    = Array.prototype.slice.call(deck.querySelectorAll('.slide'));
@@ -1929,6 +2052,10 @@ body.blacked .blackout{display:block}
   window.addEventListener('resize', function(){ fitViewport(); scaleThumbs(); });
   window.addEventListener('load', function(){ fitViewport(); showUI(2600); });
 
+  renderCountdown();
+  renderLeadTimes();
+  renderBuildRate();
+  renderProof();
   fitViewport();
   show(0);
   showUI(2600);
