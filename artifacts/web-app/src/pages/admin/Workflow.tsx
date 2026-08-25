@@ -29,6 +29,7 @@ import {
   FlaskConical,
 } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
+import { ListSkeleton } from "@/components/ds";
 
 const RISK_TONE: Record<string, string> = {
   critical: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-300/50",
@@ -358,7 +359,7 @@ export default function AdminWorkflow() {
           </CardHeader>
           <CardContent className="divide-y divide-border">
             {risksQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground py-4">Loading…</p>
+              <ListSkeleton rows={3} />
             ) : !risks || risks.risks.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">No SLA risks detected. 🎉</p>
             ) : (
@@ -376,7 +377,7 @@ export default function AdminWorkflow() {
           </CardHeader>
           <CardContent className="divide-y divide-border">
             {bottlenecksQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground py-4">Loading…</p>
+              <ListSkeleton rows={3} />
             ) : !bottlenecks || bottlenecks.bottlenecks.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">No bottlenecks detected.</p>
             ) : (

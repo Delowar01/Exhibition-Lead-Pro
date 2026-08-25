@@ -102,7 +102,7 @@ export default function AdminSecurity() {
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <ShieldAlert className="h-7 w-7 text-primary" />
-        <h1 className="text-3xl font-bold tracking-tight">Security Center</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Security Center</h1>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

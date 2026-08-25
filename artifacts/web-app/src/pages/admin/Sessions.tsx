@@ -113,7 +113,7 @@ export default function AdminSessions() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Active Sessions</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Active Sessions</h1>
           <p className="text-muted-foreground mt-1">
             Devices currently signed in to your account.
           </p>

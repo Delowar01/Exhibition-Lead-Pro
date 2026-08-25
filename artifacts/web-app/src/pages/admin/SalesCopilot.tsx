@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Bot, ShieldCheck, Cpu, ChevronRight, Copy, Check, X, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
+import { ListSkeleton } from "@/components/ds";
 
 const OUTPUT_LABELS: Record<string, string> = {
   email: "Email draft",
@@ -212,7 +213,7 @@ export default function SalesCopilot() {
         </CardHeader>
         <CardContent className="pt-2 divide-y divide-border">
           {isLoading ? (
-            <p className="text-sm text-muted-foreground py-4">Loading…</p>
+            <ListSkeleton rows={3} />
           ) : recent.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">
               No AI drafts generated yet.

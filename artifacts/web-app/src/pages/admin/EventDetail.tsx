@@ -25,7 +25,7 @@ export default function AdminEventDetail() {
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{event.name}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{event.name}</h1>
         </div>
       </div>
 

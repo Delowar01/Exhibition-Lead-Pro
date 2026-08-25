@@ -96,7 +96,7 @@ export default function AdminContacts() {
                 Export
               </Button>
             )}
-            <Link href="/admin/contacts/new" className="inline-flex items-center justify-center whitespace-nowrap rounded-full text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 hover-elevate shadow-sm h-10 px-5 py-2">
+            <Link href="/admin/contacts/new" data-testid="link-add-contact" className="inline-flex items-center justify-center whitespace-nowrap rounded-full text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 hover-elevate shadow-sm h-10 px-5 py-2">
               <UserPlus className="mr-2 h-4 w-4" />
               Add Contact
             </Link>
@@ -111,6 +111,7 @@ export default function AdminContacts() {
             <Input 
               placeholder="Search name, company, email..." 
               className="pl-9 bg-transparent border-none shadow-none focus-visible:ring-0" 
+              data-testid="input-contact-search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

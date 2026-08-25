@@ -35,12 +35,12 @@ export function SidebarFooter({
     <div className={cn("shrink-0 border-t border-border", mini ? "p-2" : "p-3")}>
       <div
         className={cn(
-          "flex items-center rounded-xl bg-secondary/70",
+          "flex items-center rounded-lg bg-secondary/50",
           mini ? "justify-center p-2" : "gap-2.5 p-2.5",
         )}
         title={mini ? companyName : undefined}
       >
-        <span className="flex items-center justify-center h-9 w-9 shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm">
+        <span className="flex items-center justify-center h-9 w-9 shrink-0 rounded-lg bg-primary-soft text-primary">
           <Building2 className="h-4.5 w-4.5" aria-hidden="true" />
         </span>
         {!mini && (
@@ -63,7 +63,7 @@ export function SidebarFooter({
           aria-label={mini ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!mini}
           className={cn(
-            "mt-2 flex items-center gap-2 rounded-lg text-xs font-medium text-muted-foreground hover:bg-secondary/80 hover:text-foreground transition-colors",
+            "mt-2 flex items-center gap-2 rounded-lg text-xs font-medium text-muted-foreground hover:bg-secondary/80 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             mini ? "justify-center h-9 w-10 mx-auto" : "px-3 py-2 w-full",
           )}
           data-testid="button-sidebar-collapse"

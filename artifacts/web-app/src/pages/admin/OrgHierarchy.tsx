@@ -65,7 +65,7 @@ export default function AdminOrgHierarchy() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Org Hierarchy</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Org Hierarchy</h1>
         <p className="text-muted-foreground mt-1">Reporting structure across your organization.</p>
       </div>
 

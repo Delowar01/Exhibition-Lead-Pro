@@ -75,7 +75,7 @@ export default function AdminOrganization() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Building2 className="h-7 w-7 text-primary" />
-          <h1 className="text-3xl font-bold tracking-tight">Organization</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Organization</h1>
         </div>
         {org && (
           <div className="flex items-center gap-2">

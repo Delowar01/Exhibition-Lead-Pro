@@ -165,7 +165,7 @@ export default function AdminRoles() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ShieldCheck className="h-7 w-7 text-primary" />
-          <h1 className="text-3xl font-bold tracking-tight">Roles & Permissions</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Roles & Permissions</h1>
         </div>
         <RoleDialog
           trigger={<Button><Plus className="mr-2 h-4 w-4" />New Role</Button>}

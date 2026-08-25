@@ -148,7 +148,7 @@ export default function AdminDocuments() {
     <div className="space-y-6 pb-12">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <FileText className="h-7 w-7 text-primary" /> Document Manager
           </h1>
           <p className="text-muted-foreground mt-1">

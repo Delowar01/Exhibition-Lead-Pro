@@ -55,6 +55,7 @@ import {
   X,
 } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
+import { ListSkeleton } from "@/components/ds";
 
 // Stage 5C — Enterprise AI Executive Intelligence Center (manager-gated).
 // A read-only executive rollup (health, KPIs, revenue trend, forecast, alerts, team
@@ -387,7 +388,7 @@ export default function AdminExecutiveIntelligence() {
           </CardHeader>
           <CardContent className="divide-y divide-border">
             {dashQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground py-4">Loading…</p>
+              <ListSkeleton rows={3} />
             ) : !dash || dash.alerts.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">No active alerts. 🎉</p>
             ) : (
@@ -416,7 +417,7 @@ export default function AdminExecutiveIntelligence() {
           </CardHeader>
           <CardContent className="divide-y divide-border">
             {dashQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground py-4">Loading…</p>
+              <ListSkeleton rows={3} />
             ) : !dash || dash.teamPerformance.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">No team performance data.</p>
             ) : (
@@ -459,7 +460,7 @@ export default function AdminExecutiveIntelligence() {
         </CardHeader>
         <CardContent className="space-y-3">
           {summariesQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground py-4">Loading…</p>
+            <ListSkeleton rows={3} />
           ) : !summariesQuery.data || summariesQuery.data.summaries.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">No summaries yet — generate one to get started.</p>
           ) : (
@@ -565,7 +566,7 @@ export default function AdminExecutiveIntelligence() {
         </CardHeader>
         <CardContent className="divide-y divide-border">
           {reportsQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground py-4">Loading…</p>
+            <ListSkeleton rows={3} />
           ) : !reportsQuery.data || reportsQuery.data.reports.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">No reports yet — generate one above.</p>
           ) : (

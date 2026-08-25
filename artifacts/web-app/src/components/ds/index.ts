@@ -7,7 +7,7 @@
 export { PageHeader, type Crumb } from "./PageHeader";
 export { StatusBadge, type StatusTone } from "./StatusBadge";
 export { MetricCard } from "./MetricCard";
-export { EmptyState, ErrorState, TableSkeleton, CardGridSkeleton } from "./StateViews";
+export { EmptyState, ErrorState, TableSkeleton, CardGridSkeleton, ListSkeleton } from "./StateViews";
 export { Display, SectionTitle, SubsectionTitle, Body, Caption, KpiNumber, OverlineLabel } from "./Typography";
 export { ThemeToggle } from "./ThemeToggle";
 export * from "./workspace";

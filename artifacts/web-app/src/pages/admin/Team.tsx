@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, MoreHorizontal, Ban, CheckCircle2, LogOut, KeyRound, Trash2, History, Shield, Mail, Send, X, Briefcase } from "lucide-react";
+import { ListSkeleton } from "@/components/ds";
 
 const NONE = "__none__";
 
@@ -488,7 +489,7 @@ function LoginHistoryDialog({ user, open, onOpenChange }: {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={4} className="py-2"><ListSkeleton rows={4} /></TableCell></TableRow>
               ) : !data?.history?.length ? (
                 <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No login history.</TableCell></TableRow>
               ) : (
@@ -672,7 +673,7 @@ export default function AdminTeam() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Team Members</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Team Members</h1>
         <div className="flex items-center gap-2">
           <InviteByEmailDialog companyId={user?.companyId} onSaved={refreshInvites} />
           <CreateUserDialog companyId={user?.companyId} onSaved={refresh} />

@@ -22,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, Plus, Trash2, Send, ShieldCheck, Cpu, User, Sparkles, ChevronRight, Loader2, Copy, AlertCircle, RefreshCw } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
-import { EmptyState } from "@/components/ds";
+import { EmptyState, ListSkeleton } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { describeAiError } from "@/lib/ai-errors";
@@ -285,7 +285,7 @@ export default function AiCommandCenter() {
               <Plus className="h-4 w-4 mr-1" /> New conversation
             </Button>
             <ScrollArea className="flex-1 -mx-1 px-1">
-              {convsLoading && <div className="text-xs text-muted-foreground p-2">Loading…</div>}
+              {convsLoading && <ListSkeleton rows={3} className="px-2" />}
               {!convsLoading && conversations.length === 0 && (
                 <EmptyState
                   icon={Bot}

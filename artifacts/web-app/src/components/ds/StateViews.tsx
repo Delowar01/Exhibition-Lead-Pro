@@ -74,6 +74,17 @@ export function TableSkeleton({ rows = 6, className }: { rows?: number; classNam
   );
 }
 
+/** Compact skeleton for short lists/panels — replaces bare "Loading…" text. */
+export function ListSkeleton({ rows = 3, className }: { rows?: number; className?: string }) {
+  return (
+    <div className={cn("space-y-2 py-2", className)} aria-busy="true" aria-label="Loading">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-8 w-full" />
+      ))}
+    </div>
+  );
+}
+
 /** Skeleton block for a metric-card grid while loading. */
 export function CardGridSkeleton({ cards = 4, className }: { cards?: number; className?: string }) {
   return (

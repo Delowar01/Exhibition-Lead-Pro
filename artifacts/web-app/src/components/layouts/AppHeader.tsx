@@ -68,7 +68,7 @@ export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps
   };
 
   const iconBtnCls =
-    "relative inline-flex items-center justify-center h-11 w-11 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors";
+    "relative inline-flex items-center justify-center h-11 w-11 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
   return (
     <header className="sticky top-0 z-30 h-14 shrink-0 bg-sidebar text-sidebar-foreground border-b border-sidebar-border flex items-center gap-2 sm:gap-3 px-3 sm:px-4">
@@ -77,7 +77,7 @@ export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps
           type="button"
           onClick={onOpenMobileNav}
           aria-label="Open navigation menu"
-          className="md:hidden inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-md text-sidebar-foreground/80 hover:bg-sidebar-accent transition-colors"
+          className="md:hidden inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-md text-sidebar-foreground/80 hover:bg-sidebar-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="button-mobile-nav"
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
@@ -87,7 +87,7 @@ export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps
       {/* Brand */}
       <Link
         href={isAdmin ? "/admin" : "/platform"}
-        className="flex items-center gap-2 shrink-0 me-1 sm:me-2"
+        className="flex items-center gap-2 shrink-0 me-1 sm:me-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label="Lead Capture Pro home"
         data-testid="link-brand"
       >
@@ -104,7 +104,7 @@ export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps
         type="button"
         onClick={() => setPaletteOpen(true)}
         aria-label="Search (Ctrl+K)"
-        className="flex items-center gap-2 h-11 w-full max-w-md px-3 rounded-lg border border-sidebar-accent bg-sidebar-accent/50 text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent transition-colors"
+        className="flex items-center gap-2 h-11 w-full max-w-md px-3 rounded-lg border border-sidebar-accent bg-sidebar-accent/50 text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="button-global-search"
       >
         <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -124,7 +124,7 @@ export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps
             <button
               type="button"
               aria-label="Quick create"
-              className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-full bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition-opacity"
+              className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-full bg-primary text-primary-foreground shadow-sm hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               data-testid="button-quick-create"
             >
               <Plus className="h-4.5 w-4.5" aria-hidden="true" />
@@ -183,7 +183,7 @@ export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps
           <button
             type="button"
             aria-label="User menu"
-            className="flex items-center gap-2 h-11 ps-1 pe-1.5 rounded-lg hover:bg-sidebar-accent transition-colors shrink-0"
+            className="flex items-center gap-2 h-11 ps-1 pe-1.5 rounded-lg hover:bg-sidebar-accent transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             data-testid="button-user-menu"
           >
             <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-primary/25 text-primary font-bold text-xs">

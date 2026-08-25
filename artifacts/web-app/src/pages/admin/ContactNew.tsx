@@ -119,7 +119,7 @@ export default function AdminContactNew() {
         <Button variant="outline" size="icon" onClick={() => setLocation("/admin/contacts")}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">New Contact</h1>
+        <h1 className="text-2xl font-bold tracking-tight">New Contact</h1>
       </div>
 
       <Card>

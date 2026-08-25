@@ -281,7 +281,7 @@ export default function AdminDuplicates() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
           <CopyCheck className="h-7 w-7 text-primary" /> Duplicate Contacts
         </h1>
         <p className="text-muted-foreground mt-1">

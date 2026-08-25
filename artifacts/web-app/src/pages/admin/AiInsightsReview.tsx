@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, ShieldCheck, Cpu, ChevronRight } from "lucide-react";
 import { AiWorkspaceLayout } from "@/components/layouts/AiWorkspaceLayout";
+import { ListSkeleton } from "@/components/ds";
 
 const INSIGHT_LABELS: Record<string, string> = {
   lead_intelligence: "Lead Intelligence",
@@ -123,7 +124,7 @@ export default function AiInsightsReview() {
         </CardHeader>
         <CardContent className="pt-2 divide-y divide-border">
           {isLoading ? (
-            <p className="text-sm text-muted-foreground py-4">Loading…</p>
+            <ListSkeleton rows={3} />
           ) : recent.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">
               No AI insights generated yet. Open a lead, contact, or company and run an analysis to get started.

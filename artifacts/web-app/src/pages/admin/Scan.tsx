@@ -567,7 +567,7 @@ export default function AdminScan() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Scan Business Card</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Scan Business Card</h1>
           <p className="text-muted-foreground mt-1">Capture or upload a card to extract contact details with AI.</p>
         </div>
       </div>
