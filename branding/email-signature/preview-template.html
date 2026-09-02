@@ -1,0 +1,234 @@
+<title>Delowar's Elite Marcom Signature</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F6F2E8; --paper: #FFFFFF; --ink: #16213A; --text: #3C4757; --muted: #76808F;
+    --line: #E3DCCB; --line-strong: #C9C0A8; --navy: #0B1F3A; --navy-2: #14305A;
+    --gold: #C9A227; --gold-deep: #8F6F12; --gold-pale: #F3E4A6; --gold-wash: #FBF5E1;
+    --mail-chrome: #F1EEE6; --code-bg: #0E1A2E; --code-fg: #D6DEEA; --focus: #2E5BB7;
+    --shadow: 0 24px 60px -30px rgba(11,31,58,.35), 0 2px 6px rgba(11,31,58,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0A1322; --paper: #111D31; --ink: #F1EDE2; --text: #C8CFDB; --muted: #8C97A8;
+      --line: #22314B; --line-strong: #34486A; --navy: #0B1F3A; --navy-2: #14305A;
+      --gold: #D9B23A; --gold-deep: #B08A1E; --gold-pale: #F3E4A6; --gold-wash: #1B2538;
+      --mail-chrome: #182742; --code-bg: #060C17; --code-fg: #D6DEEA; --focus: #7FA6F0;
+      --shadow: 0 30px 70px -30px rgba(0,0,0,.8), 0 2px 6px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0A1322; --paper: #111D31; --ink: #F1EDE2; --text: #C8CFDB; --muted: #8C97A8;
+    --line: #22314B; --line-strong: #34486A; --navy: #0B1F3A; --navy-2: #14305A;
+    --gold: #D9B23A; --gold-deep: #B08A1E; --gold-pale: #F3E4A6; --gold-wash: #1B2538;
+    --mail-chrome: #182742; --code-bg: #060C17; --code-fg: #D6DEEA; --focus: #7FA6F0;
+    --shadow: 0 30px 70px -30px rgba(0,0,0,.8), 0 2px 6px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--text); font-family: Manrope, "Segoe UI", system-ui, sans-serif; font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  a { color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 56px 24px 96px; display: grid; gap: 56px; }
+  header { display: grid; gap: 14px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: var(--gold-deep); display: flex; align-items: center; gap: 12px; }
+  .eyebrow::before { content: ""; width: 28px; height: 2px; background: var(--gold); }
+  h1 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 600; font-size: clamp(38px, 6vw, 58px); line-height: 1.02; margin: 0; color: var(--ink); text-wrap: balance; letter-spacing: -.01em; }
+  h1 em { font-style: italic; font-weight: 500; color: var(--gold-deep); }
+  .lede { max-width: 58ch; margin: 0; font-size: 16px; color: var(--text); }
+  h2 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 600; font-size: 30px; line-height: 1.1; margin: 0 0 6px; color: var(--ink); text-wrap: balance; }
+  .sub { margin: 0 0 22px; color: var(--muted); max-width: 62ch; }
+
+  /* mock inbox window */
+  .mail { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .mail-bar { background: var(--mail-chrome); border-bottom: 1px solid var(--line); padding: 12px 18px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--muted); }
+  .dots { display: inline-flex; gap: 6px; } .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); display: block; }
+  .mail-head { padding: 22px 28px 0; display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+  .mail-head b { color: var(--ink); font-weight: 600; }
+  .mail-body { padding: 18px 28px 34px; font-family: Arial, Helvetica, sans-serif; color: #1F2937; font-size: 14px; line-height: 1.6; }
+  .mail-body p { margin: 0 0 12px; }
+  .sig-stage { margin-top: 18px; overflow-x: auto; }
+  .stage-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  button { font: inherit; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-weight: 600; font-size: 14px; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px -8px rgba(11,31,58,.5); }
+  .btn.primary { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .btn.primary:hover { background: var(--navy-2); }
+  .btn.gold { background: var(--gold); border-color: var(--gold); color: #1a1405; }
+  .btn svg { width: 16px; height: 16px; }
+
+  .two { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 28px; align-items: start; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 26px 26px 24px; display: grid; gap: 14px; }
+  .panel h2 { font-size: 26px; }
+  .panel p { margin: 0; }
+  .codebox { position: relative; }
+  textarea.code { width: 100%; height: 190px; resize: vertical; background: var(--code-bg); color: var(--code-fg); border: 0; border-radius: 10px; padding: 16px; font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre; overflow: auto; tab-size: 2; }
+  .toast { font-size: 13px; color: var(--gold-deep); font-weight: 600; min-height: 20px; }
+  .note { font-size: 13px; color: var(--muted); }
+  code { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: .92em; background: var(--gold-wash); color: var(--ink); padding: 1px 6px; border-radius: 5px; overflow-wrap: anywhere; }
+
+  table.assets { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.assets th { text-align: left; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0 0 8px; border-bottom: 1px solid var(--line); }
+  table.assets td { padding: 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
+  table.assets tr:last-child td { border-bottom: 0; }
+  table.assets td:first-child { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--ink); }
+  table.assets td .pill { font-family: Manrope, system-ui, sans-serif; margin-left: 6px; vertical-align: 1px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; background: var(--gold-wash); color: var(--gold-deep); border: 1px solid var(--line); white-space: nowrap; }
+  .pill.ready { background: transparent; color: var(--muted); }
+
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  @media (max-width: 720px) { .steps { grid-template-columns: 1fr; } }
+  .step { display: grid; gap: 10px; padding: 22px 22px 20px; border-top: 2px solid var(--gold); background: var(--paper); border-radius: 0 0 12px 12px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .step h3 { margin: 0; font-family: "Cormorant Garamond", Georgia, serif; font-weight: 600; font-size: 24px; color: var(--ink); }
+  .step ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+  .step .motion { font-size: 12.5px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; }
+
+  table.compat { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  table.compat th, table.compat td { padding: 11px 16px; text-align: left; border-bottom: 1px solid var(--line); }
+  table.compat th { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); background: var(--gold-wash); }
+  table.compat tr:last-child td { border-bottom: 0; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+  .dot.on { background: #2E8B57; } .dot.still { background: var(--gold); } .dot.off { background: var(--line-strong); }
+  footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Elite Marcom · Email signature</div>
+    <h1>Mohammad Delowar Hossain, <em>Chief Operating Officer</em></h1>
+    <p class="lede">A deep-navy card with gold hairlines, built for every mail client. The photo ring turns, the gold rule draws in, the rows reveal in sequence and the icons lift on hover in clients that keep embedded CSS; everywhere else the same card shows still.</p>
+  </header>
+
+  <section>
+    <div class="mail" aria-label="Preview of the signature inside an email">
+      <div class="mail-bar"><span class="dots"><i></i><i></i><i></i></span> New message</div>
+      <div class="mail-head">
+        <div><b>From</b> &nbsp;Mohammad Delowar Hossain</div>
+        <div><b>Subject</b> &nbsp;Following up on our meeting</div>
+      </div>
+      <div class="mail-body">
+        <p>Dear partner,</p>
+        <p>Thank you for your time today. I have attached the proposal we discussed and look forward to the next step.</p>
+        <p>Best regards,</p>
+        <div class="sig-stage" id="stage">
+<!--SIGNATURE_PREVIEW-->
+        </div>
+      </div>
+    </div>
+    <div class="stage-tools">
+      <button class="btn" id="replay" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Replay animation</button>
+      <span>The silhouette is the <code>photo.jpg</code> slot and the wordmark is the <code>logo.png</code> slot: drop both files into <code>assets/</code> and rebuild.</span>
+    </div>
+  </section>
+
+  <section class="two">
+    <div class="panel">
+      <h2>Copy the signature</h2>
+      <p class="sub" style="margin-bottom:0">Production markup with images at <code>https://www.elitemarcom.com/signature/</code>. Upload the asset files there first, or change <code>ASSET_BASE</code> in build.js. A second file, <code>elite-marcom-signature-embedded.html</code>, carries every image inside it, so it opens complete anywhere and installs directly in Outlook desktop and Apple Mail.</p>
+      <div class="codebox"><textarea class="code" id="src" readonly spellcheck="false"><!--SIGNATURE_SOURCE--></textarea></div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <button class="btn primary" id="copy" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy HTML</button>
+        <button class="btn" id="copyRendered" type="button">Copy rendered (Gmail, Outlook)</button>
+        <span class="toast" id="toast" role="status" aria-live="polite"></span>
+      </div>
+      <p class="note">"Copy rendered" places the visible signature on the clipboard, which is what the Gmail and Outlook signature editors accept. "Copy HTML" gives the raw source for Apple Mail, Thunderbird, a CRM template, or your IT team.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Files to host</h2>
+      <p class="sub" style="margin-bottom:0">Email clients only load images from a URL. The icon files are already made; two are yours to add.</p>
+      <table class="assets">
+        <thead><tr><th>File</th><th>Spec</th></tr></thead>
+        <tbody>
+          <tr><td>photo.jpg <span class="pill">%PHOTO_STATUS%</span></td><td>240 × 240 px square crop of the headshot</td></tr>
+          <tr><td>logo.png <span class="pill">%LOGO_STATUS%</span></td><td>Transparent PNG, light or gold version for the navy band, about 420 × 140 px</td></tr>
+          <tr><td>linkedin.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>instagram.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>facebook.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>youtube.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>phone.png, pin.png, globe.png <span class="pill ready">Made</span></td><td>32 × 32 px</td></tr>
+        </tbody>
+      </table>
+      <p class="note">Files live in <code>branding/email-signature/assets/</code>. Until logo.png exists the band shows a live-text wordmark. Brand colours sit in one <code>BRAND</code> block in <code>build.js</code>; change them to the logo's values and run <code>node build.js</code> to regenerate everything, icons included.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Install it</h2>
+    <p class="sub">Open this page in a desktop browser, use the copy buttons above, then follow your mail client.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Gmail</h3>
+        <ol>
+          <li>Click <b>Copy rendered</b> above.</li>
+          <li>Gmail → Settings gear → <b>See all settings</b> → General → Signature → <b>Create new</b>.</li>
+          <li>Paste into the editor, set it as the default for new emails and replies, then <b>Save changes</b>.</li>
+        </ol>
+        <div class="motion">Gmail removes embedded CSS, so the card shows still. Links, colours and layout are kept.</div>
+      </div>
+      <div class="step">
+        <h3>Outlook</h3>
+        <ol>
+          <li>Click <b>Copy rendered</b> above.</li>
+          <li>Outlook → Settings → Accounts → <b>Signatures</b> → New signature.</li>
+          <li>Paste, name it, choose it for new messages and replies, then <b>Save</b>.</li>
+        </ol>
+        <div class="motion">Outlook for Windows shows the still card. Outlook for Mac and Outlook.com usually keep the animation.</div>
+      </div>
+      <div class="step">
+        <h3>Apple Mail</h3>
+        <ol>
+          <li>Mail → Settings → <b>Signatures</b> → add one for your account and untick <b>Always match my default message font</b>.</li>
+          <li>Paste the rendered signature. For full animation, replace the signature's HTML in the <code>.mailsignature</code> file in <code>~/Library/Mail/V10/MailData/Signatures/</code> with <b>Copy HTML</b>.</li>
+          <li>Reopen Mail and compose a test message to yourself.</li>
+        </ol>
+        <div class="motion">Apple Mail and iOS Mail keep embedded CSS, so the ring, shimmer and reveal play for recipients on Apple devices.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What recipients see</h2>
+    <p class="sub">Animation is a progressive touch. The still fallback is the same design, so nothing depends on it.</p>
+    <table class="compat">
+      <thead><tr><th>Recipient's client</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Apple Mail (macOS), iOS Mail, Outlook for Mac, Thunderbird, Samsung Mail</td><td><span class="dot on"></span>Animated: photo ring rotates, gold rule shimmers, rows reveal in sequence, icons lift on hover</td></tr>
+        <tr><td>Gmail (web and apps), Outlook.com, Yahoo Mail</td><td><span class="dot still"></span>Still card, full layout and colours</td></tr>
+        <tr><td>Outlook for Windows (desktop)</td><td><span class="dot still"></span>Still card; rounded photo may show square on older versions</td></tr>
+        <tr><td>Any client with images off</td><td><span class="dot off"></span>Text only: name, title, phone, address, website and social link labels still read correctly</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:12px">Client behaviour above is from published CSS-support data, not a device pass on this signature. Send yourself a test from each account before rolling it out.</p>
+  </section>
+
+  <footer>Palette: navy #0B1F3A · gold #C9A227 · pale gold #F3E4A6 · slate #3C4757. Type in the signature is Georgia and Arial so it renders identically without web fonts.</footer>
+</div>
+
+<script>
+  (function () {
+    var stage = document.getElementById('stage');
+    var src = document.getElementById('src');
+    var toast = document.getElementById('toast');
+    function say(msg) { toast.textContent = msg; clearTimeout(say.t); say.t = setTimeout(function () { toast.textContent = ''; }, 2600); }
+    document.getElementById('replay').addEventListener('click', function () {
+      var html = stage.innerHTML; stage.innerHTML = ''; void stage.offsetWidth; stage.innerHTML = html;
+    });
+    document.getElementById('copy').addEventListener('click', function () {
+      var text = src.value;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { say('HTML copied'); }, function () { fallback(); });
+      } else { fallback(); }
+      function fallback() { src.focus(); src.select(); try { document.execCommand('copy'); say('HTML copied'); } catch (e) { say('Select the code and press Ctrl+C'); } }
+    });
+    document.getElementById('copyRendered').addEventListener('click', function () {
+      var table = stage.querySelector('table');
+      var range = document.createRange(); range.selectNode(table);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+      sel.removeAllRanges();
+      say(ok ? 'Rendered signature copied. Paste it into your signature editor.' : 'Select the signature above and press Ctrl+C');
+    });
+  })();
+</script>
