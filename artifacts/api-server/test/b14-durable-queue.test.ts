@@ -406,6 +406,52 @@ describe("recurring dispatch dedupe", () => {
   });
 });
 
+describe("bounded concurrency under overlapping poll triggers (final correction)", () => {
+  it("a single-slot worker never runs two handlers at once, even with rapid poll ticks", async () => {
+    const name = jobName("poll-overlap");
+    // Fastest allowed poll cadence + handlers much slower than the interval:
+    // every handler execution spans many poll TRIGGERS, so without the
+    // in-flight guard two overlapping polls could each see active.size = 0,
+    // both compute free = 1, and together claim two rows for a concurrency-1
+    // worker. FOR UPDATE SKIP LOCKED cannot prevent that (different rows).
+    const q = makeQueue({ concurrency: 1, pollIntervalMs: 25 });
+    let current = 0;
+    let maxConcurrent = 0;
+    let completed = 0;
+    q.register(name, async () => {
+      current++;
+      maxConcurrent = Math.max(maxConcurrent, current);
+      await new Promise((r) => setTimeout(r, 150));
+      current--;
+      completed++;
+    });
+    for (let i = 0; i < 6; i++) await q.enqueue(name, { i });
+    q.start();
+    await until(() => completed === 6, 15_000, "all jobs processed");
+    expect(maxConcurrent).toBe(1); // the configured ceiling held throughout
+
+    // The ceiling scales with configuration, not with poll timing: a 2-slot
+    // worker may run two at once but never three.
+    const name2 = jobName("poll-overlap-2");
+    const q2 = makeQueue({ concurrency: 2, pollIntervalMs: 25 });
+    let current2 = 0;
+    let max2 = 0;
+    let done2 = 0;
+    q2.register(name2, async () => {
+      current2++;
+      max2 = Math.max(max2, current2);
+      await new Promise((r) => setTimeout(r, 120));
+      current2--;
+      done2++;
+    });
+    for (let i = 0; i < 6; i++) await q2.enqueue(name2, { i });
+    q2.start();
+    await until(() => done2 === 6, 15_000, "all jobs processed (2-slot)");
+    expect(max2).toBeLessThanOrEqual(2);
+    expect(max2).toBeGreaterThan(0);
+  });
+});
+
 describe("stale-worker lease ownership (final correction)", () => {
   it("a worker that lost its lease cannot dead-letter a row reclaimed by another worker", async () => {
     const name = jobName("stale-dead");

@@ -54,6 +54,7 @@ export class PostgresQueue implements JobQueue {
   private readonly key: Buffer;
   private readonly active = new Set<number>(); // row ids currently held by this worker
   private running = false;
+  private pollInFlight = false;
   private pollTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly counters = { enqueued: 0, completed: 0, failed: 0, deadLettered: 0 };
@@ -172,8 +173,16 @@ export class PostgresQueue implements JobQueue {
 
   // ── Worker internals ───────────────────────────────────────────────────────
 
+  // Polls never overlap within one instance: the interval only TRIGGERS a
+  // poll, and a poll still waiting on the database (slow PostgreSQL, long
+  // recovery sweep) must not be joined by a second one — two concurrent
+  // free-capacity calculations would both see the same `active.size` and could
+  // together claim more rows than the configured concurrency. FOR UPDATE SKIP
+  // LOCKED (unchanged) prevents two workers claiming the same ROW; this guard
+  // enforces the per-instance concurrency CEILING.
   private async poll(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running || this.pollInFlight) return;
+    this.pollInFlight = true;
     try {
       await this.recoverExpiredLeases();
       // Re-check after the async sweep: a stop() during recovery must not lead
@@ -185,6 +194,8 @@ export class PostgresQueue implements JobQueue {
       for (const row of rows) void this.run(row);
     } catch (err) {
       logger.error({ err, workerId: this.workerId }, "Job queue poll failed");
+    } finally {
+      this.pollInFlight = false;
     }
   }
 
