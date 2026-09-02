@@ -1,0 +1,119 @@
+<!--
+  ELITE MARCOM — Animated HTML Email Signature
+  Mohammad Delowar Hossain · Chief Operating Officer
+
+  HOW IT WORKS
+  · Table-based, inline-styled markup renders in every mail client (Gmail, Outlook, Apple Mail, iOS, Android).
+  · The <style> block adds motion (photo ring, shimmer bar, staggered reveal, icon lift) in clients that keep
+    embedded CSS: Apple Mail, iOS Mail, Outlook for Mac, Thunderbird, Samsung Mail. Gmail and Outlook for
+    Windows strip it and show the identical signature, just still.
+  · Every image is loaded from a URL. Upload the files in ./assets plus photo.jpg and logo.png to your web host,
+    then replace ASSET_BASE below (search for https://www.elitemarcom.com/signature/).
+
+  ASSET LIST (see README.md)
+    photo.jpg   240×240 px square headshot          logo.png       360×120 px on transparent background
+    linkedin.png instagram.png facebook.png youtube.png (64 px)   phone.png pin.png globe.png (32 px)
+-->
+<style type="text/css">
+  @keyframes emsRise   { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes emsSpin   { to { transform: rotate(360deg); } }
+  @keyframes emsUnspin { to { transform: rotate(-360deg); } }
+  @keyframes emsGrow   { from { width: 0; } to { width: 56px; } }
+  @keyframes emsShine  { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .ems-r1, .ems-r2, .ems-r3, .ems-r4, .ems-r5, .ems-r6 { animation: emsRise 0.7s cubic-bezier(.22,.61,.36,1) both; }
+  .ems-r2 { animation-delay: .12s; } .ems-r3 { animation-delay: .24s; } .ems-r4 { animation-delay: .36s; }
+  .ems-r5 { animation-delay: .48s; } .ems-r6 { animation-delay: .60s; }
+  .ems-ring { animation: emsSpin 9s linear infinite; }
+  .ems-ring img { animation: emsUnspin 9s linear infinite; }
+  .ems-rule { animation: emsGrow 0.9s cubic-bezier(.22,.61,.36,1) .5s both; }
+  .ems-bar { background-image: linear-gradient(90deg, #C9A227 0%, #F3E4A6 40%, #C9A227 60%, #8F6F12 100%) !important; background-size: 200% 100% !important; animation: emsShine 3.2s linear infinite; }
+  .ems-soc img { transition: transform .25s ease, opacity .25s ease; }
+  .ems-soc:hover img { transform: translateY(-3px) scale(1.06); }
+  @media (prefers-reduced-motion: reduce) {
+    .ems-r1, .ems-r2, .ems-r3, .ems-r4, .ems-r5, .ems-r6, .ems-ring, .ems-ring img, .ems-rule, .ems-bar { animation: none !important; }
+  }
+</style>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;background:#ffffff;">
+  <tr>
+    <td style="padding:0;">
+
+      <!-- ===== CARD ===== -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+        <tr>
+
+          <!-- PHOTO -->
+          <td width="150" valign="top" style="padding:22px 0 22px 24px;width:150px;">
+            <div class="ems-r1" style="width:118px;height:118px;">
+              <div class="ems-ring" style="width:118px;height:118px;border-radius:59px;background:#C9A227;background-image:conic-gradient(from 0deg,#C9A227,#F3E4A6,#C9A227,#8F6F12,#C9A227);padding:0;line-height:0;">
+                <img src="https://www.elitemarcom.com/signature/photo.jpg" width="110" height="110" alt="Mohammad Delowar Hossain" style="display:block;width:110px;height:110px;border-radius:55px;margin:4px;border:3px solid #ffffff;object-fit:cover;">
+              </div>
+            </div>
+          </td>
+
+          <!-- IDENTITY + CONTACT -->
+          <td valign="top" style="padding:26px 24px 20px 4px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+              <tr>
+                <td class="ems-r2" style="font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:28px;color:#0B1F3A;font-weight:bold;letter-spacing:0.2px;padding-bottom:3px;">
+                  Mohammad Delowar Hossain
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r3" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;color:#A3841C;font-weight:bold;letter-spacing:2.2px;text-transform:uppercase;">
+                  Chief Operating Officer
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0 12px 0;">
+                  <div class="ems-rule" style="width:56px;height:2px;background:#C9A227;font-size:0;line-height:0;">&nbsp;</div>
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r4" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;padding-bottom:5px;">
+                  <img src="https://www.elitemarcom.com/signature/phone.png" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;"><a href="tel:+966533810775" style="color:#0B1F3A;text-decoration:none;font-weight:bold;">+966 53 381 0775</a>
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r5" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;padding-bottom:5px;">
+                  <img src="https://www.elitemarcom.com/signature/pin.png" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;">8809 Al Aziziyah Dist., Riyadh 14514, Saudi Arabia
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r6" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;">
+                  <img src="https://www.elitemarcom.com/signature/globe.png" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;"><a href="https://www.elitemarcom.com" style="color:#0B1F3A;text-decoration:none;font-weight:bold;">www.elitemarcom.com</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <!-- ===== GOLD BAR ===== -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+        <tr>
+          <td class="ems-bar" height="4" style="height:4px;font-size:0;line-height:0;background:#C9A227;background-image:linear-gradient(90deg,#8F6F12 0%,#C9A227 35%,#F3E4A6 50%,#C9A227 65%,#8F6F12 100%);">&nbsp;</td>
+        </tr>
+      </table>
+
+      <!-- ===== BRAND BAND ===== -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;background:#0B1F3A;">
+        <tr>
+          <!-- LOGO SLOT: replace the wordmark below with
+               <img src="https://www.elitemarcom.com/signature/logo.png" width="150" alt="Elite Marcom" style="display:block;width:150px;height:auto;border:0;">
+               once logo.png is uploaded (white / gold version recommended on navy). -->
+          <td valign="middle" style="padding:14px 24px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:22px;letter-spacing:3px;color:#ffffff;white-space:nowrap;">
+            <a href="https://www.elitemarcom.com" style="color:#ffffff;text-decoration:none;"><span style="color:#E4C862;">ELITE</span>&nbsp;MARCOM</a>
+          </td>
+          <td valign="middle" align="right" style="padding:12px 24px;white-space:nowrap;">
+            <a class="ems-soc" href="https://www.linkedin.com/company/elite-marcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on LinkedIn"><img src="https://www.elitemarcom.com/signature/linkedin.png" width="30" height="30" alt="LinkedIn" style="display:block;width:30px;height:30px;border:0;"></a>
+            <a class="ems-soc" href="https://www.instagram.com/elitemarcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on Instagram"><img src="https://www.elitemarcom.com/signature/instagram.png" width="30" height="30" alt="Instagram" style="display:block;width:30px;height:30px;border:0;"></a>
+            <a class="ems-soc" href="https://www.facebook.com/profile.php?id=61558899995583" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on Facebook"><img src="https://www.elitemarcom.com/signature/facebook.png" width="30" height="30" alt="Facebook" style="display:block;width:30px;height:30px;border:0;"></a>
+            <a class="ems-soc" href="https://www.youtube.com/@Elite_Marcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on YouTube"><img src="https://www.elitemarcom.com/signature/youtube.png" width="30" height="30" alt="YouTube" style="display:block;width:30px;height:30px;border:0;"></a>
+          </td>
+        </tr>
+      </table>
+
+    </td>
+  </tr>
+</table>

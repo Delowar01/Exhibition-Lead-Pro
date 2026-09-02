@@ -1,0 +1,439 @@
+<title>Delowar's Elite Marcom Signature</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F6F2E8; --paper: #FFFFFF; --ink: #16213A; --text: #3C4757; --muted: #76808F;
+    --line: #E3DCCB; --line-strong: #C9C0A8; --navy: #0B1F3A; --navy-2: #14305A;
+    --gold: #C9A227; --gold-deep: #8F6F12; --gold-pale: #F3E4A6; --gold-wash: #FBF5E1;
+    --mail-chrome: #F1EEE6; --code-bg: #0E1A2E; --code-fg: #D6DEEA; --focus: #2E5BB7;
+    --shadow: 0 24px 60px -30px rgba(11,31,58,.35), 0 2px 6px rgba(11,31,58,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0A1322; --paper: #111D31; --ink: #F1EDE2; --text: #C8CFDB; --muted: #8C97A8;
+      --line: #22314B; --line-strong: #34486A; --navy: #0B1F3A; --navy-2: #14305A;
+      --gold: #D9B23A; --gold-deep: #B08A1E; --gold-pale: #F3E4A6; --gold-wash: #1B2538;
+      --mail-chrome: #182742; --code-bg: #060C17; --code-fg: #D6DEEA; --focus: #7FA6F0;
+      --shadow: 0 30px 70px -30px rgba(0,0,0,.8), 0 2px 6px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0A1322; --paper: #111D31; --ink: #F1EDE2; --text: #C8CFDB; --muted: #8C97A8;
+    --line: #22314B; --line-strong: #34486A; --navy: #0B1F3A; --navy-2: #14305A;
+    --gold: #D9B23A; --gold-deep: #B08A1E; --gold-pale: #F3E4A6; --gold-wash: #1B2538;
+    --mail-chrome: #182742; --code-bg: #060C17; --code-fg: #D6DEEA; --focus: #7FA6F0;
+    --shadow: 0 30px 70px -30px rgba(0,0,0,.8), 0 2px 6px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--text); font-family: Manrope, "Segoe UI", system-ui, sans-serif; font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  a { color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 56px 24px 96px; display: grid; gap: 56px; }
+  header { display: grid; gap: 14px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: var(--gold-deep); display: flex; align-items: center; gap: 12px; }
+  .eyebrow::before { content: ""; width: 28px; height: 2px; background: var(--gold); }
+  h1 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 600; font-size: clamp(38px, 6vw, 58px); line-height: 1.02; margin: 0; color: var(--ink); text-wrap: balance; letter-spacing: -.01em; }
+  h1 em { font-style: italic; font-weight: 500; color: var(--gold-deep); }
+  .lede { max-width: 58ch; margin: 0; font-size: 16px; color: var(--text); }
+  h2 { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 600; font-size: 30px; line-height: 1.1; margin: 0 0 6px; color: var(--ink); text-wrap: balance; }
+  .sub { margin: 0 0 22px; color: var(--muted); max-width: 62ch; }
+
+  /* mock inbox window */
+  .mail { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .mail-bar { background: var(--mail-chrome); border-bottom: 1px solid var(--line); padding: 12px 18px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--muted); }
+  .dots { display: inline-flex; gap: 6px; } .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); display: block; }
+  .mail-head { padding: 22px 28px 0; display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+  .mail-head b { color: var(--ink); font-weight: 600; }
+  .mail-body { padding: 18px 28px 30px; font-family: Arial, Helvetica, sans-serif; color: #1F2937; font-size: 14px; line-height: 1.6; }
+  .mail-body p { margin: 0 0 12px; }
+  .sig-stage { margin-top: 18px; overflow-x: auto; }
+  .stage-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  button { font: inherit; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-weight: 600; font-size: 14px; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px -8px rgba(11,31,58,.5); }
+  .btn.primary { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .btn.primary:hover { background: var(--navy-2); }
+  .btn.gold { background: var(--gold); border-color: var(--gold); color: #1a1405; }
+  .btn svg { width: 16px; height: 16px; }
+
+  .two { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 28px; align-items: start; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 26px 26px 24px; display: grid; gap: 14px; }
+  .panel h2 { font-size: 26px; }
+  .panel p { margin: 0; }
+  .codebox { position: relative; }
+  textarea.code { width: 100%; height: 190px; resize: vertical; background: var(--code-bg); color: var(--code-fg); border: 0; border-radius: 10px; padding: 16px; font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre; overflow: auto; tab-size: 2; }
+  .toast { font-size: 13px; color: var(--gold-deep); font-weight: 600; min-height: 20px; }
+  .note { font-size: 13px; color: var(--muted); }
+  code { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: .92em; background: var(--gold-wash); color: var(--ink); padding: 1px 6px; border-radius: 5px; overflow-wrap: anywhere; }
+
+  table.assets { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.assets th { text-align: left; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0 0 8px; border-bottom: 1px solid var(--line); }
+  table.assets td { padding: 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
+  table.assets tr:last-child td { border-bottom: 0; }
+  table.assets td:first-child { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--ink); }
+  table.assets td .pill { font-family: Manrope, system-ui, sans-serif; margin-left: 6px; vertical-align: 1px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; background: var(--gold-wash); color: var(--gold-deep); border: 1px solid var(--line); white-space: nowrap; }
+  .pill.ready { background: transparent; color: var(--muted); }
+
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  @media (max-width: 720px) { .steps { grid-template-columns: 1fr; } }
+  .step { display: grid; gap: 10px; padding: 22px 22px 20px; border-top: 2px solid var(--gold); background: var(--paper); border-radius: 0 0 12px 12px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .step h3 { margin: 0; font-family: "Cormorant Garamond", Georgia, serif; font-weight: 600; font-size: 24px; color: var(--ink); }
+  .step ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+  .step .motion { font-size: 12.5px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; }
+
+  table.compat { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  table.compat th, table.compat td { padding: 11px 16px; text-align: left; border-bottom: 1px solid var(--line); }
+  table.compat th { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); background: var(--gold-wash); }
+  table.compat tr:last-child td { border-bottom: 0; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+  .dot.on { background: #2E8B57; } .dot.still { background: var(--gold); } .dot.off { background: var(--line-strong); }
+  footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Elite Marcom · Email signature</div>
+    <h1>Mohammad Delowar Hossain, <em>Chief Operating Officer</em></h1>
+    <p class="lede">A navy-and-gold signature built for every mail client. Photo ring, shimmering gold rule and a staggered reveal play in clients that keep embedded CSS; everywhere else it renders as the same still card.</p>
+  </header>
+
+  <section>
+    <div class="mail" aria-label="Preview of the signature inside an email">
+      <div class="mail-bar"><span class="dots"><i></i><i></i><i></i></span> New message</div>
+      <div class="mail-head">
+        <div><b>From</b> &nbsp;Mohammad Delowar Hossain</div>
+        <div><b>Subject</b> &nbsp;Following up on our meeting</div>
+      </div>
+      <div class="mail-body">
+        <p>Dear partner,</p>
+        <p>Thank you for your time today. I have attached the proposal we discussed and look forward to the next step.</p>
+        <p>Best regards,</p>
+        <div class="sig-stage" id="stage">
+
+<style type="text/css">
+  @keyframes emsRise   { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes emsSpin   { to { transform: rotate(360deg); } }
+  @keyframes emsUnspin { to { transform: rotate(-360deg); } }
+  @keyframes emsGrow   { from { width: 0; } to { width: 56px; } }
+  @keyframes emsShine  { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .ems-r1, .ems-r2, .ems-r3, .ems-r4, .ems-r5, .ems-r6 { animation: emsRise 0.7s cubic-bezier(.22,.61,.36,1) both; }
+  .ems-r2 { animation-delay: .12s; } .ems-r3 { animation-delay: .24s; } .ems-r4 { animation-delay: .36s; }
+  .ems-r5 { animation-delay: .48s; } .ems-r6 { animation-delay: .60s; }
+  .ems-ring { animation: emsSpin 9s linear infinite; }
+  .ems-ring img { animation: emsUnspin 9s linear infinite; }
+  .ems-rule { animation: emsGrow 0.9s cubic-bezier(.22,.61,.36,1) .5s both; }
+  .ems-bar { background-image: linear-gradient(90deg, #C9A227 0%, #F3E4A6 40%, #C9A227 60%, #8F6F12 100%) !important; background-size: 200% 100% !important; animation: emsShine 3.2s linear infinite; }
+  .ems-soc img { transition: transform .25s ease, opacity .25s ease; }
+  .ems-soc:hover img { transform: translateY(-3px) scale(1.06); }
+  @media (prefers-reduced-motion: reduce) {
+    .ems-r1, .ems-r2, .ems-r3, .ems-r4, .ems-r5, .ems-r6, .ems-ring, .ems-ring img, .ems-rule, .ems-bar { animation: none !important; }
+  }
+</style>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;background:#ffffff;">
+  <tr>
+    <td style="padding:0;">
+
+      
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+        <tr>
+
+          
+          <td width="150" valign="top" style="padding:22px 0 22px 24px;width:150px;">
+            <div class="ems-r1" style="width:118px;height:118px;">
+              <div class="ems-ring" style="width:118px;height:118px;border-radius:59px;background:#C9A227;background-image:conic-gradient(from 0deg,#C9A227,#F3E4A6,#C9A227,#8F6F12,#C9A227);padding:0;line-height:0;">
+                <img src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22220%22%20viewBox%3D%220%200%20220%20220%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22g%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%2314305A%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%2307152A%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Ccircle%20cx%3D%22110%22%20cy%3D%22110%22%20r%3D%22110%22%20fill%3D%22url(%23g)%22%2F%3E%3Ctext%20x%3D%22110%22%20y%3D%22122%22%20text-anchor%3D%22middle%22%20font-family%3D%22Georgia%2Cserif%22%20font-size%3D%2258%22%20fill%3D%22%23E4C862%22%20letter-spacing%3D%222%22%3EMDH%3C%2Ftext%3E%3Ctext%20x%3D%22110%22%20y%3D%22160%22%20text-anchor%3D%22middle%22%20font-family%3D%22Arial%2Csans-serif%22%20font-size%3D%2213%22%20fill%3D%22%239FB0CC%22%20letter-spacing%3D%223%22%3EPHOTO.JPG%3C%2Ftext%3E%3C%2Fsvg%3E" width="110" height="110" alt="Mohammad Delowar Hossain" style="display:block;width:110px;height:110px;border-radius:55px;margin:4px;border:3px solid #ffffff;object-fit:cover;">
+              </div>
+            </div>
+          </td>
+
+          
+          <td valign="top" style="padding:26px 24px 20px 4px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+              <tr>
+                <td class="ems-r2" style="font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:28px;color:#0B1F3A;font-weight:bold;letter-spacing:0.2px;padding-bottom:3px;">
+                  Mohammad Delowar Hossain
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r3" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;color:#A3841C;font-weight:bold;letter-spacing:2.2px;text-transform:uppercase;">
+                  Chief Operating Officer
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0 12px 0;">
+                  <div class="ems-rule" style="width:56px;height:2px;background:#C9A227;font-size:0;line-height:0;">&nbsp;</div>
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r4" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;padding-bottom:5px;">
+                  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAACe0lEQVR4nOyXz2sTURDHv5NskxTqSa0K9Ud/2IhSCtompQQkXoSeRKQWoYlVNOh/oCcPXhQ8CfYmpiqUUBC9KHgoiJfEeJGiZFEorVRb4w/UNq3J7ji7rSBJVpM0m1z6hUDeMPvms/PevDeroM5SUGdtABQAxMe898E8BCLH33ZmTLs0zXfwzNtPqKIcBRbGsfzghoiwJ9fgDKLKKgQgpK2cWedm2A7APGflLFnYCrsBmDBv5czAIdgNQEwfYQlAh/lKkaxVE0DeMmHlTEDTq7b2LbATQGngR1bODH7YHXq3ADsBek6padmIz1AY/Pk27dcQqqyi68lED/KDK5mfR1tHppdRCwDdszgmYb+vRueVXJYGeiJzS7BBRQH6B99/kcjXzQGR29Wgj8AmWZZUs5a9Ibn/bPzX2XE1eXf3DtQSYHW9pephnoCbcuyOcQxO1ArAkK9RHZUN+NSEAAUSy96bqCUADUJr8nw9Lpl4vWa6EI/ujeA/SkbbdqFEUSlOidvtO9mpJMR7u9kZMF3yh1PX8v0mJ6E0znTeI6KTRv8gkycJ/FJO1w+yjrPZLF4EzqZ+lA1gQtzpOMAOxxN5pMU0MCY89O10d2h+0RzK/khkvOMy44l/TDPlD6W6KgIwFI/u2yy3lXFU96+ZZmSDXu51p8ZLCG5KAKhiAENmmmc7b8mmPPfHJmuyIOOSmpV8gLKv1mAQub6Qet7BPCCB3xi2UoMXU8V3e29Yfez3qF2yBBclB+lK51lXc2GUqW84Ner05DoYesS4ruWXsXyAWS+YA1XWVGy/a2lFOyJlGJBhqwRtkU5KzgWWEsZEX1gdthWgXG18mtUd4DcAAAD//xSTWegAAAAGSURBVAMAapXVzHe8udMAAAAASUVORK5CYII=" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;"><a href="tel:+966533810775" style="color:#0B1F3A;text-decoration:none;font-weight:bold;">+966 53 381 0775</a>
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r5" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;padding-bottom:5px;">
+                  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAADB0lEQVR4nMSXTUhUURTHz3lP0dGQQfyIKDMYRwMNAnWUWgQFQbs2Q5SODkGrIggMF0Vtc9EiicqNadLCCIIgikBdhDlqRETSfGQi1aY0U1Ob5r3TeSNS6L1v7nst5gfDvLn3nHv+77x77pyXA1kmB7LMfwmY7PXXWN/14dh7cAk6MR4d3OnR1zwXiPAQO9YDojc9QbRACBNIMFJmJq/vCc+sqa6pLGDibvUBA2EAESrt7AgowZ+W5lA8AgpoKkaRe/4rpgYvMgW3QECfBvhyvL/6EiiQMQORft9RAP0puONwIBQdArcCxgZ8RWhoCX7WpeACIvgCurG3qSWxKLOxfQQc/LYsOD9ngwDecpR3/DGF/gg70NS6wS6GbOJNf3nhGniXhZNEfbondb4+OP3D+vm6t9Kb1PNu8uVJkXlxiZFfdSzxSzQnzcAKFFWIY8PS7xSe2whusT88s+DRV89yWlZEPotztAskSAXoqO0WjSPSxMHT0aXN4/tOzX4HpFcinxTlCG/GVgCZpvCU5AyYUh/ClDAIUR44FaABfRaNc53XDg9vPcLjT3x5nJ06kU8KaQakcSR4S2GKd3lKoGB7waz/lrXxNob4iC6e/6b18GSJYKmfTdPxKEiwPwf6/M8R8YhozipDdp/ivOfyKlWcGV28Cj0KhGLHZTHsj2KkB9IpDsjq61hgjTw4Y9Ig2GArYFv+wn1ZaanAG3a+sCD3IbgVUBv8ukxI18AlvJEv1wankvY2GSg3kl2chTlwDH1s8MTuZLLKKGC9uaCr4BDOXAcGwchkp9SQ8DbSI6vVCZV+YN2BxgJtsWYVU6WGxLoTXTPCoEZS07Bd0VZNgEVDa2KEb607kx2C2dHQGo2CIsoCLMqM5EUurbjcgoYaQ/Eb4ABHAqwNqWmp9nSFbw2+SJrZBg5xJMCisfXDKCe6c1Nw7srNFm69PoFDHAuw4Eazi/8Lev7GhzONocRjcIGjF5N/sUpzfNX/jK8mA23xTnCJqwxYpEszF06sVMSV+n/pOpBlsv52/AcAAP//HO1vjwAAAAZJREFUAwCgswi/rxYWNwAAAABJRU5ErkJggg==" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;">8809 Al Aziziyah Dist., Riyadh 14514, Saudi Arabia
+                </td>
+              </tr>
+              <tr>
+                <td class="ems-r6" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;">
+                  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAE80lEQVR4nMRXX0ybVRQ/595PBnSbE9GhTJcxWngwxpCy4oPJfDAuG0uMf2aMQgGjTfTFxGnMfPFl2Yt/HvyzOA1CGS+4xRiMe9jiNE7SQjbjjCQtdW7ZsoEDom5CgX73eL5//Vr6Fcoi4SSl595z7vn97jm95140WGPRYI3llgjQAMiRm9vvhTJZQwqJhD6u/ZuaCEZgAVYoWKrjL9Htd6dJvsAr9gDBTkAUeaSAdA72AwEOlmX0/qau1PVS4i5LYGhgS4WY9e1nzzfZeT2UIERwA5AObdbnP9jWeTENt0ogHm0IEsAxdtpaBGjaDIJQ5R2BLghSTzeHUz9DERHFDMNRfwenNeaAE1GaAd/lz08ue3UAUb2dhQM6w5/3WJ23Pep0lMPx3kC4GI5nBuLR+seZ2wlzb1bgIxrOvZPB2+5AJX+z5uBcqC0RtMgGzrHrQ+aOEBqlBjfmF+ggAnZYzEiRoF0tbWMnYbkMxPrr/ADyuAPOiz9qaU9Ggm2XroGSEXehOsgeZH4EHnLmdaKXmp5LXOU1nZytL6xtsgfhsXhvXWBZAqBr3fzXZ+/8zI6K5GsWDyNb9KzlRJNidmwwG2Qm8RU7/GWlFJ9x5rV0IsLzMWuEGwG1w4vh8koQ761/GFAOWYCUZtrPI9K0NRZ+5nDEdh0UqL+fx5vEGwy+285ahxDqkjmvoBpR9rNaZppUJtjS8fvZLMl8PqIrywyxnAGP8869ZK8iubfoThB72G6r+QtRaC/yV5ZAfgkQdsGqC3kT54ZTJdO+KXtYmGIljnJWajkjF6XQO71C6yR7zGNLdJlL0J5r42Own+H2GLosX9gU3Hfhb0PPlkDOVd7nslKnmttS3+cGiEcDG+wdpBbbHIlFG/7gr61cOl/B+t5Ak9nGWTLzopa/TAI5JaAtWQ1gsjA8/4pNctxmiwhfSzdtnw0e5ikXCmsdNUuACMkNJAqOJxszsIzwzpUVAGgpPwFCurojSp8Al8Fmj+j/2NpGKCKMu8lytXpCvg3ucUPRNUd3j6GGE6AcB3h0pK/+bG4AXdGsGQahjm07wUOUgm1WAJxZ7KMIs2OSC+M5xOxJzt9wtOEqz9TAagqfkFA4eb8zzJbA6Omc+i9hlYUQBnLHeZ2QZOZDzGivGpeH0Yr53LdzPzBfNkqJep7/zHYt6BNsf53trRaI6pJAxpE0WnQN/7x72LbOuBU55se56wqu41g08Cn39JdtSiNV1eoR/+7UnFmivsCfvKSaA12X6WSt8wY8fRq0ysuBKfOoEoyHwgnzB2e9pipjDPqgHf5wqD3xSi5ewXGrlOm3jDrZ/JqnJ2W3qVlH62trGu/SywOtzhrflYYnnT7hpNggLGd9URecrpTpcwcW43k+SIaPBpqVwiG0S2S8ggTpES4MH3TtV2uOzofak+YjhLvkKAM1mp6UaQShVbBmZDJkYcMCsw+2hBPnSyJgSKzP38kNqdudIeNi/ISVoBOYQEWYk0bZutKPnIJRjhrJXcfjjlBbMuqFs/SjtNffysEHGLDC04GM9koal+R2bzPNSoKnmsPJE8Uwij5KDQmFx74BofjdR995OiDcWRSc6JSmQ9NS4FaIEiXeF3iCD1En94rHlsjIDF8pJ/lS+twkX4KUTMCRsW/r101PiR38KJW58/xeyKyv0IYf2Dc6v5J4Kybwf8ua/3f8HwAAAP//DHKkcAAAAAZJREFUAwDnNf7c2jBnWAAAAABJRU5ErkJggg==" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;"><a href="https://www.elitemarcom.com" style="color:#0B1F3A;text-decoration:none;font-weight:bold;">www.elitemarcom.com</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+        <tr>
+          <td class="ems-bar" height="4" style="height:4px;font-size:0;line-height:0;background:#C9A227;background-image:linear-gradient(90deg,#8F6F12 0%,#C9A227 35%,#F3E4A6 50%,#C9A227 65%,#8F6F12 100%);">&nbsp;</td>
+        </tr>
+      </table>
+
+      
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;background:#0B1F3A;">
+        <tr>
+          
+          <td valign="middle" style="padding:14px 24px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:22px;letter-spacing:3px;color:#ffffff;white-space:nowrap;">
+            <a href="https://www.elitemarcom.com" style="color:#ffffff;text-decoration:none;"><span style="color:#E4C862;">ELITE</span>&nbsp;MARCOM</a>
+          </td>
+          <td valign="middle" align="right" style="padding:12px 24px;white-space:nowrap;">
+            <a class="ems-soc" href="https://www.linkedin.com/company/elite-marcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on LinkedIn"><img src="data:image/png;base64,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" width="30" height="30" alt="LinkedIn" style="display:block;width:30px;height:30px;border:0;"></a>
+            <a class="ems-soc" href="https://www.instagram.com/elitemarcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on Instagram"><img src="data:image/png;base64,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" width="30" height="30" alt="Instagram" style="display:block;width:30px;height:30px;border:0;"></a>
+            <a class="ems-soc" href="https://www.facebook.com/profile.php?id=61558899995583" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on Facebook"><img src="data:image/png;base64,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" width="30" height="30" alt="Facebook" style="display:block;width:30px;height:30px;border:0;"></a>
+            <a class="ems-soc" href="https://www.youtube.com/@Elite_Marcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on YouTube"><img src="data:image/png;base64,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" width="30" height="30" alt="YouTube" style="display:block;width:30px;height:30px;border:0;"></a>
+          </td>
+        </tr>
+      </table>
+
+    </td>
+  </tr>
+</table>
+
+        </div>
+      </div>
+    </div>
+    <div class="stage-tools">
+      <button class="btn" id="replay" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Replay animation</button>
+      <span>The circle marked <code>PHOTO.JPG</code> is where your headshot goes. Icons and the wordmark are final.</span>
+    </div>
+  </section>
+
+  <section class="two">
+    <div class="panel">
+      <h2>Copy the signature HTML</h2>
+      <p class="sub" style="margin-bottom:0">This is the production markup. Every image points at <code>https://www.elitemarcom.com/signature/</code>, so upload the asset files there first (or change the URLs to wherever you host them).</p>
+      <div class="codebox"><textarea class="code" id="src" readonly spellcheck="false">&lt;style type="text/css"&gt;
+  @keyframes emsRise   { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes emsSpin   { to { transform: rotate(360deg); } }
+  @keyframes emsUnspin { to { transform: rotate(-360deg); } }
+  @keyframes emsGrow   { from { width: 0; } to { width: 56px; } }
+  @keyframes emsShine  { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .ems-r1, .ems-r2, .ems-r3, .ems-r4, .ems-r5, .ems-r6 { animation: emsRise 0.7s cubic-bezier(.22,.61,.36,1) both; }
+  .ems-r2 { animation-delay: .12s; } .ems-r3 { animation-delay: .24s; } .ems-r4 { animation-delay: .36s; }
+  .ems-r5 { animation-delay: .48s; } .ems-r6 { animation-delay: .60s; }
+  .ems-ring { animation: emsSpin 9s linear infinite; }
+  .ems-ring img { animation: emsUnspin 9s linear infinite; }
+  .ems-rule { animation: emsGrow 0.9s cubic-bezier(.22,.61,.36,1) .5s both; }
+  .ems-bar { background-image: linear-gradient(90deg, #C9A227 0%, #F3E4A6 40%, #C9A227 60%, #8F6F12 100%) !important; background-size: 200% 100% !important; animation: emsShine 3.2s linear infinite; }
+  .ems-soc img { transition: transform .25s ease, opacity .25s ease; }
+  .ems-soc:hover img { transform: translateY(-3px) scale(1.06); }
+  @media (prefers-reduced-motion: reduce) {
+    .ems-r1, .ems-r2, .ems-r3, .ems-r4, .ems-r5, .ems-r6, .ems-ring, .ems-ring img, .ems-rule, .ems-bar { animation: none !important; }
+  }
+&lt;/style&gt;
+
+&lt;table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;background:#ffffff;"&gt;
+  &lt;tr&gt;
+    &lt;td style="padding:0;"&gt;
+
+      &lt;!-- ===== CARD ===== --&gt;
+      &lt;table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"&gt;
+        &lt;tr&gt;
+
+          &lt;!-- PHOTO --&gt;
+          &lt;td width="150" valign="top" style="padding:22px 0 22px 24px;width:150px;"&gt;
+            &lt;div class="ems-r1" style="width:118px;height:118px;"&gt;
+              &lt;div class="ems-ring" style="width:118px;height:118px;border-radius:59px;background:#C9A227;background-image:conic-gradient(from 0deg,#C9A227,#F3E4A6,#C9A227,#8F6F12,#C9A227);padding:0;line-height:0;"&gt;
+                &lt;img src="https://www.elitemarcom.com/signature/photo.jpg" width="110" height="110" alt="Mohammad Delowar Hossain" style="display:block;width:110px;height:110px;border-radius:55px;margin:4px;border:3px solid #ffffff;object-fit:cover;"&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/td&gt;
+
+          &lt;!-- IDENTITY + CONTACT --&gt;
+          &lt;td valign="top" style="padding:26px 24px 20px 4px;"&gt;
+            &lt;table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"&gt;
+              &lt;tr&gt;
+                &lt;td class="ems-r2" style="font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:28px;color:#0B1F3A;font-weight:bold;letter-spacing:0.2px;padding-bottom:3px;"&gt;
+                  Mohammad Delowar Hossain
+                &lt;/td&gt;
+              &lt;/tr&gt;
+              &lt;tr&gt;
+                &lt;td class="ems-r3" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:16px;color:#A3841C;font-weight:bold;letter-spacing:2.2px;text-transform:uppercase;"&gt;
+                  Chief Operating Officer
+                &lt;/td&gt;
+              &lt;/tr&gt;
+              &lt;tr&gt;
+                &lt;td style="padding:10px 0 12px 0;"&gt;
+                  &lt;div class="ems-rule" style="width:56px;height:2px;background:#C9A227;font-size:0;line-height:0;"&gt;&amp;nbsp;&lt;/div&gt;
+                &lt;/td&gt;
+              &lt;/tr&gt;
+              &lt;tr&gt;
+                &lt;td class="ems-r4" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;padding-bottom:5px;"&gt;
+                  &lt;img src="https://www.elitemarcom.com/signature/phone.png" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;"&gt;&lt;a href="tel:+966533810775" style="color:#0B1F3A;text-decoration:none;font-weight:bold;"&gt;+966 53 381 0775&lt;/a&gt;
+                &lt;/td&gt;
+              &lt;/tr&gt;
+              &lt;tr&gt;
+                &lt;td class="ems-r5" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;padding-bottom:5px;"&gt;
+                  &lt;img src="https://www.elitemarcom.com/signature/pin.png" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;"&gt;8809 Al Aziziyah Dist., Riyadh 14514, Saudi Arabia
+                &lt;/td&gt;
+              &lt;/tr&gt;
+              &lt;tr&gt;
+                &lt;td class="ems-r6" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#3C4757;"&gt;
+                  &lt;img src="https://www.elitemarcom.com/signature/globe.png" width="14" height="14" alt="" style="display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:8px;border:0;"&gt;&lt;a href="https://www.elitemarcom.com" style="color:#0B1F3A;text-decoration:none;font-weight:bold;"&gt;www.elitemarcom.com&lt;/a&gt;
+                &lt;/td&gt;
+              &lt;/tr&gt;
+            &lt;/table&gt;
+          &lt;/td&gt;
+        &lt;/tr&gt;
+      &lt;/table&gt;
+
+      &lt;!-- ===== GOLD BAR ===== --&gt;
+      &lt;table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;"&gt;
+        &lt;tr&gt;
+          &lt;td class="ems-bar" height="4" style="height:4px;font-size:0;line-height:0;background:#C9A227;background-image:linear-gradient(90deg,#8F6F12 0%,#C9A227 35%,#F3E4A6 50%,#C9A227 65%,#8F6F12 100%);"&gt;&amp;nbsp;&lt;/td&gt;
+        &lt;/tr&gt;
+      &lt;/table&gt;
+
+      &lt;!-- ===== BRAND BAND ===== --&gt;
+      &lt;table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;background:#0B1F3A;"&gt;
+        &lt;tr&gt;
+          &lt;!-- LOGO SLOT: replace the wordmark below with
+               &lt;img src="https://www.elitemarcom.com/signature/logo.png" width="150" alt="Elite Marcom" style="display:block;width:150px;height:auto;border:0;"&gt;
+               once logo.png is uploaded (white / gold version recommended on navy). --&gt;
+          &lt;td valign="middle" style="padding:14px 24px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:22px;letter-spacing:3px;color:#ffffff;white-space:nowrap;"&gt;
+            &lt;a href="https://www.elitemarcom.com" style="color:#ffffff;text-decoration:none;"&gt;&lt;span style="color:#E4C862;"&gt;ELITE&lt;/span&gt;&amp;nbsp;MARCOM&lt;/a&gt;
+          &lt;/td&gt;
+          &lt;td valign="middle" align="right" style="padding:12px 24px;white-space:nowrap;"&gt;
+            &lt;a class="ems-soc" href="https://www.linkedin.com/company/elite-marcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on LinkedIn"&gt;&lt;img src="https://www.elitemarcom.com/signature/linkedin.png" width="30" height="30" alt="LinkedIn" style="display:block;width:30px;height:30px;border:0;"&gt;&lt;/a&gt;
+            &lt;a class="ems-soc" href="https://www.instagram.com/elitemarcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on Instagram"&gt;&lt;img src="https://www.elitemarcom.com/signature/instagram.png" width="30" height="30" alt="Instagram" style="display:block;width:30px;height:30px;border:0;"&gt;&lt;/a&gt;
+            &lt;a class="ems-soc" href="https://www.facebook.com/profile.php?id=61558899995583" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on Facebook"&gt;&lt;img src="https://www.elitemarcom.com/signature/facebook.png" width="30" height="30" alt="Facebook" style="display:block;width:30px;height:30px;border:0;"&gt;&lt;/a&gt;
+            &lt;a class="ems-soc" href="https://www.youtube.com/@Elite_Marcom" style="display:inline-block;text-decoration:none;margin-left:8px;" title="Elite Marcom on YouTube"&gt;&lt;img src="https://www.elitemarcom.com/signature/youtube.png" width="30" height="30" alt="YouTube" style="display:block;width:30px;height:30px;border:0;"&gt;&lt;/a&gt;
+          &lt;/td&gt;
+        &lt;/tr&gt;
+      &lt;/table&gt;
+
+    &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/table&gt;
+</textarea></div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <button class="btn primary" id="copy" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy HTML</button>
+        <button class="btn" id="copyRendered" type="button">Copy rendered (Gmail, Outlook)</button>
+        <span class="toast" id="toast" role="status" aria-live="polite"></span>
+      </div>
+      <p class="note">"Copy rendered" places the visible signature on the clipboard, which is what the Gmail and Outlook signature editors accept. "Copy HTML" gives the raw source for Apple Mail, Thunderbird, a CRM template, or your IT team.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Files to host</h2>
+      <p class="sub" style="margin-bottom:0">Email clients only load images from a URL. The icon files are already made; two are yours to add.</p>
+      <table class="assets">
+        <thead><tr><th>File</th><th>Spec</th></tr></thead>
+        <tbody>
+          <tr><td>photo.jpg <span class="pill">You add</span></td><td>240 × 240 px square crop of the headshot</td></tr>
+          <tr><td>logo.png <span class="pill">Optional</span></td><td>360 × 120 px, transparent, white or gold version</td></tr>
+          <tr><td>linkedin.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>instagram.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>facebook.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>youtube.png <span class="pill ready">Made</span></td><td>64 × 64 px</td></tr>
+          <tr><td>phone.png, pin.png, globe.png <span class="pill ready">Made</span></td><td>32 × 32 px</td></tr>
+        </tbody>
+      </table>
+      <p class="note">The made files sit in <code>branding/email-signature/assets/</code> in the repository. The wordmark in the navy band is live text, so the signature is complete even before logo.png exists; the HTML has a marked slot to swap it in.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Install it</h2>
+    <p class="sub">Open this page in a desktop browser, use the copy buttons above, then follow your mail client.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Gmail</h3>
+        <ol>
+          <li>Click <b>Copy rendered</b> above.</li>
+          <li>Gmail → Settings gear → <b>See all settings</b> → General → Signature → <b>Create new</b>.</li>
+          <li>Paste into the editor, set it as the default for new emails and replies, then <b>Save changes</b>.</li>
+        </ol>
+        <div class="motion">Gmail removes embedded CSS, so the card shows still. Links, colours and layout are kept.</div>
+      </div>
+      <div class="step">
+        <h3>Outlook</h3>
+        <ol>
+          <li>Click <b>Copy rendered</b> above.</li>
+          <li>Outlook → Settings → Accounts → <b>Signatures</b> → New signature.</li>
+          <li>Paste, name it, choose it for new messages and replies, then <b>Save</b>.</li>
+        </ol>
+        <div class="motion">Outlook for Windows shows the still card. Outlook for Mac and Outlook.com usually keep the animation.</div>
+      </div>
+      <div class="step">
+        <h3>Apple Mail</h3>
+        <ol>
+          <li>Mail → Settings → <b>Signatures</b> → add one for your account and untick <b>Always match my default message font</b>.</li>
+          <li>Paste the rendered signature. For full animation, replace the signature's HTML in the <code>.mailsignature</code> file in <code>~/Library/Mail/V10/MailData/Signatures/</code> with <b>Copy HTML</b>.</li>
+          <li>Reopen Mail and compose a test message to yourself.</li>
+        </ol>
+        <div class="motion">Apple Mail and iOS Mail keep embedded CSS, so the ring, shimmer and reveal play for recipients on Apple devices.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What recipients see</h2>
+    <p class="sub">Animation is a progressive touch. The still fallback is the same design, so nothing depends on it.</p>
+    <table class="compat">
+      <thead><tr><th>Recipient's client</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Apple Mail (macOS), iOS Mail, Outlook for Mac, Thunderbird, Samsung Mail</td><td><span class="dot on"></span>Animated: photo ring rotates, gold rule shimmers, rows reveal in sequence, icons lift on hover</td></tr>
+        <tr><td>Gmail (web and apps), Outlook.com, Yahoo Mail</td><td><span class="dot still"></span>Still card, full layout and colours</td></tr>
+        <tr><td>Outlook for Windows (desktop)</td><td><span class="dot still"></span>Still card; rounded photo may show square on older versions</td></tr>
+        <tr><td>Any client with images off</td><td><span class="dot off"></span>Text only: name, title, phone, address, website and social link labels still read correctly</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:12px">Client behaviour above is from published CSS-support data, not a device pass on this signature. Send yourself a test from each account before rolling it out.</p>
+  </section>
+
+  <footer>Palette: navy #0B1F3A · gold #C9A227 · pale gold #F3E4A6 · slate #3C4757. Type in the signature is Georgia and Arial so it renders identically without web fonts.</footer>
+</div>
+
+<script>
+  (function () {
+    var stage = document.getElementById('stage');
+    var src = document.getElementById('src');
+    var toast = document.getElementById('toast');
+    function say(msg) { toast.textContent = msg; clearTimeout(say.t); say.t = setTimeout(function () { toast.textContent = ''; }, 2600); }
+    document.getElementById('replay').addEventListener('click', function () {
+      var html = stage.innerHTML; stage.innerHTML = ''; void stage.offsetWidth; stage.innerHTML = html;
+    });
+    document.getElementById('copy').addEventListener('click', function () {
+      var text = src.value;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { say('HTML copied'); }, function () { fallback(); });
+      } else { fallback(); }
+      function fallback() { src.focus(); src.select(); try { document.execCommand('copy'); say('HTML copied'); } catch (e) { say('Select the code and press Ctrl+C'); } }
+    });
+    document.getElementById('copyRendered').addEventListener('click', function () {
+      var table = stage.querySelector('table');
+      var range = document.createRange(); range.selectNode(table);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+      sel.removeAllRanges();
+      say(ok ? 'Rendered signature copied. Paste it into your signature editor.' : 'Select the signature above and press Ctrl+C');
+    });
+  })();
+</script>
