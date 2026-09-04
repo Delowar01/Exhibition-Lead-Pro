@@ -7184,11 +7184,13 @@ paths:
     patch:
       operationId: updateWorkflowDefinition
       tags: [workflows]
-      summary: Update a draft or published definition
+      summary: Update a DRAFT definition
       description: >-
         Optimistic concurrency: `revision` must equal the stored revision; a
         stale value answers 409 (code WORKFLOW_REVISION_CONFLICT, context
-        carries currentRevision). Archived definitions are read-only (409).
+        carries currentRevision). Only drafts are editable: published
+        definitions are immutable (409 WORKFLOW_READ_ONLY — unpublish, edit,
+        publish again) and archived definitions are read-only (409).
       parameters:
         - name: id
           in: path
@@ -7224,12 +7226,25 @@ paths:
       operationId: deleteWorkflowDefinition
       tags: [workflows]
       summary: Hard-delete a DRAFT definition (non-drafts must be archived)
+      description: >-
+        Revision-safe like every other mutation: the JSON body carries the
+        definition's current `revision` — the same contract as publish/unpublish/
+        archive (400 when missing/invalid, 409 WORKFLOW_REVISION_CONFLICT with
+        context.currentRevision when stale). The delete is atomic on
+        id + company + status=draft + revision. Published and archived
+        definitions answer 409 WORKFLOW_NOT_DELETABLE.
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRevisionInput"
       responses:
         "200":
           description: Success
@@ -15191,7 +15206,7 @@ components:
           enum: [draft, published, archived]
           description: >-
             draft = editable working copy, never eligible for execution; published =
-            eligible for a FUTURE execution engine (Batch 16), still editable; archived =
+            eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived =
             terminal read-only history. No status executes anything in Batch 15.
         trigger:
           $ref: "#/components/schemas/WorkflowTrigger"

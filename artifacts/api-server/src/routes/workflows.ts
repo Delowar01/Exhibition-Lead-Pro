@@ -9,6 +9,7 @@ import {
   PublishWorkflowDefinitionBody,
   UnpublishWorkflowDefinitionBody,
   ArchiveWorkflowDefinitionBody,
+  DeleteWorkflowDefinitionBody,
 } from "@workspace/api-zod";
 import * as wf from "../services/workflow-definitions.service.js";
 
@@ -135,7 +136,9 @@ router.post(
   }),
 );
 
-// PATCH /workflows/:id — edit (requires the current `revision`; 409 when stale).
+// PATCH /workflows/:id — edit a DRAFT (requires the current `revision`; 409 when
+// stale). Published definitions are immutable (409 WORKFLOW_READ_ONLY): unpublish,
+// edit, publish again.
 router.patch(
   "/workflows/:id",
   canManage,
@@ -181,14 +184,24 @@ router.post(
   }),
 );
 
-// DELETE /workflows/:id — hard delete, DRAFTS ONLY (everything else is archived history).
+// DELETE /workflows/:id — hard delete, DRAFTS ONLY (everything else is archived
+// history). The JSON body carries the current `revision` (400 when missing/
+// invalid, 409 WORKFLOW_REVISION_CONFLICT when stale) — the same optimistic-
+// concurrency contract as PATCH and the publish/unpublish/archive transitions.
 router.delete(
   "/workflows/:id",
   canManage,
+  validateBody(DeleteWorkflowDefinitionBody),
   guarded(async (req, res) => {
     const id = idParam(req);
-    const result = await wf.deleteDefinition(req.user!, id);
-    await writeAudit(req, { action: "workflow.delete", entityType: "workflow_definition", entityId: id, companyId: req.user!.companyId, metadata: { name: result.name } });
+    const result = await wf.deleteDefinition(req.user!, id, (req.body ?? {}).revision);
+    await writeAudit(req, {
+      action: "workflow.delete",
+      entityType: "workflow_definition",
+      entityId: id,
+      companyId: req.user!.companyId,
+      metadata: { name: result.name, revision: result.revision },
+    });
     res.json({ success: result.success, message: result.message });
   }),
 );

@@ -106,10 +106,22 @@ export async function updateIfRevision(
   return row;
 }
 
-export async function hardDelete(companyId: number, id: number): Promise<boolean> {
-  const rows = await db
+// Optimistic-concurrency delete (drafts only): the single DELETE statement is
+// conditioned on id AND company AND status = draft AND revision = expected, so a
+// stale client can never remove a draft that someone else has since updated (or
+// published) — the service never relies on a prior read followed by an
+// unconditional delete. Returns the deleted row, or undefined when no row matched.
+export async function deleteDraftIfRevision(companyId: number, id: number, expectedRevision: number): Promise<WorkflowDefinitionRow | undefined> {
+  const [row] = await db
     .delete(workflowDefinitionsTable)
-    .where(and(eq(workflowDefinitionsTable.id, id), eq(workflowDefinitionsTable.companyId, companyId), eq(workflowDefinitionsTable.status, "draft")))
-    .returning({ id: workflowDefinitionsTable.id });
-  return rows.length > 0;
+    .where(
+      and(
+        eq(workflowDefinitionsTable.id, id),
+        eq(workflowDefinitionsTable.companyId, companyId),
+        eq(workflowDefinitionsTable.status, "draft"),
+        eq(workflowDefinitionsTable.revision, expectedRevision),
+      ),
+    )
+    .returning();
+  return row;
 }

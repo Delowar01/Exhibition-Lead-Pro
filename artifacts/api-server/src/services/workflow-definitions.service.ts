@@ -97,6 +97,8 @@ function readDescription(value: unknown, issues: WorkflowValidationIssue[]): str
   return d === "" ? null : d;
 }
 
+// The caller's view of the definition's current revision (JSON body `revision` on
+// PATCH, publish, unpublish, archive and DELETE alike).
 function readRevision(value: unknown): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new AppError(400, "revision is required (the definition's current revision)", { code: "WORKFLOW_REVISION_REQUIRED" });
@@ -159,10 +161,16 @@ function assertRevision(row: repo.WorkflowDefinitionRow, expected: number): void
   if (row.revision !== expected) throw revisionConflict(row.revision);
 }
 
+// Only drafts are editable. A PUBLISHED definition is immutable (unpublish → edit →
+// publish again is the only path), and an archived one is terminal history.
 function assertEditable(row: repo.WorkflowDefinitionRow): void {
   const status = row.status as WorkflowStatus;
   if (!WORKFLOW_LIFECYCLE[status].editable) {
-    throw new AppError(409, `An ${status} workflow definition is read-only`, { code: "WORKFLOW_READ_ONLY", details: { status } });
+    const article = status === "archived" ? "An" : "A";
+    throw new AppError(409, `${article} ${status} workflow definition is read-only${status === "published" ? " — unpublish it to edit" : ""}`, {
+      code: "WORKFLOW_READ_ONLY",
+      details: { status },
+    });
   }
 }
 
@@ -350,16 +358,30 @@ export async function transitionDefinition(user: AuthUser, id: number, target: W
   return { definition: formatDefinition(updated), from: current };
 }
 
+function notDeletable(status: string): AppError {
+  return new AppError(409, "Only draft workflow definitions can be deleted; archive it instead", {
+    code: "WORKFLOW_NOT_DELETABLE",
+    details: { status },
+  });
+}
+
 // Hard delete is reserved for drafts; anything else is history and must be archived.
-export async function deleteDefinition(user: AuthUser, id: number) {
+// Revision-safe like every other mutation: the caller must pass the definition's
+// current revision (JSON body { revision }) and the repository delete is atomic on
+// id + company + status=draft + revision, so a stale client can never delete a draft
+// someone else has updated in the meantime.
+export async function deleteDefinition(user: AuthUser, id: number, revisionParam: unknown) {
   const row = await mustFind(user, id);
-  if (row.status !== "draft") {
-    throw new AppError(409, "Only draft workflow definitions can be deleted; archive it instead", {
-      code: "WORKFLOW_NOT_DELETABLE",
-      details: { status: row.status },
-    });
+  if (row.status !== "draft") throw notDeletable(row.status);
+  const expected = readRevision(revisionParam);
+  assertRevision(row, expected);
+  const deleted = await repo.deleteDraftIfRevision(row.companyId, row.id, expected);
+  if (!deleted) {
+    // Lost a race between the read and the conditional delete: report the current state.
+    const fresh = await repo.findById(user, id);
+    if (!fresh) throw new AppError(404, "Workflow definition not found");
+    if (fresh.status !== "draft") throw notDeletable(fresh.status);
+    throw revisionConflict(fresh.revision);
   }
-  const ok = await repo.hardDelete(row.companyId, row.id);
-  if (!ok) throw new AppError(404, "Workflow definition not found");
-  return { success: true, message: "Workflow definition deleted", name: row.name };
+  return { success: true, message: "Workflow definition deleted", name: deleted.name, revision: deleted.revision };
 }

@@ -443,7 +443,7 @@ describe("lifecycle", () => {
     expect(stored.publishable).toBe(false);
   });
 
-  it("publishes a draft (revision bump), refuses to publish twice, keeps it editable", async () => {
+  it("publishes a draft (revision bump), refuses to publish twice, and the published definition is immutable", async () => {
     const res = await api("POST", `/workflows/${id}/publish`, adminToken, { revision });
     expect(res.status, await res.clone().text()).toBe(200);
     const d = await res.json();
@@ -454,8 +454,8 @@ describe("lifecycle", () => {
     expect(again.status).toBe(409);
     expect((await again.json()).code).toBe("WORKFLOW_INVALID_TRANSITION");
     const edit = await api("PATCH", `/workflows/${id}`, adminToken, { revision, description: "edited while published" });
-    expect(edit.status).toBe(200);
-    revision = (await edit.json()).revision;
+    expect(edit.status).toBe(409);
+    expect((await edit.json()).code).toBe("WORKFLOW_READ_ONLY");
   });
 
   it("refuses a lifecycle change with a stale revision", async () => {
@@ -481,7 +481,7 @@ describe("lifecycle", () => {
     expect((await api("PATCH", `/workflows/${id}`, adminToken, { revision, name: "edit archived" })).status).toBe(409);
     expect((await api("POST", `/workflows/${id}/publish`, adminToken, { revision })).status).toBe(409);
     expect((await api("POST", `/workflows/${id}/unpublish`, adminToken, { revision })).status).toBe(409);
-    const del = await api("DELETE", `/workflows/${id}`, adminToken);
+    const del = await api("DELETE", `/workflows/${id}`, adminToken, { revision: revision });
     expect(del.status).toBe(409);
     expect((await del.json()).code).toBe("WORKFLOW_NOT_DELETABLE");
 
@@ -499,14 +499,16 @@ describe("lifecycle", () => {
     expect(res.status).toBe(201);
   });
 
-  it("hard-deletes a draft only", async () => {
+  it("hard-deletes a draft only (with its current revision)", async () => {
     const draft = await createDefinition(adminToken);
-    const del = await api("DELETE", `/workflows/${draft.id}`, adminToken);
+    const del = await api("DELETE", `/workflows/${draft.id}`, adminToken, { revision: draft.revision });
     expect(del.status).toBe(200);
     expect((await api("GET", `/workflows/${draft.id}`, adminToken)).status).toBe(404);
     const published = await createDefinition(adminToken);
-    expect((await api("POST", `/workflows/${published.id}/publish`, adminToken, { revision: published.revision })).status).toBe(200);
-    expect((await api("DELETE", `/workflows/${published.id}`, adminToken)).status).toBe(409);
+    const pub = await api("POST", `/workflows/${published.id}/publish`, adminToken, { revision: published.revision });
+    expect(pub.status).toBe(200);
+    const pubRev = (await pub.json()).revision;
+    expect((await api("DELETE", `/workflows/${published.id}`, adminToken, { revision: pubRev })).status).toBe(409);
   });
 });
 
@@ -535,7 +537,10 @@ describe("tenant isolation (real second company)", () => {
     expect((await api("PATCH", `/workflows/${idA}`, adminBToken, { revision: revA, name: "hijack" })).status).toBe(404);
     expect((await api("POST", `/workflows/${idA}/publish`, adminBToken, { revision: revA })).status).toBe(404);
     expect((await api("POST", `/workflows/${idA}/archive`, adminBToken, { revision: revA })).status).toBe(404);
-    expect((await api("DELETE", `/workflows/${idA}`, adminBToken)).status).toBe(404);
+    expect((await api("DELETE", `/workflows/${idA}`, adminBToken, { revision: revA })).status).toBe(404);
+    // Without a body the request fails validation (400) before any lookup — the same
+    // answer for a foreign or an own id, so it leaks nothing either.
+    expect((await api("DELETE", `/workflows/${idA}`, adminBToken)).status).toBe(400);
     // Nothing changed.
     const d = await (await api("GET", `/workflows/${idA}`, adminToken)).json();
     expect(d.status).toBe("draft");
@@ -585,7 +590,7 @@ describe("RBAC (workflows.view / workflows.manage)", () => {
     expect((await api("POST", "/workflows", empToken, baseDefinition())).status).toBe(403);
     expect((await api("PATCH", `/workflows/${idA}`, empToken, { revision: revA, name: "x" })).status).toBe(403);
     expect((await api("POST", `/workflows/${idA}/publish`, empToken, { revision: revA })).status).toBe(403);
-    expect((await api("DELETE", `/workflows/${idA}`, empToken)).status).toBe(403);
+    expect((await api("DELETE", `/workflows/${idA}`, empToken, { revision: revA })).status).toBe(403);
   });
 
   it("workflows.view unlocks reads + validation but no mutation; workflows.manage unlocks mutation", async () => {
@@ -599,7 +604,7 @@ describe("RBAC (workflows.view / workflows.manage)", () => {
       expect((await api("POST", "/workflows", empToken, baseDefinition())).status).toBe(403);
       expect((await api("PATCH", `/workflows/${idA}`, empToken, { revision: revA, name: "x" })).status).toBe(403);
       expect((await api("POST", `/workflows/${idA}/archive`, empToken, { revision: revA })).status).toBe(403);
-      expect((await api("DELETE", `/workflows/${idA}`, empToken)).status).toBe(403);
+      expect((await api("DELETE", `/workflows/${idA}`, empToken, { revision: revA })).status).toBe(403);
 
       await db.update(usersTable).set({ permissions: { workflows: ["view", "manage"] } }).where(eq(usersTable.id, empId));
       const created = await api("POST", "/workflows", empToken, baseDefinition());
@@ -656,6 +661,153 @@ describe("auditability", () => {
     }
     const archive = rows.find((r) => r.action === "workflow.archive")!;
     expect(archive.metadata).toMatchObject({ from: "published", to: "archived" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("correction 1 — published definitions are immutable", () => {
+  it("draft → publish → PATCH rejected (row unchanged) → unpublish → PATCH ok → republish", async () => {
+    // 1. create draft
+    const d = await createDefinition(adminToken, { description: "before publish" });
+    expect(d.status).toBe("draft");
+    // 2. publish it
+    const pub = await api("POST", `/workflows/${d.id}/publish`, adminToken, { revision: d.revision });
+    expect(pub.status).toBe(200);
+    const published = await pub.json();
+    expect(published.status).toBe("published");
+    const publishedRevision = published.revision as number;
+    // 3. PATCH while published is rejected with the lifecycle read-only error …
+    for (const patch of [
+      { revision: publishedRevision, description: "edited while published" },
+      { revision: publishedRevision, name: `B15 immutable ${SUFFIX}` },
+      { revision: publishedRevision, actions: [{ type: "lead.add_tag", config: { tagId: tagA } }] },
+      { revision: publishedRevision - 1, description: "stale AND published" },
+    ]) {
+      const res = await api("PATCH", `/workflows/${d.id}`, adminToken, patch);
+      expect(res.status, JSON.stringify(patch)).toBe(409);
+      const body = await res.json();
+      expect(body.code).toBe("WORKFLOW_READ_ONLY");
+      expect(body.context.status).toBe("published");
+    }
+    // 4. … and the row + revision are unchanged
+    const unchanged = await (await api("GET", `/workflows/${d.id}`, adminToken)).json();
+    expect(unchanged.status).toBe("published");
+    expect(unchanged.revision).toBe(publishedRevision);
+    expect(unchanged.description).toBe("before publish");
+    expect(unchanged.name).toBe(d.name);
+    expect(unchanged.actions.map((a: { type: string }) => a.type)).toEqual(["lead.add_tag", "task.create", "notification.create"]);
+    const [row] = await db.select().from(workflowDefinitionsTable).where(eq(workflowDefinitionsTable.id, d.id));
+    expect(row.revision).toBe(publishedRevision);
+    expect(row.status).toBe("published");
+    // 5. unpublish with the current revision succeeds
+    const un = await api("POST", `/workflows/${d.id}/unpublish`, adminToken, { revision: publishedRevision });
+    expect(un.status).toBe(200);
+    const draft = await un.json();
+    expect(draft.status).toBe("draft");
+    expect(draft.revision).toBe(publishedRevision + 1);
+    // 6. PATCH as draft succeeds
+    const edit = await api("PATCH", `/workflows/${d.id}`, adminToken, { revision: draft.revision, description: "edited as draft" });
+    expect(edit.status, await edit.clone().text()).toBe(200);
+    const edited = await edit.json();
+    expect(edited.description).toBe("edited as draft");
+    expect(edited.revision).toBe(draft.revision + 1);
+    // 7. republish succeeds (explicit publish boundary crossed again)
+    const re = await api("POST", `/workflows/${d.id}/publish`, adminToken, { revision: edited.revision });
+    expect(re.status).toBe(200);
+    const republished = await re.json();
+    expect(republished.status).toBe("published");
+    expect(republished.description).toBe("edited as draft");
+    expect(republished.revision).toBe(edited.revision + 1);
+  });
+
+  it("the catalog documents published as non-editable and non-deletable", async () => {
+    const c = await (await api("GET", "/workflows/catalog", adminToken)).json();
+    expect(c.lifecycle.published.editable).toBe(false);
+    expect(c.lifecycle.published.deletable).toBe(false);
+    expect(c.lifecycle.published.transitions).toEqual(["draft", "archived"]);
+    expect(c.lifecycle.draft.editable).toBe(true);
+    expect(c.lifecycle.draft.deletable).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("correction 2 — revision-safe draft DELETE", () => {
+  it("rejects a missing or invalid revision (400) and leaves the draft in place", async () => {
+    const d = await createDefinition(adminToken);
+    const bodies: Array<unknown> = [undefined, {}, { revision: null }, { revision: "abc" }, { revision: 0 }, { revision: -1 }, { revision: 1.5 }, { other: 1 }];
+    for (const body of bodies) {
+      const res = await api("DELETE", `/workflows/${d.id}`, adminToken, body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      const err = await res.json();
+      expect(typeof err.error, JSON.stringify(body)).toBe("string");
+      if (err.code) expect(err.code, JSON.stringify(body)).toBe("WORKFLOW_REVISION_REQUIRED");
+    }
+    const still = await (await api("GET", `/workflows/${d.id}`, adminToken)).json();
+    expect(still.revision).toBe(d.revision);
+    expect(still.status).toBe("draft");
+  });
+
+  it("a stale revision cannot delete a draft another user has updated; the row is untouched", async () => {
+    const d = await createDefinition(adminToken);
+    const staleRevision = d.revision;
+    // Someone else edits the draft first (revision moves on).
+    const edit = await api("PATCH", `/workflows/${d.id}`, adminToken, { revision: d.revision, description: "updated by a colleague" });
+    expect(edit.status).toBe(200);
+    const current = (await edit.json()).revision as number;
+    expect(current).toBe(staleRevision + 1);
+    // Stale client tries to delete.
+    const res = await api("DELETE", `/workflows/${d.id}`, adminToken, { revision: staleRevision });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("WORKFLOW_REVISION_CONFLICT");
+    expect(body.context.currentRevision).toBe(current);
+    // Row unchanged.
+    const [row] = await db.select().from(workflowDefinitionsTable).where(eq(workflowDefinitionsTable.id, d.id));
+    expect(row).toBeTruthy();
+    expect(row.revision).toBe(current);
+    expect(row.status).toBe("draft");
+    expect(row.description).toBe("updated by a colleague");
+    // No delete audit row was written for the refused attempt.
+    const audits = await db
+      .select({ action: auditLogsTable.action })
+      .from(auditLogsTable)
+      .where(and(eq(auditLogsTable.entityType, "workflow_definition"), eq(auditLogsTable.entityId, String(d.id)), eq(auditLogsTable.action, "workflow.delete")));
+    expect(audits.length).toBe(0);
+    // The current revision deletes it.
+    const ok = await api("DELETE", `/workflows/${d.id}`, adminToken, { revision: current });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).success).toBe(true);
+    expect((await api("GET", `/workflows/${d.id}`, adminToken)).status).toBe(404);
+    const gone = await db.select({ id: workflowDefinitionsTable.id }).from(workflowDefinitionsTable).where(eq(workflowDefinitionsTable.id, d.id));
+    expect(gone.length).toBe(0);
+    const deleted = await db
+      .select({ metadata: auditLogsTable.metadata })
+      .from(auditLogsTable)
+      .where(and(eq(auditLogsTable.entityType, "workflow_definition"), eq(auditLogsTable.entityId, String(d.id)), eq(auditLogsTable.action, "workflow.delete")));
+    expect(deleted.length).toBe(1);
+    expect(deleted[0].metadata).toMatchObject({ name: d.name, revision: current });
+  });
+
+  it("cross-tenant delete still answers 404 with or without a revision, and the row survives", async () => {
+    const d = await createDefinition(adminToken);
+    expect((await api("DELETE", `/workflows/${d.id}`, adminBToken, { revision: d.revision })).status).toBe(404);
+    expect((await api("DELETE", `/workflows/${d.id}`, adminBToken, { revision: 999 })).status).toBe(404); // 404 wins over a wrong revision
+    expect((await api("DELETE", `/workflows/${d.id}`, adminBToken)).status).toBe(400); // body validation, identical for any id
+    expect((await api("GET", `/workflows/${d.id}`, adminToken)).status).toBe(200);
+  });
+
+  it("published and archived definitions still cannot be deleted even with the current revision", async () => {
+    const d = await createDefinition(adminToken);
+    const pub = await (await api("POST", `/workflows/${d.id}/publish`, adminToken, { revision: d.revision })).json();
+    let res = await api("DELETE", `/workflows/${d.id}`, adminToken, { revision: pub.revision });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("WORKFLOW_NOT_DELETABLE");
+    const arc = await (await api("POST", `/workflows/${d.id}/archive`, adminToken, { revision: pub.revision })).json();
+    expect(arc.status).toBe("archived");
+    res = await api("DELETE", `/workflows/${d.id}`, adminToken, { revision: arc.revision });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("WORKFLOW_NOT_DELETABLE");
+    expect((await api("GET", `/workflows/${d.id}`, adminToken)).status).toBe(200);
   });
 });
 

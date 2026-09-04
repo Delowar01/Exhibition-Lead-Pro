@@ -7,7 +7,7 @@
  */
 
 /**
- * draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.
+ * draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.
  */
 export type WorkflowDefinitionStatus = typeof WorkflowDefinitionStatus[keyof typeof WorkflowDefinitionStatus];
 

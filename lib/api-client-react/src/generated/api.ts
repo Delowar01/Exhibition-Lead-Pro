@@ -24231,8 +24231,8 @@ export const getUpdateWorkflowDefinitionUrl = (id: number,) => {
 }
 
 /**
- * Optimistic concurrency: `revision` must equal the stored revision; a stale value answers 409 (code WORKFLOW_REVISION_CONFLICT, context carries currentRevision). Archived definitions are read-only (409).
- * @summary Update a draft or published definition
+ * Optimistic concurrency: `revision` must equal the stored revision; a stale value answers 409 (code WORKFLOW_REVISION_CONFLICT, context carries currentRevision). Only drafts are editable: published definitions are immutable (409 WORKFLOW_READ_ONLY — unpublish, edit, publish again) and archived definitions are read-only (409).
+ * @summary Update a DRAFT definition
  */
 export const updateWorkflowDefinition = async (id: number,
     workflowDefinitionUpdate: WorkflowDefinitionUpdate, options?: RequestInit): Promise<WorkflowDefinition> => {
@@ -24282,7 +24282,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Update a draft or published definition
+ * @summary Update a DRAFT definition
  */
 export const useUpdateWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowDefinitionUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -24304,16 +24304,19 @@ export const getDeleteWorkflowDefinitionUrl = (id: number,) => {
 }
 
 /**
+ * Revision-safe like every other mutation: the JSON body carries the definition's current `revision` — the same contract as publish/unpublish/ archive (400 when missing/invalid, 409 WORKFLOW_REVISION_CONFLICT with context.currentRevision when stale). The delete is atomic on id + company + status=draft + revision. Published and archived definitions answer 409 WORKFLOW_NOT_DELETABLE.
  * @summary Hard-delete a DRAFT definition (non-drafts must be archived)
  */
-export const deleteWorkflowDefinition = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+export const deleteWorkflowDefinition = async (id: number,
+    workflowRevisionInput: WorkflowRevisionInput, options?: RequestInit): Promise<SuccessResponse> => {
 
   return customFetch<SuccessResponse>(getDeleteWorkflowDefinitionUrl(id),
   {
     ...options,
-    method: 'DELETE'
-
-
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowRevisionInput,)
   }
 );}
 
@@ -24321,8 +24324,8 @@ export const deleteWorkflowDefinition = async (id: number, options?: RequestInit
 
 
 export const getDeleteWorkflowDefinitionMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext> => {
 
 const mutationKey = ['deleteWorkflowDefinition'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -24334,10 +24337,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, {id: number}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, {id: number;data: BodyType<WorkflowRevisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  deleteWorkflowDefinition(id,requestOptions)
+          return  deleteWorkflowDefinition(id,data,requestOptions)
         }
 
 
@@ -24348,18 +24351,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWorkflowDefinition>>>
-
+    export type DeleteWorkflowDefinitionMutationBody = BodyType<WorkflowRevisionInput>
     export type DeleteWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
 
     /**
  * @summary Hard-delete a DRAFT definition (non-drafts must be archived)
  */
 export const useDeleteWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteWorkflowDefinition>>,
         TError,
-        {id: number},
+        {id: number;data: BodyType<WorkflowRevisionInput>},
         TContext
       > => {
       return useMutation(getDeleteWorkflowDefinitionMutationOptions(options));

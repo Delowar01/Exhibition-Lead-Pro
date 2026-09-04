@@ -43,15 +43,15 @@ export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 export const WORKFLOW_LIFECYCLE: Record<WorkflowStatus, { label: string; description: string; editable: boolean; deletable: boolean; transitions: readonly WorkflowStatus[] }> = {
   draft: {
     label: "Draft",
-    description: "Editable working copy. Never eligible for execution. Can be published (requires a fully valid definition with at least one action), archived, or hard-deleted.",
+    description: "Editable working copy. Never eligible for execution. Can be published (requires a fully valid definition with at least one action), archived, or hard-deleted (DELETE requires the current revision in its body, like every other mutation).",
     editable: true,
     deletable: true,
     transitions: ["published", "archived"],
   },
   published: {
     label: "Published",
-    description: "The definition a future execution engine (Batch 16) may consider eligible. Batch 15 itself never executes it. Still editable (each edit bumps the revision); can be unpublished back to draft or archived. Cannot be hard-deleted.",
-    editable: true,
+    description: "The definition a future execution engine (Batch 16) may consider eligible. Batch 15 itself never executes it. IMMUTABLE: it cannot be edited or hard-deleted — to change it, unpublish it (back to draft), edit, then publish again, so every change to an eligible definition crosses an explicit publish boundary. Can be unpublished or archived.",
+    editable: false,
     deletable: false,
     transitions: ["draft", "archived"],
   },

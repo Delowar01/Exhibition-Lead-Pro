@@ -17,16 +17,19 @@ import { usersTable } from "./users";
 // Lifecycle (`status`) — definition-MANAGEMENT states only; no state executes:
 //   draft     → editable working copy. Never eligible for the (future) engine.
 //   published → the definition the (future) Batch 16 engine may consider
-//               eligible. Still editable (revision bumps); can be unpublished
-//               back to draft. Publishing requires a fully valid definition
-//               with at least one action.
+//               eligible. IMMUTABLE: not editable and not deletable — changing
+//               it means unpublish (→ draft), edit, publish again, so every
+//               change to an eligible definition crosses an explicit publish
+//               boundary. Publishing requires a fully valid definition with
+//               at least one action.
 //   archived  → terminal, read-only history (archived_at set). Cannot be
 //               edited, published or deleted; kept for auditability.
 // Hard delete is allowed ONLY for drafts; non-draft definitions are archived.
 //
-// `revision` is the optimistic-concurrency token: every mutation requires the
-// caller's `revision` to equal the stored one and increments it, so a stale
-// editor can never silently overwrite a newer definition (409 on mismatch).
+// `revision` is the optimistic-concurrency token: every mutation — edit,
+// lifecycle transition AND draft delete — requires the caller's `revision` to
+// equal the stored one (edits/transitions increment it), so a stale editor can
+// never silently overwrite or delete a newer definition (409 on mismatch).
 // `schema_version` is the version of the definition CONTRACT the JSONB was
 // validated against, so B16/B17 can migrate/interpret older rows explicitly.
 // `trigger_type` is denormalized from trigger.type (server-derived, never

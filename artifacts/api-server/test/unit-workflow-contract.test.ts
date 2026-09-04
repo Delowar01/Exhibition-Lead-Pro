@@ -91,6 +91,11 @@ describe("workflow catalog ↔ OpenAPI contract sync", () => {
     // No lifecycle state executes anything: archived is terminal and read-only.
     expect(WORKFLOW_LIFECYCLE.archived.editable).toBe(false);
     expect(WORKFLOW_LIFECYCLE.archived.transitions).toEqual([]);
+    // Published definitions are immutable: unpublish → edit → publish is the only edit path.
+    expect(WORKFLOW_LIFECYCLE.published.editable).toBe(false);
+    expect(WORKFLOW_LIFECYCLE.published.deletable).toBe(false);
+    expect(WORKFLOW_LIFECYCLE.draft.editable).toBe(true);
+    expect(WORKFLOW_LIFECYCLE.draft.deletable).toBe(true);
     expect(WORKFLOW_LIFECYCLE.draft.transitions).toEqual(["published", "archived"]);
     expect(WORKFLOW_LIFECYCLE.published.transitions).toEqual(["draft", "archived"]);
     expect(c.limits.maxDefinitionBytes).toBe(WORKFLOW_LIMITS.maxDefinitionBytes);
