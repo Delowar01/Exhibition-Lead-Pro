@@ -125,3 +125,20 @@ export async function deleteDraftIfRevision(companyId: number, id: number, expec
     .returning();
   return row;
 }
+
+// Engine lookup (Batch 16): the PUBLISHED definitions of one company for one
+// trigger type. Draft and archived definitions are never eligible. Keyed by the
+// company of the CRM record that changed — never by a caller-supplied id.
+export async function listPublishedForTrigger(companyId: number, triggerType: string): Promise<WorkflowDefinitionRow[]> {
+  return db
+    .select()
+    .from(workflowDefinitionsTable)
+    .where(
+      and(
+        eq(workflowDefinitionsTable.companyId, companyId),
+        eq(workflowDefinitionsTable.status, "published"),
+        eq(workflowDefinitionsTable.triggerType, triggerType),
+      ),
+    )
+    .orderBy(asc(workflowDefinitionsTable.id));
+}

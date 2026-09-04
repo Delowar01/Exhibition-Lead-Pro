@@ -16,6 +16,7 @@ export const CATEGORIES = [
   "events",
   "user_mgmt",
   "mentions",
+  "workflows", // Batch 16: deterministic CRM automation (notification.create action)
 ] as const;
 export type NotificationCategory = (typeof CATEGORIES)[number];
 
@@ -31,6 +32,8 @@ export interface CreateNotificationInput {
   body?: string | null;
   link?: string | null;
   metadata?: Record<string, unknown> | null;
+  // Batch 16: stable idempotency key for the mirrored email (see lib/email dispatch).
+  emailDedupeKey?: string;
 }
 
 // Central creation helper used across the app (invitations, security, billing, …).
@@ -62,7 +65,10 @@ export async function createNotification(input: CreateNotificationInput): Promis
       const absoluteLink = input.link
         ? `${config.email.appBaseUrl.replace(/\/$/, "")}${input.link.startsWith("/") ? "" : "/"}${input.link}`
         : null;
-      await sendNotificationEmail({ to: contact.email, title: input.title, body: input.body, link: absoluteLink });
+      await sendNotificationEmail(
+        { to: contact.email, title: input.title, body: input.body, link: absoluteLink },
+        input.emailDedupeKey ? { dedupeKey: input.emailDedupeKey } : undefined,
+      );
     }
   }
 

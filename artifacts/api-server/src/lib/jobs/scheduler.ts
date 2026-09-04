@@ -5,6 +5,7 @@ import { runMaintenance } from "./maintenance.js";
 import { runDueSchedules } from "../../services/export.service.js";
 import { runWorkflowAlerts } from "../workflow-alerts.js";
 import { runAiUsageAlerts } from "../ai-alerts.js";
+import { recoverOrphanedWorkflowRuns } from "../workflows/recovery.js";
 import { getQueue } from "./queue.js";
 import type { JobQueue } from "./types.js";
 
@@ -31,6 +32,8 @@ const TASKS: Record<string, () => Promise<unknown>> = {
   exportSchedules: runDueSchedules,
   workflowAlerts: runWorkflowAlerts,
   aiUsageAlerts: runAiUsageAlerts,
+  // Batch 16: re-enqueue orphaned/abandoned workflow runs (no second scheduler).
+  workflowRecovery: () => recoverOrphanedWorkflowRuns(),
 };
 
 export interface RecurringSweepPayload {
@@ -89,6 +92,8 @@ export function startScheduler(): void {
   // Batch 6 AI usage alerts: spikes, failure rates, ledger-write failures (budget
   // thresholds are checked inline on the invocation path). Deduped per kind/tenant/day.
   registerRecurring("aiUsageAlerts", config.ai.alerts.sweepFirstDelayMs, config.ai.alerts.sweepIntervalMs);
+  // Batch 16 workflow-run orphan recovery (queued-but-never-enqueued / abandoned running).
+  registerRecurring("workflowRecovery", s.workflowRecoveryFirstDelayMs, s.workflowRecoveryIntervalMs);
   logger.info(
     {
       followUpIntervalMs: s.followUpIntervalMs,

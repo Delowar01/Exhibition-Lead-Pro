@@ -12,6 +12,8 @@ import * as customFields from "./custom_fields.service.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { convertCurrency } from "../lib/currency.js";
 import { recommendAssignee as aiRecommendAssignee, logAiError } from "../lib/ai.js";
+import { dispatchWorkflowEvents } from "../lib/workflows/dispatch.js";
+import { leadCreatedEvent, leadUpdatedEvents } from "../lib/workflows/events.js";
 
 // Legacy default stage order — kept only as a fallback when a tenant somehow
 // has no configured stages (getPipeline now honours the configured list).
@@ -276,6 +278,8 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
     createdById: user.id,
   });
   await emitSystemActivity(lead, user.id, "created", "Lead created", { stage: stageText });
+  // Batch 16: workflow dispatch (awaited before the response; never throws).
+  await dispatchWorkflowEvents([leadCreatedEvent(lead, user.id)]);
   return { conflict: false, lead: await enrichLead(lead, false) };
 }
 
@@ -430,6 +434,10 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
     await emitSystemActivity(lead, user.id, "assignment", "Owner changed", { from: existing.assignedToId, to: assignedToId ?? null });
   }
 
+  // Batch 16: lead.updated (+ lead.stage_changed / lead.assigned when applicable),
+  // built from the before/after rows; awaited before the response, never throws.
+  await dispatchWorkflowEvents(leadUpdatedEvents(existing, lead, user.id));
+
   return { conflict: false as const, lead: await enrichLead(lead, true) };
 }
 
@@ -560,6 +568,7 @@ export async function assignLead(user: AuthUser, id: number, input: AssignLeadIn
     const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows);
     if (!lead) throw new AppError(404, "Lead not found");
     if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", "Owner assigned", { from: existing.assignedToId, to: assignedToId ?? null });
+    await dispatchWorkflowEvents(leadUpdatedEvents(existing, lead, user.id));
     return await enrichLead(lead, true);
   }
 
@@ -573,6 +582,7 @@ export async function assignLead(user: AuthUser, id: number, input: AssignLeadIn
     if (result.assigneeId !== existing.assignedToId) {
       await emitSystemActivity(result.lead, user.id, "assignment", "Round-robin assigned", { from: existing.assignedToId, to: result.assigneeId });
     }
+    await dispatchWorkflowEvents(leadUpdatedEvents(existing, result.lead, user.id));
     return await enrichLead(result.lead, true);
   }
 
@@ -584,6 +594,7 @@ export async function assignLead(user: AuthUser, id: number, input: AssignLeadIn
   const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows);
   if (!lead) throw new AppError(404, "Lead not found");
   if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", reason, { from: existing.assignedToId, to: assigneeId, strategy });
+  await dispatchWorkflowEvents(leadUpdatedEvents(existing, lead, user.id));
   return await enrichLead(lead, true);
 }
 

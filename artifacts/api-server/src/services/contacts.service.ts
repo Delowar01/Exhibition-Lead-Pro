@@ -11,6 +11,8 @@ import type { ContactRow } from "../repositories/contacts.repository.js";
 import * as mergeHistoryRepo from "../repositories/merge_history.repository.js";
 import * as customFields from "./custom_fields.service.js";
 import { parseListQuery } from "../lib/list-query.js";
+import { dispatchWorkflowEvents } from "../lib/workflows/dispatch.js";
+import { contactCreatedEvent, contactUpdatedEvents } from "../lib/workflows/events.js";
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
@@ -293,6 +295,11 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
       }
     })();
   }
+
+  // Batch 16: workflow dispatch for the NEW contact row only (an add_interaction
+  // resolution above modifies no contact and emits nothing). Awaited before the
+  // response; never throws.
+  await dispatchWorkflowEvents([contactCreatedEvent(finalContact, user.id)]);
 
   return { status: 201, body: formatContact(finalContact) };
 }
@@ -1006,6 +1013,9 @@ export async function updateContact(user: AuthUser, id: number, body: UpdateCont
   if (statusChanged) {
     void contactsRepo.insertStatusHistory({ companyId: existing.companyId, contactId: id, fromStatus: existing.status, toStatus: status, comment: statusComment ?? null, changedById: user.id }).catch(() => {});
   }
+  // Batch 16: contact.updated (+ contact.status_changed when the status moved),
+  // built from the before/after rows; awaited before the response, never throws.
+  await dispatchWorkflowEvents(contactUpdatedEvents(existing, c, user.id));
   const { eventName, assignedToName, organizationName } = await namesFor(c);
   return formatContact(c, eventName, assignedToName, organizationName);
 }

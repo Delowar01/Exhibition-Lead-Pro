@@ -101,12 +101,15 @@ async function recordSyncOutcome(message: EmailMessage, result: SendResult): Pro
 // drops a transactional email. IMPORTANT (Batch 3): an enqueue is reported as
 // `{ sent:false, queued:true }` — queueing is NOT delivery; the worker records the
 // real outcome.
-function dispatch(message: EmailMessage): Promise<SendResult> {
+// `dedupeKey` (Batch 16): a stable idempotency key for the queued delivery — the
+// durable queue drops a second enqueue with the same key, so a retried workflow
+// action can never queue the same email twice.
+function dispatch(message: EmailMessage, opts?: { dedupeKey?: string }): Promise<SendResult> {
   if (!config.jobs.asyncEmail) {
     return safeSend(message).then((r) => recordSyncOutcome(message, r));
   }
   return getQueue()
-    .enqueue(EMAIL_SEND_JOB, message)
+    .enqueue(EMAIL_SEND_JOB, message, opts?.dedupeKey ? { dedupeKey: opts.dedupeKey } : undefined)
     .then(() => ({ sent: false, queued: true }) as SendResult)
     .catch((err) => {
       logger.error({ err, invitationId: message.meta?.invitationId ?? null }, "Email enqueue failed; sending synchronously");
@@ -140,6 +143,9 @@ export function sendWelcomeEmail(params: { to: string; name?: string | null; com
   return dispatch(templates.welcomeEmail(params));
 }
 
-export function sendNotificationEmail(params: { to: string; title: string; body?: string | null; link?: string | null }): Promise<SendResult> {
-  return dispatch(templates.notificationEmail(params));
+export function sendNotificationEmail(
+  params: { to: string; title: string; body?: string | null; link?: string | null },
+  opts?: { dedupeKey?: string },
+): Promise<SendResult> {
+  return dispatch(templates.notificationEmail(params), opts);
 }

@@ -5968,6 +5968,134 @@ export type WorkflowStoredValidationResult = WorkflowValidationResult & {
   status: WorkflowStoredValidationResultStatus;
 };
 
+export type WorkflowActionRunStatus = typeof WorkflowActionRunStatus[keyof typeof WorkflowActionRunStatus];
+
+
+export const WorkflowActionRunStatus = {
+  pending: 'pending',
+  running: 'running',
+  completed: 'completed',
+  skipped: 'skipped',
+  failed: 'failed',
+} as const;
+
+/**
+ * Sanitized failure metadata (stable code, error class, short message) — never provider payloads or secrets.
+ * @nullable
+ */
+export type WorkflowActionRunError = { [key: string]: unknown } | null;
+
+/**
+ * Sanitized outcome metadata (created record ids, skip reason).
+ * @nullable
+ */
+export type WorkflowActionRunResult = { [key: string]: unknown } | null;
+
+export interface WorkflowActionRun {
+  id: number;
+  /** Deterministic execution order (0-based, unique per run). */
+  actionIndex: number;
+  actionType: string;
+  status: WorkflowActionRunStatus;
+  attempts: number;
+  /**
+     * Sanitized failure metadata (stable code, error class, short message) — never provider payloads or secrets.
+     * @nullable
+     */
+  error?: WorkflowActionRunError;
+  /**
+     * Sanitized outcome metadata (created record ids, skip reason).
+     * @nullable
+     */
+  result?: WorkflowActionRunResult;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+}
+
+export interface WorkflowRunActionSummary {
+  total: number;
+  completed: number;
+  skipped: number;
+  failed: number;
+}
+
+export type WorkflowRunEntityType = typeof WorkflowRunEntityType[keyof typeof WorkflowRunEntityType];
+
+
+export const WorkflowRunEntityType = {
+  lead: 'lead',
+  contact: 'contact',
+} as const;
+
+export type WorkflowRunStatus = typeof WorkflowRunStatus[keyof typeof WorkflowRunStatus];
+
+
+export const WorkflowRunStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+/**
+ * Sanitized terminal error (code, errorClass, message, actionIndex, actionType).
+ * @nullable
+ */
+export type WorkflowRunError = { [key: string]: unknown } | null;
+
+export interface WorkflowRun {
+  id: number;
+  companyId: number;
+  /**
+     * Null only if the (draft) definition was hard-deleted after this run; the snapshot keeps the history readable.
+     * @nullable
+     */
+  workflowDefinitionId?: number | null;
+  /**
+     * Definition name captured at run time.
+     * @nullable
+     */
+  workflowName?: string | null;
+  /** The definition revision captured for this run — execution always uses this snapshot, never a later edit. */
+  definitionRevision: number;
+  triggerType: string;
+  entityType: WorkflowRunEntityType;
+  entityId: number;
+  /** @nullable */
+  actorUserId?: number | null;
+  /** Stable per-event key; a definition never produces two runs for one event. */
+  eventKey: string;
+  status: WorkflowRunStatus;
+  /**
+     * Sanitized terminal error (code, errorClass, message, actionIndex, actionType).
+     * @nullable
+     */
+  error?: WorkflowRunError;
+  enqueueGeneration: number;
+  actionSummary: WorkflowRunActionSummary;
+  queuedAt: string;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type WorkflowRunDetail = WorkflowRun & {
+  /** Ordered by actionIndex. */
+  actions: WorkflowActionRun[];
+};
+
+export interface WorkflowRunList {
+  items: WorkflowRun[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export type WorkflowCatalogLimits = { [key: string]: unknown };
 
 /**
@@ -6638,5 +6766,33 @@ export type ListWorkflowDefinitionsOrder = typeof ListWorkflowDefinitionsOrder[k
 export const ListWorkflowDefinitionsOrder = {
   asc: 'asc',
   desc: 'desc',
+} as const;
+
+export type ListWorkflowRunsParams = {
+workflowDefinitionId?: number;
+status?: ListWorkflowRunsStatus;
+triggerType?: string;
+entityType?: ListWorkflowRunsEntityType;
+entityId?: number;
+page?: number;
+pageSize?: number;
+};
+
+export type ListWorkflowRunsStatus = typeof ListWorkflowRunsStatus[keyof typeof ListWorkflowRunsStatus];
+
+
+export const ListWorkflowRunsStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export type ListWorkflowRunsEntityType = typeof ListWorkflowRunsEntityType[keyof typeof ListWorkflowRunsEntityType];
+
+
+export const ListWorkflowRunsEntityType = {
+  lead: 'lead',
+  contact: 'contact',
 } as const;
 

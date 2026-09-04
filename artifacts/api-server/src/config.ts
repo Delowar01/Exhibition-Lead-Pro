@@ -340,6 +340,22 @@ export const config = {
       // Dispatch is deduped to one digest per user per local day regardless of cadence.
       workflowAlertsFirstDelayMs: numEnv("JOBS_WORKFLOW_ALERTS_DELAY_MS", 120_000, 0),
       workflowAlertsIntervalMs: numEnv("JOBS_WORKFLOW_ALERTS_INTERVAL_MS", 6 * 60 * 60 * 1000, 1_000),
+      // Batch 16 workflow-engine orphan recovery: re-enqueue runs left `queued`
+      // (process died between persisting the run and enqueueing its job) or stuck
+      // `running` (worker died and the queue exhausted its attempts).
+      workflowRecoveryFirstDelayMs: numEnv("JOBS_WORKFLOW_RECOVERY_DELAY_MS", 45_000, 0),
+      workflowRecoveryIntervalMs: numEnv("JOBS_WORKFLOW_RECOVERY_INTERVAL_MS", 5 * 60 * 1000, 1_000),
+    },
+    // Batch 16 deterministic workflow engine (executes Batch 15 definitions).
+    workflows: {
+      // A `queued` run older than this with no job progress is considered orphaned.
+      recoveryQueuedGraceMs: numEnv("WORKFLOW_RECOVERY_QUEUED_GRACE_MS", 2 * 60 * 1000, 1_000),
+      // A `running` run with no progress for this long is considered abandoned.
+      recoveryStaleRunningMs: numEnv("WORKFLOW_RECOVERY_STALE_RUNNING_MS", 15 * 60 * 1000, 10_000),
+      // Per-run execution lease held by the worker while actions execute.
+      runLeaseMs: numEnv("WORKFLOW_RUN_LEASE_MS", 5 * 60 * 1000, 1_000),
+      // Bound on runs re-enqueued per recovery sweep.
+      recoveryBatchSize: numEnv("WORKFLOW_RECOVERY_BATCH_SIZE", 100, 1),
     },
     retention: {
       // Delete read notifications older than this many days (0 disables).

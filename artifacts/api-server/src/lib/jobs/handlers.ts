@@ -9,6 +9,7 @@ import { AI_COPILOT_GENERATE_JOB, runAiCopilotGenerateJob, type AiCopilotJobPayl
 import { CAPTURE_ANALYZE_JOB, runCaptureAnalyzeJob, type CaptureAnalyzeJobPayload } from "../../services/capture-batch.service.js";
 import { AI_WORKFLOW_ANALYZE_JOB, runAiWorkflowAnalyzeJob, type AiWorkflowJobPayload } from "../../services/ai-workflow-batch.service.js";
 import { EXECUTIVE_REPORT_JOB, runExecutiveReportJob, type ExecutiveReportJobPayload } from "../../services/executive-intelligence.service.js";
+import { registerWorkflowRunHandler } from "../workflows/engine.js";
 import { registerRecurringHandler } from "./scheduler.js";
 
 // Registers the email delivery handler on a queue. Split out from startWorkers so
@@ -116,6 +117,12 @@ export function startWorkers(): void {
   // Batch 14: recurring sweeps dispatched by the scheduler run as durable jobs
   // on this worker pool instead of inside the timer callback.
   registerRecurringHandler(queue);
+
+  // Batch 16 workflow engine: executes ONE persisted workflow run per job
+  // (`workflow.run`, payload = run/company ids). Throws only on transient failures
+  // so the queue's retry/backoff applies; deterministic failures are persisted on
+  // the run and complete the job.
+  registerWorkflowRunHandler(queue);
 
   queue.start();
 }

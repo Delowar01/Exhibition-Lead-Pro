@@ -5,6 +5,7 @@ import { getQueue } from "./lib/jobs/queue";
 import { startScheduler, stopScheduler } from "./lib/jobs/scheduler";
 import { backfillAiCopilotPermissions, backfillAiWorkflowPermissions, backfillAiExecutivePermissions, backfillAiAssistantPermissions, backfillWorkflowsPermissions } from "./lib/permission-backfill";
 import { config } from "./config.js";
+import { recoverOrphanedWorkflowRuns } from "./lib/workflows/recovery";
 
 const port = config.port;
 
@@ -60,4 +61,11 @@ app.listen(port, (err) => {
   // scheduler (token/session cleanup, invitation expiry, retention, follow-ups).
   startWorkers();
   startScheduler();
+  // Batch 16: after a restart, re-enqueue workflow runs the previous process left
+  // behind (persisted but never enqueued / abandoned mid-run). The recurring
+  // scheduler repeats this sweep; both are idempotent (unique run rows, dedupe keys,
+  // execution lease). Never blocks startup.
+  recoverOrphanedWorkflowRuns().catch((err) => {
+    logger.error({ err }, "workflow run recovery at startup failed");
+  });
 });

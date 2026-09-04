@@ -100,6 +100,16 @@ async function createDefinition(token: string, overrides: Record<string, unknown
   return (await res.json()) as { id: number; revision: number; status: string; actions: Array<{ type: string }>; [k: string]: unknown };
 }
 
+// Batch 16 note: published definitions now execute through the workflow engine.
+// Before a test asserts "nothing happens", every definition this suite left
+// published must be archived (a management action that executes nothing).
+async function archiveAllPublished(token: string) {
+  const list = await (await api("GET", "/workflows?status=published", token)).json();
+  for (const d of list.items as Array<{ id: number; revision: number }>) {
+    await api("POST", `/workflows/${d.id}/archive`, token, { revision: d.revision });
+  }
+}
+
 async function jobStats(): Promise<{ enqueued: number; completed: number }> {
   const res = await api("GET", "/metrics", platformToken);
   expect(res.status).toBe(200);
@@ -829,7 +839,12 @@ describe("definitions never execute and never enqueue", () => {
     expect(after.enqueued).toBe(before.enqueued);
   });
 
-  it("a PUBLISHED definition does nothing when its trigger event happens (no tag, task, follow-up, notification, activity)", async () => {
+  // Batch 16 note: published definitions now EXECUTE through the workflow engine
+  // (covered by test/b16-workflow-engine.test.ts). The Batch 15 guarantee that
+  // survives is that a definition which is not published — a draft — never
+  // executes and never touches CRM data when its trigger event happens.
+  it("a DRAFT definition does nothing when its trigger event happens (no tag, task, follow-up, notification, activity)", async () => {
+    await archiveAllPublished(adminToken);
     const d = await createDefinition(adminToken, {
       trigger: { type: "lead.created", config: {} },
       conditions: [],
@@ -841,7 +856,7 @@ describe("definitions never execute and never enqueue", () => {
         { type: "lead.update_fields", config: { fields: { priority: "b15-must-not-apply" } } },
       ],
     });
-    expect((await api("POST", `/workflows/${d.id}/publish`, adminToken, { revision: d.revision })).status).toBe(200);
+    expect(d.status).toBe("draft"); // deliberately NOT published
 
     const [contact] = await db.insert(contactsTable).values({ companyId, fullName: "B15 Trigger Contact", contactCompany: "Acme" }).returning({ id: contactsTable.id });
     const tasksBefore = (await db.select({ id: tasksTable.id }).from(tasksTable).where(eq(tasksTable.companyId, companyId))).length;
@@ -866,10 +881,12 @@ describe("definitions never execute and never enqueue", () => {
     expect(notifsAfter).toBe(notifsBefore);
     const mustNot = await db.select({ id: tasksTable.id }).from(tasksTable).where(eq(tasksTable.title, `B15 must-not-exist ${SUFFIX}`));
     expect(mustNot.length).toBe(0);
-    // The definition itself is untouched by the event.
+    // The definition itself is untouched by the event, and no run was recorded for it.
     const stored = await (await api("GET", `/workflows/${d.id}`, adminToken)).json();
-    expect(stored.status).toBe("published");
-    expect(stored.revision).toBe(d.revision + 1);
+    expect(stored.status).toBe("draft");
+    expect(stored.revision).toBe(d.revision);
+    const runs = await (await api("GET", `/workflows/runs?workflowDefinitionId=${d.id}`, adminToken)).json();
+    expect(runs.items.length).toBe(0);
     // No activity/run trace references the definition.
     const activities = await db.select({ id: leadActivitiesTable.id, type: leadActivitiesTable.type }).from(leadActivitiesTable).where(inArray(leadActivitiesTable.leadId, [lead.id]));
     expect(activities.map((a) => a.type)).not.toContain("workflow");

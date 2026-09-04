@@ -12,6 +12,7 @@ import {
   DeleteWorkflowDefinitionBody,
 } from "@workspace/api-zod";
 import * as wf from "../services/workflow-definitions.service.js";
+import * as runs from "../services/workflow-runs.service.js";
 
 // =============================================================================
 // /workflows — CRM automation DEFINITIONS (Batch 15). Management API only.
@@ -94,6 +95,26 @@ router.post(
   validateBody(ValidateWorkflowDefinitionBody),
   guarded(async (req, res) => {
     res.json(await wf.validateDefinitionBody(req.user!, req.body ?? {}));
+  }),
+);
+
+// ── run history (Batch 16; read-only; static paths before /workflows/:id) ───
+
+// GET /workflows/runs — the caller's company execution history (newest first).
+router.get(
+  "/workflows/runs",
+  canView,
+  guarded(async (req, res) => {
+    res.json(await runs.listRuns(req.user!, (req.query ?? {}) as Record<string, unknown>));
+  }),
+);
+
+// GET /workflows/runs/:id — one run with its ordered action outcomes (404 across tenants).
+router.get(
+  "/workflows/runs/:id",
+  canView,
+  guarded(async (req, res) => {
+    res.json(await runs.getRun(req.user!, idParam(req)));
   }),
 );
 

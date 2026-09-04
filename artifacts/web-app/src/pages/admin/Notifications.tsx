@@ -26,6 +26,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   events: "Events",
   user_mgmt: "Team & Users",
   mentions: "Mentions",
+  workflows: "Workflow Automation",
 };
 
 function categoryLabel(category: string): string {

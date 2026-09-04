@@ -8,7 +8,8 @@ import { validateBody } from "../middlewares/validate.js";
 import { CreateTaskBody, UpdateTaskBody } from "@workspace/api-zod";
 import { refAccessible, refInCompany } from "../lib/tenant.js";
 import { parseListQuery } from "../lib/list-query.js";
-import * as activitiesRepo from "../repositories/lead_activities.repository.js";
+import { AppError } from "../middlewares/errorHandler.js";
+import { canAssignToOthers, createTask, emitTaskActivity } from "../services/tasks.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -28,45 +29,12 @@ const TASK_SORT: Record<string, AnyColumn> = {
 
 type Row = typeof tasksTable.$inferSelect;
 
-// Only admins/leads may assign tasks to other users.
-function canAssignToOthers(role: string): boolean {
-  return role === "platform_owner" || role === "primary_admin" || role === "admin";
-}
-
 // Ownership rule for task mutations: admins manage any company task; a normal
 // tenant user may only touch tasks assigned to THEM. Non-admins also cannot
 // list other users' tasks (GET forces scope=mine), so an inaccessible task is
 // answered exactly like a missing one — 404, never a hint that the id exists.
 function canMutateTask(user: { id: number; role: string }, task: { assignedToId: number | null }): boolean {
   return canAssignToOthers(user.role) || task.assignedToId === user.id;
-}
-
-// Surface meaningful task lifecycle in the linked contact's Timeline via the
-// shared lead_activities feed (leadId stays null — contact-scoped events).
-// Tasks without a contact have no timeline home and emit nothing.
-// Never throws: timeline logging must not break the underlying mutation.
-async function emitTaskActivity(
-  task: { id: number; companyId: number; contactId: number | null; title: string; dueDate: string | null; dueTime: string | null },
-  userId: number,
-  type: "task_created" | "task_status_change" | "task_completed",
-  subject: string,
-  metadata?: Record<string, unknown>,
-) {
-  if (task.contactId == null) return;
-  try {
-    await activitiesRepo.insert({
-      companyId: task.companyId,
-      leadId: null,
-      contactId: task.contactId,
-      userId,
-      type,
-      source: "system",
-      subject,
-      metadata: { taskId: task.id, title: task.title, dueDate: task.dueDate, dueTime: task.dueTime, ...metadata },
-    });
-  } catch {
-    // swallow — see above
-  }
 }
 
 async function enrich(rows: Row[]) {
@@ -127,34 +95,14 @@ router.get("/tasks", async (req: AuthRequest, res) => {
   }
 });
 
-// POST /tasks — create / assign a task
+// POST /tasks — create / assign a task (rules live in services/tasks.service.ts,
+// shared with the Batch 16 workflow engine).
 router.post("/tasks", validateBody(CreateTaskBody), async (req: AuthRequest, res) => {
   try {
-    const companyId = req.user!.companyId;
-    if (!companyId) { res.status(400).json({ error: "No company context" }); return; }
-    const { title, type, contactId, dueDate, dueTime, notes, assignedToId } = req.body;
-    if (!title) { res.status(400).json({ error: "title required" }); return; }
-    // Non-admins can only create tasks for themselves.
-    const targetUser = assignedToId ?? req.user!.id;
-    if (targetUser !== req.user!.id && !canAssignToOthers(req.user!.role)) {
-      res.status(403).json({ error: "You can only assign tasks to yourself" }); return;
-    }
-    // Caller-scoped checks PLUS the same-company FK invariant: everything the
-    // task binds to must live in the task's own company — a multi-company
-    // caller must not point a company-A task at company-B records.
-    if (!(await refAccessible(req.user, "users", targetUser))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
-    if (!(await refInCompany("users", companyId, targetUser))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
-    if (contactId != null && !(await refAccessible(req.user, "contacts", contactId))) { res.status(400).json({ error: "Invalid contactId" }); return; }
-    if (!(await refInCompany("contacts", companyId, contactId ?? null))) { res.status(400).json({ error: "Invalid contactId" }); return; }
-    const [row] = await db.insert(tasksTable).values({
-      companyId, title, type: type ?? "custom", status: "pending", contactId: contactId ?? null,
-      dueDate: dueDate ?? null, dueTime: dueTime ?? null, notes: notes ?? null, assignedToId: targetUser, assignedById: req.user!.id,
-    }).returning();
-    await emitTaskActivity(row, req.user!.id, "task_created",
-      `Task created: ${row.title}`,
-      { assignedToId: row.assignedToId });
+    const row = await createTask(req.user!, req.body ?? {});
     res.status(201).json((await enrich([row]))[0]);
   } catch (err) {
+    if (err instanceof AppError) { res.status(err.statusCode).json({ error: err.message }); return; }
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
   }

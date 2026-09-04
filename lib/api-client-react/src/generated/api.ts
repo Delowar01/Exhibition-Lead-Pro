@@ -226,6 +226,7 @@ import type {
   ListTeamsParams,
   ListUsersParams,
   ListWorkflowDefinitionsParams,
+  ListWorkflowRunsParams,
   LoginHistoryList,
   LoginInput,
   MakeOriginalRequest,
@@ -343,6 +344,8 @@ import type {
   WorkflowDefinitionUpdate,
   WorkflowHealthResponse,
   WorkflowRevisionInput,
+  WorkflowRunDetail,
+  WorkflowRunList,
   WorkflowSimulateRequest,
   WorkflowSimulateResponse,
   WorkflowSlaRisksResponse,
@@ -24144,6 +24147,168 @@ export const useValidateWorkflowDefinition = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getValidateWorkflowDefinitionMutationOptions(options));
     }
+
+export const getListWorkflowRunsUrl = (params?: ListWorkflowRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/workflows/runs?${stringifiedParams}` : `/api/workflows/runs`
+}
+
+/**
+ * Read-only, tenant-scoped execution history of the caller's company, newest first. Pagination is opt-in (page/pageSize). There is no execute, run-now, replay or retry endpoint — automatic queue retries are the only re-execution path.
+ * @summary List workflow execution history (Batch 16)
+ */
+export const listWorkflowRuns = async (params?: ListWorkflowRunsParams, options?: RequestInit): Promise<WorkflowRunList> => {
+
+  return customFetch<WorkflowRunList>(getListWorkflowRunsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWorkflowRunsQueryKey = (params?: ListWorkflowRunsParams,) => {
+    return [
+    `/api/workflows/runs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListWorkflowRunsQueryOptions = <TData = Awaited<ReturnType<typeof listWorkflowRuns>>, TError = ErrorType<unknown>>(params?: ListWorkflowRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkflowRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkflowRunsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkflowRuns>>> = ({ signal }) => listWorkflowRuns(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkflowRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkflowRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkflowRuns>>>
+export type ListWorkflowRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List workflow execution history (Batch 16)
+ */
+
+export function useListWorkflowRuns<TData = Awaited<ReturnType<typeof listWorkflowRuns>>, TError = ErrorType<unknown>>(
+ params?: ListWorkflowRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkflowRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkflowRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetWorkflowRunUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/runs/${id}`
+}
+
+/**
+ * @summary Get one workflow run with its ordered action outcomes
+ */
+export const getWorkflowRun = async (id: number, options?: RequestInit): Promise<WorkflowRunDetail> => {
+
+  return customFetch<WorkflowRunDetail>(getGetWorkflowRunUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkflowRunQueryKey = (id: number,) => {
+    return [
+    `/api/workflows/runs/${id}`
+    ] as const;
+    }
+
+
+export const getGetWorkflowRunQueryOptions = <TData = Awaited<ReturnType<typeof getWorkflowRun>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflowRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkflowRunQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkflowRun>>> = ({ signal }) => getWorkflowRun(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkflowRun>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkflowRunQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkflowRun>>>
+export type GetWorkflowRunQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get one workflow run with its ordered action outcomes
+ */
+
+export function useGetWorkflowRun<TData = Awaited<ReturnType<typeof getWorkflowRun>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflowRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkflowRunQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetWorkflowDefinitionUrl = (id: number,) => {
 

@@ -9371,6 +9371,100 @@ export const ValidateWorkflowDefinitionResponse = zod.object({
 
 
 /**
+ * Read-only, tenant-scoped execution history of the caller's company, newest first. Pagination is opt-in (page/pageSize). There is no execute, run-now, replay or retry endpoint — automatic queue retries are the only re-execution path.
+ * @summary List workflow execution history (Batch 16)
+ */
+export const ListWorkflowRunsQueryParams = zod.object({
+  "workflowDefinitionId": zod.coerce.number().optional(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']).optional(),
+  "triggerType": zod.coerce.string().optional(),
+  "entityType": zod.enum(['lead', 'contact']).optional(),
+  "entityId": zod.coerce.number().optional(),
+  "page": zod.coerce.number().optional(),
+  "pageSize": zod.coerce.number().optional()
+})
+
+export const ListWorkflowRunsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "workflowDefinitionId": zod.number().nullish().describe('Null only if the (draft) definition was hard-deleted after this run; the snapshot keeps the history readable.'),
+  "workflowName": zod.string().nullish().describe('Definition name captured at run time.'),
+  "definitionRevision": zod.number().describe('The definition revision captured for this run — execution always uses this snapshot, never a later edit.'),
+  "triggerType": zod.string(),
+  "entityType": zod.enum(['lead', 'contact']),
+  "entityId": zod.number(),
+  "actorUserId": zod.number().nullish(),
+  "eventKey": zod.string().describe('Stable per-event key; a definition never produces two runs for one event.'),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "error": zod.record(zod.string(), zod.unknown()).nullish().describe('Sanitized terminal error (code, errorClass, message, actionIndex, actionType).'),
+  "enqueueGeneration": zod.number(),
+  "actionSummary": zod.object({
+  "total": zod.number(),
+  "completed": zod.number(),
+  "skipped": zod.number(),
+  "failed": zod.number()
+}),
+  "queuedAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number()
+})
+
+
+/**
+ * @summary Get one workflow run with its ordered action outcomes
+ */
+export const GetWorkflowRunParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetWorkflowRunResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "workflowDefinitionId": zod.number().nullish().describe('Null only if the (draft) definition was hard-deleted after this run; the snapshot keeps the history readable.'),
+  "workflowName": zod.string().nullish().describe('Definition name captured at run time.'),
+  "definitionRevision": zod.number().describe('The definition revision captured for this run — execution always uses this snapshot, never a later edit.'),
+  "triggerType": zod.string(),
+  "entityType": zod.enum(['lead', 'contact']),
+  "entityId": zod.number(),
+  "actorUserId": zod.number().nullish(),
+  "eventKey": zod.string().describe('Stable per-event key; a definition never produces two runs for one event.'),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "error": zod.record(zod.string(), zod.unknown()).nullish().describe('Sanitized terminal error (code, errorClass, message, actionIndex, actionType).'),
+  "enqueueGeneration": zod.number(),
+  "actionSummary": zod.object({
+  "total": zod.number(),
+  "completed": zod.number(),
+  "skipped": zod.number(),
+  "failed": zod.number()
+}),
+  "queuedAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "actions": zod.array(zod.object({
+  "id": zod.number(),
+  "actionIndex": zod.number().describe('Deterministic execution order (0-based, unique per run).'),
+  "actionType": zod.string(),
+  "status": zod.enum(['pending', 'running', 'completed', 'skipped', 'failed']),
+  "attempts": zod.number(),
+  "error": zod.record(zod.string(), zod.unknown()).nullish().describe('Sanitized failure metadata (stable code, error class, short message) — never provider payloads or secrets.'),
+  "result": zod.record(zod.string(), zod.unknown()).nullish().describe('Sanitized outcome metadata (created record ids, skip reason).'),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish()
+})).describe('Ordered by actionIndex.')
+}))
+
+
+/**
  * @summary Get a workflow definition
  */
 export const GetWorkflowDefinitionParams = zod.object({

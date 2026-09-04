@@ -1,14 +1,14 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { followUpsTable, contactsTable, usersTable } from "@workspace/db";
-import { eq, and, inArray, asc, desc, ilike, isNotNull, sql, type SQL, type AnyColumn } from "drizzle-orm";
+import { eq, and, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, canAccessCompany, tenantScope, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateFollowUpBody, UpdateFollowUpBody } from "@workspace/api-zod";
-import { refAccessible, refInCompany } from "../lib/tenant.js";
 import { parseListQuery } from "../lib/list-query.js";
-import * as activitiesRepo from "../repositories/lead_activities.repository.js";
+import { AppError } from "../middlewares/errorHandler.js";
+import { createFollowUp, emitFollowUpActivity, syncContactFollowUp } from "../services/follow-ups.service.js";
 
 const router = Router();
 
@@ -34,57 +34,6 @@ async function enrich(rows: Row[]) {
   const cName = new Map(contacts.map(c => [c.id, c.fullName]));
   const uName = new Map(users.map(u => [u.id, u.name]));
   return rows.map(r => ({ ...r, contactName: cName.get(r.contactId) ?? null, assignedToName: r.assignedToId != null ? (uName.get(r.assignedToId) ?? null) : null }));
-}
-
-// Keep contacts.followUpDate/followUpTime mirroring the NEAREST upcoming pending
-// scheduled follow-up (reminder scheduling and the AI copilot both read it):
-// earliest scheduledDate wins, earliest scheduledTime breaks same-day ties (a
-// row with no time sorts after concrete times), and pending rows WITHOUT a
-// scheduled date never occupy the mirror. When no scheduled pending follow-up
-// remains the mirror is cleared. companyId keeps the lookup tenant-pinned.
-async function syncContactFollowUp(companyId: number, contactId: number) {
-  const [next] = await db.select().from(followUpsTable)
-    .where(and(
-      eq(followUpsTable.companyId, companyId),
-      eq(followUpsTable.contactId, contactId),
-      eq(followUpsTable.status, "pending"),
-      isNotNull(followUpsTable.scheduledDate),
-    ))
-    .orderBy(
-      asc(followUpsTable.scheduledDate),
-      sql`${followUpsTable.scheduledTime} ASC NULLS LAST`,
-      asc(followUpsTable.id),
-    )
-    .limit(1);
-  await db.update(contactsTable)
-    .set({ followUpDate: next?.scheduledDate ?? null, followUpTime: next?.scheduledTime ?? null })
-    .where(and(eq(contactsTable.id, contactId), eq(contactsTable.companyId, companyId)));
-}
-
-// Surface follow-up lifecycle in the contact's existing Timeline via the shared
-// lead_activities feed (leadId stays null — these are contact-scoped events).
-// Never throws: timeline logging must not break the underlying mutation.
-async function emitFollowUpActivity(
-  row: { id: number; companyId: number; contactId: number; scheduledDate: string | null; scheduledTime: string | null },
-  userId: number,
-  type: "follow_up_scheduled" | "follow_up_completed" | "follow_up_rescheduled" | "follow_up_cancelled",
-  subject: string,
-  metadata?: Record<string, unknown>,
-) {
-  try {
-    await activitiesRepo.insert({
-      companyId: row.companyId,
-      leadId: null,
-      contactId: row.contactId,
-      userId,
-      type,
-      source: "system",
-      subject,
-      metadata: { followUpId: row.id, scheduledDate: row.scheduledDate, scheduledTime: row.scheduledTime, ...metadata },
-    });
-  } catch {
-    // swallow — see above
-  }
 }
 
 // GET /follow-ups
@@ -122,28 +71,14 @@ router.get("/follow-ups", async (req: AuthRequest, res) => {
   }
 });
 
-// POST /follow-ups — schedule a follow-up for a contact
+// POST /follow-ups — schedule a follow-up for a contact (rules live in
+// services/follow-ups.service.ts, shared with the Batch 16 workflow engine).
 router.post("/follow-ups", validateBody(CreateFollowUpBody), async (req: AuthRequest, res) => {
   try {
-    const { contactId, scheduledDate, scheduledTime, notes, assignedToId } = req.body;
-    if (typeof contactId !== "number") { res.status(400).json({ error: "contactId required" }); return; }
-    const [contact] = await db.select({ companyId: contactsTable.companyId }).from(contactsTable).where(eq(contactsTable.id, contactId)).limit(1);
-    if (!contact || !canAccessCompany(req.user, contact.companyId)) { res.status(404).json({ error: "Contact not found" }); return; }
-    // Caller-scoped check PLUS the same-company FK invariant: the assignee must
-    // belong to the CONTACT's company — a multi-company caller must not bind a
-    // company-A follow-up to a company-B user.
-    if (!(await refAccessible(req.user, "users", assignedToId))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
-    if (!(await refInCompany("users", contact.companyId, assignedToId ?? null))) { res.status(400).json({ error: "Invalid assignedToId" }); return; }
-    const [row] = await db.insert(followUpsTable).values({
-      companyId: contact.companyId, contactId, scheduledDate: scheduledDate ?? null, scheduledTime: scheduledTime ?? null,
-      notes: notes ?? null, status: "pending", assignedToId: assignedToId ?? null, createdById: req.user!.id,
-    }).returning();
-    await syncContactFollowUp(contact.companyId, contactId);
-    await emitFollowUpActivity(row, req.user!.id, "follow_up_scheduled",
-      row.scheduledDate ? `Follow-up scheduled for ${row.scheduledDate}${row.scheduledTime ? ` ${row.scheduledTime}` : ""}` : "Follow-up scheduled",
-      row.notes ? { notes: row.notes } : undefined);
+    const row = await createFollowUp(req.user!, req.body ?? {});
     res.status(201).json((await enrich([row]))[0]);
   } catch (err) {
+    if (err instanceof AppError) { res.status(err.statusCode).json({ error: err.message }); return; }
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
   }

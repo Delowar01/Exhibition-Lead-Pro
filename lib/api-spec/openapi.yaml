@@ -7157,6 +7157,80 @@ paths:
               schema:
                 $ref: "#/components/schemas/WorkflowValidationResult"
 
+  /workflows/runs:
+    get:
+      operationId: listWorkflowRuns
+      tags: [workflows]
+      summary: List workflow execution history (Batch 16)
+      description: >-
+        Read-only, tenant-scoped execution history of the caller's company, newest
+        first. Pagination is opt-in (page/pageSize). There is no execute, run-now,
+        replay or retry endpoint — automatic queue retries are the only
+        re-execution path.
+      parameters:
+        - name: workflowDefinitionId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [queued, running, completed, failed]
+        - name: triggerType
+          in: query
+          schema:
+            type: string
+        - name: entityType
+          in: query
+          schema:
+            type: string
+            enum: [lead, contact]
+        - name: entityId
+          in: query
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunList"
+
+  /workflows/runs/{id}:
+    get:
+      operationId: getWorkflowRun
+      tags: [workflows]
+      summary: Get one workflow run with its ordered action outcomes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunDetail"
+        "404":
+          description: Not found (including any run of another company)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /workflows/{id}:
     get:
       operationId: getWorkflowDefinition
@@ -15364,6 +15438,134 @@ components:
             status:
               type: string
               enum: [draft, published, archived]
+
+    # BATCH 16 — WORKFLOW EXECUTION HISTORY (read-only)
+    WorkflowActionRun:
+      type: object
+      required: [id, actionIndex, actionType, status, attempts]
+      properties:
+        id:
+          type: integer
+        actionIndex:
+          type: integer
+          description: Deterministic execution order (0-based, unique per run).
+        actionType:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, skipped, failed]
+        attempts:
+          type: integer
+        error:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Sanitized failure metadata (stable code, error class, short message) — never provider payloads or secrets.
+        result:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Sanitized outcome metadata (created record ids, skip reason).
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    WorkflowRunActionSummary:
+      type: object
+      required: [total, completed, skipped, failed]
+      properties:
+        total:
+          type: integer
+        completed:
+          type: integer
+        skipped:
+          type: integer
+        failed:
+          type: integer
+
+    WorkflowRun:
+      type: object
+      required: [id, companyId, definitionRevision, triggerType, entityType, entityId, eventKey, status, enqueueGeneration, actionSummary, queuedAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        workflowDefinitionId:
+          type: ["integer", "null"]
+          description: Null only if the (draft) definition was hard-deleted after this run; the snapshot keeps the history readable.
+        workflowName:
+          type: ["string", "null"]
+          description: Definition name captured at run time.
+        definitionRevision:
+          type: integer
+          description: The definition revision captured for this run — execution always uses this snapshot, never a later edit.
+        triggerType:
+          type: string
+        entityType:
+          type: string
+          enum: [lead, contact]
+        entityId:
+          type: integer
+        actorUserId:
+          type: ["integer", "null"]
+        eventKey:
+          type: string
+          description: Stable per-event key; a definition never produces two runs for one event.
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        error:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Sanitized terminal error (code, errorClass, message, actionIndex, actionType).
+        enqueueGeneration:
+          type: integer
+        actionSummary:
+          $ref: "#/components/schemas/WorkflowRunActionSummary"
+        queuedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    WorkflowRunDetail:
+      allOf:
+        - $ref: "#/components/schemas/WorkflowRun"
+        - type: object
+          required: [actions]
+          properties:
+            actions:
+              type: array
+              description: Ordered by actionIndex.
+              items:
+                $ref: "#/components/schemas/WorkflowActionRun"
+
+    WorkflowRunList:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowRun"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
 
     WorkflowCatalog:
       type: object
