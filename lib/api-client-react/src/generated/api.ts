@@ -225,6 +225,7 @@ import type {
   ListTasksParams,
   ListTeamsParams,
   ListUsersParams,
+  ListWorkflowDefinitionsParams,
   LoginHistoryList,
   LoginInput,
   MakeOriginalRequest,
@@ -335,10 +336,19 @@ import type {
   UserUpdate,
   VerifyEmailInput,
   WorkflowBottlenecksResponse,
+  WorkflowCatalog,
+  WorkflowDefinition,
+  WorkflowDefinitionInput,
+  WorkflowDefinitionList,
+  WorkflowDefinitionUpdate,
   WorkflowHealthResponse,
+  WorkflowRevisionInput,
   WorkflowSimulateRequest,
   WorkflowSimulateResponse,
-  WorkflowSlaRisksResponse
+  WorkflowSlaRisksResponse,
+  WorkflowStoredValidationResult,
+  WorkflowValidateInput,
+  WorkflowValidationResult
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -23828,5 +23838,817 @@ export const useUndoContactMerge = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUndoContactMergeMutationOptions(options));
+    }
+
+export const getListWorkflowDefinitionsUrl = (params?: ListWorkflowDefinitionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/workflows?${stringifiedParams}` : `/api/workflows`
+}
+
+/**
+ * Archived definitions are excluded unless `status=archived` or `includeArchived=true`. Pagination is opt-in (page/pageSize).
+ * @summary List workflow definitions of the caller's company
+ */
+export const listWorkflowDefinitions = async (params?: ListWorkflowDefinitionsParams, options?: RequestInit): Promise<WorkflowDefinitionList> => {
+
+  return customFetch<WorkflowDefinitionList>(getListWorkflowDefinitionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWorkflowDefinitionsQueryKey = (params?: ListWorkflowDefinitionsParams,) => {
+    return [
+    `/api/workflows`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListWorkflowDefinitionsQueryOptions = <TData = Awaited<ReturnType<typeof listWorkflowDefinitions>>, TError = ErrorType<unknown>>(params?: ListWorkflowDefinitionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkflowDefinitions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkflowDefinitionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkflowDefinitions>>> = ({ signal }) => listWorkflowDefinitions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkflowDefinitions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkflowDefinitionsQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkflowDefinitions>>>
+export type ListWorkflowDefinitionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List workflow definitions of the caller's company
+ */
+
+export function useListWorkflowDefinitions<TData = Awaited<ReturnType<typeof listWorkflowDefinitions>>, TError = ErrorType<unknown>>(
+ params?: ListWorkflowDefinitionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkflowDefinitions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkflowDefinitionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateWorkflowDefinitionUrl = () => {
+
+
+
+
+  return `/api/workflows`
+}
+
+/**
+ * @summary Create a workflow definition (always starts as a draft)
+ */
+export const createWorkflowDefinition = async (workflowDefinitionInput: WorkflowDefinitionInput, options?: RequestInit): Promise<WorkflowDefinition> => {
+
+  return customFetch<WorkflowDefinition>(getCreateWorkflowDefinitionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowDefinitionInput,)
+  }
+);}
+
+
+
+
+export const getCreateWorkflowDefinitionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWorkflowDefinition>>, TError,{data: BodyType<WorkflowDefinitionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWorkflowDefinition>>, TError,{data: BodyType<WorkflowDefinitionInput>}, TContext> => {
+
+const mutationKey = ['createWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWorkflowDefinition>>, {data: BodyType<WorkflowDefinitionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createWorkflowDefinition(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof createWorkflowDefinition>>>
+    export type CreateWorkflowDefinitionMutationBody = BodyType<WorkflowDefinitionInput>
+    export type CreateWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a workflow definition (always starts as a draft)
+ */
+export const useCreateWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWorkflowDefinition>>, TError,{data: BodyType<WorkflowDefinitionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createWorkflowDefinition>>,
+        TError,
+        {data: BodyType<WorkflowDefinitionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateWorkflowDefinitionMutationOptions(options));
+    }
+
+export const getGetWorkflowCatalogUrl = () => {
+
+
+
+
+  return `/api/workflows/catalog`
+}
+
+/**
+ * The single source of truth for what a definition may contain. Config shapes are published as JSON Schema rendered from the same validators the API applies.
+ * @summary Supported triggers, condition fields/operators and actions
+ */
+export const getWorkflowCatalog = async ( options?: RequestInit): Promise<WorkflowCatalog> => {
+
+  return customFetch<WorkflowCatalog>(getGetWorkflowCatalogUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkflowCatalogQueryKey = () => {
+    return [
+    `/api/workflows/catalog`
+    ] as const;
+    }
+
+
+export const getGetWorkflowCatalogQueryOptions = <TData = Awaited<ReturnType<typeof getWorkflowCatalog>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflowCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkflowCatalogQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkflowCatalog>>> = ({ signal }) => getWorkflowCatalog({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkflowCatalog>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkflowCatalogQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkflowCatalog>>>
+export type GetWorkflowCatalogQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Supported triggers, condition fields/operators and actions
+ */
+
+export function useGetWorkflowCatalog<TData = Awaited<ReturnType<typeof getWorkflowCatalog>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflowCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkflowCatalogQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getValidateWorkflowDefinitionUrl = () => {
+
+
+
+
+  return `/api/workflows/validate`
+}
+
+/**
+ * @summary Validate a candidate definition without saving or executing it
+ */
+export const validateWorkflowDefinition = async (workflowValidateInput: WorkflowValidateInput, options?: RequestInit): Promise<WorkflowValidationResult> => {
+
+  return customFetch<WorkflowValidationResult>(getValidateWorkflowDefinitionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowValidateInput,)
+  }
+);}
+
+
+
+
+export const getValidateWorkflowDefinitionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateWorkflowDefinition>>, TError,{data: BodyType<WorkflowValidateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof validateWorkflowDefinition>>, TError,{data: BodyType<WorkflowValidateInput>}, TContext> => {
+
+const mutationKey = ['validateWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof validateWorkflowDefinition>>, {data: BodyType<WorkflowValidateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  validateWorkflowDefinition(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ValidateWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof validateWorkflowDefinition>>>
+    export type ValidateWorkflowDefinitionMutationBody = BodyType<WorkflowValidateInput>
+    export type ValidateWorkflowDefinitionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Validate a candidate definition without saving or executing it
+ */
+export const useValidateWorkflowDefinition = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateWorkflowDefinition>>, TError,{data: BodyType<WorkflowValidateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof validateWorkflowDefinition>>,
+        TError,
+        {data: BodyType<WorkflowValidateInput>},
+        TContext
+      > => {
+      return useMutation(getValidateWorkflowDefinitionMutationOptions(options));
+    }
+
+export const getGetWorkflowDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/${id}`
+}
+
+/**
+ * @summary Get a workflow definition
+ */
+export const getWorkflowDefinition = async (id: number, options?: RequestInit): Promise<WorkflowDefinition> => {
+
+  return customFetch<WorkflowDefinition>(getGetWorkflowDefinitionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkflowDefinitionQueryKey = (id: number,) => {
+    return [
+    `/api/workflows/${id}`
+    ] as const;
+    }
+
+
+export const getGetWorkflowDefinitionQueryOptions = <TData = Awaited<ReturnType<typeof getWorkflowDefinition>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflowDefinition>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkflowDefinitionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkflowDefinition>>> = ({ signal }) => getWorkflowDefinition(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkflowDefinition>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkflowDefinitionQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkflowDefinition>>>
+export type GetWorkflowDefinitionQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a workflow definition
+ */
+
+export function useGetWorkflowDefinition<TData = Awaited<ReturnType<typeof getWorkflowDefinition>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkflowDefinition>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkflowDefinitionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateWorkflowDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/${id}`
+}
+
+/**
+ * Optimistic concurrency: `revision` must equal the stored revision; a stale value answers 409 (code WORKFLOW_REVISION_CONFLICT, context carries currentRevision). Archived definitions are read-only (409).
+ * @summary Update a draft or published definition
+ */
+export const updateWorkflowDefinition = async (id: number,
+    workflowDefinitionUpdate: WorkflowDefinitionUpdate, options?: RequestInit): Promise<WorkflowDefinition> => {
+
+  return customFetch<WorkflowDefinition>(getUpdateWorkflowDefinitionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowDefinitionUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateWorkflowDefinitionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowDefinitionUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowDefinitionUpdate>}, TContext> => {
+
+const mutationKey = ['updateWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWorkflowDefinition>>, {id: number;data: BodyType<WorkflowDefinitionUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateWorkflowDefinition(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof updateWorkflowDefinition>>>
+    export type UpdateWorkflowDefinitionMutationBody = BodyType<WorkflowDefinitionUpdate>
+    export type UpdateWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update a draft or published definition
+ */
+export const useUpdateWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowDefinitionUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateWorkflowDefinition>>,
+        TError,
+        {id: number;data: BodyType<WorkflowDefinitionUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateWorkflowDefinitionMutationOptions(options));
+    }
+
+export const getDeleteWorkflowDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/${id}`
+}
+
+/**
+ * @summary Hard-delete a DRAFT definition (non-drafts must be archived)
+ */
+export const deleteWorkflowDefinition = async (id: number, options?: RequestInit): Promise<SuccessResponse> => {
+
+  return customFetch<SuccessResponse>(getDeleteWorkflowDefinitionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteWorkflowDefinitionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteWorkflowDefinition(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWorkflowDefinition>>>
+
+    export type DeleteWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Hard-delete a DRAFT definition (non-drafts must be archived)
+ */
+export const useDeleteWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkflowDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWorkflowDefinition>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteWorkflowDefinitionMutationOptions(options));
+    }
+
+export const getValidateStoredWorkflowDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/${id}/validate`
+}
+
+/**
+ * @summary Re-validate a stored definition (references may have been deleted since)
+ */
+export const validateStoredWorkflowDefinition = async (id: number, options?: RequestInit): Promise<WorkflowStoredValidationResult> => {
+
+  return customFetch<WorkflowStoredValidationResult>(getValidateStoredWorkflowDefinitionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getValidateStoredWorkflowDefinitionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateStoredWorkflowDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof validateStoredWorkflowDefinition>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['validateStoredWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof validateStoredWorkflowDefinition>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  validateStoredWorkflowDefinition(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ValidateStoredWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof validateStoredWorkflowDefinition>>>
+
+    export type ValidateStoredWorkflowDefinitionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Re-validate a stored definition (references may have been deleted since)
+ */
+export const useValidateStoredWorkflowDefinition = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateStoredWorkflowDefinition>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof validateStoredWorkflowDefinition>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getValidateStoredWorkflowDefinitionMutationOptions(options));
+    }
+
+export const getPublishWorkflowDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/${id}/publish`
+}
+
+/**
+ * Requires a fully valid definition with at least one action. Published means "eligible for a future execution engine (Batch 16)"; Batch 15 never executes it.
+ * @summary Lifecycle: draft → published (definition management only; nothing executes)
+ */
+export const publishWorkflowDefinition = async (id: number,
+    workflowRevisionInput: WorkflowRevisionInput, options?: RequestInit): Promise<WorkflowDefinition> => {
+
+  return customFetch<WorkflowDefinition>(getPublishWorkflowDefinitionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowRevisionInput,)
+  }
+);}
+
+
+
+
+export const getPublishWorkflowDefinitionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof publishWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof publishWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext> => {
+
+const mutationKey = ['publishWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof publishWorkflowDefinition>>, {id: number;data: BodyType<WorkflowRevisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  publishWorkflowDefinition(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PublishWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof publishWorkflowDefinition>>>
+    export type PublishWorkflowDefinitionMutationBody = BodyType<WorkflowRevisionInput>
+    export type PublishWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Lifecycle: draft → published (definition management only; nothing executes)
+ */
+export const usePublishWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof publishWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof publishWorkflowDefinition>>,
+        TError,
+        {id: number;data: BodyType<WorkflowRevisionInput>},
+        TContext
+      > => {
+      return useMutation(getPublishWorkflowDefinitionMutationOptions(options));
+    }
+
+export const getUnpublishWorkflowDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/${id}/unpublish`
+}
+
+/**
+ * @summary Lifecycle: published → draft
+ */
+export const unpublishWorkflowDefinition = async (id: number,
+    workflowRevisionInput: WorkflowRevisionInput, options?: RequestInit): Promise<WorkflowDefinition> => {
+
+  return customFetch<WorkflowDefinition>(getUnpublishWorkflowDefinitionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowRevisionInput,)
+  }
+);}
+
+
+
+
+export const getUnpublishWorkflowDefinitionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unpublishWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unpublishWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext> => {
+
+const mutationKey = ['unpublishWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unpublishWorkflowDefinition>>, {id: number;data: BodyType<WorkflowRevisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  unpublishWorkflowDefinition(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnpublishWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof unpublishWorkflowDefinition>>>
+    export type UnpublishWorkflowDefinitionMutationBody = BodyType<WorkflowRevisionInput>
+    export type UnpublishWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Lifecycle: published → draft
+ */
+export const useUnpublishWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unpublishWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unpublishWorkflowDefinition>>,
+        TError,
+        {id: number;data: BodyType<WorkflowRevisionInput>},
+        TContext
+      > => {
+      return useMutation(getUnpublishWorkflowDefinitionMutationOptions(options));
+    }
+
+export const getArchiveWorkflowDefinitionUrl = (id: number,) => {
+
+
+
+
+  return `/api/workflows/${id}/archive`
+}
+
+/**
+ * @summary Lifecycle: draft|published → archived (terminal, read-only)
+ */
+export const archiveWorkflowDefinition = async (id: number,
+    workflowRevisionInput: WorkflowRevisionInput, options?: RequestInit): Promise<WorkflowDefinition> => {
+
+  return customFetch<WorkflowDefinition>(getArchiveWorkflowDefinitionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowRevisionInput,)
+  }
+);}
+
+
+
+
+export const getArchiveWorkflowDefinitionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext> => {
+
+const mutationKey = ['archiveWorkflowDefinition'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveWorkflowDefinition>>, {id: number;data: BodyType<WorkflowRevisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  archiveWorkflowDefinition(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveWorkflowDefinitionMutationResult = NonNullable<Awaited<ReturnType<typeof archiveWorkflowDefinition>>>
+    export type ArchiveWorkflowDefinitionMutationBody = BodyType<WorkflowRevisionInput>
+    export type ArchiveWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Lifecycle: draft|published → archived (terminal, read-only)
+ */
+export const useArchiveWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveWorkflowDefinition>>,
+        TError,
+        {id: number;data: BodyType<WorkflowRevisionInput>},
+        TContext
+      > => {
+      return useMutation(getArchiveWorkflowDefinitionMutationOptions(options));
     }
 

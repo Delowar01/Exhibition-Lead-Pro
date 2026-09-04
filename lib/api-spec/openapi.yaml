@@ -58,6 +58,8 @@ tags:
     description: Sales territory definitions
   - name: ai
     description: AI platform settings, usage & cost visibility, and provider health
+  - name: workflows
+    description: Deterministic CRM automation definitions (Batch 15 — definitions only; nothing executes)
 
 paths:
   /healthz:
@@ -7032,6 +7034,338 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UndoMergeResponse"
+
+  # BATCH 15 — WORKFLOW DEFINITIONS. Company-scoped, deterministic CRM automation
+  # DEFINITIONS (trigger → conditions → ordered actions). Management API only:
+  # there is deliberately no execute/run/test-run/history/retry/job endpoint —
+  # execution is Batch 16. Not an AI feature (not under /ai).
+  /workflows:
+    get:
+      operationId: listWorkflowDefinitions
+      tags: [workflows]
+      summary: List workflow definitions of the caller's company
+      description: >-
+        Archived definitions are excluded unless `status=archived` or
+        `includeArchived=true`. Pagination is opt-in (page/pageSize).
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, published, archived]
+        - name: includeArchived
+          in: query
+          schema:
+            type: boolean
+        - name: triggerType
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          description: Case-insensitive name search.
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, createdAt, updatedAt, status]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinitionList"
+    post:
+      operationId: createWorkflowDefinition
+      tags: [workflows]
+      summary: Create a workflow definition (always starts as a draft)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowDefinitionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "400":
+          description: Invalid definition (details lists each issue with its path)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A non-archived definition with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /workflows/catalog:
+    get:
+      operationId: getWorkflowCatalog
+      tags: [workflows]
+      summary: Supported triggers, condition fields/operators and actions
+      description: >-
+        The single source of truth for what a definition may contain. Config
+        shapes are published as JSON Schema rendered from the same validators
+        the API applies.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowCatalog"
+
+  /workflows/validate:
+    post:
+      operationId: validateWorkflowDefinition
+      tags: [workflows]
+      summary: Validate a candidate definition without saving or executing it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowValidateInput"
+      responses:
+        "200":
+          description: Validation result (200 whether valid or not)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowValidationResult"
+
+  /workflows/{id}:
+    get:
+      operationId: getWorkflowDefinition
+      tags: [workflows]
+      summary: Get a workflow definition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "404":
+          description: Not found (also answered for another company's definition)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateWorkflowDefinition
+      tags: [workflows]
+      summary: Update a draft or published definition
+      description: >-
+        Optimistic concurrency: `revision` must equal the stored revision; a
+        stale value answers 409 (code WORKFLOW_REVISION_CONFLICT, context
+        carries currentRevision). Archived definitions are read-only (409).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowDefinitionUpdate"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "400":
+          description: Invalid definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, read-only (archived) definition, or duplicate name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteWorkflowDefinition
+      tags: [workflows]
+      summary: Hard-delete a DRAFT definition (non-drafts must be archived)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "409":
+          description: Only drafts can be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /workflows/{id}/validate:
+    post:
+      operationId: validateStoredWorkflowDefinition
+      tags: [workflows]
+      summary: Re-validate a stored definition (references may have been deleted since)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowStoredValidationResult"
+
+  /workflows/{id}/publish:
+    post:
+      operationId: publishWorkflowDefinition
+      tags: [workflows]
+      summary: "Lifecycle: draft → published (definition management only; nothing executes)"
+      description: >-
+        Requires a fully valid definition with at least one action. Published
+        means "eligible for a future execution engine (Batch 16)"; Batch 15
+        never executes it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRevisionInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "400":
+          description: Definition is not publishable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid transition or stale revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /workflows/{id}/unpublish:
+    post:
+      operationId: unpublishWorkflowDefinition
+      tags: [workflows]
+      summary: "Lifecycle: published → draft"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRevisionInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "409":
+          description: Invalid transition or stale revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /workflows/{id}/archive:
+    post:
+      operationId: archiveWorkflowDefinition
+      tags: [workflows]
+      summary: "Lifecycle: draft|published → archived (terminal, read-only)"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRevisionInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "409":
+          description: Invalid transition or stale revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 
 components:
   schemas:
@@ -14796,3 +15130,327 @@ components:
             $ref: "#/components/schemas/MergeHistoryEntry"
         total:
           type: integer
+
+    # BATCH 15 — WORKFLOW DEFINITIONS (definition/API foundation; nothing executes).
+    # Enum lists mirror artifacts/api-server/src/lib/workflows/catalog.ts (the
+    # single source of truth) and are kept in sync by a unit test.
+    WorkflowTrigger:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [lead.created, lead.updated, lead.stage_changed, lead.assigned, contact.created, contact.updated, contact.status_changed]
+        config:
+          type: object
+          additionalProperties: true
+          description: Trigger-specific configuration. The shape per type is published as JSON Schema by GET /workflows/catalog.
+
+    WorkflowCondition:
+      type: object
+      required: [field, operator]
+      description: All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET /workflows/catalog.
+      properties:
+        field:
+          type: string
+        operator:
+          type: string
+          enum: [equals, not_equals, contains, not_contains, in, not_in, is_empty, is_not_empty, greater_than, less_than]
+        value:
+          description: >-
+            A single string/number/boolean for equals, not_equals, contains, not_contains,
+            greater_than, less_than; an array of strings/numbers for in / not_in; omitted
+            for is_empty / is_not_empty.
+
+    WorkflowAction:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [lead.assign_owner, lead.update_fields, lead.add_tag, lead.remove_tag, contact.update_fields, contact.assign_owner, contact.add_tag, contact.remove_tag, task.create, follow_up.create, notification.create, email.send]
+        config:
+          type: object
+          additionalProperties: true
+          description: Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET /workflows/catalog. Array order is execution order.
+
+    WorkflowDefinition:
+      type: object
+      required: [id, companyId, name, status, trigger, conditions, actions, schemaVersion, revision, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [draft, published, archived]
+          description: >-
+            draft = editable working copy, never eligible for execution; published =
+            eligible for a FUTURE execution engine (Batch 16), still editable; archived =
+            terminal read-only history. No status executes anything in Batch 15.
+        trigger:
+          $ref: "#/components/schemas/WorkflowTrigger"
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowCondition"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAction"
+        schemaVersion:
+          type: integer
+          description: Version of the definition contract the JSONB was validated against.
+        revision:
+          type: integer
+          description: Optimistic-concurrency token; every mutation requires the current value and increments it.
+        createdById:
+          type: ["integer", "null"]
+        updatedById:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        archivedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    WorkflowDefinitionList:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowDefinition"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    WorkflowDefinitionInput:
+      type: object
+      required: [name, trigger]
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        trigger:
+          $ref: "#/components/schemas/WorkflowTrigger"
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowCondition"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAction"
+
+    WorkflowDefinitionUpdate:
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          type: integer
+          description: The definition's current revision (stale values answer 409).
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        trigger:
+          $ref: "#/components/schemas/WorkflowTrigger"
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowCondition"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAction"
+
+    WorkflowRevisionInput:
+      type: object
+      required: [revision]
+      properties:
+        revision:
+          type: integer
+          description: The definition's current revision (stale values answer 409).
+
+    WorkflowValidateInput:
+      type: object
+      required: [trigger]
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        trigger:
+          $ref: "#/components/schemas/WorkflowTrigger"
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowCondition"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAction"
+
+    WorkflowValidationIssue:
+      type: object
+      required: [field, message, code]
+      properties:
+        field:
+          type: string
+          description: Path of the offending element, e.g. actions[1].config.tagId
+        message:
+          type: string
+        code:
+          type: string
+
+    WorkflowValidationResult:
+      type: object
+      required: [valid, publishable, errors]
+      properties:
+        valid:
+          type: boolean
+        publishable:
+          type: boolean
+          description: valid AND at least one action.
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowValidationIssue"
+        normalized:
+          description: The normalized definition body (defaults applied) when valid, else null.
+          type: ["object", "null"]
+          additionalProperties: true
+
+    WorkflowStoredValidationResult:
+      allOf:
+        - $ref: "#/components/schemas/WorkflowValidationResult"
+        - type: object
+          required: [id, revision, status]
+          properties:
+            id:
+              type: integer
+            revision:
+              type: integer
+            status:
+              type: string
+              enum: [draft, published, archived]
+
+    WorkflowCatalog:
+      type: object
+      required: [schemaVersion, limits, statuses, lifecycle, entities, triggers, conditionOperators, conditionFields, actions, recipientKinds]
+      properties:
+        schemaVersion:
+          type: integer
+        limits:
+          type: object
+          additionalProperties: true
+        statuses:
+          type: array
+          items:
+            type: string
+        lifecycle:
+          type: object
+          additionalProperties: true
+          description: Per-status meaning (label, description, editable, deletable, transitions). No status executes anything.
+        entities:
+          type: array
+          items:
+            type: string
+        triggers:
+          type: array
+          items:
+            type: object
+            required: [type, entity, label, description, configSchema]
+            properties:
+              type:
+                type: string
+              entity:
+                type: string
+              label:
+                type: string
+              description:
+                type: string
+              configSchema:
+                type: object
+                additionalProperties: true
+                description: JSON Schema for `config`.
+        conditionOperators:
+          type: array
+          items:
+            type: object
+            required: [operator, label, valueShape]
+            properties:
+              operator:
+                type: string
+              label:
+                type: string
+              valueShape:
+                type: string
+                enum: [single, list, none]
+        conditionFields:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              required: [key, label, type, operators]
+              properties:
+                key:
+                  type: string
+                label:
+                  type: string
+                type:
+                  type: string
+                enumValues:
+                  type: array
+                  items:
+                    type: string
+                operators:
+                  type: array
+                  items:
+                    type: string
+        actions:
+          type: array
+          items:
+            type: object
+            required: [type, label, description, entities, configSchema]
+            properties:
+              type:
+                type: string
+              label:
+                type: string
+              description:
+                type: string
+              entities:
+                type: array
+                items:
+                  type: string
+              configSchema:
+                type: object
+                additionalProperties: true
+                description: JSON Schema for `config`.
+        recipientKinds:
+          type: array
+          items:
+            type: object
+            required: [kind, label]
+            properties:
+              kind:
+                type: string
+              label:
+                type: string

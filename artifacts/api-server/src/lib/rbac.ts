@@ -29,6 +29,9 @@ export const PERMISSION_CATALOG: Record<string, { label: string; actions: string
   organization: { label: "Organization", actions: ["view", "edit"] },
   security: { label: "Security Center", actions: ["view", "edit"] },
   subscriptions: { label: "Subscription & Billing", actions: ["view", "manage"] },
+  // Batch 15 — deterministic CRM automation definitions (/workflows). `view` reads the
+  // definitions/catalog and validates; `manage` creates/edits/publishes/archives/deletes.
+  workflows: { label: "Workflow Automation", actions: ["view", "manage"] },
 };
 
 export type PermissionMatrix = Record<string, string[]>;

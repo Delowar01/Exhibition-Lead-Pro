@@ -37,7 +37,8 @@
     "qrcode": "^1.5.4",
     "sharp": "^0.35.2",
     "ua-parser-js": "^2.0.10",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",

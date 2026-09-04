@@ -116,3 +116,26 @@ export async function backfillAiAssistantPermissions(): Promise<{ admins: number
   }
   return result;
 }
+
+// One-time, idempotent RBAC backfill for the Batch 15 `workflows` permission module
+// (deterministic CRM automation definitions, /workflows). Same rationale as the AI
+// module backfills: the routes are `requirePermission("workflows", ...)`-gated, so
+// pre-existing `admin` rows that predate the module would 403 without this. Policy
+// (mirrors the seed): admin => view/manage (default-on, it is an administrative
+// configuration surface); employee => NOTHING by default (deny-by-default — an
+// employee must be explicitly granted even read access). Only touches admin rows that
+// do NOT already carry a `workflows` key, so an explicit grant/revocation is never
+// clobbered.
+export async function backfillWorkflowsPermissions(): Promise<{ admins: number }> {
+  const admins = await db
+    .update(usersTable)
+    .set({ permissions: sql`${usersTable.permissions} || '{"workflows":["view","manage"]}'::jsonb` })
+    .where(and(eq(usersTable.role, "admin"), sql`NOT jsonb_exists(${usersTable.permissions}, 'workflows')`))
+    .returning({ id: usersTable.id });
+
+  const result = { admins: admins.length };
+  if (result.admins) {
+    logger.info(result, "Backfilled workflows permissions for pre-existing admin users");
+  }
+  return result;
+}

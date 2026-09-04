@@ -360,6 +360,9 @@ async function main() {
     ai_workflow: ["view", "generate", "accept"],
     ai_executive: ["view", "generate", "accept"],
     ai_assistant: ["view", "use"],
+    // Batch 15 workflow automation definitions: admin manages by default; employee has
+    // NO access by default (must be explicitly granted).
+    workflows: ["view", "manage"],
   };
   const empPerms: Record<string, string[]> = {
     contacts: ["view", "create", "edit"],

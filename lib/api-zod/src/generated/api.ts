@@ -9223,3 +9223,399 @@ export const UndoContactMergeResponse = zod.object({
 })
 
 
+/**
+ * Archived definitions are excluded unless `status=archived` or `includeArchived=true`. Pagination is opt-in (page/pageSize).
+ * @summary List workflow definitions of the caller's company
+ */
+export const ListWorkflowDefinitionsQueryParams = zod.object({
+  "status": zod.enum(['draft', 'published', 'archived']).optional(),
+  "includeArchived": zod.coerce.boolean().optional(),
+  "triggerType": zod.coerce.string().optional(),
+  "q": zod.coerce.string().optional().describe('Case-insensitive name search.'),
+  "page": zod.coerce.number().optional(),
+  "pageSize": zod.coerce.number().optional(),
+  "sort": zod.enum(['name', 'createdAt', 'updatedAt', 'status']).optional(),
+  "order": zod.enum(['asc', 'desc']).optional()
+})
+
+export const ListWorkflowDefinitionsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})),
+  "schemaVersion": zod.number().describe('Version of the definition contract the JSONB was validated against.'),
+  "revision": zod.number().describe('Optimistic-concurrency token; every mutation requires the current value and increments it.'),
+  "createdById": zod.number().nullish(),
+  "updatedById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "archivedAt": zod.coerce.date().nullish()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number()
+})
+
+
+/**
+ * @summary Create a workflow definition (always starts as a draft)
+ */
+export const CreateWorkflowDefinitionBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')).optional(),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})).optional()
+})
+
+
+/**
+ * The single source of truth for what a definition may contain. Config shapes are published as JSON Schema rendered from the same validators the API applies.
+ * @summary Supported triggers, condition fields/operators and actions
+ */
+export const GetWorkflowCatalogResponse = zod.object({
+  "schemaVersion": zod.number(),
+  "limits": zod.record(zod.string(), zod.unknown()),
+  "statuses": zod.array(zod.string()),
+  "lifecycle": zod.record(zod.string(), zod.unknown()).describe('Per-status meaning (label, description, editable, deletable, transitions). No status executes anything.'),
+  "entities": zod.array(zod.string()),
+  "triggers": zod.array(zod.object({
+  "type": zod.string(),
+  "entity": zod.string(),
+  "label": zod.string(),
+  "description": zod.string(),
+  "configSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema for `config`.')
+})),
+  "conditionOperators": zod.array(zod.object({
+  "operator": zod.string(),
+  "label": zod.string(),
+  "valueShape": zod.enum(['single', 'list', 'none'])
+})),
+  "conditionFields": zod.record(zod.string(), zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "type": zod.string(),
+  "enumValues": zod.array(zod.string()).optional(),
+  "operators": zod.array(zod.string())
+}))),
+  "actions": zod.array(zod.object({
+  "type": zod.string(),
+  "label": zod.string(),
+  "description": zod.string(),
+  "entities": zod.array(zod.string()),
+  "configSchema": zod.record(zod.string(), zod.unknown()).describe('JSON Schema for `config`.')
+})),
+  "recipientKinds": zod.array(zod.object({
+  "kind": zod.string(),
+  "label": zod.string()
+}))
+})
+
+
+/**
+ * @summary Validate a candidate definition without saving or executing it
+ */
+export const ValidateWorkflowDefinitionBody = zod.object({
+  "name": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')).optional(),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})).optional()
+})
+
+export const ValidateWorkflowDefinitionResponse = zod.object({
+  "valid": zod.boolean(),
+  "publishable": zod.boolean().describe('valid AND at least one action.'),
+  "errors": zod.array(zod.object({
+  "field": zod.string().describe('Path of the offending element, e.g. actions[1].config.tagId'),
+  "message": zod.string(),
+  "code": zod.string()
+})),
+  "normalized": zod.record(zod.string(), zod.unknown()).nullish().describe('The normalized definition body (defaults applied) when valid, else null.')
+})
+
+
+/**
+ * @summary Get a workflow definition
+ */
+export const GetWorkflowDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetWorkflowDefinitionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})),
+  "schemaVersion": zod.number().describe('Version of the definition contract the JSONB was validated against.'),
+  "revision": zod.number().describe('Optimistic-concurrency token; every mutation requires the current value and increments it.'),
+  "createdById": zod.number().nullish(),
+  "updatedById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "archivedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * Optimistic concurrency: `revision` must equal the stored revision; a stale value answers 409 (code WORKFLOW_REVISION_CONFLICT, context carries currentRevision). Archived definitions are read-only (409).
+ * @summary Update a draft or published definition
+ */
+export const UpdateWorkflowDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateWorkflowDefinitionBody = zod.object({
+  "revision": zod.number().describe('The definition\'s current revision (stale values answer 409).'),
+  "name": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}).optional(),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')).optional(),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})).optional()
+})
+
+export const UpdateWorkflowDefinitionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})),
+  "schemaVersion": zod.number().describe('Version of the definition contract the JSONB was validated against.'),
+  "revision": zod.number().describe('Optimistic-concurrency token; every mutation requires the current value and increments it.'),
+  "createdById": zod.number().nullish(),
+  "updatedById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "archivedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Hard-delete a DRAFT definition (non-drafts must be archived)
+ */
+export const DeleteWorkflowDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteWorkflowDefinitionResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string().optional()
+})
+
+
+/**
+ * @summary Re-validate a stored definition (references may have been deleted since)
+ */
+export const ValidateStoredWorkflowDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ValidateStoredWorkflowDefinitionResponse = zod.object({
+  "valid": zod.boolean(),
+  "publishable": zod.boolean().describe('valid AND at least one action.'),
+  "errors": zod.array(zod.object({
+  "field": zod.string().describe('Path of the offending element, e.g. actions[1].config.tagId'),
+  "message": zod.string(),
+  "code": zod.string()
+})),
+  "normalized": zod.record(zod.string(), zod.unknown()).nullish().describe('The normalized definition body (defaults applied) when valid, else null.')
+}).and(zod.object({
+  "id": zod.number(),
+  "revision": zod.number(),
+  "status": zod.enum(['draft', 'published', 'archived'])
+}))
+
+
+/**
+ * Requires a fully valid definition with at least one action. Published means "eligible for a future execution engine (Batch 16)"; Batch 15 never executes it.
+ * @summary Lifecycle: draft → published (definition management only; nothing executes)
+ */
+export const PublishWorkflowDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const PublishWorkflowDefinitionBody = zod.object({
+  "revision": zod.number().describe('The definition\'s current revision (stale values answer 409).')
+})
+
+export const PublishWorkflowDefinitionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})),
+  "schemaVersion": zod.number().describe('Version of the definition contract the JSONB was validated against.'),
+  "revision": zod.number().describe('Optimistic-concurrency token; every mutation requires the current value and increments it.'),
+  "createdById": zod.number().nullish(),
+  "updatedById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "archivedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Lifecycle: published → draft
+ */
+export const UnpublishWorkflowDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UnpublishWorkflowDefinitionBody = zod.object({
+  "revision": zod.number().describe('The definition\'s current revision (stale values answer 409).')
+})
+
+export const UnpublishWorkflowDefinitionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})),
+  "schemaVersion": zod.number().describe('Version of the definition contract the JSONB was validated against.'),
+  "revision": zod.number().describe('Optimistic-concurrency token; every mutation requires the current value and increments it.'),
+  "createdById": zod.number().nullish(),
+  "updatedById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "archivedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Lifecycle: draft|published → archived (terminal, read-only)
+ */
+export const ArchiveWorkflowDefinitionParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ArchiveWorkflowDefinitionBody = zod.object({
+  "revision": zod.number().describe('The definition\'s current revision (stale values answer 409).')
+})
+
+export const ArchiveWorkflowDefinitionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "trigger": zod.object({
+  "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
+}),
+  "conditions": zod.array(zod.object({
+  "field": zod.string(),
+  "operator": zod.enum(['equals', 'not_equals', 'contains', 'not_contains', 'in', 'not_in', 'is_empty', 'is_not_empty', 'greater_than', 'less_than']),
+  "value": zod.unknown().optional().describe('A single string\/number\/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings\/numbers for in \/ not_in; omitted for is_empty \/ is_not_empty.')
+}).describe('All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET \/workflows\/catalog.')),
+  "actions": zod.array(zod.object({
+  "type": zod.enum(['lead.assign_owner', 'lead.update_fields', 'lead.add_tag', 'lead.remove_tag', 'contact.update_fields', 'contact.assign_owner', 'contact.add_tag', 'contact.remove_tag', 'task.create', 'follow_up.create', 'notification.create', 'email.send']),
+  "config": zod.record(zod.string(), zod.unknown()).optional().describe('Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET \/workflows\/catalog. Array order is execution order.')
+})),
+  "schemaVersion": zod.number().describe('Version of the definition contract the JSONB was validated against.'),
+  "revision": zod.number().describe('Optimistic-concurrency token; every mutation requires the current value and increments it.'),
+  "createdById": zod.number().nullish(),
+  "updatedById": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "archivedAt": zod.coerce.date().nullish()
+})
+
+

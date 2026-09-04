@@ -5771,6 +5771,282 @@ export interface MergeHistoryList {
   total: number;
 }
 
+export type WorkflowTriggerType = typeof WorkflowTriggerType[keyof typeof WorkflowTriggerType];
+
+
+export const WorkflowTriggerType = {
+  leadcreated: 'lead.created',
+  leadupdated: 'lead.updated',
+  leadstage_changed: 'lead.stage_changed',
+  leadassigned: 'lead.assigned',
+  contactcreated: 'contact.created',
+  contactupdated: 'contact.updated',
+  contactstatus_changed: 'contact.status_changed',
+} as const;
+
+/**
+ * Trigger-specific configuration. The shape per type is published as JSON Schema by GET /workflows/catalog.
+ */
+export type WorkflowTriggerConfig = { [key: string]: unknown };
+
+export interface WorkflowTrigger {
+  type: WorkflowTriggerType;
+  /** Trigger-specific configuration. The shape per type is published as JSON Schema by GET /workflows/catalog. */
+  config?: WorkflowTriggerConfig;
+}
+
+export type WorkflowConditionOperator = typeof WorkflowConditionOperator[keyof typeof WorkflowConditionOperator];
+
+
+export const WorkflowConditionOperator = {
+  equals: 'equals',
+  not_equals: 'not_equals',
+  contains: 'contains',
+  not_contains: 'not_contains',
+  in: 'in',
+  not_in: 'not_in',
+  is_empty: 'is_empty',
+  is_not_empty: 'is_not_empty',
+  greater_than: 'greater_than',
+  less_than: 'less_than',
+} as const;
+
+/**
+ * All conditions of a definition must hold (AND). Fields and operator compatibility per entity come from GET /workflows/catalog.
+ */
+export interface WorkflowCondition {
+  field: string;
+  operator: WorkflowConditionOperator;
+  /** A single string/number/boolean for equals, not_equals, contains, not_contains, greater_than, less_than; an array of strings/numbers for in / not_in; omitted for is_empty / is_not_empty. */
+  value?: unknown;
+}
+
+export type WorkflowActionType = typeof WorkflowActionType[keyof typeof WorkflowActionType];
+
+
+export const WorkflowActionType = {
+  leadassign_owner: 'lead.assign_owner',
+  leadupdate_fields: 'lead.update_fields',
+  leadadd_tag: 'lead.add_tag',
+  leadremove_tag: 'lead.remove_tag',
+  contactupdate_fields: 'contact.update_fields',
+  contactassign_owner: 'contact.assign_owner',
+  contactadd_tag: 'contact.add_tag',
+  contactremove_tag: 'contact.remove_tag',
+  taskcreate: 'task.create',
+  follow_upcreate: 'follow_up.create',
+  notificationcreate: 'notification.create',
+  emailsend: 'email.send',
+} as const;
+
+/**
+ * Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET /workflows/catalog. Array order is execution order.
+ */
+export type WorkflowActionConfig = { [key: string]: unknown };
+
+export interface WorkflowAction {
+  type: WorkflowActionType;
+  /** Action-specific configuration (strict; unknown keys are rejected). The shape per type is published as JSON Schema by GET /workflows/catalog. Array order is execution order. */
+  config?: WorkflowActionConfig;
+}
+
+/**
+ * draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15.
+ */
+export type WorkflowDefinitionStatus = typeof WorkflowDefinitionStatus[keyof typeof WorkflowDefinitionStatus];
+
+
+export const WorkflowDefinitionStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export interface WorkflowDefinition {
+  id: number;
+  companyId: number;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), still editable; archived = terminal read-only history. No status executes anything in Batch 15. */
+  status: WorkflowDefinitionStatus;
+  trigger: WorkflowTrigger;
+  conditions: WorkflowCondition[];
+  actions: WorkflowAction[];
+  /** Version of the definition contract the JSONB was validated against. */
+  schemaVersion: number;
+  /** Optimistic-concurrency token; every mutation requires the current value and increments it. */
+  revision: number;
+  /** @nullable */
+  createdById?: number | null;
+  /** @nullable */
+  updatedById?: number | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  archivedAt?: string | null;
+}
+
+export interface WorkflowDefinitionList {
+  items: WorkflowDefinition[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface WorkflowDefinitionInput {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  trigger: WorkflowTrigger;
+  conditions?: WorkflowCondition[];
+  actions?: WorkflowAction[];
+}
+
+export interface WorkflowDefinitionUpdate {
+  /** The definition's current revision (stale values answer 409). */
+  revision: number;
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  trigger?: WorkflowTrigger;
+  conditions?: WorkflowCondition[];
+  actions?: WorkflowAction[];
+}
+
+export interface WorkflowRevisionInput {
+  /** The definition's current revision (stale values answer 409). */
+  revision: number;
+}
+
+export interface WorkflowValidateInput {
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  trigger: WorkflowTrigger;
+  conditions?: WorkflowCondition[];
+  actions?: WorkflowAction[];
+}
+
+export interface WorkflowValidationIssue {
+  /** Path of the offending element, e.g. actions[1].config.tagId */
+  field: string;
+  message: string;
+  code: string;
+}
+
+/**
+ * The normalized definition body (defaults applied) when valid, else null.
+ * @nullable
+ */
+export type WorkflowValidationResultNormalized = { [key: string]: unknown } | null;
+
+export interface WorkflowValidationResult {
+  valid: boolean;
+  /** valid AND at least one action. */
+  publishable: boolean;
+  errors: WorkflowValidationIssue[];
+  /**
+     * The normalized definition body (defaults applied) when valid, else null.
+     * @nullable
+     */
+  normalized?: WorkflowValidationResultNormalized;
+}
+
+export type WorkflowStoredValidationResultStatus = typeof WorkflowStoredValidationResultStatus[keyof typeof WorkflowStoredValidationResultStatus];
+
+
+export const WorkflowStoredValidationResultStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export type WorkflowStoredValidationResult = WorkflowValidationResult & {
+  id: number;
+  revision: number;
+  status: WorkflowStoredValidationResultStatus;
+};
+
+export type WorkflowCatalogLimits = { [key: string]: unknown };
+
+/**
+ * Per-status meaning (label, description, editable, deletable, transitions). No status executes anything.
+ */
+export type WorkflowCatalogLifecycle = { [key: string]: unknown };
+
+/**
+ * JSON Schema for `config`.
+ */
+export type WorkflowCatalogTriggersItemConfigSchema = { [key: string]: unknown };
+
+export type WorkflowCatalogTriggersItem = {
+  type: string;
+  entity: string;
+  label: string;
+  description: string;
+  /** JSON Schema for `config`. */
+  configSchema: WorkflowCatalogTriggersItemConfigSchema;
+};
+
+export type WorkflowCatalogConditionOperatorsItemValueShape = typeof WorkflowCatalogConditionOperatorsItemValueShape[keyof typeof WorkflowCatalogConditionOperatorsItemValueShape];
+
+
+export const WorkflowCatalogConditionOperatorsItemValueShape = {
+  single: 'single',
+  list: 'list',
+  none: 'none',
+} as const;
+
+export type WorkflowCatalogConditionOperatorsItem = {
+  operator: string;
+  label: string;
+  valueShape: WorkflowCatalogConditionOperatorsItemValueShape;
+};
+
+export type WorkflowCatalogConditionFieldsItem = {
+  key: string;
+  label: string;
+  type: string;
+  enumValues?: string[];
+  operators: string[];
+};
+
+export type WorkflowCatalogConditionFields = {[key: string]: WorkflowCatalogConditionFieldsItem[]};
+
+/**
+ * JSON Schema for `config`.
+ */
+export type WorkflowCatalogActionsItemConfigSchema = { [key: string]: unknown };
+
+export type WorkflowCatalogActionsItem = {
+  type: string;
+  label: string;
+  description: string;
+  entities: string[];
+  /** JSON Schema for `config`. */
+  configSchema: WorkflowCatalogActionsItemConfigSchema;
+};
+
+export type WorkflowCatalogRecipientKindsItem = {
+  kind: string;
+  label: string;
+};
+
+export interface WorkflowCatalog {
+  schemaVersion: number;
+  limits: WorkflowCatalogLimits;
+  statuses: string[];
+  /** Per-status meaning (label, description, editable, deletable, transitions). No status executes anything. */
+  lifecycle: WorkflowCatalogLifecycle;
+  entities: string[];
+  triggers: WorkflowCatalogTriggersItem[];
+  conditionOperators: WorkflowCatalogConditionOperatorsItem[];
+  conditionFields: WorkflowCatalogConditionFields;
+  actions: WorkflowCatalogActionsItem[];
+  recipientKinds: WorkflowCatalogRecipientKindsItem[];
+}
+
 export type ListInvitationsParams = {
 companyId?: number;
 page?: number;
@@ -6321,5 +6597,46 @@ export type ListCustomFieldDefinitionsEntityType = typeof ListCustomFieldDefinit
 export const ListCustomFieldDefinitionsEntityType = {
   lead: 'lead',
   contact: 'contact',
+} as const;
+
+export type ListWorkflowDefinitionsParams = {
+status?: ListWorkflowDefinitionsStatus;
+includeArchived?: boolean;
+triggerType?: string;
+/**
+ * Case-insensitive name search.
+ */
+q?: string;
+page?: number;
+pageSize?: number;
+sort?: ListWorkflowDefinitionsSort;
+order?: ListWorkflowDefinitionsOrder;
+};
+
+export type ListWorkflowDefinitionsStatus = typeof ListWorkflowDefinitionsStatus[keyof typeof ListWorkflowDefinitionsStatus];
+
+
+export const ListWorkflowDefinitionsStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export type ListWorkflowDefinitionsSort = typeof ListWorkflowDefinitionsSort[keyof typeof ListWorkflowDefinitionsSort];
+
+
+export const ListWorkflowDefinitionsSort = {
+  name: 'name',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  status: 'status',
+} as const;
+
+export type ListWorkflowDefinitionsOrder = typeof ListWorkflowDefinitionsOrder[keyof typeof ListWorkflowDefinitionsOrder];
+
+
+export const ListWorkflowDefinitionsOrder = {
+  asc: 'asc',
+  desc: 'desc',
 } as const;
 

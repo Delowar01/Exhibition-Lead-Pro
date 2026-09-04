@@ -35,6 +35,7 @@ import exportsRouter from "./exports.js";
 import searchRouter from "./search.js";
 import aiRouter from "./ai.js";
 import executiveRouter from "./executive.js";
+import workflowsRouter from "./workflows.js";
 
 const router: IRouter = Router();
 
@@ -55,6 +56,9 @@ router.use(customFieldsRouter);
 router.use(territoriesRouter);
 router.use(aiRouter);
 router.use(executiveRouter);
+// Batch 15: deterministic CRM automation DEFINITIONS (/workflows) — management
+// API only; nothing executes. Own guards are path-scoped to /workflows.
+router.use(workflowsRouter);
 router.use(importsRouter);
 router.use(exportsRouter);
 router.use(companiesRouter);
