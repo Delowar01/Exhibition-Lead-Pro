@@ -1,7 +1,7 @@
 import { db, leadsTable, leadHistoryTable, contactsTable, usersTable, eventsTable, pipelineStagesTable, teamsTable, assignmentCursorsTable } from "@workspace/db";
 import { eq, and, count, ne, desc, asc, inArray, sql } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
-import { activeScope, notDeleted, type Executor } from "./base.js";
+import { activeScope, notDeleted, type Executor, exec } from "./base.js";
 
 export type LeadRow = typeof leadsTable.$inferSelect;
 
@@ -159,8 +159,8 @@ export async function leadCountsByContactIds(companyId: number, contactIds: numb
   return out;
 }
 
-export async function insert(values: typeof leadsTable.$inferInsert): Promise<LeadRow> {
-  const [row] = await db.insert(leadsTable).values(values).returning();
+export async function insert(values: typeof leadsTable.$inferInsert, tx?: Executor): Promise<LeadRow> {
+  const [row] = await exec(tx).insert(leadsTable).values(values).returning();
   return row;
 }
 
@@ -199,16 +199,19 @@ export async function contactIdsByEmails(companyId: number, emails: string[]): P
   return map;
 }
 
-// Atomic update: write any tracked history rows then update the lead.
+// Atomic update: write any tracked history rows then update the lead. With an
+// outer `tx` (Batch 16 durability boundary) both writes join that transaction.
 export async function updateWithHistory(
   id: number,
   updateData: Partial<typeof leadsTable.$inferInsert>,
   historyRows: Array<typeof leadHistoryTable.$inferInsert>,
+  tx?: Executor,
 ): Promise<LeadRow | undefined> {
-  const [lead] = await db.transaction(async (tx) => {
-    if (historyRows.length > 0) await tx.insert(leadHistoryTable).values(historyRows);
-    return tx.update(leadsTable).set(updateData).where(eq(leadsTable.id, id)).returning();
-  });
+  const run = async (t: Executor) => {
+    if (historyRows.length > 0) await t.insert(leadHistoryTable).values(historyRows);
+    return t.update(leadsTable).set(updateData).where(eq(leadsTable.id, id)).returning();
+  };
+  const [lead] = tx ? await run(tx) : await db.transaction(run);
   return lead;
 }
 
@@ -332,8 +335,11 @@ export async function assignByRoundRobin(
   teamId: number,
   leadId: number,
   makeHistory: (assigneeId: number) => Array<typeof leadHistoryTable.$inferInsert>,
+  outerTx?: Executor,
 ): Promise<{ lead: LeadRow; assigneeId: number } | undefined> {
-  return db.transaction(async (tx) => {
+  // With an outer transaction (Batch 16 durability boundary) the locked rotation
+  // joins it (savepoint); otherwise it is its own transaction as before.
+  return exec(outerTx).transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${companyId}, ${teamId})`);
     const members = await tx
       .select({ id: usersTable.id })

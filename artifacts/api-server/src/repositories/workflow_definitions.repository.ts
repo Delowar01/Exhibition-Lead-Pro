@@ -1,7 +1,7 @@
 import { db, workflowDefinitionsTable } from "@workspace/db";
 import { and, asc, desc, eq, ilike, ne, sql, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
-import { combine, tenantOnly } from "./base.js";
+import { combine, tenantOnly, exec, type Executor } from "./base.js";
 
 // Batch 15 — workflow definition persistence. Every read is tenant-scoped through
 // tenantScope (never by a caller-supplied companyId); writes are keyed by id AND
@@ -129,8 +129,8 @@ export async function deleteDraftIfRevision(companyId: number, id: number, expec
 // Engine lookup (Batch 16): the PUBLISHED definitions of one company for one
 // trigger type. Draft and archived definitions are never eligible. Keyed by the
 // company of the CRM record that changed — never by a caller-supplied id.
-export async function listPublishedForTrigger(companyId: number, triggerType: string): Promise<WorkflowDefinitionRow[]> {
-  return db
+export async function listPublishedForTrigger(companyId: number, triggerType: string, tx?: Executor): Promise<WorkflowDefinitionRow[]> {
+  return exec(tx)
     .select()
     .from(workflowDefinitionsTable)
     .where(

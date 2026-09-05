@@ -29,20 +29,21 @@ export async function emitTaskActivity(
   tx?: Executor,
 ) {
   if (task.contactId == null) return;
+  const values = {
+    companyId: task.companyId,
+    leadId: null,
+    contactId: task.contactId,
+    userId,
+    type,
+    source: "system",
+    subject,
+    metadata: { taskId: task.id, title: task.title, dueDate: task.dueDate, dueTime: task.dueTime, ...metadata },
+  };
   try {
-    await activitiesRepo.insert(
-      {
-        companyId: task.companyId,
-        leadId: null,
-        contactId: task.contactId,
-        userId,
-        type,
-        source: "system",
-        subject,
-        metadata: { taskId: task.id, title: task.title, dueDate: task.dueDate, dueTime: task.dueTime, ...metadata },
-      },
-      tx,
-    );
+    // Inside a caller transaction the insert runs in a savepoint so a failure can
+    // never poison the outer transaction.
+    if (tx) await tx.transaction(async (sp) => { await activitiesRepo.insert(values, sp); });
+    else await activitiesRepo.insert(values);
   } catch {
     // swallow — see above
   }

@@ -11,8 +11,9 @@ import type { ContactRow } from "../repositories/contacts.repository.js";
 import * as mergeHistoryRepo from "../repositories/merge_history.repository.js";
 import * as customFields from "./custom_fields.service.js";
 import { parseListQuery } from "../lib/list-query.js";
-import { dispatchWorkflowEvents } from "../lib/workflows/dispatch.js";
+import { enqueueWorkflowRuns, persistWorkflowRuns } from "../lib/workflows/dispatch.js";
 import { contactCreatedEvent, contactUpdatedEvents } from "../lib/workflows/events.js";
+import { db } from "@workspace/db";
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
@@ -241,7 +242,16 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   // are filled in asynchronously; the mobile client refetches and shows them
   // within a second or two. Blocking the response on the Gemini call was the
   // single biggest avoidable latency in the save path.
-  const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city: city ?? null, postalCode: postalCode ?? null, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, organizationId: organizationId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null });
+  // Batch 16 durability boundary: the contact row and every matching workflow
+  // run commit in ONE transaction (or roll back together); the queue jobs are
+  // enqueued only after the commit. The interaction record, status history and
+  // background scoring below stay best-effort side effects, as before.
+  const { contact, runs } = await db.transaction(async (tx) => {
+    const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city: city ?? null, postalCode: postalCode ?? null, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, organizationId: organizationId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null }, tx);
+    const runs = await persistWorkflowRuns([contactCreatedEvent(contact, user.id)], tx);
+    return { contact, runs };
+  });
+  await enqueueWorkflowRuns(runs);
   // Record the initial lead status in the append-only history.
   void contactsRepo.insertStatusHistory({ companyId, contactId: contact.id, fromStatus: null, toStatus: contact.status, comment: null, changedById: user.id }).catch(() => {});
 
@@ -295,11 +305,6 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
       }
     })();
   }
-
-  // Batch 16: workflow dispatch for the NEW contact row only (an add_interaction
-  // resolution above modifies no contact and emits nothing). Awaited before the
-  // response; never throws.
-  await dispatchWorkflowEvents([contactCreatedEvent(finalContact, user.id)]);
 
   return { status: 201, body: formatContact(finalContact) };
 }
@@ -1007,15 +1012,20 @@ export async function updateContact(user: AuthUser, id: number, body: UpdateCont
   Object.keys(updateData).forEach(k => updateData[k] === undefined && delete updateData[k]);
   if (Object.keys(updateData).length === 0) throw new AppError(400, "No valid fields to update");
   const statusChanged = status !== undefined && status !== existing.status;
-  const c = await contactsRepo.update(id, updateData as Partial<ContactRow>);
-  if (!c) throw new AppError(404, "Contact not found");
+  // Batch 16 durability boundary: the update and every matching workflow run
+  // (contact.updated + contact.status_changed when the status moved, from the
+  // before/after rows) commit in ONE transaction; jobs are enqueued after commit.
+  const { c, runs } = await db.transaction(async (tx) => {
+    const c = await contactsRepo.update(id, updateData as Partial<ContactRow>, tx);
+    if (!c) throw new AppError(404, "Contact not found");
+    const runs = await persistWorkflowRuns(contactUpdatedEvents(existing, c, user.id), tx);
+    return { c, runs };
+  });
+  await enqueueWorkflowRuns(runs);
   // Log lead status transitions to the append-only history.
   if (statusChanged) {
     void contactsRepo.insertStatusHistory({ companyId: existing.companyId, contactId: id, fromStatus: existing.status, toStatus: status, comment: statusComment ?? null, changedById: user.id }).catch(() => {});
   }
-  // Batch 16: contact.updated (+ contact.status_changed when the status moved),
-  // built from the before/after rows; awaited before the response, never throws.
-  await dispatchWorkflowEvents(contactUpdatedEvents(existing, c, user.id));
   const { eventName, assignedToName, organizationName } = await namesFor(c);
   return formatContact(c, eventName, assignedToName, organizationName);
 }

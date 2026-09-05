@@ -41,20 +41,21 @@ export async function emitFollowUpActivity(
   metadata?: Record<string, unknown>,
   tx?: Executor,
 ) {
+  const values = {
+    companyId: row.companyId,
+    leadId: null,
+    contactId: row.contactId,
+    userId,
+    type,
+    source: "system",
+    subject,
+    metadata: { followUpId: row.id, scheduledDate: row.scheduledDate, scheduledTime: row.scheduledTime, ...metadata },
+  };
   try {
-    await activitiesRepo.insert(
-      {
-        companyId: row.companyId,
-        leadId: null,
-        contactId: row.contactId,
-        userId,
-        type,
-        source: "system",
-        subject,
-        metadata: { followUpId: row.id, scheduledDate: row.scheduledDate, scheduledTime: row.scheduledTime, ...metadata },
-      },
-      tx,
-    );
+    // Inside a caller transaction the insert runs in a savepoint so a failure can
+    // never poison the outer transaction.
+    if (tx) await tx.transaction(async (sp) => { await activitiesRepo.insert(values, sp); });
+    else await activitiesRepo.insert(values);
   } catch {
     // swallow — see above
   }

@@ -16,11 +16,14 @@ export type WorkflowActionRunRow = typeof workflowActionRunsTable.$inferSelect;
 // (workflow_definition_id, event_key) makes the run insert itself the race-free
 // idempotency check: returns undefined when this definition already has a run
 // for this event (nothing else is written).
+// With an outer `tx` (Batch 16 durability boundary) the run and its action rows
+// join the CRM mutation's own transaction — they commit or roll back together.
 export async function createRunWithActions(
   run: WorkflowRunInsert,
   actions: Array<{ actionIndex: number; actionType: string }>,
+  outerTx?: Executor,
 ): Promise<WorkflowRunRow | undefined> {
-  return db.transaction(async (tx) => {
+  const create = async (tx: Executor) => {
     const [row] = await tx
       .insert(workflowRunsTable)
       .values(run)
@@ -33,7 +36,8 @@ export async function createRunWithActions(
       );
     }
     return row;
-  });
+  };
+  return outerTx ? create(outerTx) : db.transaction(create);
 }
 
 // ── engine reads/writes (by id; tenant re-verified by the engine) ──────────

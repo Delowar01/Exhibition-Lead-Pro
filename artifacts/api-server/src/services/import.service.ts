@@ -19,7 +19,7 @@ import {
   type ImportEntityType,
   type ImportFieldDef,
 } from "../lib/import-fields.js";
-import { dispatchWorkflowEvents } from "../lib/workflows/dispatch.js";
+import { enqueueWorkflowRuns, persistWorkflowRuns } from "../lib/workflows/dispatch.js";
 import { contactCreatedEvent, leadCreatedEvent } from "../lib/workflows/events.js";
 
 // Stage 4B — Import & Export Center (import side). Stateless three-step pipeline:
@@ -456,7 +456,11 @@ async function commitContacts(user: AuthUser, companyId: number, toInsert: Built
   // Atomic: base contacts + their (already-resolved, already-validated) custom-field
   // values commit together or not at all. A failure on ANY custom-field write rolls
   // back the whole batch — no partial imports (contact created but fields missing).
-  const insertedContacts = await db.transaction(async (tx) => {
+  // Batch 16 durability boundary: the batch, its custom-field values AND every
+  // matching workflow run commit together or not at all; jobs are enqueued only
+  // after the commit. Imported contacts are human-initiated creations (linked
+  // duplicates are hidden rows and emit nothing).
+  const runs = await db.transaction(async (tx) => {
     const inserted = await contactsRepo.bulkInsert(values, tx);
     const cfEntries = inserted.flatMap((row, i) =>
       toInsert[i].customValues.map((cv) => ({
@@ -468,11 +472,9 @@ async function commitContacts(user: AuthUser, companyId: number, toInsert: Built
       })),
     );
     await customFieldsRepo.bulkInsertValues(cfEntries, tx);
-    return inserted;
+    return persistWorkflowRuns(inserted.filter((c) => c.duplicateOfId == null).map((c) => contactCreatedEvent(c, user.id)), tx);
   });
-  // Batch 16: imported contacts are human-initiated creations — dispatch after the
-  // batch committed (linked duplicates are hidden rows and emit nothing).
-  await dispatchWorkflowEvents(insertedContacts.filter((c) => c.duplicateOfId == null).map((c) => contactCreatedEvent(c, user.id)));
+  await enqueueWorkflowRuns(runs);
 }
 
 async function commitLeads(
@@ -530,7 +532,9 @@ async function commitLeads(
 
   // Atomic: base leads + their resolved custom-field values commit together or not
   // at all (see commitContacts). A custom-field write failure rolls back the batch.
-  const insertedLeads = await db.transaction(async (tx) => {
+  // Batch 16 durability boundary: same atomic batch + workflow-run commit as
+  // commitContacts; jobs are enqueued only after the commit.
+  const runs = await db.transaction(async (tx) => {
     const inserted = await leadsRepo.bulkInsert(values, tx);
     const cfEntries = inserted.flatMap((row, i) =>
       customPerRow[i].map((cv) => ({
@@ -542,8 +546,7 @@ async function commitLeads(
       })),
     );
     await customFieldsRepo.bulkInsertValues(cfEntries, tx);
-    return inserted;
+    return persistWorkflowRuns(inserted.map((l) => leadCreatedEvent(l, user.id)), tx);
   });
-  // Batch 16: imported leads are human-initiated creations — dispatch after commit.
-  await dispatchWorkflowEvents(insertedLeads.map((l) => leadCreatedEvent(l, user.id)));
+  await enqueueWorkflowRuns(runs);
 }

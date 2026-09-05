@@ -12,8 +12,10 @@ import * as customFields from "./custom_fields.service.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { convertCurrency } from "../lib/currency.js";
 import { recommendAssignee as aiRecommendAssignee, logAiError } from "../lib/ai.js";
-import { dispatchWorkflowEvents } from "../lib/workflows/dispatch.js";
+import { enqueueWorkflowRuns, persistWorkflowRuns } from "../lib/workflows/dispatch.js";
 import { leadCreatedEvent, leadUpdatedEvents } from "../lib/workflows/events.js";
+import { db } from "@workspace/db";
+import type { Executor } from "../repositories/base.js";
 
 // Legacy default stage order — kept only as a fallback when a tenant somehow
 // has no configured stages (getPipeline now honours the configured list).
@@ -54,19 +56,23 @@ function fmtTags(tags: Array<{ id: number; companyId: number; name: string; colo
 }
 
 // Emit a system (non-user-authored) lifecycle activity. Never throws — activity
-// logging must not break the underlying lead mutation.
-async function emitSystemActivity(lead: leadsRepo.LeadRow, userId: number, type: string, subject: string, metadata?: Record<string, unknown>): Promise<void> {
+// logging must not break the underlying lead mutation. Inside a caller
+// transaction the insert runs in a savepoint so a failure cannot poison the
+// outer transaction (Batch 16 durability boundary).
+async function emitSystemActivity(lead: leadsRepo.LeadRow, userId: number, type: string, subject: string, metadata?: Record<string, unknown>, tx?: Executor): Promise<void> {
+  const values = {
+    companyId: lead.companyId,
+    leadId: lead.id,
+    contactId: lead.contactId ?? null,
+    userId,
+    type,
+    source: "system",
+    subject,
+    metadata: metadata ?? null,
+  };
   try {
-    await activitiesRepo.insert({
-      companyId: lead.companyId,
-      leadId: lead.id,
-      contactId: lead.contactId ?? null,
-      userId,
-      type,
-      source: "system",
-      subject,
-      metadata: metadata ?? null,
-    });
+    if (tx) await tx.transaction(async (sp) => { await activitiesRepo.insert(values, sp); });
+    else await activitiesRepo.insert(values);
   } catch {
     // swallow — see above
   }
@@ -257,29 +263,38 @@ export async function createLead(user: AuthUser, input: LeadInput): Promise<Crea
     resolvedStageId = s.id;
   }
 
-  const lead = await leadsRepo.insert({
-    companyId,
-    contactId: contactId ?? null,
-    stage: stageText,
-    stageId: resolvedStageId,
-    teamId: teamId ?? null,
-    title: title ?? null,
-    value: value?.toString() ?? null,
-    currency: currency ?? "USD",
-    closingDate: closingDate ?? null,
-    probability: probability ?? null,
-    priority: priority ?? null,
-    notes: notes ?? null,
-    companyName: companyName ?? null,
-    assignedToId: assignedToId ?? null,
-    eventId: eventId ?? null,
-    organizationId: organizationId ?? null,
-    source: source ?? null,
-    createdById: user.id,
+  // Batch 16 durability boundary: the lead, its lifecycle activity and every
+  // matching workflow run commit in ONE transaction (or roll back together); the
+  // queue jobs are enqueued only after the commit.
+  const { lead, runs } = await db.transaction(async (tx) => {
+    const lead = await leadsRepo.insert(
+      {
+        companyId,
+        contactId: contactId ?? null,
+        stage: stageText,
+        stageId: resolvedStageId,
+        teamId: teamId ?? null,
+        title: title ?? null,
+        value: value?.toString() ?? null,
+        currency: currency ?? "USD",
+        closingDate: closingDate ?? null,
+        probability: probability ?? null,
+        priority: priority ?? null,
+        notes: notes ?? null,
+        companyName: companyName ?? null,
+        assignedToId: assignedToId ?? null,
+        eventId: eventId ?? null,
+        organizationId: organizationId ?? null,
+        source: source ?? null,
+        createdById: user.id,
+      },
+      tx,
+    );
+    await emitSystemActivity(lead, user.id, "created", "Lead created", { stage: stageText }, tx);
+    const runs = await persistWorkflowRuns([leadCreatedEvent(lead, user.id)], tx);
+    return { lead, runs };
   });
-  await emitSystemActivity(lead, user.id, "created", "Lead created", { stage: stageText });
-  // Batch 16: workflow dispatch (awaited before the response; never throws).
-  await dispatchWorkflowEvents([leadCreatedEvent(lead, user.id)]);
+  await enqueueWorkflowRuns(runs);
   return { conflict: false, lead: await enrichLead(lead, false) };
 }
 
@@ -415,28 +430,34 @@ export async function updateLead(user: AuthUser, id: number, input: LeadInput) {
     trackedFields.push({ field: "assignedToId", oldVal: existing.assignedToId != null ? String(existing.assignedToId) : null, newVal: assignedToId != null ? String(assignedToId) : null });
   }
 
-  const lead = await leadsRepo.updateWithHistory(
-    id,
-    updateData as Partial<leadsRepo.LeadRow>,
-    trackedFields.map(f => ({ leadId: id, changedBy: user.id, fieldName: f.field, oldValue: f.oldVal, newValue: f.newVal })),
-  );
+  // Batch 16 durability boundary: the update, its history rows, lifecycle
+  // activities and every matching workflow run commit in ONE transaction; jobs
+  // are enqueued only after the commit.
+  const { lead, runs } = await db.transaction(async (tx) => {
+    const lead = await leadsRepo.updateWithHistory(
+      id,
+      updateData as Partial<leadsRepo.LeadRow>,
+      trackedFields.map(f => ({ leadId: id, changedBy: user.id, fieldName: f.field, oldValue: f.oldVal, newValue: f.newVal })),
+      tx,
+    );
+    if (!lead) throw new AppError(404, "Lead not found");
 
-  if (!lead) throw new AppError(404, "Lead not found");
-
-  // Emit system lifecycle activities for stage moves (won/lost/generic) and
-  // reassignment. Won/lost come from the CONFIGURED stage flags, so custom
-  // terminal stages (e.g. "closed_success") emit the same lifecycle types.
-  if (stageChanged) {
-    const type = newOutcome.won ? "won" : newOutcome.lost ? "lost" : "stage_change";
-    await emitSystemActivity(lead, user.id, type, `Stage changed to ${newStage}`, { from: existing.stage, to: newStage });
-  }
-  if (assigneeChanged) {
-    await emitSystemActivity(lead, user.id, "assignment", "Owner changed", { from: existing.assignedToId, to: assignedToId ?? null });
-  }
-
-  // Batch 16: lead.updated (+ lead.stage_changed / lead.assigned when applicable),
-  // built from the before/after rows; awaited before the response, never throws.
-  await dispatchWorkflowEvents(leadUpdatedEvents(existing, lead, user.id));
+    // Emit system lifecycle activities for stage moves (won/lost/generic) and
+    // reassignment. Won/lost come from the CONFIGURED stage flags, so custom
+    // terminal stages (e.g. "closed_success") emit the same lifecycle types.
+    if (stageChanged) {
+      const type = newOutcome.won ? "won" : newOutcome.lost ? "lost" : "stage_change";
+      await emitSystemActivity(lead, user.id, type, `Stage changed to ${newStage}`, { from: existing.stage, to: newStage }, tx);
+    }
+    if (assigneeChanged) {
+      await emitSystemActivity(lead, user.id, "assignment", "Owner changed", { from: existing.assignedToId, to: assignedToId ?? null }, tx);
+    }
+    // lead.updated (+ lead.stage_changed / lead.assigned when applicable), from the
+    // before/after rows.
+    const runs = await persistWorkflowRuns(leadUpdatedEvents(existing, lead, user.id), tx);
+    return { lead, runs };
+  });
+  await enqueueWorkflowRuns(runs);
 
   return { conflict: false as const, lead: await enrichLead(lead, true) };
 }
@@ -565,10 +586,14 @@ export async function assignLead(user: AuthUser, id: number, input: AssignLeadIn
     if (teamId !== undefined) updateData.teamId = teamId;
     if (Object.keys(updateData).length === 0) throw new AppError(400, "No valid fields to update");
     const historyRows = assignedToId !== undefined ? assignHistory(existing, assignedToId ?? null, user.id) : [];
-    const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows);
-    if (!lead) throw new AppError(404, "Lead not found");
-    if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", "Owner assigned", { from: existing.assignedToId, to: assignedToId ?? null });
-    await dispatchWorkflowEvents(leadUpdatedEvents(existing, lead, user.id));
+    const { lead, runs } = await db.transaction(async (tx) => {
+      const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows, tx);
+      if (!lead) throw new AppError(404, "Lead not found");
+      if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", "Owner assigned", { from: existing.assignedToId, to: assignedToId ?? null }, tx);
+      const runs = await persistWorkflowRuns(leadUpdatedEvents(existing, lead, user.id), tx);
+      return { lead, runs };
+    });
+    await enqueueWorkflowRuns(runs);
     return await enrichLead(lead, true);
   }
 
@@ -577,12 +602,16 @@ export async function assignLead(user: AuthUser, id: number, input: AssignLeadIn
   // ── Round-robin: race-safe, atomic in a single locked transaction.
   if (strategy === "round_robin") {
     if (teamId == null) throw new AppError(400, "A team is required for round-robin assignment");
-    const result = await leadsRepo.assignByRoundRobin(existing.companyId, teamId, id, (assigneeId) => assignHistory(existing, assigneeId, user.id));
-    if (!result) throw new AppError(400, "No active team members available for round-robin");
-    if (result.assigneeId !== existing.assignedToId) {
-      await emitSystemActivity(result.lead, user.id, "assignment", "Round-robin assigned", { from: existing.assignedToId, to: result.assigneeId });
-    }
-    await dispatchWorkflowEvents(leadUpdatedEvents(existing, result.lead, user.id));
+    const { result, runs } = await db.transaction(async (tx) => {
+      const result = await leadsRepo.assignByRoundRobin(existing.companyId, teamId, id, (assigneeId) => assignHistory(existing, assigneeId, user.id), tx);
+      if (!result) throw new AppError(400, "No active team members available for round-robin");
+      if (result.assigneeId !== existing.assignedToId) {
+        await emitSystemActivity(result.lead, user.id, "assignment", "Round-robin assigned", { from: existing.assignedToId, to: result.assigneeId }, tx);
+      }
+      const runs = await persistWorkflowRuns(leadUpdatedEvents(existing, result.lead, user.id), tx);
+      return { result, runs };
+    });
+    await enqueueWorkflowRuns(runs);
     return await enrichLead(result.lead, true);
   }
 
@@ -591,10 +620,14 @@ export async function assignLead(user: AuthUser, id: number, input: AssignLeadIn
   const updateData: Record<string, unknown> = { assignedToId: assigneeId };
   if (resolvedTeamId !== existing.teamId) updateData.teamId = resolvedTeamId;
   const historyRows = assignHistory(existing, assigneeId, user.id);
-  const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows);
-  if (!lead) throw new AppError(404, "Lead not found");
-  if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", reason, { from: existing.assignedToId, to: assigneeId, strategy });
-  await dispatchWorkflowEvents(leadUpdatedEvents(existing, lead, user.id));
+  const { lead, runs } = await db.transaction(async (tx) => {
+    const lead = await leadsRepo.updateWithHistory(id, updateData as Partial<leadsRepo.LeadRow>, historyRows, tx);
+    if (!lead) throw new AppError(404, "Lead not found");
+    if (historyRows.length > 0) await emitSystemActivity(lead, user.id, "assignment", reason, { from: existing.assignedToId, to: assigneeId, strategy }, tx);
+    const runs = await persistWorkflowRuns(leadUpdatedEvents(existing, lead, user.id), tx);
+    return { lead, runs };
+  });
+  await enqueueWorkflowRuns(runs);
   return await enrichLead(lead, true);
 }
 

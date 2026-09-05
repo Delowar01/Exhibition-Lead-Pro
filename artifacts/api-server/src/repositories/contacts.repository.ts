@@ -16,7 +16,7 @@ import {
 } from "@workspace/db";
 import { eq, ne, ilike, and, count, sql, inArray, isNull, isNotNull, desc, asc, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
-import { activeScope, notDeleted, type Executor } from "./base.js";
+import { activeScope, notDeleted, type Executor, exec } from "./base.js";
 
 export type ContactRow = typeof contactsTable.$inferSelect;
 
@@ -87,8 +87,8 @@ export async function list(user: AuthUser, opts: ListContactsOpts): Promise<{ ro
   return { rows, total };
 }
 
-export async function insert(values: typeof contactsTable.$inferInsert): Promise<ContactRow> {
-  const [row] = await db.insert(contactsTable).values(values).returning();
+export async function insert(values: typeof contactsTable.$inferInsert, tx?: Executor): Promise<ContactRow> {
+  const [row] = await exec(tx).insert(contactsTable).values(values).returning();
   return row;
 }
 
@@ -275,8 +275,8 @@ export async function undoMergeTransaction(opts: {
   });
 }
 
-export async function update(id: number, data: Partial<typeof contactsTable.$inferInsert>): Promise<ContactRow | undefined> {
-  const [row] = await db.update(contactsTable).set(data).where(eq(contactsTable.id, id)).returning();
+export async function update(id: number, data: Partial<typeof contactsTable.$inferInsert>, tx?: Executor): Promise<ContactRow | undefined> {
+  const [row] = await exec(tx).update(contactsTable).set(data).where(eq(contactsTable.id, id)).returning();
   return row;
 }
 
