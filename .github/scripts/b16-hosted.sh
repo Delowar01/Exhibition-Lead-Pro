@@ -11,10 +11,14 @@
 #                             (no data, no owners/privileges) for the runner-side
 #                             drizzle-kit inspection. Mutates nothing.
 #   b16-hosted.sh apply       preflight → fresh backup → migrate profile with the
-#                             ACCEPTED commit checked out → verify that exactly the
-#                             B16 tables/indexes/constraints were added → restore the
+#                             ACCEPTED commit checked out (the api container is PAUSED
+#                             for the seconds the non-atomic drizzle-kit push runs, so
+#                             no write can hit custom_field_values while its FK is
+#                             being renamed) → verify that exactly the B16 tables/
+#                             indexes/constraints were added and the FK was renamed
+#                             with an identical, validated definition → restore the
 #                             checkout to the deployed commit → health/preservation.
-#                             The running api/web/postgres containers are NOT touched.
+#                             postgres/web are never touched; api is never restarted.
 #   b16-hosted.sh smoke       after the develop deploy of ACTIVATION_SHA: durable
 #                             queue selection, startup recovery, health, one isolated
 #                             workflow smoke through the real API + PostgreSQL queue,
@@ -71,6 +75,16 @@ EXPECTED_RUN_IDX="workflow_runs_company_created_idx workflow_runs_company_defini
 EXPECTED_ACT_IDX="workflow_action_runs_company_idx workflow_action_runs_pkey workflow_action_runs_run_index_ux"
 EXPECTED_RUN_FK="workflow_runs_actor_user_id_users_id_fk workflow_runs_company_id_companies_id_fk workflow_runs_workflow_definition_id_workflow_definitions_id_fk"
 EXPECTED_ACT_FK="workflow_action_runs_company_id_companies_id_fk workflow_action_runs_run_id_workflow_runs_id_fk"
+# custom_field_values.definition_id FK (Batch 16 correction 2): truncated auto name → explicit name, identical definition.
+CFV_OLD_FK="custom_field_values_definition_id_custom_field_definitions_id_f"
+CFV_NEW_FK="custom_field_values_definition_id_fk"
+CFV_FK_DEF="FOREIGN KEY (definition_id) REFERENCES custom_field_definitions(id) ON DELETE CASCADE"
+CFV_EXPECTED_BEFORE="custom_field_values_company_id_companies_id_fk(46) ${CFV_OLD_FK}(63)"
+CFV_EXPECTED_AFTER="custom_field_values_company_id_companies_id_fk(46) ${CFV_NEW_FK}(36)"
+cfv_fk_state() { psql_q "select coalesce(string_agg(conname||' | '||pg_get_constraintdef(oid)||' | validated='||convalidated::text||' | on_delete='||confdeltype::text||' on_update='||confupdtype::text, ' ;; ' order by conname),'') from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass"; }
+# pg_dump spells the same definition schema-qualified (regex form for the DDL diff).
+CFV_FK_DEF_DUMP_RE='FOREIGN KEY \(definition_id\) REFERENCES public\.custom_field_definitions\(id\) ON DELETE CASCADE;'
+cfv_orphans()  { psql_q "select count(*) from custom_field_values v left join custom_field_definitions d on d.id=v.definition_id where d.id is null"; }
 
 cols_of() { psql_q "select coalesce(string_agg(column_name, ',' order by ordinal_position),'') from information_schema.columns where table_schema='public' and table_name='$1'"; }
 idx_of()  { psql_q "select coalesce(string_agg(indexname, ' ' order by indexname),'') from pg_indexes where schemaname='public' and tablename='$1'"; }
@@ -149,6 +163,19 @@ preflight() {
   CFV_FK="$(psql_q "select coalesce(string_agg(conname||'('||length(conname)||')', ' ' order by conname),'') from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass")"
   log "db before: public base tables=$TABLES_BEFORE, workflow_definitions=$WD_STATE ($WD_ROWS rows), workflow_runs=$RUNS_BEFORE, workflow_action_runs=$ACTS_BEFORE, job_queue=$JQ_BEFORE ($JQ_IDX_BEFORE indexes)"
   log "custom_field_values FK constraints as stored (name(length)): $CFV_FK"
+  CFV_STATE_BEFORE="$(cfv_fk_state)"; CFV_ORPHANS_BEFORE="$(cfv_orphans)"
+  CFV_ROWS="$(psql_q "select count(*) from custom_field_values")"; CFD_ROWS="$(psql_q "select count(*) from custom_field_definitions")"
+  log "custom_field_values FK state: $CFV_STATE_BEFORE"
+  log "custom_field_values rows=$CFV_ROWS, custom_field_definitions rows=$CFD_ROWS, orphaned definition references=$CFV_ORPHANS_BEFORE"
+  if [ "$CFV_FK" = "$CFV_EXPECTED_BEFORE" ]; then
+    grep -q "$CFV_OLD_FK | $CFV_FK_DEF | validated=true | on_delete=c on_update=a" <<< "$CFV_STATE_BEFORE" || fail "existing truncated FK is not the expected validated definition"
+    log "existing FK $CFV_OLD_FK: definition identical to the target, validated=true"
+  elif [ "$CFV_FK" = "$CFV_EXPECTED_AFTER" ]; then
+    log "custom_field_values FK already renamed to $CFV_NEW_FK (a prior apply completed)"
+  else
+    fail "custom_field_values FK set is neither the pre- nor the post-correction shape: $CFV_FK"
+  fi
+  [ "$CFV_ORPHANS_BEFORE" = "0" ] || fail "custom_field_values has $CFV_ORPHANS_BEFORE orphaned definition references — refusing to touch the FK"
 
   # Durable queue health (from the running api's log + the job_queue table)
   API_LOG="$(docker logs "$API_CID" 2>&1)"
@@ -242,12 +269,28 @@ do_apply() {
   export COMPOSE_PARALLEL_LIMIT=1
   compose --profile migrate build migrate >&2
   MIGRATE_LOG="$(mktemp)"
+  # drizzle-kit push executes its statements one by one (no transaction), so the
+  # custom_field_values FK is absent between its DROP and the final ADD. The api
+  # container is PAUSED (SIGSTOP semantics; not stopped, not recreated) for exactly
+  # the seconds the push runs, so no application write can reach the table in that
+  # window. The trap guarantees the unpause on any failure.
+  API_PAUSED=0
+  unpause_api() { if [ "$API_PAUSED" = "1" ]; then docker unpause "$API_CID" >/dev/null 2>&1 && log "api container unpaused"; API_PAUSED=0; fi; }
+  trap 'unpause_api; rm -f "$DDL_BEFORE" "$DDL_AFTER"; restore_checkout' EXIT
+  ACTIVE_BEFORE="$(psql_q "select count(*) from pg_stat_activity where datname=current_database() and state='active' and pid<>pg_backend_pid()")"
+  docker pause "$API_CID" >/dev/null && API_PAUSED=1
+  PAUSE_START="$(date +%s.%N)"
+  log "api container paused ($API_CID) — active application queries just before the pause: $ACTIVE_BEFORE"
   # -T: no TTY — drizzle-kit cannot prompt, so any data-loss statement it would want
   # confirmation for aborts BEFORE applying. --no-deps: postgres is already running and
   # healthy (verified); a one-off run must never start/recreate it.
   if ! compose --profile migrate run -T --rm --no-deps migrate 2>&1 | tee "$MIGRATE_LOG" >&2; then
-    rm -f "$MIGRATE_LOG"; fail "drizzle-kit push failed (see output above)"
+    unpause_api; rm -f "$MIGRATE_LOG"; fail "drizzle-kit push failed (see output above)"
   fi
+  unpause_api
+  PAUSE_SECS="$(awk "BEGIN{printf \"%.1f\", $(date +%s.%N) - $PAUSE_START}")"
+  log "api write pause lasted ${PAUSE_SECS}s (container not restarted: StartedAt unchanged)"
+  trap 'rm -f "$DDL_BEFORE" "$DDL_AFTER"; restore_checkout' EXIT
   if grep -Eiq 'drop table|drop column|truncate|drop index|data.loss|data loss' "$MIGRATE_LOG"; then
     rm -f "$MIGRATE_LOG"; fail "drizzle-kit output mentions a destructive change — STOP and inspect"
   fi
@@ -270,13 +313,24 @@ do_apply() {
   # constraints, indexes). Anything else = unrelated change. Allowed anonymous lines
   # are the column definitions and sequence bodies that pg_dump emits inside the
   # CREATE TABLE / CREATE SEQUENCE blocks of those tables, plus separators.
-  BAD="$(printf '%s\n' "$DDL_DIFF" | grep -E '^[<>]' | grep -vE 'workflow_runs|workflow_action_runs' | grep -vE '^[<>]\s*$' | grep -vE '^[<>] (\);|--|    [a-z_]+ (integer|text|jsonb|timestamp)|    (AS integer|START WITH 1|INCREMENT BY 1|NO MINVALUE|NO MAXVALUE|CACHE 1;))' || true)"
+  # The only permitted non-B16 change is the custom_field_values FK rename: its
+  # `-- Name:` header line and its ADD CONSTRAINT line (old name removed, new name
+  # added) plus the unchanged `ALTER TABLE ONLY public.custom_field_values` line
+  # that pg_dump may re-emit when the block moves.
+  BAD="$(printf '%s\n' "$DDL_DIFF" | grep -E '^[<>]' | grep -vE 'workflow_runs|workflow_action_runs' | grep -vE '^[<>]\s*$' | grep -vE "$CFV_OLD_FK|$CFV_NEW_FK" | grep -vE '^[<>] ALTER TABLE ONLY public\.custom_field_values$' | grep -vE '^[<>] (\);|--|    [a-z_]+ (integer|text|jsonb|timestamp)|    (AS integer|START WITH 1|INCREMENT BY 1|NO MINVALUE|NO MAXVALUE|CACHE 1;))' || true)"
   if [ -n "$BAD" ]; then
     log "unrelated DDL changes detected:"; printf '%s\n' "$BAD" >&2
-    fail "the migrate changed something other than workflow_runs / workflow_action_runs — STOP"
+    fail "the migrate changed something other than workflow_runs / workflow_action_runs / the custom_field_values FK rename — STOP"
   fi
-  REMOVED="$(printf '%s\n' "$DDL_DIFF" | grep -E '^<' | grep -vE '^<\s*$' || true)"
-  [ -z "$REMOVED" ] || { printf '%s\n' "$REMOVED" >&2; fail "lines were REMOVED from the schema DDL — STOP"; }
+  REMOVED="$(printf '%s\n' "$DDL_DIFF" | grep -E '^<' | grep -vE '^<\s*$' | grep -vE "$CFV_OLD_FK" | grep -vE '^< ALTER TABLE ONLY public\.custom_field_values$|^< --$' || true)"
+  [ -z "$REMOVED" ] || { printf '%s\n' "$REMOVED" >&2; fail "lines other than the old custom_field_values FK name were REMOVED from the schema DDL — STOP"; }
+  OLD_FK_LINES="$(printf '%s\n' "$DDL_DIFF" | grep -cE "^<.*ADD CONSTRAINT $CFV_OLD_FK $CFV_FK_DEF_DUMP_RE" || true)"
+  NEW_FK_LINES="$(printf '%s\n' "$DDL_DIFF" | grep -cE "^>.*ADD CONSTRAINT $CFV_NEW_FK $CFV_FK_DEF_DUMP_RE" || true)"
+  OTHER_FK_LINES="$(printf '%s\n' "$DDL_DIFF" | grep -E '^[<>].*ADD CONSTRAINT' | grep -vE 'workflow_runs|workflow_action_runs' | grep -vcE "ADD CONSTRAINT ($CFV_OLD_FK|$CFV_NEW_FK) $CFV_FK_DEF_DUMP_RE" || true)"
+  log "DDL diff FK rename evidence: old-name ADD CONSTRAINT line removed=$OLD_FK_LINES, new-name ADD CONSTRAINT line added=$NEW_FK_LINES (identical definition text), other constraint lines changed=$OTHER_FK_LINES"
+  if [ "$RUNS_BEFORE" = "absent" ]; then
+    [ "$OLD_FK_LINES" = "1" ] && [ "$NEW_FK_LINES" = "1" ] && [ "$OTHER_FK_LINES" = "0" ] || fail "the DDL diff does not show exactly the expected FK rename"
+  fi
 
   [ "$(exists_of workflow_runs)" = "workflow_runs" ] || fail "workflow_runs missing after migrate"
   [ "$(exists_of workflow_action_runs)" = "workflow_action_runs" ] || fail "workflow_action_runs missing after migrate"
@@ -308,8 +362,16 @@ do_apply() {
   [ "$(exists_of job_queue)" = "job_queue" ] && [ "$(psql_q "select count(*) from pg_indexes where schemaname='public' and tablename='job_queue'")" = "$JQ_IDX_BEFORE" ] || fail "job_queue changed"
   [ "$(psql_q "select count(*) from workflow_definitions")" = "$WD_ROWS" ] || fail "workflow_definitions row count changed"
   CFV_FK_AFTER="$(psql_q "select coalesce(string_agg(conname||'('||length(conname)||')', ' ' order by conname),'') from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass")"
-  [ "$CFV_FK_AFTER" = "$CFV_FK" ] || fail "custom_field_values FK constraint set changed: before [$CFV_FK] after [$CFV_FK_AFTER]"
-  log "custom_field_values FK constraints after: $CFV_FK_AFTER (unchanged)"
+  [ "$CFV_FK_AFTER" = "$CFV_EXPECTED_AFTER" ] || fail "custom_field_values FK constraint set after migrate is [$CFV_FK_AFTER], expected [$CFV_EXPECTED_AFTER]"
+  CFV_STATE_AFTER="$(cfv_fk_state)"; CFV_ORPHANS_AFTER="$(cfv_orphans)"
+  log "custom_field_values FK state after: $CFV_STATE_AFTER"
+  grep -q "$CFV_NEW_FK | $CFV_FK_DEF | validated=true | on_delete=c on_update=a" <<< "$CFV_STATE_AFTER" || fail "renamed FK $CFV_NEW_FK is not the identical validated definition"
+  grep -q "custom_field_values_company_id_companies_id_fk | FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE | validated=true" <<< "$CFV_STATE_AFTER" || fail "the other custom_field_values FK changed"
+  [ "$CFV_ORPHANS_AFTER" = "0" ] || fail "orphaned definition references after migrate: $CFV_ORPHANS_AFTER"
+  [ "$(psql_q "select count(*) from custom_field_values")" = "$CFV_ROWS" ] && [ "$(psql_q "select count(*) from custom_field_definitions")" = "$CFD_ROWS" ] || fail "custom field row counts changed"
+  LONG_NAMES="$(psql_q "select coalesce(string_agg(conrelid::regclass||'.'||conname||'('||length(conname)||')', ' '),'none') from pg_constraint where length(conname)>=63")"
+  [ "$LONG_NAMES" = "workflow_runs.workflow_runs_workflow_definition_id_workflow_definitions_id_fk(63)" ] || fail "unexpected >=63-char constraint names: $LONG_NAMES"
+  log "renamed FK OK: $CFV_OLD_FK -> $CFV_NEW_FK, definition '$CFV_FK_DEF', validated, on_delete=cascade on_update=no action, orphans=0, rows unchanged ($CFV_ROWS values / $CFD_ROWS definitions); >=63-char names: $LONG_NAMES (exactly 63, not truncated)"
   RUN_ROWS="$(psql_q "select count(*) from workflow_runs")"; ACT_ROWS="$(psql_q "select count(*) from workflow_action_runs")"
   log "db after: public base tables=$TABLES_AFTER (before $TABLES_BEFORE), workflow_runs rows=$RUN_ROWS, workflow_action_runs rows=$ACT_ROWS, job_queue intact, workflow_definitions rows=$WD_ROWS"
 
@@ -328,7 +390,9 @@ do_apply() {
   [ "$(started_of "$WEB_CID")" = "$WEB_STARTED" ] || fail "web was restarted"
   [ "$(cid api)" = "$API_CID" ]                   || fail "api container changed"
   [ "$(started_of "$API_CID")" = "$API_STARTED" ] || fail "api was restarted"
-  [ "$(health_of "$API_CID")" = "healthy" ]       || fail "api is no longer healthy"
+  [ "$(docker inspect -f '{{.State.Status}}' "$API_CID")" = "running" ] || fail "api is not running after unpause"
+  waited=0; until [ "$(health_of "$API_CID")" = "healthy" ]; do waited=$((waited+5)); [ "$waited" -ge 120 ] && fail "api not healthy 120s after unpause"; sleep 5; done
+  log "api healthy again ${waited}s after unpause (same container, same StartedAt)"
   grep -q '127.0.0.1:18080' <<< "$(docker port "$WEB_CID")" || fail "web is no longer bound to 127.0.0.1:18080"
   [ -z "$(docker port "$API_CID")" ]              || fail "api must not publish any host port"
   [ "$(sha256sum "$ENV_FILE" | cut -c1-64)" = "$ENV_HASH_BEFORE" ] || fail "env file changed"
@@ -341,7 +405,7 @@ do_apply() {
   log "api unchanged: $API_CID ($DEPLOYED_SHA) started $API_STARTED healthy — the B16 api starts only through the develop deploy"
   log "web unchanged: $WEB_CID started $WEB_STARTED healthy; env file unchanged (hash + mode 600); checkout back at $DEPLOYED_SHA"
   trap - EXIT; rm -f "$DDL_BEFORE" "$DDL_AFTER"
-  log "SUMMARY apply: backup=$BACKUP_FILE backup_bytes=$BACKUP_SIZE migrate='$MIGRATE_RESULT' tables_before=$TABLES_BEFORE tables_after=$TABLES_AFTER workflow_runs=cols19/idx7/fk3 workflow_action_runs=cols13/idx3/fk2 unrelated_ddl_changes=no readyz='$READYZ_PARSED' api_restarted=no postgres_restarted=no env_changed=no checkout=$DEPLOYED_SHA"
+  log "SUMMARY apply: backup=$BACKUP_FILE backup_bytes=$BACKUP_SIZE migrate='$MIGRATE_RESULT' tables_before=$TABLES_BEFORE tables_after=$TABLES_AFTER workflow_runs=cols19/idx7/fk3 workflow_action_runs=cols13/idx3/fk2 cfv_fk=$CFV_OLD_FK->$CFV_NEW_FK(identical,validated,orphans=0) api_paused_secs=$PAUSE_SECS unrelated_ddl_changes=no readyz='$READYZ_PARSED' api_restarted=no postgres_restarted=no env_changed=no checkout=$DEPLOYED_SHA"
   log "hosted B16 schema activation COMPLETED"
 }
 

@@ -9,11 +9,12 @@
 #           the branch content equals the accepted commit plus these ops files.
 # Mode:     first line of .github/scripts/b16-mode —
 #             inspect  read-only preflight + schema-only dump + drizzle-kit push
-#                      inspection on the RUNNER (scratch postgres); nothing applied
-#             apply    inspect gate, then backup + migrate profile on the VPS
+#                      inspection on the RUNNER (scratch postgres), pass 1 (exact
+#                      17 statements) and pass 2 (zero statements); nothing applied
+#             apply    the inspect gates, then backup + migrate profile on the VPS
+#                      (api paused for the seconds of the push), then a repeat
+#                      inspection of the fresh hosted schema (must be zero statements)
 #             smoke    post-deploy verification + isolated workflow smoke + cleanup
-#           optional second line `allow=cfv-fk-recreate` accepts the known,
-#           idempotent custom_field_values FK re-create (see b16-inspect-push.mjs).
 #
 # Secrets used (same as deploy-dev-vps.yml, nothing new):
 #   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
@@ -36,8 +37,9 @@ concurrency:
 env:
   # Commit that must be deployed BEFORE the schema activation (develop head after B15).
   DEPLOYED_SHA_BEFORE: fb4257b1342b0489e4de0377c42d9faddd3a649e
-  # The accepted Batch 16 commit (schema source for the inspection + migrate).
-  ACTIVATION_SHA: 7c0942659a8bbe821710505cf09d13fa5fb5ef23
+  # The accepted Batch 16 commit incl. correction 2 (schema source for the
+  # inspection + migrate).
+  ACTIVATION_SHA: 2b9fa16485fb665eee4387f5440d4263c316c345
 
 jobs:
   activate:
@@ -54,17 +56,13 @@ jobs:
         id: mode
         run: |
           MODE="$(sed -n 1p .github/scripts/b16-mode | tr -d '[:space:]')"
-          ALLOW_LINE="$(sed -n 2p .github/scripts/b16-mode | tr -d '[:space:]')"
-          ALLOW="${ALLOW_LINE#allow=}"
-          [ "$ALLOW_LINE" = "" ] || [ "${ALLOW_LINE%%=*}" = "allow" ] || { echo "invalid second line in b16-mode"; exit 1; }
           case "$MODE" in inspect|apply|smoke) ;; *) echo "invalid mode '$MODE'"; exit 1;; esac
           git cat-file -e "$ACTIVATION_SHA^{commit}" || { echo "accepted commit not present"; exit 1; }
           git merge-base --is-ancestor "$ACTIVATION_SHA" HEAD || { echo "branch does not descend from the accepted commit"; exit 1; }
           DIFF="$(git diff --stat "$ACTIVATION_SHA" HEAD -- . ':(exclude).github/scripts/b16-mode' ':(exclude).github/scripts/b16-hosted.sh' ':(exclude).github/scripts/b16-inspect-push.mjs' ':(exclude).github/workflows/b16-hosted-activation.yml')"
           [ -z "$DIFF" ] || { echo "branch differs from the accepted commit outside the ops files:"; echo "$DIFF"; exit 1; }
-          echo "mode=$MODE (allow='${ALLOW}'); branch = $ACTIVATION_SHA + ops files only"
+          echo "mode=$MODE; branch = $ACTIVATION_SHA + ops files only"
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
-          echo "allow=$ALLOW" >> "$GITHUB_OUTPUT"
           if [ "$MODE" = "smoke" ]; then echo "deployed=$ACTIVATION_SHA" >> "$GITHUB_OUTPUT"; else echo "deployed=$DEPLOYED_SHA_BEFORE" >> "$GITHUB_OUTPUT"; fi
 
       - name: Install SSH key and pinned host key
@@ -127,7 +125,7 @@ jobs:
         if: steps.mode.outputs.mode != 'smoke'
         run: pnpm install --frozen-lockfile --filter "@workspace/db..."
 
-      - name: Inspect the schema push on a scratch database (runner only)
+      - name: Inspect the schema push on a scratch database (runner only) — pass 1 and pass 2
         if: steps.mode.outputs.mode != 'smoke'
         run: |
           set -euo pipefail
@@ -137,21 +135,52 @@ jobs:
           docker exec b16pg pg_isready -U b16 -d b16
           docker exec -i b16pg psql -q -v ON_ERROR_STOP=1 -U b16 -d b16 < "$RUNNER_TEMP/schema-before.sql" >/dev/null
           echo "scratch database restored: $(docker exec b16pg psql -tA -U b16 -d b16 -c "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'") public base tables (hosted schema copy)"
-          echo "custom_field_values FK names in the hosted schema copy: $(docker exec b16pg psql -tA -U b16 -d b16 -c "select string_agg(conname||'('||length(conname)||')', ' ') from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass")"
-          echo "drizzle-kit push --verbose with the accepted code ($ACTIVATION_SHA) against the scratch copy:"
+          echo "custom_field_values FK constraints in the hosted schema copy: $(docker exec b16pg psql -tA -U b16 -d b16 -c "select string_agg(conname||'('||length(conname)||') '||pg_get_constraintdef(oid)||' validated='||convalidated, ' ;; ' order by conname) from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass")"
+          echo "== PASS 1: drizzle-kit push --verbose with the accepted code ($ACTIVATION_SHA) against the scratch copy =="
           set +e
           DATABASE_URL="postgres://b16:$PGPW@127.0.0.1:55432/b16" pnpm --filter @workspace/db exec drizzle-kit push --verbose --config ./drizzle.config.ts > "$RUNNER_TEMP/push-verbose.log" 2>&1
           RC=$?
           set -e
           if [ "$RC" != "0" ]; then echo "drizzle-kit push exited $RC:"; cat "$RUNNER_TEMP/push-verbose.log"; exit 1; fi
-          node .github/scripts/b16-inspect-push.mjs "$RUNNER_TEMP/push-verbose.log" "${{ steps.mode.outputs.allow }}"
+          node .github/scripts/b16-inspect-push.mjs "$RUNNER_TEMP/push-verbose.log"
+          echo "custom_field_values FK constraints after pass 1: $(docker exec b16pg psql -tA -U b16 -d b16 -c "select string_agg(conname||'('||length(conname)||') '||pg_get_constraintdef(oid)||' validated='||convalidated, ' ;; ' order by conname) from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass")"
+          echo "== PASS 2: the same push again must produce zero statements =="
+          set +e
+          DATABASE_URL="postgres://b16:$PGPW@127.0.0.1:55432/b16" pnpm --filter @workspace/db exec drizzle-kit push --verbose --config ./drizzle.config.ts > "$RUNNER_TEMP/push-verbose-2.log" 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" != "0" ]; then echo "drizzle-kit push (pass 2) exited $RC:"; cat "$RUNNER_TEMP/push-verbose-2.log"; exit 1; fi
+          node .github/scripts/b16-inspect-push.mjs "$RUNNER_TEMP/push-verbose-2.log" --expect-none
+          docker rm -f b16pg >/dev/null
 
-      - name: Apply the additive schema on the VPS (backup → migrate profile → verify)
+      - name: Apply the schema on the VPS (backup → migrate profile with api paused → verify)
         if: steps.mode.outputs.mode == 'apply'
         env:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
         run: |
           ssh vps "DEPLOYED_SHA='${{ steps.mode.outputs.deployed }}' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b16-hosted.sh\" apply" < /dev/null
+
+      - name: Repeat inspection against the fresh hosted schema (must be zero statements)
+        if: steps.mode.outputs.mode == 'apply'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh vps "DEPLOYED_SHA='${{ steps.mode.outputs.deployed }}' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b16-hosted.sh\" dump" < /dev/null > "$RUNNER_TEMP/schema-after.sql"
+          echo "post-apply schema-only dump: $(wc -l < "$RUNNER_TEMP/schema-after.sql") lines, $(grep -c '^CREATE TABLE' "$RUNNER_TEMP/schema-after.sql") CREATE TABLE statements"
+          PGPW="$(openssl rand -hex 16)"
+          docker run -d --name b16pg2 -e POSTGRES_PASSWORD="$PGPW" -e POSTGRES_USER=b16 -e POSTGRES_DB=b16 -p 127.0.0.1:55433:5432 postgres:16-alpine >/dev/null
+          for _ in $(seq 1 30); do docker exec b16pg2 pg_isready -U b16 -d b16 >/dev/null 2>&1 && break; sleep 2; done
+          docker exec -i b16pg2 psql -q -v ON_ERROR_STOP=1 -U b16 -d b16 < "$RUNNER_TEMP/schema-after.sql" >/dev/null
+          echo "custom_field_values FK constraints in the post-apply hosted schema: $(docker exec b16pg2 psql -tA -U b16 -d b16 -c "select string_agg(conname||'('||length(conname)||') '||pg_get_constraintdef(oid)||' validated='||convalidated, ' ;; ' order by conname) from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass")"
+          set +e
+          DATABASE_URL="postgres://b16:$PGPW@127.0.0.1:55433/b16" pnpm --filter @workspace/db exec drizzle-kit push --verbose --config ./drizzle.config.ts > "$RUNNER_TEMP/push-verbose-3.log" 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" != "0" ]; then echo "drizzle-kit push (post-apply) exited $RC:"; cat "$RUNNER_TEMP/push-verbose-3.log"; exit 1; fi
+          node .github/scripts/b16-inspect-push.mjs "$RUNNER_TEMP/push-verbose-3.log" --expect-none
+          docker rm -f b16pg2 >/dev/null
 
       - name: Post-deploy verification + isolated workflow smoke on the VPS
         if: steps.mode.outputs.mode == 'smoke'
@@ -164,5 +193,5 @@ jobs:
         if: always()
         run: |
           ssh vps 'rm -f "$HOME/b16-hosted.sh"' < /dev/null || true
-          docker rm -f b16pg >/dev/null 2>&1 || true
-          rm -f "$RUNNER_TEMP/schema-before.sql" "$RUNNER_TEMP/push-verbose.log"
+          docker rm -f b16pg b16pg2 >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/schema-before.sql" "$RUNNER_TEMP/schema-after.sql" "$RUNNER_TEMP"/push-verbose*.log
