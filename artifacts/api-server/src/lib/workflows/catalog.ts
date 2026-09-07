@@ -36,28 +36,29 @@ export const WORKFLOW_LIMITS = {
   maxDefinitionBytes: 32 * 1024,
 } as const;
 
-// Definition-management lifecycle. NO state executes anything in Batch 15.
+// Definition lifecycle. Since Batch 16 a PUBLISHED definition is live: the
+// workflow engine executes it for every future matching CRM event.
 export const WORKFLOW_STATUSES = ["draft", "published", "archived"] as const;
 export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 
 export const WORKFLOW_LIFECYCLE: Record<WorkflowStatus, { label: string; description: string; editable: boolean; deletable: boolean; transitions: readonly WorkflowStatus[] }> = {
   draft: {
     label: "Draft",
-    description: "Editable working copy. Never eligible for execution. Can be published (requires a fully valid definition with at least one action), archived, or hard-deleted (DELETE requires the current revision in its body, like every other mutation).",
+    description: "Inactive and editable. A draft never executes. It can be published (requires a fully valid definition with at least one action), archived, or deleted (DELETE requires the current revision in its body, like every other mutation).",
     editable: true,
     deletable: true,
     transitions: ["published", "archived"],
   },
   published: {
-    label: "Published",
-    description: "The definition a future execution engine (Batch 16) may consider eligible. Batch 15 itself never executes it. IMMUTABLE: it cannot be edited or hard-deleted — to change it, unpublish it (back to draft), edit, then publish again, so every change to an eligible definition crosses an explicit publish boundary. Can be unpublished or archived.",
+    label: "Active",
+    description: "Active: the workflow engine executes this definition for every future matching CRM event (each execution runs from the snapshot captured when it was queued). IMMUTABLE while active: it cannot be edited or deleted — unpublish it (back to draft), edit, then publish again, so every change crosses an explicit publish boundary. Can be unpublished or archived.",
     editable: false,
     deletable: false,
     transitions: ["draft", "archived"],
   },
   archived: {
     label: "Archived",
-    description: "Terminal, read-only history. Cannot be edited, published, unpublished or deleted.",
+    description: "Inactive, terminal, read-only history. It never executes again and cannot be edited, published, unpublished or deleted. Executions already queued or running finish from their captured snapshots.",
     editable: false,
     deletable: false,
     transitions: [],

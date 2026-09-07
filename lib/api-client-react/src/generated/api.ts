@@ -24165,7 +24165,7 @@ export const getListWorkflowRunsUrl = (params?: ListWorkflowRunsParams,) => {
 
 /**
  * Read-only, tenant-scoped execution history of the caller's company, newest first. Pagination is opt-in (page/pageSize). There is no execute, run-now, replay or retry endpoint — automatic queue retries are the only re-execution path.
- * @summary List workflow execution history (Batch 16)
+ * @summary List workflow execution history
  */
 export const listWorkflowRuns = async (params?: ListWorkflowRunsParams, options?: RequestInit): Promise<WorkflowRunList> => {
 
@@ -24212,7 +24212,7 @@ export type ListWorkflowRunsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List workflow execution history (Batch 16)
+ * @summary List workflow execution history
  */
 
 export function useListWorkflowRuns<TData = Awaited<ReturnType<typeof listWorkflowRuns>>, TError = ErrorType<unknown>>(
@@ -24612,8 +24612,8 @@ export const getPublishWorkflowDefinitionUrl = (id: number,) => {
 }
 
 /**
- * Requires a fully valid definition with at least one action. Published means "eligible for a future execution engine (Batch 16)"; Batch 15 never executes it.
- * @summary Lifecycle: draft → published (definition management only; nothing executes)
+ * Requires a fully valid definition with at least one action. Published means ACTIVE: from now on the workflow engine executes this definition for every future matching CRM event. Active definitions are read-only; unpublish to edit.
+ * @summary Lifecycle: draft → published (the definition becomes active)
  */
 export const publishWorkflowDefinition = async (id: number,
     workflowRevisionInput: WorkflowRevisionInput, options?: RequestInit): Promise<WorkflowDefinition> => {
@@ -24663,7 +24663,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type PublishWorkflowDefinitionMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Lifecycle: draft → published (definition management only; nothing executes)
+ * @summary Lifecycle: draft → published (the definition becomes active)
  */
 export const usePublishWorkflowDefinition = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof publishWorkflowDefinition>>, TError,{id: number;data: BodyType<WorkflowRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

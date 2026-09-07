@@ -17,7 +17,7 @@ export interface WorkflowCatalog {
   schemaVersion: number;
   limits: WorkflowCatalogLimits;
   statuses: string[];
-  /** Per-status meaning (label, description, editable, deletable, transitions). No status executes anything. */
+  /** Per-status meaning (label, description, editable, deletable, transitions). Only `published` definitions execute (on future matching CRM events); draft and archived are inactive. */
   lifecycle: WorkflowCatalogLifecycle;
   entities: string[];
   triggers: WorkflowCatalogTriggersItem[];

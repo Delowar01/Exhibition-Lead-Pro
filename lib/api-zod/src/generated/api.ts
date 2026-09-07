@@ -9244,7 +9244,7 @@ export const ListWorkflowDefinitionsResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots.'),
   "trigger": zod.object({
   "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
   "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
@@ -9302,7 +9302,7 @@ export const GetWorkflowCatalogResponse = zod.object({
   "schemaVersion": zod.number(),
   "limits": zod.record(zod.string(), zod.unknown()),
   "statuses": zod.array(zod.string()),
-  "lifecycle": zod.record(zod.string(), zod.unknown()).describe('Per-status meaning (label, description, editable, deletable, transitions). No status executes anything.'),
+  "lifecycle": zod.record(zod.string(), zod.unknown()).describe('Per-status meaning (label, description, editable, deletable, transitions). Only `published` definitions execute (on future matching CRM events); draft and archived are inactive.'),
   "entities": zod.array(zod.string()),
   "triggers": zod.array(zod.object({
   "type": zod.string(),
@@ -9372,7 +9372,7 @@ export const ValidateWorkflowDefinitionResponse = zod.object({
 
 /**
  * Read-only, tenant-scoped execution history of the caller's company, newest first. Pagination is opt-in (page/pageSize). There is no execute, run-now, replay or retry endpoint — automatic queue retries are the only re-execution path.
- * @summary List workflow execution history (Batch 16)
+ * @summary List workflow execution history
  */
 export const ListWorkflowRunsQueryParams = zod.object({
   "workflowDefinitionId": zod.coerce.number().optional(),
@@ -9476,7 +9476,7 @@ export const GetWorkflowDefinitionResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots.'),
   "trigger": zod.object({
   "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
   "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
@@ -9532,7 +9532,7 @@ export const UpdateWorkflowDefinitionResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots.'),
   "trigger": zod.object({
   "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
   "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
@@ -9598,8 +9598,8 @@ export const ValidateStoredWorkflowDefinitionResponse = zod.object({
 
 
 /**
- * Requires a fully valid definition with at least one action. Published means "eligible for a future execution engine (Batch 16)"; Batch 15 never executes it.
- * @summary Lifecycle: draft → published (definition management only; nothing executes)
+ * Requires a fully valid definition with at least one action. Published means ACTIVE: from now on the workflow engine executes this definition for every future matching CRM event. Active definitions are read-only; unpublish to edit.
+ * @summary Lifecycle: draft → published (the definition becomes active)
  */
 export const PublishWorkflowDefinitionParams = zod.object({
   "id": zod.coerce.number()
@@ -9614,7 +9614,7 @@ export const PublishWorkflowDefinitionResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots.'),
   "trigger": zod.object({
   "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
   "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
@@ -9654,7 +9654,7 @@ export const UnpublishWorkflowDefinitionResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots.'),
   "trigger": zod.object({
   "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
   "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')
@@ -9694,7 +9694,7 @@ export const ArchiveWorkflowDefinitionResponse = zod.object({
   "companyId": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.'),
+  "status": zod.enum(['draft', 'published', 'archived']).describe('draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots.'),
   "trigger": zod.object({
   "type": zod.enum(['lead.created', 'lead.updated', 'lead.stage_changed', 'lead.assigned', 'contact.created', 'contact.updated', 'contact.status_changed']),
   "config": zod.record(zod.string(), zod.unknown()).optional().describe('Trigger-specific configuration. The shape per type is published as JSON Schema by GET \/workflows\/catalog.')

@@ -7,6 +7,6 @@
  */
 
 /**
- * Per-status meaning (label, description, editable, deletable, transitions). No status executes anything.
+ * Per-status meaning (label, description, editable, deletable, transitions). Only `published` definitions execute (on future matching CRM events); draft and archived are inactive.
  */
 export type WorkflowCatalogLifecycle = { [key: string]: unknown };

@@ -59,7 +59,7 @@ tags:
   - name: ai
     description: AI platform settings, usage & cost visibility, and provider health
   - name: workflows
-    description: Deterministic CRM automation definitions (Batch 15 — definitions only; nothing executes)
+    description: Deterministic CRM automation — workflow definitions (trigger → conditions → ordered actions) and their execution history. A published definition is active and executes on future matching CRM events; drafts are inactive and editable; archived definitions are inactive terminal history.
 
 paths:
   /healthz:
@@ -7035,10 +7035,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/UndoMergeResponse"
 
-  # BATCH 15 — WORKFLOW DEFINITIONS. Company-scoped, deterministic CRM automation
-  # DEFINITIONS (trigger → conditions → ordered actions). Management API only:
-  # there is deliberately no execute/run/test-run/history/retry/job endpoint —
-  # execution is Batch 16. Not an AI feature (not under /ai).
+  # WORKFLOW AUTOMATION (Batch 15 definitions + Batch 16 engine). Company-scoped,
+  # deterministic CRM automation DEFINITIONS (trigger → conditions → ordered
+  # actions). Published definitions are ACTIVE: the engine executes them on future
+  # matching CRM events; drafts are inactive and editable; archived definitions
+  # are inactive terminal history. Execution history is read-only (/workflows/runs).
+  # There is deliberately no run-now/test-run/replay/retry endpoint: the queue's
+  # automatic retries are the only re-execution path. Not an AI feature (not under /ai).
   /workflows:
     get:
       operationId: listWorkflowDefinitions
@@ -7161,7 +7164,7 @@ paths:
     get:
       operationId: listWorkflowRuns
       tags: [workflows]
-      summary: List workflow execution history (Batch 16)
+      summary: List workflow execution history
       description: >-
         Read-only, tenant-scoped execution history of the caller's company, newest
         first. Pagination is opt-in (page/pageSize). There is no execute, run-now,
@@ -7356,11 +7359,12 @@ paths:
     post:
       operationId: publishWorkflowDefinition
       tags: [workflows]
-      summary: "Lifecycle: draft → published (definition management only; nothing executes)"
+      summary: "Lifecycle: draft → published (the definition becomes active)"
       description: >-
         Requires a fully valid definition with at least one action. Published
-        means "eligible for a future execution engine (Batch 16)"; Batch 15
-        never executes it.
+        means ACTIVE: from now on the workflow engine executes this definition
+        for every future matching CRM event. Active definitions are read-only;
+        unpublish to edit.
       parameters:
         - name: id
           in: path
@@ -15220,7 +15224,7 @@ components:
         total:
           type: integer
 
-    # BATCH 15 — WORKFLOW DEFINITIONS (definition/API foundation; nothing executes).
+    # WORKFLOW DEFINITIONS (Batch 15 contract; executed by the Batch 16 engine).
     # Enum lists mirror artifacts/api-server/src/lib/workflows/catalog.ts (the
     # single source of truth) and are kept in sync by a unit test.
     WorkflowTrigger:
@@ -15279,9 +15283,10 @@ components:
           type: string
           enum: [draft, published, archived]
           description: >-
-            draft = editable working copy, never eligible for execution; published =
-            eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived =
-            terminal read-only history. No status executes anything in Batch 15.
+            draft = inactive and editable (never executes); published = ACTIVE — the
+            workflow engine executes it on future matching CRM events, IMMUTABLE
+            (unpublish to edit); archived = inactive, terminal read-only history.
+            Executions already queued or running finish from their captured snapshots.
         trigger:
           $ref: "#/components/schemas/WorkflowTrigger"
         conditions:
@@ -15583,7 +15588,7 @@ components:
         lifecycle:
           type: object
           additionalProperties: true
-          description: Per-status meaning (label, description, editable, deletable, transitions). No status executes anything.
+          description: Per-status meaning (label, description, editable, deletable, transitions). Only `published` definitions execute (on future matching CRM events); draft and archived are inactive.
         entities:
           type: array
           items:

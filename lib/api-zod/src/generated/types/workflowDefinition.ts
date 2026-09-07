@@ -16,7 +16,7 @@ export interface WorkflowDefinition {
   name: string;
   /** @nullable */
   description?: string | null;
-  /** draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15. */
+  /** draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots. */
   status: WorkflowDefinitionStatus;
   trigger: WorkflowTrigger;
   conditions: WorkflowCondition[];

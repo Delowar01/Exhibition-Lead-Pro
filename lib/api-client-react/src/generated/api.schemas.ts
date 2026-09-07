@@ -5851,7 +5851,7 @@ export interface WorkflowAction {
 }
 
 /**
- * draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15.
+ * draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots.
  */
 export type WorkflowDefinitionStatus = typeof WorkflowDefinitionStatus[keyof typeof WorkflowDefinitionStatus];
 
@@ -5868,7 +5868,7 @@ export interface WorkflowDefinition {
   name: string;
   /** @nullable */
   description?: string | null;
-  /** draft = editable working copy, never eligible for execution; published = eligible for a FUTURE execution engine (Batch 16), IMMUTABLE (unpublish to edit); archived = terminal read-only history. No status executes anything in Batch 15. */
+  /** draft = inactive and editable (never executes); published = ACTIVE — the workflow engine executes it on future matching CRM events, IMMUTABLE (unpublish to edit); archived = inactive, terminal read-only history. Executions already queued or running finish from their captured snapshots. */
   status: WorkflowDefinitionStatus;
   trigger: WorkflowTrigger;
   conditions: WorkflowCondition[];
@@ -6099,7 +6099,7 @@ export interface WorkflowRunList {
 export type WorkflowCatalogLimits = { [key: string]: unknown };
 
 /**
- * Per-status meaning (label, description, editable, deletable, transitions). No status executes anything.
+ * Per-status meaning (label, description, editable, deletable, transitions). Only `published` definitions execute (on future matching CRM events); draft and archived are inactive.
  */
 export type WorkflowCatalogLifecycle = { [key: string]: unknown };
 
@@ -6165,7 +6165,7 @@ export interface WorkflowCatalog {
   schemaVersion: number;
   limits: WorkflowCatalogLimits;
   statuses: string[];
-  /** Per-status meaning (label, description, editable, deletable, transitions). No status executes anything. */
+  /** Per-status meaning (label, description, editable, deletable, transitions). Only `published` definitions execute (on future matching CRM events); draft and archived are inactive. */
   lifecycle: WorkflowCatalogLifecycle;
   entities: string[];
   triggers: WorkflowCatalogTriggersItem[];
