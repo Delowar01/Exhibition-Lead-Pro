@@ -49,7 +49,7 @@ compose() { docker compose -f docker-compose.yml -f compose.vps.yml "$@"; }
 # One SQL statement inside the postgres container as its own POSTGRES_USER over the
 # local socket — no password is read, passed, or printed.
 psql_q() {
-  compose exec -T postgres sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -c "$1"' sh "$1"
+  compose exec -T postgres sh -c 'exec psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -c "$1"' sh "$1"
 }
 cid()        { compose ps -q "$1"; }
 health_of()  { docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null || echo unknown; }
@@ -481,22 +481,24 @@ do_smoke() {
 
   # ── smoke: isolated disposable tenant through the real API + PostgreSQL queue ──
   log "── smoke ──"
+  # Leftovers of an earlier smoke attempt that failed before its cleanup trap was
+  # armed (the disposable naming pattern is exact: company 'B16 SMOKE <utc stamp>',
+  # user b16-smoke-<stamp>@smoke.invalid). Report and remove them first.
+  STALE="$(psql_q "select coalesce(string_agg(id||':'||name||':users='||(select count(*) from users u where u.company_id=c.id), ', ' order by id),'none') from companies c where name ~ '^B16 SMOKE [0-9]{14}$'")"
+  log "stale disposable smoke companies from earlier attempts: $STALE"
+  if [ "$STALE" != "none" ]; then
+    psql_q "begin; delete from audit_logs where company_id in (select id from companies where name ~ '^B16 SMOKE [0-9]{14}$'); delete from login_attempts where email ~ '^b16-smoke-[0-9]{14}@smoke\\.invalid$'; delete from companies where name ~ '^B16 SMOKE [0-9]{14}$'; commit;" >&2
+    log "stale disposable smoke companies removed; remaining: $(psql_q "select count(*) from companies where name ~ '^B16 SMOKE [0-9]{14}$'")"
+  fi
   STAMP="$(date -u +%Y%m%d%H%M%S)"
   CO_NAME="B16 SMOKE $STAMP"; EMAIL="b16-smoke-$STAMP@smoke.invalid"; TAG_NAME="b16-smoke-$STAMP"; WF_NAME="B16 smoke $STAMP"; LEAD_TITLE="B16 smoke lead $STAMP"
-  PW="$(openssl rand -hex 24)"
-  HASH="$(docker exec -e PW="$PW" "$API_CID" node -e 'import("bcryptjs").then((m) => process.stdout.write((m.default || m).hashSync(process.env.PW, 10)))')"
-  [ -n "$HASH" ] || fail "could not hash the disposable password inside the api container"
-  CID="$(psql_q "insert into companies (name, status) values ('$CO_NAME', 'active') returning id")"
-  [ -n "$CID" ] || fail "could not create the disposable company"
-  UID_="$(psql_q "insert into users (email, password_hash, name, role, company_id, permissions) values ('$EMAIL', '$HASH', 'B16 Smoke Admin', 'primary_admin', $CID, '{}'::jsonb) returning id")"
-  [ -n "$UID_" ] || fail "could not create the disposable user"
-  unset HASH
-  log "disposable tenant: company id=$CID '$CO_NAME', user id=$UID_ ($EMAIL, primary_admin) — password generated on the VPS, never printed"
+  CID=""; UID_=""; RUN_ID=""; CLEANUP="not-run"
   cleanup_smoke() {
+    [ -n "$CID" ] || { log "cleanup: no disposable company was created"; CLEANUP="nothing-created"; return 0; }
     log "── cleanup (exact disposable rows only) ──"
     psql_q "begin; delete from audit_logs where company_id=$CID; delete from login_attempts where email='$EMAIL'; delete from companies where id=$CID; commit;" >&2 || log "cleanup transaction failed"
     LEFT=""
-    for spec in "companies:id=$CID" "users:email='$EMAIL'" "users:company_id=$CID" "leads:company_id=$CID" "workflow_runs:company_id=$CID" "workflow_action_runs:company_id=$CID" "workflow_definitions:company_id=$CID" "tags:company_id=$CID" "lead_tags:company_id=$CID" "pipeline_stages:company_id=$CID" "lead_activities:company_id=$CID" "audit_logs:company_id=$CID" "notifications:company_id=$CID" "sessions:user_id=$UID_" "login_attempts:email='$EMAIL'"; do
+    for spec in "companies:id=$CID" "users:email='$EMAIL'" "users:company_id=$CID" "leads:company_id=$CID" "workflow_runs:company_id=$CID" "workflow_action_runs:company_id=$CID" "workflow_definitions:company_id=$CID" "tags:company_id=$CID" "lead_tags:company_id=$CID" "pipeline_stages:company_id=$CID" "lead_activities:company_id=$CID" "audit_logs:company_id=$CID" "notifications:company_id=$CID" "sessions:user_id=${UID_:-0}" "login_attempts:email='$EMAIL'"; do
       t="${spec%%:*}"; w="${spec#*:}"
       n="$(psql_q "select count(*) from $t where $w")"
       [ "$n" = "0" ] || LEFT="$LEFT $t($n)"
@@ -506,6 +508,15 @@ do_smoke() {
     log "job_queue row(s) of the smoke run left in place (completed, inert; queue table not modified): $JOBROW_LEFT"
   }
   trap 'cleanup_smoke' EXIT
+  PW="$(openssl rand -hex 24)"
+  HASH="$(docker exec -e PW="$PW" "$API_CID" node -e 'import("bcryptjs").then((m) => process.stdout.write((m.default || m).hashSync(process.env.PW, 10)))')"
+  [ -n "$HASH" ] || fail "could not hash the disposable password inside the api container"
+  CID="$(psql_q "insert into companies (name, status) values ('$CO_NAME', 'active') returning id")"
+  [ -n "$CID" ] && [ "$CID" -gt 0 ] 2>/dev/null || fail "could not create the disposable company (got '$CID')"
+  UID_="$(psql_q "insert into users (email, password_hash, name, role, company_id, permissions) values ('$EMAIL', '$HASH', 'B16 Smoke Admin', 'primary_admin', $CID, '{}'::jsonb) returning id")"
+  [ -n "$UID_" ] && [ "$UID_" -gt 0 ] 2>/dev/null || fail "could not create the disposable user (got '$UID_')"
+  unset HASH
+  log "disposable tenant: company id=$CID '$CO_NAME', user id=$UID_ ($EMAIL, primary_admin) — password generated on the VPS, never printed"
 
   LOGIN_RAW="$(curl -sS --max-time 20 -w '\n%{http_code}' -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"$PW\"}" "$API_URL/auth/login")"
   unset PW
