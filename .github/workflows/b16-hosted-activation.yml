@@ -1,0 +1,168 @@
+# =============================================================================
+# TEMPORARY — Batch 16 hosted activation on the dev.kaptnow.com VPS. One-off
+# operations workflow; NOT the deployment pipeline (deploy-dev-vps.yml is
+# untouched) and NOT application code.
+# =============================================================================
+# Trigger:  push to the `ops/b16-hosted-activation` branch ONLY (no
+#           workflow_dispatch: the repository default branch is export-ready).
+# Guard:    the job additionally refuses any other ref, and refuses to run unless
+#           the branch content equals the accepted commit plus these ops files.
+# Mode:     first line of .github/scripts/b16-mode —
+#             inspect  read-only preflight + schema-only dump + drizzle-kit push
+#                      inspection on the RUNNER (scratch postgres); nothing applied
+#             apply    inspect gate, then backup + migrate profile on the VPS
+#             smoke    post-deploy verification + isolated workflow smoke + cleanup
+#           optional second line `allow=cfv-fk-recreate` accepts the known,
+#           idempotent custom_field_values FK re-create (see b16-inspect-push.mjs).
+#
+# Secrets used (same as deploy-dev-vps.yml, nothing new):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+# Application runtime secrets stay ONLY in the VPS env file.
+#
+# Remove this workflow (and the branch) once the activation is accepted.
+
+name: b16-hosted-activation
+
+on:
+  push:
+    branches: [ops/b16-hosted-activation]
+
+# Serialize with the deployment workflow so an activation can never overlap
+# a deploy of develop on the same VPS.
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  # Commit that must be deployed BEFORE the schema activation (develop head after B15).
+  DEPLOYED_SHA_BEFORE: fb4257b1342b0489e4de0377c42d9faddd3a649e
+  # The accepted Batch 16 commit (schema source for the inspection + migrate).
+  ACTIVATION_SHA: 7c0942659a8bbe821710505cf09d13fa5fb5ef23
+
+jobs:
+  activate:
+    name: B16 hosted activation (one-off)
+    if: github.ref == 'refs/heads/ops/b16-hosted-activation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve mode and verify the branch is the accepted code + ops files only
+        id: mode
+        run: |
+          MODE="$(sed -n 1p .github/scripts/b16-mode | tr -d '[:space:]')"
+          ALLOW_LINE="$(sed -n 2p .github/scripts/b16-mode | tr -d '[:space:]')"
+          ALLOW="${ALLOW_LINE#allow=}"
+          [ "$ALLOW_LINE" = "" ] || [ "${ALLOW_LINE%%=*}" = "allow" ] || { echo "invalid second line in b16-mode"; exit 1; }
+          case "$MODE" in inspect|apply|smoke) ;; *) echo "invalid mode '$MODE'"; exit 1;; esac
+          git cat-file -e "$ACTIVATION_SHA^{commit}" || { echo "accepted commit not present"; exit 1; }
+          git merge-base --is-ancestor "$ACTIVATION_SHA" HEAD || { echo "branch does not descend from the accepted commit"; exit 1; }
+          DIFF="$(git diff --stat "$ACTIVATION_SHA" HEAD -- . ':(exclude).github/scripts/b16-mode' ':(exclude).github/scripts/b16-hosted.sh' ':(exclude).github/scripts/b16-inspect-push.mjs' ':(exclude).github/workflows/b16-hosted-activation.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the accepted commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          echo "mode=$MODE (allow='${ALLOW}'); branch = $ACTIVATION_SHA + ops files only"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "allow=$ALLOW" >> "$GITHUB_OUTPUT"
+          if [ "$MODE" = "smoke" ]; then echo "deployed=$ACTIVATION_SHA" >> "$GITHUB_OUTPUT"; else echo "deployed=$DEPLOYED_SHA_BEFORE" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the ops script to the VPS
+        run: |
+          # Copied to a file first (never piped into `bash -s`) so that `docker
+          # compose run/exec` on the VPS can never consume the script as stdin.
+          ssh vps 'umask 077; cat > "$HOME/b16-hosted.sh" && chmod 700 "$HOME/b16-hosted.sh"' < .github/scripts/b16-hosted.sh
+
+      - name: Preflight on the VPS (read-only)
+        if: steps.mode.outputs.mode != 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='${{ steps.mode.outputs.deployed }}' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b16-hosted.sh\" preflight" < /dev/null
+
+      - name: Schema-only dump of the hosted database (no data) to the runner
+        if: steps.mode.outputs.mode != 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          umask 077
+          ssh vps "DEPLOYED_SHA='${{ steps.mode.outputs.deployed }}' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b16-hosted.sh\" dump" < /dev/null > "$RUNNER_TEMP/schema-before.sql"
+          echo "schema-only dump: $(wc -l < "$RUNNER_TEMP/schema-before.sql") lines, $(grep -c '^CREATE TABLE' "$RUNNER_TEMP/schema-before.sql") CREATE TABLE statements"
+          grep -q '^CREATE TABLE public.companies' "$RUNNER_TEMP/schema-before.sql" || { echo "dump does not look like the application schema"; exit 1; }
+          if grep -q '^CREATE TABLE public.workflow_runs' "$RUNNER_TEMP/schema-before.sql"; then echo "NOTE: workflow_runs already exists on the hosted database"; fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.mode.outputs.mode != 'smoke'
+
+      - uses: actions/setup-node@v4
+        if: steps.mode.outputs.mode != 'smoke'
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+
+      - name: Install the db package (frozen lockfile)
+        if: steps.mode.outputs.mode != 'smoke'
+        run: pnpm install --frozen-lockfile --filter "@workspace/db..."
+
+      - name: Inspect the schema push on a scratch database (runner only)
+        if: steps.mode.outputs.mode != 'smoke'
+        run: |
+          set -euo pipefail
+          PGPW="$(openssl rand -hex 16)"
+          docker run -d --name b16pg -e POSTGRES_PASSWORD="$PGPW" -e POSTGRES_USER=b16 -e POSTGRES_DB=b16 -p 127.0.0.1:55432:5432 postgres:16-alpine >/dev/null
+          for _ in $(seq 1 30); do docker exec b16pg pg_isready -U b16 -d b16 >/dev/null 2>&1 && break; sleep 2; done
+          docker exec b16pg pg_isready -U b16 -d b16
+          docker exec -i b16pg psql -q -v ON_ERROR_STOP=1 -U b16 -d b16 < "$RUNNER_TEMP/schema-before.sql" >/dev/null
+          echo "scratch database restored: $(docker exec b16pg psql -tA -U b16 -d b16 -c "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'") public base tables (hosted schema copy)"
+          echo "custom_field_values FK names in the hosted schema copy: $(docker exec b16pg psql -tA -U b16 -d b16 -c "select string_agg(conname||'('||length(conname)||')', ' ') from pg_constraint where contype='f' and conrelid='public.custom_field_values'::regclass")"
+          echo "drizzle-kit push --verbose with the accepted code ($ACTIVATION_SHA) against the scratch copy:"
+          set +e
+          DATABASE_URL="postgres://b16:$PGPW@127.0.0.1:55432/b16" pnpm --filter @workspace/db exec drizzle-kit push --verbose --config ./drizzle.config.ts > "$RUNNER_TEMP/push-verbose.log" 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" != "0" ]; then echo "drizzle-kit push exited $RC:"; cat "$RUNNER_TEMP/push-verbose.log"; exit 1; fi
+          node .github/scripts/b16-inspect-push.mjs "$RUNNER_TEMP/push-verbose.log" "${{ steps.mode.outputs.allow }}"
+
+      - name: Apply the additive schema on the VPS (backup → migrate profile → verify)
+        if: steps.mode.outputs.mode == 'apply'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='${{ steps.mode.outputs.deployed }}' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b16-hosted.sh\" apply" < /dev/null
+
+      - name: Post-deploy verification + isolated workflow smoke on the VPS
+        if: steps.mode.outputs.mode == 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='${{ steps.mode.outputs.deployed }}' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b16-hosted.sh\" smoke" < /dev/null
+
+      - name: Remove the ops script from the VPS; clean the runner
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b16-hosted.sh"' < /dev/null || true
+          docker rm -f b16pg >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/schema-before.sql" "$RUNNER_TEMP/push-verbose.log"
