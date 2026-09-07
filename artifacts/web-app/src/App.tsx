@@ -1,4 +1,5 @@
 import { Switch, Route, Redirect, Router as WouterRouter, useLocation } from "wouter";
+import { useGuardedBrowserLocation } from "@/lib/history-guard";
 import {
   resolvePortalHost,
   retiredHostRedirectUrl,
@@ -395,7 +396,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")} hook={useGuardedBrowserLocation}>
             <Router />
           </WouterRouter>
         </AuthProvider>

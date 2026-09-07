@@ -620,7 +620,7 @@ export default function AdminAutomationEditor() {
           </aside>
         </div>
 
-        <UnsavedChangesDialog open={guard.pendingHref !== null} onCancel={guard.cancel} onDiscard={guard.confirm} />
+        <UnsavedChangesDialog open={guard.pending !== null} onCancel={guard.cancel} onDiscard={guard.confirm} />
 
         <AlertDialog open={!!confirmVerb} onOpenChange={(o) => !o && !busy && setConfirmVerb(null)}>
           <AlertDialogContent data-testid="lifecycle-dialog">

@@ -432,6 +432,162 @@ test("unsaved changes are protected on in-app navigation", async ({ page }) => {
   expect((await api("GET", `/workflows/${defId}`)).json.name).toBe(`${NAME} (overwritten)`);
 });
 
+test("browser Back on a dirty editor opens the dialog; Stay keeps everything; Discard completes Back exactly once", async ({ page }) => {
+  await page.setViewportSize(DESKTOP);
+  await seedAuth(page);
+  await page.goto("/admin/automations");
+  await page.getByTestId(`automation-link-${defId}`).click();
+  await expect(page).toHaveURL(new RegExp(`/admin/automations/${defId}$`));
+  await expect(page.getByTestId("automation-editor")).toHaveAttribute("data-dirty", "false");
+  const editorUrl = page.url();
+  const lengthBefore = await page.evaluate(() => history.length);
+
+  await page.getByTestId("automation-name").click();
+  await page.getByTestId("automation-name").fill(`${NAME} (history)`);
+  await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
+
+  // Back → dialog; editor, URL and form untouched while it is open.
+  await page.goBack({ waitUntil: "commit" });
+  await expect(page.getByTestId("unsaved-dialog")).toBeVisible();
+  expect(page.url()).toBe(editorUrl);
+  await expect(page.getByTestId("automation-editor")).toHaveAttribute("data-dirty", "true");
+  await expect(page.getByTestId("automation-name")).toHaveValue(`${NAME} (history)`);
+  expect(await page.evaluate(() => history.length)).toBe(lengthBefore);
+
+  // Stay → the traversal is cancelled cleanly, nothing else changes.
+  await page.getByTestId("unsaved-stay").click();
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+  expect(page.url()).toBe(editorUrl);
+  await expect(page.getByTestId("automation-name")).toHaveValue(`${NAME} (history)`);
+  await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
+  expect(await page.evaluate(() => history.length)).toBe(lengthBefore);
+  // Only one dialog per traversal: none re-opens on its own.
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+
+  // Back again → Discard → the original Back completes exactly once.
+  await page.goBack({ waitUntil: "commit" });
+  await expect(page.getByTestId("unsaved-dialog")).toBeVisible();
+  await page.getByTestId("unsaved-discard").click();
+  await expect(page).toHaveURL(/\/admin\/automations$/);
+  await expect(page.getByTestId("automation-list")).toBeVisible();
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => history.length)).toBe(lengthBefore);
+  expect((await api("GET", `/workflows/${defId}`)).json.name).toBe(`${NAME} (overwritten)`);
+
+  // No phantom entries: Forward lands on the (clean, reloaded) editor without a dialog.
+  await page.goForward({ waitUntil: "commit" });
+  await expect(page).toHaveURL(new RegExp(`/admin/automations/${defId}$`));
+  await expect(page.getByTestId("automation-name")).toHaveValue(`${NAME} (overwritten)`);
+  await expect(page.getByTestId("automation-editor")).toHaveAttribute("data-dirty", "false");
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+});
+
+test("browser Forward on a dirty editor is guarded the same way; a clean editor traverses freely", async ({ page }) => {
+  await page.setViewportSize(DESKTOP);
+  await seedAuth(page);
+  await page.goto("/admin/automations");
+  await page.getByTestId(`automation-link-${defId}`).click();
+  await expect(page).toHaveURL(new RegExp(`/admin/automations/${defId}$`));
+  await page.getByTestId("button-view-runs").click();
+  await expect(page).toHaveURL(/tab=runs/);
+  const lengthBefore = await page.evaluate(() => history.length);
+
+  // Clean editor: Back and Forward navigate normally, no dialog.
+  await page.goBack({ waitUntil: "commit" });
+  await expect(page).toHaveURL(new RegExp(`/admin/automations/${defId}$`));
+  await expect(page.getByTestId("automation-editor")).toBeVisible();
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+  await page.goForward({ waitUntil: "commit" });
+  await expect(page).toHaveURL(/tab=runs/);
+  await expect(page.getByTestId("run-history")).toBeVisible();
+  await page.goBack({ waitUntil: "commit" });
+  await expect(page).toHaveURL(new RegExp(`/admin/automations/${defId}$`));
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+  const editorUrl = page.url();
+
+  // Dirty editor with a forward entry: Forward → dialog → Stay.
+  await page.getByTestId("automation-name").click();
+  await page.getByTestId("automation-name").fill(`${NAME} (forward)`);
+  await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
+  await page.goForward({ waitUntil: "commit" });
+  await expect(page.getByTestId("unsaved-dialog")).toBeVisible();
+  expect(page.url()).toBe(editorUrl);
+  await expect(page.getByTestId("automation-name")).toHaveValue(`${NAME} (forward)`);
+  await page.getByTestId("unsaved-stay").click();
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+  expect(page.url()).toBe(editorUrl);
+  await expect(page.getByTestId("automation-name")).toHaveValue(`${NAME} (forward)`);
+  expect(await page.evaluate(() => history.length)).toBe(lengthBefore);
+
+  // Forward → Discard completes the Forward exactly once.
+  await page.goForward({ waitUntil: "commit" });
+  await expect(page.getByTestId("unsaved-dialog")).toBeVisible();
+  await page.getByTestId("unsaved-discard").click();
+  await expect(page).toHaveURL(/tab=runs/);
+  await expect(page.getByTestId("run-history")).toBeVisible();
+  expect(await page.evaluate(() => history.length)).toBe(lengthBefore);
+  expect((await api("GET", `/workflows/${defId}`)).json.name).toBe(`${NAME} (overwritten)`);
+
+  // The runs entry is the last one; Back returns to a clean editor with no dialog.
+  await page.goBack({ waitUntil: "commit" });
+  await expect(page).toHaveURL(new RegExp(`/admin/automations/${defId}$`));
+  await expect(page.getByTestId("automation-editor")).toHaveAttribute("data-dirty", "false");
+  await expect(page.getByTestId("unsaved-dialog")).toHaveCount(0);
+});
+
+test("link, reload and tab-close guards stay in place alongside the history guard", async ({ page }) => {
+  await page.setViewportSize(DESKTOP);
+  await seedAuth(page);
+  await page.goto(`/admin/automations/${defId}`);
+  await expect(page.getByTestId("automation-editor")).toHaveAttribute("data-dirty", "false");
+  const armed = () =>
+    page.evaluate(() => {
+      const e = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    });
+  expect(await armed()).toBe(false);
+
+  await page.getByTestId("automation-name").click();
+  await page.getByTestId("automation-name").fill(`${NAME} (guards)`);
+  await expect(page.getByTestId("unsaved-indicator")).toBeVisible();
+  expect(await armed()).toBe(true);
+
+  // In-app link (sidebar) is still intercepted after a held-back Back.
+  await page.goto("/admin/automations");
+  await page.getByTestId(`automation-link-${defId}`).click();
+  await page.getByTestId("automation-name").click();
+  await page.getByTestId("automation-name").fill(`${NAME} (guards)`);
+  await page.goBack({ waitUntil: "commit" });
+  await expect(page.getByTestId("unsaved-dialog")).toBeVisible();
+  await page.getByTestId("unsaved-stay").click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Contacts" }).click();
+  await expect(page.getByTestId("unsaved-dialog")).toBeVisible();
+  expect(page.url()).toContain(`/admin/automations/${defId}`);
+  await page.getByTestId("unsaved-stay").click();
+  await expect(page.getByTestId("automation-name")).toHaveValue(`${NAME} (guards)`);
+
+  // Real browser beforeunload prompt on close (needs user activation, which the click gave).
+  const second = await page.context().newPage();
+  await seedAuth(second);
+  await second.goto(`/admin/automations/${defId}`);
+  await second.getByTestId("automation-name").click();
+  await second.getByTestId("automation-name").fill(`${NAME} (close)`);
+  await expect(second.getByTestId("unsaved-indicator")).toBeVisible();
+  const dialog = second.waitForEvent("dialog");
+  await second.close({ runBeforeUnload: true });
+  const d = await dialog;
+  expect(d.type()).toBe("beforeunload");
+  await d.accept();
+
+  // Discarding leaves nothing behind: the definition is untouched.
+  await page.getByTestId("button-back").click();
+  await page.getByTestId("unsaved-discard").click();
+  await expect(page).toHaveURL(/\/admin\/automations$/);
+  expect((await api("GET", `/workflows/${defId}`)).json.name).toBe(`${NAME} (overwritten)`);
+});
+
 test("list row actions: delete a draft and archive with confirmations; archived is read-only and terminal", async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await seedAuth(page);
