@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
@@ -42,13 +42,19 @@ export const customFieldDefinitionsTable = pgTable("custom_field_definitions", {
 export const customFieldValuesTable = pgTable("custom_field_values", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }), // tenant boundary
-  definitionId: integer("definition_id").notNull().references(() => customFieldDefinitionsTable.id, { onDelete: "cascade" }),
+  definitionId: integer("definition_id").notNull(), // FK declared below with an explicit name
   entityType: text("entity_type").notNull(), // lead | contact
   entityId: integer("entity_id").notNull(),
   value: text("value"), // serialized typed value
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
+  // Explicitly named (Batch 16 correction 2): the auto-generated name
+  // `custom_field_values_definition_id_custom_field_definitions_id_fk` is 64
+  // characters, PostgreSQL stores it truncated to 63, and drizzle-kit therefore
+  // re-created the identical constraint on every `push`. Same reference, same
+  // ON DELETE CASCADE / ON UPDATE NO ACTION — only the name is stable now.
+  foreignKey({ name: "custom_field_values_definition_id_fk", columns: [t.definitionId], foreignColumns: [customFieldDefinitionsTable.id] }).onDelete("cascade"),
   index("custom_field_values_company_id_idx").on(t.companyId),
   index("custom_field_values_entity_idx").on(t.companyId, t.entityType, t.entityId),
   // One value per definition per entity — upserts target this constraint.
