@@ -5,6 +5,7 @@ import {
   Sparkles, Layers, Bot, Workflow, BarChart3, Activity, SlidersHorizontal,
   Briefcase, PieChart,
 } from "lucide-react";
+import { workflowAccess } from "@/components/automations/permissions";
 import type { LucideIcon } from "lucide-react";
 import type { User } from "@workspace/api-client-react";
 
@@ -46,6 +47,7 @@ export function buildAdminNav(user: User | null): NavGroup[] {
         { name: "Leads Pipeline", href: "/admin/leads", icon: Columns3 },
         { name: "Duplicates", href: "/admin/duplicates", icon: CopyCheck },
         { name: "Tags", href: "/admin/tags", icon: Tags },
+        ...(workflowAccess(user).canView ? [{ name: "Automations", href: "/admin/automations", icon: Workflow }] : []),
       ],
     },
     {

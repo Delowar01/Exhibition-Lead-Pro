@@ -44,14 +44,14 @@ export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 export const WORKFLOW_LIFECYCLE: Record<WorkflowStatus, { label: string; description: string; editable: boolean; deletable: boolean; transitions: readonly WorkflowStatus[] }> = {
   draft: {
     label: "Draft",
-    description: "Inactive and editable. A draft never executes. It can be published (requires a fully valid definition with at least one action), archived, or deleted (DELETE requires the current revision in its body, like every other mutation).",
+    description: "Inactive and editable. A draft never executes. Publish it (a valid definition with at least one action) to activate it; a draft can also be archived or deleted.",
     editable: true,
     deletable: true,
     transitions: ["published", "archived"],
   },
   published: {
     label: "Active",
-    description: "Active: the workflow engine executes this definition for every future matching CRM event (each execution runs from the snapshot captured when it was queued). IMMUTABLE while active: it cannot be edited or deleted — unpublish it (back to draft), edit, then publish again, so every change crosses an explicit publish boundary. Can be unpublished or archived.",
+    description: "Active: the workflow engine executes this definition for every future matching CRM event, always from the snapshot captured when the run was queued. It is read-only while active — unpublish it to edit (back to draft), then publish again. It can also be archived.",
     editable: false,
     deletable: false,
     transitions: ["draft", "archived"],

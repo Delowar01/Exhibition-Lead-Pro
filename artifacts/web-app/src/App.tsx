@@ -56,6 +56,9 @@ const AdminAiSettings = lazy(() => import("@/pages/admin/AiSettings"));
 const AdminAiInsightsReview = lazy(() => import("@/pages/admin/AiInsightsReview"));
 const AdminSalesCopilot = lazy(() => import("@/pages/admin/SalesCopilot"));
 const AdminWorkflow = lazy(() => import("@/pages/admin/Workflow"));
+const AdminAutomations = lazy(() => import("@/pages/admin/Automations"));
+const AdminAutomationEditor = lazy(() => import("@/pages/admin/AutomationEditor"));
+const AdminAutomationRunDetail = lazy(() => import("@/pages/admin/AutomationRunDetail"));
 const AdminAiCommandCenter = lazy(() => import("@/pages/admin/AiCommandCenter"));
 const AdminDesignSystem = lazy(() => import("@/pages/admin/DesignSystem"));
 const AdminExecutiveIntelligence = lazy(() => import("@/pages/admin/ExecutiveIntelligence"));
@@ -271,6 +274,19 @@ function Router() {
       </Route>
       <Route path="/admin/tags">
         {() => <ProtectedRoute component={AdminTags} role="admin" layout={AdminLayout} />}
+      </Route>
+      {/* Batch 17 — Automations (static routes before the dynamic :id route) */}
+      <Route path="/admin/automations">
+        {() => <ProtectedRoute component={AdminAutomations} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/automations/new">
+        {() => <ProtectedRoute component={AdminAutomationEditor} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/automations/runs/:id">
+        {() => <ProtectedRoute component={AdminAutomationRunDetail} role="admin" layout={AdminLayout} />}
+      </Route>
+      <Route path="/admin/automations/:id">
+        {() => <ProtectedRoute component={AdminAutomationEditor} role="admin" layout={AdminLayout} />}
       </Route>
       <Route path="/admin/events">
         {() => <ProtectedRoute component={AdminEvents} role="admin" layout={AdminLayout} />}
