@@ -577,7 +577,7 @@ do_smoke() {
   [ "$R_REV" = "$PUB_REV" ] || fail "definitionRevision $R_REV != published $PUB_REV"
   [ "$R_SUM" = '{"total":1,"completed":1,"skipped":0,"failed":0}' ] || fail "actionSummary $R_SUM"
   [ "$R_A_STATUS" = "completed" ] && [ "$R_A_ATT" = "1" ] || fail "action not completed exactly once"
-  grep -q "\" <<< "$R_A_RES"tagId\":$TAG_ID" || fail "action result does not reference tag $TAG_ID"
+  grep -qE "\"tagId\":$TAG_ID([,}])" <<< "$R_A_RES" || fail "action result does not reference tag $TAG_ID"
   SNAP="$(psql_q "select (definition_snapshot->>'name')||' | trigger='||(definition_snapshot->'trigger'->>'type')||' | actions='||jsonb_array_length(definition_snapshot->'actions')||' | action0='||(definition_snapshot->'actions'->0->>'type')||' | conditions='||jsonb_array_length(coalesce(definition_snapshot->'conditions','[]'::jsonb)) from workflow_runs where id=$RUN_ID")"
   log "definition_snapshot: $SNAP"
   [ "$SNAP" = "$WF_NAME | trigger=lead.created | actions=1 | action0=lead.add_tag | conditions=0" ] || fail "definition snapshot mismatch"
