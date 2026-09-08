@@ -45,7 +45,7 @@ env:
   # Accepted Batch 18 commit incl. correction 1 (schema source for the inspection + migrate).
   ACTIVATION_SHA: c2cd4674977ce517e9ffd8ec7f50688613864dad
   # Schema fingerprint printed by the apply run (filled in for smoke mode).
-  SCHEMA_FP_AFTER: ""
+  SCHEMA_FP_AFTER: e839d03d928fa46c20797329d2779e3e
   # Public customer portal; used for the browser smoke when it answers, else an
   # SSH tunnel to the VPS loopback gateway is used.
   PUBLIC_BASE: https://admin.kaptnow.com
