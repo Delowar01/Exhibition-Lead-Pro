@@ -301,10 +301,27 @@ postcheck() {
   log "error-level api log lines $C_ERRLVL -> $C_ERRLVL2; web 5xx responses $C_WEB5XX -> $C_WEB5XX2"
   [ "$AI_AFTER" = "$AI_TOTAL" ] && [ "$AI_CO" = "0" ] || fail "an AI invocation was recorded during the smoke"
   [ "$MAIL_SENT_AFTER" = "$MAIL_SENT" ] && [ "$MAIL_SKIP_AFTER" = "$MAIL_SKIP" ] || fail "an email send was attempted during the smoke"
-  [ "$C_ERRLVL2" = "$C_ERRLVL" ] || fail "new error-level api log lines during the smoke"
+  # The global error handler logs EVERY error that reaches it at level 50, including
+  # 4xx AppErrors (e.g. the smoke's own deliberate GET of the deleted definition -> 404).
+  # Only lines without a 4xx status are unexpected (true unhandled/5xx errors).
+  BAD_ERR=0
+  if [ "$C_ERRLVL2" != "$C_ERRLVL" ]; then
+    log "new error-level api log lines during the smoke (sanitized fields only):"
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      fields="$(printf '%s\n' "$line" | grep -oE '"(msg|method|url|statusCode|type|code|message|requestId)":("[^"]*"|[0-9]+)' | tr '\n' ' ')"
+      sc="$(printf '%s\n' "$line" | grep -oE '"statusCode":[0-9]+' | head -1 | grep -oE '[0-9]+' || true)"
+      if [ -n "$sc" ] && [ "$sc" -ge 400 ] && [ "$sc" -lt 500 ]; then
+        log "  client error HTTP $sc (expected 4xx, e.g. the smoke's own 404 probe): $fields"
+      else
+        log "  UNEXPECTED: $fields"; BAD_ERR=$((BAD_ERR + 1))
+      fi
+    done <<< "$(printf '%s\n' "$API_LOG2" | grep -- '"level":50' | tail -n "$((C_ERRLVL2 - C_ERRLVL))")"
+  fi
+  [ "$BAD_ERR" = "0" ] || fail "$BAD_ERR unexpected error-level api log line(s) during the smoke"
   [ "$C_WEB5XX2" = "$C_WEB5XX" ] || fail "new web 5xx responses during the smoke"
   save_state RUN_ID "$RUN_ID"
-  log "postcheck OK: run_id=$RUN_ID actions=2/2 completed attempts=1 job=$J_STATUS ai_delta=$((AI_AFTER - AI_TOTAL)) email_delta=$((MAIL_SENT_AFTER - MAIL_SENT)) errlvl_delta=$((C_ERRLVL2 - C_ERRLVL))"
+  log "postcheck OK: run_id=$RUN_ID actions=2/2 completed attempts=1 job=$J_STATUS ai_delta=$((AI_AFTER - AI_TOTAL)) email_delta=$((MAIL_SENT_AFTER - MAIL_SENT)) errlvl_delta=$((C_ERRLVL2 - C_ERRLVL)) (unexpected: $BAD_ERR) web5xx_delta=$((C_WEB5XX2 - C_WEB5XX))"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
