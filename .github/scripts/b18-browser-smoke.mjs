@@ -122,6 +122,20 @@ async function waitFor(fn, ms = T) {
   return false;
 }
 const waitCount = (locator, n) => waitFor(async () => (await locator.count()) === n);
+// The theme switcher is a Radix dropdown with open/close animations: wait until no menu
+// is open before opening it, let it settle, and wait for it to close after a pick.
+const noMenu = (pg) => waitFor(async () => (await pg.locator('[role="menu"]').count()) === 0, 10_000);
+async function openThemeMenu(pg) {
+  await noMenu(pg);
+  await pg.getByTestId("theme-toggle").click();
+  await pg.getByTestId("theme-option-light").waitFor({ state: "visible", timeout: T });
+  await pg.waitForTimeout(300);
+}
+async function pickTheme(pg, optionTestId) {
+  await openThemeMenu(pg);
+  await pg.getByTestId(optionTestId).click();
+  await noMenu(pg);
+}
 // Branded surfaces animate (transition-colors): poll until the background settles on the
 // expected color (returns the last observed value either way).
 async function settle(pg, sel, expected) {
@@ -229,10 +243,11 @@ try {
   await page.getByTestId("theme-toggle").waitFor({ timeout: T });
   await page.locator("html.dark").waitFor({ timeout: T });
   check("4a. no stored preference → tenant default (dark) applies", (await page.getByTestId("theme-toggle").getAttribute("data-theme-preference")) === "default" && (await themeKeys(page)).length === 0);
-  await page.getByTestId("theme-toggle").click();
+  await openThemeMenu(page);
   await page.getByTestId("theme-option-default").waitFor({ timeout: T });
   const orgLabel = await page.getByTestId("theme-option-default").innerText();
   await page.getByTestId("theme-option-light").click();
+  await noMenu(page);
   await page.locator("html:not(.dark)").waitFor({ timeout: T });
   const scopedKey = `csp_theme:u${U_A}c${CO_A}`;
   check("4b. explicit Light overrides the tenant default and is stored per user + company", orgLabel.includes("Organization default (Dark)") && JSON.stringify(await themeKeys(page)) === JSON.stringify([scopedKey]) && (await page.getByTestId("theme-toggle").getAttribute("data-theme-preference")) === "light");
@@ -241,12 +256,10 @@ try {
   await page.locator('html[data-tenant-branded="true"]').waitFor({ timeout: T });
   check("4c. the preference persists across reload while branding stays applied", !(await isDark(page)) && (await hasSheet(page)));
   await shot(page, "user-light-override");
-  await page.getByTestId("theme-toggle").click();
-  await page.getByTestId("theme-option-default").click();
+  await pickTheme(page, "theme-option-default");
   await page.locator("html.dark").waitFor({ timeout: T });
   check("4d. 'Organization default' returns to dark and removes the stored choice", (await themeKeys(page)).length === 0);
-  await page.getByTestId("theme-toggle").click();
-  await page.getByTestId("theme-option-light").click();
+  await pickTheme(page, "theme-option-light");
   await page.locator("html:not(.dark)").waitFor({ timeout: T });
   // Same browser storage, different member of the same company: no leaked preference.
   const vp = await ctxA.newPage(); attach(vp);
@@ -298,8 +311,7 @@ try {
   const { ctx: ctxP, page: pp } = await seededContext(P, "light");
   await pp.goto(`${PLATFORM_BASE}/platform`, { waitUntil: "domcontentloaded" });
   await pp.getByTestId("brand-name").waitFor({ timeout: T });
-  await pp.getByTestId("theme-toggle").click();
-  await pp.getByTestId("theme-option-light").waitFor({ timeout: T });
+  await openThemeMenu(pp);
   check("7b. platform-owner portal keeps the platform branding (name, mark, tokens, no org-default theme option)", (await pp.getByTestId("brand-name").innerText()) === "Lead Capture Pro" && (await pp.getByTestId("link-brand").getAttribute("data-brand")) === "platform" && (await cssVar(pp, "--primary")) === PLATFORM_PRIMARY && !(await hasSheet(pp)) && (await pp.getByTestId("theme-option-default").count()) === 0);
   await pp.keyboard.press("Escape");
   await shot(pp, "platform-portal");
