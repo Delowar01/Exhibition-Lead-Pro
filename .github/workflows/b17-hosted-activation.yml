@@ -1,0 +1,202 @@
+# =============================================================================
+# TEMPORARY — Batch 17 hosted activation on the dev VPS. One-off operations
+# workflow; NOT the deployment pipeline (deploy-dev-vps.yml is untouched) and
+# NOT application code. B17 has no schema change: no backup, no drizzle-kit
+# push, no migrate profile, no env/volume/secret change anywhere in here.
+# =============================================================================
+# Trigger:  push to the `ops/b17-hosted-activation` branch ONLY.
+# Guard:    the job refuses any other ref, and refuses to run unless the branch
+#           content equals the accepted commit plus these ops files.
+# Mode:     first line of .github/scripts/b17-mode —
+#             preflight  read-only checks on the VPS BEFORE the develop merge
+#             smoke      AFTER the develop deploy: post-deploy verification on
+#                        the VPS, one disposable tenant, a real-browser smoke
+#                        from this runner against the hosted web app, DB
+#                        evidence, exact cleanup, preservation proof
+#
+# Secrets used (same as deploy-dev-vps.yml, nothing new):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+# Application runtime secrets stay ONLY in the VPS env file.
+#
+# Remove this workflow (and the branch) once the activation is accepted.
+
+name: b17-hosted-activation
+
+on:
+  push:
+    branches: [ops/b17-hosted-activation]
+
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  # develop head deployed BEFORE the B17 merge.
+  DEPLOYED_SHA_BEFORE: 2b9fa16485fb665eee4387f5440d4263c316c345
+  # Accepted Batch 17 commit.
+  ACTIVATION_SHA: f22e73ef167a4bb3e62f05a7623664a9bf9d2db2
+  # Schema fingerprint printed by the preflight run (filled in for smoke mode).
+  SCHEMA_FP_BEFORE: ""
+  # Public customer portal; used for the browser smoke when it answers, else an
+  # SSH tunnel to the VPS loopback gateway is used.
+  PUBLIC_BASE: https://admin.kaptnow.com
+
+jobs:
+  activate:
+    name: B17 hosted activation (one-off)
+    if: github.ref == 'refs/heads/ops/b17-hosted-activation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve mode and verify the branch is the accepted code + ops files only
+        id: mode
+        run: |
+          MODE="$(sed -n 1p .github/scripts/b17-mode | tr -d '[:space:]')"
+          case "$MODE" in preflight|smoke) ;; *) echo "invalid mode '$MODE'"; exit 1;; esac
+          git cat-file -e "$ACTIVATION_SHA^{commit}" || { echo "accepted commit not present"; exit 1; }
+          git merge-base --is-ancestor "$ACTIVATION_SHA" HEAD || { echo "branch does not descend from the accepted commit"; exit 1; }
+          DIFF="$(git diff --stat "$ACTIVATION_SHA" HEAD -- . ':(exclude).github/scripts/b17-mode' ':(exclude).github/scripts/b17-hosted.sh' ':(exclude).github/scripts/b17-browser-smoke.mjs' ':(exclude).github/workflows/b17-hosted-activation.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the accepted commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          N_SCHEMA="$(git diff --name-only "$DEPLOYED_SHA_BEFORE" "$ACTIVATION_SHA" -- lib/db/src/schema | wc -l | tr -d ' ')"
+          [ "$N_SCHEMA" = "0" ] || { echo "B17 must not change lib/db/src/schema ($N_SCHEMA files differ)"; exit 1; }
+          echo "mode=$MODE; branch = $ACTIVATION_SHA + ops files only; schema files changed since $DEPLOYED_SHA_BEFORE: 0"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the ops script to the VPS
+        run: |
+          ssh vps 'umask 077; cat > "$HOME/b17-hosted.sh" && chmod 700 "$HOME/b17-hosted.sh"' < .github/scripts/b17-hosted.sh
+
+      - name: Preflight on the VPS (read-only, before the merge)
+        if: steps.mode.outputs.mode == 'preflight'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b17-hosted.sh\" preflight" < /dev/null
+
+      - name: Post-deploy verification on the VPS (read-only)
+        if: steps.mode.outputs.mode == 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' SCHEMA_FP_BEFORE='$SCHEMA_FP_BEFORE' bash \"\$HOME/b17-hosted.sh\" verify" < /dev/null
+
+      - name: Create the disposable smoke tenant on the VPS
+        if: steps.mode.outputs.mode == 'smoke'
+        id: seed
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          STAMP="$(date -u +%Y%m%d%H%M%S)"
+          PW="$(openssl rand -hex 24)"
+          echo "::add-mask::$PW"
+          printf '%s\n' "$PW" > "$RUNNER_TEMP/smoke.pw"
+          OUT="$(printf '%s\n' "$PW" | ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' SMOKE_STAMP='$STAMP' bash \"\$HOME/b17-hosted.sh\" seed")"
+          unset PW
+          echo "$OUT"
+          echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+          echo "company_id=$(printf '%s\n' "$OUT" | sed -n 's/^SMOKE_COMPANY_ID=//p')" >> "$GITHUB_OUTPUT"
+          echo "user_id=$(printf '%s\n' "$OUT" | sed -n 's/^SMOKE_USER_ID=//p')" >> "$GITHUB_OUTPUT"
+          echo "email=$(printf '%s\n' "$OUT" | sed -n 's/^SMOKE_EMAIL=//p')" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.mode.outputs.mode == 'smoke'
+
+      - uses: actions/setup-node@v4
+        if: steps.mode.outputs.mode == 'smoke'
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+
+      - name: Install Playwright (runner only)
+        if: steps.mode.outputs.mode == 'smoke'
+        run: |
+          pnpm install --frozen-lockfile --filter "@workspace/web-app..."
+          pnpm --filter @workspace/web-app exec playwright install --with-deps chromium
+
+      - name: Resolve the browser base URL (public portal, else SSH tunnel to the VPS loopback gateway)
+        if: steps.mode.outputs.mode == 'smoke'
+        id: base
+        run: |
+          set -euo pipefail
+          if [ "$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "$PUBLIC_BASE/healthz" || true)" = "200" ] && [ "$(curl -sS --max-time 15 "$PUBLIC_BASE/api/readyz" | tr -d '\n' | cut -c1-60)" != "" ]; then
+            echo "public portal answers: $PUBLIC_BASE/healthz -> 200; readyz: $(curl -sS --max-time 15 "$PUBLIC_BASE/api/readyz" | tr -d '\n')"
+            echo "base=$PUBLIC_BASE" >> "$GITHUB_OUTPUT"; echo "via=public" >> "$GITHUB_OUTPUT"
+          else
+            echo "public portal did not answer from this runner — using an SSH tunnel to the VPS loopback gateway"
+            ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18080:127.0.0.1:18080 vps
+            for _ in $(seq 1 20); do curl -fsS --max-time 5 http://127.0.0.1:18080/healthz >/dev/null 2>&1 && break; sleep 1; done
+            curl -fsS --max-time 5 http://127.0.0.1:18080/healthz
+            echo "base=http://127.0.0.1:18080" >> "$GITHUB_OUTPUT"; echo "via=tunnel" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Hosted browser smoke (real Chromium on this runner against the hosted app)
+        if: steps.mode.outputs.mode == 'smoke'
+        env:
+          SMOKE_BASE: ${{ steps.base.outputs.base }}
+          SMOKE_EMAIL: ${{ steps.seed.outputs.email }}
+          SMOKE_USER_ID: ${{ steps.seed.outputs.user_id }}
+          SMOKE_STAMP: ${{ steps.seed.outputs.stamp }}
+          SMOKE_PASSWORD_FILE: ${{ runner.temp }}/smoke.pw
+          SMOKE_OUT: ${{ runner.temp }}/b17-smoke-shots
+          SMOKE_PW_MODULE: artifacts/web-app/node_modules/@playwright/test/index.js
+        run: |
+          echo "browser smoke via ${{ steps.base.outputs.via }}: $SMOKE_BASE (tenant ${{ steps.seed.outputs.company_id }}, user $SMOKE_USER_ID)"
+          node .github/scripts/b17-browser-smoke.mjs
+
+      - name: Upload smoke screenshots
+        if: steps.mode.outputs.mode == 'smoke' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b17-hosted-smoke-screenshots
+          path: ${{ runner.temp }}/b17-smoke-shots
+          if-no-files-found: ignore
+
+      - name: Post-smoke evidence on the VPS (run/action rows, exactly-once, no AI, no email)
+        if: steps.mode.outputs.mode == 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' SMOKE_STAMP='${{ steps.seed.outputs.stamp }}' bash \"\$HOME/b17-hosted.sh\" postcheck" < /dev/null
+
+      - name: Cleanup the disposable tenant + preservation proof (always)
+        if: steps.mode.outputs.mode == 'smoke' && always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' SMOKE_STAMP='${{ steps.seed.outputs.stamp }}' bash \"\$HOME/b17-hosted.sh\" cleanup" < /dev/null
+
+      - name: Remove the ops script and state from the VPS; clean the runner
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b17-hosted.sh" "$HOME/b17-smoke.state"' < /dev/null || true
+          pkill -f 'ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18080' >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/smoke.pw"
