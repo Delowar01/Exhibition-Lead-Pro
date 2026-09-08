@@ -12,6 +12,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { setAuthTokenGetter, setOnUnauthorized } from "@workspace/api-client-react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { BrandingProvider } from "@/contexts/BrandingContext";
 
 // Pages — auth/public pages stay eager (first paint); portal pages are lazy-loaded
 import NotFound from "@/pages/not-found";
@@ -396,9 +397,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")} hook={useGuardedBrowserLocation}>
-            <Router />
-          </WouterRouter>
+          <BrandingProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")} hook={useGuardedBrowserLocation}>
+              <Router />
+            </WouterRouter>
+          </BrandingProvider>
         </AuthProvider>
         <Toaster />
       </TooltipProvider>

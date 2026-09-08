@@ -7,6 +7,8 @@ import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { UpsertOwnCardBody } from "@workspace/api-zod";
 import { config } from "../config.js";
+import * as branding from "../services/branding.service.js";
+import { sendLogo } from "./branding.js";
 
 const router = Router();
 
@@ -79,11 +81,27 @@ router.get("/cards/public/:token", async (req: AuthRequest, res) => {
       avatarUrl: owner?.avatarUrl ?? null,
       templateId: card.templateId,
       publicUrl: `${publicBaseUrl(req)}/c/${card.publicToken}`,
+      // Batch 18 — the owning tenant's PUBLIC resolved branding (colors + logo
+      // route only; null when the tenant never customized anything, or the
+      // company is gone).
+      branding: await branding.getPublicBranding(card.companyId),
     });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
+});
+
+// GET /cards/public/:token/logo — the owning tenant's managed logo for a
+// PUBLISHED card (public; same visibility rule as the card itself).
+router.get("/cards/public/:token/logo", async (req: AuthRequest, res) => {
+  const token = String(req.params.token);
+  const [card] = await db.select({ companyId: businessCardsTable.companyId, isPublished: businessCardsTable.isPublished }).from(businessCardsTable).where(eq(businessCardsTable.publicToken, token)).limit(1);
+  if (!card || !card.isPublished || card.companyId == null) {
+    res.status(404).json({ error: "Logo not found" });
+    return;
+  }
+  sendLogo(res, await branding.readLogo(card.companyId), "public, max-age=300");
 });
 
 // ---------------------------------------------------------------------------

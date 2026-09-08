@@ -1079,6 +1079,134 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
 
+  # TENANT BRANDING by explicit company id (Batch 18; platform operator only)
+  /companies/{id}/branding:
+    get:
+      operationId: getCompanyBranding
+      tags: [companies]
+      summary: Resolved branding of a company (platform operator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+    put:
+      operationId: updateCompanyBranding
+      tags: [companies]
+      summary: Update a company's brand colors / default theme (platform operator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantBrandingInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+  /companies/{id}/branding/logo:
+    get:
+      operationId: getCompanyLogo
+      tags: [companies]
+      summary: A company's managed logo bytes (platform operator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Logo image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+    post:
+      operationId: uploadCompanyLogo
+      tags: [companies]
+      summary: Upload / replace a company's logo (platform operator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+    delete:
+      operationId: removeCompanyLogo
+      tags: [companies]
+      summary: Remove a company's logo (platform operator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+  /companies/{id}/branding/reset:
+    post:
+      operationId: resetCompanyBranding
+      tags: [companies]
+      summary: Reset a company's branding to the platform default (platform operator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
   /companies/{id}/suspend:
     post:
       operationId: suspendCompany
@@ -5811,6 +5939,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /cards/public/{token}/logo:
+    get:
+      operationId: getPublicCardLogo
+      tags: [cards]
+      summary: The owning tenant's managed logo for a published public card
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Logo image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Card not found, not published, or no managed logo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /branding/logos/{companyId}/{id}:
+    get:
+      operationId: getBrandingLogo
+      tags: [organization]
+      summary: Public managed-logo route (Batch 18)
+      description: >-
+        Serves a tenant's managed logo by its random object id (this is the `logoUrl`
+        returned in resolved branding). The id changes on every replacement, so the
+        response is immutable-cacheable. Never a storage URL; no credentials involved.
+      security: []
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Logo image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Unknown logo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # USER LIFECYCLE (Phase 2.4)
   /users/{id}/enable:
     post:
@@ -6063,6 +6253,139 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Organization"
+
+  # TENANT BRANDING (Batch 18) — resolved defaults are always returned so clients
+  # never duplicate fallback logic. The company is always the caller's own tenant.
+  /organization/branding:
+    get:
+      operationId: getTenantBranding
+      tags: [organization]
+      summary: Resolved branding of the caller's tenant
+      description: >-
+        Any authenticated tenant member may read it. Returns resolved values (platform
+        defaults applied), the raw overrides, the platform defaults and contrast-safe
+        derived colors. Platform operators use /companies/{id}/branding instead.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+    put:
+      operationId: updateTenantBranding
+      tags: [organization]
+      summary: Update the tenant's brand colors / default theme
+      description: >-
+        Requires organization:edit (primary_admin bypasses the matrix). Colors must be
+        6-digit hex (stored normalized as #RRGGBB) able to carry readable text; `null`
+        resets a field to the platform default. Read-only (cancelled) tenants get 403.
+        Audited as branding.update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantBrandingInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+        "400":
+          description: Invalid branding (code BRANDING_INVALID, details.issues[])
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /organization/branding/logo:
+    get:
+      operationId: getTenantLogo
+      tags: [organization]
+      summary: The tenant's managed logo bytes
+      responses:
+        "200":
+          description: Logo image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No managed logo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: uploadTenantLogo
+      tags: [organization]
+      summary: Upload / replace the tenant logo
+      description: >-
+        Raw image body (PNG, JPEG or WebP; 2 MB max; 32–4096 px per side; validated from
+        the actual bytes and normalized before storage). Requires organization:edit. A
+        failed storage write leaves the previous branding unchanged (503
+        BRANDING_STORAGE_UNAVAILABLE). Audited as branding.logo.replace.
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+        "400":
+          description: Rejected file (BRANDING_LOGO_EMPTY | BRANDING_LOGO_UNSUPPORTED | BRANDING_LOGO_TOO_LARGE | BRANDING_LOGO_INVALID | BRANDING_LOGO_DIMENSIONS)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Logo storage unavailable (branding unchanged)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: removeTenantLogo
+      tags: [organization]
+      summary: Remove the tenant logo (managed and legacy)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
+  /organization/branding/reset:
+    post:
+      operationId: resetTenantBranding
+      tags: [organization]
+      summary: Reset all branding to the platform default
+      description: Clears colors, default theme and logo. Audited as branding.reset.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantBranding"
 
   # SECURITY CENTER (Phase 2.4)
   /security/policy:
@@ -8812,6 +9135,123 @@ components:
           type: string
         status:
           type: string
+
+    # Batch 18 — tenant branding
+    BrandTheme:
+      type: string
+      enum: [light, dark, system]
+    TenantBrandingInput:
+      type: object
+      description: >-
+        Partial update. Omitted fields are untouched; `null` resets a field to the
+        platform default. Colors must be 6-digit hex (#RRGGBB) able to carry readable
+        text (WCAG AA against white or near-black); CSS functions, gradients, names,
+        URLs and scripts are rejected.
+      properties:
+        primaryColor:
+          type: ["string", "null"]
+          pattern: "^#?[0-9a-fA-F]{6}$"
+        sidebarColor:
+          type: ["string", "null"]
+          pattern: "^#?[0-9a-fA-F]{6}$"
+        defaultTheme:
+          oneOf:
+            - $ref: "#/components/schemas/BrandTheme"
+            - type: "null"
+    BrandingDerivedColors:
+      type: object
+      description: Contrast-safe colors derived server-side (all #RRGGBB) plus the "H S% L%" token triplets.
+      required: [primaryForeground, primaryContrast, primaryLinkLight, primaryLinkDark, primarySoftLight, primarySoftDark, sidebarForeground, sidebarContrast, sidebarAccent, sidebarBorder, tokens]
+      properties:
+        primaryForeground:
+          type: string
+        primaryContrast:
+          type: number
+        primaryLinkLight:
+          type: string
+        primaryLinkDark:
+          type: string
+        primarySoftLight:
+          type: string
+        primarySoftDark:
+          type: string
+        sidebarForeground:
+          type: string
+        sidebarContrast:
+          type: number
+        sidebarAccent:
+          type: string
+        sidebarBorder:
+          type: string
+        tokens:
+          type: object
+          additionalProperties:
+            type: string
+    TenantBranding:
+      type: object
+      required: [companyId, logoUrl, logoSource, primaryColor, sidebarColor, defaultTheme, overrides, defaults, derived, isCustomized]
+      properties:
+        companyId:
+          type: integer
+        logoUrl:
+          type: ["string", "null"]
+          description: Managed logo route (/api/branding/logos/{companyId}/{id}) or a legacy https URL; null when none.
+        logoSource:
+          type: string
+          enum: [managed, legacy, none]
+        primaryColor:
+          type: string
+          description: Resolved (#RRGGBB).
+        sidebarColor:
+          type: string
+        defaultTheme:
+          $ref: "#/components/schemas/BrandTheme"
+        overrides:
+          type: object
+          description: Raw stored overrides (null = platform default).
+          required: [primaryColor, sidebarColor, defaultTheme, logo]
+          properties:
+            primaryColor:
+              type: ["string", "null"]
+            sidebarColor:
+              type: ["string", "null"]
+            defaultTheme:
+              oneOf:
+                - $ref: "#/components/schemas/BrandTheme"
+                - type: "null"
+            logo:
+              type: boolean
+        defaults:
+          type: object
+          required: [primaryColor, sidebarColor, defaultTheme]
+          properties:
+            primaryColor:
+              type: string
+            sidebarColor:
+              type: string
+            defaultTheme:
+              $ref: "#/components/schemas/BrandTheme"
+        derived:
+          $ref: "#/components/schemas/BrandingDerivedColors"
+        isCustomized:
+          type: boolean
+    PublicBranding:
+      type: object
+      description: The tenant's public resolved branding for a public card (null when nothing is customized).
+      required: [logoUrl, primaryColor, primaryForeground, sidebarColor, sidebarForeground, defaultTheme]
+      properties:
+        logoUrl:
+          type: ["string", "null"]
+        primaryColor:
+          type: string
+        primaryForeground:
+          type: string
+        sidebarColor:
+          type: string
+        sidebarForeground:
+          type: string
+        defaultTheme:
+          $ref: "#/components/schemas/BrandTheme"
 
     OrganizationInput:
       type: object
@@ -14348,6 +14788,11 @@ components:
           type: string
         publicUrl:
           type: ["string", "null"]
+        branding:
+          description: Owning tenant's public resolved branding (Batch 18); null when unbranded.
+          oneOf:
+            - $ref: "#/components/schemas/PublicBranding"
+            - type: "null"
 
     # ─── PHASE 3B: DOCUMENTS ───
     DocumentVersion:

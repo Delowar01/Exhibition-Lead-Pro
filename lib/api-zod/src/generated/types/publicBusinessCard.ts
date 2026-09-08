@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicBranding } from './publicBranding';
 
 export interface PublicBusinessCard {
   /** @nullable */
@@ -38,4 +39,6 @@ export interface PublicBusinessCard {
   templateId: string;
   /** @nullable */
   publicUrl?: string | null;
+  /** Owning tenant's public resolved branding (Batch 18); null when unbranded. */
+  branding?: PublicBranding | null;
 }

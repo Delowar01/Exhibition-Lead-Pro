@@ -21,6 +21,7 @@ import followUpsRouter from "./follow_ups.js";
 import meetingsRouter from "./meetings.js";
 import tasksRouter from "./tasks.js";
 import cardsRouter from "./cards.js";
+import brandingRouter from "./branding.js";
 import rbacRouter from "./rbac.js";
 import orgRouter from "./org.js";
 import securityRouter from "./security.js";
@@ -46,6 +47,10 @@ router.use(authRouter);
 // before the request ever reaches here. Its own guards are path-scoped to
 // /cards/me, so this does not leak onto other modules.
 router.use(cardsRouter);
+// Batch 18 — branding: carries a PUBLIC logo route and path-scoped auth of its
+// own; mounted early for the same reason as cards (and before org.ts, whose
+// path-less requireAuth + generic audit must not see /organization/branding).
+router.use(brandingRouter);
 // Mounted early: invitations.ts has PUBLIC routes (/invitations/token/:token,
 // /invitations/accept, /invitations/reject) with no auth. Its authed management
 // guards are path-scoped to /invitations, so this does not leak onto other modules.

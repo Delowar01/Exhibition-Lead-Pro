@@ -267,6 +267,16 @@ export const config = {
     privateObjectDir: process.env.PRIVATE_OBJECT_DIR ?? "",
   },
 
+  // Tenant branding (Batch 18). Managed logos live in the object-storage bucket
+  // above. OUTSIDE production, when no bucket is configured, an in-process memory
+  // store stands in so local development and the integration suites never touch
+  // live GCS (set BRANDING_STORAGE_STUB=false to disable). In production a missing
+  // bucket makes logo upload/remove answer 503 (colors/theme still work).
+  branding: {
+    storageStub: nodeEnv !== "production" && process.env.BRANDING_STORAGE_STUB !== "false",
+    maxLogoBytes: 2 * 1024 * 1024,
+  },
+
   push: {
     // Optional Expo "enhanced security" bearer token.
     expoAccessToken: process.env.EXPO_ACCESS_TOKEN,

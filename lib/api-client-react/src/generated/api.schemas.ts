@@ -1060,6 +1060,110 @@ export interface Organization {
   status?: string;
 }
 
+export type BrandTheme = typeof BrandTheme[keyof typeof BrandTheme];
+
+
+export const BrandTheme = {
+  light: 'light',
+  dark: 'dark',
+  system: 'system',
+} as const;
+
+/**
+ * Partial update. Omitted fields are untouched; `null` resets a field to the platform default. Colors must be 6-digit hex (#RRGGBB) able to carry readable text (WCAG AA against white or near-black); CSS functions, gradients, names, URLs and scripts are rejected.
+ */
+export interface TenantBrandingInput {
+  /**
+     * @nullable
+     * @pattern ^#?[0-9a-fA-F]{6}$
+     */
+  primaryColor?: string | null;
+  /**
+     * @nullable
+     * @pattern ^#?[0-9a-fA-F]{6}$
+     */
+  sidebarColor?: string | null;
+  defaultTheme?: BrandTheme | null;
+}
+
+export type BrandingDerivedColorsTokens = {[key: string]: string};
+
+/**
+ * Contrast-safe colors derived server-side (all
+ */
+export interface BrandingDerivedColors {
+  primaryForeground: string;
+  primaryContrast: number;
+  primaryLinkLight: string;
+  primaryLinkDark: string;
+  primarySoftLight: string;
+  primarySoftDark: string;
+  sidebarForeground: string;
+  sidebarContrast: number;
+  sidebarAccent: string;
+  sidebarBorder: string;
+  tokens: BrandingDerivedColorsTokens;
+}
+
+export type TenantBrandingLogoSource = typeof TenantBrandingLogoSource[keyof typeof TenantBrandingLogoSource];
+
+
+export const TenantBrandingLogoSource = {
+  managed: 'managed',
+  legacy: 'legacy',
+  none: 'none',
+} as const;
+
+/**
+ * Raw stored overrides (null = platform default).
+ */
+export type TenantBrandingOverrides = {
+  /** @nullable */
+  primaryColor: string | null;
+  /** @nullable */
+  sidebarColor: string | null;
+  defaultTheme: BrandTheme | null;
+  logo: boolean;
+};
+
+export type TenantBrandingDefaults = {
+  primaryColor: string;
+  sidebarColor: string;
+  defaultTheme: BrandTheme;
+};
+
+export interface TenantBranding {
+  companyId: number;
+  /**
+     * Managed logo route (/api/branding/logos/{companyId}/{id}) or a legacy https URL; null when none.
+     * @nullable
+     */
+  logoUrl: string | null;
+  logoSource: TenantBrandingLogoSource;
+  /** Resolved (#RRGGBB). */
+  primaryColor: string;
+  sidebarColor: string;
+  defaultTheme: BrandTheme;
+  /** Raw stored overrides (null = platform default). */
+  overrides: TenantBrandingOverrides;
+  defaults: TenantBrandingDefaults;
+  derived: BrandingDerivedColors;
+  isCustomized: boolean;
+}
+
+/**
+ * The tenant's public resolved branding for a public card (null when nothing is customized).
+ */
+export interface PublicBranding {
+  /** @nullable */
+  logoUrl: string | null;
+  primaryColor: string;
+  primaryForeground: string;
+  sidebarColor: string;
+  sidebarForeground: string;
+  defaultTheme: BrandTheme;
+}
+
 export interface OrganizationInput {
   companyId?: number;
   name?: string;
@@ -5039,6 +5143,8 @@ export interface PublicBusinessCard {
   templateId: string;
   /** @nullable */
   publicUrl?: string | null;
+  /** Owning tenant's public resolved branding (Batch 18); null when unbranded. */
+  branding?: PublicBranding | null;
 }
 
 export interface DocumentVersion {

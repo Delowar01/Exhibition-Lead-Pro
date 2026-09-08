@@ -827,6 +827,234 @@ export const DeleteCompanyResponse = zod.object({
 
 
 /**
+ * @summary Resolved branding of a company (platform operator)
+ */
+export const GetCompanyBrandingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetCompanyBrandingResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * @summary Update a company's brand colors / default theme (platform operator)
+ */
+export const UpdateCompanyBrandingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateCompanyBrandingBodyPrimaryColorRegExp = new RegExp('^#?[0-9a-fA-F]{6}$');
+export const updateCompanyBrandingBodySidebarColorRegExp = new RegExp('^#?[0-9a-fA-F]{6}$');
+
+
+export const UpdateCompanyBrandingBody = zod.object({
+  "primaryColor": zod.string().regex(updateCompanyBrandingBodyPrimaryColorRegExp).nullish(),
+  "sidebarColor": zod.string().regex(updateCompanyBrandingBodySidebarColorRegExp).nullish(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]).optional()
+}).describe('Partial update. Omitted fields are untouched; `null` resets a field to the platform default. Colors must be 6-digit hex (#RRGGBB) able to carry readable text (WCAG AA against white or near-black); CSS functions, gradients, names, URLs and scripts are rejected.')
+
+export const UpdateCompanyBrandingResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * @summary A company's managed logo bytes (platform operator)
+ */
+export const GetCompanyLogoParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary Upload / replace a company's logo (platform operator)
+ */
+export const UploadCompanyLogoParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UploadCompanyLogoResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * @summary Remove a company's logo (platform operator)
+ */
+export const RemoveCompanyLogoParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RemoveCompanyLogoResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * @summary Reset a company's branding to the platform default (platform operator)
+ */
+export const ResetCompanyBrandingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ResetCompanyBrandingResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
  * @summary Suspend company
  */
 export const SuspendCompanyParams = zod.object({
@@ -7646,7 +7874,33 @@ export const GetPublicCardResponse = zod.object({
   "youtube": zod.string().nullish(),
   "avatarUrl": zod.string().nullish(),
   "templateId": zod.string(),
-  "publicUrl": zod.string().nullish()
+  "publicUrl": zod.string().nullish(),
+  "branding": zod.union([zod.object({
+  "logoUrl": zod.string().nullable(),
+  "primaryColor": zod.string(),
+  "primaryForeground": zod.string(),
+  "sidebarColor": zod.string(),
+  "sidebarForeground": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}).describe('The tenant\'s public resolved branding for a public card (null when nothing is customized).'),zod.null()]).optional().describe('Owning tenant\'s public resolved branding (Batch 18); null when unbranded.')
+})
+
+
+/**
+ * @summary The owning tenant's managed logo for a published public card
+ */
+export const GetPublicCardLogoParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+
+/**
+ * Serves a tenant's managed logo by its random object id (this is the `logoUrl` returned in resolved branding). The id changes on every replacement, so the response is immutable-cacheable. Never a storage URL; no credentials involved.
+ * @summary Public managed-logo route (Batch 18)
+ */
+export const GetBrandingLogoParams = zod.object({
+  "companyId": zod.coerce.number(),
+  "id": zod.coerce.string()
 })
 
 
@@ -7995,6 +8249,210 @@ export const UpdateOrganizationResponse = zod.object({
   "primaryContactEmail": zod.string().nullish(),
   "plan": zod.string().optional(),
   "status": zod.string().optional()
+})
+
+
+/**
+ * Any authenticated tenant member may read it. Returns resolved values (platform defaults applied), the raw overrides, the platform defaults and contrast-safe derived colors. Platform operators use /companies/{id}/branding instead.
+ * @summary Resolved branding of the caller's tenant
+ */
+export const GetTenantBrandingResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * Requires organization:edit (primary_admin bypasses the matrix). Colors must be 6-digit hex (stored normalized as #RRGGBB) able to carry readable text; `null` resets a field to the platform default. Read-only (cancelled) tenants get 403. Audited as branding.update.
+ * @summary Update the tenant's brand colors / default theme
+ */
+export const updateTenantBrandingBodyPrimaryColorRegExp = new RegExp('^#?[0-9a-fA-F]{6}$');
+export const updateTenantBrandingBodySidebarColorRegExp = new RegExp('^#?[0-9a-fA-F]{6}$');
+
+
+export const UpdateTenantBrandingBody = zod.object({
+  "primaryColor": zod.string().regex(updateTenantBrandingBodyPrimaryColorRegExp).nullish(),
+  "sidebarColor": zod.string().regex(updateTenantBrandingBodySidebarColorRegExp).nullish(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]).optional()
+}).describe('Partial update. Omitted fields are untouched; `null` resets a field to the platform default. Colors must be 6-digit hex (#RRGGBB) able to carry readable text (WCAG AA against white or near-black); CSS functions, gradients, names, URLs and scripts are rejected.')
+
+export const UpdateTenantBrandingResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * Raw image body (PNG, JPEG or WebP; 2 MB max; 32–4096 px per side; validated from the actual bytes and normalized before storage). Requires organization:edit. A failed storage write leaves the previous branding unchanged (503 BRANDING_STORAGE_UNAVAILABLE). Audited as branding.logo.replace.
+ * @summary Upload / replace the tenant logo
+ */
+export const UploadTenantLogoResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * @summary Remove the tenant logo (managed and legacy)
+ */
+export const RemoveTenantLogoResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * Clears colors, default theme and logo. Audited as branding.reset.
+ * @summary Reset all branding to the platform default
+ */
+export const ResetTenantBrandingResponse = zod.object({
+  "companyId": zod.number(),
+  "logoUrl": zod.string().nullable().describe('Managed logo route (\/api\/branding\/logos\/{companyId}\/{id}) or a legacy https URL; null when none.'),
+  "logoSource": zod.enum(['managed', 'legacy', 'none']),
+  "primaryColor": zod.string().describe('Resolved (#RRGGBB).'),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system']),
+  "overrides": zod.object({
+  "primaryColor": zod.string().nullable(),
+  "sidebarColor": zod.string().nullable(),
+  "defaultTheme": zod.union([zod.enum(['light', 'dark', 'system']),zod.null()]),
+  "logo": zod.boolean()
+}).describe('Raw stored overrides (null = platform default).'),
+  "defaults": zod.object({
+  "primaryColor": zod.string(),
+  "sidebarColor": zod.string(),
+  "defaultTheme": zod.enum(['light', 'dark', 'system'])
+}),
+  "derived": zod.object({
+  "primaryForeground": zod.string(),
+  "primaryContrast": zod.number(),
+  "primaryLinkLight": zod.string(),
+  "primaryLinkDark": zod.string(),
+  "primarySoftLight": zod.string(),
+  "primarySoftDark": zod.string(),
+  "sidebarForeground": zod.string(),
+  "sidebarContrast": zod.number(),
+  "sidebarAccent": zod.string(),
+  "sidebarBorder": zod.string(),
+  "tokens": zod.record(zod.string(), zod.string())
+}).describe('Contrast-safe colors derived server-side (all'),
+  "isCustomized": zod.boolean()
 })
 
 

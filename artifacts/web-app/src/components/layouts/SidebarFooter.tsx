@@ -23,12 +23,15 @@ export function SidebarFooter({
   plan,
   mini,
   onToggleMini,
+  logoUrl,
 }: {
   companyName: string;
   plan?: string | null;
   mini: boolean;
   /** Present only on desktop; mobile drawer has no collapse. */
   onToggleMini?: () => void;
+  /** Tenant logo (Batch 18); falls back to the building mark. */
+  logoUrl?: string | null;
 }) {
   const planText = planLabel(plan);
   return (
@@ -40,9 +43,13 @@ export function SidebarFooter({
         )}
         title={mini ? companyName : undefined}
       >
-        <span className="flex items-center justify-center h-9 w-9 shrink-0 rounded-lg bg-primary-soft text-primary">
-          <Building2 className="h-4.5 w-4.5" aria-hidden="true" />
-        </span>
+        {logoUrl ? (
+          <img src={logoUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-contain bg-white/95 p-0.5" data-testid="sidebar-company-logo" />
+        ) : (
+          <span className="flex items-center justify-center h-9 w-9 shrink-0 rounded-lg bg-primary-soft text-primary" data-testid="sidebar-company-mark">
+            <Building2 className="h-4.5 w-4.5" aria-hidden="true" />
+          </span>
+        )}
         {!mini && (
           <span className="min-w-0 flex flex-col leading-tight">
             <span className="text-sm font-semibold truncate" data-testid="text-sidebar-company">

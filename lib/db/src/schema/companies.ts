@@ -27,6 +27,16 @@ export const companiesTable = pgTable("companies", {
   // Security policy: when true, every member must have MFA enabled; login forces
   // enrollment. The broader Security Center UI lands in a later phase.
   mfaRequired: boolean("mfa_required").notNull().default(false),
+  // Tenant branding (Batch 18). All nullable/additive: NULL means "platform
+  // default" so existing tenants keep the current look. Colors are stored only as
+  // normalized #RRGGBB; the managed logo is an internal object key (never a URL
+  // or image bytes) plus its content type. `logo_url` above stays as the legacy
+  // externally-hosted value.
+  brandPrimaryColor: text("brand_primary_color"),
+  brandSidebarColor: text("brand_sidebar_color"),
+  brandDefaultTheme: text("brand_default_theme"), // light | dark | system
+  brandLogoKey: text("brand_logo_key"),
+  brandLogoContentType: text("brand_logo_content_type"),
   createdById: integer("created_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -5,6 +5,7 @@ import {
   Calendar, Camera, Menu, ChevronDown, Zap,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranding } from "@/contexts/BrandingContext";
 import { useLogout, useGetUnreadCount, getGetUnreadCountQueryKey } from "@workspace/api-client-react";
 import { ThemeToggle } from "@/components/ds/ThemeToggle";
 import {
@@ -34,7 +35,13 @@ const ROLE_LABEL: Record<string, string> = {
 export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps) {
   const [, navigate] = useLocation();
   const { user, logout } = useAuth();
+  const { branding, isTenant } = useBranding();
   const logoutMutation = useLogout();
+  // Batch 18: the authenticated tenant portal carries the tenant's identity; the
+  // platform portal (and the shared login page) keep the platform brand.
+  const tenantIdentity = portal === "admin" && isTenant;
+  const tenantName = tenantIdentity ? (user?.companyName || "Company Portal") : null;
+  const tenantLogo = tenantIdentity ? branding?.logoUrl ?? null : null;
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const isAdmin = portal === "admin";
@@ -88,15 +95,31 @@ export function AppHeader({ portal, navGroups, onOpenMobileNav }: AppHeaderProps
       <Link
         href={isAdmin ? "/admin" : "/platform"}
         className="flex items-center gap-2 shrink-0 me-1 sm:me-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label="Lead Capture Pro home"
+        aria-label={tenantName ? `${tenantName} home` : "Lead Capture Pro home"}
         data-testid="link-brand"
+        data-brand={tenantIdentity ? "tenant" : "platform"}
       >
-        <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary text-primary-foreground shadow-sm">
-          <Zap className="h-4.5 w-4.5" aria-hidden="true" />
-        </span>
-        <span className="hidden sm:inline font-bold text-base tracking-tight whitespace-nowrap">
-          Lead Capture <span className="text-primary">Pro</span>
-        </span>
+        {tenantLogo ? (
+          <img
+            src={tenantLogo}
+            alt=""
+            className="h-8 w-8 rounded-lg object-contain bg-white/95 p-0.5 shadow-sm"
+            data-testid="brand-logo"
+          />
+        ) : (
+          <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary text-primary-foreground shadow-sm" data-testid="brand-mark">
+            <Zap className="h-4.5 w-4.5" aria-hidden="true" />
+          </span>
+        )}
+        {tenantName ? (
+          <span className="hidden sm:inline font-bold text-base tracking-tight whitespace-nowrap max-w-[220px] truncate" data-testid="brand-name">
+            {tenantName}
+          </span>
+        ) : (
+          <span className="hidden sm:inline font-bold text-base tracking-tight whitespace-nowrap" data-testid="brand-name">
+            Lead Capture <span className="text-primary">Pro</span>
+          </span>
+        )}
       </Link>
 
       {/* Global search */}

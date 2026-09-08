@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Save } from "lucide-react";
+import { BrandingSection } from "@/components/branding/BrandingSection";
 
 type OrgForm = Required<Pick<OrganizationInput,
   "name" | "legalName" | "registrationNumber" | "industry" | "website" | "phone" |
@@ -119,6 +120,8 @@ export default function AdminOrganization() {
           </CardContent>
         </Card>
       </form>
+
+      <BrandingSection />
     </div>
   );
 }

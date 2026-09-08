@@ -24,29 +24,35 @@ function ContactRow({
   label,
   value,
   href,
+  tile = rowStyles.iconTile,
+  labelColor = "#3A5E82",
+  valueColor = "#C8DDEF",
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   href?: string;
+  tile?: React.CSSProperties;
+  labelColor?: string;
+  valueColor?: string;
 }) {
   const valueEl = href ? (
     <a
       href={href}
-      style={{ ...rowStyles.value, color: "#C8DDEF", textDecoration: "none" }}
+      style={{ ...rowStyles.value, color: valueColor, textDecoration: "none" }}
     >
       {value}
     </a>
   ) : (
-    <span style={rowStyles.value}>{value}</span>
+    <span style={{ ...rowStyles.value, color: valueColor }}>{value}</span>
   );
   return (
     <div style={rowStyles.row}>
-      <div style={rowStyles.iconTile} aria-hidden>
+      <div style={tile} aria-hidden>
         {icon}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
-        <span style={rowStyles.label}>{label}</span>
+        <span style={{ ...rowStyles.label, color: labelColor }}>{label}</span>
         {valueEl}
       </div>
     </div>
@@ -64,34 +70,61 @@ const iconProps = {
   strokeLinejoin: "round" as const,
 };
 
-const MailIcon = () => (
-  <svg {...iconProps}>
+const MailIcon = ({ stroke = ORANGE_LIGHT }: { stroke?: string }) => (
+  <svg {...iconProps} stroke={stroke}>
     <rect x="2" y="4" width="20" height="16" rx="2" />
     <polyline points="2,4 12,13 22,4" />
   </svg>
 );
-const PhoneIcon = () => (
-  <svg {...iconProps}>
+const PhoneIcon = ({ stroke = ORANGE_LIGHT }: { stroke?: string }) => (
+  <svg {...iconProps} stroke={stroke}>
     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 5.94 5.94l1.98-1.98a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
   </svg>
 );
-const PinIcon = () => (
-  <svg {...iconProps}>
+const PinIcon = ({ stroke = ORANGE_LIGHT }: { stroke?: string }) => (
+  <svg {...iconProps} stroke={stroke}>
     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
     <circle cx="12" cy="10" r="3" />
   </svg>
 );
 
+// Batch 18 — the owning tenant's public branding (null → the platform card look).
+function brandStyles(b: PublicBusinessCard["branding"]) {
+  if (!b) return { card: styles.card, band: styles.band, ring: styles.ring, job: styles.job, qrHeading: styles.qrHeading, qrFg: NAVY, iconStroke: ORANGE_LIGHT, iconTile: rowStyles.iconTile, logoUrl: null as string | null };
+  const accent = b.primaryColor;
+  return {
+    card: { ...styles.card, background: b.sidebarColor, boxShadow: `0 32px 64px ${b.sidebarColor}59, 0 8px 16px ${b.sidebarColor}33` },
+    band: { ...styles.band, background: accent },
+    ring: { ...styles.ring, background: accent },
+    job: { ...styles.job, color: accent },
+    qrHeading: { ...styles.qrHeading, color: accent },
+    qrFg: b.sidebarColor,
+    iconStroke: accent,
+    iconTile: { ...rowStyles.iconTile, background: `${accent}22` },
+    logoUrl: b.logoUrl,
+  };
+}
+
 function CardBody({ card, url }: { card: PublicBusinessCard; url: string }) {
   const name = card.fullName ?? "";
   const subtitle = card.companyName ?? "";
+  const brand = brandStyles(card.branding ?? null);
+  const dark = card.branding ? card.branding.sidebarForeground === "#FFFFFF" : true;
+  const nameColor = dark ? "#FFF7F0" : "#111827";
+  const softColor = dark ? "#C8DDEF" : "#374151";
+  const labelColor = dark ? "#3A5E82" : "#6B7280";
 
   return (
-    <div style={styles.card} role="main" aria-label={`Digital business card for ${name}`}>
-      <div style={styles.band} />
+    <div style={brand.card} role="main" aria-label={`Digital business card for ${name}`} data-testid="public-card" data-branded={card.branding ? "true" : "false"}>
+      <div style={brand.band} data-testid="public-card-band" />
+      {brand.logoUrl && (
+        <div style={styles.logoStrip} data-testid="public-card-logo-strip">
+          <img src={brand.logoUrl} alt={`${subtitle || "Company"} logo`} style={styles.logoImg} data-testid="public-card-logo" />
+        </div>
+      )}
 
       <div style={styles.header}>
-        <div style={styles.ring}>
+        <div style={brand.ring}>
           <div style={styles.ringInner}>
             {card.avatarUrl ? (
               <img src={card.avatarUrl} alt={name} style={styles.avatarImg} />
@@ -101,10 +134,10 @@ function CardBody({ card, url }: { card: PublicBusinessCard; url: string }) {
           </div>
         </div>
         {card.designation ? (
-          <p style={styles.job}>{card.designation}</p>
+          <p style={brand.job}>{card.designation}</p>
         ) : null}
-        <h1 style={styles.name}>{name}</h1>
-        {subtitle ? <p style={styles.company}>{subtitle}</p> : null}
+        <h1 style={{ ...styles.name, color: nameColor }}>{name}</h1>
+        {subtitle ? <p style={{ ...styles.company, color: dark ? "#7A9CC4" : "#4B5563" }}>{subtitle}</p> : null}
       </div>
 
       {(card.email || card.primaryPhone || card.alternatePhone || card.officeAddress) ? (
@@ -112,29 +145,29 @@ function CardBody({ card, url }: { card: PublicBusinessCard; url: string }) {
           <div style={styles.divider} />
           <div style={styles.contactSection}>
             {card.email ? (
-              <ContactRow icon={<MailIcon />} label="EMAIL" value={card.email} href={`mailto:${card.email}`} />
+              <ContactRow icon={<MailIcon stroke={brand.iconStroke} />} label="EMAIL" value={card.email} href={`mailto:${card.email}`} tile={brand.iconTile} labelColor={labelColor} valueColor={softColor} />
             ) : null}
             {card.primaryPhone ? (
-              <ContactRow icon={<PhoneIcon />} label="PHONE" value={card.primaryPhone} href={`tel:${card.primaryPhone}`} />
+              <ContactRow icon={<PhoneIcon stroke={brand.iconStroke} />} label="PHONE" value={card.primaryPhone} href={`tel:${card.primaryPhone}`} tile={brand.iconTile} labelColor={labelColor} valueColor={softColor} />
             ) : null}
             {card.alternatePhone ? (
-              <ContactRow icon={<PhoneIcon />} label="ALT. PHONE" value={card.alternatePhone} href={`tel:${card.alternatePhone}`} />
+              <ContactRow icon={<PhoneIcon stroke={brand.iconStroke} />} label="ALT. PHONE" value={card.alternatePhone} href={`tel:${card.alternatePhone}`} tile={brand.iconTile} labelColor={labelColor} valueColor={softColor} />
             ) : null}
             {card.officeAddress ? (
-              <ContactRow icon={<PinIcon />} label="OFFICE" value={card.officeAddress} />
+              <ContactRow icon={<PinIcon stroke={brand.iconStroke} />} label="OFFICE" value={card.officeAddress} tile={brand.iconTile} labelColor={labelColor} valueColor={softColor} />
             ) : null}
           </div>
         </>
       ) : null}
 
-      <div style={styles.qrSection}>
-        <span style={styles.qrHeading}>SCAN TO CONNECT</span>
+      <div style={{ ...styles.qrSection, background: card.branding ? (dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)") : PANEL }}>
+        <span style={brand.qrHeading}>SCAN TO CONNECT</span>
         <div style={styles.qrWrap}>
           <QRCodeCanvas
             value={url}
             size={132}
             bgColor="#ffffff"
-            fgColor={NAVY}
+            fgColor={brand.qrFg}
             level="H"
             marginSize={2}
             imageSettings={{
@@ -145,14 +178,14 @@ function CardBody({ card, url }: { card: PublicBusinessCard; url: string }) {
             }}
           />
         </div>
-        <p style={styles.qrSub}>
+        <p style={{ ...styles.qrSub, color: dark ? "#4A6E94" : "#4B5563" }}>
           Point your camera to open
           <br />
           this card instantly
         </p>
       </div>
 
-      <div style={styles.band} />
+      <div style={brand.band} />
     </div>
   );
 }
@@ -215,6 +248,8 @@ const styles: Record<string, React.CSSProperties> = {
       "0 32px 64px rgba(11, 26, 51, 0.35), 0 8px 16px rgba(11, 26, 51, 0.2)",
   },
   band: { height: 6, background: ORANGE, width: "100%" },
+  logoStrip: { background: "#FFFFFF", padding: "12px 26px 10px", display: "flex", justifyContent: "center" },
+  logoImg: { maxHeight: 44, maxWidth: 200, objectFit: "contain" },
   header: { padding: "30px 26px 22px", textAlign: "center" },
   ring: {
     width: 96,

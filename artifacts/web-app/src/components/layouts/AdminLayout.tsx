@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranding } from "@/contexts/BrandingContext";
 import { useGetOrganization, getGetOrganizationQueryKey } from "@workspace/api-client-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     },
   });
   const companyName = org?.name || user?.companyName || "Company Portal";
+  // Batch 18: the sidebar surface takes the tenant's sidebar color only when one is configured.
+  const { branding } = useBranding();
+  const brandedSidebar = branding?.overrides.sidebarColor != null;
+  const logoUrl = branding?.logoUrl ?? null;
 
   return (
     <div className="flex flex-col h-screen w-full bg-background overflow-hidden">
@@ -63,7 +68,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           className={cn(
             "hidden md:flex bg-card text-card-foreground border-r border-border flex-col flex-shrink-0 transition-[width] duration-150",
             mini ? "w-[68px]" : "w-64",
+            brandedSidebar && "tenant-sidebar",
           )}
+          data-testid="admin-sidebar"
         >
           <SidebarNav groups={navGroups} storageKey="csp_nav_admin" mini={mini} />
           <SidebarFooter
@@ -71,15 +78,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             plan={org?.plan}
             mini={mini}
             onToggleMini={toggleMini}
+            logoUrl={logoUrl}
           />
         </aside>
 
         {/* Sidebar (mobile drawer) */}
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-          <SheetContent side="left" className="w-72 p-0 flex flex-col md:hidden">
+          <SheetContent side="left" className={cn("w-72 p-0 flex flex-col md:hidden", brandedSidebar && "tenant-sidebar")}>
             <SheetTitle className="sr-only">Navigation</SheetTitle>
             <SidebarNav groups={navGroups} storageKey="csp_nav_admin" />
-            <SidebarFooter companyName={companyName} plan={org?.plan} mini={false} />
+            <SidebarFooter companyName={companyName} plan={org?.plan} mini={false} logoUrl={logoUrl} />
           </SheetContent>
         </Sheet>
 

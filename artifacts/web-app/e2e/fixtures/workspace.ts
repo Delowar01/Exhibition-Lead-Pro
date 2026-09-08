@@ -16,23 +16,27 @@ export const state: SeedState = loadState();
  * csp_refresh_token / csp_company_id) BEFORE any navigation, plus an optional
  * theme. This reuses the real login token — it is not a login bypass. Also sets
  * a window marker used to prove SPA navigations do not perform a full reload.
+ * The theme is written both as the pre-B18 global key and as the user's scoped
+ * preference (`csp_theme:u<id>c<company>`, Batch 18) so a seeded theme is the
+ * member's explicit choice regardless of what an earlier load migrated.
  */
 export async function seedAuth(page: Page, opts: { theme?: "light" | "dark" | "system" } = {}) {
   const { token, refreshToken, user } = state;
   const theme = opts.theme ?? "light";
   await page.addInitScript(
-    ([t, r, u, companyId, th]) => {
+    ([t, r, u, companyId, th, userId]) => {
       try {
         localStorage.setItem("csp_token", t as string);
         localStorage.setItem("csp_user", u as string);
         if (r) localStorage.setItem("csp_refresh_token", r as string);
         if (companyId) localStorage.setItem("csp_company_id", companyId as string);
         localStorage.setItem("csp_theme", th as string);
+        localStorage.setItem(`csp_theme:u${userId}c${companyId}`, th as string);
       } catch {
         /* storage unavailable */
       }
     },
-    [token, refreshToken ?? "", JSON.stringify(user), String(user.companyId ?? ""), theme] as const,
+    [token, refreshToken ?? "", JSON.stringify(user), String(user.companyId ?? ""), theme, String(user.id)] as const,
   );
 }
 
