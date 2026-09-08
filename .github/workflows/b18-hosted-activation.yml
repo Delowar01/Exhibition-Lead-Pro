@@ -1,0 +1,316 @@
+# =============================================================================
+# TEMPORARY — Batch 18 hosted activation on the dev VPS. One-off operations
+# workflow; NOT the deployment pipeline (deploy-dev-vps.yml is untouched) and
+# NOT application code.
+# =============================================================================
+# Trigger:  push to the `ops/b18-hosted-activation` branch ONLY.
+# Guard:    the job refuses any other ref, and refuses to run unless the branch
+#           content equals the accepted commit plus these ops files.
+# Mode:     first line of .github/scripts/b18-mode —
+#             inspect  read-only preflight on the VPS + schema-only dump + drizzle-kit
+#                      push inspection on the RUNNER (scratch postgres 16): pass 1 must
+#                      be exactly the five additive companies.brand_* columns, pass 2
+#                      must be "No changes detected"; nothing is applied
+#             apply    the inspect gates, then on the VPS: verified backup → migrate
+#                      profile at the accepted commit with the api paused for the
+#                      seconds of the push (trap-guarded unpause) → checkout restored to
+#                      the deployed commit → column/NULL/row-count/DDL/fingerprint proof
+#                      → a repeat inspection of the fresh hosted schema (zero statements)
+#             smoke    AFTER the develop deploy: post-deploy verification on the VPS,
+#                      disposable tenants, a real-browser smoke from this runner
+#                      against the hosted web app (real GCS logo storage), DB/GCS
+#                      evidence, exact cleanup, preservation proof
+#
+# Secrets used (same as deploy-dev-vps.yml, nothing new):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+# Application runtime secrets stay ONLY in the VPS env file.
+#
+# Remove this workflow (and the branch) once the activation is accepted.
+
+name: b18-hosted-activation
+
+on:
+  push:
+    branches: [ops/b18-hosted-activation]
+
+# Serialize with the deployment workflow so an activation can never overlap a
+# deploy of develop on the same VPS.
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  # develop head deployed BEFORE the B18 merge (B17).
+  DEPLOYED_SHA_BEFORE: f22e73ef167a4bb3e62f05a7623664a9bf9d2db2
+  # Accepted Batch 18 commit incl. correction 1 (schema source for the inspection + migrate).
+  ACTIVATION_SHA: c2cd4674977ce517e9ffd8ec7f50688613864dad
+  # Schema fingerprint printed by the apply run (filled in for smoke mode).
+  SCHEMA_FP_AFTER: ""
+  # Public customer portal; used for the browser smoke when it answers, else an
+  # SSH tunnel to the VPS loopback gateway is used.
+  PUBLIC_BASE: https://admin.kaptnow.com
+
+jobs:
+  activate:
+    name: B18 hosted activation (one-off)
+    if: github.ref == 'refs/heads/ops/b18-hosted-activation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve mode and verify the branch is the accepted code + ops files only
+        id: mode
+        run: |
+          MODE="$(sed -n 1p .github/scripts/b18-mode | tr -d '[:space:]')"
+          case "$MODE" in inspect|apply|smoke) ;; *) echo "invalid mode '$MODE'"; exit 1;; esac
+          git cat-file -e "$ACTIVATION_SHA^{commit}" || { echo "accepted commit not present"; exit 1; }
+          git merge-base --is-ancestor "$ACTIVATION_SHA" HEAD || { echo "branch does not descend from the accepted commit"; exit 1; }
+          DIFF="$(git diff --stat "$ACTIVATION_SHA" HEAD -- . ':(exclude).github/scripts/b18-mode' ':(exclude).github/scripts/b18-hosted.sh' ':(exclude).github/scripts/b18-inspect-push.mjs' ':(exclude).github/scripts/b18-browser-smoke.mjs' ':(exclude).github/workflows/b18-hosted-activation.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the accepted commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          git merge-base --is-ancestor "$DEPLOYED_SHA_BEFORE" "$ACTIVATION_SHA" || { echo "accepted commit does not descend from the deployed commit"; exit 1; }
+          AHEAD="$(git rev-list --count "$DEPLOYED_SHA_BEFORE..$ACTIVATION_SHA")"
+          [ "$AHEAD" = "2" ] || { echo "accepted commit is $AHEAD commits ahead of the deployed commit, expected 2"; exit 1; }
+          SCHEMA_FILES="$(git diff --name-only "$DEPLOYED_SHA_BEFORE" "$ACTIVATION_SHA" -- lib/db/src/schema | tr '\n' ' ')"
+          [ "$SCHEMA_FILES" = "lib/db/src/schema/companies.ts " ] || { echo "unexpected schema files changed: $SCHEMA_FILES"; exit 1; }
+          echo "mode=$MODE; branch = $ACTIVATION_SHA + ops files only; ahead of $DEPLOYED_SHA_BEFORE by $AHEAD commits; schema files changed: companies.ts only"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          if [ "$MODE" = "smoke" ]; then [ -n "$SCHEMA_FP_AFTER" ] || { echo "SCHEMA_FP_AFTER must be filled in for smoke mode"; exit 1; }; fi
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the ops script to the VPS
+        run: |
+          # Copied to a file first (never piped into `bash -s`) so that `docker
+          # compose run/exec` on the VPS can never consume the script as stdin.
+          ssh vps 'umask 077; cat > "$HOME/b18-hosted.sh" && chmod 700 "$HOME/b18-hosted.sh"' < .github/scripts/b18-hosted.sh
+
+      # ── inspect / apply ────────────────────────────────────────────────────
+      - name: Preflight on the VPS (read-only)
+        if: steps.mode.outputs.mode != 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b18-hosted.sh\" preflight" < /dev/null
+
+      - name: Schema-only dump of the hosted database (no data) to the runner
+        if: steps.mode.outputs.mode != 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          umask 077
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b18-hosted.sh\" dump" < /dev/null > "$RUNNER_TEMP/schema-before.sql"
+          echo "schema-only dump: $(wc -l < "$RUNNER_TEMP/schema-before.sql") lines, $(grep -c '^CREATE TABLE' "$RUNNER_TEMP/schema-before.sql") CREATE TABLE statements"
+          grep -q '^CREATE TABLE public.companies' "$RUNNER_TEMP/schema-before.sql" || { echo "dump does not look like the application schema"; exit 1; }
+          if grep -q 'brand_primary_color' "$RUNNER_TEMP/schema-before.sql"; then echo "STOP: brand_* columns already exist on the hosted database"; exit 1; fi
+          echo "companies columns in the hosted schema copy: $(awk '/^CREATE TABLE public.companies \(/{f=1;next} f&&/^\);/{exit} f{gsub(/^ +/,""); printf "%s ", $1}' "$RUNNER_TEMP/schema-before.sql")"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.mode.outputs.mode != 'smoke'
+
+      - uses: actions/setup-node@v4
+        if: steps.mode.outputs.mode != 'smoke'
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+
+      - name: Install the db package (frozen lockfile)
+        if: steps.mode.outputs.mode != 'smoke'
+        run: pnpm install --frozen-lockfile --filter "@workspace/db..."
+
+      - name: Inspect the schema push on a scratch database (runner only) — pass 1 and pass 2
+        if: steps.mode.outputs.mode != 'smoke'
+        run: |
+          set -euo pipefail
+          PGPW="$(openssl rand -hex 16)"
+          docker run -d --name b18pg -e POSTGRES_PASSWORD="$PGPW" -e POSTGRES_USER=b18 -e POSTGRES_DB=b18 -p 127.0.0.1:55432:5432 postgres:16-alpine >/dev/null
+          for _ in $(seq 1 30); do docker exec b18pg pg_isready -U b18 -d b18 >/dev/null 2>&1 && break; sleep 2; done
+          docker exec b18pg pg_isready -U b18 -d b18
+          docker exec -i b18pg psql -q -v ON_ERROR_STOP=1 -U b18 -d b18 < "$RUNNER_TEMP/schema-before.sql" >/dev/null
+          echo "scratch database restored: $(docker exec b18pg psql -tA -U b18 -d b18 -c "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'") public base tables (hosted schema copy); companies brand_* columns before: $(docker exec b18pg psql -tA -U b18 -d b18 -c "select count(*) from information_schema.columns where table_name='companies' and column_name like 'brand\\_%'")"
+          echo "== PASS 1: drizzle-kit push --verbose with the accepted code ($ACTIVATION_SHA) against the scratch copy =="
+          set +e
+          DATABASE_URL="postgres://b18:$PGPW@127.0.0.1:55432/b18" pnpm --filter @workspace/db exec drizzle-kit push --verbose --config ./drizzle.config.ts > "$RUNNER_TEMP/push-verbose.log" 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" != "0" ]; then echo "drizzle-kit push exited $RC:"; cat "$RUNNER_TEMP/push-verbose.log"; exit 1; fi
+          node .github/scripts/b18-inspect-push.mjs "$RUNNER_TEMP/push-verbose.log"
+          echo "companies brand_* columns after pass 1: $(docker exec b18pg psql -tA -U b18 -d b18 -c "select string_agg(column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,'<none>'), ' ' order by column_name) from information_schema.columns where table_name='companies' and column_name like 'brand\\_%'")"
+          echo "== PASS 2: the same push again must produce zero statements =="
+          set +e
+          DATABASE_URL="postgres://b18:$PGPW@127.0.0.1:55432/b18" pnpm --filter @workspace/db exec drizzle-kit push --verbose --config ./drizzle.config.ts > "$RUNNER_TEMP/push-verbose-2.log" 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" != "0" ]; then echo "drizzle-kit push (pass 2) exited $RC:"; cat "$RUNNER_TEMP/push-verbose-2.log"; exit 1; fi
+          node .github/scripts/b18-inspect-push.mjs "$RUNNER_TEMP/push-verbose-2.log" --expect-none
+          docker rm -f b18pg >/dev/null
+
+      - name: Apply the schema on the VPS (verified backup → migrate profile with api paused → verify → restore checkout)
+        if: steps.mode.outputs.mode == 'apply'
+        id: apply
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          OUT="$(ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b18-hosted.sh\" apply" < /dev/null)"
+          echo "$OUT"
+          FP="$(printf '%s\n' "$OUT" | sed -n 's/^SCHEMA_FP_AFTER=//p' | tail -1)"
+          [ -n "$FP" ] || { echo "apply did not print SCHEMA_FP_AFTER"; exit 1; }
+          echo "SCHEMA_FP_AFTER (record this in the workflow env for smoke mode): $FP"
+
+      - name: Repeat inspection against the fresh hosted schema (must be zero statements)
+        if: steps.mode.outputs.mode == 'apply'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b18-hosted.sh\" dump" < /dev/null > "$RUNNER_TEMP/schema-after.sql"
+          echo "post-apply schema-only dump: $(wc -l < "$RUNNER_TEMP/schema-after.sql") lines, $(grep -c '^CREATE TABLE' "$RUNNER_TEMP/schema-after.sql") CREATE TABLE statements"
+          echo "companies columns in the post-apply hosted schema: $(awk '/^CREATE TABLE public.companies \(/{f=1;next} f&&/^\);/{exit} f{gsub(/^ +/,""); printf "%s ", $1}' "$RUNNER_TEMP/schema-after.sql")"
+          PGPW="$(openssl rand -hex 16)"
+          docker run -d --name b18pg2 -e POSTGRES_PASSWORD="$PGPW" -e POSTGRES_USER=b18 -e POSTGRES_DB=b18 -p 127.0.0.1:55433:5432 postgres:16-alpine >/dev/null
+          for _ in $(seq 1 30); do docker exec b18pg2 pg_isready -U b18 -d b18 >/dev/null 2>&1 && break; sleep 2; done
+          docker exec -i b18pg2 psql -q -v ON_ERROR_STOP=1 -U b18 -d b18 < "$RUNNER_TEMP/schema-after.sql" >/dev/null
+          set +e
+          DATABASE_URL="postgres://b18:$PGPW@127.0.0.1:55433/b18" pnpm --filter @workspace/db exec drizzle-kit push --verbose --config ./drizzle.config.ts > "$RUNNER_TEMP/push-verbose-3.log" 2>&1
+          RC=$?
+          set -e
+          if [ "$RC" != "0" ]; then echo "drizzle-kit push (post-apply) exited $RC:"; cat "$RUNNER_TEMP/push-verbose-3.log"; exit 1; fi
+          node .github/scripts/b18-inspect-push.mjs "$RUNNER_TEMP/push-verbose-3.log" --expect-none
+          docker rm -f b18pg2 >/dev/null
+
+      # ── smoke ──────────────────────────────────────────────────────────────
+      - name: Post-deploy verification on the VPS (read-only)
+        if: steps.mode.outputs.mode == 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' SCHEMA_FP_AFTER='$SCHEMA_FP_AFTER' bash \"\$HOME/b18-hosted.sh\" verify" < /dev/null
+
+      - name: Create the disposable smoke principals on the VPS
+        if: steps.mode.outputs.mode == 'smoke'
+        id: seed
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          STAMP="$(date -u +%Y%m%d%H%M%S)"
+          PW="$(openssl rand -hex 24)"
+          echo "::add-mask::$PW"
+          printf '%s\n' "$PW" > "$RUNNER_TEMP/smoke.pw"
+          OUT="$(printf '%s\n' "$PW" | ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' SMOKE_STAMP='$STAMP' bash \"\$HOME/b18-hosted.sh\" seed")"
+          unset PW
+          echo "$OUT"
+          echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+          for k in CO_A CO_B U_A U_V U_B U_P EMAIL_A EMAIL_V EMAIL_B EMAIL_P; do
+            echo "$(echo "$k" | tr 'A-Z' 'a-z')=$(printf '%s\n' "$OUT" | sed -n "s/^SMOKE_$k=//p")" >> "$GITHUB_OUTPUT"
+          done
+
+      - uses: pnpm/action-setup@v4
+        if: steps.mode.outputs.mode == 'smoke'
+
+      - uses: actions/setup-node@v4
+        if: steps.mode.outputs.mode == 'smoke'
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+
+      - name: Install Playwright (runner only)
+        if: steps.mode.outputs.mode == 'smoke'
+        run: |
+          pnpm install --frozen-lockfile --filter "@workspace/web-app..."
+          pnpm --filter @workspace/web-app exec playwright install --with-deps chromium
+
+      - name: Resolve the browser base URL (public portal, else SSH tunnel to the VPS loopback gateway)
+        if: steps.mode.outputs.mode == 'smoke'
+        id: base
+        run: |
+          set -euo pipefail
+          if [ "$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "$PUBLIC_BASE/healthz" || true)" = "200" ] && [ "$(curl -sS --max-time 15 "$PUBLIC_BASE/api/readyz" | tr -d '\n' | cut -c1-60)" != "" ]; then
+            echo "public portal answers: $PUBLIC_BASE/healthz -> 200; readyz: $(curl -sS --max-time 15 "$PUBLIC_BASE/api/readyz" | tr -d '\n')"
+            echo "base=$PUBLIC_BASE" >> "$GITHUB_OUTPUT"; echo "via=public" >> "$GITHUB_OUTPUT"
+          else
+            echo "public portal did not answer from this runner — using an SSH tunnel to the VPS loopback gateway"
+            ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18080:127.0.0.1:18080 vps
+            for _ in $(seq 1 20); do curl -fsS --max-time 5 http://127.0.0.1:18080/healthz >/dev/null 2>&1 && break; sleep 1; done
+            curl -fsS --max-time 5 http://127.0.0.1:18080/healthz
+            echo "base=http://127.0.0.1:18080" >> "$GITHUB_OUTPUT"; echo "via=tunnel" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Hosted browser + API smoke (real Chromium on this runner against the hosted app, real GCS logo storage)
+        if: steps.mode.outputs.mode == 'smoke'
+        env:
+          SMOKE_BASE: ${{ steps.base.outputs.base }}
+          SMOKE_STAMP: ${{ steps.seed.outputs.stamp }}
+          SMOKE_CO_A: ${{ steps.seed.outputs.co_a }}
+          SMOKE_CO_B: ${{ steps.seed.outputs.co_b }}
+          SMOKE_U_A: ${{ steps.seed.outputs.u_a }}
+          SMOKE_U_V: ${{ steps.seed.outputs.u_v }}
+          SMOKE_U_B: ${{ steps.seed.outputs.u_b }}
+          SMOKE_U_P: ${{ steps.seed.outputs.u_p }}
+          SMOKE_EMAIL_A: ${{ steps.seed.outputs.email_a }}
+          SMOKE_EMAIL_V: ${{ steps.seed.outputs.email_v }}
+          SMOKE_EMAIL_B: ${{ steps.seed.outputs.email_b }}
+          SMOKE_EMAIL_P: ${{ steps.seed.outputs.email_p }}
+          SMOKE_PASSWORD_FILE: ${{ runner.temp }}/smoke.pw
+          SMOKE_OUT: ${{ runner.temp }}/b18-smoke-shots
+          SMOKE_PW_MODULE: artifacts/web-app/node_modules/@playwright/test/index.js
+          SMOKE_VPS_ENV: DEPLOYED_SHA='${{ env.DEPLOYED_SHA_BEFORE }}' ACTIVATION_SHA='${{ env.ACTIVATION_SHA }}' DEPLOY_PATH='${{ secrets.VPS_DEPLOY_PATH }}'
+        run: |
+          echo "browser smoke via ${{ steps.base.outputs.via }}: $SMOKE_BASE (tenant A $SMOKE_CO_A, tenant B $SMOKE_CO_B)"
+          node .github/scripts/b18-browser-smoke.mjs
+
+      - name: Upload smoke screenshots
+        if: steps.mode.outputs.mode == 'smoke' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b18-hosted-smoke-screenshots
+          path: ${{ runner.temp }}/b18-smoke-shots
+          if-no-files-found: ignore
+
+      - name: Post-smoke evidence on the VPS (audit rows, no AI, no email, log deltas, queue)
+        if: steps.mode.outputs.mode == 'smoke'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b18-hosted.sh\" postcheck" < /dev/null
+
+      - name: Cleanup the disposable principals + GCS objects + preservation proof (always)
+        if: steps.mode.outputs.mode == 'smoke' && always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOYED_SHA='$DEPLOYED_SHA_BEFORE' ACTIVATION_SHA='$ACTIVATION_SHA' DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b18-hosted.sh\" cleanup" < /dev/null
+
+      - name: Remove the ops script and state from the VPS; clean the runner
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b18-hosted.sh" "$HOME/b18-smoke.state"' < /dev/null || true
+          pkill -f 'ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18080' >/dev/null 2>&1 || true
+          docker rm -f b18pg b18pg2 >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/smoke.pw" "$RUNNER_TEMP/schema-before.sql" "$RUNNER_TEMP/schema-after.sql" "$RUNNER_TEMP"/push-verbose*.log
