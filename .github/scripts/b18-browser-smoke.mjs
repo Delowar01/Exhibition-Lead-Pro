@@ -26,6 +26,10 @@ const env = (k, d) => {
 };
 const BASE = env("SMOKE_BASE").replace(/\/$/, "");
 const API = `${BASE}/api`;
+// Split portal hosts: platform_owner logins are only accepted on the Platform Owner
+// portal host (elite.kaptnow.com), never on the customer portal host.
+const PLATFORM_BASE = (process.env.SMOKE_PLATFORM_BASE || BASE).replace(/\/$/, "");
+const PLATFORM_API = `${PLATFORM_BASE}/api`;
 const STAMP = env("SMOKE_STAMP");
 const CO_A = Number(env("SMOKE_CO_A")), CO_B = Number(env("SMOKE_CO_B"));
 const U_A = Number(env("SMOKE_U_A")), U_V = Number(env("SMOKE_U_V")), U_B = Number(env("SMOKE_U_B")), U_P = Number(env("SMOKE_U_P"));
@@ -63,14 +67,14 @@ function vps(cmd) {
 const vpsJson = (cmd) => JSON.parse(vps(cmd).split("\n").filter(Boolean).pop());
 
 const tokens = {};
-async function login(email) {
-  const res = await fetch(`${API}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: PASSWORD }) });
+async function login(email, apiBase = API) {
+  const res = await fetch(`${apiBase}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: PASSWORD }) });
   const json = await res.json().catch(() => null);
   if (res.status !== 200 || !json?.token || json?.mfaRequired) throw new Error(`login failed for ${email}: HTTP ${res.status}`);
   return { token: json.token, user: json.user };
 }
-async function api(method, p, body, token, extraHeaders = {}) {
-  const res = await fetch(`${API}${p}`, {
+async function api(method, p, body, token, extraHeaders = {}, apiBase = API) {
+  const res = await fetch(`${apiBase}${p}`, {
     method,
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -146,7 +150,7 @@ const V = await login(EMAIL_V); tokens.V = V.token;
 check("API login: tenant A view-only employee", V.user?.id === U_V && V.user?.role === "employee" && V.user?.companyId === CO_A);
 const B = await login(EMAIL_B); tokens.B = B.token;
 check("API login: tenant B primary_admin", B.user?.id === U_B && B.user?.companyId === CO_B);
-const P = await login(EMAIL_P); tokens.P = P.token;
+const P = await login(EMAIL_P, PLATFORM_API); tokens.P = P.token;
 check("API login: disposable platform_owner", P.user?.id === U_P && P.user?.role === "platform_owner");
 
 // SMOKE_CHROMIUM_PATH: optional explicit Chromium binary (the runner uses the Playwright-installed one).
@@ -286,13 +290,13 @@ try {
   await ctxB.close();
 
   // 7. platform owner: explicit-company routes only; platform portal keeps platform branding
-  const pSelf = await api("GET", "/organization/branding", undefined, tokens.P);
-  const pRead = await api("GET", `/companies/${CO_A}/branding`, undefined, tokens.P);
-  const pPut = await api("PUT", `/companies/${CO_A}/branding`, { defaultTheme: "system" }, tokens.P);
-  const pRestore = await api("PUT", `/companies/${CO_A}/branding`, { defaultTheme: "dark" }, tokens.P);
+  const pSelf = await api("GET", "/organization/branding", undefined, tokens.P, {}, PLATFORM_API);
+  const pRead = await api("GET", `/companies/${CO_A}/branding`, undefined, tokens.P, {}, PLATFORM_API);
+  const pPut = await api("PUT", `/companies/${CO_A}/branding`, { defaultTheme: "system" }, tokens.P, {}, PLATFORM_API);
+  const pRestore = await api("PUT", `/companies/${CO_A}/branding`, { defaultTheme: "dark" }, tokens.P, {}, PLATFORM_API);
   check("7a. platform owner: tenant route 403; explicit-company read/update 200 (theme system → dark restored)", pSelf.status === 403 && pRead.status === 200 && pRead.json?.primaryColor === PRIMARY && pRead.json?.companyId === CO_A && pPut.status === 200 && pPut.json?.defaultTheme === "system" && pRestore.status === 200 && pRestore.json?.defaultTheme === "dark" && noLeak(pRead.text), `${pSelf.status}/${pRead.status}/${pPut.status}/${pRestore.status}`);
   const { ctx: ctxP, page: pp } = await seededContext(P, "light");
-  await pp.goto(`${BASE}/platform`, { waitUntil: "domcontentloaded" });
+  await pp.goto(`${PLATFORM_BASE}/platform`, { waitUntil: "domcontentloaded" });
   await pp.getByTestId("brand-name").waitFor({ timeout: T });
   await pp.getByTestId("theme-toggle").click();
   await pp.getByTestId("theme-option-light").waitFor({ timeout: T });
@@ -424,7 +428,7 @@ try {
   await browser.close().catch(() => {});
   try { vps("tenant-status active"); } catch { /* best effort */ }
   if (cardToken) await api("DELETE", "/cards/me", undefined, tokens.A).catch(() => {});
-  for (const k of Object.keys(tokens)) { await api("POST", "/auth/logout", {}, tokens[k]).catch(() => {}); tokens[k] = ""; }
+  for (const k of Object.keys(tokens)) { await api("POST", "/auth/logout", {}, tokens[k], {}, k === "P" ? PLATFORM_API : API).catch(() => {}); tokens[k] = ""; }
   console.log(`\nSMOKE SUMMARY: ${results.filter((r) => r.ok).length} passed, ${failed} failed; tenant A=${CO_A} tenant B=${CO_B}; screenshots in ${OUT}`);
 }
 process.exit(failed === 0 ? 0 : 1);
