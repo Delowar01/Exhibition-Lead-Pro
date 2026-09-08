@@ -9242,6 +9242,10 @@ components:
       properties:
         logoUrl:
           type: ["string", "null"]
+          description: >-
+            First-party managed logo route (`/api/branding/logos/{companyId}/{id}`) or null.
+            A legacy external `logoUrl` is never exposed on public surfaces; it remains an
+            authenticated-only fallback of `/organization/branding`.
         primaryColor:
           type: string
         primaryForeground:

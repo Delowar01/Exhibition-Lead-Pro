@@ -26,6 +26,7 @@ let tokenEmpEdit = "";
 let companyA = 0;
 let companyB = 0;
 let adminAId = 0;
+let tokenBCard = "";
 const userIds: number[] = [];
 
 const DEFAULTS = { primaryColor: "#FF6B00", sidebarColor: "#1A1C2E", defaultTheme: "system" };
@@ -447,12 +448,75 @@ describe("public digital business card", () => {
     // Unbranded tenant → branding: null; unpublished card → 404 for card and logo.
     res = await api("PUT", "/cards/me", tokenB, { fullName: "B18 Card Owner B" });
     expect(res.status).toBeLessThan(300);
-    const tokenBCard = String((await json(res)).publicToken);
+    tokenBCard = String((await json(res)).publicToken);
     const pubB = await json(await fetch(`${BASE}/cards/public/${tokenBCard}`));
     expect(pubB.branding).toBeNull();
     expect((await fetch(`${BASE}/cards/public/${tokenBCard}/logo`)).status).toBe(404);
     await db.update(businessCardsTable).set({ isPublished: false }).where(eq(businessCardsTable.publicToken, token));
     expect((await fetch(`${BASE}/cards/public/${token}`)).status).toBe(404);
     expect((await fetch(`${BASE}/cards/public/${token}/logo`)).status).toBe(404);
+  });
+});
+
+// Correction 1 — a legacy external `companies.logo_url` never reaches a public surface.
+// It stays an authenticated-only fallback; public cards get colors/theme and either the
+// first-party managed logo route or null.
+describe("public logo boundary (legacy logo_url stays authenticated-only)", () => {
+  const HOST = "legacy-cdn.example.test";
+  const LEGACY = `https://${HOST}/brand/logo.png`;
+
+  it("legacy-only branding exposes no public logo (public branding stays null)", async () => {
+    const res = await api("PATCH", "/organization", tokenB, { logoUrl: LEGACY });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const mine = await branding(tokenB);
+    expect(mine).toMatchObject({ logoSource: "legacy", logoUrl: LEGACY, isCustomized: false, overrides: { logo: false } });
+    const pub = await fetch(`${BASE}/cards/public/${tokenBCard}`);
+    expect(pub.status).toBe(200);
+    const text = await pub.text();
+    expect(JSON.parse(text).branding).toBeNull();
+    expect(text).not.toContain(HOST);
+    expect((await fetch(`${BASE}/cards/public/${tokenBCard}/logo`)).status).toBe(404);
+  });
+
+  it("legacy logo plus customized colors returns public colors but logoUrl: null", async () => {
+    const res = await api("PUT", "/organization/branding", tokenB, { primaryColor: "#0E7C86", sidebarColor: "#12213A", defaultTheme: "dark" });
+    expect(res.status, await res.clone().text()).toBe(200);
+    // Authenticated surfaces (tenant self-service and the platform operator) still report the legacy fallback.
+    const mine = await branding(tokenB);
+    expect(mine).toMatchObject({ logoSource: "legacy", logoUrl: LEGACY, isCustomized: true, primaryColor: "#0E7C86", sidebarColor: "#12213A", defaultTheme: "dark" });
+    const byPlatform = await json(await api("GET", `/companies/${companyB}/branding`, platformToken));
+    expect(byPlatform).toMatchObject({ logoSource: "legacy", logoUrl: LEGACY });
+    // The public card carries colors/theme and NO logo: not the legacy URL, not a proxy of it.
+    const pub = await fetch(`${BASE}/cards/public/${tokenBCard}`);
+    expect(pub.status).toBe(200);
+    const text = await pub.text();
+    expect(JSON.parse(text).branding).toEqual({ logoUrl: null, primaryColor: "#0E7C86", primaryForeground: "#FFFFFF", sidebarColor: "#12213A", sidebarForeground: "#FFFFFF", defaultTheme: "dark" });
+    expect(text).not.toContain(HOST);
+    expect((await fetch(`${BASE}/cards/public/${tokenBCard}/logo`)).status).toBe(404);
+  });
+
+  it("managed logos keep using and serving the first-party randomized route publicly", async () => {
+    let res = await upload("/organization/branding/logo", tokenB, await png(120, 60), "image/png");
+    expect(res.status, await res.clone().text()).toBe(200);
+    const mine = await json(res);
+    expect(mine.logoSource).toBe("managed");
+    expect(mine.logoUrl).toMatch(new RegExp(`^/api/branding/logos/${companyB}/[0-9a-f]{32}$`));
+    const pub = await fetch(`${BASE}/cards/public/${tokenBCard}`);
+    const text = await pub.text();
+    expect(JSON.parse(text).branding.logoUrl).toBe(mine.logoUrl);
+    expect(text).not.toContain(HOST);
+    expect((await fetch(`http://localhost:80${mine.logoUrl}`)).status).toBe(200);
+    const viaCard = await fetch(`${BASE}/cards/public/${tokenBCard}/logo`);
+    expect(viaCard.status).toBe(200);
+    expect(viaCard.headers.get("content-type")).toBe("image/png");
+    // Removing the managed logo also clears the legacy value: nothing public, nothing authenticated.
+    res = await api("DELETE", "/organization/branding/logo", tokenB);
+    expect(res.status).toBe(200);
+    expect(await branding(tokenB)).toMatchObject({ logoSource: "none", logoUrl: null });
+    expect((await json(await fetch(`${BASE}/cards/public/${tokenBCard}`))).branding.logoUrl).toBeNull();
+    expect((await fetch(`http://localhost:80${mine.logoUrl}`)).status).toBe(404);
+    res = await api("POST", "/organization/branding/reset", tokenB);
+    expect(res.status).toBe(200);
+    expect((await json(await fetch(`${BASE}/cards/public/${tokenBCard}`))).branding).toBeNull();
   });
 });

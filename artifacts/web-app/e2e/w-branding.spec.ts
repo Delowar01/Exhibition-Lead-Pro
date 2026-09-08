@@ -871,6 +871,65 @@ test("Reset to platform default clears colors, theme and logo for the portal and
   await context.close();
 });
 
+test("a legacy external logo never reaches the public card; authenticated members still get the fallback", async ({ browser }) => {
+  const LEGACY_ORIGIN = "https://legacy-logo.example";
+  const LEGACY = `${LEGACY_ORIGIN}/brand/logo.png`;
+
+  // Legacy-only: the public card stays on the platform look; the authenticated read reports the fallback.
+  expect((await api("PATCH", "/organization", { logoUrl: LEGACY })).status).toBe(200);
+  let mine = await api("GET", "/organization/branding");
+  expect(mine.json).toMatchObject({ logoSource: "legacy", logoUrl: LEGACY, isCustomized: false });
+  let pub = await api("GET", `/cards/public/${cardToken}`, undefined, null);
+  expect(pub.status).toBe(200);
+  expect(pub.json.branding).toBeNull();
+  expect(pub.text).not.toContain("legacy-logo.example");
+
+  // Legacy logo + customized colors: public colors, but no public logo of any kind.
+  expect((await api("PUT", "/organization/branding", { primaryColor: PRIMARY, sidebarColor: SIDEBAR })).status).toBe(200);
+  mine = await api("GET", "/organization/branding");
+  expect(mine.json).toMatchObject({ logoSource: "legacy", logoUrl: LEGACY, isCustomized: true });
+  pub = await api("GET", `/cards/public/${cardToken}`, undefined, null);
+  expect(pub.json.branding).toMatchObject({ logoUrl: null, primaryColor: PRIMARY, sidebarColor: SIDEBAR });
+  expect(pub.text).not.toContain("legacy-logo.example");
+  expect((await fetch(`${API_BASE}/cards/public/${cardToken}/logo`)).status).toBe(404);
+
+  // A visitor's browser never contacts the legacy origin: every such request is recorded (and blocked).
+  const context = await browser.newContext({ viewport: MOBILE });
+  const legacyRequests: string[] = [];
+  context.on("request", (r) => {
+    if (r.url().startsWith(LEGACY_ORIGIN)) legacyRequests.push(r.url());
+  });
+  await context.route(`${LEGACY_ORIGIN}/**`, (route) => route.abort());
+  const visitor = await context.newPage();
+  await visitor.goto(`/c/${cardToken}`);
+  await expect(visitor.getByTestId("public-card")).toHaveAttribute("data-branded", "true");
+  expectColorClose(await visitor.getByTestId("public-card-band").evaluate((el) => getComputedStyle(el).backgroundColor), PRIMARY_RGB);
+  await expect(visitor.getByTestId("public-card-logo")).toHaveCount(0);
+  await expect(visitor.getByTestId("public-card-logo-strip")).toHaveCount(0);
+  await visitor.waitForLoadState("networkidle");
+  expect(await visitor.content()).not.toContain("legacy-logo.example");
+  expect(await visitor.evaluate(() => performance.getEntriesByType("resource").map((e) => e.name).filter((n) => n.includes("legacy-logo.example")))).toEqual([]);
+  expect(legacyRequests).toEqual([]);
+  await visitor.close();
+
+  // The authenticated tenant shell still uses the legacy fallback (and does request it).
+  const member = await context.newPage();
+  await seedAs(member, admin);
+  await member.goto("/admin/organization");
+  await expect(member.getByTestId("branding-logo-preview")).toHaveAttribute("data-logo-source", "legacy");
+  await expect(member.getByTestId("branding-logo-image")).toHaveAttribute("src", LEGACY);
+  await expect(member.getByTestId("brand-logo")).toHaveAttribute("src", LEGACY);
+  await expect.poll(() => legacyRequests.length).toBeGreaterThan(0);
+  await expectBrandedLook(member);
+  await context.close();
+
+  // Reset clears the colors and the legacy value; the public card is unbranded again.
+  const reset = await api("POST", "/organization/branding/reset");
+  expect(reset.json).toMatchObject({ logoSource: "none", logoUrl: null, isCustomized: false });
+  pub = await api("GET", `/cards/public/${cardToken}`, undefined, null);
+  expect(pub.json.branding).toBeNull();
+});
+
 test("a view-only member sees the branding but cannot change it", async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await seedAs(page, viewer);

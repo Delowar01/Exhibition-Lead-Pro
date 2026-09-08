@@ -262,12 +262,20 @@ export function resolveBranding(row: BrandingRow): ResolvedBranding {
   };
 }
 
-/** The subset a public (unauthenticated) surface may see; null when nothing is customized. */
+/**
+ * The subset a public (unauthenticated) surface may see; null when nothing is customized.
+ *
+ * Logo boundary: a public response exposes a logo ONLY when it is the tenant's current
+ * managed object — the first-party `/api/branding/logos/{companyId}/{id}` route — or
+ * `null`. A legacy external `companies.logo_url` never crosses this boundary (it stays
+ * an authenticated-only fallback), so a public card can never send a visitor's browser
+ * to a third-party origin. Colors/theme are still returned when only the logo is legacy.
+ */
 export function publicBranding(row: BrandingRow): PublicBranding | null {
   const r = resolveBranding(row);
   if (!r.isCustomized) return null;
   return {
-    logoUrl: r.logoUrl,
+    logoUrl: r.logoSource === "managed" ? r.logoUrl : null,
     primaryColor: r.primaryColor,
     primaryForeground: r.derived.primaryForeground,
     sidebarColor: r.sidebarColor,

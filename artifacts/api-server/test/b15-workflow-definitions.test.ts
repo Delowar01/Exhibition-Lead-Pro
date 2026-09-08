@@ -30,6 +30,9 @@ import {
   leadActivitiesTable,
   pipelineStagesTable,
   workflowDefinitionsTable,
+  workflowRunsTable,
+  workflowActionRunsTable,
+  jobQueueTable,
   loginAttemptsTable,
 } from "@workspace/db";
 
@@ -108,12 +111,6 @@ async function archiveAllPublished(token: string) {
   for (const d of list.items as Array<{ id: number; revision: number }>) {
     await api("POST", `/workflows/${d.id}/archive`, token, { revision: d.revision });
   }
-}
-
-async function jobStats(): Promise<{ enqueued: number; completed: number }> {
-  const res = await api("GET", "/metrics", platformToken);
-  expect(res.status).toBe(200);
-  return (await res.json()).jobs;
 }
 
 beforeAll(async () => {
@@ -824,7 +821,6 @@ describe("correction 2 — revision-safe draft DELETE", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("definitions never execute and never enqueue", () => {
   it("full CRUD + lifecycle of a definition enqueues no background job", async () => {
-    const before = await jobStats();
     const d = await createDefinition(adminToken);
     let rev = d.revision;
     rev = (await (await api("PATCH", `/workflows/${d.id}`, adminToken, { revision: rev, description: "x" })).json()).revision;
@@ -835,8 +831,33 @@ describe("definitions never execute and never enqueue", () => {
     await api("GET", "/workflows", adminToken);
     await api("GET", "/workflows/catalog", adminToken);
     rev = (await (await api("POST", `/workflows/${d.id}/archive`, adminToken, { revision: rev })).json()).revision;
-    const after = await jobStats();
-    expect(after.enqueued).toBe(before.enqueued);
+    expect(rev).toBeGreaterThan(d.revision);
+
+    // Deterministic, resource-attributable proof — never a server-wide counter
+    // (concurrent suites legitimately enqueue jobs of their own). The engine's
+    // durability boundary (src/lib/workflows/dispatch.ts) enqueues a `workflow.run`
+    // job ONLY for a committed workflow_runs row, keyed `workflow.run:<runId>:<gen>`,
+    // so a definition that owns no run rows has executed nothing and owns no job.
+    const runs = await db
+      .select({ id: workflowRunsTable.id, generation: workflowRunsTable.enqueueGeneration })
+      .from(workflowRunsTable)
+      .where(eq(workflowRunsTable.workflowDefinitionId, d.id));
+    expect(runs).toEqual([]);
+    const actionRows = await db
+      .select({ id: workflowActionRunsTable.id })
+      .from(workflowActionRunsTable)
+      .innerJoin(workflowRunsTable, eq(workflowActionRunsTable.runId, workflowRunsTable.id))
+      .where(eq(workflowRunsTable.workflowDefinitionId, d.id));
+    expect(actionRows).toEqual([]);
+    const jobKeys = runs.map((r) => `workflow.run:${r.id}:${r.generation}`);
+    const jobs = await db
+      .select({ id: jobQueueTable.id })
+      .from(jobQueueTable)
+      .where(inArray(jobQueueTable.dedupeKey, jobKeys.length ? jobKeys : ["-"]));
+    expect(jobs).toEqual([]);
+    // The tenant-facing run history for this definition is empty as well.
+    const history = await (await api("GET", `/workflows/runs?workflowDefinitionId=${d.id}&pageSize=100`, adminToken)).json();
+    expect(history.items).toEqual([]);
   });
 
   // Batch 16 note: published definitions now EXECUTE through the workflow engine

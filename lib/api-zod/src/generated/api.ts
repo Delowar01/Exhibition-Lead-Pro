@@ -7876,7 +7876,7 @@ export const GetPublicCardResponse = zod.object({
   "templateId": zod.string(),
   "publicUrl": zod.string().nullish(),
   "branding": zod.union([zod.object({
-  "logoUrl": zod.string().nullable(),
+  "logoUrl": zod.string().nullable().describe('First-party managed logo route (`\/api\/branding\/logos\/{companyId}\/{id}`) or null. A legacy external `logoUrl` is never exposed on public surfaces; it remains an authenticated-only fallback of `\/organization\/branding`.'),
   "primaryColor": zod.string(),
   "primaryForeground": zod.string(),
   "sidebarColor": zod.string(),

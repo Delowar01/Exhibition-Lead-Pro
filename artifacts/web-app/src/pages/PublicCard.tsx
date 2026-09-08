@@ -89,6 +89,15 @@ const PinIcon = ({ stroke = ORANGE_LIGHT }: { stroke?: string }) => (
 );
 
 // Batch 18 — the owning tenant's public branding (null → the platform card look).
+// A public card renders only a FIRST-PARTY managed logo (the relative
+// /api/branding/logos route the API hands out). The API never sends anything else on
+// this surface; this guard keeps a visitor's browser off third-party origins even if a
+// stale or tampered response carried an external URL.
+const FIRST_PARTY_LOGO = /^\/api\/branding\/logos\/\d+\/[0-9a-f]{32}$/;
+function firstPartyLogo(url: string | null | undefined): string | null {
+  return typeof url === "string" && FIRST_PARTY_LOGO.test(url) ? url : null;
+}
+
 function brandStyles(b: PublicBusinessCard["branding"]) {
   if (!b) return { card: styles.card, band: styles.band, ring: styles.ring, job: styles.job, qrHeading: styles.qrHeading, qrFg: NAVY, iconStroke: ORANGE_LIGHT, iconTile: rowStyles.iconTile, logoUrl: null as string | null };
   const accent = b.primaryColor;
@@ -101,7 +110,7 @@ function brandStyles(b: PublicBusinessCard["branding"]) {
     qrFg: b.sidebarColor,
     iconStroke: accent,
     iconTile: { ...rowStyles.iconTile, background: `${accent}22` },
-    logoUrl: b.logoUrl,
+    logoUrl: firstPartyLogo(b.logoUrl),
   };
 }
 

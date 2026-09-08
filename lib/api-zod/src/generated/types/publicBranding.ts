@@ -11,7 +11,10 @@ import type { BrandTheme } from './brandTheme';
  * The tenant's public resolved branding for a public card (null when nothing is customized).
  */
 export interface PublicBranding {
-  /** @nullable */
+  /**
+     * First-party managed logo route (`/api/branding/logos/{companyId}/{id}`) or null. A legacy external `logoUrl` is never exposed on public surfaces; it remains an authenticated-only fallback of `/organization/branding`.
+     * @nullable
+     */
   logoUrl: string | null;
   primaryColor: string;
   primaryForeground: string;
