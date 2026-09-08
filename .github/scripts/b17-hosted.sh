@@ -77,6 +77,9 @@ exists_of() { psql_q "select coalesce(to_regclass('public.$1')::text,'absent')";
 
 umask 077
 
+# State file lines are shell-quoted (%q) so sourcing them is safe for any value.
+save_state() { printf '%s=%q\n' "$1" "$2" >> "$SMOKE_STATE"; }
+
 env_checks() {
   [ -f "$ENV_FILE" ] || fail "runtime env file missing: $ENV_FILE"
   ENV_MODE="$(stat -c '%a' "$ENV_FILE")"
@@ -224,13 +227,10 @@ verify() {
   AI_TOTAL="$(psql_q "select count(*) from ai_invocations")"
   MAIL_SENT="$(count_in "$API_LOG" 'Email sent')"; MAIL_SKIP="$(count_in "$API_LOG" 'Email not sent')"
   JOBQ_WF="$(psql_q "select count(*) from job_queue where name='workflow.run'")"
-  {
-    echo "PG_CID=$PG_CID"; echo "API_CID=$API_CID"; echo "WEB_CID=$WEB_CID"
-    echo "PG_STARTED=$PG_STARTED"; echo "API_STARTED=$API_STARTED"; echo "WEB_STARTED=$WEB_STARTED"
-    echo "PG_VOL=$PG_VOL"; echo "PG_VOL_CREATED=$PG_VOL_CREATED"; echo "ENV_HASH=$ENV_HASH"
-    echo "SCHEMA_FP=$SCHEMA_FP"; echo "AI_TOTAL=$AI_TOTAL"; echo "MAIL_SENT=$MAIL_SENT"; echo "MAIL_SKIP=$MAIL_SKIP"
-    echo "C_ERRLVL=$C_ERRLVL"; echo "C_WEB5XX=$C_WEB5XX"; echo "JOBQ_WF=$JOBQ_WF"; echo "RUNS_TOTAL=$RUNS_TOTAL"; echo "WD_TOTAL=$WD_TOTAL"
-  } > "$SMOKE_STATE"
+  : > "$SMOKE_STATE"
+  for kv in PG_CID API_CID WEB_CID PG_STARTED API_STARTED WEB_STARTED PG_VOL PG_VOL_CREATED ENV_HASH SCHEMA_FP AI_TOTAL MAIL_SENT MAIL_SKIP C_ERRLVL C_WEB5XX JOBQ_WF RUNS_TOTAL WD_TOTAL; do
+    save_state "$kv" "${!kv}"
+  done
   log "verify OK — deployed $ACTIVATION_SHA, driver postgres, readyz '$READYZ_PARSED'"
 }
 
@@ -258,7 +258,7 @@ seed() {
   U_ID="$(psql_q "insert into users (email, password_hash, name, role, company_id, permissions) values ('$EMAIL', '$HASH', 'B17 Smoke Admin', 'primary_admin', $CO_ID, '{}'::jsonb) returning id")"
   [ -n "$U_ID" ] && [ "$U_ID" -gt 0 ] 2>/dev/null || fail "could not create the disposable user (got '$U_ID')"
   unset HASH
-  { echo "CO_ID=$CO_ID"; echo "U_ID=$U_ID"; echo "EMAIL=$EMAIL"; echo "CO_NAME=$CO_NAME"; } >> "$SMOKE_STATE"
+  save_state CO_ID "$CO_ID"; save_state U_ID "$U_ID"; save_state EMAIL "$EMAIL"; save_state CO_NAME "$CO_NAME"
   log "disposable tenant: company id=$CO_ID '$CO_NAME', user id=$U_ID ($EMAIL, primary_admin) — password hashed inside the api container, never printed"
   echo "SMOKE_COMPANY_ID=$CO_ID"; echo "SMOKE_USER_ID=$U_ID"; echo "SMOKE_EMAIL=$EMAIL"
 }
@@ -303,7 +303,7 @@ postcheck() {
   [ "$MAIL_SENT_AFTER" = "$MAIL_SENT" ] && [ "$MAIL_SKIP_AFTER" = "$MAIL_SKIP" ] || fail "an email send was attempted during the smoke"
   [ "$C_ERRLVL2" = "$C_ERRLVL" ] || fail "new error-level api log lines during the smoke"
   [ "$C_WEB5XX2" = "$C_WEB5XX" ] || fail "new web 5xx responses during the smoke"
-  echo "RUN_ID=$RUN_ID" >> "$SMOKE_STATE"
+  save_state RUN_ID "$RUN_ID"
   log "postcheck OK: run_id=$RUN_ID actions=2/2 completed attempts=1 job=$J_STATUS ai_delta=$((AI_AFTER - AI_TOTAL)) email_delta=$((MAIL_SENT_AFTER - MAIL_SENT)) errlvl_delta=$((C_ERRLVL2 - C_ERRLVL))"
 }
 

@@ -68,6 +68,17 @@ async function pick(page, triggerTestId, optionName, exact = false) {
   await page.getByRole("option", { name: optionName, exact }).click();
 }
 const T = 30_000;
+async function waitFor(fn, ms = T) {
+  const end = Date.now() + ms;
+  let last;
+  while (Date.now() < end) {
+    try { last = await fn(); if (last) return last; } catch (e) { last = e; }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return false;
+}
+const waitCount = (locator, n) => waitFor(async () => (await locator.count()) === n);
+const waitText = (locator, text) => waitFor(async () => (await locator.innerText()).includes(text));
 
 // ── login through the real API (same origin the browser will use) ──────────
 const login = await api("POST", "/auth/login", { email: EMAIL, password: PASSWORD });
@@ -96,8 +107,8 @@ try {
   // 1. /admin/automations loads
   await page.goto(`${BASE}/admin/automations`, { waitUntil: "domcontentloaded" });
   await page.getByTestId("automation-list").waitFor({ timeout: T });
-  check("1. /admin/automations loads (list + tabs + nav item)", (await page.getByTestId("tab-runs").count()) === 1 && (await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Automations" }).count()) === 1);
-  check("1b. fresh tenant shows the empty state", (await page.getByText("No automations yet").count()) === 1);
+  check("1. /admin/automations loads (list + tabs + nav item)", (await waitCount(page.getByTestId("tab-runs"), 1)) && (await waitCount(page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Automations" }), 1)));
+  check("1b. fresh tenant shows the empty state", await waitCount(page.getByText("No automations yet"), 1));
   check("1c. no page-level horizontal overflow on the list", (await overflow(page)) <= 1, `${await overflow(page)}px`);
   await shot(page, "list-empty");
 
@@ -127,7 +138,7 @@ try {
   await page.getByTestId("field-actions[0].config.title").fill(`B17 smoke task ${STAMP}`);
   await pick(page, "action-add", "Add tag to lead");
   await pick(page, "field-actions[1].config.tagId", TAG_NAME);
-  check("4b. actions keep their order (task, tag)", (await page.getByTestId("action-title-0").innerText()).includes("Create task") && (await page.getByTestId("action-title-1").innerText()).includes("Add tag to lead"));
+  check("4b. actions keep their order (task, tag)", (await waitText(page.getByTestId("action-title-0"), "Create task")) && (await waitText(page.getByTestId("action-title-1"), "Add tag to lead")));
   await page.getByTestId("button-validate").click();
   await page.getByTestId("validation-summary").waitFor({ timeout: T });
   check("5a. server validation: valid and publishable", (await page.getByTestId("validation-summary").getAttribute("data-tone")) === "success");
@@ -159,13 +170,13 @@ try {
   const rowText = await completedRow.first().innerText();
   runId = Number((await completedRow.first().getAttribute("data-testid")).replace("run-row-", ""));
   check("5c. run appears completed in Run History", (await completedRow.count()) === 1 && rowText.includes(NAME) && rowText.includes("Lead created") && rowText.includes(`Lead #${leadId}`) && rowText.includes("2/2 done"), `run ${runId}`);
-  check("5d. polling stopped (all runs finished)", (await page.getByTestId("runs-polling").innerText()).includes("finished"));
+  check("5d. polling stopped (all runs finished)", await waitText(page.getByTestId("runs-polling"), "finished"));
   await shot(page, "run-history");
   await page.getByTestId(`run-link-${runId}`).click();
   await page.waitForURL(new RegExp(`/admin/automations/runs/${runId}$`), { timeout: T });
   await page.locator('[data-testid="run-detail"][data-status="completed"]').waitFor({ timeout: T });
   const a0 = page.getByTestId("run-action-0"), a1 = page.getByTestId("run-action-1");
-  check("5e. run detail: ordered action outcomes completed", (await a0.getAttribute("data-status")) === "completed" && (await a0.innerText()).includes("Create task") && (await a1.getAttribute("data-status")) === "completed" && (await a1.innerText()).includes("Add tag to lead") && (await page.getByTestId("run-action-1-result").innerText()).includes(TAG_NAME));
+  check("5e. run detail: ordered action outcomes completed", (await a0.getAttribute("data-status")) === "completed" && (await waitText(a0, "Create task")) && (await a1.getAttribute("data-status")) === "completed" && (await waitText(a1, "Add tag to lead")) && (await waitText(page.getByTestId("run-action-1-result"), TAG_NAME)));
   check("5f. run detail links the related lead; no retry/replay controls", ((await page.getByTestId("run-entity-link").getAttribute("href")) ?? "").endsWith(`/admin/leads/${leadId}`) && (await page.getByRole("button", { name: /retry|replay|run now|re-run/i }).count()) === 0);
   check("5g. no overflow on the run detail", (await overflow(page)) <= 1);
   await shot(page, "run-detail");
@@ -176,7 +187,7 @@ try {
   await page.getByTestId("button-unpublish").click();
   await page.getByTestId("confirm-unpublish").click();
   await page.locator('[data-testid="automation-editor"][data-status="draft"]').waitFor({ timeout: T });
-  check("6a. unpublish → editable draft", (await page.getByTestId("readonly-banner").count()) === 0 && (await page.getByTestId("automation-name").isEnabled()));
+  check("6a. unpublish → editable draft", (await waitCount(page.getByTestId("readonly-banner"), 0)) && (await page.getByTestId("automation-name").isEnabled()));
 
   // 7–11. browser history guard
   await page.goto(`${BASE}/admin/automations`, { waitUntil: "domcontentloaded" });
@@ -226,11 +237,11 @@ try {
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Contacts" }).click();
   await page.getByTestId("unsaved-dialog").waitFor({ timeout: T });
   await page.getByTestId("unsaved-stay").click();
-  check("12c. sidebar link intercepted; Stay keeps the editor", page.url() === editorUrl && (await page.getByTestId("automation-name").inputValue()) === `${NAME} (guards)`);
+  check("12c. sidebar link intercepted; Stay keeps the editor", (await waitCount(page.getByTestId("unsaved-dialog"), 0)) && page.url() === editorUrl && (await page.getByTestId("automation-name").inputValue()) === `${NAME} (guards)`);
   await page.getByTestId("button-back").click();
   await page.getByTestId("unsaved-dialog").waitFor({ timeout: T });
   await page.getByTestId("unsaved-stay").click();
-  check("12d. editor Cancel/Back button intercepted; Stay keeps the editor", page.url() === editorUrl);
+  check("12d. editor Cancel/Back button intercepted; Stay keeps the editor", (await waitCount(page.getByTestId("unsaved-dialog"), 0)) && page.url() === editorUrl);
   const second = await context.newPage();
   await second.goto(`${BASE}/admin/automations/${defId}`, { waitUntil: "domcontentloaded" });
   await second.getByTestId("automation-name").waitFor({ timeout: T });
@@ -261,7 +272,7 @@ try {
   await page.getByTestId(`automation-row-${archiveId}`).waitFor({ state: "detached", timeout: T });
   await page.getByTestId("automations-include-archived").click();
   await page.getByTestId(`automation-row-${archiveId}`).waitFor({ timeout: T });
-  check("6b. archive with confirmation → Archived, hidden unless 'Show archived'", (await page.getByTestId(`automation-row-${archiveId}`).innerText()).includes("Archived"));
+  check("6b. archive with confirmation → Archived, hidden unless 'Show archived'", await waitText(page.getByTestId(`automation-row-${archiveId}`), "Archived"));
   await page.getByTestId(`automation-menu-${defId}`).click();
   await page.getByTestId(`automation-delete-${defId}`).click();
   await page.getByTestId("lifecycle-dialog").waitFor({ timeout: T });
@@ -270,6 +281,9 @@ try {
   check("6c. draft deleted with confirmation", (await api("GET", `/workflows/${defId}`)).status === 404);
   await shot(page, "list-final");
   check("console: no unexpected browser errors", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
+} catch (e) {
+  try { await page.screenshot({ path: path.join(OUT, "99-failure.png"), fullPage: false }); console.log("failure screenshot saved; url:", page.url()); } catch { /* page gone */ }
+  throw e;
 } finally {
   await browser.close().catch(() => {});
   const logout = await api("POST", "/auth/logout", {}).catch(() => ({ status: "n/a" }));
