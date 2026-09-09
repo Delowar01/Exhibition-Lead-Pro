@@ -7,6 +7,7 @@
  */
 import type { CompanyPlan } from './companyPlan';
 import type { CompanyStatus } from './companyStatus';
+import type { SubscriptionSummary } from './subscriptionSummary';
 
 export interface Company {
   id: number;
@@ -32,5 +33,6 @@ export interface Company {
   userCount?: number;
   contactCount?: number;
   scanCount?: number;
+  subscription?: SubscriptionSummary | null;
   createdAt: Date;
 }

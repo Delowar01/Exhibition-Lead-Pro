@@ -3,6 +3,7 @@ import { eq, ilike, count, desc, and, ne, inArray, type SQL } from "drizzle-orm"
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { tenantOnly, notDeleted } from "./base.js";
+import { exec, type Executor } from "./base.js";
 
 export type UserRow = typeof usersTable.$inferSelect;
 
@@ -45,13 +46,13 @@ export async function findById(user: AuthUser, id: number): Promise<UserRow | un
   return row;
 }
 
-export async function insert(values: typeof usersTable.$inferInsert): Promise<UserRow> {
-  const [row] = await db.insert(usersTable).values(values).returning();
+export async function insert(values: typeof usersTable.$inferInsert, tx?: Executor): Promise<UserRow> {
+  const [row] = await exec(tx).insert(usersTable).values(values).returning();
   return row;
 }
 
-export async function update(id: number, data: Partial<typeof usersTable.$inferInsert>): Promise<UserRow | undefined> {
-  const [row] = await db.update(usersTable).set(data).where(eq(usersTable.id, id)).returning();
+export async function update(id: number, data: Partial<typeof usersTable.$inferInsert>, tx?: Executor): Promise<UserRow | undefined> {
+  const [row] = await exec(tx).update(usersTable).set(data).where(eq(usersTable.id, id)).returning();
   return row;
 }
 

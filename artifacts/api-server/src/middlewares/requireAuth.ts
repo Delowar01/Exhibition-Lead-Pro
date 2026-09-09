@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { db, usersTable, companiesTable, userCompanyAccessTable, userRolesTable, rolePermissionsTable, type Company } from "@workspace/db";
+import { db, usersTable, userCompanyAccessTable, userRolesTable, rolePermissionsTable } from "@workspace/db";
 import { and, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { verifyAccessToken } from "../lib/tokens.js";
@@ -51,11 +51,12 @@ export function normalizeRole(role: string): string {
   return LEGACY_ROLE_ALIASES[role] ?? role;
 }
 
-// Implementation lives in lib/company-access.ts so the refresh-rotation path
-// (lib/sessions.ts) can share it without a middleware import cycle. Re-exported
-// here for existing importers.
-import { evaluateCompanyAccess, type CompanyAccess } from "../lib/company-access.js";
-export { evaluateCompanyAccess, type CompanyAccess };
+// Batch 20: tenant access is resolved from the CANONICAL subscription row by
+// lib/company-access.ts (shared with the login path and the refresh-rotation
+// path so all three apply the same entitlement policy). The legacy company
+// billing columns are never read here.
+import { loadTenantAccess, type CompanyAccess } from "../lib/company-access.js";
+export { type CompanyAccess };
 
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -99,20 +100,13 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     let companyStatus: string | null = null;
     let readOnly = false;
     if (user.companyId) {
-      const [company] = await db
-        .select({ status: companiesTable.status, trialEndsAt: companiesTable.trialEndsAt })
-        .from(companiesTable)
-        .where(eq(companiesTable.id, user.companyId))
-        .limit(1);
-      if (company) {
-        companyStatus = company.status;
-        const access = evaluateCompanyAccess(company);
-        if (access.blocked) {
-          res.status(403).json({ error: access.reason });
-          return;
-        }
-        readOnly = access.readOnly;
+      const tenant = await loadTenantAccess(user.companyId);
+      companyStatus = tenant.summary?.status ?? null;
+      if (tenant.access.blocked) {
+        res.status(403).json({ error: tenant.access.reason, code: tenant.access.reasonCode });
+        return;
       }
+      readOnly = tenant.access.readOnly;
     }
 
     const accessRows = await db
@@ -193,16 +187,9 @@ export async function loadAuthUserById(userId: number): Promise<AuthUser | null>
   let companyStatus: string | null = null;
   let readOnly = false;
   if (user.companyId) {
-    const [company] = await db
-      .select({ status: companiesTable.status, trialEndsAt: companiesTable.trialEndsAt })
-      .from(companiesTable)
-      .where(eq(companiesTable.id, user.companyId))
-      .limit(1);
-    if (company) {
-      companyStatus = company.status;
-      const access = evaluateCompanyAccess(company);
-      readOnly = access.blocked ? true : access.readOnly;
-    }
+    const tenant = await loadTenantAccess(user.companyId);
+    companyStatus = tenant.summary?.status ?? null;
+    readOnly = tenant.access.blocked ? true : tenant.access.readOnly;
   }
 
   const accessRows = await db

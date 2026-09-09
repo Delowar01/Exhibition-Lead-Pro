@@ -18,6 +18,7 @@ import {
   resolveCorsOrigin,
 } from "./lib/httpPolicy.js";
 import type { AuthRequest } from "./middlewares/requireAuth.js";
+import { stripeWebhookHandler } from "./routes/billing-webhook.js";
 
 const app: Express = express();
 
@@ -129,6 +130,14 @@ app.use(
 // sent uncompressed. Additive: changes transport encoding only, never the body.
 app.use(compression());
 app.use(cookieParser());
+// Batch 20 — Stripe webhook: a STRICT raw-body parser mounted BEFORE any JSON
+// parser so the signature is verified over the unmodified bytes. Public route
+// (no session); authenticity is the provider signature. Oversized bodies → 413.
+app.post(
+  ["/api/v1/billing/stripe/webhook", "/api/billing/stripe/webhook"],
+  express.raw({ type: () => true, limit: config.billing.webhookMaxBodyBytes }),
+  stripeWebhookHandler,
+);
 app.use(express.json({ limit: config.http.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
 

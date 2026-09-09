@@ -1,4 +1,5 @@
-import { usersTable } from "@workspace/db";
+import { usersTable, db } from "@workspace/db";
+import { assertCapacity, roleFamily } from "./entitlements.service.js";
 import { normalizeRole, type AuthUser } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
 import { hashPassword } from "../lib/auth.js";
@@ -158,15 +159,24 @@ export async function createUser(user: AuthUser, input: CreateUserInput) {
   await validateOrgProfile(user, cid, input);
   const pw = password ?? "Welcome123!";
   const passwordHash = hashPassword(pw);
-  const created = await usersRepo.insert({
-    email,
-    passwordHash,
-    name,
-    role,
-    companyId: cid,
-    isActive: true,
-    ...(phone !== undefined ? { phone } : {}),
-    ...orgProfilePatch(input),
+  // Batch 20: the destination role family (admins / employees) is checked against
+  // the tenant's effective limit under the tenant+resource lock, in the insert's transaction.
+  const family = cid != null ? roleFamily(role) : null;
+  const created = await db.transaction(async (tx) => {
+    if (cid != null && family) await assertCapacity(tx, cid, family, 1);
+    return usersRepo.insert(
+      {
+        email,
+        passwordHash,
+        name,
+        role,
+        companyId: cid,
+        isActive: true,
+        ...(phone !== undefined ? { phone } : {}),
+        ...orgProfilePatch(input),
+      },
+      tx,
+    );
   });
   const name2 = cid ? await usersRepo.companyName(cid) : null;
   return formatUser(created, name2);
@@ -243,7 +253,14 @@ export async function updateUser(user: AuthUser, id: number, input: UpdateUserIn
   if (phone !== undefined) patch.phone = phone;
   if (Object.keys(patch).length === 0) throw new AppError(400, "No valid fields to update");
   patch.updatedAt = new Date();
-  const updated = await usersRepo.update(id, patch);
+  // Batch 20: a role change into another family (employee → admin or back) must
+  // fit the destination family's limit; checked in the update's transaction.
+  const fromFamily = roleFamily(normalizeRole(target.role));
+  const toFamily = role !== undefined ? roleFamily(role) : null;
+  const updated = await db.transaction(async (tx) => {
+    if (target.companyId != null && toFamily && toFamily !== fromFamily) await assertCapacity(tx, target.companyId, toFamily, 1);
+    return usersRepo.update(id, patch, tx);
+  });
   if (!updated) throw new AppError(404, "User not found");
   const companyName = updated.companyId ? await usersRepo.companyName(updated.companyId) : null;
   return formatUser(updated, companyName);

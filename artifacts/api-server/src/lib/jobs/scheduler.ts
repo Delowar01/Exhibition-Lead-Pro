@@ -6,6 +6,7 @@ import { runDueSchedules } from "../../services/export.service.js";
 import { runWorkflowAlerts } from "../workflow-alerts.js";
 import { runAiUsageAlerts } from "../ai-alerts.js";
 import { recoverOrphanedWorkflowRuns } from "../workflows/recovery.js";
+import { runSubscriptionSweep } from "./subscription-sweep.js";
 import { getQueue } from "./queue.js";
 import type { JobQueue } from "./types.js";
 
@@ -34,6 +35,8 @@ const TASKS: Record<string, () => Promise<unknown>> = {
   aiUsageAlerts: runAiUsageAlerts,
   // Batch 16: re-enqueue orphaned/abandoned workflow runs (no second scheduler).
   workflowRecovery: () => recoverOrphanedWorkflowRuns(),
+  // Batch 20: elapsed MANUAL trials → expired (never touches Stripe-managed rows).
+  subscriptionSweep: () => runSubscriptionSweep(),
 };
 
 export interface RecurringSweepPayload {
@@ -94,12 +97,15 @@ export function startScheduler(): void {
   registerRecurring("aiUsageAlerts", config.ai.alerts.sweepFirstDelayMs, config.ai.alerts.sweepIntervalMs);
   // Batch 16 workflow-run orphan recovery (queued-but-never-enqueued / abandoned running).
   registerRecurring("workflowRecovery", s.workflowRecoveryFirstDelayMs, s.workflowRecoveryIntervalMs);
+  // Batch 20 subscription lifecycle sweep: once shortly after boot, then on a conservative cadence.
+  registerRecurring("subscriptionSweep", s.subscriptionSweepFirstDelayMs, s.subscriptionSweepIntervalMs);
   logger.info(
     {
       followUpIntervalMs: s.followUpIntervalMs,
       maintenanceIntervalMs: s.maintenanceIntervalMs,
       exportIntervalMs: s.exportIntervalMs,
       workflowAlertsIntervalMs: s.workflowAlertsIntervalMs,
+      subscriptionSweepIntervalMs: s.subscriptionSweepIntervalMs,
     },
     "Recurring task scheduler started (durable dispatch)",
   );

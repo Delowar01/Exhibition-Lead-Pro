@@ -81,7 +81,7 @@ export default function AdminOrganization() {
         {org && (
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="capitalize">{org.plan}</Badge>
-            <Badge variant={org.status === "active" ? "default" : "destructive"} className="capitalize">{org.status}</Badge>
+            <Badge variant={org.status === "active" || org.status === "trialing" ? "default" : "destructive"} className="capitalize">{(org.status ?? "").replace("_", " ")}</Badge>
           </div>
         )}
       </div>

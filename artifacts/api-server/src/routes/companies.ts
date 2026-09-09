@@ -6,6 +6,7 @@ import { CreateCompanyBody, UpdateCompanyBody, UpdateCompanyBrandingBody } from 
 import * as companies from "../services/companies.service.js";
 import * as branding from "../services/branding.service.js";
 import { rawLogoBody, sendLogo } from "./branding.js";
+import { getClientIp } from "../lib/security.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -20,7 +21,7 @@ router.get("/companies", async (req: AuthRequest, res) => {
 
 // POST /companies
 router.post("/companies", validateBody(CreateCompanyBody), async (req: AuthRequest, res) => {
-  res.status(201).json(await companies.createCompany(req.user!, req.body ?? {}));
+  res.status(201).json(await companies.createCompany(req.user!, req.body ?? {}, getClientIp(req)));
 });
 
 // GET /companies/:id
@@ -69,12 +70,12 @@ router.get("/companies/:id/branding/logo", async (req: AuthRequest, res) => {
 
 // POST /companies/:id/suspend
 router.post("/companies/:id/suspend", async (req: AuthRequest, res) => {
-  res.json(await companies.suspendCompany(req.user!, parseInt(String(req.params.id))));
+  res.json(await companies.suspendCompany(req.user!, parseInt(String(req.params.id)), getClientIp(req)));
 });
 
 // POST /companies/:id/activate
 router.post("/companies/:id/activate", async (req: AuthRequest, res) => {
-  res.json(await companies.activateCompany(req.user!, parseInt(String(req.params.id))));
+  res.json(await companies.activateCompany(req.user!, parseInt(String(req.params.id)), getClientIp(req)));
 });
 
 export default router;

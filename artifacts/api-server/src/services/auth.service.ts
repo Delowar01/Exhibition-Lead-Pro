@@ -1,6 +1,9 @@
 import { type Company } from "@workspace/db";
 import { hashPassword, comparePassword } from "../lib/auth.js";
-import { evaluateCompanyAccess, normalizeRole } from "../middlewares/requireAuth.js";
+import { normalizeRole } from "../middlewares/requireAuth.js";
+import { loadTenantAccess } from "../lib/company-access.js";
+import { createSubscriptionForCompany } from "./subscription-lifecycle.service.js";
+import { db } from "@workspace/db";
 import { AppError } from "../middlewares/errorHandler.js";
 import { signMfaChallenge, verifyMfaChallenge } from "../lib/tokens.js";
 import { revokeSession, revokeOtherSessions } from "../lib/sessions.js";
@@ -31,6 +34,9 @@ async function accessibleCompaniesFor(userId: number, companyId: number | null):
 
 export async function buildUserResponse(user: UserRow, companyName: string | null) {
   const accessibleCompanies = await accessibleCompaniesFor(user.id, user.companyId);
+  // Batch 20: stable subscription projection (plan/status/access mode) so clients
+  // never have to infer read-only state from a 403.
+  const subscription = user.companyId ? (await loadTenantAccess(user.companyId)).summary : null;
   return {
     id: user.id,
     email: user.email,
@@ -48,6 +54,7 @@ export async function buildUserResponse(user: UserRow, companyName: string | nul
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
+    subscription,
   };
 }
 
@@ -85,10 +92,11 @@ export async function insertTrustedDevice(values: {
   await authRepo.insertTrustedDevice(values);
 }
 
-function checkCompanyAccessOrThrow(company: Pick<Company, "status" | "trialEndsAt"> | undefined): string | null {
-  if (!company) return null;
-  const access = evaluateCompanyAccess(company);
-  return access.blocked ? access.reason : null;
+// Batch 20: the login gate reads the canonical subscription (never the legacy
+// company columns) through the shared resolver.
+async function companyBlockedReason(companyId: number): Promise<string | null> {
+  const tenant = await loadTenantAccess(companyId);
+  return tenant.access.blocked ? tenant.access.reason : null;
 }
 
 export type LoginOutcome =
@@ -125,8 +133,7 @@ export async function authenticateLogin(params: {
   }
 
   if (user.companyId) {
-    const c = await authRepo.findCompanyAccessInfo(user.companyId);
-    const blockedReason = checkCompanyAccessOrThrow(c);
+    const blockedReason = await companyBlockedReason(user.companyId);
     if (blockedReason) {
       await recordLoginAttempt({ email, ip, userId: user.id, success: false, reason: "company_blocked", userAgent });
       throw new AppError(403, blockedReason);
@@ -223,35 +230,19 @@ export async function registerCompany(input: {
   const existing = await authRepo.findUserIdByEmail(email);
   if (existing) throw new AppError(400, "Email already registered");
 
-  const freePlan = await authRepo.findPlanById("free");
-  const trialDays = freePlan?.trialDays ?? 14;
-  const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
-
-  const company = await authRepo.insertCompany({ name: companyName, industry: industry ?? null, country: country ?? null, plan: "free", status: "trial", trialEndsAt });
-  await authRepo.insertSubscription({
-    companyId: company.id,
-    plan: "free",
-    status: "trial",
-    scansUsed: 0,
-    scansLimit: 50,
-    usersLimit: 1,
-    adminsLimit: freePlan?.adminsLimit ?? 1,
-    employeesLimit: freePlan?.employeesLimit ?? 0,
-    contactsLimit: freePlan?.contactsLimit ?? 50,
-    eventsLimit: freePlan?.eventsLimit ?? 1,
-    storageLimitMb: freePlan?.storageLimitMb ?? 100,
-    apiLimit: freePlan?.apiLimit ?? 0,
-    trialEndsAt: trialEndsAt.toISOString().slice(0, 10),
-  });
-
+  // Batch 20: company, its canonical subscription (manual, trialing, 14 days)
+  // and the primary administrator commit in ONE transaction or roll back together.
   const passwordHash = hashPassword(password);
-  const user = await authRepo.insertUser({ email, passwordHash, name, role: "primary_admin", companyId: company.id, isActive: true, contactVisibility: "all", companyVisibility: "own" });
-  await authRepo.updateCompany(company.id, { createdById: user.id });
-
-  await authRepo.insertActivityLog({ type: "company_created", description: `New company registered: ${companyName}`, companyId: company.id, companyName, userId: user.id, userName: name });
-
-  return { user, company };
+  const { user, company } = await db.transaction(async (tx) => {
+    const company = await authRepo.insertCompany({ name: companyName, industry: industry ?? null, country: country ?? null, plan: "free", status: "trial" }, tx);
+    const user = await authRepo.insertUser({ email, passwordHash, name, role: "primary_admin", companyId: company.id, isActive: true, contactVisibility: "all", companyVisibility: "own" }, tx);
+    await createSubscriptionForCompany(tx, { id: company.id, name: company.name }, { plan: "free", actor: { userId: user.id, userName: user.email, ipAddress: null } });
+    await authRepo.updateCompany(company.id, { createdById: user.id }, tx);
+    await authRepo.insertActivityLog({ type: "company_created", description: `New company registered: ${companyName}`, companyId: company.id, companyName, userId: user.id, userName: name }, tx);
+    return { user, company };
+  });
+  const fresh = await authRepo.findUserById(user.id);
+  return { user: fresh ?? user, company };
 }
 
 export async function getMe(userId: number) {

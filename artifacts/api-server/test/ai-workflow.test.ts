@@ -11,6 +11,7 @@ import {
   auditLogsTable,
   notificationsTable,
   aiSettingsTable,
+  subscriptionsTable,
 } from "@workspace/db";
 import { backfillAiWorkflowPermissions } from "../src/lib/permission-backfill";
 
@@ -757,14 +758,15 @@ describe("POST /ai/workflow/alerts/run — advisory risk notifications, deduped 
 // MUST run last: it flips tenant B to a read-only (cancelled) status.
 describe("Read-only tenant (cancelled) — mutations blocked, reads allowed", () => {
   it("403s a workflow analyze for a cancelled tenant but still allows reads", async () => {
-    await db.update(companiesTable).set({ status: "cancelled" }).where(eq(companiesTable.id, companyBId));
+    // Batch 20: access is resolved from the CANONICAL subscription row, not the legacy company column.
+    await db.update(subscriptionsTable).set({ status: "cancelled" }).where(eq(subscriptionsTable.companyId, companyBId));
     try {
       const gen = await api("POST", `/ai/workflow/lead/${foreignLeadId}/analyze`, adminBToken, {});
       expect(gen.status).toBe(403); // blockReadOnlyMutations
       const read = await api("GET", `/ai/workflow/lead/${foreignLeadId}`, adminBToken);
       expect(read.status).toBe(200); // reads stay open in read-only mode
     } finally {
-      await db.update(companiesTable).set({ status: "active" }).where(eq(companiesTable.id, companyBId));
+      await db.update(subscriptionsTable).set({ status: "active" }).where(eq(subscriptionsTable.companyId, companyBId));
     }
   });
 });

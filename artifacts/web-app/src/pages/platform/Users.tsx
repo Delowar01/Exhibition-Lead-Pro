@@ -57,6 +57,9 @@ export default function PlatformUsers() {
   const totalUsers = users.length;
   const activeUsers = users.filter(u => u.isActive).length;
   const inactiveUsers = totalUsers - activeUsers;
+  // Batch 20: counts are real (no percentage-derived splits). "Suspended"
+  // counts users whose employment status is literally `suspended`.
+  const suspendedUsers = users.filter(u => u.employmentStatus === "suspended").length;
   const superAdmins = users.filter(u => u.role === "platform_owner").length;
 
   return (
@@ -94,7 +97,7 @@ export default function PlatformUsers() {
             <UserX className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Math.floor(inactiveUsers * 0.7)}</div>
+            <div className="text-2xl font-bold">{inactiveUsers}</div>
           </CardContent>
         </Card>
         <Card className="shadow-sm">
@@ -103,7 +106,7 @@ export default function PlatformUsers() {
             <UserX className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Math.ceil(inactiveUsers * 0.3)}</div>
+            <div className="text-2xl font-bold">{suspendedUsers}</div>
           </CardContent>
         </Card>
         <Card className="bg-sidebar text-sidebar-foreground border-sidebar-border shadow-sm">

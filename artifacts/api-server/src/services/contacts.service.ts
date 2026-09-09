@@ -14,6 +14,7 @@ import { parseListQuery } from "../lib/list-query.js";
 import { enqueueWorkflowRuns, persistWorkflowRuns } from "../lib/workflows/dispatch.js";
 import { contactCreatedEvent, contactUpdatedEvents } from "../lib/workflows/events.js";
 import { db } from "@workspace/db";
+import { assertCapacity } from "./entitlements.service.js";
 
 function parseTags(tags: string | null): string[] {
   if (!tags) return [];
@@ -247,6 +248,8 @@ export async function createContact(user: AuthUser, input: CreateContactInput) {
   // enqueued only after the commit. The interaction record, status history and
   // background scoring below stay best-effort side effects, as before.
   const { contact, runs } = await db.transaction(async (tx) => {
+    // Batch 20: plan limit check under the tenant+resource lock, in the same transaction.
+    await assertCapacity(tx, companyId, "contacts", 1);
     const contact = await contactsRepo.insert({ companyId, firstName, lastName, fullName, arabicName: arabicName ?? null, jobTitle, contactCompany, email, mobile, officePhone, website, country, address, city: city ?? null, postalCode: postalCode ?? null, latitude: latitude ?? null, longitude: longitude ?? null, gpsAccuracy: gpsAccuracy ?? null, linkedin, notes, tags: JSON.stringify(tags ?? []), status: status ?? "new", leadScore: null, leadTemperature: null, aiReasoning: null, followUpDate: followUpDate ?? null, followUpTime: followUpTime ?? null, eventId: eventId ?? null, assignedToId: assignedToId ?? null, organizationId: organizationId ?? null, cardImageUrl: cardImageUrl ?? null, source: source ?? null }, tx);
     const runs = await persistWorkflowRuns([contactCreatedEvent(contact, user.id)], tx);
     return { contact, runs };

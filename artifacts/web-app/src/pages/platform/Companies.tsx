@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { useListCompanies, useSuspendCompany, useActivateCompany, getListCompaniesQueryKey } from "@workspace/api-client-react";
+import { Link } from "wouter";
+import { useListCompanies, useSuspendCompany, useActivateCompany, getListCompaniesQueryKey, type Company } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
-import { Search, MoreHorizontal, Power, PowerOff, Building2 } from "lucide-react";
+import { Search, MoreHorizontal, Power, PowerOff, Building2, CreditCard } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 
@@ -29,8 +30,12 @@ export default function PlatformCompanies() {
   const suspendCompany = useSuspendCompany();
   const activateCompany = useActivateCompany();
 
-  const handleStatusChange = (id: number, currentStatus: string) => {
-    if (currentStatus === "active") {
+  // Batch 20: suspend/reactivate operate on the canonical subscription
+  // (POST /companies/:id/suspend|activate → lifecycle service). Suspension is
+  // allowed from any non-suspended state; "Activate" reactivates a suspended
+  // company (restoring the pre-suspension state) or activates a manual one.
+  const handleStatusChange = (id: number, currentStatus: string | undefined) => {
+    if (currentStatus && currentStatus !== "suspended") {
       suspendCompany.mutate({ id }, {
         onSuccess: () => {
           toast({ title: "Company suspended" });
@@ -40,37 +45,50 @@ export default function PlatformCompanies() {
     } else {
       activateCompany.mutate({ id }, {
         onSuccess: () => {
-          toast({ title: "Company activated" });
+          toast({ title: "Company reactivated" });
           queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
         }
       });
     }
   };
 
-  const getStatusBadgeVariant = (status: string) => {
+  const getStatusBadgeVariant = (status: string | undefined) => {
     switch (status) {
-      case "active": return "default";
-      case "suspended": return "destructive";
-      case "cancelled": return "secondary";
-      default: return "outline";
+      case "active":
+      case "trialing":
+        return "default";
+      case "suspended":
+      case "expired":
+        return "destructive";
+      case "cancelled":
+      case "past_due":
+        return "secondary";
+      default:
+        return "outline";
     }
   };
 
-  const getPlanBadgeVariant = (plan: string) => {
+  const getPlanBadgeVariant = (plan: string | undefined) => {
     switch (plan) {
       case "enterprise": return "default";
+      case "business":
       case "professional": return "secondary";
       default: return "outline";
     }
   };
 
+  const subscriptionStatus = (company: Company) => company.subscription?.status;
+  const subscriptionPlan = (company: Company) => company.subscription?.plan;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" data-testid="platform-companies">
         <h1 className="text-3xl font-bold tracking-tight">Companies</h1>
-        <Button>
-          <Building2 className="mr-2 h-4 w-4" />
-          Add Company
+        <Button asChild variant="outline">
+          <Link href="/platform/subscriptions">
+            <CreditCard className="mr-2 h-4 w-4" />
+            Subscriptions
+          </Link>
         </Button>
       </div>
 
@@ -93,9 +111,12 @@ export default function PlatformCompanies() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="trialing">Trialing</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
+                  <SelectItem value="past_due">Past due</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="suspended">Suspended</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={plan} onValueChange={setPlan}>
@@ -107,6 +128,7 @@ export default function PlatformCompanies() {
                   <SelectItem value="free">Free</SelectItem>
                   <SelectItem value="starter">Starter</SelectItem>
                   <SelectItem value="professional">Professional</SelectItem>
+                  <SelectItem value="business">Business</SelectItem>
                   <SelectItem value="enterprise">Enterprise</SelectItem>
                 </SelectContent>
               </Select>
@@ -120,7 +142,7 @@ export default function PlatformCompanies() {
                 <TableRow>
                   <TableHead>Company</TableHead>
                   <TableHead>Plan</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Subscription</TableHead>
                   <TableHead className="text-right">Users</TableHead>
                   <TableHead className="text-right">Scans</TableHead>
                   <TableHead>Created</TableHead>
@@ -138,7 +160,7 @@ export default function PlatformCompanies() {
                   </TableRow>
                 ) : (
                   data?.companies.map((company) => (
-                    <TableRow key={company.id}>
+                    <TableRow key={company.id} data-testid={`company-row-${company.id}`}>
                       <TableCell className="font-medium">
                         <div className="flex flex-col">
                           <span>{company.name}</span>
@@ -146,13 +168,13 @@ export default function PlatformCompanies() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={getPlanBadgeVariant(company.plan) as any} className="capitalize">
-                          {company.plan}
+                        <Badge variant={getPlanBadgeVariant(subscriptionPlan(company))} className="capitalize">
+                          {subscriptionPlan(company) ?? "—"}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={getStatusBadgeVariant(company.status) as any} className="capitalize">
-                          {company.status}
+                        <Badge variant={getStatusBadgeVariant(subscriptionStatus(company))} className="capitalize">
+                          {subscriptionStatus(company)?.replace("_", " ") ?? "No subscription"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">{company.userCount}</TableCell>
@@ -169,11 +191,19 @@ export default function PlatformCompanies() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleStatusChange(company.id, company.status)}>
-                              {company.status === "active" ? (
-                                <><PowerOff className="mr-2 h-4 w-4" /> Suspend Company</>
+                            <DropdownMenuItem asChild>
+                              <Link href="/platform/subscriptions">
+                                <CreditCard className="mr-2 h-4 w-4" /> Manage subscription
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={!company.subscription}
+                              onClick={() => handleStatusChange(company.id, subscriptionStatus(company))}
+                            >
+                              {subscriptionStatus(company) === "suspended" ? (
+                                <><Power className="mr-2 h-4 w-4" /> Reactivate Company</>
                               ) : (
-                                <><Power className="mr-2 h-4 w-4" /> Activate Company</>
+                                <><PowerOff className="mr-2 h-4 w-4" /> Suspend Company</>
                               )}
                             </DropdownMenuItem>
                           </DropdownMenuContent>

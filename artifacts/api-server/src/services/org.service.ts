@@ -1,6 +1,8 @@
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as companiesRepo from "../repositories/companies.repository.js";
+import * as subsRepo from "../repositories/subscriptions.repository.js";
+import { normalizeLegacyStatus } from "../lib/billing/lifecycle.js";
 
 // Self-service organization profile for a company admin (own tenant). Distinct
 // from the platform-owner /companies surface: a company manages only its OWN org.
@@ -17,7 +19,10 @@ function resolveCompanyId(user: AuthUser, companyId?: number): number {
   return companyId && user.accessibleCompanies.includes(companyId) ? companyId : user.companyId;
 }
 
-function format(company: companiesRepo.CompanyRow) {
+// Batch 20: `plan` / `status` are projected from the canonical subscription row
+// (the legacy company columns are write-only mirrors and are not consulted).
+async function format(company: companiesRepo.CompanyRow) {
+  const sub = await subsRepo.findByCompanyId(company.id);
   return {
     id: company.id,
     name: company.name,
@@ -34,8 +39,8 @@ function format(company: companiesRepo.CompanyRow) {
     logoUrl: company.logoUrl,
     primaryContactName: company.primaryContactName,
     primaryContactEmail: company.primaryContactEmail,
-    plan: company.plan,
-    status: company.status,
+    plan: sub?.plan ?? company.plan,
+    status: sub ? (normalizeLegacyStatus(sub.status) ?? sub.status) : company.status,
   };
 }
 
@@ -43,7 +48,7 @@ export async function getMyOrg(user: AuthUser, companyId?: number) {
   const cid = resolveCompanyId(user, companyId);
   const company = await companiesRepo.findById(cid);
   if (!company) throw new AppError(404, "Organization not found");
-  return format(company);
+  return await format(company);
 }
 
 export interface OrgInput {
@@ -81,5 +86,5 @@ export async function updateMyOrg(user: AuthUser, input: OrgInput) {
   patch.updatedAt = new Date();
   const company = await companiesRepo.update(cid, patch);
   if (!company) throw new AppError(404, "Organization not found");
-  return format(company);
+  return await format(company);
 }

@@ -1,49 +1,48 @@
 import * as platformRepo from "../repositories/platform.repository.js";
+import * as subsRepo from "../repositories/subscriptions.repository.js";
+import { subscriptionMetrics, revenueSnapshot } from "./platform-billing.service.js";
+
+// Batch 20 — truthful platform metrics. No simulated revenue, no random trends,
+// no percentage-derived states. Revenue is reported only when it can be computed
+// from verified provider prices and live provider subscriptions; otherwise the
+// response says so explicitly ("available: false" + reason).
 
 export async function getStats() {
-  const totalCompanies = await platformRepo.countCompanies();
-  const activeCompanies = await platformRepo.countActiveCompanies();
-  const totalUsers = await platformRepo.countUsers();
-  const totalScans = await platformRepo.countScans();
-  const totalLeads = await platformRepo.countLeads();
-
-  const planDistribution = await platformRepo.planDistribution();
-
-  // Simulate monthly revenue from plans
-  const planRevenue: Record<string, number> = { free: 0, starter: 29, professional: 99, enterprise: 299 };
-  const monthlyRevenue = planDistribution.reduce((sum, p) => sum + (planRevenue[p.status] ?? 0) * p.count, 0);
-
+  const [totalCompanies, totalUsers, totalScans, totalLeads, metrics, revenue] = await Promise.all([
+    platformRepo.countCompanies(),
+    platformRepo.countUsers(),
+    platformRepo.countScans(),
+    platformRepo.countLeads(),
+    subscriptionMetrics(),
+    revenueSnapshot(),
+  ]);
+  const byStatus = new Map(metrics.byStatus.map((s) => [s.status, s.count]));
+  const activeCompanies = (byStatus.get("active") ?? 0) + (byStatus.get("trialing") ?? 0);
   return {
-    totalCompanies, activeCompanies, totalUsers, totalScans, totalLeads,
-    monthlyRevenue,
-    churnRate: totalCompanies > 0 ? Math.round(((totalCompanies - activeCompanies) / totalCompanies) * 100) : 0,
-    subscriptionDistribution: planDistribution.map(p => ({ status: p.status, count: p.count, label: p.status })),
+    totalCompanies,
+    // Companies with FULL access today (active or trialing).
+    activeCompanies,
+    totalUsers,
+    totalScans,
+    totalLeads,
+    revenue,
+    subscriptions: metrics,
+    // Compatibility fields (kept for existing clients): counts by canonical status.
+    subscriptionDistribution: metrics.byStatus.map((s) => ({ status: s.status, count: s.count, label: s.status })),
   };
 }
 
+// Revenue history requires stored invoice/period data that this system does not
+// hold; the trend is therefore reported as unavailable rather than simulated.
 export async function getRevenueTrend() {
-  // Generate 12-month revenue trend (simulated based on company creation dates)
-  const months = [];
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    const label = d.toLocaleString("default", { month: "short", year: "2-digit" });
-    // Simulate growing revenue
-    const baseRevenue = 1200 + (11 - i) * 450 + Math.floor(Math.random() * 300);
-    months.push({ date: d.toISOString().slice(0, 7), value: baseRevenue, label });
-  }
-  return months;
+  return { available: false as const, reason: "NO_REVENUE_HISTORY", points: [] as Array<{ date: string; value: number }> };
 }
 
+// Real daily OCR scan counts for the last 30 days (synthetic manual interaction
+// rows excluded).
 export async function getScanTrend() {
-  const days = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const label = d.toLocaleDateString("default", { month: "short", day: "numeric" });
-    days.push({ date: d.toISOString().slice(0, 10), value: Math.floor(40 + Math.random() * 120), label });
-  }
-  return days;
+  const points = await subsRepo.dailyScanCounts(30);
+  return points.map((p) => ({ date: p.date, value: p.value, label: p.date }));
 }
 
 export async function getActivity() {

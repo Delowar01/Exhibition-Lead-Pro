@@ -122,16 +122,8 @@ export async function linkScanToContact(companyId: number, scanId: number, conta
   return row;
 }
 
-// Increment the company's scan usage counter. Raw sql expression preserved intact.
-export async function incrementScansUsed(companyId: number): Promise<void> {
-  await db.update(companiesTable).set({ scansUsed: sql`${companiesTable.scansUsed} + 1` }).where(eq(companiesTable.id, companyId));
-}
-
-// Undo an optimistic usage increment when a scan is denied before any provider work
-// happened (AI disabled / budget exhausted / rate limited). Floored at 0.
-export async function decrementScansUsed(companyId: number): Promise<void> {
-  await db.update(companiesTable).set({ scansUsed: sql`GREATEST(${companiesTable.scansUsed} - 1, 0)` }).where(eq(companiesTable.id, companyId));
-}
+// Batch 20: the legacy companies.scans_used counter is DEPRECATED — scan usage is
+// measured from scan rows + usage reservations by the entitlement service.
 
 export async function insert(values: typeof scansTable.$inferInsert): Promise<ScanRow> {
   const [row] = await db.insert(scansTable).values(values).returning();

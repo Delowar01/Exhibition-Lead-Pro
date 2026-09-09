@@ -5,15 +5,18 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { PlatformSubscriptionMetrics } from './platformSubscriptionMetrics';
+import type { RevenueSnapshot } from './revenueSnapshot';
 import type { StatusCount } from './statusCount';
 
 export interface PlatformStats {
   totalCompanies: number;
+  /** Companies whose subscription grants full access today (active or trialing) */
   activeCompanies: number;
   totalUsers: number;
   totalScans: number;
   totalLeads: number;
-  monthlyRevenue: number;
-  churnRate?: number;
+  revenue: RevenueSnapshot;
+  subscriptions: PlatformSubscriptionMetrics;
   subscriptionDistribution?: StatusCount[];
 }

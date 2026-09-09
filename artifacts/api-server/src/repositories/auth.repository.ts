@@ -12,6 +12,7 @@ import {
   type Company,
 } from "@workspace/db";
 import { and, eq, isNull, gt } from "drizzle-orm";
+import { exec, type Executor } from "./base.js";
 
 export type UserRow = typeof usersTable.$inferSelect;
 export type TrustedDeviceRow = typeof trustedDevicesTable.$inferSelect;
@@ -36,8 +37,8 @@ export async function findUserIdByEmail(email: string): Promise<{ id: number } |
   return existing;
 }
 
-export async function insertUser(values: typeof usersTable.$inferInsert): Promise<UserRow> {
-  const [user] = await db.insert(usersTable).values(values).returning();
+export async function insertUser(values: typeof usersTable.$inferInsert, tx?: Executor): Promise<UserRow> {
+  const [user] = await exec(tx).insert(usersTable).values(values).returning();
   return user;
 }
 
@@ -70,13 +71,13 @@ export async function findCompanyMfaRequired(companyId: number): Promise<{ mfaRe
   return c;
 }
 
-export async function insertCompany(values: typeof companiesTable.$inferInsert): Promise<Company> {
-  const [company] = await db.insert(companiesTable).values(values).returning();
+export async function insertCompany(values: typeof companiesTable.$inferInsert, tx?: Executor): Promise<Company> {
+  const [company] = await exec(tx).insert(companiesTable).values(values).returning();
   return company;
 }
 
-export async function updateCompany(id: number, data: Partial<typeof companiesTable.$inferInsert>): Promise<void> {
-  await db.update(companiesTable).set(data).where(eq(companiesTable.id, id));
+export async function updateCompany(id: number, data: Partial<typeof companiesTable.$inferInsert>, tx?: Executor): Promise<void> {
+  await exec(tx).update(companiesTable).set(data).where(eq(companiesTable.id, id));
 }
 
 // ---- trusted_devices ----
@@ -156,8 +157,8 @@ export async function insertSubscription(values: typeof subscriptionsTable.$infe
 
 // ---- activity_logs ----
 
-export async function insertActivityLog(values: typeof activityLogsTable.$inferInsert): Promise<void> {
-  await db.insert(activityLogsTable).values(values);
+export async function insertActivityLog(values: typeof activityLogsTable.$inferInsert, tx?: Executor): Promise<void> {
+  await exec(tx).insert(activityLogsTable).values(values);
 }
 
 // ---- user_company_access ----

@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type SubscriptionUpgradeInputPlan = typeof SubscriptionUpgradeInputPlan[keyof typeof SubscriptionUpgradeInputPlan];
+export type PlatformRegisterPriceInputPlanId = typeof PlatformRegisterPriceInputPlanId[keyof typeof PlatformRegisterPriceInputPlanId];
 
 
-export const SubscriptionUpgradeInputPlan = {
+export const PlatformRegisterPriceInputPlanId = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',

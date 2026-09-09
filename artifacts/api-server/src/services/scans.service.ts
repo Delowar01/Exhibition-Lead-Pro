@@ -7,6 +7,8 @@ import { streamScanImage, loadScanImageBase64, uploadScanImage } from "../lib/im
 import * as scansRepo from "../repositories/scans.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { analyzeCaptureFields } from "../lib/capture-validation.js";
+import { createHash } from "node:crypto";
+import { reserveScans, consumeReservation, releaseReservation } from "./entitlements.service.js";
 
 // Builds the additive OCR-metadata + deterministic-validation columns persisted on a
 // scan after a successful extraction. `captureSource` defaults to "camera" (the only
@@ -104,8 +106,11 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   const gpsAccuracy = typeof body.gpsAccuracy === "number" ? body.gpsAccuracy : null;
   const notes = typeof body.notes === "string" && body.notes.trim().length > 0 ? body.notes : null;
 
-  // Increment company scans used
-  await scansRepo.incrementScansUsed(companyId);
+  // Batch 20: reserve scan capacity BEFORE any provider work, under the tenant
+  // lock, keyed by the image content so a retry of the same capture never consumes
+  // twice. The legacy companies.scans_used counter is deprecated and no longer written.
+  const reservationKey = `scan:${companyId}:${user.id}:${createHash("sha256").update(image.dataUrl).digest("hex").slice(0, 32)}`;
+  const reservation = await reserveScans(companyId, reservationKey, 1);
 
   // Create scan record
   const scan = await scansRepo.insert({ companyId, userId: user.id, status: "processing", imageUrl: null, extractedData: null, eventId, latitude, longitude, gpsAccuracy, notes });
@@ -122,13 +127,14 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   if (ocrErr !== null) {
     // Enforcement rejections (AI disabled / budget exhausted / rate limited) surface
     // with their real status instead of being masked as a generic 502. The scan row
-    // and usage counter were already written optimistically — reconcile them so a
-    // denied scan never strands a "processing" row or inflates the quota.
+    // was written optimistically — reconcile it and release the unused reservation so
+    // a denied scan never strands a "processing" row or consumes quota.
     if (ocrErr instanceof AppError) {
       await scansRepo.update(scan.id, { status: "failed" });
-      await scansRepo.decrementScansUsed(companyId);
+      if (!reservation.alreadyConsumed) await releaseReservation(reservation.reservationId);
       throw ocrErr;
     }
+    if (!reservation.alreadyConsumed) await releaseReservation(reservation.reservationId);
     logAiError("scan-ocr", ocrErr);
     const failed = await scansRepo.update(scan.id, { status: "failed" });
     return {
@@ -151,6 +157,7 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
   // is kept (the route still uploads it) so the user can review/replace, and the
   // client gets an honest 422 instead of an empty "successful" extraction.
   if (!hasReadableCard(ocrResult!.fields)) {
+    if (!reservation.alreadyConsumed) await releaseReservation(reservation.reservationId);
     const failed = await scansRepo.update(scan.id, { status: "failed", rawOcr: ocrResult!.rawOcr });
     return {
       scanId: scan.id,
@@ -168,6 +175,7 @@ export async function createScan(user: AuthUser, body: { imageData?: string; eve
     };
   }
 
+  if (!reservation.alreadyConsumed) await consumeReservation(reservation.reservationId, scan.id);
   const updated = await scansRepo.update(scan.id, {
     status: "completed",
     extractedData: JSON.stringify(ocrResult!.fields),

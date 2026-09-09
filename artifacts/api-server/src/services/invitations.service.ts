@@ -13,6 +13,7 @@ import * as authRepo from "../repositories/auth.repository.js";
 import * as rbacRepo from "../repositories/rbac.repository.js";
 import { sendInvitationEmail, sendWelcomeEmail } from "../lib/email/index.js";
 import { notifyUsers } from "./notifications.service.js";
+import { assertCapacity, roleFamily } from "./entitlements.service.js";
 
 // Invitable roles via this flow. platform_owner is never invitable.
 const ROLE_RANK: Record<string, number> = { employee: 1, admin: 2, primary_admin: 3, platform_owner: 4 };
@@ -115,16 +116,25 @@ export async function createInvitation(user: AuthUser, input: CreateInvitationIn
   const tokenHash = sha256(raw);
   const expiresAt = new Date(Date.now() + config.tokens.invitationTtlDays * 24 * 60 * 60 * 1000);
 
-  const inv = await invitationsRepo.insert({
-    companyId,
-    email,
-    name: typeof input.name === "string" ? input.name : null,
-    role,
-    roleIds,
-    invitedByUserId: user.id,
-    tokenHash,
-    status: "pending",
-    expiresAt,
+  // Batch 20: a pending invitation reserves a seat in its role family, so it is
+  // checked against the tenant's effective limit like a user creation.
+  const family = roleFamily(role);
+  const inv = await db.transaction(async (tx) => {
+    if (family) await assertCapacity(tx, companyId, family, 1);
+    return invitationsRepo.insert(
+      {
+        companyId,
+        email,
+        name: typeof input.name === "string" ? input.name : null,
+        role,
+        roleIds,
+        invitedByUserId: user.id,
+        tokenHash,
+        status: "pending",
+        expiresAt,
+      },
+      tx,
+    );
   });
 
   const companyName = (await usersRepo.companyName(companyId)) ?? "your team";
@@ -266,6 +276,11 @@ export async function acceptInvitation(input: AcceptInvitationInput) {
       .for("update");
     if (!locked || locked.status !== "pending") throw new AppError(409, "This invitation is no longer active");
     if (locked.expiresAt.getTime() < Date.now()) throw new AppError(410, "This invitation has expired");
+
+    // Batch 20: the seat this invitation reserved becomes a user; the invitation
+    // itself is excluded from the pending count so acceptance never double-counts.
+    const family = roleFamily(inv.role);
+    if (family) await assertCapacity(tx, inv.companyId, family, 1, { excludeInvitationId: inv.id });
 
     const [user] = await tx
       .insert(usersTable)

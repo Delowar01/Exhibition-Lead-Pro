@@ -925,16 +925,14 @@ paths:
     get:
       operationId: getPlatformRevenueTrend
       tags: [platform]
-      summary: Revenue trend chart data
+      summary: Revenue history — reported as unavailable unless real billing history exists (never simulated)
       responses:
         "200":
           description: Success
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/TrendDataPoint"
+                $ref: "#/components/schemas/RevenueTrend"
 
   /platform/scan-trend:
     get:
@@ -965,6 +963,361 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ActivityItem"
+
+  # PLATFORM BILLING (Batch 20 — platform owner only)
+  /platform/subscriptions:
+    get:
+      operationId: platformListSubscriptions
+      tags: [platform]
+      summary: List canonical subscriptions with real filters and pagination
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [trialing, active, past_due, cancelled, expired, suspended]
+        - name: plan
+          in: query
+          schema:
+            type: string
+        - name: billingSource
+          in: query
+          schema:
+            type: string
+            enum: [manual, stripe]
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionList"
+
+  /platform/subscriptions/metrics:
+    get:
+      operationId: platformSubscriptionMetrics
+      tags: [platform]
+      summary: Counts by canonical state, plan and billing source; trial expirations; truthful revenue
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionMetrics"
+
+  /platform/subscriptions/{companyId}:
+    get:
+      operationId: platformGetSubscription
+      tags: [platform]
+      summary: Subscription detail for a company
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/events:
+    get:
+      operationId: platformListSubscriptionEvents
+      tags: [platform]
+      summary: Recent sanitized provider events for a company
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderEventList"
+
+  /platform/subscriptions/{companyId}/plan:
+    post:
+      operationId: platformSetSubscriptionPlan
+      tags: [platform]
+      summary: Set the manual plan
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformSetSubscriptionPlanInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+        "409":
+          description: Transition not allowed (deterministic code)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/subscriptions/{companyId}/trial:
+    post:
+      operationId: platformStartTrial
+      tags: [platform]
+      summary: Start or extend a manual trial
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformStartTrialInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/activate:
+    post:
+      operationId: platformActivateSubscription
+      tags: [platform]
+      summary: Activate a manual subscription
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/past-due:
+    post:
+      operationId: platformMarkSubscriptionPastDue
+      tags: [platform]
+      summary: Mark a manual subscription past due (read-only access)
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/cancel:
+    post:
+      operationId: platformCancelSubscription
+      tags: [platform]
+      summary: Cancel a manual subscription (read-only access)
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/expire:
+    post:
+      operationId: platformExpireSubscription
+      tags: [platform]
+      summary: Expire a manual subscription (blocked access; no data deletion)
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/suspend:
+    post:
+      operationId: platformSuspendSubscription
+      tags: [platform]
+      summary: Suspend (blocked access) with a sanitized reason
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformSuspendSubscriptionInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/reactivate:
+    post:
+      operationId: platformReactivateSubscription
+      tags: [platform]
+      summary: Lift a suspension (restores the pre-suspension state)
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/limits:
+    put:
+      operationId: platformSetSubscriptionLimits
+      tags: [platform]
+      summary: Replace per-subscription limit overrides (null clears; empty object clears all)
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformSetSubscriptionLimitsInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+
+  /platform/subscriptions/{companyId}/convert-to-manual:
+    post:
+      operationId: platformConvertSubscriptionToManual
+      tags: [platform]
+      summary: Convert a provider-managed subscription to manual (only when no live provider subscription remains)
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSubscriptionDetail"
+        "409":
+          description: A live provider subscription still exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /platform/subscriptions/{companyId}/sync:
+    post:
+      operationId: platformSyncSubscription
+      tags: [platform]
+      summary: Re-read the provider subscription and apply its authoritative state
+      parameters:
+        - $ref: "#/components/parameters/BillingCompanyId"
+      responses:
+        "200":
+          description: Sync outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSyncResult"
+
+  /platform/billing/status:
+    get:
+      operationId: platformBillingStatus
+      tags: [platform]
+      summary: Provider configuration state (no secret values)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformBillingStatus"
+
+  /platform/billing/prices:
+    get:
+      operationId: platformListPrices
+      tags: [platform]
+      summary: Provider price mappings
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanPriceList"
+    post:
+      operationId: platformRegisterPrice
+      tags: [platform]
+      summary: Register a provider price id for a plan (interval/currency/amount are retrieved from the provider, never from the request)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformRegisterPriceInput"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanPrice"
+
+  /platform/billing/prices/{id}:
+    patch:
+      operationId: platformUpdatePrice
+      tags: [platform]
+      summary: Activate or deactivate a price mapping
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformUpdatePriceInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformPlanPrice"
 
   # COMPANIES
   /companies:
@@ -3722,12 +4075,12 @@ paths:
         "502":
           description: AI scoring temporarily unavailable
 
-  # SUBSCRIPTIONS
+  # SUBSCRIPTIONS (Batch 20 — canonical subscription; reads never write)
   /subscriptions/current:
     get:
       operationId: getCurrentSubscription
       tags: [subscriptions]
-      summary: Get current company subscription
+      summary: Current canonical subscription projection (plan, status, access mode, capabilities, limits, usage)
       responses:
         "200":
           description: Success
@@ -3735,12 +4088,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Subscription"
+        "403":
+          description: Platform operators and users without subscriptions:view are refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /subscriptions/usage:
+    get:
+      operationId: getSubscriptionUsage
+      tags: [subscriptions]
+      summary: Real usage against effective limits (the same calculation used for enforcement)
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionUsage"
 
   /subscriptions/plans:
     get:
       operationId: listPlans
       tags: [subscriptions]
-      summary: List available subscription plans
+      summary: Plan catalog with provider-verified active prices only
       responses:
         "200":
           description: Success
@@ -3751,24 +4123,102 @@ paths:
                 items:
                   $ref: "#/components/schemas/Plan"
 
-  /subscriptions/upgrade:
+  /subscriptions/checkout:
     post:
-      operationId: upgradeSubscription
+      operationId: createCheckoutSession
       tags: [subscriptions]
-      summary: Upgrade subscription plan
+      summary: Start a provider-hosted Checkout session (subscriptions:manage). Never changes entitlement.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SubscriptionUpgradeInput"
+              $ref: "#/components/schemas/CreateCheckoutSessionInput"
       responses:
         "200":
-          description: Success
+          description: Hosted checkout URL
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Subscription"
+                $ref: "#/components/schemas/CheckoutSessionResponse"
+        "409":
+          description: Checkout not available for this subscription (code explains why)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Provider not configured or checkout disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /subscriptions/portal:
+    post:
+      operationId: createBillingPortalSession
+      tags: [subscriptions]
+      summary: Open the provider-hosted Billing Portal (subscriptions:manage; provider-managed subscriptions only)
+      responses:
+        "200":
+          description: Hosted portal URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSessionResponse"
+        "409":
+          description: Portal not available for this subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Provider not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /subscriptions/upgrade:
+    post:
+      operationId: upgradeSubscription
+      deprecated: true
+      tags: [subscriptions]
+      summary: RETIRED (Batch 20) — always 410 BILLING_UPGRADE_RETIRED, never mutates
+      responses:
+        "410":
+          description: Retired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # BILLING PROVIDER WEBHOOK (public; authenticity = provider signature over the raw body)
+  /billing/stripe/webhook:
+    post:
+      operationId: stripeWebhook
+      tags: [subscriptions]
+      summary: Stripe webhook receiver (raw body, signature-verified, idempotent by event id)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StripeWebhookPayload"
+      responses:
+        "200":
+          description: Processed, duplicate or ignored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookAck"
+        "400":
+          description: Missing/invalid signature or malformed event
+        "413":
+          description: Body too large
+        "503":
+          description: Provider not configured
 
   # REPORTS
   /reports/admin-dashboard:
@@ -7784,6 +8234,13 @@ paths:
 
 
 components:
+  parameters:
+    BillingCompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: integer
   schemas:
     HealthStatus:
       type: object
@@ -8445,6 +8902,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        subscription:
+          oneOf:
+            - $ref: "#/components/schemas/SubscriptionSummary"
+            - type: "null"
 
     UserList:
       type: object
@@ -9561,6 +10022,10 @@ components:
           type: integer
         scanCount:
           type: integer
+        subscription:
+          oneOf:
+            - $ref: "#/components/schemas/SubscriptionSummary"
+            - type: "null"
         createdAt:
           type: string
           format: date-time
@@ -9615,14 +10080,6 @@ components:
         vatNumber:
           type: ["string", "null"]
         website:
-          type: ["string", "null"]
-        plan:
-          type: string
-          enum: [free, starter, professional, business, enterprise]
-        status:
-          type: string
-          enum: [trial, active, suspended, expired, cancelled]
-        suspendedReason:
           type: ["string", "null"]
 
     # CONTACTS
@@ -11578,9 +12035,117 @@ components:
           type: ["string", "null"]
 
     # SUBSCRIPTIONS
+    SubscriptionSummary:
+      type: object
+      required: [plan, status, billingSource, accessMode, cancelAtPeriodEnd]
+      properties:
+        plan:
+          type: string
+        status:
+          type: string
+          enum: [trialing, active, past_due, cancelled, expired, suspended]
+        billingSource:
+          type: string
+          enum: [manual, stripe]
+        accessMode:
+          type: string
+          enum: [full, read_only, blocked]
+        reasonCode:
+          type: ["string", "null"]
+        message:
+          type: ["string", "null"]
+        trialExpiresAt:
+          type: ["string", "null"]
+          format: date-time
+        currentPeriodEndsAt:
+          type: ["string", "null"]
+          format: date-time
+        cancelAtPeriodEnd:
+          type: boolean
+
+    EffectiveLimit:
+      type: object
+      required: [resource, limit, source]
+      properties:
+        resource:
+          type: string
+          enum: [contacts, events, admins, employees, scans, storageMb]
+        limit:
+          type: ["integer", "null"]
+          description: null = unlimited
+        source:
+          type: string
+          enum: [override, plan, unlimited]
+
+    ResourceUsage:
+      type: object
+      required: [resource, used, limit, remaining, source, enforced, measurable]
+      properties:
+        resource:
+          type: string
+          enum: [contacts, events, admins, employees, scans, storageMb]
+        used:
+          type: integer
+        limit:
+          type: ["integer", "null"]
+        remaining:
+          type: ["integer", "null"]
+        source:
+          type: string
+          enum: [override, plan, unlimited]
+        enforced:
+          type: boolean
+        measurable:
+          type: boolean
+          description: false when the resource cannot be measured durably (storage) — reported honestly, not enforced
+        details:
+          type: object
+          additionalProperties: true
+
+    SubscriptionUsage:
+      type: object
+      required: [window, resources]
+      properties:
+        window:
+          type: object
+          required: [startsAt, endsAt, source]
+          properties:
+            startsAt:
+              type: string
+              format: date-time
+            endsAt:
+              type: string
+              format: date-time
+            source:
+              type: string
+              enum: [billing_period, anchored_month]
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceUsage"
+
+    SubscriptionBillingCapabilities:
+      type: object
+      required: [providerConfigured, selfServiceCheckoutEnabled, checkoutAvailable, portalAvailable, managedByPlatform]
+      properties:
+        providerConfigured:
+          type: boolean
+        selfServiceCheckoutEnabled:
+          type: boolean
+        checkoutAvailable:
+          type: boolean
+        checkoutUnavailableReason:
+          type: ["string", "null"]
+        portalAvailable:
+          type: boolean
+        portalUnavailableReason:
+          type: ["string", "null"]
+        managedByPlatform:
+          type: boolean
+
     Subscription:
       type: object
-      required: [id, companyId, plan, status]
+      required: [id, companyId, plan, status, billingSource, accessMode, cancelAtPeriodEnd, statusChangedAt, providerLinked, providerSubscriptionLinked, billing, limits, usage]
       properties:
         id:
           type: integer
@@ -11588,38 +12153,82 @@ components:
           type: integer
         plan:
           type: string
-          enum: [free, starter, professional, business, enterprise]
         status:
           type: string
-          enum: [trial, active, suspended, expired, cancelled]
-        scansUsed:
+          enum: [trialing, active, past_due, cancelled, expired, suspended]
+        billingSource:
+          type: string
+          enum: [manual, stripe]
+        accessMode:
+          type: string
+          enum: [full, read_only, blocked]
+        accessReasonCode:
+          type: ["string", "null"]
+        accessMessage:
+          type: ["string", "null"]
+        trialStartedAt:
+          type: ["string", "null"]
+          format: date-time
+        trialExpiresAt:
+          type: ["string", "null"]
+          format: date-time
+        currentPeriodStartsAt:
+          type: ["string", "null"]
+          format: date-time
+        currentPeriodEndsAt:
+          type: ["string", "null"]
+          format: date-time
+        cancelAtPeriodEnd:
+          type: boolean
+        canceledAt:
+          type: ["string", "null"]
+          format: date-time
+        endedAt:
+          type: ["string", "null"]
+          format: date-time
+        suspendedAt:
+          type: ["string", "null"]
+          format: date-time
+        statusChangedAt:
+          type: string
+          format: date-time
+        providerLinked:
+          type: boolean
+        providerSubscriptionLinked:
+          type: boolean
+        billing:
+          $ref: "#/components/schemas/SubscriptionBillingCapabilities"
+        limits:
+          type: array
+          items:
+            $ref: "#/components/schemas/EffectiveLimit"
+        usage:
+          $ref: "#/components/schemas/SubscriptionUsage"
+
+    PlanPrice:
+      type: object
+      required: [id, planId, interval, intervalCount, currency, unitAmountMinor, active]
+      properties:
+        id:
           type: integer
-        scansLimit:
-          type: ["integer", "null"]
-        usersLimit:
-          type: ["integer", "null"]
-        adminsLimit:
-          type: ["integer", "null"]
-        employeesLimit:
-          type: ["integer", "null"]
-        contactsLimit:
-          type: ["integer", "null"]
-        eventsLimit:
-          type: ["integer", "null"]
-        storageLimitMb:
-          type: ["integer", "null"]
-        apiLimit:
-          type: ["integer", "null"]
-        trialEndsAt:
+        planId:
+          type: string
+        interval:
+          type: string
+        intervalCount:
+          type: integer
+        currency:
+          type: string
+        unitAmountMinor:
+          type: integer
+        nickname:
           type: ["string", "null"]
-          format: date
-        renewalDate:
-          type: ["string", "null"]
-          format: date
+        active:
+          type: boolean
 
     Plan:
       type: object
-      required: [id, name, priceMonthly, features]
+      required: [id, name, trialDays, sortOrder, limits, prices]
       properties:
         id:
           type: string
@@ -11627,40 +12236,379 @@ components:
           type: string
         description:
           type: ["string", "null"]
-        priceMonthly:
-          type: number
-        currency:
-          type: string
-        adminsLimit:
-          type: ["integer", "null"]
-        employeesLimit:
-          type: ["integer", "null"]
-        contactsLimit:
-          type: ["integer", "null"]
-        eventsLimit:
-          type: ["integer", "null"]
-        storageLimitMb:
-          type: ["integer", "null"]
-        apiLimit:
-          type: ["integer", "null"]
         trialDays:
           type: integer
-        features:
-          type: object
-          additionalProperties:
-            type: boolean
         sortOrder:
           type: integer
-        isActive:
-          type: boolean
+        limits:
+          type: object
+          required: [contacts, events, admins, employees, scans, storageMb]
+          properties:
+            contacts:
+              type: ["integer", "null"]
+            events:
+              type: ["integer", "null"]
+            admins:
+              type: ["integer", "null"]
+            employees:
+              type: ["integer", "null"]
+            scans:
+              type: ["integer", "null"]
+            storageMb:
+              type: ["integer", "null"]
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanPrice"
 
-    SubscriptionUpgradeInput:
+    CreateCheckoutSessionInput:
+      type: object
+      required: [planPriceId]
+      properties:
+        planPriceId:
+          type: integer
+          description: Internal active plan-price mapping id. No provider ids, amounts, currencies or URLs are accepted.
+
+    CheckoutSessionResponse:
+      type: object
+      required: [url, status]
+      properties:
+        url:
+          type: string
+        status:
+          type: string
+          enum: [created, reused]
+
+    PortalSessionResponse:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+
+    StripeWebhookPayload:
+      type: object
+      description: Raw provider event (verified by signature; never persisted)
+      additionalProperties: true
+
+    WebhookAck:
+      type: object
+      required: [received, outcome]
+      properties:
+        received:
+          type: boolean
+        outcome:
+          type: string
+
+    PlatformSubscriptionListItem:
+      type: object
+      required: [id, companyId, companyName, plan, status, billingSource, accessMode, cancelAtPeriodEnd, providerLinked, statusChangedAt, companyCreatedAt]
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        companyName:
+          type: string
+        plan:
+          type: string
+        status:
+          type: string
+          enum: [trialing, active, past_due, cancelled, expired, suspended]
+        billingSource:
+          type: string
+          enum: [manual, stripe]
+        accessMode:
+          type: string
+          enum: [full, read_only, blocked]
+        trialExpiresAt:
+          type: ["string", "null"]
+          format: date-time
+        currentPeriodEndsAt:
+          type: ["string", "null"]
+          format: date-time
+        cancelAtPeriodEnd:
+          type: boolean
+        providerLinked:
+          type: boolean
+        statusChangedAt:
+          type: string
+          format: date-time
+        companyCreatedAt:
+          type: string
+          format: date-time
+
+    PlatformSubscriptionList:
+      type: object
+      required: [subscriptions, total, page, limit]
+      properties:
+        subscriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformSubscriptionListItem"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    PlatformSubscriptionDetail:
+      allOf:
+        - $ref: "#/components/schemas/Subscription"
+        - type: object
+          required: [companyName, limitOverrides, allowedActions]
+          properties:
+            companyName:
+              type: ["string", "null"]
+            limitOverrides:
+              type: object
+              additionalProperties:
+                type: ["integer", "null"]
+            allowedActions:
+              type: array
+              items:
+                type: string
+            suspendedReason:
+              type: ["string", "null"]
+            statusBeforeSuspension:
+              type: ["string", "null"]
+            providerStatus:
+              type: ["string", "null"]
+            providerSyncedAt:
+              type: ["string", "null"]
+              format: date-time
+            providerCustomerRef:
+              type: ["string", "null"]
+              description: Masked diagnostic reference (never the full provider id)
+            providerSubscriptionRef:
+              type: ["string", "null"]
+
+    PlatformSyncResult:
+      type: object
+      required: [outcome, subscription]
+      properties:
+        outcome:
+          type: string
+          enum: [applied, stale, no_change, mismatch]
+        subscription:
+          $ref: "#/components/schemas/Subscription"
+
+    ProviderEventList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            required: [id, eventType, status, receivedAt]
+            properties:
+              id:
+                type: integer
+              eventType:
+                type: string
+              eventRef:
+                type: ["string", "null"]
+              status:
+                type: string
+              outcome:
+                type: ["string", "null"]
+              failureCode:
+                type: ["string", "null"]
+              receivedAt:
+                type: string
+                format: date-time
+              processedAt:
+                type: ["string", "null"]
+                format: date-time
+
+    RevenueSnapshot:
+      type: object
+      required: [available, reason, currency, monthlyRecurringMinor, countedSubscriptions, unpricedSubscriptions]
+      description: Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+        currency:
+          type: ["string", "null"]
+        monthlyRecurringMinor:
+          type: ["integer", "null"]
+        countedSubscriptions:
+          type: integer
+        unpricedSubscriptions:
+          type: integer
+
+    PlatformSubscriptionMetrics:
+      type: object
+      required: [byStatus, byPlan, byBillingSource, trialsExpiringWithin7Days]
+      properties:
+        byStatus:
+          type: array
+          items:
+            type: object
+            required: [status, count]
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+        byPlan:
+          type: array
+          items:
+            type: object
+            required: [plan, count]
+            properties:
+              plan:
+                type: string
+              count:
+                type: integer
+        byBillingSource:
+          type: array
+          items:
+            type: object
+            required: [billingSource, count]
+            properties:
+              billingSource:
+                type: string
+              count:
+                type: integer
+        trialsExpiringWithin7Days:
+          type: integer
+        revenue:
+          $ref: "#/components/schemas/RevenueSnapshot"
+
+    RevenueTrend:
+      type: object
+      required: [available, reason, points]
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: ["string", "null"]
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrendDataPoint"
+
+    PlatformBillingStatus:
+      type: object
+      required: [provider, available, selfServiceCheckoutEnabled, automaticTax, portalConfigurationSet, trialDays]
+      properties:
+        provider:
+          type: string
+          enum: [stripe, fake, unavailable]
+        available:
+          type: boolean
+        unavailableReason:
+          type: ["string", "null"]
+        selfServiceCheckoutEnabled:
+          type: boolean
+        automaticTax:
+          type: boolean
+        portalConfigurationSet:
+          type: boolean
+        trialDays:
+          type: integer
+
+    PlatformPlanPrice:
+      allOf:
+        - $ref: "#/components/schemas/PlanPrice"
+        - type: object
+          required: [verifiedAt, createdAt]
+          properties:
+            providerPriceRef:
+              type: ["string", "null"]
+            providerProductRef:
+              type: ["string", "null"]
+            verifiedAt:
+              type: string
+              format: date-time
+            createdAt:
+              type: string
+              format: date-time
+
+    PlatformPlanPriceList:
+      type: object
+      required: [prices]
+      properties:
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformPlanPrice"
+
+    PlatformSetSubscriptionPlanInput:
       type: object
       required: [plan]
       properties:
         plan:
           type: string
           enum: [free, starter, professional, business, enterprise]
+
+    PlatformStartTrialInput:
+      type: object
+      properties:
+        trialExpiresAt:
+          type: string
+          format: date-time
+        trialDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+
+    PlatformSuspendSubscriptionInput:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 200
+
+    PlatformSetSubscriptionLimitsInput:
+      type: object
+      required: [limits]
+      properties:
+        limits:
+          type: object
+          properties:
+            contacts:
+              type: ["integer", "null"]
+              minimum: 0
+            events:
+              type: ["integer", "null"]
+              minimum: 0
+            admins:
+              type: ["integer", "null"]
+              minimum: 0
+            employees:
+              type: ["integer", "null"]
+              minimum: 0
+            scans:
+              type: ["integer", "null"]
+              minimum: 0
+            storageMb:
+              type: ["integer", "null"]
+              minimum: 0
+
+    PlatformRegisterPriceInput:
+      type: object
+      required: [planId, providerPriceId]
+      properties:
+        planId:
+          type: string
+          enum: [free, starter, professional, business, enterprise]
+        providerPriceId:
+          type: string
+          minLength: 6
+          maxLength: 128
+
+    PlatformUpdatePriceInput:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
 
     # REPORTS
     AdminDashboard:
@@ -12056,22 +13004,23 @@ components:
 
     PlatformStats:
       type: object
-      required: [totalCompanies, activeCompanies, totalUsers, totalScans, totalLeads, monthlyRevenue]
+      required: [totalCompanies, activeCompanies, totalUsers, totalScans, totalLeads, revenue, subscriptions]
       properties:
         totalCompanies:
           type: integer
         activeCompanies:
           type: integer
+          description: Companies whose subscription grants full access today (active or trialing)
         totalUsers:
           type: integer
         totalScans:
           type: integer
         totalLeads:
           type: integer
-        monthlyRevenue:
-          type: number
-        churnRate:
-          type: number
+        revenue:
+          $ref: "#/components/schemas/RevenueSnapshot"
+        subscriptions:
+          $ref: "#/components/schemas/PlatformSubscriptionMetrics"
         subscriptionDistribution:
           type: array
           items:

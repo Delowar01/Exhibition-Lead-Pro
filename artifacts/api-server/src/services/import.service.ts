@@ -6,7 +6,7 @@ import * as contactsRepo from "../repositories/contacts.repository.js";
 import * as leadsRepo from "../repositories/leads.repository.js";
 import * as customFieldsRepo from "../repositories/custom_fields.repository.js";
 import * as pipelineRepo from "../repositories/pipeline_stages.repository.js";
-import * as subscriptionsRepo from "../repositories/subscriptions.repository.js";
+import { assertCapacity } from "./entitlements.service.js";
 import { buildContactDupeMatcher } from "./contacts.service.js";
 import * as customFields from "./custom_fields.service.js";
 import { ensureStages } from "./pipeline.service.js";
@@ -409,18 +409,10 @@ function parseTags(raw: string | null): string[] {
 }
 
 async function commitContacts(user: AuthUser, companyId: number, toInsert: BuiltRow[], skipDuplicates: boolean) {
-  // Enforce the plan contact limit against ORIGINALS (stats counts originals).
-  // Rows linked as duplicates of an existing contact don't add to the original count.
-  const sub = await subscriptionsRepo.findSubscriptionByCompanyId(companyId);
-  const limit = sub?.contactsLimit ?? null;
+  // Batch 20: the plan contact limit is enforced INSIDE the commit transaction under
+  // the tenant+resource lock (same boundary as a direct create), against ORIGINALS —
+  // rows linked as duplicates of an existing contact don't add to the original count.
   const newOriginals = toInsert.filter((b) => !b.duplicateOfExistingId).length;
-  if (limit != null) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const { total } = await contactsRepo.stats(user, today);
-    if (total + newOriginals > limit) {
-      throw new AppError(400, `Import would exceed the plan contact limit (${limit}); ${total} used, ${newOriginals} new.`);
-    }
-  }
 
   const values = toInsert.map((b) => {
     const r = b.record;
@@ -461,6 +453,7 @@ async function commitContacts(user: AuthUser, companyId: number, toInsert: Built
   // after the commit. Imported contacts are human-initiated creations (linked
   // duplicates are hidden rows and emit nothing).
   const runs = await db.transaction(async (tx) => {
+    await assertCapacity(tx, companyId, "contacts", newOriginals);
     const inserted = await contactsRepo.bulkInsert(values, tx);
     const cfEntries = inserted.flatMap((row, i) =>
       toInsert[i].customValues.map((cv) => ({

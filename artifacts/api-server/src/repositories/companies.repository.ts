@@ -1,6 +1,6 @@
-import { db, companiesTable, usersTable, contactsTable, scansTable, activityLogsTable } from "@workspace/db";
-import { eq, ilike, and, count } from "drizzle-orm";
-import { notDeleted } from "./base.js";
+import { db, companiesTable, usersTable, contactsTable, scansTable, activityLogsTable, subscriptionsTable } from "@workspace/db";
+import { eq, ilike, and, count, inArray, sql } from "drizzle-orm";
+import { notDeleted, exec, type Executor } from "./base.js";
 
 export type CompanyRow = typeof companiesTable.$inferSelect;
 
@@ -13,11 +13,21 @@ export async function counts(id: number): Promise<{ userCount: number; contactCo
   return { userCount: userCount.count, contactCount: contactCount.count, scanCount: scanCount.count };
 }
 
+// Batch 20: `status` / `plan` filters resolve against the canonical
+// subscriptions row (never the legacy mirror columns on companies). The legacy
+// spelling "trial" is accepted as an alias of the canonical "trialing".
 export async function list(opts: { search?: string; status?: string; plan?: string; limit: number; offset: number }): Promise<{ rows: CompanyRow[]; total: number }> {
   const conditions = [];
   if (opts.search) conditions.push(ilike(companiesTable.name, `%${opts.search}%`));
-  if (opts.status) conditions.push(eq(companiesTable.status, opts.status));
-  if (opts.plan) conditions.push(eq(companiesTable.plan, opts.plan));
+  if (opts.status || opts.plan) {
+    const subConditions = [eq(subscriptionsTable.companyId, companiesTable.id)];
+    if (opts.status) {
+      const wanted = opts.status === "trial" ? ["trialing", "trial"] : [opts.status];
+      subConditions.push(inArray(subscriptionsTable.status, wanted));
+    }
+    if (opts.plan) subConditions.push(eq(subscriptionsTable.plan, opts.plan));
+    conditions.push(sql`exists (${db.select({ one: sql`1` }).from(subscriptionsTable).where(and(...subConditions))})`);
+  }
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [{ total }] = await db.select({ total: count() }).from(companiesTable).where(whereClause);
@@ -30,8 +40,8 @@ export async function findById(id: number): Promise<CompanyRow | undefined> {
   return row;
 }
 
-export async function insert(values: typeof companiesTable.$inferInsert): Promise<CompanyRow> {
-  const [row] = await db.insert(companiesTable).values(values).returning();
+export async function insert(values: typeof companiesTable.$inferInsert, tx?: Executor): Promise<CompanyRow> {
+  const [row] = await exec(tx).insert(companiesTable).values(values).returning();
   return row;
 }
 
@@ -47,6 +57,6 @@ export async function remove(id: number): Promise<void> {
   await db.delete(companiesTable).where(eq(companiesTable.id, id));
 }
 
-export async function insertActivityLog(values: typeof activityLogsTable.$inferInsert): Promise<void> {
-  await db.insert(activityLogsTable).values(values);
+export async function insertActivityLog(values: typeof activityLogsTable.$inferInsert, tx?: Executor): Promise<void> {
+  await exec(tx).insert(activityLogsTable).values(values);
 }

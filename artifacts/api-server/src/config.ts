@@ -11,6 +11,38 @@ export function resolveEnableRegistration(env: string, override: string | undefi
   return env !== "production" && override !== "false";
 }
 
+// Batch 20 — billing provider selection truth table (pure, unit-tested):
+//   BILLING_PROVIDER unset/"none"  → unavailable (NOT_CONFIGURED)
+//   "stripe" without secret key    → unavailable (STRIPE_SECRET_KEY_MISSING)
+//   "stripe" without webhook secret→ unavailable (STRIPE_WEBHOOK_SECRET_MISSING)
+//   "stripe" fully configured      → stripe
+//   "fake" outside production with a webhook secret → fake (deterministic tests);
+//   "fake" in production           → unavailable (FAKE_PROVIDER_FORBIDDEN)
+//   anything else                  → unavailable (UNKNOWN_PROVIDER)
+// The provider is never required for startup or readiness.
+export type BillingProviderSelection = { kind: "stripe" | "fake" | "unavailable"; reason: string | null };
+
+export function resolveBillingProviderSelection(
+  env: string,
+  provider: string | undefined,
+  hasSecretKey: boolean,
+  hasWebhookSecret: boolean,
+): BillingProviderSelection {
+  const p = (provider ?? "none").trim().toLowerCase();
+  if (p === "" || p === "none") return { kind: "unavailable", reason: "NOT_CONFIGURED" };
+  if (p === "stripe") {
+    if (!hasSecretKey) return { kind: "unavailable", reason: "STRIPE_SECRET_KEY_MISSING" };
+    if (!hasWebhookSecret) return { kind: "unavailable", reason: "STRIPE_WEBHOOK_SECRET_MISSING" };
+    return { kind: "stripe", reason: null };
+  }
+  if (p === "fake") {
+    if (env === "production") return { kind: "unavailable", reason: "FAKE_PROVIDER_FORBIDDEN" };
+    if (!hasWebhookSecret) return { kind: "unavailable", reason: "STRIPE_WEBHOOK_SECRET_MISSING" };
+    return { kind: "fake", reason: null };
+  }
+  return { kind: "unavailable", reason: "UNKNOWN_PROVIDER" };
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -277,6 +309,40 @@ export const config = {
     maxLogoBytes: 2 * 1024 * 1024,
   },
 
+  // Billing (Batch 20). Hybrid model: platform owners manage subscriptions
+  // manually; authorized tenant admins may use Stripe-hosted Checkout / Billing
+  // Portal when — and only when — a provider is fully configured. FAIL-CLOSED:
+  // a missing key never breaks startup or readiness; the provider is simply
+  // "unavailable" (manual billing keeps working, provider endpoints answer 503,
+  // capabilities report Checkout/Portal unavailable). See lib/billing/provider.ts.
+  billing: {
+    // none (default) | stripe | fake (deterministic test provider; NEVER in production)
+    providerSelection: resolveBillingProviderSelection(
+      nodeEnv,
+      process.env.BILLING_PROVIDER,
+      !!process.env.STRIPE_SECRET_KEY,
+      !!process.env.STRIPE_WEBHOOK_SECRET,
+    ),
+    // Tenant self-service Checkout master switch (manual/platform-managed
+    // subscriptions never need it). Default off until prices are approved.
+    selfServiceCheckout: process.env.BILLING_SELF_SERVICE_CHECKOUT === "true",
+    // Read lazily by the provider factory only; never logged, audited or returned.
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    // Optional Stripe Billing Portal configuration id (bps_…). Unset = account default.
+    stripePortalConfigurationId: process.env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID,
+    // TRUSTED application URL the hosted pages return to. Never taken from a request.
+    returnUrl: (process.env.BILLING_RETURN_URL ?? process.env.APP_BASE_URL ?? "http://localhost:5000").replace(/\/$/, ""),
+    // Stripe automatic tax on Checkout sessions — OFF until the tax policy is approved.
+    automaticTax: process.env.BILLING_AUTOMATIC_TAX === "true",
+    // Raw webhook body cap (Stripe events are small; oversized bodies answer 413).
+    webhookMaxBodyBytes: numEnv("BILLING_WEBHOOK_MAX_BODY_BYTES", 256 * 1024, 1024),
+    // Pending usage reservations (scans) older than this are treated as released.
+    usageReservationTtlMs: numEnv("BILLING_USAGE_RESERVATION_TTL_MS", 10 * 60 * 1000, 1_000),
+    // Owner decision (Batch 20): every newly created company starts a 14-day manual trial.
+    trialDays: 14,
+  },
+
   push: {
     // Optional Expo "enhanced security" bearer token.
     expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
@@ -355,6 +421,10 @@ export const config = {
       // `running` (worker died and the queue exhausted its attempts).
       workflowRecoveryFirstDelayMs: numEnv("JOBS_WORKFLOW_RECOVERY_DELAY_MS", 45_000, 0),
       workflowRecoveryIntervalMs: numEnv("JOBS_WORKFLOW_RECOVERY_INTERVAL_MS", 5 * 60 * 1000, 1_000),
+      // Batch 20 subscription lifecycle sweep: elapsed MANUAL trials → expired.
+      // Runs once shortly after boot (first delay) and then on a conservative cadence.
+      subscriptionSweepFirstDelayMs: numEnv("JOBS_SUBSCRIPTION_SWEEP_DELAY_MS", 20_000, 0),
+      subscriptionSweepIntervalMs: numEnv("JOBS_SUBSCRIPTION_SWEEP_INTERVAL_MS", 15 * 60 * 1000, 1_000),
     },
     // Batch 16 deterministic workflow engine (executes Batch 15 definitions).
     workflows: {

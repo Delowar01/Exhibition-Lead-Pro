@@ -96,7 +96,18 @@ export const LoginResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
   "mfaEnrollmentRequired": zod.boolean().optional(),
@@ -146,7 +157,18 @@ export const GetMeResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })
 
 
@@ -270,7 +292,18 @@ export const MfaVerifyLoginResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 }).optional(),
   "mfaRequired": zod.boolean().optional(),
   "mfaEnrollmentRequired": zod.boolean().optional(),
@@ -642,12 +675,41 @@ export const DeleteNotificationResponse = zod.object({
  */
 export const GetPlatformStatsResponse = zod.object({
   "totalCompanies": zod.number(),
-  "activeCompanies": zod.number(),
+  "activeCompanies": zod.number().describe('Companies whose subscription grants full access today (active or trialing)'),
   "totalUsers": zod.number(),
   "totalScans": zod.number(),
   "totalLeads": zod.number(),
-  "monthlyRevenue": zod.number(),
-  "churnRate": zod.number().optional(),
+  "revenue": zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "currency": zod.string().nullable(),
+  "monthlyRecurringMinor": zod.number().nullable(),
+  "countedSubscriptions": zod.number(),
+  "unpricedSubscriptions": zod.number()
+}).describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.'),
+  "subscriptions": zod.object({
+  "byStatus": zod.array(zod.object({
+  "status": zod.string(),
+  "count": zod.number()
+})),
+  "byPlan": zod.array(zod.object({
+  "plan": zod.string(),
+  "count": zod.number()
+})),
+  "byBillingSource": zod.array(zod.object({
+  "billingSource": zod.string(),
+  "count": zod.number()
+})),
+  "trialsExpiringWithin7Days": zod.number(),
+  "revenue": zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "currency": zod.string().nullable(),
+  "monthlyRecurringMinor": zod.number().nullable(),
+  "countedSubscriptions": zod.number(),
+  "unpricedSubscriptions": zod.number()
+}).optional().describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.')
+}),
   "subscriptionDistribution": zod.array(zod.object({
   "status": zod.string(),
   "count": zod.number(),
@@ -657,14 +719,17 @@ export const GetPlatformStatsResponse = zod.object({
 
 
 /**
- * @summary Revenue trend chart data
+ * @summary Revenue history — reported as unavailable unless real billing history exists (never simulated)
  */
-export const GetPlatformRevenueTrendResponseItem = zod.object({
+export const GetPlatformRevenueTrendResponse = zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "points": zod.array(zod.object({
   "date": zod.string(),
   "value": zod.number(),
   "label": zod.string().nullish()
+}))
 })
-export const GetPlatformRevenueTrendResponse = zod.array(GetPlatformRevenueTrendResponseItem)
 
 
 /**
@@ -690,6 +755,1061 @@ export const GetPlatformActivityResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const GetPlatformActivityResponse = zod.array(GetPlatformActivityResponseItem)
+
+
+/**
+ * @summary List canonical subscriptions with real filters and pagination
+ */
+export const platformListSubscriptionsQueryPageDefault = 1;
+export const platformListSubscriptionsQueryLimitDefault = 20;
+
+export const PlatformListSubscriptionsQueryParams = zod.object({
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']).optional(),
+  "plan": zod.coerce.string().optional(),
+  "billingSource": zod.enum(['manual', 'stripe']).optional(),
+  "search": zod.coerce.string().optional(),
+  "page": zod.coerce.number().default(platformListSubscriptionsQueryPageDefault),
+  "limit": zod.coerce.number().default(platformListSubscriptionsQueryLimitDefault)
+})
+
+export const PlatformListSubscriptionsResponse = zod.object({
+  "subscriptions": zod.array(zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "companyName": zod.string(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "providerLinked": zod.boolean(),
+  "statusChangedAt": zod.coerce.date(),
+  "companyCreatedAt": zod.coerce.date()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "limit": zod.number()
+})
+
+
+/**
+ * @summary Counts by canonical state, plan and billing source; trial expirations; truthful revenue
+ */
+export const PlatformSubscriptionMetricsResponse = zod.object({
+  "byStatus": zod.array(zod.object({
+  "status": zod.string(),
+  "count": zod.number()
+})),
+  "byPlan": zod.array(zod.object({
+  "plan": zod.string(),
+  "count": zod.number()
+})),
+  "byBillingSource": zod.array(zod.object({
+  "billingSource": zod.string(),
+  "count": zod.number()
+})),
+  "trialsExpiringWithin7Days": zod.number(),
+  "revenue": zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable(),
+  "currency": zod.string().nullable(),
+  "monthlyRecurringMinor": zod.number().nullable(),
+  "countedSubscriptions": zod.number(),
+  "unpricedSubscriptions": zod.number()
+}).optional().describe('Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.')
+})
+
+
+/**
+ * @summary Subscription detail for a company
+ */
+export const PlatformGetSubscriptionParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformGetSubscriptionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Recent sanitized provider events for a company
+ */
+export const PlatformListSubscriptionEventsParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformListSubscriptionEventsResponse = zod.object({
+  "events": zod.array(zod.object({
+  "id": zod.number(),
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullish(),
+  "status": zod.string(),
+  "outcome": zod.string().nullish(),
+  "failureCode": zod.string().nullish(),
+  "receivedAt": zod.coerce.date(),
+  "processedAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Set the manual plan
+ */
+export const PlatformSetSubscriptionPlanParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformSetSubscriptionPlanBody = zod.object({
+  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise'])
+})
+
+export const PlatformSetSubscriptionPlanResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Start or extend a manual trial
+ */
+export const PlatformStartTrialParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const platformStartTrialBodyTrialDaysMax = 365;
+
+
+
+export const PlatformStartTrialBody = zod.object({
+  "trialExpiresAt": zod.coerce.date().optional(),
+  "trialDays": zod.number().min(1).max(platformStartTrialBodyTrialDaysMax).optional()
+})
+
+export const PlatformStartTrialResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Activate a manual subscription
+ */
+export const PlatformActivateSubscriptionParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformActivateSubscriptionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Mark a manual subscription past due (read-only access)
+ */
+export const PlatformMarkSubscriptionPastDueParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformMarkSubscriptionPastDueResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Cancel a manual subscription (read-only access)
+ */
+export const PlatformCancelSubscriptionParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformCancelSubscriptionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Expire a manual subscription (blocked access; no data deletion)
+ */
+export const PlatformExpireSubscriptionParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformExpireSubscriptionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Suspend (blocked access) with a sanitized reason
+ */
+export const PlatformSuspendSubscriptionParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const platformSuspendSubscriptionBodyReasonMax = 200;
+
+
+
+export const PlatformSuspendSubscriptionBody = zod.object({
+  "reason": zod.string().max(platformSuspendSubscriptionBodyReasonMax).optional()
+})
+
+export const PlatformSuspendSubscriptionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Lift a suspension (restores the pre-suspension state)
+ */
+export const PlatformReactivateSubscriptionParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformReactivateSubscriptionResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Replace per-subscription limit overrides (null clears; empty object clears all)
+ */
+export const PlatformSetSubscriptionLimitsParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const platformSetSubscriptionLimitsBodyLimitsContactsMin = 0;
+
+export const platformSetSubscriptionLimitsBodyLimitsEventsMin = 0;
+
+export const platformSetSubscriptionLimitsBodyLimitsAdminsMin = 0;
+
+export const platformSetSubscriptionLimitsBodyLimitsEmployeesMin = 0;
+
+export const platformSetSubscriptionLimitsBodyLimitsScansMin = 0;
+
+export const platformSetSubscriptionLimitsBodyLimitsStorageMbMin = 0;
+
+
+
+export const PlatformSetSubscriptionLimitsBody = zod.object({
+  "limits": zod.object({
+  "contacts": zod.number().min(platformSetSubscriptionLimitsBodyLimitsContactsMin).nullish(),
+  "events": zod.number().min(platformSetSubscriptionLimitsBodyLimitsEventsMin).nullish(),
+  "admins": zod.number().min(platformSetSubscriptionLimitsBodyLimitsAdminsMin).nullish(),
+  "employees": zod.number().min(platformSetSubscriptionLimitsBodyLimitsEmployeesMin).nullish(),
+  "scans": zod.number().min(platformSetSubscriptionLimitsBodyLimitsScansMin).nullish(),
+  "storageMb": zod.number().min(platformSetSubscriptionLimitsBodyLimitsStorageMbMin).nullish()
+})
+})
+
+export const PlatformSetSubscriptionLimitsResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Convert a provider-managed subscription to manual (only when no live provider subscription remains)
+ */
+export const PlatformConvertSubscriptionToManualParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformConvertSubscriptionToManualResponse = zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+}).and(zod.object({
+  "companyName": zod.string().nullable(),
+  "limitOverrides": zod.record(zod.string(), zod.number().nullable()),
+  "allowedActions": zod.array(zod.string()),
+  "suspendedReason": zod.string().nullish(),
+  "statusBeforeSuspension": zod.string().nullish(),
+  "providerStatus": zod.string().nullish(),
+  "providerSyncedAt": zod.coerce.date().nullish(),
+  "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
+  "providerSubscriptionRef": zod.string().nullish()
+}))
+
+
+/**
+ * @summary Re-read the provider subscription and apply its authoritative state
+ */
+export const PlatformSyncSubscriptionParams = zod.object({
+  "companyId": zod.coerce.number()
+})
+
+export const PlatformSyncSubscriptionResponse = zod.object({
+  "outcome": zod.enum(['applied', 'stale', 'no_change', 'mismatch']),
+  "subscription": zod.object({
+  "id": zod.number(),
+  "companyId": zod.number(),
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+})
+})
+
+
+/**
+ * @summary Provider configuration state (no secret values)
+ */
+export const PlatformBillingStatusResponse = zod.object({
+  "provider": zod.enum(['stripe', 'fake', 'unavailable']),
+  "available": zod.boolean(),
+  "unavailableReason": zod.string().nullish(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "automaticTax": zod.boolean(),
+  "portalConfigurationSet": zod.boolean(),
+  "trialDays": zod.number()
+})
+
+
+/**
+ * @summary Provider price mappings
+ */
+export const PlatformListPricesResponse = zod.object({
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+})))
+})
+
+
+/**
+ * @summary Register a provider price id for a plan (interval/currency/amount are retrieved from the provider, never from the request)
+ */
+export const platformRegisterPriceBodyProviderPriceIdMin = 6;
+export const platformRegisterPriceBodyProviderPriceIdMax = 128;
+
+
+
+export const PlatformRegisterPriceBody = zod.object({
+  "planId": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
+  "providerPriceId": zod.string().min(platformRegisterPriceBodyProviderPriceIdMin).max(platformRegisterPriceBodyProviderPriceIdMax)
+})
+
+
+/**
+ * @summary Activate or deactivate a price mapping
+ */
+export const PlatformUpdatePriceParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const PlatformUpdatePriceBody = zod.object({
+  "active": zod.boolean()
+})
+
+export const PlatformUpdatePriceResponse = zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}).and(zod.object({
+  "providerPriceRef": zod.string().nullish(),
+  "providerProductRef": zod.string().nullish(),
+  "verifiedAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+}))
 
 
 /**
@@ -723,6 +1843,17 @@ export const ListCompaniesResponse = zod.object({
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional(),
   "createdAt": zod.coerce.date()
 })),
   "total": zod.number(),
@@ -770,6 +1901,17 @@ export const GetCompanyResponse = zod.object({
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -787,10 +1929,7 @@ export const UpdateCompanyBody = zod.object({
   "country": zod.string().nullish(),
   "address": zod.string().nullish(),
   "vatNumber": zod.string().nullish(),
-  "website": zod.string().nullish(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']).optional(),
-  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']).optional(),
-  "suspendedReason": zod.string().nullish()
+  "website": zod.string().nullish()
 })
 
 export const UpdateCompanyResponse = zod.object({
@@ -809,6 +1948,17 @@ export const UpdateCompanyResponse = zod.object({
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1077,6 +2227,17 @@ export const SuspendCompanyResponse = zod.object({
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1104,6 +2265,17 @@ export const ActivateCompanyResponse = zod.object({
   "userCount": zod.number().optional(),
   "contactCount": zod.number().optional(),
   "scanCount": zod.number().optional(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -1149,7 +2321,18 @@ export const ListUsersResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -1214,7 +2397,18 @@ export const UpdateOwnProfileResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })
 
 
@@ -1307,7 +2501,18 @@ export const UpdateUserResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })
 
 
@@ -4118,7 +5323,18 @@ export const ListTeamMembersResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -4189,7 +5405,18 @@ export const ListEmployeeDirectoryResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -4769,73 +5996,144 @@ export const ScoreScanResponse = zod.object({
 
 
 /**
- * @summary Get current company subscription
+ * @summary Current canonical subscription projection (plan, status, access mode, capabilities, limits, usage)
  */
 export const GetCurrentSubscriptionResponse = zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
-  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
-  "scansUsed": zod.number().optional(),
-  "scansLimit": zod.number().nullish(),
-  "usersLimit": zod.number().nullish(),
-  "adminsLimit": zod.number().nullish(),
-  "employeesLimit": zod.number().nullish(),
-  "contactsLimit": zod.number().nullish(),
-  "eventsLimit": zod.number().nullish(),
-  "storageLimitMb": zod.number().nullish(),
-  "apiLimit": zod.number().nullish(),
-  "trialEndsAt": zod.coerce.date().nullish(),
-  "renewalDate": zod.coerce.date().nullish()
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "accessReasonCode": zod.string().nullish(),
+  "accessMessage": zod.string().nullish(),
+  "trialStartedAt": zod.coerce.date().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodStartsAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean(),
+  "canceledAt": zod.coerce.date().nullish(),
+  "endedAt": zod.coerce.date().nullish(),
+  "suspendedAt": zod.coerce.date().nullish(),
+  "statusChangedAt": zod.coerce.date(),
+  "providerLinked": zod.boolean(),
+  "providerSubscriptionLinked": zod.boolean(),
+  "billing": zod.object({
+  "providerConfigured": zod.boolean(),
+  "selfServiceCheckoutEnabled": zod.boolean(),
+  "checkoutAvailable": zod.boolean(),
+  "checkoutUnavailableReason": zod.string().nullish(),
+  "portalAvailable": zod.boolean(),
+  "portalUnavailableReason": zod.string().nullish(),
+  "managedByPlatform": zod.boolean()
+}),
+  "limits": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "limit": zod.number().nullable().describe('null = unlimited'),
+  "source": zod.enum(['override', 'plan', 'unlimited'])
+})),
+  "usage": zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
 })
 
 
 /**
- * @summary List available subscription plans
+ * @summary Real usage against effective limits (the same calculation used for enforcement)
+ */
+export const GetSubscriptionUsageResponse = zod.object({
+  "window": zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "source": zod.enum(['billing_period', 'anchored_month'])
+}),
+  "resources": zod.array(zod.object({
+  "resource": zod.enum(['contacts', 'events', 'admins', 'employees', 'scans', 'storageMb']),
+  "used": zod.number(),
+  "limit": zod.number().nullable(),
+  "remaining": zod.number().nullable(),
+  "source": zod.enum(['override', 'plan', 'unlimited']),
+  "enforced": zod.boolean(),
+  "measurable": zod.boolean().describe('false when the resource cannot be measured durably (storage) — reported honestly, not enforced'),
+  "details": zod.record(zod.string(), zod.unknown()).optional()
+}))
+})
+
+
+/**
+ * @summary Plan catalog with provider-verified active prices only
  */
 export const ListPlansResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "description": zod.string().nullish(),
-  "priceMonthly": zod.number(),
-  "currency": zod.string().optional(),
-  "adminsLimit": zod.number().nullish(),
-  "employeesLimit": zod.number().nullish(),
-  "contactsLimit": zod.number().nullish(),
-  "eventsLimit": zod.number().nullish(),
-  "storageLimitMb": zod.number().nullish(),
-  "apiLimit": zod.number().nullish(),
-  "trialDays": zod.number().optional(),
-  "features": zod.record(zod.string(), zod.boolean()),
-  "sortOrder": zod.number().optional(),
-  "isActive": zod.boolean().optional()
+  "trialDays": zod.number(),
+  "sortOrder": zod.number(),
+  "limits": zod.object({
+  "contacts": zod.number().nullable(),
+  "events": zod.number().nullable(),
+  "admins": zod.number().nullable(),
+  "employees": zod.number().nullable(),
+  "scans": zod.number().nullable(),
+  "storageMb": zod.number().nullable()
+}),
+  "prices": zod.array(zod.object({
+  "id": zod.number(),
+  "planId": zod.string(),
+  "interval": zod.string(),
+  "intervalCount": zod.number(),
+  "currency": zod.string(),
+  "unitAmountMinor": zod.number(),
+  "nickname": zod.string().nullish(),
+  "active": zod.boolean()
+}))
 })
 export const ListPlansResponse = zod.array(ListPlansResponseItem)
 
 
 /**
- * @summary Upgrade subscription plan
+ * @summary Start a provider-hosted Checkout session (subscriptions:manage). Never changes entitlement.
  */
-export const UpgradeSubscriptionBody = zod.object({
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise'])
+export const CreateCheckoutSessionBody = zod.object({
+  "planPriceId": zod.number().describe('Internal active plan-price mapping id. No provider ids, amounts, currencies or URLs are accepted.')
 })
 
-export const UpgradeSubscriptionResponse = zod.object({
-  "id": zod.number(),
-  "companyId": zod.number(),
-  "plan": zod.enum(['free', 'starter', 'professional', 'business', 'enterprise']),
-  "status": zod.enum(['trial', 'active', 'suspended', 'expired', 'cancelled']),
-  "scansUsed": zod.number().optional(),
-  "scansLimit": zod.number().nullish(),
-  "usersLimit": zod.number().nullish(),
-  "adminsLimit": zod.number().nullish(),
-  "employeesLimit": zod.number().nullish(),
-  "contactsLimit": zod.number().nullish(),
-  "eventsLimit": zod.number().nullish(),
-  "storageLimitMb": zod.number().nullish(),
-  "apiLimit": zod.number().nullish(),
-  "trialEndsAt": zod.coerce.date().nullish(),
-  "renewalDate": zod.coerce.date().nullish()
+export const CreateCheckoutSessionResponse = zod.object({
+  "url": zod.string(),
+  "status": zod.enum(['created', 'reused'])
+})
+
+
+/**
+ * @summary Open the provider-hosted Billing Portal (subscriptions:manage; provider-managed subscriptions only)
+ */
+export const CreateBillingPortalSessionResponse = zod.object({
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Stripe webhook receiver (raw body, signature-verified, idempotent by event id)
+ */
+export const StripeWebhookBody = zod.record(zod.string(), zod.unknown()).describe('Raw provider event (verified by signature; never persisted)')
+
+export const StripeWebhookResponse = zod.object({
+  "received": zod.boolean(),
+  "outcome": zod.string()
 })
 
 
@@ -7937,7 +9235,18 @@ export const EnableUserResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })
 
 
@@ -7974,7 +9283,18 @@ export const DisableUserResponse = zod.object({
   "departmentName": zod.string().nullish(),
   "teamId": zod.number().nullish(),
   "teamName": zod.string().nullish(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "subscription": zod.union([zod.object({
+  "plan": zod.string(),
+  "status": zod.enum(['trialing', 'active', 'past_due', 'cancelled', 'expired', 'suspended']),
+  "billingSource": zod.enum(['manual', 'stripe']),
+  "accessMode": zod.enum(['full', 'read_only', 'blocked']),
+  "reasonCode": zod.string().nullish(),
+  "message": zod.string().nullish(),
+  "trialExpiresAt": zod.coerce.date().nullish(),
+  "currentPeriodEndsAt": zod.coerce.date().nullish(),
+  "cancelAtPeriodEnd": zod.boolean()
+}),zod.null()]).optional()
 })
 
 

@@ -2,6 +2,7 @@ import { db, eventsTable, contactsTable, leadsTable } from "@workspace/db";
 import { eq, ilike, and, count, sum, isNull, inArray } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { activeScope, notDeleted } from "./base.js";
+import { exec, type Executor } from "./base.js";
 
 export type EventRow = typeof eventsTable.$inferSelect;
 
@@ -54,8 +55,8 @@ export async function findById(user: AuthUser, id: number): Promise<EventRow | u
   return row;
 }
 
-export async function insert(values: typeof eventsTable.$inferInsert): Promise<EventRow> {
-  const [row] = await db.insert(eventsTable).values(values).returning();
+export async function insert(values: typeof eventsTable.$inferInsert, tx?: Executor): Promise<EventRow> {
+  const [row] = await exec(tx).insert(eventsTable).values(values).returning();
   return row;
 }
 

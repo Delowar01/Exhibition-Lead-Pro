@@ -2,6 +2,8 @@ import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as eventsRepo from "../repositories/events.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
+import { db } from "@workspace/db";
+import { assertCapacity } from "./entitlements.service.js";
 
 async function enrichEvent(e: eventsRepo.EventRow) {
   const { contactCount, leadCount } = await eventsRepo.counts(e.id);
@@ -38,7 +40,11 @@ export async function createEvent(user: AuthUser, input: EventInput) {
   if (!companyId) throw new AppError(400, "No company context");
   const { name, venue, country, startDate, endDate, boothNumber, description, status } = input;
   if (!name) throw new AppError(400, "name required");
-  const event = await eventsRepo.insert({ companyId, name, venue, country: country ?? null, startDate: startDate ?? null, endDate: endDate ?? null, boothNumber, description, status: status ?? "active" });
+  // Batch 20: plan limit check under the tenant+resource lock, in the same transaction as the insert.
+  const event = await db.transaction(async (tx) => {
+    await assertCapacity(tx, companyId, "events", 1);
+    return eventsRepo.insert({ companyId, name, venue, country: country ?? null, startDate: startDate ?? null, endDate: endDate ?? null, boothNumber, description, status: status ?? "active" }, tx);
+  });
   return await enrichEvent(event);
 }
 

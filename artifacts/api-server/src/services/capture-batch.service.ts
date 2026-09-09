@@ -7,6 +7,7 @@ import { analyzeCapture, type CaptureAnalysis } from "./capture-intelligence.ser
 import type { CaptureFields } from "../lib/capture-validation.js";
 import { extractCardData } from "../lib/ai.js";
 import { validateScanImage } from "../lib/image-validation.js";
+import { reserveScans, consumeReservation, releaseReservation } from "./entitlements.service.js";
 
 // Batch runner for Stage 5E intelligent capture. It lets a tenant analyze MANY captured
 // cards at once (e.g. a mobile batch-scan session) without holding the request open.
@@ -30,6 +31,8 @@ export interface CaptureAnalyzeJobPayload {
   imageData?: string | null;
   appLanguage?: string;
   user: AuthUser;
+  // Batch 20: usage reservation taken when the batch was accepted (image items only).
+  reservationId?: number | null;
 }
 
 export type BatchStatus = "queued" | "running" | "completed" | "failed";
@@ -91,8 +94,24 @@ export async function startCaptureBatch(user: AuthUser, items: CaptureBatchItem[
     throw new AppError(400, `A batch can analyze at most ${MAX_ITEMS} items`);
   }
 
+  // Batch 20: batch scans contend on the SAME scan limit as single scans. Every
+  // image item reserves one unit up front (idempotent per batch item); a batch that
+  // does not fit is rejected as a whole before any provider work.
+  const jobId = randomUUID();
+  const imageItems = items.filter((i) => typeof i.imageData === "string" && i.imageData.length > 0);
+  const reservations = new Map<string, number>();
+  try {
+    for (const item of imageItems) {
+      const r = await reserveScans(user.companyId, `batch:${user.companyId}:${jobId}:${item.key}`, 1);
+      if (!r.alreadyConsumed) reservations.set(item.key, r.reservationId);
+    }
+  } catch (err) {
+    for (const id of reservations.values()) await releaseReservation(id);
+    throw err;
+  }
+
   const job: CaptureBatchJob = {
-    id: randomUUID(),
+    id: jobId,
     companyId: user.companyId,
     requestedById: user.id,
     status: "queued",
@@ -112,7 +131,7 @@ export async function startCaptureBatch(user: AuthUser, items: CaptureBatchItem[
   for (const item of items) {
     void queue.enqueue<CaptureAnalyzeJobPayload>(
       CAPTURE_ANALYZE_JOB,
-      { jobId: job.id, key: item.key, fields: item.fields, imageData: item.imageData ?? null, appLanguage: item.appLanguage, user },
+      { jobId: job.id, key: item.key, fields: item.fields, imageData: item.imageData ?? null, appLanguage: item.appLanguage, user, reservationId: reservations.get(item.key) ?? null },
       { maxAttempts: 1, dedupeKey: `capture:${job.id}:${item.key}` },
     );
   }
@@ -158,8 +177,10 @@ export async function runCaptureAnalyzeJob(payload: CaptureAnalyzeJobPayload): P
     const analysis = await analyzeCapture(payload.user, fields);
     job.results.push({ key: payload.key, analysis });
     job.succeeded += 1;
+    if (payload.reservationId != null) await consumeReservation(payload.reservationId, null);
   } catch (err) {
     job.failed += 1;
+    if (payload.reservationId != null) await releaseReservation(payload.reservationId);
     if (job.errors.length < MAX_ERRORS) {
       job.errors.push({ key: payload.key, message: err instanceof AppError ? err.message : "Analysis failed" });
     }

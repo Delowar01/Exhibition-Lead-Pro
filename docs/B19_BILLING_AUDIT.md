@@ -1,5 +1,7 @@
 # Batch 19 — Billing Audit
 
+> **Status (Batch 20):** this audit is a historical record of the tree at `c2cd467`. The P0/P1 findings below were addressed by **Batch 20 — Subscription Lifecycle Integrity and Hybrid Stripe Billing**; the canonical model, transition table, access matrix, repair algorithm, provider boundary and limit semantics that now apply are documented in `docs/B20_SUBSCRIPTION_LIFECYCLE.md`. Where this document and the code disagree, the code (and the B20 document) are authoritative.
+
 **Scope:** audit and documentation only. No schema, API, behavior, generated-client or UI change was made. No payment provider was selected or integrated. Nothing was merged, deployed, or executed against the hosted VPS or hosted database.
 
 **Baseline audited:** `develop` at `c2cd4674977ce517e9ffd8ec7f50688613864dad` (branch `claude/b19-billing-audit`, same tree).
@@ -373,7 +375,7 @@ Explicitly **out of B20**: provider selection, checkout, webhooks, invoices, tax
 * **Deferred to after §13:** provider integration, invoices/receipts, tax, coupons, refunds, dunning, billing portal, reconciliation, multi-currency pricing, seat-based licensing.
 * **Not exercised locally:** document/export storage paths (storage `not_configured` locally — the absence of a storage quota was established by code reading only); real email; real Gemini (stub provider used for the scan probe); hosted behavior of any kind.
 * **Not reproduced locally:** the concurrent first-read unique-constraint race (S4) — eight parallel requests all succeeded; the defect is stated from code, not observation.
-* **Documentation contradictions reported, not fixed:** `docs/PROJECT_FILE_MAP.md:94` (test reference), `docs/PROJECT_TECHNICAL_BRIEF.md:456` ("subscription lifecycle").
+* **Documentation contradictions reported, not fixed in B19:** `docs/PROJECT_FILE_MAP.md:94` (test reference), `docs/PROJECT_TECHNICAL_BRIEF.md:456` ("subscription lifecycle") — both corrected in Batch 20.
 
 ---
 

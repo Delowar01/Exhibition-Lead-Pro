@@ -1,5 +1,6 @@
 import { db, invitationsTable, type Invitation } from "@workspace/db";
 import { and, or, eq, inArray, asc, desc, ilike, sql, type SQL, type AnyColumn } from "drizzle-orm";
+import { exec, type Executor } from "./base.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 
 export type { Invitation };
@@ -21,8 +22,8 @@ export interface ListInvitationsOpts {
   paginated?: boolean;
 }
 
-export async function insert(values: typeof invitationsTable.$inferInsert): Promise<Invitation> {
-  const [row] = await db.insert(invitationsTable).values(values).returning();
+export async function insert(values: typeof invitationsTable.$inferInsert, tx?: Executor): Promise<Invitation> {
+  const [row] = await exec(tx).insert(invitationsTable).values(values).returning();
   return row;
 }
 

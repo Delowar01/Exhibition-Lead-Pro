@@ -6,6 +6,7 @@ import {
   Briefcase, PieChart,
 } from "lucide-react";
 import { workflowAccess } from "@/components/automations/permissions";
+import { subscriptionAccess } from "@/components/billing/permissions";
 import type { LucideIcon } from "lucide-react";
 import type { User } from "@workspace/api-client-react";
 
@@ -99,7 +100,11 @@ export function buildAdminNav(user: User | null): NavGroup[] {
         { name: "Organization Profile", href: "/admin/organization", icon: Building2 },
         { name: "Pipeline Settings", href: "/admin/pipeline-settings", icon: SlidersHorizontal },
         { name: "Security", href: "/admin/security", icon: ShieldAlert },
-        { name: "Subscription", href: "/admin/subscription", icon: CreditCard },
+        // Batch 20: billing is visible only to users holding subscriptions:view
+        // (primary_admin implicitly); platform operators never see tenant billing.
+        ...(subscriptionAccess(user).canView
+          ? [{ name: "Subscription", href: "/admin/subscription", icon: CreditCard }]
+          : []),
         { name: "Sessions", href: "/admin/sessions", icon: MonitorSmartphone },
         { name: "Settings", href: "/admin/settings", icon: Settings },
       ],

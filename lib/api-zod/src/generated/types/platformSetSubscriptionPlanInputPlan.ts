@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CompanyUpdatePlan = typeof CompanyUpdatePlan[keyof typeof CompanyUpdatePlan];
+export type PlatformSetSubscriptionPlanInputPlan = typeof PlatformSetSubscriptionPlanInputPlan[keyof typeof PlatformSetSubscriptionPlanInputPlan];
 
 
-export const CompanyUpdatePlan = {
+export const PlatformSetSubscriptionPlanInputPlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',

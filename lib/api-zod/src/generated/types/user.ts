@@ -5,6 +5,7 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
+import type { SubscriptionSummary } from './subscriptionSummary';
 import type { UserCompanyVisibility } from './userCompanyVisibility';
 import type { UserContactVisibility } from './userContactVisibility';
 import type { UserEmploymentStatus } from './userEmploymentStatus';
@@ -52,4 +53,5 @@ export interface User {
   /** @nullable */
   teamName?: string | null;
   createdAt: Date;
+  subscription?: SubscriptionSummary | null;
 }

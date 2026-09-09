@@ -6,6 +6,7 @@ import { startScheduler, stopScheduler } from "./lib/jobs/scheduler";
 import { backfillAiCopilotPermissions, backfillAiWorkflowPermissions, backfillAiExecutivePermissions, backfillAiAssistantPermissions, backfillWorkflowsPermissions } from "./lib/permission-backfill";
 import { config } from "./config.js";
 import { recoverOrphanedWorkflowRuns } from "./lib/workflows/recovery";
+import { ensurePlanCatalog } from "./lib/billing/plan-catalog";
 
 const port = config.port;
 
@@ -57,6 +58,16 @@ app.listen(port, (err) => {
   backfillWorkflowsPermissions().catch((err) => {
     logger.error({ err }, "workflows permission backfill failed");
   });
+  // Batch 20: idempotent plan catalog seed (insert-if-missing; never overwrites an
+  // operator's edits, never invents prices). The subscription REPAIR is a separate
+  // explicit command (scripts/repair-subscriptions.ts) and is never run at startup.
+  ensurePlanCatalog()
+    .then((r) => {
+      if (r.inserted.length) logger.info({ inserted: r.inserted }, "Plan catalog seeded");
+    })
+    .catch((err) => {
+      logger.error({ err }, "plan catalog seed failed");
+    });
   // Background job queue (async email/notification delivery) + recurring maintenance
   // scheduler (token/session cleanup, invitation expiry, retention, follow-ups).
   startWorkers();

@@ -144,17 +144,20 @@ uploads report "not configured", AI uses the stub).
 
 ```bash
 pnpm run typecheck                                  # all packages — PASS
-pnpm --filter @workspace/api-server run test        # 728/728 (restart API first, run ONCE)
-pnpm --filter @workspace/web-app run test:e2e       # 43/43 (stack running; set PW_CHROMIUM_PATH)
-pnpm --filter @workspace/mobile run test            # 107/107
+pnpm --filter @workspace/api-server run test        # 1153 tests (restart API first, run ONCE)
+pnpm --filter @workspace/web-app run test:e2e       # 142/142 (stack running; set PW_CHROMIUM_PATH)
+pnpm --filter @workspace/mobile run test            # 114/114
 pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-Without GCS object-storage credentials, 27 of the 728 API tests (documents
-upload/versioning, stored-scan-image reprocess, executive export artifacts)
-fail or skip locally — everything else must be green. Details:
-`docs/LOCALHOST_DEVELOPMENT.md` §7.
+Without GCS object-storage credentials the API suite reports **1116 passed /
+9 failed / 28 skipped** — the failures are exactly the documented storage-gated
+set (documents.test.ts 6 failed + 18 skipped, ocr-pipeline 1, executive-
+intelligence 2); everything else must be green. The B20 billing suites and the
+Playwright billing spec need `BILLING_PROVIDER=fake` + `STRIPE_WEBHOOK_SECRET`
+(any local value) + `BILLING_SELF_SERVICE_CHECKOUT=true` in the API and test
+shells. Details: `docs/LOCALHOST_DEVELOPMENT.md` §3, §7.
 
 The API suite is integration-against-live-API: the login rate limiter is
 stateful, so **restart the API server before the suite and run it exactly

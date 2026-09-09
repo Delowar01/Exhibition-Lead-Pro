@@ -6,4 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PlanFeatures = {[key: string]: boolean};
+export type PlatformSubscriptionMetricsByPlanItem = {
+  plan: string;
+  count: number;
+};

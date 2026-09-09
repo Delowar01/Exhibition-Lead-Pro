@@ -14,6 +14,7 @@ import teamsRouter from "./teams.js";
 import scansRouter from "./scans.js";
 import subscriptionsRouter from "./subscriptions.js";
 import platformRouter from "./platform.js";
+import platformBillingRouter from "./platform-billing.js";
 import reportsRouter from "./reports.js";
 import analyticsRouter from "./analytics.js";
 import pushRouter from "./push.js";
@@ -84,6 +85,8 @@ router.use(teamsRouter);
 router.use(scansRouter);
 router.use(subscriptionsRouter);
 router.use(platformRouter);
+// Batch 20: platform-owner subscription lifecycle + provider price mappings.
+router.use(platformBillingRouter);
 router.use(reportsRouter);
 router.use(analyticsRouter);
 router.use(pushRouter);

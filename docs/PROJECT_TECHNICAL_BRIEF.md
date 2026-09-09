@@ -243,8 +243,10 @@ Unless noted, routes are under `/api/v1` (§G), services in
 `artifacts/api-server/src/services/`, repositories in `.../repositories/`.
 
 **Login** — `POST /auth/login` → `auth.service.ts` verifies the password
-(`lib/crypto.ts`), enforces the per-account lockout + `loginRateLimiter`, evaluates
-subscription lifecycle (`evaluateCompanyAccess`), then creates a **session
+(`lib/crypto.ts`), enforces the per-account lockout + `loginRateLimiter`, resolves
+the tenant's entitlement from the CANONICAL `subscriptions` row
+(`lib/company-access.ts` → `loadTenantAccess`; the same reader gates every request
+in `requireAuth` and every refresh in `lib/sessions.ts` — Batch 20), then creates a **session
 row/refresh family** (`lib/sessions.ts`) and returns a JWT access token +
 refresh token. `writeAudit` records the login.
 
@@ -380,7 +382,7 @@ soft-deleted users.
 
 | Table (file) | Purpose / notes |
 |---|---|
-| `companies` (`companies.ts`) | Tenant root; `status` drives subscription lifecycle gating. |
+| `companies` (`companies.ts`) | Tenant root. `plan` / `status` / `trial_ends_at` are **write-only compatibility mirrors** since Batch 20 — access is never decided from them. |
 | `users` (`users.ts`) | Auth + profile. `role` (4-tier), `permissions` matrix, visibility scopes, MFA fields (`mfaSecret` encrypted), soft-delete, org profile (`managerId`, `departmentId`, `teamId`). |
 | `sessions` (`sessions.ts`) | Refresh-token families; rotation + revocation; `expiresAt`, `revokedAt`. |
 | `login_attempts` (`login_attempts.ts`) | Brute-force lockout tracking. |
@@ -401,7 +403,7 @@ soft-deleted users.
 | `notifications`, `notification_preferences`, `device_tokens` | Notification center + push. |
 | `custom_fields`, `tags`, `saved_searches`, `recent_searches` | Extensibility + search. |
 | `export_schedules`, `export_runs` | Scheduled/one-off exports. |
-| `subscriptions`, `plans` | Billing plans + subscription state. |
+| `subscriptions`, `plans`, `plan_prices`, `billing_checkout_sessions`, `billing_provider_events`, `subscription_usage_reservations` | Canonical subscription per company (Batch 20: status, billing source, trial/period, limit overrides, provider ids), stable plan catalog, server-verified provider price mappings, Checkout sessions, idempotent webhook ledger, scan usage reservations — see `docs/B20_SUBSCRIPTION_LIFECYCLE.md`. |
 | `audit_logs` (`audit_logs.ts`) | **Append-only** audit trail (no delete route, no cascade). |
 | `activity_logs` | Platform activity feed. |
 | `ai_invocations` (`ai_invocations.ts`) | **Append-only AI usage ledger** — tokens, micro-USD cost, `pricingVersion`, prompt version, status, latency; `requestId` unique for idempotent writes. |
@@ -453,7 +455,9 @@ contract, and [PROJECT_FILE_MAP.md](PROJECT_FILE_MAP.md) for per-feature file pa
 | `/ai` | `ai.ts` | All AI features (insights, copilot, assistant, capture intel, settings, usage) | Web + mobile (Assistant) |
 | `/executive` | `executive.ts` | Executive Intelligence summaries/forecasts | Web (admin) |
 | `/platform` | `platform.ts` | Platform Owner cross-tenant admin/analytics | Web (platform) |
-| `/subscriptions` | `subscriptions.ts` | Plans + subscription lifecycle | Web (admin/platform) |
+| `/subscriptions` | `subscriptions.ts` | Tenant canonical subscription, usage, verified plan prices, Checkout / Billing Portal (`subscriptions:view` / `manage`; platform owner fenced out; `POST /subscriptions/upgrade` retired → 410) | Web (admin) |
+| `/platform/subscriptions`, `/platform/billing` | `platform-billing.ts` | Platform-owner manual lifecycle (plan, trial, activate, past due, cancel, expire, suspend, reactivate, limits, convert-to-manual, sync) + provider status / price mappings | Web (platform) |
+| `/billing/stripe/webhook` | `billing-webhook.ts` | Signed, idempotent Stripe webhook (raw body; mounted before the JSON parser) | Stripe |
 | `/healthz`, `/readyz` | `health.ts` | Liveness / readiness | Infra |
 
 ---
@@ -599,12 +603,14 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   the **live** API (the api-server workflow must be running and seeded with demo
   tenants); restart/seed before a full run. Detail in
   [LOCAL_AND_STAGING_RUNBOOK.md](LOCAL_AND_STAGING_RUNBOOK.md).
-- **Current totals** — API **705/705**, Playwright **43/43**, mobile **107/107**,
-  all typechecks clean.
+- **Current totals (Batch 20)** — API **1153** tests (1116 passed / 9 failed /
+  28 skipped without object storage — the failures are the documented
+  storage-gated subset), Playwright **142/142**, mobile **114/114**, all
+  typechecks clean.
 - **Playwright setup** — `artifacts/web-app/playwright.config.ts` resolves a Nix-store
   chromium via `executablePath` (newest `-playwright-browsers-chromium` build);
   override with `PW_CHROMIUM_PATH`; target with `E2E_BASE_URL` (default
-  `http://localhost:80`). Spec files in `e2e/` (`a-…` … `j-ai-copilot.spec.ts`).
+  `http://localhost:80`). Spec files in `e2e/` (`a-…` … `x-billing.spec.ts`).
 - **Stub-provider behavior** — the deterministic stub provider (`ai/providers/stub.ts`)
   is registered only outside production; a tenant opts in via `PATCH /ai/settings`.
   It exercises usage accounting, budgets, rate limits, and dedup **without** live

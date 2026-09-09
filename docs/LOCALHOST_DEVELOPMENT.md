@@ -54,6 +54,24 @@ Optional — correct localhost values:
   for normal development: email becomes a logged no-op, uploads report
   "not configured", AI degrades gracefully, and nothing Replit-specific is
   needed (see §12).
+- **Billing (Batch 20)** — leave `BILLING_PROVIDER` unset for plain manual
+  billing. The B20 API suites (`test/b20-billing-stripe.test.ts`) and the
+  Playwright billing spec (`e2e/x-billing.spec.ts`) require the deterministic
+  offline provider — export, in the shell that runs the API **and** the one
+  that runs the tests:
+
+  ```bash
+  export BILLING_PROVIDER=fake
+  export STRIPE_WEBHOOK_SECRET="whsec_local_test_only_$(openssl rand -hex 16)"   # any value; never a real secret
+  export BILLING_SELF_SERVICE_CHECKOUT=true
+  export BILLING_RETURN_URL=http://localhost:80
+  ```
+
+  No network is used: prices are synthesized from ids such as
+  `price_fake_usd_2900_month`, Checkout/Portal URLs are local placeholders, and
+  webhooks are signed offline. Never set a real `STRIPE_SECRET_KEY` locally.
+  The repair command for existing rows is
+  `pnpm --filter @workspace/api-server exec tsx scripts/repair-subscriptions.ts` (dry-run; add `--apply`).
 
 ## 4. Development database
 
@@ -155,20 +173,20 @@ PORT=8081 EXPO_PUBLIC_API_URL="http://<YOUR-LAN-IP>:8080" pnpm exec expo start -
 
 ```bash
 pnpm run typecheck                              # all packages — PASS
-pnpm --filter @workspace/api-server run test    # 728/728 with storage configured (see note)
-pnpm --filter @workspace/web-app run test:e2e   # 43/43
-pnpm --filter @workspace/mobile run test        # 107/107
+pnpm --filter @workspace/api-server run test    # 1153 tests; 1153/1153 only with storage configured (see note)
+pnpm --filter @workspace/web-app run test:e2e   # 142/142 (needs the Batch 20 billing env, §3)
+pnpm --filter @workspace/mobile run test        # 114/114
 pnpm --filter @workspace/api-server run build   # PASS → dist/index.mjs
 pnpm --filter @workspace/web-app run build      # PASS → dist/public (env-free)
 ```
 
-> **Object-storage-gated subset:** 27 of the 728 API tests exercise GCS-backed
+> **Object-storage-gated subset:** 27 of the API tests exercise GCS-backed
 > uploads (document upload/download/versioning, the stored-scan-image
 > reprocess, executive report export artifacts). Without object-storage
-> credentials the local result is **701 passed / 9 failed / 18 skipped — all
-> 27 in that storage subset; everything else green**. Configure the GCS vars
-> from `.env.example` §1d (dev bucket + service account, never production) to
-> reach literal 728/728.
+> credentials the local result is **1116 passed / 9 failed / 28 skipped of
+> 1153 — the 9 failures and 18 of the skips are that storage subset; everything
+> else green**. Configure the GCS vars from `.env.example` §1d (dev bucket +
+> service account, never production) to reach a fully green run.
 
 **API suite rules** (`artifacts/api-server/vitest.config.ts`): it is an
 integration suite against the **live** API at `http://localhost:80/api` — the

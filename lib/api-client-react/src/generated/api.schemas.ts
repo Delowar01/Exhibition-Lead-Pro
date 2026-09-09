@@ -323,6 +323,51 @@ export const UserEmploymentStatus = {
   offboarded: 'offboarded',
 } as const;
 
+export type SubscriptionSummaryStatus = typeof SubscriptionSummaryStatus[keyof typeof SubscriptionSummaryStatus];
+
+
+export const SubscriptionSummaryStatus = {
+  trialing: 'trialing',
+  active: 'active',
+  past_due: 'past_due',
+  cancelled: 'cancelled',
+  expired: 'expired',
+  suspended: 'suspended',
+} as const;
+
+export type SubscriptionSummaryBillingSource = typeof SubscriptionSummaryBillingSource[keyof typeof SubscriptionSummaryBillingSource];
+
+
+export const SubscriptionSummaryBillingSource = {
+  manual: 'manual',
+  stripe: 'stripe',
+} as const;
+
+export type SubscriptionSummaryAccessMode = typeof SubscriptionSummaryAccessMode[keyof typeof SubscriptionSummaryAccessMode];
+
+
+export const SubscriptionSummaryAccessMode = {
+  full: 'full',
+  read_only: 'read_only',
+  blocked: 'blocked',
+} as const;
+
+export interface SubscriptionSummary {
+  plan: string;
+  status: SubscriptionSummaryStatus;
+  billingSource: SubscriptionSummaryBillingSource;
+  accessMode: SubscriptionSummaryAccessMode;
+  /** @nullable */
+  reasonCode?: string | null;
+  /** @nullable */
+  message?: string | null;
+  /** @nullable */
+  trialExpiresAt?: string | null;
+  /** @nullable */
+  currentPeriodEndsAt?: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
 export type UserPermissions = {[key: string]: string[]};
 
 export interface User {
@@ -366,6 +411,7 @@ export interface User {
   /** @nullable */
   teamName?: string | null;
   createdAt: string;
+  subscription?: SubscriptionSummary | null;
 }
 
 /**
@@ -1389,6 +1435,7 @@ export interface Company {
   userCount?: number;
   contactCount?: number;
   scanCount?: number;
+  subscription?: SubscriptionSummary | null;
   createdAt: string;
 }
 
@@ -1425,28 +1472,6 @@ export interface CompanyInput {
   plan?: CompanyInputPlan;
 }
 
-export type CompanyUpdatePlan = typeof CompanyUpdatePlan[keyof typeof CompanyUpdatePlan];
-
-
-export const CompanyUpdatePlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
-} as const;
-
-export type CompanyUpdateStatus = typeof CompanyUpdateStatus[keyof typeof CompanyUpdateStatus];
-
-
-export const CompanyUpdateStatus = {
-  trial: 'trial',
-  active: 'active',
-  suspended: 'suspended',
-  expired: 'expired',
-  cancelled: 'cancelled',
-} as const;
-
 export interface CompanyUpdate {
   name?: string;
   /** @nullable */
@@ -1459,10 +1484,6 @@ export interface CompanyUpdate {
   vatNumber?: string | null;
   /** @nullable */
   website?: string | null;
-  plan?: CompanyUpdatePlan;
-  status?: CompanyUpdateStatus;
-  /** @nullable */
-  suspendedReason?: string | null;
 }
 
 export type ContactStatus = typeof ContactStatus[keyof typeof ContactStatus];
@@ -3242,87 +3263,439 @@ export interface CalendarInviteResult {
   communication: LeadActivity;
 }
 
-export type SubscriptionPlan = typeof SubscriptionPlan[keyof typeof SubscriptionPlan];
+export type EffectiveLimitResource = typeof EffectiveLimitResource[keyof typeof EffectiveLimitResource];
 
 
-export const SubscriptionPlan = {
-  free: 'free',
-  starter: 'starter',
-  professional: 'professional',
-  business: 'business',
-  enterprise: 'enterprise',
+export const EffectiveLimitResource = {
+  contacts: 'contacts',
+  events: 'events',
+  admins: 'admins',
+  employees: 'employees',
+  scans: 'scans',
+  storageMb: 'storageMb',
 } as const;
+
+export type EffectiveLimitSource = typeof EffectiveLimitSource[keyof typeof EffectiveLimitSource];
+
+
+export const EffectiveLimitSource = {
+  override: 'override',
+  plan: 'plan',
+  unlimited: 'unlimited',
+} as const;
+
+export interface EffectiveLimit {
+  resource: EffectiveLimitResource;
+  /**
+     * null = unlimited
+     * @nullable
+     */
+  limit: number | null;
+  source: EffectiveLimitSource;
+}
+
+export type ResourceUsageResource = typeof ResourceUsageResource[keyof typeof ResourceUsageResource];
+
+
+export const ResourceUsageResource = {
+  contacts: 'contacts',
+  events: 'events',
+  admins: 'admins',
+  employees: 'employees',
+  scans: 'scans',
+  storageMb: 'storageMb',
+} as const;
+
+export type ResourceUsageSource = typeof ResourceUsageSource[keyof typeof ResourceUsageSource];
+
+
+export const ResourceUsageSource = {
+  override: 'override',
+  plan: 'plan',
+  unlimited: 'unlimited',
+} as const;
+
+export type ResourceUsageDetails = { [key: string]: unknown };
+
+export interface ResourceUsage {
+  resource: ResourceUsageResource;
+  used: number;
+  /** @nullable */
+  limit: number | null;
+  /** @nullable */
+  remaining: number | null;
+  source: ResourceUsageSource;
+  enforced: boolean;
+  /** false when the resource cannot be measured durably (storage) — reported honestly, not enforced */
+  measurable: boolean;
+  details?: ResourceUsageDetails;
+}
+
+export type SubscriptionUsageWindowSource = typeof SubscriptionUsageWindowSource[keyof typeof SubscriptionUsageWindowSource];
+
+
+export const SubscriptionUsageWindowSource = {
+  billing_period: 'billing_period',
+  anchored_month: 'anchored_month',
+} as const;
+
+export type SubscriptionUsageWindow = {
+  startsAt: string;
+  endsAt: string;
+  source: SubscriptionUsageWindowSource;
+};
+
+export interface SubscriptionUsage {
+  window: SubscriptionUsageWindow;
+  resources: ResourceUsage[];
+}
+
+export interface SubscriptionBillingCapabilities {
+  providerConfigured: boolean;
+  selfServiceCheckoutEnabled: boolean;
+  checkoutAvailable: boolean;
+  /** @nullable */
+  checkoutUnavailableReason?: string | null;
+  portalAvailable: boolean;
+  /** @nullable */
+  portalUnavailableReason?: string | null;
+  managedByPlatform: boolean;
+}
 
 export type SubscriptionStatus = typeof SubscriptionStatus[keyof typeof SubscriptionStatus];
 
 
 export const SubscriptionStatus = {
-  trial: 'trial',
+  trialing: 'trialing',
   active: 'active',
-  suspended: 'suspended',
-  expired: 'expired',
+  past_due: 'past_due',
   cancelled: 'cancelled',
+  expired: 'expired',
+  suspended: 'suspended',
+} as const;
+
+export type SubscriptionBillingSource = typeof SubscriptionBillingSource[keyof typeof SubscriptionBillingSource];
+
+
+export const SubscriptionBillingSource = {
+  manual: 'manual',
+  stripe: 'stripe',
+} as const;
+
+export type SubscriptionAccessMode = typeof SubscriptionAccessMode[keyof typeof SubscriptionAccessMode];
+
+
+export const SubscriptionAccessMode = {
+  full: 'full',
+  read_only: 'read_only',
+  blocked: 'blocked',
 } as const;
 
 export interface Subscription {
   id: number;
   companyId: number;
-  plan: SubscriptionPlan;
+  plan: string;
   status: SubscriptionStatus;
-  scansUsed?: number;
+  billingSource: SubscriptionBillingSource;
+  accessMode: SubscriptionAccessMode;
   /** @nullable */
-  scansLimit?: number | null;
+  accessReasonCode?: string | null;
   /** @nullable */
-  usersLimit?: number | null;
+  accessMessage?: string | null;
   /** @nullable */
-  adminsLimit?: number | null;
+  trialStartedAt?: string | null;
   /** @nullable */
-  employeesLimit?: number | null;
+  trialExpiresAt?: string | null;
   /** @nullable */
-  contactsLimit?: number | null;
+  currentPeriodStartsAt?: string | null;
   /** @nullable */
-  eventsLimit?: number | null;
+  currentPeriodEndsAt?: string | null;
+  cancelAtPeriodEnd: boolean;
   /** @nullable */
-  storageLimitMb?: number | null;
+  canceledAt?: string | null;
   /** @nullable */
-  apiLimit?: number | null;
+  endedAt?: string | null;
   /** @nullable */
-  trialEndsAt?: string | null;
-  /** @nullable */
-  renewalDate?: string | null;
+  suspendedAt?: string | null;
+  statusChangedAt: string;
+  providerLinked: boolean;
+  providerSubscriptionLinked: boolean;
+  billing: SubscriptionBillingCapabilities;
+  limits: EffectiveLimit[];
+  usage: SubscriptionUsage;
 }
 
-export type PlanFeatures = {[key: string]: boolean};
+export interface PlanPrice {
+  id: number;
+  planId: string;
+  interval: string;
+  intervalCount: number;
+  currency: string;
+  unitAmountMinor: number;
+  /** @nullable */
+  nickname?: string | null;
+  active: boolean;
+}
+
+export type PlanLimits = {
+  /** @nullable */
+  contacts: number | null;
+  /** @nullable */
+  events: number | null;
+  /** @nullable */
+  admins: number | null;
+  /** @nullable */
+  employees: number | null;
+  /** @nullable */
+  scans: number | null;
+  /** @nullable */
+  storageMb: number | null;
+};
 
 export interface Plan {
   id: string;
   name: string;
   /** @nullable */
   description?: string | null;
-  priceMonthly: number;
-  currency?: string;
-  /** @nullable */
-  adminsLimit?: number | null;
-  /** @nullable */
-  employeesLimit?: number | null;
-  /** @nullable */
-  contactsLimit?: number | null;
-  /** @nullable */
-  eventsLimit?: number | null;
-  /** @nullable */
-  storageLimitMb?: number | null;
-  /** @nullable */
-  apiLimit?: number | null;
-  trialDays?: number;
-  features: PlanFeatures;
-  sortOrder?: number;
-  isActive?: boolean;
+  trialDays: number;
+  sortOrder: number;
+  limits: PlanLimits;
+  prices: PlanPrice[];
 }
 
-export type SubscriptionUpgradeInputPlan = typeof SubscriptionUpgradeInputPlan[keyof typeof SubscriptionUpgradeInputPlan];
+export interface CreateCheckoutSessionInput {
+  /** Internal active plan-price mapping id. No provider ids, amounts, currencies or URLs are accepted. */
+  planPriceId: number;
+}
+
+export type CheckoutSessionResponseStatus = typeof CheckoutSessionResponseStatus[keyof typeof CheckoutSessionResponseStatus];
 
 
-export const SubscriptionUpgradeInputPlan = {
+export const CheckoutSessionResponseStatus = {
+  created: 'created',
+  reused: 'reused',
+} as const;
+
+export interface CheckoutSessionResponse {
+  url: string;
+  status: CheckoutSessionResponseStatus;
+}
+
+export interface PortalSessionResponse {
+  url: string;
+}
+
+/**
+ * Raw provider event (verified by signature; never persisted)
+ */
+export interface StripeWebhookPayload { [key: string]: unknown }
+
+export interface WebhookAck {
+  received: boolean;
+  outcome: string;
+}
+
+export type PlatformSubscriptionListItemStatus = typeof PlatformSubscriptionListItemStatus[keyof typeof PlatformSubscriptionListItemStatus];
+
+
+export const PlatformSubscriptionListItemStatus = {
+  trialing: 'trialing',
+  active: 'active',
+  past_due: 'past_due',
+  cancelled: 'cancelled',
+  expired: 'expired',
+  suspended: 'suspended',
+} as const;
+
+export type PlatformSubscriptionListItemBillingSource = typeof PlatformSubscriptionListItemBillingSource[keyof typeof PlatformSubscriptionListItemBillingSource];
+
+
+export const PlatformSubscriptionListItemBillingSource = {
+  manual: 'manual',
+  stripe: 'stripe',
+} as const;
+
+export type PlatformSubscriptionListItemAccessMode = typeof PlatformSubscriptionListItemAccessMode[keyof typeof PlatformSubscriptionListItemAccessMode];
+
+
+export const PlatformSubscriptionListItemAccessMode = {
+  full: 'full',
+  read_only: 'read_only',
+  blocked: 'blocked',
+} as const;
+
+export interface PlatformSubscriptionListItem {
+  id: number;
+  companyId: number;
+  companyName: string;
+  plan: string;
+  status: PlatformSubscriptionListItemStatus;
+  billingSource: PlatformSubscriptionListItemBillingSource;
+  accessMode: PlatformSubscriptionListItemAccessMode;
+  /** @nullable */
+  trialExpiresAt?: string | null;
+  /** @nullable */
+  currentPeriodEndsAt?: string | null;
+  cancelAtPeriodEnd: boolean;
+  providerLinked: boolean;
+  statusChangedAt: string;
+  companyCreatedAt: string;
+}
+
+export interface PlatformSubscriptionList {
+  subscriptions: PlatformSubscriptionListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type PlatformSubscriptionDetailLimitOverrides = {[key: string]: number | null};
+
+export type PlatformSubscriptionDetail = Subscription & ({
+  /** @nullable */
+  companyName: string | null;
+  limitOverrides: PlatformSubscriptionDetailLimitOverrides;
+  allowedActions: string[];
+  /** @nullable */
+  suspendedReason?: string | null;
+  /** @nullable */
+  statusBeforeSuspension?: string | null;
+  /** @nullable */
+  providerStatus?: string | null;
+  /** @nullable */
+  providerSyncedAt?: string | null;
+  /**
+     * Masked diagnostic reference (never the full provider id)
+     * @nullable
+     */
+  providerCustomerRef?: string | null;
+  /** @nullable */
+  providerSubscriptionRef?: string | null;
+});
+
+export type PlatformSyncResultOutcome = typeof PlatformSyncResultOutcome[keyof typeof PlatformSyncResultOutcome];
+
+
+export const PlatformSyncResultOutcome = {
+  applied: 'applied',
+  stale: 'stale',
+  no_change: 'no_change',
+  mismatch: 'mismatch',
+} as const;
+
+export interface PlatformSyncResult {
+  outcome: PlatformSyncResultOutcome;
+  subscription: Subscription;
+}
+
+export type ProviderEventListEventsItem = {
+  id: number;
+  eventType: string;
+  /** @nullable */
+  eventRef?: string | null;
+  status: string;
+  /** @nullable */
+  outcome?: string | null;
+  /** @nullable */
+  failureCode?: string | null;
+  receivedAt: string;
+  /** @nullable */
+  processedAt?: string | null;
+};
+
+export interface ProviderEventList {
+  events: ProviderEventListEventsItem[];
+}
+
+/**
+ * Computed only from active provider-managed subscriptions bound to verified prices; otherwise available=false with a reason. Never an estimate.
+ */
+export interface RevenueSnapshot {
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+  /** @nullable */
+  currency: string | null;
+  /** @nullable */
+  monthlyRecurringMinor: number | null;
+  countedSubscriptions: number;
+  unpricedSubscriptions: number;
+}
+
+export type PlatformSubscriptionMetricsByStatusItem = {
+  status: string;
+  count: number;
+};
+
+export type PlatformSubscriptionMetricsByPlanItem = {
+  plan: string;
+  count: number;
+};
+
+export type PlatformSubscriptionMetricsByBillingSourceItem = {
+  billingSource: string;
+  count: number;
+};
+
+export interface PlatformSubscriptionMetrics {
+  byStatus: PlatformSubscriptionMetricsByStatusItem[];
+  byPlan: PlatformSubscriptionMetricsByPlanItem[];
+  byBillingSource: PlatformSubscriptionMetricsByBillingSourceItem[];
+  trialsExpiringWithin7Days: number;
+  revenue?: RevenueSnapshot;
+}
+
+export interface TrendDataPoint {
+  date: string;
+  value: number;
+  /** @nullable */
+  label?: string | null;
+}
+
+export interface RevenueTrend {
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+  points: TrendDataPoint[];
+}
+
+export type PlatformBillingStatusProvider = typeof PlatformBillingStatusProvider[keyof typeof PlatformBillingStatusProvider];
+
+
+export const PlatformBillingStatusProvider = {
+  stripe: 'stripe',
+  fake: 'fake',
+  unavailable: 'unavailable',
+} as const;
+
+export interface PlatformBillingStatus {
+  provider: PlatformBillingStatusProvider;
+  available: boolean;
+  /** @nullable */
+  unavailableReason?: string | null;
+  selfServiceCheckoutEnabled: boolean;
+  automaticTax: boolean;
+  portalConfigurationSet: boolean;
+  trialDays: number;
+}
+
+export type PlatformPlanPrice = PlanPrice & ({
+  /** @nullable */
+  providerPriceRef?: string | null;
+  /** @nullable */
+  providerProductRef?: string | null;
+  verifiedAt: string;
+  createdAt: string;
+});
+
+export interface PlatformPlanPriceList {
+  prices: PlatformPlanPrice[];
+}
+
+export type PlatformSetSubscriptionPlanInputPlan = typeof PlatformSetSubscriptionPlanInputPlan[keyof typeof PlatformSetSubscriptionPlanInputPlan];
+
+
+export const PlatformSetSubscriptionPlanInputPlan = {
   free: 'free',
   starter: 'starter',
   professional: 'professional',
@@ -3330,8 +3703,83 @@ export const SubscriptionUpgradeInputPlan = {
   enterprise: 'enterprise',
 } as const;
 
-export interface SubscriptionUpgradeInput {
-  plan: SubscriptionUpgradeInputPlan;
+export interface PlatformSetSubscriptionPlanInput {
+  plan: PlatformSetSubscriptionPlanInputPlan;
+}
+
+export interface PlatformStartTrialInput {
+  trialExpiresAt?: string;
+  /**
+     * @minimum 1
+     * @maximum 365
+     */
+  trialDays?: number;
+}
+
+export interface PlatformSuspendSubscriptionInput {
+  /** @maxLength 200 */
+  reason?: string;
+}
+
+export type PlatformSetSubscriptionLimitsInputLimits = {
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  contacts?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  events?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  admins?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  employees?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  scans?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  storageMb?: number | null;
+};
+
+export interface PlatformSetSubscriptionLimitsInput {
+  limits: PlatformSetSubscriptionLimitsInputLimits;
+}
+
+export type PlatformRegisterPriceInputPlanId = typeof PlatformRegisterPriceInputPlanId[keyof typeof PlatformRegisterPriceInputPlanId];
+
+
+export const PlatformRegisterPriceInputPlanId = {
+  free: 'free',
+  starter: 'starter',
+  professional: 'professional',
+  business: 'business',
+  enterprise: 'enterprise',
+} as const;
+
+export interface PlatformRegisterPriceInput {
+  planId: PlatformRegisterPriceInputPlanId;
+  /**
+     * @minLength 6
+     * @maxLength 128
+     */
+  providerPriceId: string;
+}
+
+export interface PlatformUpdatePriceInput {
+  active: boolean;
 }
 
 export interface AdminDashboard {
@@ -3545,20 +3993,14 @@ export interface TeamMemberReport {
 
 export interface PlatformStats {
   totalCompanies: number;
+  /** Companies whose subscription grants full access today (active or trialing) */
   activeCompanies: number;
   totalUsers: number;
   totalScans: number;
   totalLeads: number;
-  monthlyRevenue: number;
-  churnRate?: number;
+  revenue: RevenueSnapshot;
+  subscriptions: PlatformSubscriptionMetrics;
   subscriptionDistribution?: StatusCount[];
-}
-
-export interface TrendDataPoint {
-  date: string;
-  value: number;
-  /** @nullable */
-  label?: string | null;
 }
 
 export interface AnalyticsKpis {
@@ -6320,6 +6762,35 @@ page?: number;
 pageSize?: number;
 unreadOnly?: boolean;
 };
+
+export type PlatformListSubscriptionsParams = {
+status?: PlatformListSubscriptionsStatus;
+plan?: string;
+billingSource?: PlatformListSubscriptionsBillingSource;
+search?: string;
+page?: number;
+limit?: number;
+};
+
+export type PlatformListSubscriptionsStatus = typeof PlatformListSubscriptionsStatus[keyof typeof PlatformListSubscriptionsStatus];
+
+
+export const PlatformListSubscriptionsStatus = {
+  trialing: 'trialing',
+  active: 'active',
+  past_due: 'past_due',
+  cancelled: 'cancelled',
+  expired: 'expired',
+  suspended: 'suspended',
+} as const;
+
+export type PlatformListSubscriptionsBillingSource = typeof PlatformListSubscriptionsBillingSource[keyof typeof PlatformListSubscriptionsBillingSource];
+
+
+export const PlatformListSubscriptionsBillingSource = {
+  manual: 'manual',
+  stripe: 'stripe',
+} as const;
 
 export type ListCompaniesParams = {
 search?: string;

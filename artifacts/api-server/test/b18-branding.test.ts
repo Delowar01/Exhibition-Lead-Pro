@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
 import { eq, like, and, inArray } from "drizzle-orm";
 import sharp from "sharp";
-import { db, companiesTable, usersTable, auditLogsTable, loginAttemptsTable, businessCardsTable } from "@workspace/db";
+import { db, companiesTable, usersTable, auditLogsTable, loginAttemptsTable, businessCardsTable, subscriptionsTable } from "@workspace/db";
 
 // Batch 18 — Tenant branding. Runs against the LIVE API (localhost:80) like the
 // other integration suites. Logo storage is the in-process memory driver
@@ -343,14 +343,15 @@ describe("permissions and lifecycle", () => {
   });
 
   it("a cancelled (read-only) tenant can read but not mutate branding", async () => {
-    await db.update(companiesTable).set({ status: "cancelled" }).where(eq(companiesTable.id, companyA));
+    // Batch 20: access is resolved from the CANONICAL subscription row, not the legacy company column.
+    await db.update(subscriptionsTable).set({ status: "cancelled" }).where(eq(subscriptionsTable.companyId, companyA));
     try {
       expect((await api("GET", "/organization/branding", tokenA)).status).toBe(200);
       expect((await api("PUT", "/organization/branding", tokenA, { primaryColor: "#654321" })).status).toBe(403);
       expect((await upload("/organization/branding/logo", tokenA, await png(100, 100), "image/png")).status).toBe(403);
       expect((await api("POST", "/organization/branding/reset", tokenA)).status).toBe(403);
     } finally {
-      await db.update(companiesTable).set({ status: "active" }).where(eq(companiesTable.id, companyA));
+      await db.update(subscriptionsTable).set({ status: "active" }).where(eq(subscriptionsTable.companyId, companyA));
     }
     expect((await branding(tokenA)).primaryColor).toBe("#123456");
   });

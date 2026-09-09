@@ -5,33 +5,43 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { SubscriptionPlan } from './subscriptionPlan';
+import type { EffectiveLimit } from './effectiveLimit';
+import type { SubscriptionAccessMode } from './subscriptionAccessMode';
+import type { SubscriptionBillingCapabilities } from './subscriptionBillingCapabilities';
+import type { SubscriptionBillingSource } from './subscriptionBillingSource';
 import type { SubscriptionStatus } from './subscriptionStatus';
+import type { SubscriptionUsage } from './subscriptionUsage';
 
 export interface Subscription {
   id: number;
   companyId: number;
-  plan: SubscriptionPlan;
+  plan: string;
   status: SubscriptionStatus;
-  scansUsed?: number;
+  billingSource: SubscriptionBillingSource;
+  accessMode: SubscriptionAccessMode;
   /** @nullable */
-  scansLimit?: number | null;
+  accessReasonCode?: string | null;
   /** @nullable */
-  usersLimit?: number | null;
+  accessMessage?: string | null;
   /** @nullable */
-  adminsLimit?: number | null;
+  trialStartedAt?: Date | null;
   /** @nullable */
-  employeesLimit?: number | null;
+  trialExpiresAt?: Date | null;
   /** @nullable */
-  contactsLimit?: number | null;
+  currentPeriodStartsAt?: Date | null;
   /** @nullable */
-  eventsLimit?: number | null;
+  currentPeriodEndsAt?: Date | null;
+  cancelAtPeriodEnd: boolean;
   /** @nullable */
-  storageLimitMb?: number | null;
+  canceledAt?: Date | null;
   /** @nullable */
-  apiLimit?: number | null;
+  endedAt?: Date | null;
   /** @nullable */
-  trialEndsAt?: Date | null;
-  /** @nullable */
-  renewalDate?: Date | null;
+  suspendedAt?: Date | null;
+  statusChangedAt: Date;
+  providerLinked: boolean;
+  providerSubscriptionLinked: boolean;
+  billing: SubscriptionBillingCapabilities;
+  limits: EffectiveLimit[];
+  usage: SubscriptionUsage;
 }

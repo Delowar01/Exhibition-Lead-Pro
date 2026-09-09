@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import type { Request } from "express";
 import { and, eq, desc } from "drizzle-orm";
-import { db, sessionsTable, usersTable, companiesTable, type Session } from "@workspace/db";
+import { db, sessionsTable, usersTable, type Session } from "@workspace/db";
 import { config } from "../config.js";
-import { evaluateCompanyAccess } from "./company-access.js";
+import { loadTenantAccess } from "./company-access.js";
 import {
   signAccessToken,
   generateRefreshToken,
@@ -131,16 +131,9 @@ export async function rotateSession(rawToken: string, req: Request): Promise<Rot
   // family alive indefinitely). The family is NOT revoked — suspension can be
   // temporary and lifting it should restore existing sessions.
   if (user.companyId) {
-    const [company] = await db
-      .select({ status: companiesTable.status, trialEndsAt: companiesTable.trialEndsAt })
-      .from(companiesTable)
-      .where(eq(companiesTable.id, user.companyId))
-      .limit(1);
-    if (company) {
-      const access = evaluateCompanyAccess(company);
-      if (access.blocked) {
-        return { ok: false, status: 403, error: access.reason };
-      }
+    const tenant = await loadTenantAccess(user.companyId);
+    if (tenant.access.blocked) {
+      return { ok: false, status: 403, error: tenant.access.reason };
     }
   }
 

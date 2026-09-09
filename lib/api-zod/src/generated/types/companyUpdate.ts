@@ -5,8 +5,6 @@
  * Card Scanner Pro API
  * OpenAPI spec version: 0.1.0
  */
-import type { CompanyUpdatePlan } from './companyUpdatePlan';
-import type { CompanyUpdateStatus } from './companyUpdateStatus';
 
 export interface CompanyUpdate {
   name?: string;
@@ -20,8 +18,4 @@ export interface CompanyUpdate {
   vatNumber?: string | null;
   /** @nullable */
   website?: string | null;
-  plan?: CompanyUpdatePlan;
-  status?: CompanyUpdateStatus;
-  /** @nullable */
-  suspendedReason?: string | null;
 }
