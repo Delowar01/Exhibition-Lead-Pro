@@ -61,6 +61,7 @@ export function normalizeProviderSubscription(o: Obj): ProviderSubscription {
   const price = first?.price;
   return {
     id: str(o, "id") ?? "",
+    livemode: bool(o, "livemode"),
     customerId: refId(o.customer) ?? "",
     status: str(o, "status") ?? "unknown",
     priceId: refId(price),
@@ -79,6 +80,7 @@ export function normalizeProviderSubscription(o: Obj): ProviderSubscription {
 export function normalizeProviderCheckoutSession(o: Obj): ProviderCheckoutSession {
   return {
     id: str(o, "id") ?? "",
+    livemode: bool(o, "livemode"),
     url: str(o, "url"),
     status: str(o, "status"),
     customerId: refId(o.customer),
@@ -93,6 +95,7 @@ export function normalizeProviderPrice(o: Obj): ProviderPrice {
   const recurring = (o.recurring as Obj | null | undefined) ?? null;
   return {
     id: str(o, "id") ?? "",
+    livemode: bool(o, "livemode"),
     productId: refId(o.product),
     currency: (str(o, "currency") ?? "").toLowerCase(),
     unitAmountMinor: num(o, "unit_amount"),
@@ -180,6 +183,15 @@ export class StripeBillingProvider implements BillingProvider {
       const e = toProviderError(err);
       if (e.providerStatus === 404) return null;
       throw e;
+    }
+  }
+
+  async expireCheckoutSession(sessionId: string): Promise<ProviderCheckoutSession> {
+    try {
+      const s = await this.stripe.checkout.sessions.expire(sessionId);
+      return normalizeProviderCheckoutSession(s as unknown as Obj);
+    } catch (err) {
+      throw toProviderError(err);
     }
   }
 

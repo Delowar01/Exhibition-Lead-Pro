@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlatformSubscriptionDetailLimitOverrides } from './platformSubscriptionDetailLimitOverrides';
+import type { ProviderEventDiagnostic } from './providerEventDiagnostic';
 import type { Subscription } from './subscription';
 
 export type PlatformSubscriptionDetail = Subscription & ({
@@ -28,4 +29,8 @@ export type PlatformSubscriptionDetail = Subscription & ({
   providerCustomerRef?: string | null;
   /** @nullable */
   providerSubscriptionRef?: string | null;
+  /** Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none */
+  providerConflict?: null | ProviderEventDiagnostic;
+  /** Latest provider delivery that could not be applied because its price is not registered; null when none */
+  providerPriceUnmapped?: null | ProviderEventDiagnostic;
 });

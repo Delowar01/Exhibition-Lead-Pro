@@ -12,6 +12,7 @@ import type { AppLanguage } from "../lib/ai.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { generateFile, type ExportFormat } from "../lib/export-generate.js";
 import { uploadExportBuffer, exportDownloadURL } from "../lib/exportStorage.js";
+import { assertTenantWritable } from "../lib/company-access.js";
 
 // Stage 5C — Enterprise AI Executive Intelligence orchestration.
 //
@@ -863,6 +864,9 @@ export async function runExecutiveReportJob(payload: ExecutiveReportJobPayload):
     // isolated exactly as it was at request time (accessibleCompanies/role/perms).
     const worker = await loadAuthUserById(payload.userId);
     if (!worker || worker.companyId !== companyId) throw new AppError(403, "Report requester is no longer authorized");
+    // B20 Correction 1: re-read the CANONICAL entitlement at execution time — a
+    // read-only / blocked tenant gets no artifact (deterministic failure, no retry).
+    await assertTenantWritable(companyId);
     const dash = await getExecutiveDashboard(worker, {
       scopeType: payload.scopeType,
       id: payload.scopeId === 0 ? undefined : payload.scopeId,

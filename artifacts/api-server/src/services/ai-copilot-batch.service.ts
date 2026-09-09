@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { assertEntityType, assertOutputType, generateForBatch, listAvailable } from "./ai-copilot.service.js";
 import type { EntityType, OutputType } from "../repositories/ai_copilot_outputs.repository.js";
+import { assertTenantWritable } from "../lib/company-access.js";
 
 // Batch runner for the Stage 5B AI Sales Copilot. It lets a tenant generate ONE output
 // type (e.g. a follow-up draft) across ALL records of one entity type at once. Mirrors the
@@ -142,6 +143,8 @@ export async function runAiCopilotGenerateJob(payload: AiCopilotJobPayload): Pro
   if (!job) return;
   if (job.status === "queued") job.status = "running";
   try {
+    // B20 Correction 1: re-read the CANONICAL entitlement before any provider call.
+    if (payload.user.companyId != null) await assertTenantWritable(payload.user.companyId);
     await generateForBatch(payload.user, payload.entityType, payload.entityId, payload.outputType);
     job.succeeded += 1;
   } catch (err) {

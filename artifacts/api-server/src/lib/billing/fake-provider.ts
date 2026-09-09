@@ -16,18 +16,32 @@ import { normalizeProviderCheckoutSession, normalizeProviderEvent, normalizeProv
 // Batch 20 — deterministic FAKE provider for automated tests and local
 // development. NEVER selectable in production (config guard). No network:
 //   • prices are synthesized from the id itself:  price_fake_<currency>_<minor>_<interval>
-//     (e.g. price_fake_usd_2900_month); any other id is "resource_missing".
-//   • one customer per company (cus_fake_<companyId>) — creating it twice is idempotent.
-//   • a Checkout session is derived from the idempotency key (same key → same session).
+//     (e.g. price_fake_usd_2900_month); `price_fake_live_…` synthesizes a LIVE-mode price
+//     (mode-mismatch tests); any other id is "resource_missing".
+//   • one customer per company (cus_fake_<companyId>) — creating it twice is idempotent
+//     (the idempotency key → customer id is remembered, like the real provider).
+//   • a Checkout session is derived from the idempotency key (same key → same session);
+//     the remote session registry can be inspected, expired and counted by tests
+//     (B20 Correction 1: provider-side expiration is a real state change here).
 //   • webhook signatures are verified with the OFFICIAL Stripe SDK against the
 //     configured webhook secret, exactly like the real provider. Every verified
 //     subscription / checkout object is remembered (newest `created` wins) so a later
 //     retrieveSubscription() returns the provider's most recent state — which is how
 //     out-of-order deliveries are exercised without a network.
+//   • every object it produces is TEST mode (livemode=false).
 
 type Obj = Record<string, unknown>;
 
-const PRICE_RE = /^price_fake_([a-z]{3})_(\d{1,9})_(month|year|week|day)$/;
+const PRICE_RE = /^price_fake_(live_)?([a-z]{3})_(\d{1,9})_(month|year|week|day)$/;
+
+export type FakeProviderMethod =
+  | "retrievePrice"
+  | "createCustomer"
+  | "createCheckoutSession"
+  | "retrieveCheckoutSession"
+  | "expireCheckoutSession"
+  | "createPortalSession"
+  | "retrieveSubscription";
 
 export class FakeBillingProvider implements BillingProvider {
   readonly kind = "fake" as const;
@@ -37,7 +51,18 @@ export class FakeBillingProvider implements BillingProvider {
   private readonly webhookSecret: string;
   private readonly subscriptions = new Map<string, { created: number; object: Obj }>();
   private readonly checkoutSessions = new Map<string, ProviderCheckoutSession>();
-  private failNext: string | null = null;
+  private readonly customersByKey = new Map<string, string>();
+  private failNext: { code: string; method: FakeProviderMethod | null } | null = null;
+  // Inspectable counters (tests): how many times each remote operation ran.
+  readonly calls: Record<FakeProviderMethod, number> = {
+    retrievePrice: 0,
+    createCustomer: 0,
+    createCheckoutSession: 0,
+    retrieveCheckoutSession: 0,
+    expireCheckoutSession: 0,
+    createPortalSession: 0,
+    retrieveSubscription: 0,
+  };
 
   constructor(webhookSecret: string) {
     // Placeholder key: used only for the SDK's offline webhook-signature helpers.
@@ -45,28 +70,50 @@ export class FakeBillingProvider implements BillingProvider {
     this.webhookSecret = webhookSecret;
   }
 
-  // Test hook: the next provider call fails with the given sanitized code.
-  __failNextCall(code: string | null): void {
-    this.failNext = code;
+  // Test hook: the next provider call (optionally only the named method) fails
+  // with the given sanitized code. `null` clears it.
+  __failNextCall(code: string | null, method: FakeProviderMethod | null = null): void {
+    this.failNext = code ? { code, method } : null;
   }
-  private maybeFail(): void {
-    if (this.failNext) {
-      const code = this.failNext;
+  private maybeFail(method: FakeProviderMethod): void {
+    this.calls[method] += 1;
+    if (this.failNext && (this.failNext.method === null || this.failNext.method === method)) {
+      const code = this.failNext.code;
       this.failNext = null;
       throw new BillingProviderError(code, { providerStatus: 503, retryable: true });
     }
   }
 
+  // ── inspection helpers (tests) ────────────────────────────────────────────
+  remoteSessions(): ProviderCheckoutSession[] {
+    return [...this.checkoutSessions.values()];
+  }
+  remoteSession(id: string): ProviderCheckoutSession | undefined {
+    return this.checkoutSessions.get(id);
+  }
+  remoteOpenSessionCount(customerId?: string): number {
+    return this.remoteSessions().filter((s) => s.status === "open" && (!customerId || s.customerId === customerId)).length;
+  }
+  // Seeds a provider-side subscription object without a webhook (simulates an
+  // object Stripe already holds, e.g. "completed" arriving before "created").
+  __seedSubscription(object: Obj, created = Math.floor(Date.now() / 1000)): void {
+    this.recordObject("subscription", object, created);
+  }
+  __resetCounters(): void {
+    for (const k of Object.keys(this.calls) as FakeProviderMethod[]) this.calls[k] = 0;
+  }
+
   async retrievePrice(priceId: string): Promise<ProviderPrice> {
-    this.maybeFail();
+    this.maybeFail("retrievePrice");
     const m = priceId.match(PRICE_RE);
     if (!m) throw new BillingProviderError("StripeInvalidRequestError:resource_missing", { providerStatus: 404 });
     return {
       id: priceId,
-      productId: `prod_fake_${m[1]}`,
-      currency: m[1],
-      unitAmountMinor: Number(m[2]),
-      recurringInterval: m[3],
+      livemode: m[1] === "live_",
+      productId: `prod_fake_${m[2]}`,
+      currency: m[2],
+      unitAmountMinor: Number(m[3]),
+      recurringInterval: m[4],
       recurringIntervalCount: 1,
       active: true,
       nickname: null,
@@ -75,17 +122,22 @@ export class FakeBillingProvider implements BillingProvider {
   }
 
   async createCustomer(input: CreateCustomerInput): Promise<{ id: string }> {
-    this.maybeFail();
-    return { id: `cus_fake_${input.companyId}` };
+    this.maybeFail("createCustomer");
+    const existing = this.customersByKey.get(input.idempotencyKey);
+    if (existing) return { id: existing };
+    const id = `cus_fake_${input.companyId}`;
+    this.customersByKey.set(input.idempotencyKey, id);
+    return { id };
   }
 
   async createCheckoutSession(input: CreateCheckoutInput): Promise<ProviderCheckoutSession> {
-    this.maybeFail();
+    this.maybeFail("createCheckoutSession");
     const id = `cs_fake_${createHash("sha256").update(input.idempotencyKey).digest("hex").slice(0, 24)}`;
     const existing = this.checkoutSessions.get(id);
     if (existing) return existing;
     const session: ProviderCheckoutSession = {
       id,
+      livemode: false,
       url: `https://checkout.fake.local/c/${id}`,
       status: "open",
       customerId: input.customerId,
@@ -99,17 +151,29 @@ export class FakeBillingProvider implements BillingProvider {
   }
 
   async retrieveCheckoutSession(sessionId: string): Promise<ProviderCheckoutSession | null> {
-    this.maybeFail();
+    this.maybeFail("retrieveCheckoutSession");
     return this.checkoutSessions.get(sessionId) ?? null;
   }
 
+  // Provider-side expiration: only an OPEN session can be expired (Stripe answers
+  // 400 invalid_request for any other state).
+  async expireCheckoutSession(sessionId: string): Promise<ProviderCheckoutSession> {
+    this.maybeFail("expireCheckoutSession");
+    const s = this.checkoutSessions.get(sessionId);
+    if (!s) throw new BillingProviderError("StripeInvalidRequestError:resource_missing", { providerStatus: 404 });
+    if (s.status !== "open") throw new BillingProviderError("StripeInvalidRequestError:checkout_session_not_open", { providerStatus: 400 });
+    const expired = { ...s, status: "expired", url: null };
+    this.checkoutSessions.set(sessionId, expired);
+    return expired;
+  }
+
   async createPortalSession(input: CreatePortalInput): Promise<{ url: string }> {
-    this.maybeFail();
+    this.maybeFail("createPortalSession");
     return { url: `https://billing.fake.local/p/${input.customerId}` };
   }
 
   async retrieveSubscription(subscriptionId: string): Promise<ProviderSubscription | null> {
-    this.maybeFail();
+    this.maybeFail("retrieveSubscription");
     const rec = this.subscriptions.get(subscriptionId);
     return rec ? normalizeProviderSubscription(rec.object) : null;
   }
@@ -124,7 +188,7 @@ export class FakeBillingProvider implements BillingProvider {
     } else if (objectType === "checkout.session") {
       const s = normalizeProviderCheckoutSession(object);
       const prev = this.checkoutSessions.get(id);
-      this.checkoutSessions.set(id, { ...(prev ?? s), ...s, url: prev?.url ?? s.url });
+      this.checkoutSessions.set(id, { ...(prev ?? s), ...s, url: prev?.url ?? s.url, livemode: prev?.livemode ?? s.livemode });
     }
   }
 

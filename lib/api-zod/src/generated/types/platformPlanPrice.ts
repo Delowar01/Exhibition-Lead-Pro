@@ -6,12 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlanPrice } from './planPrice';
+import type { PlatformPlanPriceProviderMode } from './platformPlanPriceProviderMode';
 
 export type PlatformPlanPrice = PlanPrice & ({
   /** @nullable */
   providerPriceRef?: string | null;
   /** @nullable */
   providerProductRef?: string | null;
+  /** Verified provider mode of the price at registration */
+  providerMode: PlatformPlanPriceProviderMode;
   verifiedAt: Date;
   createdAt: Date;
 });

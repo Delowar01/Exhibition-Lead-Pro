@@ -3551,6 +3551,17 @@ export interface PlatformSubscriptionList {
 
 export type PlatformSubscriptionDetailLimitOverrides = {[key: string]: number | null};
 
+export interface ProviderEventDiagnostic {
+  eventType: string;
+  /**
+     * Masked provider event reference
+     * @nullable
+     */
+  eventRef: string | null;
+  receivedAt: string;
+  attempts?: number;
+}
+
 export type PlatformSubscriptionDetail = Subscription & ({
   /** @nullable */
   companyName: string | null;
@@ -3571,6 +3582,10 @@ export type PlatformSubscriptionDetail = Subscription & ({
   providerCustomerRef?: string | null;
   /** @nullable */
   providerSubscriptionRef?: string | null;
+  /** Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none */
+  providerConflict?: null | ProviderEventDiagnostic;
+  /** Latest provider delivery that could not be applied because its price is not registered; null when none */
+  providerPriceUnmapped?: null | ProviderEventDiagnostic;
 });
 
 export type PlatformSyncResultOutcome = typeof PlatformSyncResultOutcome[keyof typeof PlatformSyncResultOutcome];
@@ -3581,6 +3596,8 @@ export const PlatformSyncResultOutcome = {
   stale: 'stale',
   no_change: 'no_change',
   mismatch: 'mismatch',
+  unbound: 'unbound',
+  conflict: 'conflict',
 } as const;
 
 export interface PlatformSyncResult {
@@ -3668,6 +3685,31 @@ export const PlatformBillingStatusProvider = {
   unavailable: 'unavailable',
 } as const;
 
+/**
+ * Explicitly configured provider mode enforced on every price, session, subscription and event (null = invalid setting)
+ * @nullable
+ */
+export type PlatformBillingStatusStripeMode = typeof PlatformBillingStatusStripeMode[keyof typeof PlatformBillingStatusStripeMode] | null;
+
+
+export const PlatformBillingStatusStripeMode = {
+  test: 'test',
+  live: 'live',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PlatformBillingStatusReturnUrlReason = typeof PlatformBillingStatusReturnUrlReason[keyof typeof PlatformBillingStatusReturnUrlReason] | null;
+
+
+export const PlatformBillingStatusReturnUrlReason = {
+  RETURN_URL_MISSING: 'RETURN_URL_MISSING',
+  RETURN_URL_INVALID: 'RETURN_URL_INVALID',
+  RETURN_URL_INSECURE: 'RETURN_URL_INSECURE',
+  RETURN_URL_LOCALHOST: 'RETURN_URL_LOCALHOST',
+} as const;
+
 export interface PlatformBillingStatus {
   provider: PlatformBillingStatusProvider;
   available: boolean;
@@ -3677,13 +3719,35 @@ export interface PlatformBillingStatus {
   automaticTax: boolean;
   portalConfigurationSet: boolean;
   trialDays: number;
+  /**
+     * Explicitly configured provider mode enforced on every price, session, subscription and event (null = invalid setting)
+     * @nullable
+     */
+  stripeMode: PlatformBillingStatusStripeMode;
+  /** Whether the centrally validated billing return URL is usable (the URL itself is never exposed) */
+  returnUrlConfigured: boolean;
+  /** @nullable */
+  returnUrlReason: PlatformBillingStatusReturnUrlReason;
 }
+
+/**
+ * Verified provider mode of the price at registration
+ */
+export type PlatformPlanPriceProviderMode = typeof PlatformPlanPriceProviderMode[keyof typeof PlatformPlanPriceProviderMode];
+
+
+export const PlatformPlanPriceProviderMode = {
+  test: 'test',
+  live: 'live',
+} as const;
 
 export type PlatformPlanPrice = PlanPrice & ({
   /** @nullable */
   providerPriceRef?: string | null;
   /** @nullable */
   providerProductRef?: string | null;
+  /** Verified provider mode of the price at registration */
+  providerMode: PlatformPlanPriceProviderMode;
   verifiedAt: string;
   createdAt: string;
 });

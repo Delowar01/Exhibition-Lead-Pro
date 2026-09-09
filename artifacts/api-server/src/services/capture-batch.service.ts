@@ -8,6 +8,7 @@ import type { CaptureFields } from "../lib/capture-validation.js";
 import { extractCardData } from "../lib/ai.js";
 import { validateScanImage } from "../lib/image-validation.js";
 import { reserveScans, consumeReservation, releaseReservation } from "./entitlements.service.js";
+import { assertTenantWritable } from "../lib/company-access.js";
 
 // Batch runner for Stage 5E intelligent capture. It lets a tenant analyze MANY captured
 // cards at once (e.g. a mobile batch-scan session) without holding the request open.
@@ -146,6 +147,8 @@ export async function runCaptureAnalyzeJob(payload: CaptureAnalyzeJobPayload): P
   if (!job) return; // job pruned/expired — nothing to update
   if (job.status === "queued") job.status = "running";
   try {
+    // B20 Correction 1: re-read the CANONICAL entitlement before any OCR/AI provider call.
+    if (payload.user.companyId != null) await assertTenantWritable(payload.user.companyId);
     // When the item carries a raw image, run OCR first so a batch of scans goes through the
     // full OCR -> validation -> recognition pipeline. OCR-derived fields are the base; any
     // explicitly supplied fields override them (a reviewer's edits win over raw OCR).

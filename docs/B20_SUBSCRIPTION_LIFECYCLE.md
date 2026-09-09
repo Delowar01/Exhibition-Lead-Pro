@@ -88,11 +88,11 @@ Every change runs in one transaction with the row locked (`FOR UPDATE`), writes 
 **`subscriptions` — new columns:** `billing_source` (NOT NULL default `manual`), `trial_started_at`, `trial_expires_at`, `current_period_starts_at`, `current_period_ends_at`, `cancel_at_period_end` (NOT NULL default false), `canceled_at`, `ended_at`, `past_due_since`, `suspended_at`, `suspended_reason`, `status_before_suspension`, `status_changed_at` (NOT NULL default now), `usage_anchor_at`, `limit_overrides` (jsonb NOT NULL default `{}`), `stripe_price_id`, `provider_status`, `provider_synced_at`, `provider_event_created_at`; `status` default → `trialing`.
 **Indexes:** `subscriptions_status_idx`, `subscriptions_billing_source_idx`, partial UNIQUE `subscriptions_stripe_customer_ux` / `subscriptions_stripe_subscription_ux` (WHERE NOT NULL — one Stripe customer/subscription binds to at most one company).
 **`plans`:** `scans_limit` added; `price_monthly`, `currency`, `api_limit` deprecated (never read).
-**New tables:** `plan_prices` (plan FK, provider, `provider_price_id` UNIQUE, product, interval, interval_count, currency, `unit_amount_minor`, nickname, active, `verified_at`, created_by), `billing_checkout_sessions` (company/subscription FK cascade, plan price FK, `idempotency_key` UNIQUE, `provider_session_id` UNIQUE, status created|completed|expired|failed), `billing_provider_events` (`event_id` UNIQUE, type, provider created, received/processed, status received|processed|ignored|failed, outcome, failure code, attempts, company/subscription refs — **no payload**), `subscription_usage_reservations` (company FK cascade, resource, quantity, `idempotency_key` UNIQUE, status pending|consumed|released, scan id, expires/consumed/released timestamps).
+**New tables:** `plan_prices` (plan FK, provider, `provider_price_id` UNIQUE, product, interval, interval_count, currency, `unit_amount_minor`, nickname, active, `verified_at`, created_by), `billing_checkout_sessions` (company/subscription FK cascade, plan price FK, `idempotency_key` UNIQUE, `provider_session_id` UNIQUE, status creating|open|completed|expired|failed — intent states since Correction 1), `billing_provider_events` (`event_id` UNIQUE, type, provider created, received/processed, status received|processed|ignored|failed, outcome, failure code, attempts, company/subscription refs — **no payload**), `subscription_usage_reservations` (company FK cascade, resource, quantity, `idempotency_key` UNIQUE, status pending|consumed|released, scan id, expires/consumed/released timestamps).
 **Deprecated, retained (never read for access or enforcement):** `subscriptions.scans_used`, `scans_limit`, `users_limit`, `admins_limit`, `employees_limit`, `contacts_limit`, `events_limit`, `storage_limit_mb`, `api_limit`, `trial_ends_at` (date), `renewal_date` (date); `companies.plan`, `status`, `trial_ends_at`, `scans_used`.
-**Deferred by design:** a DB FK `subscriptions.plan → plans.id` and status CHECK constraints — a push adding them would fail on an environment whose plan catalog has not been seeded / whose legacy `trial` rows have not been repaired. Add them in a later batch after every environment has run the repair.
+**Correction 1 — final integrity constraints (additive, applied in a SECOND stage after the repair has run, §12/§16.7):** `subscriptions.plan → plans.id` FK, CHECKs `subscriptions_status_chk` (`trialing|active|past_due|cancelled|expired|suspended`), `subscriptions_billing_source_chk` (`manual|stripe`), `subscriptions_status_before_suspension_chk` (null or a non-suspended canonical status); `plan_prices` CHECKs provider (`stripe`), interval (`day|week|month|year`), `interval_count > 0`, `unit_amount_minor >= 0`, currency `^[a-z]{3}$`, `provider_mode` (`test|live`) + new column `provider_mode` (NOT NULL default `test`); `billing_checkout_sessions` plan FK, CHECKs provider / status (`creating|open|completed|expired|failed`) / `provider_mode`, new column `provider_mode`, status default `creating`, partial UNIQUE `billing_checkout_sessions_current_ux (company_id) WHERE status in ('creating','open')`; `billing_provider_events` CHECKs provider / `provider_mode` / status (`received|processed|ignored|failed`) / outcome (null or `applied|duplicate|stale|unbound|unsupported|mismatch|no_change|conflict|price_unmapped`) / `attempts >= 1`, new column `provider_mode`; `subscription_usage_reservations` CHECKs resource (`scans`), status (`pending|consumed|released`), `quantity > 0`. Every earlier uniqueness / partial index is kept; no column is removed, renamed or retyped.
 
-Local push classification (Drizzle `push` on a scratch copy, then the local dev DB): 41 statements — 4 CREATE TABLE, 1 default change, 22 ADD COLUMN, 5 FK on new tables, 7 CREATE INDEX, 2 partial unique indexes; **no DROP / RENAME / type change / NOT NULL on an existing column / data statement**; second pass "No changes detected".
+Push classification, stage 1 (B20 additive schema `4f42931`, rehearsed on the scratch copy of the hosted B18 schema): 39 statements — 4 CREATE TABLE, 1 default change, 20 ADD COLUMN, 5 FK on the new tables, 7 CREATE INDEX, 2 partial unique indexes; **no DROP / RENAME / type change / NOT NULL on an existing column / data statement**. Stage 2 (Correction 1 tip): 27 statements — 3 ADD COLUMN (`provider_mode` ×3, defaulted), 1 default change, 2 FK, 20 CHECK, 1 partial unique index; no destructive statement; second pass "No changes detected" (both the local dev DB and the scratch rehearsal).
 
 ---
 
@@ -121,18 +121,19 @@ Output is aggregate JSON only (counts by rule; no names, e-mails or ids beyond t
 | `STRIPE_WEBHOOK_SECRET` | required for `stripe` **and** `fake`; official SDK signature verification |
 | `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` | optional portal configuration |
 | `BILLING_SELF_SERVICE_CHECKOUT` | master switch for tenant Checkout (default off) |
-| `BILLING_RETURN_URL` (fallback `APP_BASE_URL`) | trusted return origin for Checkout/Portal; never taken from a request |
+| `BILLING_STRIPE_MODE` | **explicit expected Stripe mode** `test` \| `live` (Correction 1). Default: `live` in production, `test` elsewhere; production may use `test` only by setting it explicitly. Enforced on every Price (registration), Checkout Session, Subscription and Event `livemode`; must agree with the `sk_`/`rk_` key prefix; the fake provider is test mode only. Never inferred from user input |
+| `BILLING_RETURN_URL` (fallback `APP_BASE_URL`) | trusted return origin for Checkout/Portal; validated centrally by `validateBillingReturnUrl` (Correction 1): absolute `http(s)` URL without credentials / query / fragment; **production requires HTTPS and refuses localhost / loopback; there is no implicit localhost fallback anywhere**; development may use an explicit `http://localhost…`. Invalid → Checkout and Portal unavailable with the stable reason `RETURN_URL_INVALID` (platform status shows `RETURN_URL_MISSING|INVALID|INSECURE|LOCALHOST`); manual billing, `/readyz` and every other feature stay healthy |
 | `BILLING_AUTOMATIC_TAX` | off until the tax policy is approved |
 | `BILLING_WEBHOOK_MAX_BODY_BYTES` (256 KiB) · `BILLING_USAGE_RESERVATION_TTL_MS` (10 min) | limits |
 | `JOBS_SUBSCRIPTION_SWEEP_DELAY_MS` (20 s) · `JOBS_SUBSCRIPTION_SWEEP_INTERVAL_MS` (15 min) | sweep cadence |
 
-Selection truth table (`resolveBillingProviderSelection`, unit-tested): unset/none → unavailable `NOT_CONFIGURED`; stripe without key → `STRIPE_SECRET_KEY_MISSING`; stripe without webhook secret → `STRIPE_WEBHOOK_SECRET_MISSING`; fake in production → `FAKE_PROVIDER_FORBIDDEN`; unknown value → `UNKNOWN_PROVIDER`. When unavailable: Checkout/Portal/price registration answer `503 PROVIDER_UNAVAILABLE`, the webhook answers 503, tenants see "not available", and `/readyz` is unaffected. The official `stripe` SDK is imported only by `stripe-provider.ts` and `fake-provider.ts` (structural test). Frontends never call Stripe.
+Selection truth table (`resolveBillingProviderSelection`, unit-tested): unset/none → unavailable `NOT_CONFIGURED`; stripe without key → `STRIPE_SECRET_KEY_MISSING`; stripe without webhook secret → `STRIPE_WEBHOOK_SECRET_MISSING`; invalid `BILLING_STRIPE_MODE` → `STRIPE_MODE_INVALID`; key prefix disagreeing with the mode → `STRIPE_MODE_KEY_MISMATCH`; fake in production → `FAKE_PROVIDER_FORBIDDEN`; fake with `live` mode → `FAKE_PROVIDER_TEST_MODE_ONLY`; unknown value → `UNKNOWN_PROVIDER`. `GET /platform/billing/status` reports `stripeMode`, `returnUrlConfigured` and `returnUrlReason` (never the URL or a key). When unavailable: Checkout/Portal/price registration answer `503 PROVIDER_UNAVAILABLE`, the webhook answers 503, tenants see "not available", and `/readyz` is unaffected. The official `stripe` SDK is imported only by `stripe-provider.ts` and `fake-provider.ts` (structural test). Frontends never call Stripe.
 
 ---
 
 ## 8. Checkout, Portal and webhook mapping
 
-**Checkout (`POST /subscriptions/checkout {planPriceId}`)** — the browser sends only the internal active price-mapping id; price ids, amounts, currencies and URLs are resolved server-side. Under the subscription row lock: eligibility re-checked, an open unexpired session for the same price is **reused**, exactly one provider customer per company is created (idempotency key `customer:<sha256>`), a local session row is inserted with an opaque `checkout:<sha256(company|price|uuid)>` key, `success_url/cancel_url = BILLING_RETURN_URL/admin/subscription?checkout=success|cancelled`, metadata = opaque internal ids only (companyId, subscriptionId, checkoutId, planId — never e-mail). Provider failure → `502 PROVIDER_ERROR`, transaction rolled back, entitlement untouched. **No local entitlement changes at Checkout time.**
+**Checkout (`POST /subscriptions/checkout {planPriceId}`)** — the browser sends only the internal active price-mapping id; price ids, amounts, currencies and URLs are resolved server-side. Correction 1 made the orchestration **durable and provider-call-free under locks** (§16.1): a short transaction validates and finds-or-creates ONE durable checkout intent, the provider customer / session are created outside any transaction with keys derived from stable identifiers, and the returned URL is never stored. `success_url/cancel_url = BILLING_RETURN_URL/admin/subscription?checkout=success|cancelled`, metadata = opaque internal ids only (companyId, subscriptionId, checkoutId, planId — never e-mail). Provider failure → `502 PROVIDER_ERROR`, entitlement untouched. **No local entitlement changes at Checkout time.**
 
 **Portal (`POST /subscriptions/portal`)** — only for provider-managed rows with a linked customer; trusted return URL; audited (`subscription.portal_opened`).
 
@@ -140,15 +141,15 @@ Selection truth table (`resolveBillingProviderSelection`, unit-tested): unset/no
 
 | Event | Handling |
 |---|---|
-| `checkout.session.completed` | closes the local checkout row, links the customer, fetches the authoritative provider subscription and applies it |
-| `customer.subscription.created` / `updated` | resolve by bound ids or server metadata (all must agree → otherwise `mismatch`), fetch the provider's current object, apply |
+| `checkout.session.completed` | completes the local checkout intent (`providerSubscriptionId` recorded), links the customer, applies the authoritative provider subscription fetched **before** the transaction (the intent is the linkage proof, §16.3) |
+| `customer.subscription.created` / `updated` | resolve by bound ids, server metadata or the local intent referenced by `metadata.checkoutId` (all must agree → otherwise `mismatch`), apply the provider's current object |
 | `customer.subscription.deleted` | apply the delivered object (provider no longer holds it) |
 | `invoice.paid` / `invoice.payment_failed` | re-read the referenced provider subscription (the subscription object is the authority) and apply |
 | anything else | `unsupported` (200, recorded as ignored) |
 
-Outcomes recorded per event: `applied`, `no_change`, `duplicate`, `stale` (older than the newest applied event — out-of-order safe), `unbound`, `mismatch`, `unsupported`, `failed`. Tenants are **never** identified by e-mail.
+Outcomes recorded per event: `applied`, `no_change`, `duplicate`, `stale` (older than the newest applied event — out-of-order safe), `unbound`, `mismatch`, `unsupported`, `conflict` (a second LIVE provider subscription for a company — §16.3), `failed` (with `outcome = price_unmapped` for an unregistered price — §16.5). Every event row carries the verified `provider_mode`. Tenants are **never** identified by e-mail. The race-safe processing algorithm is in §16.4.
 
-**Provider → canonical status:** `trialing→trialing`, `active→active`, `past_due→past_due`, `unpaid→past_due`, `paused→past_due`, `canceled→cancelled`, `incomplete`/`incomplete_expired`/unknown → **entitlement unchanged**. The plan follows the **verified** price mapping the subscription is billed on; an unmapped price never changes the plan. Provider events are audited as `subscription.provider_sync` by actor `system:stripe-webhook` with the event type and opaque id only.
+**Provider → canonical status:** `trialing→trialing`, `active→active`, `past_due→past_due`, `unpaid→past_due`, `paused→past_due`, `canceled→cancelled`, `incomplete`/`incomplete_expired`/unknown → **entitlement unchanged**. The plan follows the **verified** price mapping the subscription is billed on (inactive mappings still resolve existing subscriptions); a live subscription on an **unregistered** price is a sanitized failure (`PROVIDER_PRICE_UNMAPPED`, 500 → Stripe retries; nothing changes until the operator registers the price — §16.5); a terminal event still cancels without any price. Provider events are audited as `subscription.provider_sync` by actor `system:stripe-webhook` with the event type and opaque id only.
 
 ---
 
@@ -156,9 +157,9 @@ Outcomes recorded per event: `applied`, `no_change`, `duplicate`, `stale` (older
 
 | Concern | Key / guard |
 |---|---|
-| Webhook deliveries | `billing_provider_events.event_id` UNIQUE (23505 → duplicate); failed rows retried; ordering by provider `created` vs `provider_event_created_at` |
-| Checkout | one open session per company (row lock, reuse), opaque `checkout:<sha256>` idempotency key, `provider_session_id` UNIQUE |
-| Provider customer | `customer:<sha256>` idempotency key, `stripe_customer_id` partial UNIQUE |
+| Webhook deliveries | `INSERT … ON CONFLICT (event_id) DO NOTHING` claim inside the processing transaction + `FOR UPDATE` on the existing row (no 23505 inside a transaction); only new or `failed` rows are processed; conditional failure upsert (`WHERE status = 'failed'`); `attempts` +1 per attempt; ordering by provider `created` vs `provider_event_created_at` |
+| Checkout | one durable intent per company (`billing_checkout_sessions_current_ux` partial UNIQUE over `creating|open`), provider session key `checkout:<sha256("checkout|"+companyId+"|"+intentId)>` (deterministic per intent — a retry or a concurrent request sends the SAME key), `provider_session_id` UNIQUE |
+| Provider customer | `customer:<sha256("customer|"+companyId)>` (stable per company — a retry after a local failure re-sends the same key and receives the same customer), `stripe_customer_id` partial UNIQUE |
 | Scan reservations | `scan:<company>:<user>:<sha256(image)[:32]>` and `batch:<company>:<job>:<item>`; a consumed reservation within the TTL is honoured as already paid (client retry), released on validation/OCR failure or no-card, batch reserves every image item up front and releases all on any failure |
 | Lifecycle sweep | `FOR UPDATE SKIP LOCKED` batches; the transition predicate is false on a second pass; dispatched through the durable recurring-sweep job with a cadence-bucket dedupe key |
 
@@ -191,11 +192,12 @@ Hosted read-only inspection (ops branch `ops/b20-hosted-inspection` @ `9375d8c`,
 When the batch is approved for the hosted environment, in this order:
 
 1. Fast-forward `develop` and let the existing deploy workflow build the new image (never `export-ready`/`main`).
-2. Schema push (`pnpm --filter @workspace/db run push`) — additive statements only (§5); take the usual backup first.
-3. `tsx scripts/repair-subscriptions.ts` (dry-run; expect 1 update `trial_lapsed`, 0 conflicts) → `--apply` → verify `plannedUpdates 0`. Expected effect on the single hosted row: `trial → trialing` with the same lapsed end → **blocked exactly as today**, then the sweep marks it `expired` within one cadence; the platform owner starts a trial / activates it from `/platform/subscriptions`.
-4. Restart the API (plan catalog seeded at start; sweep registered).
-5. Leave `BILLING_PROVIDER` unset (manual billing only) until the commercial decisions below are made; never store app secrets in GitHub.
-6. Delete the temporary remote branch `ops/b20-hosted-inspection` manually (the git proxy cannot delete remote branches).
+2. **Stage 1 — B20 additive schema** (`pnpm --filter @workspace/db run push` from commit `4f42931`, i.e. `git checkout 4f42931 -- lib/db/src/schema` on a throw-away checkout, or the `wt-b20` worktree procedure of the rehearsal script) — additive statements only (§5, 39 statements, 0 destructive); take the usual backup first. **Do not push the Correction 1 schema before the repair has run**: its `subscriptions.plan` FK and status CHECK would fail on the legacy `free/trial` row and the empty plan catalog.
+3. `tsx scripts/repair-subscriptions.ts` (dry-run; expect `plannedUpdates 1`, rule `trial_lapsed`, 0 conflicts) → `--apply` (seeds the 5-plan catalog in the same transaction) → verify `plannedUpdates 0 / alreadyCanonical 1`. Expected effect on the single hosted row: `trial → trialing` with the same lapsed end → **blocked exactly as today**, then the sweep marks it `expired` within one cadence; the platform owner starts a trial / activates it from `/platform/subscriptions`.
+4. **Stage 2 — Correction 1 schema** (`pnpm --filter @workspace/db run push` from the correction commit) — 27 additive statements (3 defaulted columns, 1 default change, 2 FK, 20 CHECK, 1 partial unique index; §5); a second push must report "No changes detected". Rehearsed end-to-end on a scratch database representing the hosted B18 state (§16.7): no deletion, rewrite or manual edit of any row at any stage.
+5. Restart the API (plan catalog seeded at start; sweep registered). Set `BILLING_STRIPE_MODE` explicitly (`live` in production once Stripe is approved) and make sure `BILLING_RETURN_URL` is an explicit HTTPS origin — otherwise tenant Checkout/Portal stay unavailable (`RETURN_URL_*`) while manual billing works.
+6. Leave `BILLING_PROVIDER` unset (manual billing only) until the commercial decisions below are made; never store app secrets in GitHub.
+7. Delete the temporary remote branch `ops/b20-hosted-inspection` manually (the git proxy cannot delete remote branches).
 
 ---
 
@@ -215,9 +217,92 @@ No live Stripe credentials or prices, no hosted Checkout activation, no tax, cou
 
 | Suite | What it proves |
 |---|---|
-| `test/b20-lifecycle-unit.test.ts` (35) | resolver, transition table, provider mapping, usage window, limit precedence, repair rules, audit sanitization, payload normalization, offline signature verification, provider selection |
+| `test/b20-lifecycle-unit.test.ts` (35, +`RETURN_URL_INVALID` capability cases) | resolver, transition table, provider mapping, usage window, limit precedence, repair rules, audit sanitization, payload normalization, offline signature verification, provider selection |
 | `test/b20-structural.test.ts` (19) | no legacy-column reads on the gate path, webhook before JSON parser, SDK confinement, reads never write, no simulated UI metrics |
 | `test/b20-subscriptions.test.ts` (26) | transactional creation, authorization/isolation, tombstone, GET-never-writes, every manual transition with its access effect, audit, limit overrides, list/metrics/stats, sweep, repair dry-run/apply/abort, registration |
-| `test/b20-billing-stripe.test.ts` (19) | fake provider status, server-verified prices, serialized idempotent Checkout, Portal gating, webhook transport (400/413/duplicate/unsupported), lifecycle through signed events (bind, active, past due, stale, invoices, mismatch, unbound, suspension shadow, cancellation, convert-to-manual, re-bind), manual-op refusal, revenue, retry after provider failure, no secret leaks |
+| `test/b20-billing-stripe.test.ts` (19) | fake provider status, server-verified prices, serialized idempotent Checkout (`open` intents), Portal gating, webhook transport (400/413/duplicate/unsupported), lifecycle through signed events (bind, active, past due, stale, invoices, mismatch, unbound, **conflict**, suspension shadow, cancellation, convert-to-manual, re-bind only with server metadata), manual-op refusal, revenue, retry after provider failure, no secret leaks |
+| `test/b20c1-billing-durability.test.ts` (29) | Correction 1: customer / session retry with the same remote objects, process-style retry on the durable intent, concurrent same-price → one remote session, price switch expires the old session at the provider first, provider expiry failure → no replacement, cancelled subscription self-recovery through Checkout in both event orders, stray subscription / forged metadata never take over, late old-subscription event ignored, recorded conflict, unknown price (existing + new subscription, Portal change) fails closed and applies after registration, live-mode price / webhook rejected without data change, barrier-based concurrent identical deliveries, failed duplicate never downgrades processed, retry after genuine failure exactly once, rollback keeps entitlement + retryable, fail-closed limit service (`SUBSCRIPTION_MISSING` / `SUBSCRIPTION_PLAN_INVALID`), workflow runs refuse cancelled / past_due / suspended tenants with zero side effects and never replay, final DB constraints reject invalid direct writes, fault hooks reset |
+| `test/b20c1-config-unit.test.ts` (28) | `resolveBillingStripeMode`, `stripeKeyMode`, provider selection with mode enforcement, `validateBillingReturnUrl` across production/development combinations |
 | `test/b20-limits-concurrency.test.ts` (12) | parallel creates/imports/events/users/invitations/role changes/scans/batches never exceed a limit; releases and retries |
+| `e2e/l-ocr-scan.spec.ts` (2) | (Correction 1 hygiene) records the deterministic reservation keys it creates and deletes exactly those in `afterAll`, asserting none remain |
 | `e2e/x-billing.spec.ts` (13) | truthful tenant page, permission gating, Checkout → webhook → Portal, read-only rendering, platform list/detail/confirmations, dashboard/companies truthfulness, isolation/role routing, responsive light/dark without overflow or console errors |
+
+---
+
+## 16. Correction 1 — Stripe durability, webhook concurrency and canonical integrity
+
+### 16.1 Durable Checkout (intent states, stable keys, durability boundary)
+
+`billing_checkout_sessions` rows are **durable Checkout intents**: `creating` (intent persisted, no provider session linked yet) → `open` (provider session id + expiry linked) → `completed` (`checkout.session.completed` verified; `provider_subscription_id` recorded) | `expired` (expired at the provider, then locally) | `failed` (definitive provider refusal / mode mismatch). The partial unique index `billing_checkout_sessions_current_ux` allows **one** `creating|open` intent per company at the database.
+
+`createCheckout` (`services/subscriptions.service.ts`) never calls the provider while a transaction or row lock is open:
+
+1. **Short transaction** — lock the canonical subscription, validate price (active, registered, same `provider_mode`), capabilities, find-or-create the intent (`INSERT … ON CONFLICT DO NOTHING` on the partial index; a concurrent loser re-reads). Audit `subscription.checkout_started`. Commit.
+2. **Provider customer** (outside any transaction) with the stable key `customer:<sha256("customer|"+companyId)>`; then a short transaction links `stripe_customer_id` (409 `PROVIDER_CUSTOMER_MISMATCH` if another id is already linked). A retry after a local failure re-sends the same key and receives the same customer — never a second one.
+3. **Provider session** (outside any transaction) with the intent-derived key `checkout:<sha256("checkout|"+companyId+"|"+intentId)>`; metadata = opaque ids only. A transient provider failure keeps the intent `creating` (the retry reuses the key); a definitive refusal marks it `failed`; a session in the wrong `livemode` marks it `failed` (502 `PROVIDER_MODE_MISMATCH`).
+4. **Short transaction** links `provider_session_id` + `expires_at` (`creating → open`). Concurrent requests that created the SAME session with the SAME key are tolerated; anything else → 409 `CHECKOUT_IN_PROGRESS`.
+5. The hosted URL is returned only after the durable link and is **never stored**.
+
+**Reuse / replacement rules:** same price + `open` intent → the provider session is retrieved; `open` → `reused`; `complete` → reconciled (409 `CHECKOUT_ALREADY_COMPLETED`); expired/unknown → retired locally and re-created. **Different price →** `retireIntent`: retrieve at the provider → if open, `checkout.sessions.expire` **at Stripe** → confirmed `expired` → local `expired` + audit `subscription.checkout_expired` → only then the replacement is created. If the provider refuses to expire (error or unconfirmed state) → 502 `PROVIDER_ERROR`, **no local change, no replacement** (the tenant retries later). The fake provider keeps a real remote-session registry (`remoteSessions()`, `remoteOpenSessionCount()`, `expireCheckoutSession`) so tests observe provider-side state.
+
+### 16.2 Return URL and Stripe mode
+
+See §7. `resolveBillingStripeMode` / `stripeKeyMode` / `validateBillingReturnUrl` are pure and unit-tested. Every `plan_prices`, `billing_checkout_sessions` and `billing_provider_events` row records the verified `provider_mode`; a price whose `livemode` disagrees with the configured mode is refused at registration (400 `PRICE_MODE_MISMATCH`) and can never be used for Checkout; a webhook whose event or object `livemode` disagrees is rejected `400 LIVEMODE_MISMATCH` before any read or write and is **not recorded**.
+
+### 16.3 Cancelled provider subscription — self-service recovery and ownership
+
+Terminal provider statuses (`canceled`, `incomplete_expired`) keep the binding for history but **do not permanently occupy it**. `applyProviderState` (`services/subscription-lifecycle.service.ts`):
+
+| Local binding | Incoming provider subscription | Result |
+|---|---|---|
+| customer disagrees | any | `mismatch` (nothing changes) |
+| older than the newest applied event | any | `stale` |
+| bound, same id | any | applied (status/plan/period follow the provider) |
+| bound **live**, different id | live | **`conflict`** — recorded (`billing_provider_events.outcome = conflict`, audit `subscription.provider_conflict`, platform detail `providerConflict`); the operator resolves it in Stripe; nothing changes |
+| bound live or terminal, different id | terminal | `unbound` (late/foreign event) |
+| bound **terminal**, different id | live **and linked** | **replaced** (audit `subscription.provider_replaced` with the masked old ref); status/plan/period/customer/price re-derived |
+| bound terminal, different id | live, not linked | `unbound` |
+| unbound (manual row) | live and linked | bound |
+| unbound | anything else | `unbound` |
+
+**Linkage** (`linkageProven`) = the tenant's own Checkout: subscription metadata `companyId` + `subscriptionId` (server-generated `subscription_data.metadata`), a `checkoutId` pointing at this tenant's `creating|open|completed` intent, the intent completed by the same `checkout.session.completed`, or a completed intent already recording this provider subscription id. Company, subscription, customer, price (registered) and intent must agree. Both event orders work: `customer.subscription.created` before or after `checkout.session.completed`. A random subscription for the same customer never takes over; a late event for the old subscription never overwrites the new binding.
+
+### 16.4 Race-safe webhook processing
+
+```
+verify signature → mode check → fast duplicate read (no lock)
+→ fetch provider state OUTSIDE any transaction (session, subscription)
+→ [test fault point webhook.beforeClaim]
+→ transaction:
+     INSERT billing_provider_events … ON CONFLICT (event_id) DO NOTHING
+     if no row: SELECT … FOR UPDATE existing → not failed → `duplicate` (no mutation) | failed → attempts+1, status received
+     lock the subscription row; resolve; applyProviderState; write audit; status processed|ignored (+ outcome)
+     [test fault point webhook.beforeCommit]
+   commit
+→ on any error: the transaction rolled back; recordProviderEventFailure OUTSIDE it —
+   INSERT failed (attempts 1) ON CONFLICT DO UPDATE … WHERE status = 'failed' (attempts+1, sanitized code)
+   → a concurrently processed / ignored row is never downgraded; answer 500 so Stripe retries.
+```
+
+No 23505 is ever raised inside the transaction; no provider call waits under a lock; two simultaneous deliveries of one event produce exactly one mutation and one audit transition (`applied` + `duplicate`), attempts increment exactly once per attempt, a rollback leaves the entitlement unchanged and the event retryable. Proven with a barrier-based real-PostgreSQL concurrency test.
+
+### 16.5 Verified price requirement
+
+A new binding or a plan change requires a registered `plan_prices` row (inactive mappings resolve existing subscriptions but never open Checkout). A live subscription on an unregistered price → `ProviderPriceUnmappedError`: no change, event row `failed / price_unmapped / PROVIDER_PRICE_UNMAPPED` (masked, never the full Price id), 500 (Stripe retries), platform detail `providerPriceUnmapped` diagnostics; after the operator registers the price the retried delivery applies exactly once. Manual sync answers 409 `PROVIDER_PRICE_UNMAPPED`. A terminal event still cancels without any price.
+
+### 16.6 Fail-closed entitlement services and background work
+
+`entitlements.service.ts`: `assertCapacity`, `reserveScans`, `effectiveLimitsFor` and `usageReport` throw `SubscriptionIntegrityError` (409) — `SUBSCRIPTION_MISSING` when the company has no canonical row, `SUBSCRIPTION_PLAN_INVALID` when the plan row is missing. **Never unlimited.** (The plan FK makes the latter unreachable for new writes; the service still refuses.)
+
+Workflow engine (`lib/workflows/engine.ts`): before **every** action the canonical entitlement is re-read (`loadTenantAccess`); `read_only` / `blocked` → no action executes (no email, notification, CRM mutation), the action row and the run are marked `failed` with `SUBSCRIPTION_NOT_WRITABLE` (`retryable: false`, access mode + reason recorded), history is retained, the queue never replays it; after reactivation a **new** event runs normally.
+
+Other background handlers reviewed (Correction 1) — all now re-read the canonical entitlement through `lib/company-access.ts` (`tenantWritable`, `assertTenantWritable`, `writableCompanyIds`) and perform tenant side effects only for `full` access: follow-up reminders (push + `followUpNotifiedOn` marker), scheduled exports (artifact + storage), workflow alerts and AI usage alerts (notification + mirrored e-mail; the legacy `companies.status` filter, which mapped `past_due` to `active`, is gone), executive report jobs, and the four batch AI jobs (analysis, copilot, capture, workflow analysis — the enqueued principal snapshot is no longer trusted at execution time). Not gated by design: the email delivery job (its payload carries no tenant; every producer is gated), maintenance retention, the AI ledger retry (accounting of a call that already happened), subscription sweep (the lifecycle authority) and workflow recovery (re-enqueues only; execution is gated in the engine).
+
+### 16.7 Two-stage activation rehearsal (scratch database)
+
+`scratchpad/rehearsal-b20c1.sh` (not committed; procedure documented in §12): a fresh database received the pre-B20 schema (`c2cd467`, 68 tables — the hosted B18 fingerprint), the hosted-like data (0 plans, 1 company, 1 legacy `free/trial` subscription with a lapsed end), then **stage 1** (`4f42931`: 39 additive statements, 0 destructive), the repair (dry-run `plannedUpdates 1 / trial_lapsed` → apply → verify `plannedUpdates 0 / alreadyCanonical 1`; plan catalog 5 rows; row `free / trialing / manual`, `trial_expires_at` = the legacy end, `usage_anchor_at` set, no provider ids), then **stage 2** (Correction 1: 27 additive statements — 3 defaulted columns, 1 default change, 2 FK, 20 CHECK, 1 partial unique index; 0 destructive), 28 CHECK/FK constraints verified in `pg_constraint`, the three partial unique indexes present, the row unchanged, `status='trial'` / `plan='gold'` / `billing_source='paypal'` rejected, and a second push reporting **"No changes detected"**. No row was deleted, rewritten or edited by hand at any stage.
+
+### 16.8 Test-data hygiene
+
+`e2e/l-ocr-scan.spec.ts` computes the deterministic reservation keys of the two fixture uploads (`scan:<companyId>:<userId>:<sha256(dataUrl)[:32]>`), records them, deletes exactly those rows in `afterAll` (never a company-wide delete; safe when a test fails midway) and asserts none remain. Test-only fault hooks (`lib/billing/test-faults.ts`) are inert unless set, unavailable in production and reset after every test.
+

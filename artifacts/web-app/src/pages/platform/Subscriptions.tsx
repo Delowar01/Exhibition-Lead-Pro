@@ -50,6 +50,13 @@ import { CreditCard, Search, Building2, RefreshCw } from "lucide-react";
 // lifecycle actions with confirmation dialogs. No fake rows, no random numbers,
 // no growth percentages, no non-functional buttons.
 
+const RETURN_URL_REASON: Record<string, string> = {
+  RETURN_URL_MISSING: "not set (BILLING_RETURN_URL / APP_BASE_URL)",
+  RETURN_URL_INVALID: "invalid (must be an absolute URL without credentials, query or fragment)",
+  RETURN_URL_INSECURE: "insecure (production requires HTTPS)",
+  RETURN_URL_LOCALHOST: "localhost is not allowed in production",
+};
+
 const STATUSES = ["trialing", "active", "past_due", "cancelled", "expired", "suspended"] as const;
 const PLANS = ["free", "starter", "professional", "business", "enterprise"] as const;
 const STATUS_LABEL: Record<string, string> = { trialing: "Trial", active: "Active", past_due: "Past due", cancelled: "Cancelled", expired: "Expired", suspended: "Suspended" };
@@ -369,6 +376,8 @@ export default function PlatformSubscriptions() {
                 <div>Tenant self-service checkout: {providerStatus.data.selfServiceCheckoutEnabled ? "enabled" : "disabled"}</div>
                 <div>Automatic tax: {providerStatus.data.automaticTax ? "enabled" : "off (tax policy not approved)"}</div>
                 <div>Default trial for new companies: {providerStatus.data.trialDays} days</div>
+                <div data-testid="provider-mode">Provider mode: {providerStatus.data.stripeMode ? <Badge variant={providerStatus.data.stripeMode === "live" ? "default" : "secondary"}>{providerStatus.data.stripeMode}</Badge> : <span className="text-destructive">invalid setting</span>}</div>
+                <div data-testid="provider-return-url">Billing return URL: {providerStatus.data.returnUrlConfigured ? "configured" : <span className="text-destructive">{RETURN_URL_REASON[providerStatus.data.returnUrlReason ?? ""] ?? "not usable"} — tenant checkout and portal are unavailable until fixed</span>}</div>
               </>
             ) : (
               <div className="text-muted-foreground">Loading…</div>
@@ -410,7 +419,7 @@ export default function PlatformSubscriptions() {
                         <TableCell className="capitalize">{p.planId}</TableCell>
                         <TableCell>{money(p.unitAmountMinor, p.currency)}</TableCell>
                         <TableCell>{p.intervalCount > 1 ? `${p.intervalCount} ${p.interval}s` : p.interval}</TableCell>
-                        <TableCell className="font-mono text-xs">{p.providerPriceRef ?? "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{p.providerPriceRef ?? "—"}<span className="ml-2 font-sans text-muted-foreground">({p.providerMode})</span></TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => void togglePrice(p.id, !p.active)}>{p.active ? "Deactivate" : "Activate"}</Button>
                         </TableCell>
@@ -448,6 +457,18 @@ export default function PlatformSubscriptions() {
                 <div><span className="text-muted-foreground">Status changed</span><div>{fmt(d.statusChangedAt)}</div></div>
                 <div><span className="text-muted-foreground">Provider</span><div>{d.providerLinked ? `linked (${d.providerCustomerRef ?? "…"})` : "not linked"}{d.providerStatus ? ` · ${d.providerStatus}` : ""}</div></div>
                 {d.suspendedReason && <div className="sm:col-span-2"><span className="text-muted-foreground">Suspension reason</span><div>{d.suspendedReason}</div></div>}
+                {d.providerConflict && (
+                  <div className="sm:col-span-2 text-destructive" data-testid="detail-provider-conflict">
+                    <span className="font-medium">Provider conflict</span>
+                    <div>A second live provider subscription for this company was refused ({d.providerConflict.eventType}, ref {d.providerConflict.eventRef ?? "…"}, {fmt(d.providerConflict.receivedAt)}). Resolve it in the provider dashboard; the canonical subscription was not changed.</div>
+                  </div>
+                )}
+                {d.providerPriceUnmapped && (
+                  <div className="sm:col-span-2 text-destructive" data-testid="detail-price-unmapped">
+                    <span className="font-medium">Unregistered provider price</span>
+                    <div>A provider delivery could not be applied because its price is not registered ({d.providerPriceUnmapped.eventType}, ref {d.providerPriceUnmapped.eventRef ?? "…"}, {fmt(d.providerPriceUnmapped.receivedAt)}, attempts {d.providerPriceUnmapped.attempts ?? 1}). Register the price, then re-sync.</div>
+                  </div>
+                )}
               </div>
               <div>
                 <div className="text-sm font-medium mb-2">Usage and effective limits</div>

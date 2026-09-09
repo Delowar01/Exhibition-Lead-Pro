@@ -64,7 +64,8 @@ Optional — correct localhost values:
   export BILLING_PROVIDER=fake
   export STRIPE_WEBHOOK_SECRET="whsec_local_test_only_$(openssl rand -hex 16)"   # any value; never a real secret
   export BILLING_SELF_SERVICE_CHECKOUT=true
-  export BILLING_RETURN_URL=http://localhost:80
+  export BILLING_RETURN_URL=http://localhost:80        # explicit localhost HTTP is accepted outside production
+  # BILLING_STRIPE_MODE=test                            # optional; defaults to test outside production (fake = test only)
   ```
 
   No network is used: prices are synthesized from ids such as
@@ -173,7 +174,7 @@ PORT=8081 EXPO_PUBLIC_API_URL="http://<YOUR-LAN-IP>:8080" pnpm exec expo start -
 
 ```bash
 pnpm run typecheck                              # all packages — PASS
-pnpm --filter @workspace/api-server run test    # 1153 tests; 1153/1153 only with storage configured (see note)
+pnpm --filter @workspace/api-server run test    # 1210 tests; 1210/1210 only with storage configured (see note)
 pnpm --filter @workspace/web-app run test:e2e   # 142/142 (needs the Batch 20 billing env, §3)
 pnpm --filter @workspace/mobile run test        # 114/114
 pnpm --filter @workspace/api-server run build   # PASS → dist/index.mjs
@@ -183,8 +184,8 @@ pnpm --filter @workspace/web-app run build      # PASS → dist/public (env-free
 > **Object-storage-gated subset:** 27 of the API tests exercise GCS-backed
 > uploads (document upload/download/versioning, the stored-scan-image
 > reprocess, executive report export artifacts). Without object-storage
-> credentials the local result is **1116 passed / 9 failed / 28 skipped of
-> 1153 — the 9 failures and 18 of the skips are that storage subset; everything
+> credentials the local result is **1173 passed / 9 failed / 28 skipped of
+> 1210 — the 9 failures and 18 of the skips are that storage subset; everything
 > else green**. Configure the GCS vars from `.env.example` §1d (dev bucket +
 > service account, never production) to reach a fully green run.
 

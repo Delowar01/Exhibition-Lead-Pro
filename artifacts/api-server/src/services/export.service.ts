@@ -25,6 +25,7 @@ import {
   type EncryptionMethod,
 } from "../lib/export-generate.js";
 import { uploadExportBuffer, exportDownloadURL } from "../lib/exportStorage.js";
+import { tenantWritable } from "../lib/company-access.js";
 
 // Stage 4B — Export Center (export side). Produces a filtered CSV/Excel/PDF/JSON
 // file of the caller's contacts or leads, optionally AES-encrypted (on-demand
@@ -449,6 +450,14 @@ export async function runDueSchedules(): Promise<{ processed: number }> {
   const due = await schedulesRepo.dueSchedules(now);
   for (const s of due) {
     try {
+      // B20 Correction 1: a scheduled export is a side effect (artifact + storage
+      // upload). The CANONICAL entitlement is re-read now; a read-only / blocked
+      // tenant gets no artifact and the schedule simply advances.
+      const gate = await tenantWritable(s.companyId, now);
+      if (!gate.writable) {
+        logger.warn({ scheduleId: s.id, companyId: s.companyId, accessMode: gate.accessMode, reasonCode: gate.reasonCode, code: "SUBSCRIPTION_NOT_WRITABLE" }, "Scheduled export skipped: subscription not writable");
+        continue;
+      }
       const sysUser = systemUserForCompany(s.companyId, s.createdById);
       await produceAndStore(sysUser, s.companyId, {
         entityType: assertEntityType(s.entityType),

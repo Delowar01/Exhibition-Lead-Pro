@@ -8,6 +8,7 @@ import { ACTION_EXECUTORS, type ActionContext, type ActionExecutor } from "./act
 import { runInWorkflowContext } from "./context.js";
 import { classifyError, WorkflowFailure, WorkflowSkip } from "./errors.js";
 import { buildPrincipal } from "./principal.js";
+import { loadTenantAccess } from "../company-access.js";
 import type { WorkflowActionType, WorkflowEntity } from "./catalog.js";
 
 // =============================================================================
@@ -120,6 +121,23 @@ export async function executeRun(runId: number, attempt: JobAttempt, deps: Execu
       if (!def || def.type !== action.actionType) throw new WorkflowFailure("SNAPSHOT_INVALID", `captured action ${action.actionIndex} does not match its run record`);
       const executor = executors[def.type];
       if (!executor) throw new WorkflowFailure("UNSUPPORTED_ACTION", `no executor for action type "${def.type}"`);
+
+      // Entitlement re-check before EVERY action (B20 Correction 1): the canonical
+      // subscription is re-read now, not at trigger time. A read_only or blocked
+      // tenant gets NO action — no email, no notification, no CRM mutation — and the
+      // run fails deterministically (never retried, never replayed). The action row
+      // records the failure so the history explains why nothing happened.
+      const tenant = await loadTenantAccess(run.companyId);
+      if (tenant.access.blocked || tenant.access.readOnly) {
+        const accessMode = tenant.entitlement.accessMode;
+        const reasonCode = tenant.entitlement.reasonCode ?? "UNKNOWN_STATUS";
+        await runsRepo.updateActionRun(action.id, {
+          status: "failed",
+          error: { code: "SUBSCRIPTION_NOT_WRITABLE", errorClass: "WorkflowFailure", retryable: false, accessMode, reasonCode, actionIndex: action.actionIndex, actionType: def.type, message: `subscription access is ${accessMode}` },
+          completedAt: new Date(),
+        });
+        throw new WorkflowFailure("SUBSCRIPTION_NOT_WRITABLE", `subscription access is ${accessMode} (${reasonCode}); workflow actions are not executed`);
+      }
 
       // Tenant re-check before EVERY mutation: the entity must still belong to
       // the run's company (deterministic failure otherwise). Reloaded per action so

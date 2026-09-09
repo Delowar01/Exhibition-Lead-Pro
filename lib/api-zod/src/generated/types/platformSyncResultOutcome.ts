@@ -14,4 +14,6 @@ export const PlatformSyncResultOutcome = {
   stale: 'stale',
   no_change: 'no_change',
   mismatch: 'mismatch',
+  unbound: 'unbound',
+  conflict: 'conflict',
 } as const;

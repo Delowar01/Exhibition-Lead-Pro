@@ -5,9 +5,11 @@ import type { AuthUser } from "../middlewares/requireAuth.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import * as repo from "../repositories/subscriptions.repository.js";
-import type { SubscriptionRow, PlanPriceRow } from "../repositories/subscriptions.repository.js";
+import type { SubscriptionRow, PlanPriceRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
 import { resolveEntitlement, resolveBillingCapabilities, normalizeLegacyStatus, allowedActions } from "../lib/billing/lifecycle.js";
-import { getBillingProvider, BillingProviderError } from "../lib/billing/provider.js";
+import { getBillingProvider, BillingProviderError, type ProviderCheckoutSession } from "../lib/billing/provider.js";
+import { billingFault } from "../lib/billing/test-faults.js";
+import { applyProviderState } from "./subscription-lifecycle.service.js";
 import { writeSubscriptionAudit, type AuditActor } from "../lib/billing/audit.js";
 import { effectiveLimitsFor, usageReport } from "./entitlements.service.js";
 
@@ -28,13 +30,15 @@ async function loadTenantSubscription(companyId: number): Promise<SubscriptionRo
   return sub;
 }
 
-function providerContext(activePrices: number) {
+export function providerContext(activePrices: number) {
   const provider = getBillingProvider();
   return {
     providerAvailable: provider.available,
     checkoutEnabled: config.billing.selfServiceCheckout,
     portalConfigured: provider.available,
     hasActivePrices: activePrices > 0,
+    // B20 Correction 1: the trusted return URL must have passed central validation.
+    returnUrlValid: config.billing.returnUrl != null,
   };
 }
 
@@ -127,10 +131,79 @@ export async function listPlans() {
   }));
 }
 
-// ── Checkout ─────────────────────────────────────────────────────────────────
+// ── Checkout (B20 Correction 1 — durable intent orchestration) ───────────────
+//
+// Invariant: NO provider network call runs while a database transaction or row
+// lock is open. The flow is a sequence of SHORT transactions around provider calls:
+//
+//   1. tx: lock the canonical subscription, validate eligibility + the internal
+//      price mapping, find-or-create ONE durable Checkout intent (`creating`),
+//      derive the provider idempotency key from the intent id, COMMIT.
+//   2. provider: create/retrieve the customer with the STABLE company key.
+//   3. tx: persist the customer id (conditional, idempotent).
+//   4. provider: create the Checkout session with the intent-derived key
+//      (a retry after a crash resolves to the SAME provider session).
+//   5. tx: link the provider session id / expiry, `creating → open`, COMMIT.
+//   6. return the hosted URL (never stored).
+//
+// Switching prices: the existing OPEN session is expired AT THE PROVIDER first
+// (confirmed), then locally, and only then is a replacement intent created. A
+// session the provider reports as complete is reconciled instead.
+// At most one non-terminal intent per company (partial unique index).
 
 function opaqueKey(...parts: Array<string | number>): string {
   return createHash("sha256").update(parts.join("|")).digest("hex");
+}
+const customerKey = (companyId: number) => `customer:${opaqueKey("customer", companyId)}`;
+const intentKey = (companyId: number, intentId: number) => `checkout:${opaqueKey("checkout", companyId, intentId)}`;
+const isTerminalSession = (status: string | null) => status === "complete" || status === "expired";
+
+type IntentStep =
+  | { kind: "retry" }
+  | { kind: "switch"; intent: CheckoutSessionRow }
+  | { kind: "ready"; sub: SubscriptionRow; price: PlanPriceRow; intent: CheckoutSessionRow };
+
+async function reconcileCompletedIntent(intent: CheckoutSessionRow, remote: ProviderCheckoutSession, actor: AuditActor): Promise<void> {
+  const provider = getBillingProvider();
+  // Provider state is fetched OUTSIDE the transaction.
+  const remoteSub = remote.subscriptionId ? await provider.retrieveSubscription(remote.subscriptionId) : null;
+  await db.transaction(async (tx) => {
+    const local = await repo.transitionCheckoutSession(intent.id, ["creating", "open"], { status: "completed", completedAt: new Date(), providerSubscriptionId: remote.subscriptionId, providerCustomerId: remote.customerId ?? intent.providerCustomerId }, tx);
+    const sub = await repo.lockByCompanyId(intent.companyId, tx);
+    if (!sub || !remoteSub) return;
+    await applyProviderState(tx, sub, remoteSub, null, actor, { source: "checkout_reconcile", checkoutId: intent.id }, { checkoutId: intent.id, completedCheckout: local ?? intent });
+  });
+}
+
+// Expires the intent's provider session (when it is still open) and then the
+// local intent. Provider failure → nothing changes locally, no replacement.
+async function retireIntent(intent: CheckoutSessionRow, actor: AuditActor): Promise<void> {
+  const provider = getBillingProvider();
+  if (intent.providerSessionId) {
+    const remote = await provider.retrieveCheckoutSession(intent.providerSessionId);
+    if (remote && remote.status === "complete") {
+      await reconcileCompletedIntent(intent, remote, actor);
+      throw new AppError(409, "Your previous checkout was already completed; the subscription is being confirmed.", { code: "CHECKOUT_ALREADY_COMPLETED" });
+    }
+    if (remote && remote.status === "open") {
+      await billingFault("checkout.beforeExpire");
+      let result: ProviderCheckoutSession;
+      try {
+        result = await provider.expireCheckoutSession(intent.providerSessionId);
+      } catch (err) {
+        logger.warn({ companyId: intent.companyId, checkoutId: intent.id, code: err instanceof BillingProviderError ? err.code : "unknown" }, "Provider refused to expire the open Checkout session");
+        throw new AppError(502, "The payment provider could not close the previous checkout. Please try again.", { code: "PROVIDER_ERROR" });
+      }
+      if (result.status !== "expired") throw new AppError(502, "The payment provider did not confirm the previous checkout was closed.", { code: "PROVIDER_ERROR" });
+    }
+  }
+  await db.transaction(async (tx) => {
+    const row = await repo.transitionCheckoutSession(intent.id, ["creating", "open"], { status: "expired" }, tx);
+    if (row) {
+      const sub = await repo.findByCompanyId(intent.companyId, tx);
+      if (sub) await writeSubscriptionAudit(tx, { action: "subscription.checkout_expired", companyId: intent.companyId, subscriptionId: sub.id, before: sub, after: sub, actor, extra: { checkoutId: intent.id, providerSessionLinked: !!intent.providerSessionId } });
+    }
+  });
 }
 
 export async function createCheckout(user: AuthUser, input: { planPriceId?: unknown }, actor: AuditActor): Promise<{ url: string; status: "created" | "reused" }> {
@@ -139,73 +212,129 @@ export async function createCheckout(user: AuthUser, input: { planPriceId?: unkn
   if (planPriceId == null) throw new AppError(400, "planPriceId is required", { code: "INVALID_PRICE" });
   const provider = getBillingProvider();
   if (!provider.available) throw new AppError(503, "Online checkout is not available.", { code: "PROVIDER_UNAVAILABLE" });
+  if (!config.billing.returnUrl) throw new AppError(503, "Online checkout is not configured.", { code: config.billing.returnUrlReason ?? "RETURN_URL_INVALID" });
   if (!config.billing.selfServiceCheckout) throw new AppError(503, "Online checkout is not enabled.", { code: "CHECKOUT_DISABLED" });
+  const mode = config.billing.stripeMode ?? "test";
+  const base = config.billing.returnUrl;
 
-  // Serialize Checkout creation per company: the row lock is held for the
-  // provider call so two concurrent requests cannot create two live sessions.
-  const { url, status } = await db.transaction(async (tx) => {
-    const sub = await repo.lockByCompanyId(companyId, tx);
-    if (!sub) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
-    const price = await repo.findPlanPriceById(planPriceId, tx);
-    if (!price || !price.active) throw new AppError(400, "This price is not available.", { code: "PRICE_NOT_AVAILABLE" });
-    const activeCount = (await repo.listPlanPrices({ activeOnly: true }, tx)).length;
-    const caps = resolveBillingCapabilities(sub, providerContext(activeCount), sub.providerStatus);
-    if (!caps.checkoutAvailable) {
-      throw new AppError(409, "Checkout is not available for this subscription.", { code: caps.checkoutUnavailableReason ?? "CHECKOUT_UNAVAILABLE" });
+  for (let round = 0; round < 4; round++) {
+    // ── Step 1: short transaction — validate + find-or-create the durable intent.
+    const step: IntentStep = await db.transaction(async (tx) => {
+      const sub = await repo.lockByCompanyId(companyId, tx);
+      if (!sub) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
+      const price = await repo.findPlanPriceById(planPriceId, tx);
+      if (!price || !price.active) throw new AppError(400, "This price is not available.", { code: "PRICE_NOT_AVAILABLE" });
+      if (price.providerMode !== mode) throw new AppError(400, "This price was verified in a different provider mode.", { code: "PRICE_MODE_MISMATCH" });
+      const activeCount = (await repo.listPlanPrices({ activeOnly: true }, tx)).length;
+      const caps = resolveBillingCapabilities(sub, providerContext(activeCount), sub.providerStatus);
+      if (!caps.checkoutAvailable) throw new AppError(409, "Checkout is not available for this subscription.", { code: caps.checkoutUnavailableReason ?? "CHECKOUT_UNAVAILABLE" });
+      const current = await repo.findCurrentCheckoutIntent(companyId, tx, true);
+      if (current) {
+        if (current.planPriceId === price.id) return { kind: "ready", sub, price, intent: current };
+        return { kind: "switch", intent: current };
+      }
+      const inserted = await repo.insertCheckoutIntent(
+        { companyId, subscriptionId: sub.id, planPriceId: price.id, planId: price.planId, provider: "stripe", providerMode: mode, idempotencyKey: `intent:${randomUUID()}`, providerCustomerId: sub.stripeCustomerId, status: "creating", createdByUserId: user.id },
+        tx,
+      );
+      if (!inserted) return { kind: "retry" }; // another request created the intent concurrently
+      const idempotencyKey = intentKey(companyId, inserted.id);
+      await repo.updateCheckoutSession(inserted.id, { idempotencyKey }, tx);
+      await writeSubscriptionAudit(tx, { action: "subscription.checkout_started", companyId, subscriptionId: sub.id, before: sub, after: sub, actor, extra: { planId: price.planId, planPriceId: price.id, checkoutId: inserted.id } });
+      return { kind: "ready", sub, price, intent: { ...inserted, idempotencyKey } };
+    });
+    if (step.kind === "retry") continue;
+    if (step.kind === "switch") {
+      await retireIntent(step.intent, actor);
+      continue;
     }
-    const now = new Date();
-    // Reuse an open, unexpired session for the same price instead of minting another.
-    const open = await repo.findOpenCheckoutSession(companyId, now, tx);
-    if (open && open.planPriceId === price.id && open.providerSessionId) {
-      const remote = await provider.retrieveCheckoutSession(open.providerSessionId).catch(() => null);
-      if (remote?.url && remote.status === "open") return { url: remote.url, status: "reused" as const };
-      await repo.updateCheckoutSession(open.id, { status: "expired" }, tx);
-    }
+    const { price, intent } = step;
+    let sub = step.sub;
 
-    // Exactly one provider customer per company (created under the lock, idempotent).
+    // ── Step 2/3: provider customer (stable key) → persisted in a short transaction.
     let customerId = sub.stripeCustomerId;
     if (!customerId) {
-      const company = await repo.findCompany(companyId, tx);
-      const created = await provider.createCustomer({ companyId, companyName: company?.name ?? `Company ${companyId}`, idempotencyKey: `customer:${opaqueKey("customer", companyId)}` });
+      const company = await repo.findCompany(companyId);
+      let created: { id: string };
+      try {
+        created = await provider.createCustomer({ companyId, companyName: company?.name ?? `Company ${companyId}`, idempotencyKey: customerKey(companyId) });
+      } catch (err) {
+        logger.warn({ companyId, code: err instanceof BillingProviderError ? err.code : "unknown" }, "Customer creation failed at the provider");
+        throw new AppError(502, "The payment provider could not start checkout. Please try again.", { code: "PROVIDER_ERROR" });
+      }
+      await billingFault("checkout.afterCustomerCreate");
       customerId = created.id;
-      await repo.update(sub.id, { stripeCustomerId: customerId }, tx);
-      await writeSubscriptionAudit(tx, { action: "subscription.provider_customer_linked", companyId, subscriptionId: sub.id, before: sub, after: { ...sub, stripeCustomerId: customerId }, actor });
+      sub = await db.transaction(async (tx) => {
+        const locked = await repo.lockByCompanyId(companyId, tx);
+        if (!locked) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
+        if (locked.stripeCustomerId && locked.stripeCustomerId !== customerId) throw new AppError(409, "This company is already linked to a different billing account.", { code: "PROVIDER_CUSTOMER_MISMATCH" });
+        if (!locked.stripeCustomerId) {
+          await repo.update(locked.id, { stripeCustomerId: customerId }, tx);
+          await writeSubscriptionAudit(tx, { action: "subscription.provider_customer_linked", companyId, subscriptionId: locked.id, before: locked, after: { ...locked, stripeCustomerId: customerId }, actor });
+        }
+        await repo.updateCheckoutSession(intent.id, { providerCustomerId: customerId }, tx);
+        return (await repo.findById(locked.id, tx))!;
+      });
     }
 
-    const attempt = randomUUID();
-    const idempotencyKey = `checkout:${opaqueKey("checkout", companyId, price.id, attempt)}`;
-    const local = await repo.insertCheckoutSession(
-      { companyId, subscriptionId: sub.id, planPriceId: price.id, planId: price.planId, idempotencyKey, providerCustomerId: customerId, status: "created", createdByUserId: user.id },
-      tx,
-    );
-    await repo.expireOpenCheckoutSessions(companyId, local.id, tx);
-    const base = config.billing.returnUrl;
-    let session;
+    // ── Step 4/5: provider session (intent-derived key) → linked in a short transaction.
+    if (intent.status === "open" && intent.providerSessionId) {
+      const remote = await provider.retrieveCheckoutSession(intent.providerSessionId);
+      if (remote && remote.status === "open" && remote.url) return { url: remote.url, status: "reused" };
+      if (remote && remote.status === "complete") {
+        await reconcileCompletedIntent(intent, remote, actor);
+        throw new AppError(409, "Your previous checkout was already completed; the subscription is being confirmed.", { code: "CHECKOUT_ALREADY_COMPLETED" });
+      }
+      // Expired (or unknown) at the provider: retire locally and start over.
+      await db.transaction((tx) => repo.transitionCheckoutSession(intent.id, ["open"], { status: "expired" }, tx));
+      continue;
+    }
+
+    let session: ProviderCheckoutSession;
     try {
       session = await provider.createCheckoutSession({
         customerId,
         priceId: price.providerPriceId,
         successUrl: `${base}/admin/subscription?checkout=success`,
         cancelUrl: `${base}/admin/subscription?checkout=cancelled`,
-        clientReferenceId: String(local.id),
+        clientReferenceId: String(intent.id),
         // Opaque internal identifiers only — no email, no names.
-        metadata: { companyId: String(companyId), subscriptionId: String(sub.id), checkoutId: String(local.id), planId: price.planId },
-        idempotencyKey,
+        metadata: { companyId: String(companyId), subscriptionId: String(sub.id), checkoutId: String(intent.id), planId: price.planId },
+        idempotencyKey: intent.idempotencyKey,
         automaticTax: config.billing.automaticTax,
       });
     } catch (err) {
-      // Provider failure: the transaction rolls back (no local session row, no
-      // customer link beyond what already existed) and entitlement is untouched.
-      logger.warn({ companyId, code: err instanceof BillingProviderError ? err.code : "unknown" }, "Checkout session creation failed at the provider");
+      const code = err instanceof BillingProviderError ? err.code : "unknown";
+      const retryable = err instanceof BillingProviderError ? err.retryable : false;
+      logger.warn({ companyId, checkoutId: intent.id, code, retryable }, "Checkout session creation failed at the provider");
+      // A transient failure keeps the intent `creating` so the retry reuses the same key;
+      // a definitive refusal closes it.
+      if (!retryable) await db.transaction((tx) => repo.transitionCheckoutSession(intent.id, ["creating"], { status: "failed" }, tx));
       throw new AppError(502, "The payment provider could not start checkout. Please try again.", { code: "PROVIDER_ERROR" });
     }
-    if (!session.url) throw new AppError(502, "The payment provider returned no checkout link.", { code: "PROVIDER_ERROR" });
-    await repo.updateCheckoutSession(local.id, { providerSessionId: session.id, expiresAt: session.expiresAt }, tx);
-    await writeSubscriptionAudit(tx, { action: "subscription.checkout_started", companyId, subscriptionId: sub.id, before: sub, after: sub, actor, extra: { planId: price.planId, planPriceId: price.id } });
-    logger.info({ companyId, subscriptionId: sub.id, checkoutId: local.id, planId: price.planId }, "Checkout session created");
-    return { url: session.url, status: "created" as const };
-  });
-  return { url, status };
+    await billingFault("checkout.afterSessionCreate");
+    if (session.livemode !== (mode === "live")) {
+      await db.transaction((tx) => repo.transitionCheckoutSession(intent.id, ["creating"], { status: "failed" }, tx));
+      logger.error({ companyId, checkoutId: intent.id }, "Provider Checkout session mode does not match the configured Stripe mode");
+      throw new AppError(502, "The payment provider returned a session in the wrong mode.", { code: "PROVIDER_MODE_MISMATCH" });
+    }
+    if (isTerminalSession(session.status) || !session.url) {
+      await db.transaction((tx) => repo.transitionCheckoutSession(intent.id, ["creating"], { status: session.status === "complete" ? "completed" : "expired" }, tx));
+      throw new AppError(502, "The payment provider returned no usable checkout link.", { code: "PROVIDER_ERROR" });
+    }
+    await db.transaction(async (tx) => {
+      const linked = await repo.transitionCheckoutSession(intent.id, ["creating"], { status: "open", providerSessionId: session.id, expiresAt: session.expiresAt, providerCustomerId: customerId }, tx);
+      if (!linked) {
+        // A concurrent request with the SAME idempotency key already linked the same
+        // provider session; nothing else can have changed the row meanwhile.
+        const now = await repo.findCheckoutSessionById(intent.id, tx);
+        if (!now || now.providerSessionId !== session.id) throw new AppError(409, "Checkout is being prepared by another request. Please try again.", { code: "CHECKOUT_IN_PROGRESS" });
+      }
+    });
+    logger.info({ companyId, subscriptionId: sub.id, checkoutId: intent.id, planId: price.planId }, "Checkout session linked");
+    return { url: session.url, status: "created" };
+  }
+  throw new AppError(409, "Checkout could not be prepared. Please try again.", { code: "CHECKOUT_IN_PROGRESS" });
 }
 
 // ── Billing Portal ───────────────────────────────────────────────────────────
@@ -214,6 +343,7 @@ export async function createPortalSession(user: AuthUser, actor: AuditActor): Pr
   const companyId = tenantCompanyId(user);
   const provider = getBillingProvider();
   if (!provider.available) throw new AppError(503, "The billing portal is not available.", { code: "PROVIDER_UNAVAILABLE" });
+  if (!config.billing.returnUrl) throw new AppError(503, "The billing portal is not configured.", { code: config.billing.returnUrlReason ?? "RETURN_URL_INVALID" });
   const sub = await loadTenantSubscription(companyId);
   const activeCount = (await repo.listPlanPrices({ activeOnly: true })).length;
   const caps = resolveBillingCapabilities(sub, providerContext(activeCount), sub.providerStatus);

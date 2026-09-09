@@ -22,25 +22,85 @@ export function resolveEnableRegistration(env: string, override: string | undefi
 // The provider is never required for startup or readiness.
 export type BillingProviderSelection = { kind: "stripe" | "fake" | "unavailable"; reason: string | null };
 
+export type BillingStripeMode = "test" | "live";
+
+// B20 Correction 1 — the EXPECTED Stripe mode is an explicit server setting,
+// never inferred from user input: production defaults to live and may use test
+// mode only through an explicit BILLING_STRIPE_MODE=test; every other
+// environment defaults to test. Every provider object (price, session,
+// subscription, event) is verified against it. Returns null for an invalid value.
+export function resolveBillingStripeMode(env: string, raw: string | undefined): BillingStripeMode | null {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (v === "") return env === "production" ? "live" : "test";
+  if (v === "test" || v === "live") return v;
+  return null;
+}
+
+// Mode encoded in a Stripe secret / restricted key prefix (sk_live_, rk_test_ …).
+// Used only as a consistency check against the explicit mode — never as the source.
+export function stripeKeyMode(secretKey: string | undefined): BillingStripeMode | "unknown" | null {
+  if (!secretKey) return null;
+  const m = secretKey.match(/^(?:sk|rk)_(test|live)_/);
+  return m ? (m[1] as BillingStripeMode) : "unknown";
+}
+
 export function resolveBillingProviderSelection(
   env: string,
   provider: string | undefined,
   hasSecretKey: boolean,
   hasWebhookSecret: boolean,
+  modes: { stripeMode?: BillingStripeMode | null; keyMode?: BillingStripeMode | "unknown" | null } = {},
 ): BillingProviderSelection {
   const p = (provider ?? "none").trim().toLowerCase();
   if (p === "" || p === "none") return { kind: "unavailable", reason: "NOT_CONFIGURED" };
+  const stripeMode = modes.stripeMode === undefined ? (env === "production" ? "live" : "test") : modes.stripeMode;
   if (p === "stripe") {
     if (!hasSecretKey) return { kind: "unavailable", reason: "STRIPE_SECRET_KEY_MISSING" };
     if (!hasWebhookSecret) return { kind: "unavailable", reason: "STRIPE_WEBHOOK_SECRET_MISSING" };
+    if (stripeMode === null) return { kind: "unavailable", reason: "STRIPE_MODE_INVALID" };
+    // A key whose prefix disagrees with the explicit mode is a misconfiguration.
+    if (modes.keyMode && modes.keyMode !== "unknown" && modes.keyMode !== stripeMode) return { kind: "unavailable", reason: "STRIPE_MODE_KEY_MISMATCH" };
     return { kind: "stripe", reason: null };
   }
   if (p === "fake") {
     if (env === "production") return { kind: "unavailable", reason: "FAKE_PROVIDER_FORBIDDEN" };
     if (!hasWebhookSecret) return { kind: "unavailable", reason: "STRIPE_WEBHOOK_SECRET_MISSING" };
+    if (stripeMode === null) return { kind: "unavailable", reason: "STRIPE_MODE_INVALID" };
+    // The deterministic provider only ever produces test-mode objects.
+    if (stripeMode === "live") return { kind: "unavailable", reason: "FAKE_PROVIDER_TEST_MODE_ONLY" };
     return { kind: "fake", reason: null };
   }
   return { kind: "unavailable", reason: "UNKNOWN_PROVIDER" };
+}
+
+export type BillingReturnUrlReason = "RETURN_URL_MISSING" | "RETURN_URL_INVALID" | "RETURN_URL_INSECURE" | "RETURN_URL_LOCALHOST";
+
+// B20 Correction 1 — the TRUSTED origin the hosted Checkout / Portal pages return
+// to. Validated centrally, once, at startup:
+//   • must be an absolute http(s) URL with no credentials, query string or fragment;
+//   • production requires https and refuses loopback hosts (no localhost fallback);
+//   • development may use an explicit http://localhost URL.
+// Invalid configuration never breaks startup or readiness — it only makes
+// Checkout / Portal unavailable with a stable reason.
+export function validateBillingReturnUrl(env: string, raw: string | undefined): { url: string | null; reason: BillingReturnUrlReason | null } {
+  const v = (raw ?? "").trim();
+  if (!v) return { url: null, reason: "RETURN_URL_MISSING" };
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return { url: null, reason: "RETURN_URL_INVALID" };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return { url: null, reason: "RETURN_URL_INVALID" };
+  if (u.username || u.password || u.search || u.hash || v.endsWith("?") || v.endsWith("#")) return { url: null, reason: "RETURN_URL_INVALID" };
+  const host = u.hostname.toLowerCase();
+  const loopback = host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1" || host === "[::1]" || host === "0.0.0.0";
+  if (env === "production") {
+    if (u.protocol !== "https:") return { url: null, reason: "RETURN_URL_INSECURE" };
+    if (loopback) return { url: null, reason: "RETURN_URL_LOCALHOST" };
+  }
+  const normalized = `${u.origin}${u.pathname.replace(/\/+$/, "")}`;
+  return { url: normalized, reason: null };
 }
 
 function requireEnv(name: string): string {
@@ -322,7 +382,11 @@ export const config = {
       process.env.BILLING_PROVIDER,
       !!process.env.STRIPE_SECRET_KEY,
       !!process.env.STRIPE_WEBHOOK_SECRET,
+      { stripeMode: resolveBillingStripeMode(nodeEnv, process.env.BILLING_STRIPE_MODE), keyMode: stripeKeyMode(process.env.STRIPE_SECRET_KEY) },
     ),
+    // Expected Stripe mode (B20 Correction 1). Every provider object is verified
+    // against it; the fake provider is always test mode. `null` = invalid setting.
+    stripeMode: resolveBillingStripeMode(nodeEnv, process.env.BILLING_STRIPE_MODE),
     // Tenant self-service Checkout master switch (manual/platform-managed
     // subscriptions never need it). Default off until prices are approved.
     selfServiceCheckout: process.env.BILLING_SELF_SERVICE_CHECKOUT === "true",
@@ -331,8 +395,13 @@ export const config = {
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     // Optional Stripe Billing Portal configuration id (bps_…). Unset = account default.
     stripePortalConfigurationId: process.env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID,
-    // TRUSTED application URL the hosted pages return to. Never taken from a request.
-    returnUrl: (process.env.BILLING_RETURN_URL ?? process.env.APP_BASE_URL ?? "http://localhost:5000").replace(/\/$/, ""),
+    // TRUSTED application URL the hosted pages return to (validated centrally —
+    // see validateBillingReturnUrl; never taken from a request; no production
+    // fallback). `returnUrl` is null when the configuration is unusable.
+    ...(() => {
+      const r = validateBillingReturnUrl(nodeEnv, process.env.BILLING_RETURN_URL ?? process.env.APP_BASE_URL);
+      return { returnUrl: r.url, returnUrlReason: r.reason };
+    })(),
     // Stripe automatic tax on Checkout sessions — OFF until the tax policy is approved.
     automaticTax: process.env.BILLING_AUTOMATIC_TAX === "true",
     // Raw webhook body cap (Stripe events are small; oversized bodies answer 413).

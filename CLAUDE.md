@@ -144,7 +144,7 @@ uploads report "not configured", AI uses the stub).
 
 ```bash
 pnpm run typecheck                                  # all packages — PASS
-pnpm --filter @workspace/api-server run test        # 1153 tests (restart API first, run ONCE)
+pnpm --filter @workspace/api-server run test        # 1210 tests (restart API first, run ONCE)
 pnpm --filter @workspace/web-app run test:e2e       # 142/142 (stack running; set PW_CHROMIUM_PATH)
 pnpm --filter @workspace/mobile run test            # 114/114
 pnpm --filter @workspace/api-server run build       # PASS

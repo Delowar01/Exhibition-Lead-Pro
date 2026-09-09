@@ -213,7 +213,7 @@ describe("Checkout — serialized, idempotent, one customer per company, no enti
     expect(after).toMatchObject({ status: before.status, billingSource: "manual", plan: "free", stripeCustomerId: CUS_A(), stripeSubscriptionId: null });
     const sessions = await db.select().from(billingCheckoutSessionsTable).where(eq(billingCheckoutSessionsTable.companyId, companyA));
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]).toMatchObject({ status: "created", planPriceId: priceMonth.id, planId: "professional", providerCustomerId: CUS_A() });
+    expect(sessions[0]).toMatchObject({ status: "open", planPriceId: priceMonth.id, planId: "professional", providerCustomerId: CUS_A() });
     expect(sessions[0].providerSessionId).toMatch(/^cs_fake_/);
     expect(sessions[0].idempotencyKey).toMatch(/^checkout:[a-f0-9]{64}$/);
     checkoutSessionId = sessions[0].providerSessionId!;
@@ -228,7 +228,7 @@ describe("Checkout — serialized, idempotent, one customer per company, no enti
     const parallel = await Promise.all(Array.from({ length: 4 }, () => api("POST", "/subscriptions/checkout", tokenA, { planPriceId: priceMonth.id })));
     expect(parallel.every((r) => r.status === 200)).toBe(true);
     expect(new Set(parallel.map((r) => r.body.url)).size).toBe(1);
-    const sessions = await db.select().from(billingCheckoutSessionsTable).where(and(eq(billingCheckoutSessionsTable.companyId, companyA), eq(billingCheckoutSessionsTable.status, "created")));
+    const sessions = await db.select().from(billingCheckoutSessionsTable).where(and(eq(billingCheckoutSessionsTable.companyId, companyA), eq(billingCheckoutSessionsTable.status, "open")));
     expect(sessions).toHaveLength(1);
     expect((await subRow(companyA)).stripeCustomerId).toBe(CUS_A());
   });
@@ -247,12 +247,12 @@ describe("Checkout — serialized, idempotent, one customer per company, no enti
     expect(switched.status).toBe(200);
     expect(switched.body.status).toBe("created");
     const rows = await db.select().from(billingCheckoutSessionsTable).where(eq(billingCheckoutSessionsTable.companyId, companyA));
-    expect(rows.filter((r) => r.status === "created")).toHaveLength(1);
+    expect(rows.filter((r) => r.status === "open")).toHaveLength(1);
     expect(rows.filter((r) => r.status === "expired")).toHaveLength(1);
     // Back to the monthly price for the webhook flow below.
     const back = await api("POST", "/subscriptions/checkout", tokenA, { planPriceId: priceMonth.id });
     expect(back.status).toBe(200);
-    checkoutSessionId = (await db.select().from(billingCheckoutSessionsTable).where(and(eq(billingCheckoutSessionsTable.companyId, companyA), eq(billingCheckoutSessionsTable.status, "created"))))[0].providerSessionId!;
+    checkoutSessionId = (await db.select().from(billingCheckoutSessionsTable).where(and(eq(billingCheckoutSessionsTable.companyId, companyA), eq(billingCheckoutSessionsTable.status, "open"))))[0].providerSessionId!;
   });
 });
 
@@ -368,8 +368,12 @@ describe("provider-managed lifecycle through verified webhooks", () => {
     const beforeB = await subRow(companyB);
     const wrongCompany = await webhook("customer.subscription.updated", subscriptionObject({ status: "active", metadata: { companyId: String(companyB) } }), T0 + 50);
     expect(wrongCompany.body.outcome).toBe("mismatch");
+    // B20 C1: a terminal event about ANOTHER subscription of the same customer is unbound (never a takeover);
+    // a second LIVE subscription for the same customer is a recorded conflict (no mutation).
     const otherSub = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_other_${SUFFIX}`, status: "canceled", metadata: {} }), T0 + 51);
-    expect(otherSub.body.outcome).toBe("mismatch");
+    expect(otherSub.body.outcome).toBe("unbound");
+    const otherLive = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_other_live_${SUFFIX}`, status: "active" }), T0 + 51);
+    expect(otherLive.body.outcome).toBe("conflict");
     const unknown = await webhook("customer.subscription.updated", subscriptionObject({ id: `sub_fake_zz_${SUFFIX}`, customer: "cus_fake_999999999", status: "canceled", metadata: {} }), T0 + 52);
     expect(unknown.body.outcome).toBe("unbound");
     const emailOnly = await webhook("invoice.paid", { id: "in_3", object: "invoice", customer_email: `admin-a@${DOMAIN}` }, T0 + 53);
@@ -444,7 +448,12 @@ describe("provider-managed lifecycle through verified webhooks", () => {
     expect(late.body.outcome).toBe("unbound");
     expect((await subRow(companyA))).toMatchObject({ billingSource: "manual", status: "active", stripeSubscriptionId: null });
     // …but a NEW live provider subscription for the same customer (re-subscribed through Checkout/Portal) binds again.
-    const rebound = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_a2_${SUFFIX}`, status: "active", metadata: {} }), T0 + 95);
+    // B20 C1: a live subscription for the same customer WITHOUT server-generated linkage is unbound …
+    const stray = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_a2_${SUFFIX}`, status: "active", metadata: {} }), T0 + 94);
+    expect(stray.body.outcome).toBe("unbound");
+    expect((await subRow(companyA))).toMatchObject({ billingSource: "manual", status: "active", stripeSubscriptionId: null });
+    // … while the one carrying this tenant's Checkout metadata (companyId + subscriptionId) binds.
+    const rebound = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_a2_${SUFFIX}`, status: "active" }), T0 + 95);
     expect(rebound.body.outcome).toBe("applied");
     expect((await subRow(companyA))).toMatchObject({ billingSource: "stripe", status: "active", stripeSubscriptionId: `sub_fake_a2_${SUFFIX}` });
   });

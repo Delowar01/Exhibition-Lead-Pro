@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { assertEntityType, analyzeForBatch } from "./ai-workflow.service.js";
 import type { EntityType } from "../repositories/ai_workflow.repository.js";
+import { assertTenantWritable } from "../lib/company-access.js";
 
 // Batch runner for the Stage 5F AI Workflow engine. Lets a tenant (re)compute workflow
 // recommendations across ALL records of one entity type at once. Mirrors the Stage 5B
@@ -127,6 +128,8 @@ export async function runAiWorkflowAnalyzeJob(payload: AiWorkflowJobPayload): Pr
   if (!job) return;
   if (job.status === "queued") job.status = "running";
   try {
+    // B20 Correction 1: re-read the CANONICAL entitlement before any provider call.
+    if (payload.user.companyId != null) await assertTenantWritable(payload.user.companyId);
     await analyzeForBatch(payload.user, payload.entityType, payload.entityId);
     job.succeeded += 1;
   } catch (err) {

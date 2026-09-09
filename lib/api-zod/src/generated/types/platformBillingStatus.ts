@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlatformBillingStatusProvider } from './platformBillingStatusProvider';
+import type { PlatformBillingStatusReturnUrlReason } from './platformBillingStatusReturnUrlReason';
+import type { PlatformBillingStatusStripeMode } from './platformBillingStatusStripeMode';
 
 export interface PlatformBillingStatus {
   provider: PlatformBillingStatusProvider;
@@ -16,4 +18,13 @@ export interface PlatformBillingStatus {
   automaticTax: boolean;
   portalConfigurationSet: boolean;
   trialDays: number;
+  /**
+     * Explicitly configured provider mode enforced on every price, session, subscription and event (null = invalid setting)
+     * @nullable
+     */
+  stripeMode: PlatformBillingStatusStripeMode;
+  /** Whether the centrally validated billing return URL is usable (the URL itself is never exposed) */
+  returnUrlConfigured: boolean;
+  /** @nullable */
+  returnUrlReason: PlatformBillingStatusReturnUrlReason;
 }

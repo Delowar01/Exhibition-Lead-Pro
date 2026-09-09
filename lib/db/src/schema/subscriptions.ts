@@ -1,8 +1,9 @@
-import { pgTable, serial, text, integer, timestamp, date, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, date, boolean, jsonb, index, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { sql } from "drizzle-orm";
 import { companiesTable } from "./companies";
+import { plansTable } from "./plans";
 
 // Canonical subscription record (Batch 20). Exactly ONE row per company
 // (company_id is unique) and the ONLY source of truth for plan, billing source,
@@ -30,7 +31,10 @@ export const subscriptionsTable = pgTable(
   {
     id: serial("id").primaryKey(),
     companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }).unique(),
-    plan: text("plan").notNull().default("free"), // logical reference to plans.id — validated by the subscription service; a DB FK is deferred until the plan catalog has been seeded on every environment
+    // B20 Correction 1: enforced at the database boundary (FK → plans.id). The
+    // plan catalog is seeded before this constraint is applied (staged activation:
+    // additive schema → repair/seed → constrained schema).
+    plan: text("plan").notNull().default("free").references(() => plansTable.id),
     status: text("status").notNull().default("trialing"), // trialing | active | past_due | cancelled | expired | suspended
     billingSource: text("billing_source").notNull().default("manual"), // manual | stripe
 
@@ -87,6 +91,10 @@ export const subscriptionsTable = pgTable(
     // One Stripe customer / subscription can bind to at most one company.
     uniqueIndex("subscriptions_stripe_customer_ux").on(t.stripeCustomerId).where(sql`stripe_customer_id is not null`),
     uniqueIndex("subscriptions_stripe_subscription_ux").on(t.stripeSubscriptionId).where(sql`stripe_subscription_id is not null`),
+    // B20 Correction 1 — canonical values are enforced by the database, not only by code.
+    check("subscriptions_status_chk", sql`status in ('trialing','active','past_due','cancelled','expired','suspended')`),
+    check("subscriptions_billing_source_chk", sql`billing_source in ('manual','stripe')`),
+    check("subscriptions_status_before_suspension_chk", sql`status_before_suspension is null or status_before_suspension in ('trialing','active','past_due','cancelled','expired')`),
   ],
 );
 

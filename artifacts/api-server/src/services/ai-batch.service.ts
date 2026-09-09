@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { analyzeEntity, assertEntityType } from "./ai-insights.service.js";
 import type { EntityType } from "../repositories/ai_insights.repository.js";
+import { assertTenantWritable } from "../lib/company-access.js";
 
 // Batch runner for Stage 5A. It lets a tenant (re)analyze ALL of one entity type at once.
 // Execution runs on the SHARED in-process background-job queue (lib/jobs): startBatch
@@ -148,6 +149,9 @@ export async function runAiAnalyzeEntityJob(payload: AiAnalyzeJobPayload): Promi
   if (!job) return; // job pruned/expired — nothing to update
   if (job.status === "queued") job.status = "running";
   try {
+    // B20 Correction 1: the payload carries a principal captured at enqueue time;
+    // the CANONICAL entitlement is re-read here, before any provider call.
+    if (payload.user.companyId != null) await assertTenantWritable(payload.user.companyId);
     await analyzeEntity(payload.user, payload.entityType, payload.entityId);
     job.succeeded += 1;
   } catch (err) {

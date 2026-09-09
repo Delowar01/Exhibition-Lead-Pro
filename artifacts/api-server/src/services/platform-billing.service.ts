@@ -78,7 +78,22 @@ export async function getSubscriptionDetail(companyId: number) {
     // Sanitized diagnostic refs only (platform-only view).
     providerCustomerRef: mask(sub.stripeCustomerId),
     providerSubscriptionRef: mask(sub.stripeSubscriptionId),
+    // B20 Correction 1: a second LIVE provider subscription for this company was
+    // refused and recorded; the operator resolves it in the provider.
+    providerConflict: await latestConflict(companyId),
+    // Last provider delivery that could not be applied because its price is unregistered.
+    providerPriceUnmapped: await latestPriceUnmapped(companyId),
   };
+}
+
+async function latestConflict(companyId: number) {
+  const row = await repo.latestProviderEventByOutcome(companyId, "conflict");
+  return row ? { eventType: row.eventType, eventRef: mask(row.eventId), receivedAt: row.receivedAt.toISOString() } : null;
+}
+
+async function latestPriceUnmapped(companyId: number) {
+  const row = await repo.latestProviderEventByOutcome(companyId, "price_unmapped");
+  return row ? { eventType: row.eventType, eventRef: mask(row.eventId), receivedAt: row.receivedAt.toISOString(), attempts: row.attempts } : null;
 }
 
 export async function listRecentProviderEvents(companyId: number, limit = 20) {
@@ -98,6 +113,10 @@ export function providerStatus() {
     automaticTax: config.billing.automaticTax,
     portalConfigurationSet: !!config.billing.stripePortalConfigurationId,
     trialDays: config.billing.trialDays,
+    // B20 Correction 1 — explicit Stripe mode + centrally validated return URL (never the value itself).
+    stripeMode: config.billing.stripeMode,
+    returnUrlConfigured: config.billing.returnUrl != null,
+    returnUrlReason: config.billing.returnUrlReason,
   };
 }
 
@@ -107,7 +126,7 @@ export async function listPrices() {
 }
 
 function fullPriceView(p: PlanPriceRow) {
-  return { ...priceView(p), providerPriceRef: mask(p.providerPriceId), providerProductRef: mask(p.providerProductId), verifiedAt: p.verifiedAt.toISOString(), createdAt: p.createdAt.toISOString() };
+  return { ...priceView(p), providerMode: p.providerMode, providerPriceRef: mask(p.providerPriceId), providerProductRef: mask(p.providerProductId), verifiedAt: p.verifiedAt.toISOString(), createdAt: p.createdAt.toISOString() };
 }
 
 // Registers a provider price for a plan. The browser supplies ONLY the plan and
@@ -130,6 +149,9 @@ export async function registerPrice(actor: AuditActor, input: { planId?: unknown
     logger.warn({ code }, "Price retrieval failed at the provider");
     throw new AppError(502, "The payment provider could not verify this price", { code: "PROVIDER_ERROR" });
   }
+  // B20 Correction 1: a price can only enter the catalog of the mode the server is configured for.
+  const expectedLive = (config.billing.stripeMode ?? "test") === "live";
+  if (remote.livemode !== expectedLive) throw new AppError(400, `This price belongs to Stripe ${remote.livemode ? "live" : "test"} mode; the platform is configured for ${expectedLive ? "live" : "test"} mode`, { code: "PRICE_MODE_MISMATCH" });
   if (remote.type !== "recurring" || !remote.recurringInterval) throw new AppError(400, "Only recurring prices can be mapped to a plan", { code: "PRICE_NOT_RECURRING" });
   if (remote.unitAmountMinor == null) throw new AppError(400, "Only fixed-amount prices can be mapped to a plan", { code: "PRICE_NOT_FIXED" });
   if (!remote.active) throw new AppError(400, "This provider price is not active", { code: "PRICE_INACTIVE" });
@@ -145,6 +167,7 @@ export async function registerPrice(actor: AuditActor, input: { planId?: unknown
         currency: remote.currency,
         unitAmountMinor: remote.unitAmountMinor as number,
         nickname: remote.nickname,
+        providerMode: remote.livemode ? "live" : "test",
         active: true,
         verifiedAt: new Date(),
         createdByUserId: actor.userId,

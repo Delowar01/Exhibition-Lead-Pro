@@ -112,10 +112,13 @@ export interface CapabilityContext {
   checkoutEnabled: boolean;
   portalConfigured: boolean;
   hasActivePrices: boolean;
+  // B20 Correction 1: the trusted return URL passed central validation.
+  returnUrlValid: boolean;
 }
 
 export type CapabilityReason =
   | "PROVIDER_UNAVAILABLE"
+  | "RETURN_URL_INVALID"
   | "CHECKOUT_DISABLED"
   | "NO_ACTIVE_PRICES"
   | "STATUS_NOT_ELIGIBLE"
@@ -152,6 +155,7 @@ export function resolveBillingCapabilities(
 
   let checkoutUnavailableReason: CapabilityReason | null = null;
   if (!ctx.providerAvailable) checkoutUnavailableReason = "PROVIDER_UNAVAILABLE";
+  else if (!ctx.returnUrlValid) checkoutUnavailableReason = "RETURN_URL_INVALID";
   else if (!ctx.checkoutEnabled) checkoutUnavailableReason = "CHECKOUT_DISABLED";
   else if (!ctx.hasActivePrices) checkoutUnavailableReason = "NO_ACTIVE_PRICES";
   else if (liveProviderSubscription) checkoutUnavailableReason = "LIVE_SUBSCRIPTION_EXISTS";
@@ -159,6 +163,7 @@ export function resolveBillingCapabilities(
 
   let portalUnavailableReason: CapabilityReason | null = null;
   if (!ctx.providerAvailable) portalUnavailableReason = "PROVIDER_UNAVAILABLE";
+  else if (!ctx.returnUrlValid) portalUnavailableReason = "RETURN_URL_INVALID";
   else if (sub.billingSource !== "stripe") portalUnavailableReason = "NOT_PROVIDER_MANAGED";
   else if (!sub.stripeCustomerId) portalUnavailableReason = "NO_PROVIDER_CUSTOMER";
   else if (status === "expired" || status === "suspended") portalUnavailableReason = "STATUS_NOT_ELIGIBLE";

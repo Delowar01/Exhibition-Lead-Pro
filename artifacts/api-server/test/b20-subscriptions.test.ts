@@ -480,14 +480,26 @@ describe("repair command (scripts/repair-subscriptions.ts) — dry-run then appl
     expect(num(again.out, "alreadyCanonical")).toBe(1);
     expect(dry.out + applied.out).not.toMatch(/@|whsec_|sk_/);
   });
-  it("normalizes a legacy 'trial' subscription row from the company authority and aborts on provider ids", async () => {
+  it("legacy statuses can no longer be written (constraint); the repair still completes a canonical row and aborts on provider ids", async () => {
+    // B20 Correction 1: the final schema forbids legacy status vocabulary at the
+    // database — legacy `trial` normalization happens in the pre-constraint stage
+    // of the staged activation (rehearsed on a scratch database, see
+    // docs/B20_SUBSCRIPTION_LIFECYCLE.md §12), never against a constrained database.
     const [legacy] = await db.insert(companiesTable).values({ name: `QA B20 Legacy Row ${SUFFIX}`, plan: "free", status: "active", trialEndsAt: null }).returning();
     companyIds.push(legacy.id);
-    await db.insert(subscriptionsTable).values({ companyId: legacy.id, plan: "free", status: "trial", billingSource: "manual" });
+    let sqlstate: string | null = null;
+    try {
+      await db.insert(subscriptionsTable).values({ companyId: legacy.id, plan: "free", status: "trial", billingSource: "manual" });
+    } catch (e: any) {
+      sqlstate = e?.code ?? e?.cause?.code ?? null;
+    }
+    expect(sqlstate).toBe("23514");
+    // A canonical row missing its usage anchor is completed by the repair (idempotent).
+    await db.insert(subscriptionsTable).values({ companyId: legacy.id, plan: "free", status: "active", billingSource: "manual", usageAnchorAt: null });
     const dry = repair([`--company=${legacy.id}`]);
     expect(dry.code, dry.out).toBe(0);
     expect(num(dry.out, "plannedUpdates")).toBe(1);
-    expect(dry.out).toContain("legacy_active");
+    expect(dry.out).toContain("update:legacy_active"); // rule of the company authority; the patch completes usageAnchorAt
     const applied = repair([`--company=${legacy.id}`, "--apply"]);
     expect(applied.code, applied.out).toBe(0);
     expect((await subRow(legacy.id)).status).toBe("active");

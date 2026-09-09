@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import type { Executor } from "../repositories/base.js";
 import * as repo from "../repositories/subscriptions.repository.js";
-import type { SubscriptionRow } from "../repositories/subscriptions.repository.js";
+import type { SubscriptionRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
 import { findPlan } from "../lib/billing/plan-catalog.js";
 import {
   checkTransition,
@@ -277,26 +277,79 @@ export async function convertToManual(companyId: number, actor: Actor): Promise<
   });
 }
 
-// ── Provider state application (webhook + manual sync share this) ────────────
+// ── Provider state application (webhook, manual sync and Checkout reconciliation) ──
 
 export interface ApplyProviderResult {
   changed: boolean;
-  outcome: "applied" | "stale" | "no_change" | "mismatch" | "unbound";
+  outcome: "applied" | "stale" | "no_change" | "mismatch" | "unbound" | "conflict";
+  // B20 Correction 1: true when a TERMINAL provider subscription binding was
+  // replaced by a new live one that the tenant's own Checkout produced.
+  replaced?: boolean;
   subscription: SubscriptionRow;
+}
+
+// Evidence that a provider subscription belongs to THIS tenant's own Checkout:
+// the server-generated metadata Stripe copies from `subscription_data.metadata`
+// (companyId / subscriptionId / checkoutId) or the local Checkout intent that
+// completed with this provider subscription id. Never the customer id alone,
+// never an email.
+export interface ProviderLinkage {
+  checkoutId?: number | null;
+  completedCheckout?: CheckoutSessionRow | null;
+}
+
+// B20 Correction 1 — a live provider subscription billed on a price that the
+// platform owner has not registered must not change entitlement. The webhook
+// answers non-2xx (Stripe retries after the price is registered).
+export class ProviderPriceUnmappedError extends Error {
+  readonly code = "PROVIDER_PRICE_UNMAPPED";
+  constructor() {
+    super("The provider subscription uses a price that is not registered on this platform");
+    this.name = "ProviderPriceUnmappedError";
+    Object.setPrototypeOf(this, ProviderPriceUnmappedError.prototype);
+  }
+}
+
+export const TERMINAL_PROVIDER_STATUSES = new Set(["canceled", "incomplete_expired"]);
+
+function boundIsTerminal(sub: SubscriptionRow): boolean {
+  if (!sub.stripeSubscriptionId) return true;
+  if (sub.providerStatus) return TERMINAL_PROVIDER_STATUSES.has(sub.providerStatus);
+  const st = normalizeLegacyStatus(sub.status);
+  return st === "cancelled" || st === "expired";
+}
+
+async function linkageProven(tx: Executor, sub: SubscriptionRow, remote: ProviderSubscription, linkage?: ProviderLinkage): Promise<boolean> {
+  const meta = remote.metadata ?? {};
+  const metaCompany = /^\d{1,12}$/.test(meta.companyId ?? "") ? Number(meta.companyId) : null;
+  const metaSub = /^\d{1,12}$/.test(meta.subscriptionId ?? "") ? Number(meta.subscriptionId) : null;
+  if (metaCompany === sub.companyId && metaSub === sub.id) return true;
+  if (linkage?.completedCheckout && linkage.completedCheckout.companyId === sub.companyId && linkage.completedCheckout.subscriptionId === sub.id) return true;
+  const checkoutId = linkage?.checkoutId ?? (/^\d{1,12}$/.test(meta.checkoutId ?? "") ? Number(meta.checkoutId) : null);
+  if (checkoutId != null) {
+    const co = await repo.findCheckoutSessionById(checkoutId, tx);
+    if (co && co.companyId === sub.companyId && co.subscriptionId === sub.id && (co.status === "open" || co.status === "completed" || co.status === "creating")) return true;
+  }
+  const completed = await repo.findCompletedCheckoutByProviderSubscription(sub.companyId, remote.id, tx);
+  return !!completed && completed.subscriptionId === sub.id;
 }
 
 // Applies the provider's authoritative subscription object to the locked local
 // row. Rules:
 //   • an event older than the newest applied event is STALE and ignored;
-//   • a provider subscription id that disagrees with the bound id is a MISMATCH
-//     (nothing changes);
+//   • a provider customer that disagrees with the bound customer is a MISMATCH;
+//   • a bound LIVE provider subscription is never replaced by a different one:
+//     two live subscriptions are recorded as a CONFLICT for the platform operator;
+//   • a bound TERMINAL provider subscription may be replaced only by a LIVE one
+//     that the tenant's own Checkout produced (server metadata / local intent);
+//   • a platform-managed (manual) row with no binding is taken over only by a
+//     LIVE, linked provider subscription — never by customer id alone;
+//   • a LIVE subscription must be billed on a REGISTERED price (active or not);
+//     otherwise PROVIDER_PRICE_UNMAPPED and nothing changes. A terminal event
+//     for an already-bound subscription still cancels it even without a price;
 //   • while the platform holds the tenant SUSPENDED, provider state updates only
 //     the shadow fields (statusBeforeSuspension / provider*) — access stays blocked;
-//   • incomplete / incomplete_expired never change entitlement;
-//   • a PLATFORM-MANAGED (manual) row with no bound provider subscription is taken
-//     over only by a LIVE provider subscription (trialing/active/past_due/unpaid/
-//     paused). A late or terminal event about an old, detached subscription
-//     (e.g. after convert-to-manual) is UNBOUND and changes nothing.
+//   • incomplete / incomplete_expired never change entitlement.
 export async function applyProviderState(
   tx: Executor,
   sub: SubscriptionRow,
@@ -304,20 +357,31 @@ export async function applyProviderState(
   eventCreated: Date | null,
   actor: Actor = PROVIDER_ACTOR,
   extra?: Record<string, string | number | boolean | null>,
+  linkage?: ProviderLinkage,
 ): Promise<ApplyProviderResult> {
-  if (sub.stripeSubscriptionId && sub.stripeSubscriptionId !== remote.id) return { changed: false, outcome: "mismatch", subscription: sub };
+  const remoteLive = LIVE_PROVIDER_STATUSES.has(remote.status);
   if (sub.stripeCustomerId && remote.customerId && sub.stripeCustomerId !== remote.customerId) return { changed: false, outcome: "mismatch", subscription: sub };
   if (eventCreated && sub.providerEventCreatedAt && eventCreated.getTime() < sub.providerEventCreatedAt.getTime()) {
     return { changed: false, outcome: "stale", subscription: sub };
   }
-  if (sub.billingSource === "manual" && !sub.stripeSubscriptionId && !LIVE_PROVIDER_STATUSES.has(remote.status)) {
-    return { changed: false, outcome: "unbound", subscription: sub };
+  let replaced = false;
+  if (sub.stripeSubscriptionId && sub.stripeSubscriptionId !== remote.id) {
+    const terminal = boundIsTerminal(sub);
+    if (!remoteLive) return { changed: false, outcome: "unbound", subscription: sub }; // late/terminal event for another subscription
+    if (!terminal) return { changed: false, outcome: "conflict", subscription: sub }; // two live provider subscriptions
+    if (!(await linkageProven(tx, sub, remote, linkage))) return { changed: false, outcome: "unbound", subscription: sub };
+    replaced = true;
+  } else if (!sub.stripeSubscriptionId) {
+    // First binding: must be live AND linked to this tenant's own Checkout.
+    if (!remoteLive) return { changed: false, outcome: "unbound", subscription: sub };
+    if (!(await linkageProven(tx, sub, remote, linkage))) return { changed: false, outcome: "unbound", subscription: sub };
   }
   const mapped = mapProviderStatus(remote.status);
-  // The plan follows the VERIFIED price mapping the provider subscription is
-  // billed on (server-registered by the platform owner); an unmapped price never
-  // changes the plan.
+  // The plan follows the VERIFIED price mapping (active or retired) the provider
+  // subscription is billed on. A live subscription on an unregistered price is refused.
   const mappedPrice = remote.priceId ? await repo.findPlanPriceByProviderId(remote.priceId, tx) : undefined;
+  const priceChanged = remote.priceId !== sub.stripePriceId || replaced || !sub.stripeSubscriptionId;
+  if (remoteLive && !mappedPrice && (priceChanged || !remote.priceId)) throw new ProviderPriceUnmappedError();
   const patch: Partial<SubscriptionRow> = {
     ...(mappedPrice ? { plan: mappedPrice.planId } : {}),
     billingSource: "stripe",
@@ -330,7 +394,7 @@ export async function applyProviderState(
     currentPeriodStartsAt: remote.currentPeriodStart ?? sub.currentPeriodStartsAt,
     currentPeriodEndsAt: remote.currentPeriodEnd ?? sub.currentPeriodEndsAt,
     cancelAtPeriodEnd: remote.cancelAtPeriodEnd,
-    canceledAt: remote.canceledAt ?? (mapped.status === "cancelled" ? sub.canceledAt ?? new Date() : sub.canceledAt),
+    canceledAt: remote.canceledAt ?? (mapped.status === "cancelled" ? sub.canceledAt ?? new Date() : replaced ? null : sub.canceledAt),
     endedAt: remote.endedAt ?? (mapped.status === "cancelled" ? sub.endedAt ?? new Date() : null),
     trialStartedAt: remote.trialStart ?? sub.trialStartedAt,
     trialExpiresAt: remote.trialEnd ?? (mapped.status === "trialing" ? sub.trialExpiresAt : null),
@@ -356,8 +420,20 @@ export async function applyProviderState(
     }
     return { changed: false, outcome: "no_change", subscription: sub };
   }
-  const after = await commitChange(tx, sub, patch, "subscription.provider_sync", actor, { providerStatus: remote.status, mapping: mapped.note, ...(extra ?? {}) });
-  return { changed: true, outcome: "applied", subscription: after };
+  const after = await commitChange(
+    tx,
+    sub,
+    patch,
+    replaced ? "subscription.provider_replaced" : "subscription.provider_sync",
+    actor,
+    { providerStatus: remote.status, mapping: mapped.note, ...(replaced ? { replacedProviderSubscriptionRef: maskRef(sub.stripeSubscriptionId) } : {}), ...(extra ?? {}) },
+  );
+  return { changed: true, outcome: "applied", replaced, subscription: after };
+}
+
+function maskRef(id: string | null): string | null {
+  if (!id) return null;
+  return id.length <= 6 ? "…" : `${id.slice(0, 4)}…${id.slice(-4)}`;
 }
 
 export async function syncFromProvider(companyId: number, actor: Actor): Promise<ApplyProviderResult> {
@@ -370,7 +446,12 @@ export async function syncFromProvider(companyId: number, actor: Actor): Promise
   if (!provider.available) throw new AppError(503, "Billing provider unavailable", { code: "PROVIDER_UNAVAILABLE" });
   const remote = await provider.retrieveSubscription(current.stripeSubscriptionId);
   if (!remote) throw conflict("PROVIDER_SUBSCRIPTION_NOT_FOUND", "The provider no longer knows this subscription.");
-  return withLockedSubscription(companyId, async (tx, sub) => applyProviderState(tx, sub, remote, null, actor, { source: "manual_sync" }));
+  try {
+    return await withLockedSubscription(companyId, async (tx, sub) => applyProviderState(tx, sub, remote, null, actor, { source: "manual_sync" }));
+  } catch (err) {
+    if (err instanceof ProviderPriceUnmappedError) throw conflict("PROVIDER_PRICE_UNMAPPED", "The provider subscription is billed on a price that is not registered. Register the price mapping, then sync again.");
+    throw err;
+  }
 }
 
 // ── System sweep (elapsed manual trials) ─────────────────────────────────────

@@ -15,6 +15,7 @@ export type ProviderKind = "stripe" | "fake" | "unavailable";
 
 export interface ProviderPrice {
   id: string;
+  livemode: boolean; // B20 Correction 1: verified against the configured Stripe mode
   productId: string | null;
   currency: string; // lowercase ISO-4217 as the provider reports it
   unitAmountMinor: number | null;
@@ -27,6 +28,7 @@ export interface ProviderPrice {
 
 export interface ProviderSubscription {
   id: string;
+  livemode: boolean;
   customerId: string;
   status: string; // raw provider status
   priceId: string | null;
@@ -43,6 +45,7 @@ export interface ProviderSubscription {
 
 export interface ProviderCheckoutSession {
   id: string;
+  livemode: boolean;
   url: string | null;
   status: string | null; // open | complete | expired
   customerId: string | null;
@@ -107,6 +110,10 @@ export interface BillingProvider {
   createCustomer(input: CreateCustomerInput): Promise<{ id: string }>;
   createCheckoutSession(input: CreateCheckoutInput): Promise<ProviderCheckoutSession>;
   retrieveCheckoutSession(sessionId: string): Promise<ProviderCheckoutSession | null>;
+  // B20 Correction 1: expires an OPEN hosted Checkout session at the provider so it
+  // can no longer be completed (Stripe: POST /v1/checkout/sessions/:id/expire).
+  // Resolves with the provider's resulting session state; rejects on failure.
+  expireCheckoutSession(sessionId: string): Promise<ProviderCheckoutSession>;
   createPortalSession(input: CreatePortalInput): Promise<{ url: string }>;
   retrieveSubscription(subscriptionId: string): Promise<ProviderSubscription | null>;
   // Verifies the signature over the UNMODIFIED raw body and parses the event.
@@ -131,6 +138,9 @@ export class UnavailableBillingProvider implements BillingProvider {
     return Promise.reject(new BillingProviderError("PROVIDER_UNAVAILABLE"));
   }
   retrieveCheckoutSession(): Promise<ProviderCheckoutSession | null> {
+    return Promise.reject(new BillingProviderError("PROVIDER_UNAVAILABLE"));
+  }
+  expireCheckoutSession(): Promise<ProviderCheckoutSession> {
     return Promise.reject(new BillingProviderError("PROVIDER_UNAVAILABLE"));
   }
   createPortalSession(): Promise<{ url: string }> {

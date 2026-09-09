@@ -57,12 +57,25 @@ const CHECKOUT_REASON: Record<string, string> = {
   NO_ACTIVE_PRICES: "No online plan prices are available yet.",
   LIVE_SUBSCRIPTION_EXISTS: "This company already has an online subscription — manage it in the billing portal.",
   STATUS_NOT_ELIGIBLE: "Online checkout is not available in the current subscription state.",
+  RETURN_URL_INVALID: "Online checkout is not available until the platform operator completes the billing configuration.",
+  RETURN_URL_MISSING: "Online checkout is not available until the platform operator completes the billing configuration.",
+  RETURN_URL_INSECURE: "Online checkout is not available until the platform operator completes the billing configuration.",
+  RETURN_URL_LOCALHOST: "Online checkout is not available until the platform operator completes the billing configuration.",
+  CHECKOUT_IN_PROGRESS: "Another checkout for your company is being prepared. Please try again in a moment.",
+  CHECKOUT_ALREADY_COMPLETED: "Your previous checkout has already completed; the subscription is being synchronized.",
+  PROVIDER_MODE_MISMATCH: "The payment provider configuration is inconsistent. Please contact the platform operator.",
+  PRICE_MODE_MISMATCH: "This price is not available in the current payment configuration.",
+  PROVIDER_CUSTOMER_MISMATCH: "Your billing account could not be linked. Please contact the platform operator.",
 };
 const PORTAL_REASON: Record<string, string> = {
   PROVIDER_UNAVAILABLE: "The billing portal is not available on this platform.",
   NOT_PROVIDER_MANAGED: "This subscription is managed by the platform operator.",
   NO_PROVIDER_CUSTOMER: "No online billing account exists for this company yet.",
   STATUS_NOT_ELIGIBLE: "The billing portal is not available in the current subscription state.",
+  RETURN_URL_INVALID: "The billing portal is not available until the platform operator completes the billing configuration.",
+  RETURN_URL_MISSING: "The billing portal is not available until the platform operator completes the billing configuration.",
+  RETURN_URL_INSECURE: "The billing portal is not available until the platform operator completes the billing configuration.",
+  RETURN_URL_LOCALHOST: "The billing portal is not available until the platform operator completes the billing configuration.",
 };
 
 export { subscriptionAccess } from "@/components/billing/permissions";

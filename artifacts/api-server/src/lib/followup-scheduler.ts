@@ -3,6 +3,7 @@ import { contactsTable } from "@workspace/db";
 import { and, lte, isNotNull, isNull, ne, or, sql, inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { notifyUser } from "./push.js";
+import { writableCompanyIds } from "./company-access.js";
 
 // Finds contacts whose follow-up is due today (or overdue) and pushes a
 // reminder to the assigned rep. Each contact is notified at most once per
@@ -53,11 +54,25 @@ export async function runFollowUpReminders(): Promise<void> {
 
   if (due.length === 0) return;
 
+  // B20 Correction 1: reminders (push + the followUpNotifiedOn CRM marker) are a
+  // side effect — only tenants whose CANONICAL entitlement is `full` receive them.
+  // Read-only / blocked tenants are skipped for this tick and picked up again
+  // once their subscription is writable (the marker stays unset).
+  const writable = await writableCompanyIds();
+  const skippedTenants = new Set<number>();
+  const eligible = due.filter((c) => {
+    if (writable.has(c.companyId!)) return true;
+    skippedTenants.add(c.companyId!);
+    return false;
+  });
+  if (skippedTenants.size > 0) logger.info({ companies: skippedTenants.size, contacts: due.length - eligible.length }, "Follow-up reminders skipped: subscription not writable");
+  if (eligible.length === 0) return;
+
   // One notification per rep, summarising their due follow-ups. Grouped strictly within
   // a (companyId, assignedToId) tenant boundary (GAP-06) — companyId is guaranteed non-null
   // by the query above, so every group belongs to exactly one tenant.
   const byCompanyUser = new Map<string, typeof due>();
-  for (const c of due) {
+  for (const c of eligible) {
     const key = `${c.companyId}:${c.assignedToId}`;
     const arr = byCompanyUser.get(key) ?? [];
     arr.push(c);

@@ -141,7 +141,7 @@ describe("mapProviderStatus — Stripe status → canonical state", () => {
 });
 
 describe("resolveBillingCapabilities — when Checkout / Portal are offered", () => {
-  const ctx = { providerAvailable: true, checkoutEnabled: true, portalConfigured: true, hasActivePrices: true };
+  const ctx = { providerAvailable: true, checkoutEnabled: true, portalConfigured: true, hasActivePrices: true, returnUrlValid: true };
   const sub = (o: Partial<{ status: string; billingSource: string; stripeCustomerId: string | null; stripeSubscriptionId: string | null }>) => ({
     status: "trialing",
     billingSource: "manual",
@@ -153,6 +153,8 @@ describe("resolveBillingCapabilities — when Checkout / Portal are offered", ()
     expect(resolveBillingCapabilities(sub({}), ctx)).toMatchObject({ checkoutAvailable: true, portalAvailable: false, portalUnavailableReason: "NOT_PROVIDER_MANAGED" });
     expect(resolveBillingCapabilities(sub({}), { ...ctx, providerAvailable: false }).checkoutUnavailableReason).toBe("PROVIDER_UNAVAILABLE");
     expect(resolveBillingCapabilities(sub({}), { ...ctx, checkoutEnabled: false }).checkoutUnavailableReason).toBe("CHECKOUT_DISABLED");
+    // B20 C1: an unusable return URL makes Checkout unavailable with a stable reason (manual billing unaffected).
+    expect(resolveBillingCapabilities(sub({}), { ...ctx, returnUrlValid: false }).checkoutUnavailableReason).toBe("RETURN_URL_INVALID");
     expect(resolveBillingCapabilities(sub({}), { ...ctx, hasActivePrices: false }).checkoutUnavailableReason).toBe("NO_ACTIVE_PRICES");
     expect(resolveBillingCapabilities(sub({ status: "active" }), ctx).checkoutUnavailableReason).toBe("STATUS_NOT_ELIGIBLE");
     expect(resolveBillingCapabilities(sub({ status: "cancelled" }), ctx).checkoutAvailable).toBe(true);
@@ -167,6 +169,7 @@ describe("resolveBillingCapabilities — when Checkout / Portal are offered", ()
     expect(resolveBillingCapabilities({ ...managed, stripeCustomerId: null }, ctx).portalUnavailableReason).toBe("NO_PROVIDER_CUSTOMER");
     expect(resolveBillingCapabilities({ ...managed, status: "suspended" }, ctx).portalUnavailableReason).toBe("STATUS_NOT_ELIGIBLE");
     expect(resolveBillingCapabilities(managed, { ...ctx, providerAvailable: false }).portalUnavailableReason).toBe("PROVIDER_UNAVAILABLE");
+    expect(resolveBillingCapabilities(managed, { ...ctx, returnUrlValid: false }).portalUnavailableReason).toBe("RETURN_URL_INVALID");
   });
 });
 

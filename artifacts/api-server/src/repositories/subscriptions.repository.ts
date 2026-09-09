@@ -226,13 +226,33 @@ export async function findCheckoutSessionByProviderId(providerSessionId: string,
   return row;
 }
 
-export async function findOpenCheckoutSession(companyId: number, now: Date, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
-  const [row] = await exec(tx)
+// The company's single NON-TERMINAL Checkout intent (creating | open), if any —
+// guaranteed unique by billing_checkout_sessions_current_ux.
+export async function findCurrentCheckoutIntent(companyId: number, tx?: Executor, lock = false): Promise<CheckoutSessionRow | undefined> {
+  const q = exec(tx)
     .select()
     .from(billingCheckoutSessionsTable)
-    .where(and(eq(billingCheckoutSessionsTable.companyId, companyId), eq(billingCheckoutSessionsTable.status, "created"), or(isNull(billingCheckoutSessionsTable.expiresAt), gt(billingCheckoutSessionsTable.expiresAt, now))))
+    .where(and(eq(billingCheckoutSessionsTable.companyId, companyId), inArray(billingCheckoutSessionsTable.status, ["creating", "open"])))
     .orderBy(desc(billingCheckoutSessionsTable.id))
     .limit(1);
+  const [row] = lock && tx ? await q.for("update") : await q;
+  return row;
+}
+
+export async function findCheckoutSessionById(id: number, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
+  const [row] = await exec(tx).select().from(billingCheckoutSessionsTable).where(eq(billingCheckoutSessionsTable.id, id)).limit(1);
+  return row;
+}
+
+// Inserts a `creating` intent unless the company already has a non-terminal one
+// (partial unique index → ON CONFLICT DO NOTHING). Returns the inserted row or
+// undefined when another request won the race.
+export async function insertCheckoutIntent(values: typeof billingCheckoutSessionsTable.$inferInsert, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
+  const [row] = await exec(tx)
+    .insert(billingCheckoutSessionsTable)
+    .values(values)
+    .onConflictDoNothing({ target: billingCheckoutSessionsTable.companyId, where: sql`status in ('creating','open')` })
+    .returning();
   return row;
 }
 
@@ -243,11 +263,25 @@ export async function updateCheckoutSession(id: number, data: Partial<typeof bil
     .where(eq(billingCheckoutSessionsTable.id, id));
 }
 
-export async function expireOpenCheckoutSessions(companyId: number, exceptId: number | null, tx?: Executor): Promise<void> {
-  await exec(tx)
+// Conditional state change: applies only while the row is still in `from`.
+export async function transitionCheckoutSession(id: number, from: string[], data: Partial<typeof billingCheckoutSessionsTable.$inferInsert>, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
+  const [row] = await exec(tx)
     .update(billingCheckoutSessionsTable)
-    .set({ status: "expired", updatedAt: new Date() })
-    .where(and(eq(billingCheckoutSessionsTable.companyId, companyId), eq(billingCheckoutSessionsTable.status, "created"), exceptId == null ? undefined : ne(billingCheckoutSessionsTable.id, exceptId)));
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(billingCheckoutSessionsTable.id, id), inArray(billingCheckoutSessionsTable.status, from)))
+    .returning();
+  return row;
+}
+
+// Completed local intents that bound a provider subscription (replacement proof / history).
+export async function findCompletedCheckoutByProviderSubscription(companyId: number, providerSubscriptionId: string, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
+  const [row] = await exec(tx)
+    .select()
+    .from(billingCheckoutSessionsTable)
+    .where(and(eq(billingCheckoutSessionsTable.companyId, companyId), eq(billingCheckoutSessionsTable.providerSubscriptionId, providerSubscriptionId)))
+    .orderBy(desc(billingCheckoutSessionsTable.id))
+    .limit(1);
+  return row;
 }
 
 // ── provider events ──────────────────────────────────────────────────────────
@@ -263,6 +297,15 @@ export async function lockProviderEvent(eventId: string, tx: Executor): Promise<
   return row;
 }
 
+// B20 Correction 1 — transaction-safe claim: INSERT … ON CONFLICT (event_id) DO
+// NOTHING. Returns the new row, or undefined when the event already exists (the
+// caller then locks and inspects the existing row). Never raises 23505, so the
+// surrounding transaction stays usable.
+export async function claimProviderEvent(values: typeof billingProviderEventsTable.$inferInsert, tx: Executor): Promise<ProviderEventRow | undefined> {
+  const [row] = await tx.insert(billingProviderEventsTable).values(values).onConflictDoNothing({ target: billingProviderEventsTable.eventId }).returning();
+  return row;
+}
+
 export async function insertProviderEvent(values: typeof billingProviderEventsTable.$inferInsert, tx?: Executor): Promise<ProviderEventRow> {
   const [row] = await exec(tx).insert(billingProviderEventsTable).values(values).returning();
   return row;
@@ -270,6 +313,45 @@ export async function insertProviderEvent(values: typeof billingProviderEventsTa
 
 export async function updateProviderEvent(id: number, data: Partial<typeof billingProviderEventsTable.$inferInsert>, tx?: Executor): Promise<void> {
   await exec(tx).update(billingProviderEventsTable).set(data).where(eq(billingProviderEventsTable.id, id));
+}
+
+// B20 Correction 1 — conditional failure record, used OUTSIDE the rolled-back
+// processing transaction: inserts a `failed` row for an absent event, or bumps an
+// existing row ONLY while it is already `failed`. A concurrently processed /
+// ignored row is never downgraded. Returns the resulting row (or undefined when
+// the existing row was left untouched).
+export async function recordProviderEventFailure(
+  values: { provider: string; providerMode: string; eventId: string; eventType: string; providerCreatedAt: Date | null; failureCode: string; outcome?: string | null; companyId?: number | null; subscriptionId?: number | null },
+  tx?: Executor,
+): Promise<ProviderEventRow | undefined> {
+  const { outcome, companyId, subscriptionId, ...rest } = values;
+  const [row] = await exec(tx)
+    .insert(billingProviderEventsTable)
+    .values({ ...rest, outcome: outcome ?? null, companyId: companyId ?? null, subscriptionId: subscriptionId ?? null, status: "failed", attempts: 1 })
+    .onConflictDoUpdate({
+      target: billingProviderEventsTable.eventId,
+      set: {
+        status: "failed",
+        failureCode: values.failureCode,
+        outcome: outcome ?? null,
+        attempts: sql`${billingProviderEventsTable.attempts} + 1`,
+        companyId: sql`coalesce(${companyId ?? null}, ${billingProviderEventsTable.companyId})`,
+        subscriptionId: sql`coalesce(${subscriptionId ?? null}, ${billingProviderEventsTable.subscriptionId})`,
+      },
+      setWhere: eq(billingProviderEventsTable.status, "failed"),
+    })
+    .returning();
+  return row;
+}
+
+export async function latestProviderEventByOutcome(companyId: number, outcome: string, tx?: Executor): Promise<ProviderEventRow | undefined> {
+  const [row] = await exec(tx)
+    .select()
+    .from(billingProviderEventsTable)
+    .where(and(eq(billingProviderEventsTable.companyId, companyId), eq(billingProviderEventsTable.outcome, outcome)))
+    .orderBy(desc(billingProviderEventsTable.id))
+    .limit(1);
+  return row;
 }
 
 export async function listProviderEvents(opts: { companyId?: number; limit: number }): Promise<ProviderEventRow[]> {

@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, index, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { companiesTable } from "./companies";
 
 // Usage reservations for consumable resources (Batch 20) — today: scans.
@@ -26,7 +27,12 @@ export const subscriptionUsageReservationsTable = pgTable(
     consumedAt: timestamp("consumed_at"),
     releasedAt: timestamp("released_at"),
   },
-  (t) => [index("subscription_usage_reservations_lookup_idx").on(t.companyId, t.resource, t.status)],
+  (t) => [
+    index("subscription_usage_reservations_lookup_idx").on(t.companyId, t.resource, t.status),
+    check("subscription_usage_reservations_resource_chk", sql`resource in ('scans')`),
+    check("subscription_usage_reservations_status_chk", sql`status in ('pending','consumed','released')`),
+    check("subscription_usage_reservations_quantity_chk", sql`quantity > 0`),
+  ],
 );
 
 export type SubscriptionUsageReservation = typeof subscriptionUsageReservationsTable.$inferSelect;

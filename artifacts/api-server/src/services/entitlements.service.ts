@@ -42,9 +42,39 @@ export interface UsageReport {
   resources: ResourceUsage[];
 }
 
+// B20 Correction 1 — canonical-integrity errors. Entitlement services FAIL CLOSED:
+// a company without a canonical subscription row, or a subscription that
+// references a plan that no longer exists, is an integrity fault that must surface
+// as a deterministic error — never as "unlimited".
+export type SubscriptionIntegrityCode = "SUBSCRIPTION_MISSING" | "SUBSCRIPTION_PLAN_INVALID";
+
+export class SubscriptionIntegrityError extends AppError {
+  constructor(code: SubscriptionIntegrityCode, companyId: number, plan?: string) {
+    super(
+      409,
+      code === "SUBSCRIPTION_MISSING"
+        ? "This company has no canonical subscription record. Contact the platform operator."
+        : "This company's subscription references an unknown plan. Contact the platform operator.",
+      { code, details: plan ? { companyId, plan } : { companyId } },
+    );
+    Object.setPrototypeOf(this, SubscriptionIntegrityError.prototype);
+  }
+}
+
+// Effective limits of a subscription. Throws SUBSCRIPTION_PLAN_INVALID when the
+// referenced plan row is missing (the DB FK forbids this for new writes; legacy
+// rows are repaired by scripts/repair-subscriptions.ts).
 export async function effectiveLimitsFor(sub: SubscriptionRow, tx?: Executor): Promise<EffectiveLimit[]> {
   const plan = await repo.findPlanById(sub.plan, tx);
-  return resolveEffectiveLimits(plan ?? null, sub.limitOverrides);
+  if (!plan) throw new SubscriptionIntegrityError("SUBSCRIPTION_PLAN_INVALID", sub.companyId, sub.plan);
+  return resolveEffectiveLimits(plan, sub.limitOverrides);
+}
+
+// Loads the canonical row for a limit decision; a missing row fails closed.
+export async function requireCanonicalSubscription(companyId: number, tx?: Executor): Promise<SubscriptionRow> {
+  const sub = await repo.findByCompanyId(companyId, tx);
+  if (!sub) throw new SubscriptionIntegrityError("SUBSCRIPTION_MISSING", companyId);
+  return sub;
 }
 
 export function roleFamily(role: string): "admins" | "employees" | null {
@@ -126,8 +156,8 @@ export class LimitExceededError extends AppError {
 // Returns the effective limit (null = unlimited, nothing was locked or counted).
 export async function assertCapacity(tx: Executor, companyId: number, resource: CountedResource, quantity: number, opts: CountOptions = {}): Promise<{ limit: number | null; used: number }> {
   if (quantity <= 0) return { limit: null, used: 0 };
-  const sub = await repo.findByCompanyId(companyId, tx);
-  if (!sub) return { limit: null, used: 0 }; // no canonical row → unlimited (repair guarantees rows; access is already fail-closed)
+  // Fail closed: no canonical row / unknown plan → integrity error, never unlimited.
+  const sub = await requireCanonicalSubscription(companyId, tx);
   const limits = await effectiveLimitsFor(sub, tx);
   const limit = limitFor(limits, resource);
   if (limit == null) return { limit: null, used: 0 };
@@ -159,15 +189,15 @@ export async function reserveScans(companyId: number, idempotencyKey: string, qu
       return { reservationId: existing.id, status: "consumed", alreadyConsumed: true };
     }
     if (existing?.status === "pending" && existing.expiresAt.getTime() > Date.now()) return { reservationId: existing.id, status: "pending", alreadyConsumed: false };
-    const sub = await repo.findByCompanyId(companyId, tx);
-    if (sub) {
-      const limits = await effectiveLimitsFor(sub, tx);
-      const limit = limitFor(limits, "scans");
-      if (limit != null) {
-        await repo.acquireUsageLock(companyId, "scans", tx);
-        const { used } = await countUsage(companyId, sub, "scans", {}, tx);
-        if (used + quantity > limit) throw new LimitExceededError("scans", limit, used, quantity);
-      }
+    // Fail closed (B20 C1): a reservation is never admitted without a canonical
+    // subscription whose plan resolves.
+    const sub = await requireCanonicalSubscription(companyId, tx);
+    const limits = await effectiveLimitsFor(sub, tx);
+    const limit = limitFor(limits, "scans");
+    if (limit != null) {
+      await repo.acquireUsageLock(companyId, "scans", tx);
+      const { used } = await countUsage(companyId, sub, "scans", {}, tx);
+      if (used + quantity > limit) throw new LimitExceededError("scans", limit, used, quantity);
     }
     const expiresAt = new Date(Date.now() + ttl);
     if (existing) {

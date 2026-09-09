@@ -1,6 +1,5 @@
 import {
   db,
-  companiesTable,
   usersTable,
   leadsTable,
   contactsTable,
@@ -12,6 +11,7 @@ import { and, eq, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { createNotification } from "../services/notifications.service.js";
 import { resolveSettings } from "../services/ai.service.js";
+import { writableCompanyIds } from "./company-access.js";
 import {
   detectLeadRisks,
   detectContactRisks,
@@ -207,12 +207,13 @@ async function dispatchCompanyAlerts(companyId: number, risks: SlaRisk[]): Promi
 }
 
 // Global recurring sweep across all live tenants (registered with the jobs scheduler).
-// Suspended/expired/cancelled tenants are skipped — no alerts for dormant accounts.
+// B20 Correction 1: eligibility comes from the CANONICAL subscription entitlement
+// (never the legacy companies.status mirror, which maps past_due to "active"):
+// only tenants with `full` access receive alerts — no notifications / emails for
+// read-only or blocked accounts.
 export async function runWorkflowAlerts(): Promise<SweepResult> {
-  const companies = await db
-    .select({ id: companiesTable.id })
-    .from(companiesTable)
-    .where(inArray(companiesTable.status, ["trial", "active"]));
+  const writable = await writableCompanyIds();
+  const companies = [...writable].map((id) => ({ id }));
 
   const result: SweepResult = { companies: companies.length, notified: 0, skipped: 0 };
   for (const c of companies) {

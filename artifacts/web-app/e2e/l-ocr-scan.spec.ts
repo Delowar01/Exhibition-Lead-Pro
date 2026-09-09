@@ -1,5 +1,8 @@
 import path from "node:path";
+import fs from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { Client } from "pg";
 import { test, expect, state, seedAuth } from "./fixtures/workspace";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +41,23 @@ async function api(pathname: string, method = "GET", body?: unknown) {
 let originalSettings: { provider?: string | null; model?: string | null; enabled?: boolean } = {};
 let savedContactId: number | null = null;
 
+// B20 Correction 1 — test-data hygiene. Every upload below makes the API reserve
+// scan capacity under a DETERMINISTIC key derived from (company, user, image):
+//   scan:<companyId>:<userId>:<sha256("data:image/jpeg;base64,<file>")[:32]>
+// (artifacts/api-server/src/services/scans.service.ts). The keys of the two
+// fixtures are computed up-front, recorded, and afterAll deletes EXACTLY those
+// rows — never a company-wide delete — so a focused or full run leaves no
+// reservation behind even when a test fails midway.
+function reservationKeyFor(fixture: string): string {
+  const dataUrl = `data:image/jpeg;base64,${fs.readFileSync(fixture).toString("base64")}`;
+  return `scan:${state.user.companyId}:${state.user.id}:${createHash("sha256").update(dataUrl).digest("hex").slice(0, 32)}`;
+}
+const reservationKeys: string[] = [];
+function trackReservation(fixture: string) {
+  const key = reservationKeyFor(fixture);
+  if (!reservationKeys.includes(key)) reservationKeys.push(key);
+}
+
 test.beforeAll(async () => {
   const s = await api("/ai/settings");
   originalSettings = { provider: s?.provider ?? null, model: s?.model ?? null, enabled: s?.enabled ?? true };
@@ -53,6 +73,18 @@ test.afterAll(async () => {
   if (savedContactId != null) {
     await api(`/contacts/${savedContactId}`, "DELETE").catch(() => undefined);
   }
+  // Remove only the reservations this spec created (by exact key), then prove none remain.
+  if (process.env.DATABASE_URL && reservationKeys.length) {
+    const pg = new Client({ connectionString: process.env.DATABASE_URL });
+    try {
+      await pg.connect();
+      await pg.query("delete from subscription_usage_reservations where company_id = $1 and idempotency_key = any($2::text[])", [state.user.companyId, reservationKeys]);
+      const left = await pg.query("select count(*)::int as n from subscription_usage_reservations where idempotency_key = any($1::text[])", [reservationKeys]);
+      expect(left.rows[0].n).toBe(0);
+    } finally {
+      await pg.end().catch(() => undefined);
+    }
+  }
 });
 
 async function openScanPage(page: import("@playwright/test").Page) {
@@ -64,6 +96,7 @@ async function openScanPage(page: import("@playwright/test").Page) {
 test("upload → OCR review populated → edit → Save to Contacts creates the contact once", async ({ page }) => {
   await openScanPage(page);
 
+  trackReservation(FIXTURE_A);
   await page.getByTestId("input-scan-file").setInputFiles(FIXTURE_A);
   await expect(page.getByText("Card scanned successfully").first()).toBeVisible({ timeout: 30_000 });
 
@@ -97,6 +130,7 @@ test("provider failure surfaces an honest error and never creates a contact", as
     const before = await api(`/contacts?search=${encodeURIComponent("Taylor")}`);
     const beforeList = Array.isArray(before) ? before : before?.data ?? before?.contacts ?? [];
 
+    trackReservation(FIXTURE_B);
     await page.getByTestId("input-scan-file").setInputFiles(FIXTURE_B);
     // 502 from the OCR provider → describeAiError copy, not a fake success.
     await expect(page.getByText("AI temporarily unavailable").first()).toBeVisible({ timeout: 30_000 });

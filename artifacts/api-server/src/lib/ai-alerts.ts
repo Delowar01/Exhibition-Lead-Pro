@@ -1,8 +1,9 @@
-import { db, usersTable, notificationsTable, aiSettingsTable, aiInvocationsTable, companiesTable } from "@workspace/db";
+import { db, usersTable, notificationsTable, aiSettingsTable, aiInvocationsTable } from "@workspace/db";
 import { and, eq, gte, isNotNull, or, sql } from "drizzle-orm";
 import { config } from "../config.js";
 import { logger } from "./logger.js";
 import { createNotification } from "../services/notifications.service.js";
+import { writableCompanyIds } from "./company-access.js";
 import {
   resolveSettings,
   monthStart,
@@ -251,9 +252,13 @@ export async function runAiUsageAlerts(): Promise<{ companies: number }> {
     .from(aiInvocationsTable)
     .where(and(gte(aiInvocationsTable.createdAt, localDayStart()), isNotNull(aiInvocationsTable.companyId)));
 
+  // B20 Correction 1: tenant alerts (notification + mirrored email) only for
+  // tenants whose CANONICAL entitlement is `full`.
+  const writable = await writableCompanyIds();
   let companies = 0;
   for (const row of active) {
     if (row.companyId == null) continue;
+    if (!writable.has(row.companyId)) continue;
     try {
       await sweepCompany(row.companyId);
       companies += 1;

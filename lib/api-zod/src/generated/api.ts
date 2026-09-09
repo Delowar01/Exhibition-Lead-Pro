@@ -889,7 +889,19 @@ export const PlatformGetSubscriptionResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -985,7 +997,19 @@ export const PlatformSetSubscriptionPlanResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1065,7 +1089,19 @@ export const PlatformStartTrialResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1136,7 +1172,19 @@ export const PlatformActivateSubscriptionResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1207,7 +1255,19 @@ export const PlatformMarkSubscriptionPastDueResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1278,7 +1338,19 @@ export const PlatformCancelSubscriptionResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1349,7 +1421,19 @@ export const PlatformExpireSubscriptionResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1428,7 +1512,19 @@ export const PlatformSuspendSubscriptionResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1499,7 +1595,19 @@ export const PlatformReactivateSubscriptionResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1595,7 +1703,19 @@ export const PlatformSetSubscriptionLimitsResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1666,7 +1786,19 @@ export const PlatformConvertSubscriptionToManualResponse = zod.object({
   "providerStatus": zod.string().nullish(),
   "providerSyncedAt": zod.coerce.date().nullish(),
   "providerCustomerRef": zod.string().nullish().describe('Masked diagnostic reference (never the full provider id)'),
-  "providerSubscriptionRef": zod.string().nullish()
+  "providerSubscriptionRef": zod.string().nullish(),
+  "providerConflict": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest refused second LIVE provider subscription for this company (operator resolves it in the provider); null when none'),
+  "providerPriceUnmapped": zod.union([zod.null(),zod.object({
+  "eventType": zod.string(),
+  "eventRef": zod.string().nullable().describe('Masked provider event reference'),
+  "receivedAt": zod.coerce.date(),
+  "attempts": zod.number().optional()
+})]).optional().describe('Latest provider delivery that could not be applied because its price is not registered; null when none')
 }))
 
 
@@ -1678,7 +1810,7 @@ export const PlatformSyncSubscriptionParams = zod.object({
 })
 
 export const PlatformSyncSubscriptionResponse = zod.object({
-  "outcome": zod.enum(['applied', 'stale', 'no_change', 'mismatch']),
+  "outcome": zod.enum(['applied', 'stale', 'no_change', 'mismatch', 'unbound', 'conflict']),
   "subscription": zod.object({
   "id": zod.number(),
   "companyId": zod.number(),
@@ -1744,7 +1876,10 @@ export const PlatformBillingStatusResponse = zod.object({
   "selfServiceCheckoutEnabled": zod.boolean(),
   "automaticTax": zod.boolean(),
   "portalConfigurationSet": zod.boolean(),
-  "trialDays": zod.number()
+  "trialDays": zod.number(),
+  "stripeMode": zod.union([zod.literal('test'),zod.literal('live'),zod.literal(null)]).nullable().describe('Explicitly configured provider mode enforced on every price, session, subscription and event (null = invalid setting)'),
+  "returnUrlConfigured": zod.boolean().describe('Whether the centrally validated billing return URL is usable (the URL itself is never exposed)'),
+  "returnUrlReason": zod.union([zod.literal('RETURN_URL_MISSING'),zod.literal('RETURN_URL_INVALID'),zod.literal('RETURN_URL_INSECURE'),zod.literal('RETURN_URL_LOCALHOST'),zod.literal(null)]).nullable()
 })
 
 
@@ -1764,6 +1899,7 @@ export const PlatformListPricesResponse = zod.object({
 }).and(zod.object({
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
   "verifiedAt": zod.coerce.date(),
   "createdAt": zod.coerce.date()
 })))
@@ -1807,6 +1943,7 @@ export const PlatformUpdatePriceResponse = zod.object({
 }).and(zod.object({
   "providerPriceRef": zod.string().nullish(),
   "providerProductRef": zod.string().nullish(),
+  "providerMode": zod.enum(['test', 'live']).describe('Verified provider mode of the price at registration'),
   "verifiedAt": zod.coerce.date(),
   "createdAt": zod.coerce.date()
 }))
