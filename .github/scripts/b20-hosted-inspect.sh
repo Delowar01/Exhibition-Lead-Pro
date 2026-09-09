@@ -99,7 +99,7 @@ section "invitations by status"
 q "select status||'='||count(*) from invitations group by status order by 1"
 
 section "constraints on plans / subscriptions / companies"
-q "select conrelid::regclass||' | '||conname||' | '||contype||' | '||pg_get_constraintdef(oid) from pg_constraint where conrelid in ('companies'::regclass,'subscriptions'::regclass,'plans'::regclass) order by conrelid::regclass::text, conname"
+q "select conrelid::regclass||' | '||conname||' | '||contype::text||' | '||pg_get_constraintdef(oid) from pg_constraint where conrelid in ('companies'::regclass,'subscriptions'::regclass,'plans'::regclass) order by conrelid::regclass::text, conname"
 section "indexes on plans / subscriptions / companies"
 q "select tablename||' | '||indexname||' | '||indexdef from pg_indexes where schemaname='public' and tablename in ('companies','subscriptions','plans') order by tablename, indexname"
 section "columns of subscriptions / plans / companies (name:type:nullable:default)"
