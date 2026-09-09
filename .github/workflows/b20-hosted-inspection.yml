@@ -1,0 +1,93 @@
+# =============================================================================
+# TEMPORARY — Batch 20 hosted READ-ONLY database inspection on the dev VPS.
+# One-off operations workflow; NOT the deployment pipeline (deploy-dev-vps.yml is
+# untouched) and NOT application code.
+# =============================================================================
+# Trigger:  push to the `ops/b20-hosted-inspection` branch ONLY.
+# Guard:    the job refuses any other ref, and refuses to run unless the branch
+#           content equals the deployed develop commit plus these two ops files.
+# What it does: uploads a script to the VPS that runs SELECT / catalog queries
+#           only (psql session pinned to default_transaction_read_only=on) and
+#           prints aggregate counts, distinct plan/status values, drift counts,
+#           provider-id presence, constraints and indexes. It never reads the env
+#           file, never dumps, never pauses/restarts a container, never changes
+#           the checkout, never calls Stripe, never prints names/emails/tokens/
+#           provider identifier values.
+#
+# Secrets used (same as deploy-dev-vps.yml, nothing new):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+#
+# Remove this workflow (and the branch) once the inspection is recorded.
+
+name: b20-hosted-inspection
+
+on:
+  push:
+    branches: [ops/b20-hosted-inspection]
+
+# Serialize with the deployment workflow so the inspection never overlaps a deploy.
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  # develop head currently deployed on the VPS (Batch 18 + correction 1).
+  DEPLOYED_SHA: c2cd4674977ce517e9ffd8ec7f50688613864dad
+
+jobs:
+  inspect:
+    name: B20 hosted read-only inspection (one-off)
+    if: github.ref == 'refs/heads/ops/b20-hosted-inspection'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the branch is the deployed commit + the two ops files only
+        run: |
+          git cat-file -e "$DEPLOYED_SHA^{commit}" || { echo "deployed commit not present"; exit 1; }
+          git merge-base --is-ancestor "$DEPLOYED_SHA" HEAD || { echo "branch does not descend from the deployed commit"; exit 1; }
+          DIFF="$(git diff --stat "$DEPLOYED_SHA" HEAD -- . ':(exclude).github/scripts/b20-hosted-inspect.sh' ':(exclude).github/workflows/b20-hosted-inspection.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the deployed commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          grep -q 'default_transaction_read_only = on' .github/scripts/b20-hosted-inspect.sh || { echo "script is missing the read-only session guard"; exit 1; }
+          echo "branch = $DEPLOYED_SHA + ops files only; read-only guard present"
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the read-only inspection script to the VPS
+        run: |
+          ssh vps 'umask 077; cat > "$HOME/b20-hosted-inspect.sh" && chmod 700 "$HOME/b20-hosted-inspect.sh"' < .github/scripts/b20-hosted-inspect.sh
+
+      - name: Run the read-only inspection
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' bash \"\$HOME/b20-hosted-inspect.sh\"" < /dev/null
+
+      - name: Remove the script from the VPS (always)
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b20-hosted-inspect.sh"' < /dev/null || true
