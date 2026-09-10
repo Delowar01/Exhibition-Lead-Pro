@@ -273,6 +273,24 @@ export async function transitionCheckoutSession(id: number, from: string[], data
   return row;
 }
 
+// B20 Correction 2 — compare-and-set attach of a provider session id to a
+// NON-TERMINAL intent that has no (or the same) session id. Returns the row,
+// or undefined when the intent is terminal or already carries another session.
+export async function attachProviderSession(id: number, providerSessionId: string, data: Partial<typeof billingCheckoutSessionsTable.$inferInsert>, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
+  const [row] = await exec(tx)
+    .update(billingCheckoutSessionsTable)
+    .set({ ...data, providerSessionId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(billingCheckoutSessionsTable.id, id),
+        inArray(billingCheckoutSessionsTable.status, ["creating", "open"]),
+        sql`(${billingCheckoutSessionsTable.providerSessionId} is null or ${billingCheckoutSessionsTable.providerSessionId} = ${providerSessionId})`,
+      ),
+    )
+    .returning();
+  return row;
+}
+
 // Completed local intents that bound a provider subscription (replacement proof / history).
 export async function findCompletedCheckoutByProviderSubscription(companyId: number, providerSubscriptionId: string, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
   const [row] = await exec(tx)

@@ -44,6 +44,7 @@ let nexus: Auth;
 let companyId = 0;
 let subscriptionId = 0;
 let priceId = 0;
+let checkoutIntentId = 0; // the tenant's own Checkout intent — server-generated subscription metadata carries its id (B20 C2 proof)
 let createdPrice = false;
 let eventCount = 0;
 
@@ -109,7 +110,7 @@ function subscriptionObject(status: string, extra: Record<string, unknown> = {})
     status,
     cancel_at_period_end: false,
     items: { data: [{ price: { id: PRICE_ID }, current_period_start: T0, current_period_end: T0 + 30 * 24 * 3600 }] },
-    metadata: { companyId: String(companyId), subscriptionId: String(subscriptionId) },
+    metadata: { companyId: String(companyId), subscriptionId: String(subscriptionId), ...(checkoutIntentId ? { checkoutId: String(checkoutIntentId) } : {}) },
     ...extra,
   };
 }
@@ -240,6 +241,10 @@ test("self-service Checkout is offered only with a verified price; entitlement c
   // Nothing changed locally: still a manual trial; only the provider customer got linked.
   const afterClick = (await api("GET", "/subscriptions/current", undefined, admin.token)).json;
   expect(afterClick).toMatchObject({ status: "trialing", billingSource: "manual", accessMode: "full", providerLinked: true, providerSubscriptionLinked: false });
+  // The durable Checkout intent is what proves ownership of the provider subscription (B20 C2).
+  const intent = await pg.query("select id from billing_checkout_sessions where company_id = $1 and status in ('creating','open') order by id desc limit 1", [companyId]);
+  expect(intent.rows).toHaveLength(1);
+  checkoutIntentId = intent.rows[0].id as number;
 
   const applied = await webhook("customer.subscription.created", subscriptionObject("active"), T0 + 1);
   expect(applied.outcome).toBe("applied");

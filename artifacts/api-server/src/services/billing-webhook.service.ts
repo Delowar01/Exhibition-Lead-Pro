@@ -5,7 +5,7 @@ import * as repo from "../repositories/subscriptions.repository.js";
 import type { SubscriptionRow, CheckoutSessionRow } from "../repositories/subscriptions.repository.js";
 import { getBillingProvider, BillingProviderError, type BillingProvider, type ProviderEvent, type ProviderSubscription, type ProviderCheckoutSession } from "../lib/billing/provider.js";
 import { normalizeProviderSubscription, normalizeProviderCheckoutSession } from "../lib/billing/stripe-provider.js";
-import { applyProviderState, ProviderPriceUnmappedError, type ProviderLinkage } from "./subscription-lifecycle.service.js";
+import { applyProviderState, ProviderPriceUnmappedError, type ProviderLinkage, ProviderModeMismatchError } from "./subscription-lifecycle.service.js";
 import { PROVIDER_ACTOR, writeSubscriptionAudit } from "../lib/billing/audit.js";
 import { billingFault } from "../lib/billing/test-faults.js";
 
@@ -150,6 +150,7 @@ async function prefetchProviderState(provider: BillingProvider, event: ProviderE
 
 function failureCodeOf(err: unknown): string {
   if (err instanceof ProviderPriceUnmappedError) return err.code;
+  if (err instanceof ProviderModeMismatchError) return err.code;
   if (err instanceof BillingProviderError) return err.code;
   if (err instanceof Error) return err.constructor.name;
   return "Error";
@@ -246,14 +247,40 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string | 
 
       if (event.type === "checkout.session.completed") {
         const session = pre.session!;
-        const local = session.id ? await repo.findCheckoutSessionByProviderId(session.id, tx) : undefined;
-        const { sub: found, mismatch } = await resolveSubscription(tx, { subscriptionProviderId: session.subscriptionId, customerId: session.customerId, metadata: session.metadata, localCheckout: local ?? null });
+        // B20 Correction 2 — locate the local intent by its recorded provider session
+        // id, or (crash before the id was saved) by a VALIDATED checkout id: metadata
+        // `checkoutId` and `client_reference_id` must agree, the intent must be
+        // non-terminal, carry no other session, and match customer + mode; the session
+        // id is then attached atomically before completion. Any disagreement → mismatch.
+        const metaCheckout = intOrNull(session.metadata.checkoutId);
+        const refCheckout = intOrNull(session.clientReferenceId ?? undefined);
+        if (metaCheckout != null && refCheckout != null && metaCheckout !== refCheckout) return finish("mismatch", null, null);
+        const checkoutId = metaCheckout ?? refCheckout;
+        let local = session.id ? await repo.findCheckoutSessionByProviderId(session.id, tx) : undefined;
+        let candidate: CheckoutSessionRow | undefined;
+        if (!local && session.id && checkoutId != null) {
+          candidate = await repo.findCheckoutSessionById(checkoutId, tx);
+          if (candidate) {
+            const nonTerminal = candidate.status === "creating" || candidate.status === "open";
+            const sameCustomer = !session.customerId || !candidate.providerCustomerId || candidate.providerCustomerId === session.customerId;
+            if (!nonTerminal || candidate.providerSessionId || !sameCustomer || candidate.providerMode !== providerMode) return finish("mismatch", null, null);
+          }
+        }
+        if (local && checkoutId != null && local.id !== checkoutId) return finish("mismatch", null, null);
+        const { sub: found, mismatch } = await resolveSubscription(tx, { subscriptionProviderId: session.subscriptionId, customerId: session.customerId, metadata: session.metadata, localCheckout: local ?? candidate ?? null });
         if (mismatch) return finish("mismatch", null, null);
         if (!found) return finish("unbound", null, null);
         const sub = await repo.lockById(found.id, tx);
         if (!sub) return finish("unbound", null, null);
         scope = { companyId: sub.companyId, subscriptionId: sub.id };
         if (session.customerId && sub.stripeCustomerId && sub.stripeCustomerId !== session.customerId) return finish("mismatch", sub.companyId, sub.id);
+        if (!local && candidate && session.id) {
+          // The session id is attached ONLY after the resolved tenant is proven to own the
+          // candidate intent (company + canonical subscription + customer agree).
+          if (candidate.companyId !== sub.companyId || candidate.subscriptionId !== sub.id) return finish("mismatch", sub.companyId, sub.id);
+          local = await repo.attachProviderSession(candidate.id, session.id, {}, tx);
+          if (!local) return finish("mismatch", sub.companyId, sub.id);
+        }
         let completed: CheckoutSessionRow | null = local ?? null;
         if (local) {
           completed = (await repo.transitionCheckoutSession(local.id, ["creating", "open"], { status: "completed", completedAt: new Date(), providerSubscriptionId: session.subscriptionId, providerCustomerId: session.customerId ?? local.providerCustomerId }, tx)) ?? local;
@@ -266,7 +293,7 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string | 
         if (!session.subscriptionId) return finish("no_change", sub.companyId, sub.id); // no subscription in this session
         if (!pre.remote) return finish("unbound", sub.companyId, sub.id); // provider does not (yet) hold the subscription
         const locked = (await repo.findById(sub.id, tx))!;
-        const result = await applyProviderState(tx, locked, pre.remote, event.created, PROVIDER_ACTOR, { eventType: event.type, eventId: event.id }, { checkoutId: local?.id ?? null, completedCheckout: completed });
+        const result = await applyProviderState(tx, locked, pre.remote, event.created, PROVIDER_ACTOR, { eventType: event.type, eventId: event.id }, { checkoutId: local?.id ?? null, completedCheckout: completed, sessionId: session.id });
         if (result.outcome === "conflict") return conflict(locked, session.subscriptionId);
         return finish(result.outcome, sub.companyId, sub.id);
       }

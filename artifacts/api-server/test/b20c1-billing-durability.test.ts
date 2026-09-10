@@ -352,13 +352,16 @@ describe("§2 durable Checkout — stable keys, retries, concurrency, provider-s
     expect((await checkoutRows(companyA)).filter((r) => r.status === "open")).toHaveLength(1);
   });
 
-  it("the tenant HTTP route exposes only open|reused and the durable intent states are constrained", async () => {
+  it("an intent whose session the provider cannot confirm is never retired: the HTTP route answers a retryable failure", async () => {
+    const before = (await checkoutRows(companyA)).find((r) => r.status === "open")!;
     const res = await api("POST", "/subscriptions/checkout", tokenA, { planPriceId: priceM.id });
-    // The API process holds its own fake registry: it retrieves this process' session id
-    // and finds nothing → retires the intent and mints its own (still one open intent).
-    expect([200, 409]).toContain(res.status);
+    // The API process holds its own fake registry: it cannot retrieve this process' session,
+    // so the remote state is AMBIGUOUS (B20 C2) → 502, the intent stays current, nothing is minted.
+    expect(res.status, res.text).toBe(502);
+    expect(res.body.code).toBe("PROVIDER_ERROR");
     const rows = await checkoutRows(companyA);
     expect(rows.filter((r) => r.status === "open" || r.status === "creating")).toHaveLength(1);
+    expect(rows.find((r) => r.id === before.id)).toMatchObject({ status: "open", providerSessionId: before.providerSessionId });
     expect(new Set(rows.map((r) => r.status))).toEqual(new Set([...new Set(rows.map((r) => r.status))].filter((s) => ["creating", "open", "completed", "expired", "failed"].includes(s))));
   });
 });
@@ -520,9 +523,12 @@ describe("§5/§6 verified price requirement and explicit Stripe mode", () => {
   it("a NEW live subscription with an unknown price cannot bind; inactive mappings never open Checkout", async () => {
     const before = await subRow(companyB);
     const SUBB = `sub_fake_c1_b_${SUFFIX}`;
+    // B20 C2: ownership proof comes first — without a local Checkout record for company B the
+    // subscription is unbound (ignored), so an unregistered price on a NEW subscription can never
+    // reach the entitlement (the price check applies to proven / already-bound subscriptions).
     const r = await deliver("customer.subscription.created", subscriptionObject({ id: SUBB, customer: `cus_fake_${companyB}`, metadata: { companyId: String(companyB), subscriptionId: String(before.id) }, items: { data: [{ price: { id: "price_fake_usd_555_month" }, current_period_start: T0, current_period_end: T0 + 30 * 24 * 3600 }] } }), T0 + 100);
-    expect(r).toMatchObject({ httpStatus: 500, outcome: "failed" });
-    expect(await eventRow(r.id)).toMatchObject({ status: "failed", outcome: "price_unmapped" });
+    expect(r).toMatchObject({ httpStatus: 200, outcome: "unbound" });
+    expect(await eventRow(r.id)).toMatchObject({ status: "ignored", outcome: "unbound" });
     expect(await subRow(companyB)).toMatchObject({ billingSource: "manual", stripeSubscriptionId: null, plan: "free" });
     // Inactive mapping: existing subscriptions resolve (above), NEW Checkout is refused.
     const inactive = (await api("GET", "/platform/billing/prices", platformToken)).body.prices.find((p: any) => p.providerMode === "test" && p.active === false);

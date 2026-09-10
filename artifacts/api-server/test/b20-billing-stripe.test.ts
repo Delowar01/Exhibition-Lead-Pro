@@ -46,6 +46,7 @@ let subIdA = 0;
 let priceMonth: Record<string, any> = {};
 let priceYear: Record<string, any> = {};
 let checkoutSessionId = "";
+let checkoutIntentId = 0; // local intent referenced by server-generated subscription metadata (B20 C2 proof)
 const companyIds: number[] = [];
 const eventIds: string[] = [];
 const responses: string[] = [];
@@ -87,7 +88,7 @@ function subscriptionObject(o: Record<string, unknown>) {
     status: "active",
     cancel_at_period_end: false,
     items: { data: [{ price: { id: PRICE_MONTH }, current_period_start: T0, current_period_end: T0 + 30 * 24 * 3600 }] },
-    metadata: { companyId: String(companyA), subscriptionId: String(subIdA) },
+    metadata: { companyId: String(companyA), subscriptionId: String(subIdA), checkoutId: String(checkoutIntentId) },
     ...o,
   };
 }
@@ -217,6 +218,7 @@ describe("Checkout — serialized, idempotent, one customer per company, no enti
     expect(sessions[0].providerSessionId).toMatch(/^cs_fake_/);
     expect(sessions[0].idempotencyKey).toMatch(/^checkout:[a-f0-9]{64}$/);
     checkoutSessionId = sessions[0].providerSessionId!;
+    checkoutIntentId = sessions[0].id;
     const audit = await auditRows(companyA);
     expect(audit.map((r) => r.action)).toEqual(expect.arrayContaining(["subscription.provider_customer_linked", "subscription.checkout_started"]));
     expect((await current(tokenA)).accessMode).toBe("full");
@@ -252,7 +254,9 @@ describe("Checkout — serialized, idempotent, one customer per company, no enti
     // Back to the monthly price for the webhook flow below.
     const back = await api("POST", "/subscriptions/checkout", tokenA, { planPriceId: priceMonth.id });
     expect(back.status).toBe(200);
-    checkoutSessionId = (await db.select().from(billingCheckoutSessionsTable).where(and(eq(billingCheckoutSessionsTable.companyId, companyA), eq(billingCheckoutSessionsTable.status, "open"))))[0].providerSessionId!;
+    const open = (await db.select().from(billingCheckoutSessionsTable).where(and(eq(billingCheckoutSessionsTable.companyId, companyA), eq(billingCheckoutSessionsTable.status, "open"))))[0];
+    checkoutSessionId = open.providerSessionId!;
+    checkoutIntentId = open.id;
   });
 });
 
@@ -311,7 +315,7 @@ describe("provider-managed lifecycle through verified webhooks", () => {
   });
   it("checkout.session.completed closes the local checkout row; a duplicate delivery is a 200 no-op", async () => {
     const auditBefore = (await auditRows(companyA)).length;
-    const res = await webhook("checkout.session.completed", { id: checkoutSessionId, object: "checkout.session", customer: CUS_A(), subscription: SUB_A, status: "complete", metadata: { companyId: String(companyA), subscriptionId: String(subIdA) } }, T0 + 2);
+    const res = await webhook("checkout.session.completed", { id: checkoutSessionId, object: "checkout.session", customer: CUS_A(), subscription: SUB_A, status: "complete", client_reference_id: String(checkoutIntentId), metadata: { companyId: String(companyA), subscriptionId: String(subIdA), checkoutId: String(checkoutIntentId) } }, T0 + 2);
     expect(res.status).toBe(200);
     expect(["applied", "no_change"]).toContain(res.body.outcome);
     const [session] = await db.select().from(billingCheckoutSessionsTable).where(eq(billingCheckoutSessionsTable.providerSessionId, checkoutSessionId));
@@ -447,15 +451,25 @@ describe("provider-managed lifecycle through verified webhooks", () => {
     const late = await webhook("customer.subscription.updated", subscriptionObject({ status: "canceled", canceled_at: T0 + 80, ended_at: T0 + 80 }), T0 + 90);
     expect(late.body.outcome).toBe("unbound");
     expect((await subRow(companyA))).toMatchObject({ billingSource: "manual", status: "active", stripeSubscriptionId: null });
-    // …but a NEW live provider subscription for the same customer (re-subscribed through Checkout/Portal) binds again.
-    // B20 C1: a live subscription for the same customer WITHOUT server-generated linkage is unbound …
-    const stray = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_a2_${SUFFIX}`, status: "active", metadata: {} }), T0 + 94);
-    expect(stray.body.outcome).toBe("unbound");
-    expect((await subRow(companyA))).toMatchObject({ billingSource: "manual", status: "active", stripeSubscriptionId: null });
-    // … while the one carrying this tenant's Checkout metadata (companyId + subscriptionId) binds.
-    const rebound = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_a2_${SUFFIX}`, status: "active" }), T0 + 95);
+    // B20 C1/C2: a live subscription for the same customer WITHOUT a local Checkout record is unbound —
+    // with no metadata, with tenant metadata only (companyId + subscriptionId), and with the checkout id
+    // of the ALREADY COMPLETED Checkout that produced SUB_A.
+    for (const metadata of [{}, { companyId: String(companyA), subscriptionId: String(subIdA) }, { companyId: String(companyA), subscriptionId: String(subIdA), checkoutId: String(checkoutIntentId) }]) {
+      const stray = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_a2_${SUFFIX}`, status: "active", metadata }), T0 + 94);
+      expect(stray.body.outcome, JSON.stringify(metadata)).toBe("unbound");
+      expect((await subRow(companyA))).toMatchObject({ billingSource: "manual", status: "active", stripeSubscriptionId: null });
+    }
+    // A legitimate re-subscription goes through the tenant's own Checkout: cancelled (read-only) →
+    // Checkout opens a NEW intent → the provider subscription carries that intent's id → binds.
+    expect((await platformOp(companyA, "cancel")).status).toBe(200);
+    const again = await api("POST", "/subscriptions/checkout", tokenA, { planPriceId: priceMonth.id });
+    expect(again.status, again.text).toBe(200);
+    const fresh = (await db.select().from(billingCheckoutSessionsTable).where(and(eq(billingCheckoutSessionsTable.companyId, companyA), eq(billingCheckoutSessionsTable.status, "open"))))[0];
+    expect(fresh.id).toBeGreaterThan(checkoutIntentId);
+    const rebound = await webhook("customer.subscription.created", subscriptionObject({ id: `sub_fake_a2_${SUFFIX}`, status: "active", metadata: { companyId: String(companyA), subscriptionId: String(subIdA), checkoutId: String(fresh.id) } }), T0 + 95);
     expect(rebound.body.outcome).toBe("applied");
     expect((await subRow(companyA))).toMatchObject({ billingSource: "stripe", status: "active", stripeSubscriptionId: `sub_fake_a2_${SUFFIX}` });
+    checkoutIntentId = fresh.id;
   });
 });
 

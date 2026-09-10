@@ -296,6 +296,28 @@ export interface ApplyProviderResult {
 export interface ProviderLinkage {
   checkoutId?: number | null;
   completedCheckout?: CheckoutSessionRow | null;
+  sessionId?: string | null; // provider Checkout session id when the caller knows it
+}
+
+// B20 Correction 2 — a provider object from the OTHER Stripe mode can never
+// reach the canonical row. Raised before any mutation; callers answer with a
+// sanitized code and leave everything (subscription, Checkout row, mirror,
+// audit) untouched. Webhooks stay non-2xx / retryable.
+export class ProviderModeMismatchError extends Error {
+  readonly code = "PROVIDER_MODE_MISMATCH";
+  constructor() {
+    super("The provider object belongs to the other Stripe mode");
+    this.name = "ProviderModeMismatchError";
+    Object.setPrototypeOf(this, ProviderModeMismatchError.prototype);
+  }
+}
+
+export function configuredStripeMode(): "test" | "live" {
+  return config.billing.stripeMode ?? "test";
+}
+
+export function assertRemoteMode(remote: { livemode: boolean }): void {
+  if (remote.livemode !== (configuredStripeMode() === "live")) throw new ProviderModeMismatchError();
 }
 
 // B20 Correction 1 — a live provider subscription billed on a price that the
@@ -319,19 +341,51 @@ function boundIsTerminal(sub: SubscriptionRow): boolean {
   return st === "cancelled" || st === "expired";
 }
 
+// B20 Correction 2 — ownership proof requires a REAL local Checkout record.
+// `companyId + subscriptionId` metadata only LOCATES a tenant; it never binds on
+// its own. A row proves ownership only when every applicable relationship agrees:
+//   • the row belongs to this company AND this subscription;
+//   • it is `creating` / `open` (current intent) or `completed` — never expired/failed;
+//   • its provider customer (when known) equals the remote customer;
+//   • its provider mode equals the configured mode;
+//   • its price mapping's provider price equals the remote subscription's price;
+//   • its provider session id (when both known) equals the session in hand;
+//   • its recorded provider subscription id is null or equals the remote id
+//     (a completed Checkout bound to subscription A never authorizes B).
+// Metadata that disagrees with the located tenant or with the supplied checkout
+// id disproves ownership outright.
 async function linkageProven(tx: Executor, sub: SubscriptionRow, remote: ProviderSubscription, linkage?: ProviderLinkage): Promise<boolean> {
   const meta = remote.metadata ?? {};
-  const metaCompany = /^\d{1,12}$/.test(meta.companyId ?? "") ? Number(meta.companyId) : null;
-  const metaSub = /^\d{1,12}$/.test(meta.subscriptionId ?? "") ? Number(meta.subscriptionId) : null;
-  if (metaCompany === sub.companyId && metaSub === sub.id) return true;
-  if (linkage?.completedCheckout && linkage.completedCheckout.companyId === sub.companyId && linkage.completedCheckout.subscriptionId === sub.id) return true;
-  const checkoutId = linkage?.checkoutId ?? (/^\d{1,12}$/.test(meta.checkoutId ?? "") ? Number(meta.checkoutId) : null);
-  if (checkoutId != null) {
-    const co = await repo.findCheckoutSessionById(checkoutId, tx);
-    if (co && co.companyId === sub.companyId && co.subscriptionId === sub.id && (co.status === "open" || co.status === "completed" || co.status === "creating")) return true;
+  const num = (v: string | undefined) => (v && /^\d{1,12}$/.test(v) ? Number(v) : null);
+  const metaCompany = num(meta.companyId);
+  const metaSub = num(meta.subscriptionId);
+  const metaCheckout = num(meta.checkoutId);
+  if (metaCompany != null && metaCompany !== sub.companyId) return false;
+  if (metaSub != null && metaSub !== sub.id) return false;
+  if (linkage?.checkoutId != null && metaCheckout != null && linkage.checkoutId !== metaCheckout) return false;
+
+  const rows: CheckoutSessionRow[] = [];
+  const push = (r: CheckoutSessionRow | undefined | null) => {
+    if (r && !rows.some((x) => x.id === r.id)) rows.push(r);
+  };
+  push(linkage?.completedCheckout);
+  const checkoutId = linkage?.checkoutId ?? metaCheckout;
+  if (checkoutId != null) push(await repo.findCheckoutSessionById(checkoutId, tx));
+  push(await repo.findCompletedCheckoutByProviderSubscription(sub.companyId, remote.id, tx));
+
+  for (const co of rows) {
+    if (co.companyId !== sub.companyId || co.subscriptionId !== sub.id) continue;
+    if (co.status !== "creating" && co.status !== "open" && co.status !== "completed") continue;
+    if (co.providerMode !== configuredStripeMode()) continue;
+    if (co.providerCustomerId && remote.customerId && co.providerCustomerId !== remote.customerId) continue;
+    if (linkage?.sessionId && co.providerSessionId && co.providerSessionId !== linkage.sessionId) continue;
+    if (co.providerSubscriptionId && co.providerSubscriptionId !== remote.id) continue;
+    if (!remote.priceId || co.planPriceId == null) continue;
+    const price = await repo.findPlanPriceById(co.planPriceId, tx);
+    if (!price || price.providerPriceId !== remote.priceId) continue;
+    return true;
   }
-  const completed = await repo.findCompletedCheckoutByProviderSubscription(sub.companyId, remote.id, tx);
-  return !!completed && completed.subscriptionId === sub.id;
+  return false;
 }
 
 // Applies the provider's authoritative subscription object to the locked local
@@ -359,6 +413,8 @@ export async function applyProviderState(
   extra?: Record<string, string | number | boolean | null>,
   linkage?: ProviderLinkage,
 ): Promise<ApplyProviderResult> {
+  // B20 Correction 2 — explicit mode enforcement before ANY decision or write.
+  assertRemoteMode(remote);
   const remoteLive = LIVE_PROVIDER_STATUSES.has(remote.status);
   if (sub.stripeCustomerId && remote.customerId && sub.stripeCustomerId !== remote.customerId) return { changed: false, outcome: "mismatch", subscription: sub };
   if (eventCreated && sub.providerEventCreatedAt && eventCreated.getTime() < sub.providerEventCreatedAt.getTime()) {
@@ -380,6 +436,7 @@ export async function applyProviderState(
   // The plan follows the VERIFIED price mapping (active or retired) the provider
   // subscription is billed on. A live subscription on an unregistered price is refused.
   const mappedPrice = remote.priceId ? await repo.findPlanPriceByProviderId(remote.priceId, tx) : undefined;
+  if (mappedPrice && mappedPrice.providerMode !== configuredStripeMode()) throw new ProviderModeMismatchError();
   const priceChanged = remote.priceId !== sub.stripePriceId || replaced || !sub.stripeSubscriptionId;
   if (remoteLive && !mappedPrice && (priceChanged || !remote.priceId)) throw new ProviderPriceUnmappedError();
   const patch: Partial<SubscriptionRow> = {
@@ -450,6 +507,7 @@ export async function syncFromProvider(companyId: number, actor: Actor): Promise
     return await withLockedSubscription(companyId, async (tx, sub) => applyProviderState(tx, sub, remote, null, actor, { source: "manual_sync" }));
   } catch (err) {
     if (err instanceof ProviderPriceUnmappedError) throw conflict("PROVIDER_PRICE_UNMAPPED", "The provider subscription is billed on a price that is not registered. Register the price mapping, then sync again.");
+    if (err instanceof ProviderModeMismatchError) throw conflict("PROVIDER_MODE_MISMATCH", "The provider subscription belongs to the other Stripe mode; nothing was changed.");
     throw err;
   }
 }

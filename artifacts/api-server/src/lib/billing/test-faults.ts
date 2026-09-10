@@ -10,7 +10,9 @@ import { config } from "../../config.js";
 export type BillingFaultPoint =
   | "checkout.afterCustomerCreate" // provider customer exists remotely; local link not yet persisted
   | "checkout.afterSessionCreate" // provider session exists remotely; local link not yet persisted
+  | "checkout.afterRecover" // recovery replay returned the remote session id; before the CAS persist
   | "checkout.beforeExpire" // just before asking the provider to expire an open session
+  | "checkout.afterExpire" // provider confirmed the expiration; before the local transition
   | "webhook.beforeClaim" // signature verified + provider state fetched; before the durable claim
   | "webhook.beforeCommit"; // state applied inside the transaction; before commit
 

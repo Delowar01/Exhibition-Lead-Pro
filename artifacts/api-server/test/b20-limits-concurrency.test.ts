@@ -226,10 +226,17 @@ describe("admins / employees — users, pending invitations and role changes", (
 });
 
 describe("scans — reservations under the limit, released on failure, idempotent retries, batch all-or-nothing", () => {
+  // Which two of the four racing captures are admitted is not deterministic; the
+  // retry test below must retry an image that was ACTUALLY admitted.
+  const admittedImages: string[] = [];
   it("exactly `limit` parallel scans are admitted; failures release their reservation", async () => {
     await setLimits(companyId, { scans: 2 });
-    const results = await Promise.all(images.slice(0, 4).map((imageData) => api("POST", "/scans", adminToken, { imageData, appLanguage: "en" })));
+    const candidates = images.slice(0, 4);
+    const results = await Promise.all(candidates.map((imageData) => api("POST", "/scans", adminToken, { imageData, appLanguage: "en" })));
     const ok = results.filter((r) => r.status === 201);
+    results.forEach((r, i) => {
+      if (r.status === 201) admittedImages.push(candidates[i]);
+    });
     expect(ok, results.map((r) => `${r.status}:${r.text.slice(0, 80)}`).join(" | ")).toHaveLength(2);
     for (const d of results.filter((r) => r.status !== 201)) limitError(d, "scans");
     const u = await usage("scans");
@@ -254,8 +261,9 @@ describe("scans — reservations under the limit, released on failure, idempoten
     expect(released.length).toBeGreaterThanOrEqual(1);
     expect((await api("PATCH", "/ai/settings", adminToken, { provider: "stub", model: "stub-model" })).status).toBe(200);
     // Retry the SAME image that already succeeded: admitted without a new reservation (TTL window).
+    expect(admittedImages.length).toBe(2);
     const successful = (await db.select().from(scansTable).where(and(eq(scansTable.companyId, companyId), eq(scansTable.status, "completed")))).length;
-    const retry = await api("POST", "/scans", adminToken, { imageData: images[0], appLanguage: "en" });
+    const retry = await api("POST", "/scans", adminToken, { imageData: admittedImages[0], appLanguage: "en" });
     expect(retry.status, retry.text).toBe(201);
     const reservations = await db.select().from(subscriptionUsageReservationsTable).where(eq(subscriptionUsageReservationsTable.companyId, companyId));
     expect(reservations.filter((r) => r.status === "consumed")).toHaveLength(2);
