@@ -334,9 +334,70 @@ phase_postdeploy() {
   log "postdeploy complete (read-only)"
 }
 
+# ── smoke-setup: ONE disposable platform-owner login for the browser smoke ─────
+# ARG1 = bcrypt hash generated OFF-host (the password never reaches the VPS or any
+# log), ARG2 = disposable e-mail (unique, throwaway domain). Prints ids only.
+phase_smoke_setup() {
+  [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$STAGE2_SHA" ] || fail "hosted checkout is not the accepted commit"
+  curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz >/dev/null || fail "api not ready"
+  [[ "$ARG1" =~ ^\$2[aby]\$10\$.{53}$ ]] || fail "ARG1 is not a bcrypt hash"
+  [[ "$ARG2" =~ ^b20-smoke-[a-z0-9]+@b20smoke\.invalid$ ]] || fail "ARG2 is not a disposable smoke address"
+  section "existing users (ids / roles / company only)"
+  q "select 'user '||id||': role='||role||' company_id='||coalesce(company_id::text,'null')||' active='||is_active||' deleted='||(deleted_at is not null) from users order by id"
+  local pco; pco="$(q "select coalesce(min(company_id)::text,'null') from users where role='platform_owner' and deleted_at is null")"
+  echo "platform company id: $pco"
+  local cid_sql; if [ "$pco" = "null" ]; then cid_sql="null"; else cid_sql="$pco"; fi
+  section "insert disposable platform owner"
+  local uid; uid="$(qw "insert into users (email, name, role, company_id, password_hash, is_active, contact_visibility, company_visibility, permissions) values ('$ARG2', 'B20 smoke operator (disposable)', 'platform_owner', $cid_sql, '$ARG1', true, 'all', 'own', '{}'::jsonb) returning id")"
+  echo "disposable_owner_user_id=$uid"
+  log "smoke-setup complete"
+}
+
+# ── cleanup: remove ONLY the disposable smoke rows, by explicit ids ─────────────
+# ARG1 = disposable company ids (csv), ARG2 = disposable user ids (csv, the owner),
+# ARG3 = disposable e-mail domain. Verifies names/e-mails before deleting, verifies
+# zero remain and that the existing customer rows are intact. Removes the stage
+# images and temporary files. Completed queue history is left intact.
+phase_cleanup() {
+  [[ "$ARG1" =~ ^[0-9]+(,[0-9]+)*$ ]] || fail "ARG1 must be a csv of company ids"
+  [[ "$ARG2" =~ ^[0-9]+(,[0-9]+)*$ ]] || fail "ARG2 must be a csv of user ids"
+  [ "$ARG3" = "b20smoke.invalid" ] || fail "ARG3 must be the disposable domain"
+  section "guard: every target is a disposable smoke row"
+  q "select 'company '||id||': '||case when name like 'B20 SMOKE %' then 'disposable' else 'NOT DISPOSABLE' end from companies where id in ($ARG1) order by id"
+  [ "$(q "select count(*) from companies where id in ($ARG1) and name not like 'B20 SMOKE %'")" = "0" ] || fail "a target company is not a smoke tenant"
+  [ "$(q "select count(*) from users where id in ($ARG2) and email not like '%@$ARG3'")" = "0" ] || fail "a target user is not a smoke user"
+  [ "$(q "select count(*) from users where company_id in ($ARG1) and email not like '%@$ARG3'")" = "0" ] || fail "a smoke tenant holds a non-smoke user"
+  section "existing rows BEFORE cleanup (must be untouched afterwards)"
+  local before; before="$(q "select 'companies='||(select count(*) from companies where id not in ($ARG1))||' users='||(select count(*) from users where id not in ($ARG2) and company_id is distinct from all(array[$ARG1]))||' subscriptions='||(select count(*) from subscriptions where company_id not in ($ARG1))||' audit='||(select count(*) from audit_logs where (company_id is null or company_id not in ($ARG1)) and (user_id is null or user_id not in ($ARG2)))")"; echo "$before"
+  section "delete disposable rows"
+  echo "sessions=$(qw "with d as (delete from sessions where user_id in ($ARG2) or user_id in (select id from users where company_id in ($ARG1)) returning 1) select count(*) from d")"
+  echo "audit_logs=$(qw "with d as (delete from audit_logs where company_id in ($ARG1) or user_id in ($ARG2) returning 1) select count(*) from d")"
+  echo "tenant_users=$(qw "with d as (delete from users where company_id in ($ARG1) returning 1) select count(*) from d")"
+  echo "owner_users=$(qw "with d as (delete from users where id in ($ARG2) returning 1) select count(*) from d")"
+  echo "companies=$(qw "with d as (delete from companies where id in ($ARG1) returning 1) select count(*) from d")"
+  section "verify zero disposable rows remain"
+  q "select 'companies='||(select count(*) from companies where id in ($ARG1) or name like 'B20 SMOKE %')||' users='||(select count(*) from users where id in ($ARG2) or email like '%@$ARG3')||' subscriptions='||(select count(*) from subscriptions where company_id in ($ARG1))||' intents='||(select count(*) from billing_checkout_sessions where company_id in ($ARG1))||' reservations='||(select count(*) from subscription_usage_reservations where company_id in ($ARG1))||' audit='||(select count(*) from audit_logs where company_id in ($ARG1) or user_id in ($ARG2))||' sessions='||(select count(*) from sessions where user_id in ($ARG2))"
+  [ "$(q "select (select count(*) from companies where id in ($ARG1) or name like 'B20 SMOKE %')+(select count(*) from users where id in ($ARG2) or email like '%@$ARG3')+(select count(*) from audit_logs where company_id in ($ARG1) or user_id in ($ARG2))")" = "0" ] || fail "disposable rows remain"
+  section "existing rows AFTER cleanup"
+  local after; after="$(q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' subscriptions='||(select count(*) from subscriptions)||' audit='||(select count(*) from audit_logs)")"; echo "$after"
+  snapshot_rows
+  section "remove stage images and temporary files"
+  docker rmi cardscanner/migrate:b20-stage1 cardscanner/migrate:b20-stage2 >/dev/null 2>&1 && echo "stage images removed" || echo "stage images already absent"
+  rm -f "$HOME"/b20-*.log "$HOME"/b20-*.json "$HOME"/b20-baseline-*.txt; rm -rf "$HOME/b20-worktrees"; git -C "$APP_DIR" worktree prune
+  echo "leftover temp files: $(ls "$HOME" | grep -c '^b20-' || true); worktrees=$(git -C "$APP_DIR" worktree list | wc -l); app checkout=$(git -C "$APP_DIR" rev-parse HEAD) dirty=$(git -C "$APP_DIR" status --porcelain | wc -l)"
+  echo "schema_fingerprint=$(fingerprint)"
+  echo "readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE)"
+  log "cleanup complete"
+}
+
+# Writable SQL — used ONLY by smoke-setup / cleanup (explicit ids) and never by preflight/postdeploy.
+qw() { compose exec -T postgres sh -c 'exec psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -F "|" -c "$1"' sh "$1"; }
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   migrate) phase_migrate ;;
   postdeploy) phase_postdeploy ;;
+  smoke-setup) phase_smoke_setup ;;
+  cleanup) phase_cleanup ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac
