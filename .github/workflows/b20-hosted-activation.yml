@@ -20,6 +20,11 @@
 name: b20-hosted-activation
 
 on:
+  # A push to the ops branch registers the workflow (a dispatch-only workflow on a
+  # non-default branch is not indexed); it runs the READ-ONLY preflight, and only
+  # when the commit message opts in with [run-preflight].
+  push:
+    branches: [ops/b20-hosted-activation]
   workflow_dispatch:
     inputs:
       phase:
@@ -51,11 +56,13 @@ concurrency:
 env:
   # develop head deployed on the VPS before this activation (Batch 18 + correction 1).
   BASE_SHA: c2cd4674977ce517e9ffd8ec7f50688613864dad
+  # Operator-supplied tenant-admin login (not a secret) resolved read-only in preflight.
+  LOOKUP_EMAIL: delowarhossain098216@gmail.com
 
 jobs:
   run:
     name: B20 hosted activation phase (one-off)
-    if: github.ref == 'refs/heads/ops/b20-hosted-activation'
+    if: github.ref == 'refs/heads/ops/b20-hosted-activation' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -102,8 +109,8 @@ jobs:
       - name: Run the phase
         env:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          PHASE: ${{ inputs.phase }}
-          ARG1: ${{ inputs.arg1 }}
+          PHASE: ${{ inputs.phase || 'preflight' }}
+          ARG1: ${{ inputs.arg1 || env.LOOKUP_EMAIL }}
           ARG2: ${{ inputs.arg2 }}
           ARG3: ${{ inputs.arg3 }}
         run: |
