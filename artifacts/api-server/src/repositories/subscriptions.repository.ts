@@ -291,6 +291,47 @@ export async function attachProviderSession(id: number, providerSessionId: strin
   return row;
 }
 
+// B20 Correction 3 — customer-binding FENCE: binds the provider customer to the
+// intent only while the intent is still the company's current non-terminal intent
+// for this subscription and carries no other customer. A stale / retired / foreign
+// intent is never bound, so it can never authorize a later session creation.
+export async function bindIntentCustomer(id: number, companyId: number, subscriptionId: number, providerCustomerId: string, tx: Executor): Promise<CheckoutSessionRow | undefined> {
+  const [row] = await tx
+    .update(billingCheckoutSessionsTable)
+    .set({ providerCustomerId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(billingCheckoutSessionsTable.id, id),
+        eq(billingCheckoutSessionsTable.companyId, companyId),
+        eq(billingCheckoutSessionsTable.subscriptionId, subscriptionId),
+        inArray(billingCheckoutSessionsTable.status, ["creating", "open"]),
+        sql`(${billingCheckoutSessionsTable.providerCustomerId} is null or ${billingCheckoutSessionsTable.providerCustomerId} = ${providerCustomerId})`,
+      ),
+    )
+    .returning();
+  return row;
+}
+
+// B20 Correction 3 — retires an intent ONLY while it is still unbound (no provider
+// customer, no provider session): the counterpart of the fence above. Once a
+// binding has landed the row no longer matches and the caller must resolve the
+// remote state through the recovery protocol instead.
+export async function retireUnboundIntent(id: number, tx: Executor): Promise<CheckoutSessionRow | undefined> {
+  const [row] = await tx
+    .update(billingCheckoutSessionsTable)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(
+      and(
+        eq(billingCheckoutSessionsTable.id, id),
+        inArray(billingCheckoutSessionsTable.status, ["creating", "open"]),
+        isNull(billingCheckoutSessionsTable.providerCustomerId),
+        isNull(billingCheckoutSessionsTable.providerSessionId),
+      ),
+    )
+    .returning();
+  return row;
+}
+
 // Completed local intents that bound a provider subscription (replacement proof / history).
 export async function findCompletedCheckoutByProviderSubscription(companyId: number, providerSubscriptionId: string, tx?: Executor): Promise<CheckoutSessionRow | undefined> {
   const [row] = await exec(tx)

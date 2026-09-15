@@ -121,6 +121,11 @@ export class FakeBillingProvider implements BillingProvider {
   remoteOpenSessionCount(customerId?: string): number {
     return this.remoteSessions().filter((s) => s.status === "open" && (!customerId || s.customerId === customerId)).length;
   }
+  // Distinct provider customers ever created (stable keys collapse retries onto one);
+  // optionally only those with the given id (one company → at most one).
+  remoteCustomerCount(customerId?: string): number {
+    return [...new Set(this.customersByKey.values())].filter((id) => !customerId || id === customerId).length;
+  }
   // Highest number of simultaneously open sessions observed since the last reset.
   remoteMaxOpenSessionCount(customerId?: string): number {
     return this.peakOpen.get(customerId ?? "*") ?? 0;

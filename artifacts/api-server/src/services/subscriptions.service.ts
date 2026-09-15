@@ -232,12 +232,16 @@ async function recoverIntentSession(intent: CheckoutSessionRow): Promise<string>
 }
 
 // Local closure of an intent (audited). Idempotent: only a non-terminal row moves.
-async function expireIntentLocally(intent: CheckoutSessionRow, actor: AuditActor, providerClosed: boolean): Promise<void> {
-  await db.transaction(async (tx) => {
-    const row = await repo.transitionCheckoutSession(intent.id, ["creating", "open"], { status: "expired" }, tx);
-    if (!row) return;
+// `onlyUnbound` (B20 Correction 3) retires the row ONLY while it still has no
+// provider customer and no provider session — the counterpart of the customer-
+// binding fence. Returns whether this call moved the row.
+async function expireIntentLocally(intent: CheckoutSessionRow, actor: AuditActor, providerClosed: boolean, onlyUnbound = false): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const row = onlyUnbound ? await repo.retireUnboundIntent(intent.id, tx) : await repo.transitionCheckoutSession(intent.id, ["creating", "open"], { status: "expired" }, tx);
+    if (!row) return false;
     const sub = await repo.findByCompanyId(intent.companyId, tx);
     if (sub) await writeSubscriptionAudit(tx, { action: "subscription.checkout_expired", companyId: intent.companyId, subscriptionId: sub.id, before: sub, after: sub, actor, extra: { checkoutId: intent.id, providerSessionLinked: !!row.providerSessionId, providerClosed } });
+    return true;
   });
 }
 
@@ -285,11 +289,21 @@ async function closeIntent(intent: CheckoutSessionRow, actor: AuditActor): Promi
   let sessionId = intent.providerSessionId;
   if (!sessionId) {
     if (!intent.providerCustomerId) {
-      // The session creation needs the linked customer; without one it never ran —
-      // there is nothing remote to close.
-      await expireIntentLocally(intent, actor, false);
-      return;
+      // A missing stored customer proves that no session creation has been AUTHORIZED
+      // yet (the fence in createCheckout binds the customer before any session call) —
+      // not that no request is in flight. Retire the row only while it is still
+      // unbound; if a concurrent request's binding landed first, that request may be
+      // creating a session right now, so fall through to the authoritative recovery
+      // protocol on the bound row instead of retiring it blindly.
+      if (await expireIntentLocally(intent, actor, false, true)) return;
+      const now = await repo.findCheckoutSessionById(intent.id);
+      if (!now || (now.status !== "creating" && now.status !== "open")) return; // closed concurrently
+      if (!now.providerCustomerId) throw inProgress(); // changed under us in an unexpected way: let the tenant retry
+      intent = now;
+      sessionId = now.providerSessionId;
     }
+  }
+  if (!sessionId) {
     sessionId = await recoverIntentSession(intent);
     await billingFault("checkout.afterRecover");
     const recovered = sessionId;
@@ -352,7 +366,16 @@ export async function createCheckout(user: AuthUser, input: { planPriceId?: unkn
     const { price, intent } = step;
     let sub = step.sub;
 
-    // ── Step 2/3: provider customer (stable key) → persisted in a short transaction.
+    // ── Step 2/3: provider customer (stable key) → FENCED binding in a short transaction.
+    // B20 Correction 3: the customer is bound to the intent CONDITIONALLY — only while
+    // the intent is still this company's current non-terminal intent for this
+    // subscription and carries no other customer. A concurrent price switch may have
+    // retired the intent while the provider call was in flight; that retired row is
+    // never written to and never authorizes a session creation — the request stops
+    // with a sanitized conflict. The fence and `closeIntent`'s guarded retirement are
+    // serialized by the row lock on the intent: whichever commits first decides, and
+    // the loser (retirement → conflict here; binding → recovery protocol there) never
+    // proceeds on a stale view.
     let customerId = sub.stripeCustomerId;
     if (!customerId) {
       const company = await repo.findCompany(companyId);
@@ -365,15 +388,20 @@ export async function createCheckout(user: AuthUser, input: { planPriceId?: unkn
       }
       await billingFault("checkout.afterCustomerCreate");
       customerId = created.id;
+    }
+    if (intent.providerCustomerId !== customerId || !sub.stripeCustomerId) {
+      const bound = customerId;
       sub = await db.transaction(async (tx) => {
         const locked = await repo.lockByCompanyId(companyId, tx);
         if (!locked) throw new AppError(404, "Subscription not found", { code: "SUBSCRIPTION_NOT_FOUND" });
-        if (locked.stripeCustomerId && locked.stripeCustomerId !== customerId) throw new AppError(409, "This company is already linked to a different billing account.", { code: "PROVIDER_CUSTOMER_MISMATCH" });
+        if (locked.stripeCustomerId && locked.stripeCustomerId !== bound) throw new AppError(409, "This company is already linked to a different billing account.", { code: "PROVIDER_CUSTOMER_MISMATCH" });
+        // The fence: nothing is written unless the intent is still current and unbound (or bound to the same customer).
+        const fenced = await repo.bindIntentCustomer(intent.id, companyId, locked.id, bound, tx);
+        if (!fenced) throw inProgress();
         if (!locked.stripeCustomerId) {
-          await repo.update(locked.id, { stripeCustomerId: customerId }, tx);
-          await writeSubscriptionAudit(tx, { action: "subscription.provider_customer_linked", companyId, subscriptionId: locked.id, before: locked, after: { ...locked, stripeCustomerId: customerId }, actor });
+          await repo.update(locked.id, { stripeCustomerId: bound }, tx);
+          await writeSubscriptionAudit(tx, { action: "subscription.provider_customer_linked", companyId, subscriptionId: locked.id, before: locked, after: { ...locked, stripeCustomerId: bound }, actor, extra: { checkoutId: intent.id } });
         }
-        await repo.updateCheckoutSession(intent.id, { providerCustomerId: customerId }, tx);
         return (await repo.findById(locked.id, tx))!;
       });
     }
@@ -400,6 +428,7 @@ export async function createCheckout(user: AuthUser, input: { planPriceId?: unkn
     }
 
     // ── Step 5: provider session with the intent-derived key (outside any transaction).
+    await billingFault("checkout.beforeSessionCreate");
     let session: ProviderCheckoutSession;
     try {
       session = await provider.createCheckoutSession({
@@ -433,9 +462,10 @@ export async function createCheckout(user: AuthUser, input: { planPriceId?: unkn
     // later request can resolve it without another replay …
     const attached = await db.transaction((tx) => repo.attachProviderSession(intent.id, session.id, { providerCustomerId: customerId }, tx));
     if (!attached) {
-      const now = await repo.findCheckoutSessionById(intent.id);
-      if (!now || now.providerSessionId !== session.id) throw inProgress();
-      if (now.status !== "creating" && now.status !== "open") continue; // closed concurrently (proven at the provider by that request)
+      // Closed or re-owned concurrently (a switch resolved this very session at the
+      // provider): this request must neither continue on a stale view nor hand out a
+      // URL — the tenant retries against the current state.
+      throw inProgress();
     }
     // … then trust ONLY the provider's current state: the creation reply may be an
     // idempotent replay of a session that has since expired or completed.
