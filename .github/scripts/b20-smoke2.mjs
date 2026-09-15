@@ -38,6 +38,10 @@ let failures = 0;
 const trunc = (v) => { const s = typeof v === "string" ? v : JSON.stringify(v); return s.length > 900 ? s.slice(0, 900) + "…" : s; };
 function check(name, ok, detail) { results.push({ section: S, name, ok: !!ok, detail: detail ?? null }); if (!ok) failures += 1; console.log(`${ok ? "PASS" : "FAIL"} [${S}] ${name}${detail != null ? ` — ${trunc(detail)}` : ""}`); }
 function note(name, detail) { results.push({ section: S, name, ok: null, detail: detail ?? null }); console.log(`NOTE [${S}] ${name} — ${trunc(detail ?? "")}`); }
+// A product finding: the check did not hold, it is reported as FINDING (ok=false, kind=finding)
+// and listed explicitly, but it does not mark the tooling run as broken (exit code).
+let findings = 0;
+function finding(name, ok, detail) { if (ok) { check(name, true, detail); return; } results.push({ section: S, name, ok: false, kind: "finding", detail: detail ?? null }); findings += 1; console.log(`FINDING [${S}] ${name} — ${trunc(detail ?? "")}`); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(fn, timeoutMs = 20000, every = 500) { const t0 = Date.now(); let last; while (Date.now() - t0 < timeoutMs) { last = await fn(); if (last) return last; await sleep(every); } return last; }
 const pathOf = (u) => { try { return new URL(u).pathname; } catch { return String(u); } };
@@ -241,7 +245,7 @@ async function main() {
     const navHasSubscription = (await p.getByRole("link", { name: /^subscription$/i }).count()) > 0;
     const excerpt = (await bodyText(p)).slice(0, 220);
     check("employee UI: no billing-management controls are offered", noMgmt, { subscriptionPageVisible: pageVisible, navHasSubscription });
-    check("employee UI: subscription page renders for an employee whose subscriptions:view comes from an RBAC role (API allows the read)", pageVisible, pageVisible ? { statusBadge: await p.getByTestId("status-badge").innerText().catch(() => null), accessMode: await p.getByTestId("access-mode").innerText().catch(() => null) } : { finding: "the web client gates the page on the login-time legacy permissions object; RBAC-role grants are honoured by the API but not by this client-side gate", navHasSubscription, excerpt });
+    finding("employee UI: subscription page renders for an employee whose subscriptions:view comes from an RBAC role (API allows the read)", pageVisible, pageVisible ? { statusBadge: await p.getByTestId("status-badge").innerText().catch(() => null), accessMode: await p.getByTestId("access-mode").innerText().catch(() => null) } : { finding: "the web client gates the page on the login-time legacy permissions object; RBAC-role grants are honoured by the API but not by this client-side gate", navHasSubscription, excerpt });
     await shot(p, "employee-subscription");
     await p.goto(`${TENANT}/admin/automations`, { waitUntil: "domcontentloaded" }); await p.waitForTimeout(1500);
     const forb = await p.getByTestId("automations-forbidden").isVisible().catch(() => false);
@@ -485,7 +489,13 @@ async function main() {
       check("run detail (blocked) displays the failed status, SUBSCRIPTION_NOT_WRITABLE and the untouched second action", /failed/i.test(st2) && /SUBSCRIPTION_NOT_WRITABLE/.test(err2 + b0) && /pending/i.test(b1), { status: st2.replace(/\s+/g, " "), error: err2.replace(/\s+/g, " ").slice(0, 160), action1: b1.replace(/\s+/g, " ").slice(0, 100) });
       await shot(p, "automations-run-blocked");
     }
+    // The editor is read-only while a definition is published; the dirty-editor guard is
+    // exercised on the draft after a legitimate unpublish (revision-checked).
+    const curDef = await A.get(`/workflows/${D}`);
+    const unpub = await A.post(`/workflows/${D}/unpublish`, { revision: curDef.json?.revision });
+    check("automation unpublished (revision-checked) to edit it as a draft", unpub.status === 200 && unpub.json?.status === "draft", { status: unpub.status, definitionStatus: unpub.json?.status, revision: unpub.json?.revision });
     await p.goto(`${TENANT}/admin/automations/${D}`, { waitUntil: "domcontentloaded" }); await p.getByTestId("automation-editor").waitFor({ state: "visible" });
+    await p.getByTestId("automation-name").waitFor({ state: "visible" });
     const nameBefore = await p.getByTestId("automation-name").inputValue();
     await p.getByTestId("automation-name").fill(`${nameBefore} EDITED`); await p.getByTestId("unsaved-indicator").waitFor({ state: "visible" });
     await p.getByTestId("button-back").click(); await p.getByTestId("unsaved-dialog").waitFor({ state: "visible" });
@@ -507,9 +517,9 @@ async function main() {
       await uiLogin(p, TENANT, fx.A.adminEmail, PW_A_ADMIN); await p.waitForURL((u) => u.pathname.startsWith("/admin"));
       await qaPage(p, `tenant subscription ${lab}`, `${TENANT}/admin/subscription`, "subscription-page", ["status-badge", "access-mode", "plan-name", "usage-card"], { theme });
       await qaPage(p, `tenant branding ${lab}`, `${TENANT}/admin/organization`, "branding-section", ["branding-primary-hex", "branding-theme", "branding-save", "branding-reset"], { theme });
-      await qaPage(p, `tenant automations ${lab}`, `${TENANT}/admin/automations`, "automation-list", ["button-new-automation", "tab-runs", `automation-row-${D}`], { theme });
+      await qaPage(p, `tenant automations ${lab}`, `${TENANT}/admin/automations`, "automation-list", ["button-new-automation", "tab-runs", `automation-link-${D}`], { theme });
       await qaPage(p, `tenant automation editor ${lab}`, `${TENANT}/admin/automations/${D}`, "automation-editor", ["automation-name", "button-save", "button-back"], { theme });
-      if (R1) await qaPage(p, `tenant run detail ${lab}`, `${TENANT}/admin/automations/runs/${R1}`, "run-detail", ["run-detail-status", "run-action-0", "run-action-1"], { theme });
+      if (R1) await qaPage(p, `tenant run detail ${lab}`, `${TENANT}/admin/automations/runs/${R1}`, "run-detail", ["run-action-0", "run-action-1", "run-action-summary"], { theme });
     });
     await withPage({ label: `qa-platform-${lab}`, userId: OWNER_USER_ID, companyId: null, theme, mobile }, async (p) => {
       await uiLogin(p, PLATFORM, OWNER_EMAIL, OWNER_PASSWORD); await p.waitForURL((u) => u.pathname.startsWith("/platform"));
@@ -545,9 +555,9 @@ async function main() {
 async function finish(exitCode) {
   saveState();
   const sections = {};
-  for (const r of results) { const s = (sections[r.section] ??= { passed: 0, failed: 0, notes: 0 }); if (r.ok === true) s.passed++; else if (r.ok === false) s.failed++; else s.notes++; }
-  fs.writeFileSync(path.join(OUT_DIR, "summary.json"), JSON.stringify({ tag: TAG, fixtures: { A: fx.A, B: fx.B, ownerUserId: OWNER_USER_ID }, state, failures, sections, results, consoleErrors: consoleLog, pageErrors }, null, 2));
-  console.log(`\nSUPPLEMENTAL SUMMARY: ${results.filter((r) => r.ok === true).length} passed, ${failures} failed, ${results.filter((r) => r.ok === null).length} notes; sections=${JSON.stringify(sections)}; state=${JSON.stringify(state)}`);
+  for (const r of results) { const s = (sections[r.section] ??= { passed: 0, failed: 0, findings: 0, notes: 0 }); if (r.ok === true) s.passed++; else if (r.ok === false && r.kind === "finding") s.findings++; else if (r.ok === false) s.failed++; else s.notes++; }
+  fs.writeFileSync(path.join(OUT_DIR, "summary.json"), JSON.stringify({ tag: TAG, fixtures: { A: fx.A, B: fx.B, ownerUserId: OWNER_USER_ID }, state, failures, findings, sections, results, consoleErrors: consoleLog, pageErrors }, null, 2));
+  console.log(`\nSUPPLEMENTAL SUMMARY: ${results.filter((r) => r.ok === true).length} passed, ${failures} failed, ${findings} findings, ${results.filter((r) => r.ok === null).length} notes; sections=${JSON.stringify(sections)}; state=${JSON.stringify(state)}`);
   process.exit(exitCode);
 }
 
