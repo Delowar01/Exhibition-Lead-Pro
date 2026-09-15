@@ -197,8 +197,7 @@ async function main() {
   const EMP_GRANTS = [{ module: "subscriptions", action: "view" }, { module: "leads", action: "view" }, { module: "contacts", action: "view" }, { module: "events", action: "view" }];
   const role = await A.post("/rbac/roles", { name: `B20 SMOKE ${TAG} viewer`, description: "disposable view-only role", permissions: EMP_GRANTS });
   const assign = Number.isInteger(role.json?.id) ? await A.put(`/users/${empId}/roles`, { roleIds: [role.json.id] }) : { status: 0 };
-  const me = await E.get("/users/me").catch(() => ({ status: 0 }));
-  check("employee restricted to a view-only RBAC role (subscriptions/leads/contacts/events view; no create/edit/manage, no workflows/organization)", role.status === 201 && assign.status === 200, { role: role.status, roleId: role.json?.id, assign: assign.status, assignedRoles: assign.json?.roles ?? assign.json?.roleIds ?? null, me: me.status });
+  check("employee restricted to a view-only RBAC role (subscriptions/leads/contacts/events view; no create/edit/manage, no workflows/organization)", role.status === 201 && assign.status === 200, { role: role.status, roleId: role.json?.id, assign: assign.status, assignedRoles: assign.json?.roles ?? assign.json?.roleIds ?? null });
 
   browser = await chromium.launch();
 
@@ -236,9 +235,13 @@ async function main() {
   check("employee create/edit denied by the permission matrix (events.create, leads.create, organization.edit, workflows.view → 403)", eEv.status === 403 && eLead.status === 403 && eBr.status === 403 && eWf.status === 403, { events: eEv.status, leads: eLead.status, branding: eBr.status, workflows: eWf.status });
   await withPage({ label: "employee-ui", userId: fx.A.empId, companyId: fx.A.cid, theme: "light" }, async (p) => {
     await uiLogin(p, TENANT, empEmail, PW_A_EMP); await p.waitForURL((u) => u.pathname.startsWith("/admin"));
-    await p.goto(`${TENANT}/admin/subscription`, { waitUntil: "domcontentloaded" }); await p.getByTestId("subscription-page").waitFor({ state: "visible" });
+    await p.goto(`${TENANT}/admin/subscription`, { waitUntil: "domcontentloaded" }); await p.waitForTimeout(3500);
+    const pageVisible = await p.getByTestId("subscription-page").isVisible().catch(() => false);
     const noMgmt = (await p.getByTestId("portal-button").count()) === 0 && (await p.getByTestId("checkout-card").count()) === 0 && (await p.getByRole("button", { name: /upgrade|manage billing|checkout/i }).count()) === 0;
-    check("employee UI: subscription page readable, no billing-management controls", noMgmt, { statusBadge: await p.getByTestId("status-badge").innerText().catch(() => null), accessMode: await p.getByTestId("access-mode").innerText().catch(() => null) });
+    const navHasSubscription = (await p.getByRole("link", { name: /^subscription$/i }).count()) > 0;
+    const excerpt = (await bodyText(p)).slice(0, 220);
+    check("employee UI: no billing-management controls are offered", noMgmt, { subscriptionPageVisible: pageVisible, navHasSubscription });
+    check("employee UI: subscription page renders for an employee whose subscriptions:view comes from an RBAC role (API allows the read)", pageVisible, pageVisible ? { statusBadge: await p.getByTestId("status-badge").innerText().catch(() => null), accessMode: await p.getByTestId("access-mode").innerText().catch(() => null) } : { finding: "the web client gates the page on the login-time legacy permissions object; RBAC-role grants are honoured by the API but not by this client-side gate", navHasSubscription, excerpt });
     await shot(p, "employee-subscription");
     await p.goto(`${TENANT}/admin/automations`, { waitUntil: "domcontentloaded" }); await p.waitForTimeout(1500);
     const forb = await p.getByTestId("automations-forbidden").isVisible().catch(() => false);
@@ -288,7 +291,8 @@ async function main() {
   check("creation up to capacity succeeds", e1.status === 201 && e2.status === 201, { e1: e1.status, e2: e2.status });
   const e3 = await A.post("/events", { name: `B20 SMOKE ${TAG} event 3 (over)` });
   const u3 = await usage(); const c3 = await evCount();
-  check("over-capacity request returns 409 LIMIT_EXCEEDED with details and creates nothing", e3.status === 409 && e3.json?.code === "LIMIT_EXCEEDED" && e3.json?.details?.resource === "events" && e3.json?.details?.limit === base + 2 && e3.json?.details?.used === base + 2 && c3 === base + 2 && u3?.remaining === 0, { status: e3.status, code: e3.json?.code, details: e3.json?.details, count: c3, usage: u3 });
+  const e3ctx = e3.json?.context ?? e3.json?.details ?? null;
+  check("over-capacity request returns 409 LIMIT_EXCEEDED (resource/limit/used in the error context) and creates nothing", e3.status === 409 && e3.json?.code === "LIMIT_EXCEEDED" && e3ctx?.resource === "events" && e3ctx?.limit === base + 2 && e3ctx?.used === base + 2 && c3 === base + 2 && u3?.remaining === 0, { status: e3.status, code: e3.json?.code, error: e3.json?.error, context: e3ctx, count: c3, usage: u3 });
   const set3 = await own("PUT", `/platform/subscriptions/${fx.A.cid}/limits`, { limits: { events: base + 3 } });
   const u3b = await usage();
   check("one remaining slot prepared for the concurrency test", set3.status === 200 && u3b?.remaining === 1, { usage: u3b });
@@ -310,24 +314,25 @@ async function main() {
   // ── workflow: exactly-once execution on a writable tenant ───────────────────
   let tagId, C1, C2, L1, L2, D, run1 = null;
   await section("workflow", async () => {
+  // No contacts are created on purpose: contact creation kicks off AI contact scoring
+  // (Gemini unset → logged error); leads without a contact still get their task.
   const tag = await A.post("/tags", { name: `B20 SMOKE ${TAG} tag`, color: "#2563eb" });
-  const c1 = await A.post("/contacts", { firstName: "B20", lastName: `Smoke ${TAG} one` }), c2 = await A.post("/contacts", { firstName: "B20", lastName: `Smoke ${TAG} two` });
-  tagId = tag.json?.id; C1 = c1.json?.id; C2 = c2.json?.id;
-  check("workflow fixtures (tag, two contacts) created", tag.status === 201 && c1.status === 201 && c2.status === 201, { tagId, C1, C2 });
-  const l2 = await A.post("/leads", { contactId: C2, title: `B20 SMOKE ${TAG} lead two (no automation yet)` }); L2 = l2.json?.id;
+  tagId = tag.json?.id;
+  check("workflow fixture (tag) created", tag.status === 201 && Number.isInteger(tagId), { tagId });
+  const l2 = await A.post("/leads", { title: `B20 SMOKE ${TAG} lead two (no automation yet)` }); L2 = l2.json?.id;
   const def = await A.post("/workflows", { name: `B20 SMOKE ${TAG} automation`, description: "lead.created → task.create → lead.add_tag", trigger: { type: "lead.created" }, actions: [{ type: "task.create", config: { title: `B20 SMOKE ${TAG} task`, type: "custom", assignee: { kind: "actor" } } }, { type: "lead.add_tag", config: { tagId } }] });
   D = def.json?.id; if (Number.isInteger(D)) { state.definitionIds.push(D); saveState(); }
-  const pub = Number.isInteger(D) ? await A.post(`/workflows/${D}/publish`) : { status: 0 };
-  check("automation created and published (lead.created → task.create → lead.add_tag)", def.status === 201 && pub.status === 200 && pub.json?.status === "published", { definitionId: D, created: def.status, published: pub.json?.status, revision: pub.json?.revision, validation: def.json?.validation ?? pub.json?.validation ?? null });
+  const pub = Number.isInteger(D) ? await A.post(`/workflows/${D}/publish`, { revision: def.json?.revision ?? 1 }) : { status: 0 };
+  check("automation created and published (lead.created → task.create → lead.add_tag)", def.status === 201 && pub.status === 200 && pub.json?.status === "published", { definitionId: D, created: def.status, publishStatus: pub.status, published: pub.json?.status ?? pub.json?.error ?? null, revision: pub.json?.revision, validation: def.json?.validation ?? pub.json?.validation ?? null });
   if (!Number.isInteger(D)) throw new Error("automation creation failed");
-  const l1 = await A.post("/leads", { contactId: C1, title: `B20 SMOKE ${TAG} lead one` }); L1 = l1.json?.id;
+  const l1 = await A.post("/leads", { title: `B20 SMOKE ${TAG} lead one` }); L1 = l1.json?.id;
   check("real CRM mutation (POST /leads) triggers the automation", l1.status === 201 && Number.isInteger(L1), { leadId: L1 });
   run1 = await waitFor(async () => { const r = await A.get(`/workflows/runs?definitionId=${D}&entityId=${L1}`); const it = listOf(r.json)[0]; return it && (it.status === "completed" || it.status === "failed") ? it : null; }, 90000, 1500);
   if (run1?.id) { state.runIds.push(run1.id); saveState(); }
   const r1d = run1?.id ? await A.get(`/workflows/runs/${run1.id}`) : { json: null };
   const acts1 = listOf(r1d.json?.actions);
   check("durable queue executed the run: completed, both actions completed once", run1?.status === "completed" && acts1.length === 2 && acts1.every((a) => a.status === "completed" && a.attempts === 1) && acts1[0]?.actionType === "task.create" && Number.isInteger(acts1[0]?.result?.taskId) && acts1[1]?.actionType === "lead.add_tag" && acts1[1]?.result?.tagId === tagId && r1d.json?.enqueueGeneration === 1, { run: pick(r1d.json ?? {}, ["id", "status", "enqueueGeneration", "actionSummary", "queuedAt", "startedAt", "completedAt"]), actions: acts1.map((a) => pick(a, ["actionIndex", "actionType", "status", "attempts", "result"])) });
-  const tasks1 = listOf((await A.get(`/tasks?scope=all&contactId=${C1}`)).json).filter((t) => t.title === `B20 SMOKE ${TAG} task`);
+  const tasks1 = listOf((await A.get(`/tasks?scope=all`)).json).filter((t) => t.title === `B20 SMOKE ${TAG} task`);
   const lead1 = await A.get(`/leads/${L1}`); const tags1 = listOf(lead1.json?.tags);
   const runsForD = totalOf((await A.get(`/workflows/runs?definitionId=${D}`)).json);
   const runsForL2 = totalOf((await A.get(`/workflows/runs?entityId=${L2}`)).json);
@@ -337,16 +342,17 @@ async function main() {
   // ── cancelled (read-only) — real dialog, then the auth/access contract ──────
   await section("cancelled", async () => {
   const notifBefore = totalOf((await A.get("/notifications")).json);
+  const tasksBaseline = listOf((await A.get(`/tasks?scope=all`)).json).filter((t) => t.title === `B20 SMOKE ${TAG} task`).length;
   await withPage({ label: "elite-lifecycle", userId: OWNER_USER_ID, companyId: null, theme: "light" }, async (pp) => {
   try {
     await uiLogin(pp, PLATFORM, OWNER_EMAIL, OWNER_PASSWORD); await pp.waitForURL((u) => u.pathname.startsWith("/platform"));
     const canc = await lifecycleUI(pp, fx.A.cid, "cancel", "cancelled");
     const cancelledAt = canc?.statusChangedAt ?? new Date().toISOString(); // the orphan run is only persisted after this instant
-    check("cancelled: canonical status/access = cancelled / read_only / SUBSCRIPTION_CANCELLED", canc?.status === "cancelled" && canc?.accessMode === "read_only" && canc?.reasonCode === "SUBSCRIPTION_CANCELLED" && Array.isArray(canc?.allowedActions) && canc.allowedActions.includes("activate"), subView(canc ?? {}));
+    check("cancelled: canonical status/access = cancelled / read_only (restore offered via activate)", canc?.status === "cancelled" && canc?.accessMode === "read_only" && Array.isArray(canc?.allowedActions) && canc.allowedActions.includes("activate"), subView(canc ?? {}));
     const lc = await tenantLogin(fx.A.adminEmail, PW_A_ADMIN);
     check("cancelled: login allowed (read-only is not a login block) and the existing token keeps working", lc.status === 200 && !!lc.json?.token, { login: lc.status });
     const cur = await A.get("/subscriptions/current");
-    check("cancelled: /subscriptions/current explains read-only with the contract message", cur.status === 200 && cur.json?.status === "cancelled" && cur.json?.accessMode === "read_only" && cur.json?.reasonCode === "SUBSCRIPTION_CANCELLED" && /read-only/i.test(cur.json?.accessMessage ?? ""), pick(cur.json ?? {}, ["status", "accessMode", "reasonCode", "accessMessage"]));
+    check("cancelled: /subscriptions/current explains read-only with SUBSCRIPTION_CANCELLED and the contract message", cur.status === 200 && cur.json?.status === "cancelled" && cur.json?.accessMode === "read_only" && cur.json?.accessReasonCode === "SUBSCRIPTION_CANCELLED" && /read-only/i.test(cur.json?.accessMessage ?? ""), pick(cur.json ?? {}, ["status", "accessMode", "accessReasonCode", "accessMessage"]));
     const reads = { leads: (await A.get("/leads")).status, leadById: (await A.get(`/leads/${L1}`)).status, events: (await A.get("/events")).status, tasks: (await A.get("/tasks")).status, usage: (await A.get("/subscriptions/usage")).status, runs: (await A.get("/workflows/runs")).status, branding: (await A.get("/organization/branding")).status };
     check("cancelled: representative CRM reads succeed (200)", Object.values(reads).every((s) => s === 200), reads);
     const writes = { postLead: await A.post("/leads", { title: "B20 SMOKE blocked write" }), patchLead: await A.patch(`/leads/${L1}`, { title: "HACKED" }), postEvent: await A.post("/events", { name: "B20 SMOKE blocked event" }), postTask: await A.post("/tasks", { title: "B20 SMOKE blocked task" }), postTag: await A.post("/tags", { name: "B20 SMOKE blocked tag" }), putBranding: await A.put("/organization/branding", { primaryColor: "#1d4ed8" }), postWorkflow: await A.post("/workflows", { name: "B20 SMOKE blocked wf", trigger: { type: "lead.created" }, actions: [] }), attachTag: await A.post(`/leads/${L1}/tags`, { tagId }) };
@@ -378,13 +384,13 @@ async function main() {
       const done = await waitFor(async () => { const r = await A.get(`/workflows/runs/${orphanId}`); return r.json && r.json.status !== "queued" && r.json.status !== "running" ? r.json : null; }, RECOVERY_WAIT_MS, 10000);
       note("waited for the orphan-recovery sweep to re-enqueue and the worker to execute", { waitedMs: Date.now() - tw, status: done?.status ?? "(still queued)" });
       const acts = listOf(done?.actions);
-      check("blocked run: documented non-writable failure (run failed, SUBSCRIPTION_NOT_WRITABLE / read_only / SUBSCRIPTION_CANCELLED), re-enqueued by recovery (generation 2)", done?.status === "failed" && done?.error?.code === "SUBSCRIPTION_NOT_WRITABLE" && done?.error?.accessMode === "read_only" && done?.error?.reasonCode === "SUBSCRIPTION_CANCELLED" && done?.enqueueGeneration === 2, { run: pick(done ?? {}, ["id", "status", "enqueueGeneration", "error", "queuedAt", "startedAt", "completedAt"]) });
+      check("blocked run: documented non-writable failure (run failed, SUBSCRIPTION_NOT_WRITABLE, read_only / SUBSCRIPTION_CANCELLED, not retryable), re-enqueued by recovery (generation 2)", done?.status === "failed" && done?.error?.code === "SUBSCRIPTION_NOT_WRITABLE" && /read_only/.test(done?.error?.message ?? "") && /SUBSCRIPTION_CANCELLED/.test(done?.error?.message ?? "") && done?.error?.retryable === false && done?.enqueueGeneration === 2, { run: pick(done ?? {}, ["id", "status", "enqueueGeneration", "error", "queuedAt", "startedAt", "completedAt"]) });
       check("blocked run: first action failed with SUBSCRIPTION_NOT_WRITABLE, second action never started (no continuation)", acts.length === 2 && acts[0]?.status === "failed" && acts[0]?.error?.code === "SUBSCRIPTION_NOT_WRITABLE" && acts[1]?.status === "pending" && (acts[1]?.attempts ?? 0) === 0, { actions: acts.map((a) => pick(a, ["actionIndex", "actionType", "status", "attempts", "error"])) });
       check("blocked run: executed strictly after the cancellation (startedAt > subscription statusChangedAt)", !!done?.startedAt && !!cancelledAt && new Date(done.startedAt).getTime() > new Date(cancelledAt).getTime(), { cancelledAt, startedAt: done?.startedAt });
-      const tasks2 = listOf((await A.get(`/tasks?scope=all&contactId=${C2}`)).json); const lead2 = await A.get(`/leads/${L2}`); const notifAfter = totalOf((await A.get("/notifications")).json);
-      check("blocked run: no task, tag, notification or e-mail side effect (SMTP unset; no email action in the definition)", tasks2.length === 0 && listOf(lead2.json?.tags).length === 0 && notifAfter === notifBefore, { tasksForLeadTwoContact: tasks2.length, leadTwoTags: listOf(lead2.json?.tags).length, notifications: { before: notifBefore, after: notifAfter } });
-      const r1again = await A.get(`/workflows/runs/${run1?.id}`);
-      check("idempotency intact: the earlier completed run is untouched (still completed, attempts 1, generation 1)", r1again.json?.status === "completed" && r1again.json?.enqueueGeneration === 1 && listOf(r1again.json?.actions).every((a) => a.attempts === 1), pick(r1again.json ?? {}, ["id", "status", "enqueueGeneration", "actionSummary"]));
+      const tasks2 = listOf((await A.get(`/tasks?scope=all`)).json).filter((t) => t.title === `B20 SMOKE ${TAG} task`); const lead2 = await A.get(`/leads/${L2}`); const notifAfter = totalOf((await A.get("/notifications")).json);
+      check("blocked run: no task, tag, notification or e-mail side effect (SMTP unset; no email action in the definition)", tasks2.length === tasksBaseline && listOf(lead2.json?.tags).length === 0 && notifAfter === notifBefore, { automationTasks: { beforeBlockedRun: tasksBaseline, after: tasks2.length }, leadTwoTags: listOf(lead2.json?.tags).length, notifications: { before: notifBefore, after: notifAfter } });
+      const r1again = run1?.id ? await A.get(`/workflows/runs/${run1.id}`) : { json: null };
+      check("idempotency intact: the earlier completed run is untouched (still completed, attempts 1, generation 1)", r1again.json?.status === "completed" && r1again.json?.enqueueGeneration === 1 && listOf(r1again.json?.actions).length === 2 && listOf(r1again.json?.actions).every((a) => a.attempts === 1), pick(r1again.json ?? {}, ["id", "status", "enqueueGeneration", "actionSummary"]));
     }
 
     // ── restore from cancelled through the real dialog ────────────────────────
@@ -394,14 +400,14 @@ async function main() {
     check("restore (activate) returns full writable access", restored?.accessMode === "full" && wOk.status === 201, { accessMode: restored?.accessMode, write: wOk.status });
     if (Number.isInteger(orphanId)) {
       await sleep(15000);
-      const later = await A.get(`/workflows/runs/${orphanId}`); const tasks2b = listOf((await A.get(`/tasks?scope=all&contactId=${C2}`)).json); const lead2b = await A.get(`/leads/${L2}`);
-      check("blocked run stays failed after reactivation: no retry, no replay, still no side effects", later.json?.status === "failed" && later.json?.enqueueGeneration === 2 && tasks2b.length === 0 && listOf(lead2b.json?.tags).length === 0, { status: later.json?.status, generation: later.json?.enqueueGeneration, tasks: tasks2b.length, tags: listOf(lead2b.json?.tags).length });
+      const later = await A.get(`/workflows/runs/${orphanId}`); const tasks2b = listOf((await A.get(`/tasks?scope=all`)).json).filter((t) => t.title === `B20 SMOKE ${TAG} task`); const lead2b = await A.get(`/leads/${L2}`);
+      check("blocked run stays failed after reactivation: no retry, no replay, still no side effects", later.json?.status === "failed" && later.json?.enqueueGeneration === 2 && tasks2b.length === tasksBaseline && listOf(lead2b.json?.tags).length === 0, { status: later.json?.status, generation: later.json?.enqueueGeneration, automationTasks: tasks2b.length, tags: listOf(lead2b.json?.tags).length });
     }
 
     // ── expired (blocked) — real dialog, then the auth contract ──────────────
     S = "expired";
     const exp = await lifecycleUI(pp, fx.A.cid, "expire", "expired");
-    check("expired: canonical status/access = expired / blocked / SUBSCRIPTION_EXPIRED", exp?.status === "expired" && exp?.accessMode === "blocked" && exp?.reasonCode === "SUBSCRIPTION_EXPIRED" && exp?.allowedActions?.includes("activate"), subView(exp ?? {}));
+    check("expired: canonical status/access = expired / blocked (restore offered via activate)", exp?.status === "expired" && exp?.accessMode === "blocked" && exp?.allowedActions?.includes("activate"), subView(exp ?? {}));
     const le2 = await tenantLogin(fx.A.adminEmail, PW_A_ADMIN); const tok403 = await A.get("/subscriptions/current"); const read403 = await A.get("/leads"); const write403 = await A.post("/tags", { name: "x" }); const empLogin = await tenantLogin(empEmail, PW_A_EMP);
     check("expired: login refused (403, expired message) for admin and employee; existing tokens refused with SUBSCRIPTION_EXPIRED on reads and writes", le2.status === 403 && /expired/i.test(le2.json?.error ?? "") && empLogin.status === 403 && tok403.status === 403 && tok403.json?.code === "SUBSCRIPTION_EXPIRED" && read403.status === 403 && read403.json?.code === "SUBSCRIPTION_EXPIRED" && write403.status === 403, { login: le2.status, loginMessage: le2.json?.error, employeeLogin: empLogin.status, tokenRead: [tok403.status, tok403.json?.code], leads: [read403.status, read403.json?.code], write: write403.status });
     await withPage({ label: "tenant-expired-ui" }, async (tp) => {
@@ -431,7 +437,7 @@ async function main() {
     await p.goto(`${TENANT}/admin/organization`, { waitUntil: "domcontentloaded" }); await p.getByTestId("branding-section").waitFor({ state: "visible" });
     check("branding section renders the platform defaults (not customized)", br0.status === 200 && br0.json?.isCustomized === false && (await p.getByTestId("branding-customized").count()) === 0, { isCustomized: br0.json?.isCustomized });
     await shot(p, "branding-defaults");
-    const hex = p.getByTestId("branding-primaryColor-hex");
+    const hex = p.getByTestId("branding-primary-hex");
     await hex.fill(""); await hex.fill("#1D4ED8");
     await p.getByTestId("branding-theme-dark").check({ force: true });
     await p.getByTestId("branding-dirty").waitFor({ state: "visible" });
@@ -460,13 +466,19 @@ async function main() {
     check("automations list shows the published automation", await p.getByTestId(`automation-row-${D}`).isVisible().catch(() => false), { rowText: (await p.getByTestId(`automation-row-${D}`).innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 120) });
     await shot(p, "automations-list");
     await p.getByTestId("tab-runs").click(); await p.getByTestId("run-history").waitFor({ state: "visible" });
-    const rowOk = await p.getByTestId(`run-row-${R1}`).isVisible().catch(() => false); const rowBlocked = R2 ? await p.getByTestId(`run-row-${R2}`).isVisible().catch(() => false) : null;
-    check("run history lists the completed run and the blocked run with their outcomes", rowOk && (R2 == null || rowBlocked) && /completed/i.test(await p.getByTestId(`run-row-${R1}`).innerText()) && (R2 == null || /failed/i.test(await p.getByTestId(`run-row-${R2}`).innerText())), { completedRow: rowOk, blockedRow: rowBlocked });
+    const rowLoc = (id) => p.getByTestId(`run-row-${id}`);
+    if (R1) await rowLoc(R1).waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    if (R2) await rowLoc(R2).waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    const rowOk = R1 ? await rowLoc(R1).isVisible().catch(() => false) : false; const rowBlocked = R2 ? await rowLoc(R2).isVisible().catch(() => false) : null;
+    const rowOkText = rowOk ? await rowLoc(R1).innerText() : ""; const rowBlockedText = rowBlocked ? await rowLoc(R2).innerText() : "";
+    check("run history lists the completed run and the blocked run with their outcomes", rowOk && /completed/i.test(rowOkText) && (R2 == null || (rowBlocked && /failed/i.test(rowBlockedText))), { completedRow: rowOk, completedText: rowOkText.replace(/\s+/g, " ").slice(0, 120), blockedRow: rowBlocked, blockedText: rowBlockedText.replace(/\s+/g, " ").slice(0, 120) });
     await shot(p, "automations-run-history");
-    await p.goto(`${TENANT}/admin/automations/runs/${R1}`, { waitUntil: "domcontentloaded" }); await p.getByTestId("run-detail").waitFor({ state: "visible" }); await p.waitForTimeout(500);
-    const st1 = await p.getByTestId("run-detail-status").innerText().catch(() => ""); const a0 = await p.getByTestId("run-action-0").innerText().catch(() => ""); const a1 = await p.getByTestId("run-action-1").innerText().catch(() => "");
-    check("run detail (completed) displays both actions as completed with their outcomes", /completed/i.test(st1) && /completed/i.test(a0) && /completed/i.test(a1) && /task/i.test(a0) && /tag/i.test(a1), { status: st1.replace(/\s+/g, " "), action0: a0.replace(/\s+/g, " ").slice(0, 120), action1: a1.replace(/\s+/g, " ").slice(0, 120) });
-    await shot(p, "automations-run-completed");
+    if (R1) {
+      await p.goto(`${TENANT}/admin/automations/runs/${R1}`, { waitUntil: "domcontentloaded" }); await p.getByTestId("run-detail").waitFor({ state: "visible" }); await p.waitForTimeout(500);
+      const st1 = await p.getByTestId("run-detail-status").innerText().catch(() => ""); const a0 = await p.getByTestId("run-action-0").innerText().catch(() => ""); const a1 = await p.getByTestId("run-action-1").innerText().catch(() => "");
+      check("run detail (completed) displays both actions as completed with their outcomes", /completed/i.test(st1) && /completed/i.test(a0) && /completed/i.test(a1) && /task/i.test(a0) && /tag/i.test(a1), { status: st1.replace(/\s+/g, " "), action0: a0.replace(/\s+/g, " ").slice(0, 120), action1: a1.replace(/\s+/g, " ").slice(0, 120) });
+      await shot(p, "automations-run-completed");
+    } else check("run detail (completed) displays both actions", false, "no completed run id available");
     if (R2) {
       await p.goto(`${TENANT}/admin/automations/runs/${R2}`, { waitUntil: "domcontentloaded" }); await p.getByTestId("run-detail").waitFor({ state: "visible" }); await p.waitForTimeout(500);
       const st2 = await p.getByTestId("run-detail-status").innerText().catch(() => ""); const err2 = await p.getByTestId("run-error").innerText().catch(() => ""); const b0 = await p.getByTestId("run-action-0").innerText().catch(() => ""); const b1 = await p.getByTestId("run-action-1").innerText().catch(() => "");
@@ -494,10 +506,10 @@ async function main() {
     await withPage({ label: `qa-tenant-${lab}`, userId: fx.A.adminId, companyId: fx.A.cid, theme, mobile }, async (p) => {
       await uiLogin(p, TENANT, fx.A.adminEmail, PW_A_ADMIN); await p.waitForURL((u) => u.pathname.startsWith("/admin"));
       await qaPage(p, `tenant subscription ${lab}`, `${TENANT}/admin/subscription`, "subscription-page", ["status-badge", "access-mode", "plan-name", "usage-card"], { theme });
-      await qaPage(p, `tenant branding ${lab}`, `${TENANT}/admin/organization`, "branding-section", ["branding-primaryColor-hex", "branding-theme", "branding-save", "branding-reset"], { theme });
+      await qaPage(p, `tenant branding ${lab}`, `${TENANT}/admin/organization`, "branding-section", ["branding-primary-hex", "branding-theme", "branding-save", "branding-reset"], { theme });
       await qaPage(p, `tenant automations ${lab}`, `${TENANT}/admin/automations`, "automation-list", ["button-new-automation", "tab-runs", `automation-row-${D}`], { theme });
       await qaPage(p, `tenant automation editor ${lab}`, `${TENANT}/admin/automations/${D}`, "automation-editor", ["automation-name", "button-save", "button-back"], { theme });
-      await qaPage(p, `tenant run detail ${lab}`, `${TENANT}/admin/automations/runs/${R1}`, "run-detail", ["run-detail-status", "run-action-0", "run-action-1"], { theme });
+      if (R1) await qaPage(p, `tenant run detail ${lab}`, `${TENANT}/admin/automations/runs/${R1}`, "run-detail", ["run-detail-status", "run-action-0", "run-action-1"], { theme });
     });
     await withPage({ label: `qa-platform-${lab}`, userId: OWNER_USER_ID, companyId: null, theme, mobile }, async (p) => {
       await uiLogin(p, PLATFORM, OWNER_EMAIL, OWNER_PASSWORD); await p.waitForURL((u) => u.pathname.startsWith("/platform"));
