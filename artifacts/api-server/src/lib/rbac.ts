@@ -36,6 +36,18 @@ export const PERMISSION_CATALOG: Record<string, { label: string; actions: string
 
 export type PermissionMatrix = Record<string, string[]>;
 
+// Legacy role names persisted in older databases (incl. production) that predate the
+// Phase-0 role rename. Authorization recognizes only the canonical names, so every
+// consumer normalizes the stored role at its boundary (re-exported by requireAuth).
+const LEGACY_ROLE_ALIASES: Record<string, string> = {
+  company_admin: "primary_admin",
+  team_member: "employee",
+};
+
+export function normalizeRole(role: string): string {
+  return LEGACY_ROLE_ALIASES[role] ?? role;
+}
+
 // Validates that every (module, action) in a grant list exists in the catalog.
 // Returns the offending pair (for a 400) or null when all are valid.
 export function findInvalidPermission(grants: Array<{ module: string; action: string }>): { module: string; action: string } | null {

@@ -1,10 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
-import { db, usersTable, userCompanyAccessTable, userRolesTable, rolePermissionsTable } from "@workspace/db";
+import { db, usersTable, userCompanyAccessTable } from "@workspace/db";
 import { and, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { verifyAccessToken } from "../lib/tokens.js";
 import { validateSession } from "../lib/sessions.js";
-import { mergePermissions, type PermissionMatrix } from "../lib/rbac.js";
+import { normalizeRole } from "../lib/rbac.js";
+import { resolveEffectivePermissions } from "../lib/effective-permissions.js";
 
 export interface AuthUser {
   id: number;
@@ -37,19 +38,11 @@ export function tenantScope(user: AuthUser | undefined, column: PgColumn): SQL |
   return inArray(column, user.accessibleCompanies);
 }
 
-// Legacy role names persisted in older databases (incl. production) that predate the
-// Phase-0 role rename. Authorization recognizes only the canonical names, so every
-// request normalizes the stored role at the auth boundary. Without this, a user still
-// stored as `company_admin` is denied the `primary_admin` permission bypass and gets
-// 403 on every permission-gated write (scans/OCR, contact edit/delete, team, etc.).
-const LEGACY_ROLE_ALIASES: Record<string, string> = {
-  company_admin: "primary_admin",
-  team_member: "employee",
-};
-
-export function normalizeRole(role: string): string {
-  return LEGACY_ROLE_ALIASES[role] ?? role;
-}
+// Legacy role names (company_admin / team_member) are normalized at the auth boundary;
+// the alias map lives in lib/rbac.ts so the auth projection and every other consumer
+// share one definition. Without this, a user still stored as `company_admin` is
+// denied the `primary_admin` permission bypass and gets 403 on every gated write.
+export { normalizeRole };
 
 // Batch 20: tenant access is resolved from the CANONICAL subscription row by
 // lib/company-access.ts (shared with the login path and the refresh-rotation
@@ -124,27 +117,11 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       return;
     }
 
-    // Effective permissions = legacy per-user JSON ∪ grants from assigned roles.
-    // This keeps the RBAC model ADDITIVE: existing permission JSON still works and
-    // requirePermission stays unchanged. platform_owner/primary_admin bypass anyway,
-    // so the role join is skipped for them to save a round-trip.
-    let permissions: PermissionMatrix = user.permissions ?? {};
-    if (user.role !== "platform_owner" && user.role !== "primary_admin") {
-      const grantRows = await db
-        .select({ module: rolePermissionsTable.module, action: rolePermissionsTable.action })
-        .from(userRolesTable)
-        .innerJoin(rolePermissionsTable, eq(userRolesTable.roleId, rolePermissionsTable.roleId))
-        .where(eq(userRolesTable.userId, user.id));
-      if (grantRows.length > 0) {
-        const roleMatrix: PermissionMatrix = {};
-        for (const r of grantRows) {
-          const set = new Set(roleMatrix[r.module] ?? []);
-          set.add(r.action);
-          roleMatrix[r.module] = Array.from(set);
-        }
-        permissions = mergePermissions(permissions, roleMatrix);
-      }
-    }
+    // Effective permissions = legacy per-user JSON ∪ grants from assigned roles
+    // (lib/effective-permissions.ts — the same resolver feeds the auth user
+    // projection, so the browser stores what requirePermission enforces). The RBAC
+    // model stays ADDITIVE and platform_owner/primary_admin bypass as before.
+    const permissions = await resolveEffectivePermissions(user);
 
     req.user = {
       id: user.id,
@@ -200,23 +177,7 @@ export async function loadAuthUserById(userId: number): Promise<AuthUser | null>
     new Set([...(user.companyId ? [user.companyId] : []), ...accessRows.map((r) => r.companyId)]),
   );
 
-  let permissions: PermissionMatrix = user.permissions ?? {};
-  if (user.role !== "platform_owner" && user.role !== "primary_admin") {
-    const grantRows = await db
-      .select({ module: rolePermissionsTable.module, action: rolePermissionsTable.action })
-      .from(userRolesTable)
-      .innerJoin(rolePermissionsTable, eq(userRolesTable.roleId, rolePermissionsTable.roleId))
-      .where(eq(userRolesTable.userId, user.id));
-    if (grantRows.length > 0) {
-      const roleMatrix: PermissionMatrix = {};
-      for (const r of grantRows) {
-        const set = new Set(roleMatrix[r.module] ?? []);
-        set.add(r.action);
-        roleMatrix[r.module] = Array.from(set);
-      }
-      permissions = mergePermissions(permissions, roleMatrix);
-    }
-  }
+  const permissions = await resolveEffectivePermissions(user);
 
   return {
     id: user.id,

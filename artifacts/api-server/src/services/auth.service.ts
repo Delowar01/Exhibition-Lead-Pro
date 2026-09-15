@@ -1,6 +1,7 @@
 import { type Company } from "@workspace/db";
 import { hashPassword, comparePassword } from "../lib/auth.js";
 import { normalizeRole } from "../middlewares/requireAuth.js";
+import { resolveEffectivePermissions } from "../lib/effective-permissions.js";
 import { loadTenantAccess } from "../lib/company-access.js";
 import { createSubscriptionForCompany } from "./subscription-lifecycle.service.js";
 import { db } from "@workspace/db";
@@ -46,7 +47,11 @@ export async function buildUserResponse(user: UserRow, companyName: string | nul
     companyId: user.companyId,
     companyName,
     avatarUrl: user.avatarUrl,
-    permissions: user.permissions ?? {},
+    // B20 Correction 4: the EFFECTIVE matrix (legacy column ∪ assigned RBAC role
+    // grants) — the same resolver requireAuth enforces with — so the browser's
+    // navigation/billing gates never disagree with the server. The stored legacy
+    // column is not modified.
+    permissions: await resolveEffectivePermissions(user),
     contactVisibility: user.contactVisibility,
     companyVisibility: user.companyVisibility,
     accessibleCompanies,
