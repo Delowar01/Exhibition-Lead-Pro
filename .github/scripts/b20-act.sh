@@ -374,6 +374,11 @@ phase_postdeploy() {
   fi
   q "select 'job_queue: '||coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s"
   q "select 'job_queue dead_last_24h='||count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'"
+  # Recurring scheduler jobs since the deploy (task name is the 2nd segment of the dedupe key; no payload is read).
+  q "select 'recurring jobs (last 6h): '||coalesce(string_agg(k||'='||n||'/'||st, ' ' order by k, st), 'none') from (select split_part(coalesce(dedupe_key,''), ':', 2) k, status st, count(*) n from job_queue where name='recurring.sweep' and enqueued_at > now() - interval '6 hours' group by 1,2) s"
+  q "select 'subscriptionSweep last completed: '||coalesce(max(completed_at)::text, 'never') from job_queue where name='recurring.sweep' and dedupe_key like 'recurring:subscriptionSweep:%' and status='completed'"
+  echo "sweep log lines (api container): $(docker logs "$API_CID" 2>&1 | grep -c '"sweep":"subscription"' || true)"
+  q "select 'disposable rows remaining: companies='||(select count(*) from companies where name like 'B20 SMOKE %')||' users='||(select count(*) from users where email like '%@b20smoke.invalid')"
   log "postdeploy complete (read-only)"
 }
 
