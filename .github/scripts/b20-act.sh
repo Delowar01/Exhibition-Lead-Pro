@@ -7,8 +7,22 @@
 #                Never reads secret values (only key presence / non-secret values),
 #                never prints names, emails (except the operator-supplied lookup
 #                key), password hashes, tokens or provider identifier values.
-# Other phases are added in later commits of the ops branch and are documented
-# in their own headers.
+#   migrate    : the controlled apply — preconditions (deployed commit, clean
+#                checkout, billing disabled, schema fingerprint = rehearsed F0,
+#                data state = preflight) → build the two migrate images from
+#                isolated worktrees (artifacts before any downtime) → fresh
+#                standard backup + integrity checks → STOP the API writers →
+#                stage-1 schema (statements classified against the rehearsal) →
+#                repair dry-run gated against the company authority → apply →
+#                zero-change verify → stage-2 schema → constraint verification →
+#                repeat push "No changes detected". Every gate aborts the run and
+#                leaves the API STOPPED (the old API is incompatible with the final
+#                schema; nothing is restored automatically).
+#   postdeploy : read-only verification after the deploy workflow.
+# Expected values come from the local rehearsal on the schema-only hosted dump:
+#   F0 e839d03d928fa46c20797329d2779e3e  (hosted schema before)
+#   F1 4f5776f7421880daf2d453b7466b6ffb  (after stage 1, 39 statements)
+#   F2 ce55dfa2959cc89c2baad2923217842a  (after stage 2, 27 statements)
 # =============================================================================
 set -euo pipefail
 set +x
@@ -127,7 +141,202 @@ phase_preflight() {
   log "preflight complete (read-only)"
 }
 
+STAGE1_SHA=4f42931d1d5270d0731b9e7461ca1685c5f74cf7
+STAGE2_SHA=054b207a3e5bd92d822549e8bcbe61098c26acc5
+BASE_SHA=c2cd4674977ce517e9ffd8ec7f50688613864dad
+EXPECT_F0="${ARG1:-e839d03d928fa46c20797329d2779e3e}"
+EXPECT_F1="${ARG2:-4f5776f7421880daf2d453b7466b6ffb}"
+EXPECT_F2="${ARG3:-ce55dfa2959cc89c2baad2923217842a}"
+WT_ROOT="$HOME/b20-worktrees"
+STAGE="init"
+classify() { grep -E "^(ALTER|CREATE|DROP|TRUNCATE|DELETE|UPDATE|INSERT)" "$1" | sed -E 's/^(ALTER TABLE "[a-z_]+" (ADD COLUMN|ALTER COLUMN|ADD CONSTRAINT "[a-z_]+" (CHECK|FOREIGN KEY|UNIQUE|PRIMARY KEY)|DROP [A-Z]+|RENAME)|CREATE (TABLE|INDEX|UNIQUE INDEX)|DROP [A-Z ]+|[A-Z]+).*/\1/' | sort | uniq -c; }
+destructive_count() { grep -ciE '^(drop|.*rename|truncate|delete|update |insert|alter table "[a-z_]+" alter column "[a-z_]+" (set data type|drop not null|set not null|drop default))' "$1" || true; }
+on_abort() { local rc=$?; [ $rc -eq 0 ] && return; echo; echo "!!!! MIGRATE ABORTED at stage '$STAGE' (exit $rc). API writers: $(compose ps --status running api --format '{{.Name}}' 2>/dev/null | grep -q . && echo RUNNING || echo STOPPED). Nothing was restored automatically. Schema fingerprint now: $(fingerprint 2>/dev/null || echo unknown)" >&2; }
+# run_in_image <image> <shell command> — env from the runtime env file (never printed),
+# attached to the postgres network so DATABASE_URL resolves exactly as for the app.
+run_in_image() { local img="$1"; shift; docker run --rm --network "$PG_NET" --env-file "$ENV_FILE" --entrypoint sh "$img" -c "$*" </dev/null; }
+snapshot_rows() {
+  q "select 'company '||c.id||': status='||coalesce(c.status,'<null>')||' plan='||coalesce(c.plan,'<null>')||' trial_ends_at='||coalesce(c.trial_ends_at::text,'null')||' | sub: '||coalesce((select 'id='||s.id||' status='||s.status||' plan='||s.plan||' trial_ends_at='||coalesce(s.trial_ends_at::text,'null')||' stripe='||(s.stripe_customer_id is not null or s.stripe_subscription_id is not null) from subscriptions s where s.company_id=c.id limit 1),'NONE') from companies c order by c.id"
+}
+jsonnum() { grep -oE "\"$2\": [0-9]+" "$1" | head -1 | grep -oE '[0-9]+'; }
+
+phase_migrate() {
+  trap on_abort EXIT
+  STAGE="preconditions"
+  section "preconditions"
+  local head cur
+  head="$(git -C "$APP_DIR" rev-parse HEAD)"; cur="$(cat "$STATE_DIR/current-deploy.sha")"
+  echo "HEAD=$head current-deploy.sha=$cur"
+  [ "$head" = "$BASE_SHA" ] && [ "$cur" = "$BASE_SHA" ] || fail "hosted checkout / current-deploy.sha is not the expected base commit"
+  [ -z "$(git -C "$APP_DIR" status --porcelain)" ] || fail "hosted checkout is dirty"
+  [ "$(docker inspect -f '{{.State.Health.Status}}' "$PG_CID")" = "healthy" ] || fail "postgres is not healthy"
+  [ -n "$API_CID" ] || fail "api container not running (unexpected starting state)"
+  local bp bs bk
+  bp="$(grep -E '^BILLING_PROVIDER=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' || true)"
+  bs="$(grep -E '^BILLING_SELF_SERVICE_CHECKOUT=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' || true)"
+  bk="$(grep -cE '^STRIPE_SECRET_KEY=.+' "$ENV_FILE" || true)"
+  echo "billing: BILLING_PROVIDER='${bp:-<unset>}' BILLING_SELF_SERVICE_CHECKOUT='${bs:-<unset>}' STRIPE_SECRET_KEY_present=$bk"
+  { [ -z "$bp" ] || [ "$bp" = "none" ]; } || fail "a billing provider is configured on the hosted stack ('$bp') — stopping without changes"
+  [ "${bs:-false}" != "true" ] || fail "self-service checkout is enabled on the hosted stack — stopping without changes"
+  [ "$bk" = "0" ] || fail "a Stripe secret key is present on the hosted stack — stopping without changes"
+  local f0; f0="$(fingerprint)"; echo "schema_fingerprint=$f0 (expected F0=$EXPECT_F0)"
+  [ "$f0" = "$EXPECT_F0" ] || fail "hosted schema fingerprint differs from the rehearsed F0"
+  q "select 'plans='||(select count(*) from plans)||' subscriptions='||(select count(*) from subscriptions)||' companies='||(select count(*) from companies)"
+  [ "$(q "select count(*) from plans")" = "0" ] || fail "plans table is not empty (preflight expected 0)"
+  [ "$(q "select count(*) from subscriptions where stripe_customer_id is not null or stripe_subscription_id is not null")" = "0" ] || fail "provider ids present — manual reconciliation required"
+  [ "$(q "select count(*) from companies where status not in ('trial','active','suspended','expired','cancelled')")" = "0" ] || fail "unknown legacy company status present"
+  section "data baseline BEFORE (ids/states only)"
+  snapshot_rows
+  PG_NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$PG_CID" | head -c 200)"; echo "postgres network: $PG_NET"
+
+  STAGE="artifacts"
+  section "artifacts (before any downtime): isolated worktrees + migrate images"
+  git -C "$APP_DIR" fetch --quiet origin "refs/heads/claude/b20-subscription-lifecycle:refs/remotes/origin/claude/b20-subscription-lifecycle"
+  for sha in "$STAGE1_SHA" "$STAGE2_SHA"; do git -C "$APP_DIR" cat-file -e "$sha^{commit}" || fail "commit $sha not present after fetch"; done
+  git -C "$APP_DIR" merge-base --is-ancestor "$BASE_SHA" "$STAGE2_SHA" || fail "accepted commit does not descend from the deployed base"
+  git -C "$APP_DIR" merge-base --is-ancestor "$STAGE1_SHA" "$STAGE2_SHA" || fail "stage-1 commit is not an ancestor of the accepted commit"
+  rm -rf "$WT_ROOT"; mkdir -p "$WT_ROOT"; git -C "$APP_DIR" worktree prune
+  git -C "$APP_DIR" worktree add --quiet --detach "$WT_ROOT/stage1" "$STAGE1_SHA"
+  git -C "$APP_DIR" worktree add --quiet --detach "$WT_ROOT/stage2" "$STAGE2_SHA"
+  echo "worktrees: stage1=$(git -C "$WT_ROOT/stage1" rev-parse HEAD) stage2=$(git -C "$WT_ROOT/stage2" rev-parse HEAD); app checkout still $(git -C "$APP_DIR" rev-parse HEAD), dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l)"
+  export DOCKER_BUILDKIT=1
+  for st in stage1 stage2; do
+    echo "building cardscanner/migrate:b20-$st from $WT_ROOT/$st ($(date -u +%T), sequential, quiet)"
+    docker build --quiet -f "$WT_ROOT/$st/docker/Dockerfile.api" --target migrate -t "cardscanner/migrate:b20-$st" "$WT_ROOT/$st" >/dev/null || fail "image build failed for $st"
+  done
+  docker image inspect cardscanner/migrate:b20-stage1 cardscanner/migrate:b20-stage2 -f '{{.RepoTags}} size={{.Size}}' | sed 's/^/image: /'
+  echo "stage-1 image drizzle-kit: $(run_in_image cardscanner/migrate:b20-stage1 'cd lib/db && npx drizzle-kit --version' 2>/dev/null | tail -1)"
+
+  STAGE="backup"
+  section "fresh standard backup + integrity"
+  local out size
+  out="$(cd "$APP_DIR" && DEPLOY_PATH="$APP_DIR" bash docker/scripts/backup-postgres.sh 2>&1 | tee /dev/stderr | grep -oE '/opt/[^ ]+\.sql\.gz' | head -1)"
+  [ -n "$out" ] && [ -f "$out" ] || fail "backup file not found"
+  gzip -t "$out" || fail "backup gzip integrity check failed"
+  size="$(stat -c '%s' "$out")"
+  echo "backup=$out size=$size mtime=$(stat -c '%y' "$out") retained=$(ls -1 "$(dirname "$out")"/leadcapture-*.sql.gz | wc -l)"
+  echo "backup structure: header=$(zcat "$out" | head -1 | cut -c1-40) complete_marker=$(zcat "$out" | tail -3 | grep -c 'PostgreSQL database dump complete') CREATE_TABLE=$(zcat "$out" | grep -c '^CREATE TABLE') COPY=$(zcat "$out" | grep -c '^COPY ') companies_copy=$(zcat "$out" | grep -c '^COPY public.companies') subscriptions_copy=$(zcat "$out" | grep -c '^COPY public.subscriptions')"
+  [ "$(zcat "$out" | tail -3 | grep -c 'PostgreSQL database dump complete')" = "1" ] || fail "backup is not a complete dump"
+  [ "$(zcat "$out" | grep -c '^CREATE TABLE')" = "68" ] || fail "backup CREATE TABLE count is not 68"
+
+  STAGE="stop-writers"
+  section "stop API writers (queue + schedulers live in the api container)"
+  T_STOP="$(date -u +%FT%TZ)"; echo "downtime_start=$T_STOP"
+  compose stop api >/dev/null 2>&1 || fail "could not stop api"
+  compose ps --status running api --format '{{.Name}}' | grep -q . && fail "api still running"
+  echo "api container: $(docker inspect -f '{{.State.Status}}' "$API_CID")"
+  local active; active="$(q "select count(*) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and state is not null and state<>'idle'")"
+  echo "non-idle database backends (excluding this session): $active"
+  [ "$active" = "0" ] || fail "database still has active mutations"
+  [ "$(fingerprint)" = "$EXPECT_F0" ] || fail "fingerprint changed before stage 1"
+
+  STAGE="stage1"
+  section "STAGE 1 — schema $STAGE1_SHA (statements)"
+  run_in_image cardscanner/migrate:b20-stage1 'cd lib/db && npx drizzle-kit push --verbose --config ./drizzle.config.ts' 2>&1 | grep -v "Pulling schema" > "$HOME/b20-stage1.log" || true
+  grep -E "^(ALTER|CREATE|DROP|TRUNCATE|DELETE|UPDATE|INSERT)" "$HOME/b20-stage1.log" | sed 's/^/  /'
+  echo "statements=$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage1.log") destructive=$(destructive_count "$HOME/b20-stage1.log") result=$(tail -1 "$HOME/b20-stage1.log")"
+  classify "$HOME/b20-stage1.log"
+  [ "$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage1.log")" = "39" ] || fail "stage-1 statement count is not the rehearsed 39"
+  [ "$(destructive_count "$HOME/b20-stage1.log")" = "0" ] || fail "stage-1 produced a destructive/unexpected statement"
+  grep -q "Changes applied" "$HOME/b20-stage1.log" || fail "stage-1 push did not report 'Changes applied'"
+  local f1; f1="$(fingerprint)"; echo "schema_fingerprint=$f1 (expected F1=$EXPECT_F1)"; [ "$f1" = "$EXPECT_F1" ] || fail "post-stage-1 fingerprint differs from the rehearsal"
+
+  STAGE="repair-dry-run"
+  section "REPAIR — dry-run (stage-1 image code) gated against the company authority"
+  run_in_image cardscanner/migrate:b20-stage1 'cd artifacts/api-server && npx tsx scripts/repair-subscriptions.ts' > "$HOME/b20-repair-dry.json" 2>&1 || fail "repair dry-run failed: $(tail -3 "$HOME/b20-repair-dry.json")"
+  grep -E '"mode"|"companies"|"subscriptions"|"companiesWithoutSubscription"|"plannedCreates"|"plannedUpdates"|"alreadyCanonical"|"conflicts"|"update:|"create:|"status"|"companyId"|"changed"' "$HOME/b20-repair-dry.json" | sed 's/^/  /'
+  local pc pu cf rules
+  pc="$(jsonnum "$HOME/b20-repair-dry.json" plannedCreates)"; pu="$(jsonnum "$HOME/b20-repair-dry.json" plannedUpdates)"; cf="$(jsonnum "$HOME/b20-repair-dry.json" conflicts)"
+  rules="$(grep -oE '"(update|create):[a-z_]+": [0-9]+' "$HOME/b20-repair-dry.json" | tr '\n' ' ')"
+  echo "gate: plannedCreates=$pc plannedUpdates=$pu conflicts=$cf rules=[$rules]"
+  [ "$cf" = "0" ] || fail "repair reports conflicts"
+  [ "$pc" = "0" ] || fail "repair would CREATE subscription rows (preflight showed none missing)"
+  [ "$pu" = "1" ] || fail "repair plans $pu updates; the baseline expects exactly 1 (company 1: legacy active → canonical active)"
+  [ "$rules" = '"update:legacy_active": 1 ' ] || fail "repair rule set [$rules] differs from the expected legacy_active for the single active company"
+  for cid in $(q "select id from companies order by id"); do
+    local ls; ls="$(q "select status from companies where id=$cid")"
+    case "$ls" in
+      active) grep -q '"status": "active"' "$HOME/b20-repair-dry.json" || fail "company $cid is active but the planned canonical status is not active" ;;
+      *) fail "company $cid has legacy status '$ls' — outside the accepted expectation (active only); stopping" ;;
+    esac
+  done
+  echo "gate passed: the only planned change keeps company 1 active (full access), plan preserved"
+
+  STAGE="repair-apply"
+  section "REPAIR — apply + verify"
+  run_in_image cardscanner/migrate:b20-stage1 'cd artifacts/api-server && npx tsx scripts/repair-subscriptions.ts --apply' > "$HOME/b20-repair-apply.json" 2>&1 || fail "repair apply failed: $(tail -3 "$HOME/b20-repair-apply.json")"
+  grep -E '"mode"|"plannedCreates"|"plannedUpdates"|"alreadyCanonical"|"conflicts"|verify' "$HOME/b20-repair-apply.json" | sed 's/^/  /'
+  run_in_image cardscanner/migrate:b20-stage1 'cd artifacts/api-server && npx tsx scripts/repair-subscriptions.ts' > "$HOME/b20-repair-verify.json" 2>&1 || fail "repair verify failed"
+  grep -E '"plannedCreates"|"plannedUpdates"|"alreadyCanonical"|"conflicts"' "$HOME/b20-repair-verify.json" | sed 's/^/  verify: /'
+  [ "$(jsonnum "$HOME/b20-repair-verify.json" plannedUpdates)" = "0" ] || fail "repair verify still plans updates"
+  [ "$(jsonnum "$HOME/b20-repair-verify.json" plannedCreates)" = "0" ] || fail "repair verify still plans creates"
+  [ "$(jsonnum "$HOME/b20-repair-verify.json" conflicts)" = "0" ] || fail "repair verify reports conflicts"
+  q "select 'plans='||count(*)||' ids='||string_agg(id, ',' order by sort_order)||' non_null_limits='||count(*) filter (where admins_limit is not null or employees_limit is not null or contacts_limit is not null or events_limit is not null or storage_limit_mb is not null or scans_limit is not null)||' price_monthly(legacy column default)='||string_agg(coalesce(price_monthly::text,'null'), ',' order by sort_order) from plans"
+  [ "$(q "select count(*) from plans")" = "5" ] || fail "plan catalog is not exactly 5 rows"
+  q "select 'subscription '||id||': company='||company_id||' plan='||plan||' status='||status||' billing_source='||billing_source||' trial_expires_at='||coalesce(trial_expires_at::text,'null')||' usage_anchor_at='||coalesce(usage_anchor_at::text,'null')||' stripe='||(stripe_customer_id is not null or stripe_subscription_id is not null)||' overrides='||limit_overrides::text from subscriptions order by id"
+  section "data AFTER repair (ids/states only)"
+  snapshot_rows
+  echo "repair audit rows: $(q "select count(*)||' actions='||coalesce(string_agg(distinct action, ','),'none') from audit_logs where entity_type='subscription' and action like 'subscription.repair_%'")"
+  [ "$(q "select status from subscriptions where company_id=1")" = "active" ] || fail "company 1 subscription is not active after repair"
+  [ "$(q "select status||'/'||plan from companies where id=1")" = "active/free" ] || fail "company 1 mirror changed unexpectedly"
+  [ "$(fingerprint)" = "$EXPECT_F1" ] || fail "repair changed the schema fingerprint"
+
+  STAGE="stage2"
+  section "STAGE 2 — accepted schema $STAGE2_SHA (statements)"
+  run_in_image cardscanner/migrate:b20-stage2 'cd lib/db && npx drizzle-kit push --verbose --config ./drizzle.config.ts' 2>&1 | grep -v "Pulling schema" > "$HOME/b20-stage2.log" || true
+  grep -E "^(ALTER|CREATE|DROP|TRUNCATE|DELETE|UPDATE|INSERT)" "$HOME/b20-stage2.log" | sed 's/^/  /'
+  echo "statements=$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage2.log") destructive=$(destructive_count "$HOME/b20-stage2.log") result=$(tail -1 "$HOME/b20-stage2.log")"
+  classify "$HOME/b20-stage2.log"
+  [ "$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage2.log")" = "27" ] || fail "stage-2 statement count is not the rehearsed 27"
+  [ "$(destructive_count "$HOME/b20-stage2.log")" = "0" ] || fail "stage-2 produced a destructive/unexpected statement"
+  grep -q "Changes applied" "$HOME/b20-stage2.log" || fail "stage-2 push did not report 'Changes applied'"
+  local f2; f2="$(fingerprint)"; echo "schema_fingerprint=$f2 (expected F2=$EXPECT_F2)"; [ "$f2" = "$EXPECT_F2" ] || fail "post-stage-2 fingerprint differs from the rehearsal"
+  echo "check+fk constraints on the five tables: $(q "select count(*) from pg_constraint where conrelid in ('subscriptions'::regclass,'plan_prices'::regclass,'billing_checkout_sessions'::regclass,'billing_provider_events'::regclass,'subscription_usage_reservations'::regclass) and contype in ('c','f')") (expected 28)"
+  echo "partial unique indexes: $(q "select string_agg(indexname, ' ' order by indexname) from pg_indexes where tablename in ('subscriptions','billing_checkout_sessions') and indexdef ilike '%where%'")"
+  run_in_image cardscanner/migrate:b20-stage2 'cd lib/db && npx drizzle-kit push --config ./drizzle.config.ts' 2>&1 | tail -1 | tee "$HOME/b20-stage2-repeat.log"
+  grep -q "No changes detected" "$HOME/b20-stage2-repeat.log" || fail "repeat push did not report 'No changes detected'"
+  section "final state (API remains STOPPED — the old code is incompatible with the final schema; the deploy brings the new API up)"
+  snapshot_rows
+  q "select 'tables='||(select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')||' size='||pg_size_pretty(pg_database_size(current_database()))"
+  echo "downtime_start=$T_STOP now=$(date -u +%FT%TZ)"
+
+  STAGE="cleanup-worktrees"
+  git -C "$APP_DIR" worktree remove --force "$WT_ROOT/stage1"; git -C "$APP_DIR" worktree remove --force "$WT_ROOT/stage2"; git -C "$APP_DIR" worktree prune; rm -rf "$WT_ROOT"
+  rm -f "$HOME"/b20-stage1.log "$HOME"/b20-stage2.log "$HOME"/b20-stage2-repeat.log "$HOME"/b20-repair-dry.json "$HOME"/b20-repair-apply.json "$HOME"/b20-repair-verify.json
+  echo "app checkout: $(git -C "$APP_DIR" rev-parse HEAD) dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l) worktrees=$(git -C "$APP_DIR" worktree list | wc -l)"
+  STAGE="done"
+  log "migrate complete — proceed with the fast-forward of develop and the deploy workflow"
+}
+
+phase_postdeploy() {
+  section "hosted checkout / deploy state"
+  echo "HEAD=$(git -C "$APP_DIR" rev-parse HEAD) dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l) current-deploy.sha=$(cat "$STATE_DIR/current-deploy.sha") previous-deploy.sha=$(cat "$STATE_DIR/previous-deploy.sha" 2>/dev/null || echo none) worktrees=$(git -C "$APP_DIR" worktree list | wc -l)"
+  section "containers / volume"
+  for svc in postgres api web; do cid="$(compose ps -q "$svc" || true)"; if [ -n "$cid" ]; then docker inspect -f "$svc: id={{.Id}} created={{.Created}} started={{.State.StartedAt}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}" "$cid"; else echo "$svc: absent"; fi; done
+  for v in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$PG_CID"); do docker volume inspect -f "volume $v: created={{.CreatedAt}}" "$v"; done
+  echo "readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE)"; echo "healthz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/healthz || echo UNAVAILABLE)"
+  section "schema / data"
+  echo "schema_fingerprint=$(fingerprint)"
+  q "select 'tables='||(select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')||' plans='||(select count(*) from plans)||' subscriptions='||(select count(*) from subscriptions)||' companies='||(select count(*) from companies)||' users_active='||(select count(*) from users where deleted_at is null and is_active)"
+  snapshot_rows
+  section "env (non-secret keys) / billing disabled"
+  for k in JOBS_DRIVER BILLING_PROVIDER BILLING_SELF_SERVICE_CHECKOUT BILLING_STRIPE_MODE; do envkey "$k" yes; done
+  for k in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET BILLING_RETURN_URL APP_BASE_URL; do envkey "$k"; done
+  echo "env sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16) mode=$(stat -c '%a' "$ENV_FILE")"
+  section "durable queue / sweep / recovery (api log since container start)"
+  if [ -n "$API_CID" ]; then
+    docker logs "$API_CID" 2>&1 | grep -iE '"driver"|durable|queue|recovery|sweep|scheduler|billing|provider|workers' | grep -viE 'authorization|token|secret|password' | head -30 | cut -c1-240 || true
+    echo "api log error-level lines: $(docker logs "$API_CID" 2>&1 | grep -c '"level":50' || true)"
+    docker logs "$API_CID" 2>&1 | grep '"level":50' | tail -5 | cut -c1-240 || true
+  fi
+  q "select 'job_queue: '||coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s"
+  q "select 'job_queue dead_last_24h='||count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'"
+  log "postdeploy complete (read-only)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
+  migrate) phase_migrate ;;
+  postdeploy) phase_postdeploy ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac
