@@ -215,8 +215,11 @@ phase_migrate() {
   gzip -t "$out" || fail "backup gzip integrity check failed"
   size="$(stat -c '%s' "$out")"
   echo "backup=$out size=$size mtime=$(stat -c '%y' "$out") retained=$(ls -1 "$(dirname "$out")"/leadcapture-*.sql.gz | wc -l)"
-  echo "backup structure: header=$(zcat "$out" | head -1 | cut -c1-40) complete_marker=$(zcat "$out" | tail -3 | grep -c 'PostgreSQL database dump complete') CREATE_TABLE=$(zcat "$out" | grep -c '^CREATE TABLE') COPY=$(zcat "$out" | grep -c '^COPY ') companies_copy=$(zcat "$out" | grep -c '^COPY public.companies') subscriptions_copy=$(zcat "$out" | grep -c '^COPY public.subscriptions')"
-  [ "$(zcat "$out" | tail -3 | grep -c 'PostgreSQL database dump complete')" = "1" ] || fail "backup is not a complete dump"
+  # pg_dump ≥ 16.10 appends a \unrestrict trailer AFTER the completion marker, so the
+  # marker is searched in the whole dump; the last lines are printed as evidence.
+  echo "backup structure: header=$(zcat "$out" | head -1 | cut -c1-40) complete_marker=$(zcat "$out" | grep -c '^-- PostgreSQL database dump complete') CREATE_TABLE=$(zcat "$out" | grep -c '^CREATE TABLE') COPY=$(zcat "$out" | grep -c '^COPY ') companies_copy=$(zcat "$out" | grep -c '^COPY public.companies') subscriptions_copy=$(zcat "$out" | grep -c '^COPY public.subscriptions') users_copy=$(zcat "$out" | grep -c '^COPY public.users')"
+  echo "backup tail: $(zcat "$out" | tail -5 | tr '\n' '|' | cut -c1-160)"
+  [ "$(zcat "$out" | grep -c '^-- PostgreSQL database dump complete')" = "1" ] || fail "backup is not a complete dump"
   [ "$(zcat "$out" | grep -c '^CREATE TABLE')" = "68" ] || fail "backup CREATE TABLE count is not 68"
 
   STAGE="stop-writers"
