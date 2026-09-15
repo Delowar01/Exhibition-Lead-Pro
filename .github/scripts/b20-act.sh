@@ -573,8 +573,8 @@ phase_supp_postcheck() {
   echo "api error-level lines since start: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"level":50' || true)"
   echo "  by error type / status: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -oE '"type":"[A-Za-z_]+"|"statusCode":[0-9]+' | sort | uniq -c | tr '\n' ' ' | tr -s ' ')"
   echo "  non-AppError error lines: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
-  docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -v '"type":"_AppError"' | grep -viE 'authorization|token|secret|password' | cut -c1-260 | head -10
-  echo "  workflow log lines: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -E '"msg":"(Workflow run (persisted|started|completed|failed)|Orphaned workflow run re-enqueued|Workflow orphan recovery sweep complete)"' | grep -oE '"msg":"[^"]+"' | sort | uniq -c | tr '\n' ' ' | tr -s ' ')"
+  { docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -v '"type":"_AppError"' | grep -viE 'authorization|token|secret|password' | cut -c1-260 | head -10; } || true
+  echo "  workflow log lines: $({ docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -E '"msg":"(Workflow run (persisted|started|completed|failed)|Orphaned workflow run re-enqueued|Workflow orphan recovery sweep complete)"' | grep -oE '"msg":"[^"]+"' | sort | uniq -c | tr '\n' ' ' | tr -s ' '; } || true)"
   log "supp-postcheck complete (read-only)"
 }
 

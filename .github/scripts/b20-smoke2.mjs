@@ -140,6 +140,15 @@ function sshPhase(phase, a1, a2, a3) {
 // ─────────────────────────────────────────────────────────────────────────────
 const fx = { A: {}, B: {} };
 let TA = null, TB = null, TE = null; // tenant tokens (A admin, B admin, A employee)
+// A section that throws records ONE failure and the smoke continues with the next
+// section (cleanup always runs from the workflow; tenants are restored in finally).
+async function section(name, fn) {
+  S = name;
+  try { await fn(); } catch (e) {
+    results.push({ section: name, name: `section "${name}" aborted by an unexpected error`, ok: false, detail: String(e?.message ?? e).slice(0, 300) });
+    failures += 1; console.log(`FAIL [${name}] section aborted — ${String(e?.message ?? e).slice(0, 300)}`);
+  }
+}
 
 async function main() {
   const t0 = Date.now();
@@ -176,9 +185,6 @@ async function main() {
   const emp = await own("POST", "/users", { email: empEmail, name: "B20 SMOKE A employee (disposable)", role: "employee", companyId: fx.A.cid, password: PW_A_EMP });
   const empId = emp.json?.id; if (Number.isInteger(empId)) { state.userIds.push(empId); saveState(); }
   check("tenant A employee created via API", emp.status === 201 && Number.isInteger(empId), { status: emp.status, userId: empId, role: emp.json?.role });
-  const EMP_PERMS = { subscriptions: ["view"], leads: ["view"], contacts: ["view"], events: ["view"], tasks: ["view"] };
-  const empP = await own("PATCH", `/users/${empId}`, { permissions: EMP_PERMS });
-  check("employee restricted to view-only permissions (no create/edit/manage, no workflows/organization)", empP.status === 200 && JSON.stringify(empP.json?.permissions ?? {}) === JSON.stringify(EMP_PERMS), { status: empP.status, permissions: empP.json?.permissions });
   fx.A.empId = empId; fx.A.empEmail = empEmail;
 
   const la = await tenantLogin(fx.A.adminEmail, PW_A_ADMIN); const lb = await tenantLogin(fx.B.adminEmail, PW_B_ADMIN); const le = await tenantLogin(empEmail, PW_A_EMP);
@@ -186,11 +192,18 @@ async function main() {
   TA = la.json?.token; TB = lb.json?.token; TE = le.json?.token;
   if (!TA || !TB || !TE) throw new Error("tenant logins failed");
   const A = ten(TA), B = ten(TB), E = ten(TE);
+  // Restricted permissions are granted through the tenant's own RBAC role (the
+  // accepted mechanism; the user-update API deliberately ignores `permissions`).
+  const EMP_GRANTS = [{ module: "subscriptions", action: "view" }, { module: "leads", action: "view" }, { module: "contacts", action: "view" }, { module: "events", action: "view" }];
+  const role = await A.post("/rbac/roles", { name: `B20 SMOKE ${TAG} viewer`, description: "disposable view-only role", permissions: EMP_GRANTS });
+  const assign = Number.isInteger(role.json?.id) ? await A.put(`/users/${empId}/roles`, { roleIds: [role.json.id] }) : { status: 0 };
+  const me = await E.get("/users/me").catch(() => ({ status: 0 }));
+  check("employee restricted to a view-only RBAC role (subscriptions/leads/contacts/events view; no create/edit/manage, no workflows/organization)", role.status === 201 && assign.status === 200, { role: role.status, roleId: role.json?.id, assign: assign.status, assignedRoles: assign.json?.roles ?? assign.json?.roleIds ?? null, me: me.status });
 
   browser = await chromium.launch();
 
   // ── host routing (assertions) ───────────────────────────────────────────────
-  S = "host";
+  await section("host", async () => {
   await withPage({ label: "host" }, async (p) => {
     await p.goto(`${PLATFORM}/admin`, { waitUntil: "domcontentloaded" }).catch(() => {}); await p.waitForTimeout(2000);
     check("elite host never renders the tenant portal (/admin redirects to the tenant host)", hostOf(p.url()) === hostOf(TENANT) && !(await p.getByTestId("subscription-page").isVisible().catch(() => false)), { finalUrl: p.url() });
@@ -209,9 +222,10 @@ async function main() {
     check("platform owner signing in on the tenant host is not shown the platform portal there", !dashOnAdmin, { finalUrl: p.url(), platformDashboardOnTenantHost: dashOnAdmin });
     await shot(p, "host-owner-login-on-admin");
   });
+  });
 
   // ── employee permissions ────────────────────────────────────────────────────
-  S = "employee";
+  await section("employee", async () => {
   const eCur = await E.get("/subscriptions/current"), eUse = await E.get("/subscriptions/usage");
   check("employee (subscriptions:view) reads /subscriptions/current and /usage", eCur.status === 200 && eCur.json?.companyId === fx.A.cid && eUse.status === 200, { current: eCur.status, usage: eUse.status, accessMode: eCur.json?.accessMode });
   const ePortal = await E.post("/subscriptions/portal"), eCheckout = await E.post("/subscriptions/checkout", { planPriceId: 1 });
@@ -237,11 +251,13 @@ async function main() {
     check("employee UI: branding is read-only (no usable save/reset/upload controls)", ro && !saveUsable && !(await p.getByTestId("branding-reset").isEnabled().catch(() => false)) && !(await p.getByTestId("branding-logo-upload").isEnabled().catch(() => false)), { readonlyBanner: ro, saveUsable });
     await shot(p, "employee-organization");
   });
+  });
 
   // ── tenant isolation ────────────────────────────────────────────────────────
-  S = "isolation";
+  let isoLead, isoEv, isoTask;
+  await section("isolation", async () => {
   const aLeadIso = await A.post("/leads", { title: `B20 SMOKE ${TAG} iso lead` }); const aEvIso = await A.post("/events", { name: `B20 SMOKE ${TAG} iso event` }); const aTaskIso = await A.post("/tasks", { title: `B20 SMOKE ${TAG} iso task` });
-  const isoLead = aLeadIso.json?.id, isoEv = aEvIso.json?.id, isoTask = aTaskIso.json?.id;
+  isoLead = aLeadIso.json?.id; isoEv = aEvIso.json?.id; isoTask = aTaskIso.json?.id;
   check("tenant A fixtures for isolation created", aLeadIso.status === 201 && aEvIso.status === 201 && aTaskIso.status === 201, { lead: isoLead, event: isoEv, task: isoTask });
   const crossReads = { lead: (await B.get(`/leads/${isoLead}`)).status, event: (await B.get(`/events/${isoEv}`)).status, taskInList: listOf((await B.get("/tasks?scope=all")).json).some((t) => t.id === isoTask) ? "visible" : "absent" };
   const crossWrites = { patchLead: (await B.patch(`/leads/${isoLead}`, { title: "HACKED" })).status, patchEvent: (await B.patch(`/events/${isoEv}`, { name: "HACKED" })).status, attachTag: (await B.post(`/leads/${isoLead}/tags`, { tagId: 1 })).status, patchTask: (await B.patch(`/tasks/${isoTask}`, { title: "HACKED" })).status, deleteTask: (await B.del(`/tasks/${isoTask}`)).status };
@@ -257,12 +273,14 @@ async function main() {
   check("tenant users cannot access platform subscription management (403)", Object.values(tenantPlat).every((s) => s === 403), tenantPlat);
   const ownerCrm = { contacts: (await own("GET", "/contacts")).status, leads: (await own("GET", "/leads")).status, events: (await own("GET", "/events")).status, tasks: (await own("GET", "/tasks")).status, workflows: (await own("GET", "/workflows")).status, leadById: (await own("GET", `/leads/${isoLead}`)).status };
   check("platform owner cannot access customer CRM data (403 firewall on every tenant module)", Object.values(ownerCrm).every((s) => s === 403), ownerCrm);
+  });
 
   // ── real usage-limit enforcement (events) ───────────────────────────────────
-  S = "limits";
   const usage = async () => { const u = await A.get("/subscriptions/usage"); return listOf(u.json?.resources).find((r) => r.resource === "events") ?? null; };
   const evCount = async () => totalOf((await A.get("/events")).json);
-  const base = await evCount();
+  let base = 0;
+  await section("limits", async () => {
+  base = await evCount();
   const set2 = await own("PUT", `/platform/subscriptions/${fx.A.cid}/limits`, { limits: { events: base + 2 } });
   const u2 = await usage();
   check("override applied through the platform limits operation: reported limit/usage/source/enforced match", set2.status === 200 && JSON.stringify(set2.json?.limitOverrides) === JSON.stringify({ events: base + 2 }) && u2?.limit === base + 2 && u2?.used === base && u2?.source === "override" && u2?.enforced === true, { overrides: set2.json?.limitOverrides, usage: u2 });
@@ -285,22 +303,26 @@ async function main() {
   const plansA = listOf((await A.get("/subscriptions/plans")).json); const freePlan = plansA.find((p) => (p.id ?? p.plan) === "free");
   const exL = await platformSub(EXISTING);
   check("shared plan limits and the existing customer untouched by the override", JSON.stringify(exL.json?.limitOverrides ?? {}) === "{}" && freePlan != null && Object.entries(freePlan).filter(([k]) => /limit/i.test(k)).every(([, v]) => v == null || (typeof v === "object" && Object.values(v).every((x) => x == null))), { existingOverrides: exL.json?.limitOverrides, freePlan: pick(freePlan ?? {}, Object.keys(freePlan ?? {}).filter((k) => /limit|id|name/i.test(k))) });
+  }); // limits
+  // Whatever happened above, make sure no override lingers on the disposable tenant.
+  await own("PUT", `/platform/subscriptions/${fx.A.cid}/limits`, { limits: {} });
 
   // ── workflow: exactly-once execution on a writable tenant ───────────────────
-  S = "workflow";
+  let tagId, C1, C2, L1, L2, D, run1 = null;
+  await section("workflow", async () => {
   const tag = await A.post("/tags", { name: `B20 SMOKE ${TAG} tag`, color: "#2563eb" });
   const c1 = await A.post("/contacts", { firstName: "B20", lastName: `Smoke ${TAG} one` }), c2 = await A.post("/contacts", { firstName: "B20", lastName: `Smoke ${TAG} two` });
-  const tagId = tag.json?.id, C1 = c1.json?.id, C2 = c2.json?.id;
+  tagId = tag.json?.id; C1 = c1.json?.id; C2 = c2.json?.id;
   check("workflow fixtures (tag, two contacts) created", tag.status === 201 && c1.status === 201 && c2.status === 201, { tagId, C1, C2 });
-  const l2 = await A.post("/leads", { contactId: C2, title: `B20 SMOKE ${TAG} lead two (no automation yet)` }); const L2 = l2.json?.id;
+  const l2 = await A.post("/leads", { contactId: C2, title: `B20 SMOKE ${TAG} lead two (no automation yet)` }); L2 = l2.json?.id;
   const def = await A.post("/workflows", { name: `B20 SMOKE ${TAG} automation`, description: "lead.created → task.create → lead.add_tag", trigger: { type: "lead.created" }, actions: [{ type: "task.create", config: { title: `B20 SMOKE ${TAG} task`, type: "custom", assignee: { kind: "actor" } } }, { type: "lead.add_tag", config: { tagId } }] });
-  const D = def.json?.id; if (Number.isInteger(D)) { state.definitionIds.push(D); saveState(); }
+  D = def.json?.id; if (Number.isInteger(D)) { state.definitionIds.push(D); saveState(); }
   const pub = Number.isInteger(D) ? await A.post(`/workflows/${D}/publish`) : { status: 0 };
   check("automation created and published (lead.created → task.create → lead.add_tag)", def.status === 201 && pub.status === 200 && pub.json?.status === "published", { definitionId: D, created: def.status, published: pub.json?.status, revision: pub.json?.revision, validation: def.json?.validation ?? pub.json?.validation ?? null });
   if (!Number.isInteger(D)) throw new Error("automation creation failed");
-  const l1 = await A.post("/leads", { contactId: C1, title: `B20 SMOKE ${TAG} lead one` }); const L1 = l1.json?.id;
+  const l1 = await A.post("/leads", { contactId: C1, title: `B20 SMOKE ${TAG} lead one` }); L1 = l1.json?.id;
   check("real CRM mutation (POST /leads) triggers the automation", l1.status === 201 && Number.isInteger(L1), { leadId: L1 });
-  const run1 = await waitFor(async () => { const r = await A.get(`/workflows/runs?definitionId=${D}&entityId=${L1}`); const it = listOf(r.json)[0]; return it && (it.status === "completed" || it.status === "failed") ? it : null; }, 90000, 1500);
+  run1 = await waitFor(async () => { const r = await A.get(`/workflows/runs?definitionId=${D}&entityId=${L1}`); const it = listOf(r.json)[0]; return it && (it.status === "completed" || it.status === "failed") ? it : null; }, 90000, 1500);
   if (run1?.id) { state.runIds.push(run1.id); saveState(); }
   const r1d = run1?.id ? await A.get(`/workflows/runs/${run1.id}`) : { json: null };
   const acts1 = listOf(r1d.json?.actions);
@@ -310,11 +332,13 @@ async function main() {
   const runsForD = totalOf((await A.get(`/workflows/runs?definitionId=${D}`)).json);
   const runsForL2 = totalOf((await A.get(`/workflows/runs?entityId=${L2}`)).json);
   check("exactly one task, one tag association and one completed run (no duplicates)", tasks1.length === 1 && tasks1[0].id === acts1[0]?.result?.taskId && tags1.length === 1 && tags1[0].id === tagId && runsForD === 1 && runsForL2 === 0, { tasks: tasks1.map((t) => pick(t, ["id", "title", "contactId", "assignedToId"])), leadTags: tags1.map((t) => t.id), runsForDefinition: runsForD, runsForLeadTwo: runsForL2 });
+  }); // workflow
 
   // ── cancelled (read-only) — real dialog, then the auth/access contract ──────
-  S = "cancelled";
+  await section("cancelled", async () => {
   const notifBefore = totalOf((await A.get("/notifications")).json);
   await withPage({ label: "elite-lifecycle", userId: OWNER_USER_ID, companyId: null, theme: "light" }, async (pp) => {
+  try {
     await uiLogin(pp, PLATFORM, OWNER_EMAIL, OWNER_PASSWORD); await pp.waitForURL((u) => u.pathname.startsWith("/platform"));
     const canc = await lifecycleUI(pp, fx.A.cid, "cancel", "cancelled");
     const cancelledAt = canc?.statusChangedAt ?? new Date().toISOString(); // the orphan run is only persisted after this instant
@@ -390,10 +414,16 @@ async function main() {
     const le3 = await tenantLogin(fx.A.adminEmail, PW_A_ADMIN); TA = le3.json?.token ?? TA; Object.assign(A, ten(TA));
     const wOk2 = await A.post("/tags", { name: `B20 SMOKE ${TAG} restored tag 2` });
     check("restore from expired (activate): login works and writes succeed again", back?.accessMode === "full" && le3.status === 200 && wOk2.status === 201, { accessMode: back?.accessMode, login: le3.status, write: wOk2.status });
+  } finally {
+    // Whatever happened, the disposable tenant must be writable again before the UI sections.
+    const fin = await ensureActive(fx.A.cid);
+    if (fin?.status === "active") { const rl = await tenantLogin(fx.A.adminEmail, PW_A_ADMIN); if (rl.json?.token) { TA = rl.json.token; Object.assign(A, ten(TA)); } }
+  }
   });
+  }); // cancelled / blocked-run / expired
 
   // ── branding (defaults, temporary save, persistence, reset; no logo) ────────
-  S = "branding";
+  await section("branding", async () => {
   const br0 = await A.get("/organization/branding");
   note("branding defaults before the test", pick(br0.json ?? {}, ["primaryColor", "sidebarColor", "defaultTheme", "isCustomized", "logoUrl"]));
   await withPage({ label: "branding", userId: fx.A.adminId, companyId: fx.A.cid, theme: "light" }, async (p) => {
@@ -419,10 +449,11 @@ async function main() {
     check("branding reset restores the defaults; no logo was uploaded or removed (no GCS mutation)", br2.json?.isCustomized === false && br2.json?.logoUrl == null && br0.json?.logoUrl == null, pick(br2.json ?? {}, ["primaryColor", "defaultTheme", "isCustomized", "logoUrl"]));
     await shot(p, "branding-reset");
   });
+  }); // branding
 
   // ── automations UI: list, run history/detail, editor, dirty-editor guard ────
-  S = "automations";
   const R1 = run1?.id, R2 = state.runIds.find((id) => id !== R1) ?? null;
+  await section("automations", async () => {
   await withPage({ label: "automations", userId: fx.A.adminId, companyId: fx.A.cid, theme: "light" }, async (p) => {
     await uiLogin(p, TENANT, fx.A.adminEmail, PW_A_ADMIN); await p.waitForURL((u) => u.pathname.startsWith("/admin"));
     await p.goto(`${TENANT}/admin/automations`, { waitUntil: "domcontentloaded" }); await p.getByTestId("automation-list").waitFor({ state: "visible" });
@@ -454,9 +485,10 @@ async function main() {
     const defAfter = await A.get(`/workflows/${D}`);
     check("dirty editor Back → Stay keeps the edit on the editor; Back → Discard leaves without saving (definition unchanged)", stayed && pathOf(p.url()) === "/admin/automations" && defAfter.json?.name === nameBefore, { stayed, finalPath: pathOf(p.url()), nameAfter: defAfter.json?.name });
   });
+  }); // automations
 
   // ── responsive + theme QA (desktop / ~390px mobile × light / dark) ──────────
-  S = "responsive";
+  await section("responsive", async () => {
   for (const mobile of [false, true]) for (const theme of ["light", "dark"]) {
     const lab = `${mobile ? "mobile" : "desktop"}-${theme}`;
     await withPage({ label: `qa-tenant-${lab}`, userId: fx.A.adminId, companyId: fx.A.cid, theme, mobile }, async (p) => {
@@ -478,6 +510,7 @@ async function main() {
       await shot(p, `platform-sub-detail-${lab}`);
     });
   }
+  }); // responsive
 
   // ── console / page errors ───────────────────────────────────────────────────
   S = "console";
