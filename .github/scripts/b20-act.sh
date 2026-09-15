@@ -147,6 +147,8 @@ BASE_SHA=c2cd4674977ce517e9ffd8ec7f50688613864dad
 EXPECT_F0="${ARG1:-e839d03d928fa46c20797329d2779e3e}"
 EXPECT_F1="${ARG2:-4f5776f7421880daf2d453b7466b6ffb}"
 EXPECT_F2="${ARG3:-ce55dfa2959cc89c2baad2923217842a}"
+# Literal accepted fingerprint for phases whose ARG1..3 carry other arguments (supp-*).
+F2_CONST=ce55dfa2959cc89c2baad2923217842a
 WT_ROOT="$HOME/b20-worktrees"
 STAGE="init"
 classify() { grep -E "^(ALTER|CREATE|DROP|TRUNCATE|DELETE|UPDATE|INSERT)" "$1" | sed -E 's/^(ALTER TABLE "[a-z_]+" (ADD COLUMN|ALTER COLUMN|ADD CONSTRAINT "[a-z_]+" (CHECK|FOREIGN KEY|UNIQUE|PRIMARY KEY)|DROP [A-Z]+|RENAME)|CREATE (TABLE|INDEX|UNIQUE INDEX)|DROP [A-Z ]+|[A-Z]+).*/\1/' | sort | uniq -c; }
@@ -484,7 +486,7 @@ phase_supp_preflight() {
   [ "$head" = "$STAGE2_SHA" ] && [ "$cur" = "$STAGE2_SHA" ] || fail "hosted checkout / current-deploy.sha is not the accepted commit"
   [ -z "$(git -C "$APP_DIR" status --porcelain)" ] || fail "hosted checkout is dirty"
   section "schema"
-  local fp; fp="$(fingerprint)"; echo "schema_fingerprint=$fp"; [ "$fp" = "$EXPECT_F2" ] || fail "schema fingerprint is not the accepted F2"
+  local fp; fp="$(fingerprint)"; echo "schema_fingerprint=$fp"; [ "$fp" = "$F2_CONST" ] || fail "schema fingerprint is not the accepted F2"
   section "containers / volume / health"
   for svc in postgres api web; do cid="$(compose ps -q "$svc" || true)"; [ -n "$cid" ] || fail "$svc container absent"; docker inspect -f "$svc: id={{.Id}} created={{.Created}} started={{.State.StartedAt}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}" "$cid"; [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}healthy{{end}}' "$cid")" = "healthy" ] || fail "$svc is not healthy"; done
   for v in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$PG_CID"); do docker volume inspect -f "volume $v: created={{.CreatedAt}}" "$v"; done
@@ -500,7 +502,7 @@ phase_supp_preflight() {
   echo "plan_prices=$(q "select count(*) from plan_prices")"; [ "$(q "select count(*) from plan_prices")" = "0" ] || fail "provider prices registered"
   section "durable queue"
   docker logs "$API_CID" 2>&1 | grep -E '"msg":"Durable job queue (selected|started)"' | cut -c1-200 | head -2
-  docker logs "$API_CID" 2>&1 | grep -qE '"driver":"postgres".*"Durable job queue started"' || fail "postgres durable queue not started"
+  [ "$(docker logs "$API_CID" 2>&1 | grep -cE '"driver":"postgres".*"Durable job queue started"')" -ge 1 ] || fail "postgres durable queue not started"
   q "select 'job_queue: '||coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s"
   [ "$(q "select count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'")" = "0" ] || fail "dead jobs in the last 24h"
   section "existing customer baseline (company 1)"
@@ -550,7 +552,7 @@ phase_supp_postcheck() {
   section "deploy / schema / env / containers"
   echo "HEAD=$(git -C "$APP_DIR" rev-parse HEAD) current-deploy.sha=$(cat "$STATE_DIR/current-deploy.sha") dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l)"
   [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$STAGE2_SHA" ] && [ "$(cat "$STATE_DIR/current-deploy.sha")" = "$STAGE2_SHA" ] || fail "deploy sha changed"
-  echo "schema_fingerprint=$(fingerprint)"; [ "$(fingerprint)" = "$EXPECT_F2" ] || fail "schema fingerprint changed"
+  echo "schema_fingerprint=$(fingerprint)"; [ "$(fingerprint)" = "$F2_CONST" ] || fail "schema fingerprint changed"
   echo "env sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16) mode=$(stat -c '%a' "$ENV_FILE")"
   for svc in postgres api web; do cid="$(compose ps -q "$svc" || true)"; docker inspect -f "$svc: id={{.Id}} created={{.Created}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}" "$cid"; done
   for v in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$PG_CID"); do docker volume inspect -f "volume $v: created={{.CreatedAt}}" "$v"; done
