@@ -170,6 +170,18 @@ phase_migrate() {
   [ "$head" = "$BASE_SHA" ] && [ "$cur" = "$BASE_SHA" ] || fail "hosted checkout / current-deploy.sha is not the expected base commit"
   [ -z "$(git -C "$APP_DIR" status --porcelain)" ] || fail "hosted checkout is dirty"
   [ "$(docker inspect -f '{{.State.Health.Status}}' "$PG_CID")" = "healthy" ] || fail "postgres is not healthy"
+  # RESUME: a previous run applied stage 1 (schema already at F1) and stopped the API
+  # before the repair; continue from the repair with the images it already built.
+  RESUME=0
+  if [ "$(fingerprint)" = "$EXPECT_F1" ]; then
+    RESUME=1
+    echo "RESUME: schema fingerprint already equals F1 — stage 1 was applied by the previous run; continuing from the repair"
+    compose ps --status running api --format '{{.Name}}' | grep -q . && fail "resume requires the api to be STOPPED (it is running)"
+    docker image inspect cardscanner/migrate:b20-stage1 cardscanner/migrate:b20-stage2 >/dev/null 2>&1 || fail "resume requires the stage images from the previous run"
+    [ "$(q "select count(*) from subscriptions where status not in ('trial','active','suspended','expired','cancelled','trialing','past_due')")" = "0" ] || fail "unknown subscription status"
+    PG_NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$PG_CID" | head -c 200)"
+    T_STOP="(previous run)"
+  else
   [ -n "$API_CID" ] || fail "api container not running (unexpected starting state)"
   local bp bs bk
   bp="$(grep -E '^BILLING_PROVIDER=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' || true)"
@@ -243,6 +255,7 @@ phase_migrate() {
   [ "$(destructive_count "$HOME/b20-stage1.log")" = "0" ] || fail "stage-1 produced a destructive/unexpected statement"
   grep -q "Changes applied" "$HOME/b20-stage1.log" || fail "stage-1 push did not report 'Changes applied'"
   local f1; f1="$(fingerprint)"; echo "schema_fingerprint=$f1 (expected F1=$EXPECT_F1)"; [ "$f1" = "$EXPECT_F1" ] || fail "post-stage-1 fingerprint differs from the rehearsal"
+  fi # end of the non-resume path (preconditions → artifacts → backup → stop → stage 1)
 
   STAGE="repair-dry-run"
   section "REPAIR — dry-run (stage-1 image code) gated against the company authority"
@@ -255,15 +268,17 @@ phase_migrate() {
   [ "$cf" = "0" ] || fail "repair reports conflicts"
   [ "$pc" = "0" ] || fail "repair would CREATE subscription rows (preflight showed none missing)"
   [ "$pu" = "1" ] || fail "repair plans $pu updates; the baseline expects exactly 1 (company 1: legacy active → canonical active)"
-  [ "$rules" = '"update:legacy_active": 1 ' ] || fail "repair rule set [$rules] differs from the expected legacy_active for the single active company"
+  # The planned rule must be exactly the company-authority mapping of every company's
+  # OWN legacy status (repair-rules: legacy_<status> → the same canonical status), and
+  # every company must be `active` (the only expectation accepted for this activation).
+  local expected_rules=""
   for cid in $(q "select id from companies order by id"); do
     local ls; ls="$(q "select status from companies where id=$cid")"
-    case "$ls" in
-      active) grep -q '"status": "active"' "$HOME/b20-repair-dry.json" || fail "company $cid is active but the planned canonical status is not active" ;;
-      *) fail "company $cid has legacy status '$ls' — outside the accepted expectation (active only); stopping" ;;
-    esac
+    [ "$ls" = "active" ] || fail "company $cid has legacy status '$ls' — outside the accepted expectation (active only); stopping"
+    expected_rules='"update:legacy_active": 1 '
   done
-  echo "gate passed: the only planned change keeps company 1 active (full access), plan preserved"
+  [ "$rules" = "$expected_rules" ] || fail "repair rule set [$rules] differs from the company-authority expectation [$expected_rules]"
+  echo "gate passed: the only planned change maps company 1's legacy 'active' to canonical 'active' (full access preserved); plan untouched"
 
   STAGE="repair-apply"
   section "REPAIR — apply + verify"
