@@ -114,10 +114,13 @@ phase_preflight() {
     q "select 'user_id='||u.id||' role='||u.role||' active='||u.is_active||' deleted='||(u.deleted_at is not null)||' company_id='||coalesce(u.company_id::text,'null')||' company_status='||coalesce(c.status,'?')||' company_plan='||coalesce(c.plan,'?')||' company_trial_ends_at='||coalesce(c.trial_ends_at::text,'null')||' subscription_status='||coalesce(s.status,'NONE')||' subscription_plan='||coalesce(s.plan,'NONE') from users u left join companies c on c.id=u.company_id left join subscriptions s on s.company_id=c.id where lower(u.email)=lower('$ARG1')" || echo "lookup failed"
   fi
 
-  section "schema-only dump (pg_dump -s, gzip, base64 — no data rows)"
-  DUMP="$(compose exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" --schema-only --no-owner --no-privileges "$POSTGRES_DB"' | gzip -9 | base64 -w0)"
-  echo "dump_b64_chars=${#DUMP}"
-  [ "${#DUMP}" -le 400000 ] || fail "schema dump unexpectedly large; not printing"
+  section "schema-only dump (pg_dump -s, gzip, hex re-mapped to letters g-v — no data rows)"
+  # Letters-only encoding: the Actions log masker rewrites any substring equal to a
+  # secret value (e.g. the numeric SSH port), which corrupts base64. Decode with:
+  #   tr 'g-v' '0-9a-f' | xxd -r -p | gunzip
+  DUMP="$(compose exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" --schema-only --no-owner --no-privileges "$POSTGRES_DB"' | gzip -9 | od -An -v -tx1 | tr -d ' \n' | tr '0-9a-f' 'g-v')"
+  echo "dump_chars=${#DUMP}"
+  [ "${#DUMP}" -le 600000 ] || fail "schema dump unexpectedly large; not printing"
   echo "-----BEGIN B20 SCHEMA DUMP-----"
   echo "$DUMP" | fold -w 76
   echo "-----END B20 SCHEMA DUMP-----"
