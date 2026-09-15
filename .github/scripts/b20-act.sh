@@ -173,9 +173,15 @@ phase_migrate() {
   # RESUME: a previous run applied stage 1 (schema already at F1) and stopped the API
   # before the repair; continue from the repair with the images it already built.
   RESUME=0
-  if [ "$(fingerprint)" = "$EXPECT_F1" ]; then
-    RESUME=1
-    echo "RESUME: schema fingerprint already equals F1 — stage 1 was applied by the previous run; continuing from the repair"
+  local fp_now; fp_now="$(fingerprint)"
+  if [ "$fp_now" = "$EXPECT_F2" ] || [ "$fp_now" = "$EXPECT_F1" ]; then
+    if [ "$fp_now" = "$EXPECT_F2" ]; then
+      RESUME=2
+      echo "RESUME: schema fingerprint already equals F2 — stage 1, the repair and stage 2 were applied by the previous runs; continuing with the final verification only"
+    else
+      RESUME=1
+      echo "RESUME: schema fingerprint already equals F1 — stage 1 was applied by the previous run; continuing from the repair"
+    fi
     compose ps --status running api --format '{{.Name}}' | grep -q . && fail "resume requires the api to be STOPPED (it is running)"
     docker image inspect cardscanner/migrate:b20-stage1 cardscanner/migrate:b20-stage2 >/dev/null 2>&1 || fail "resume requires the stage images from the previous run"
     [ "$(q "select count(*) from subscriptions where status not in ('trial','active','suspended','expired','cancelled','trialing','past_due')")" = "0" ] || fail "unknown subscription status"
@@ -249,7 +255,7 @@ phase_migrate() {
   section "STAGE 1 — schema $STAGE1_SHA (statements)"
   run_in_image cardscanner/migrate:b20-stage1 'cd lib/db && npx drizzle-kit push --verbose --config ./drizzle.config.ts' 2>&1 | grep -v "Pulling schema" > "$HOME/b20-stage1.log" || true
   grep -E "^(ALTER|CREATE|DROP|TRUNCATE|DELETE|UPDATE|INSERT)" "$HOME/b20-stage1.log" | sed 's/^/  /'
-  echo "statements=$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage1.log") destructive=$(destructive_count "$HOME/b20-stage1.log") result=$(tail -1 "$HOME/b20-stage1.log")"
+  echo "statements=$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage1.log") destructive=$(destructive_count "$HOME/b20-stage1.log") result=$(grep -oE 'Changes applied|No changes detected' "$HOME/b20-stage1.log" | tail -1)"
   classify "$HOME/b20-stage1.log"
   [ "$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage1.log")" = "39" ] || fail "stage-1 statement count is not the rehearsed 39"
   [ "$(destructive_count "$HOME/b20-stage1.log")" = "0" ] || fail "stage-1 produced a destructive/unexpected statement"
@@ -257,6 +263,7 @@ phase_migrate() {
   local f1; f1="$(fingerprint)"; echo "schema_fingerprint=$f1 (expected F1=$EXPECT_F1)"; [ "$f1" = "$EXPECT_F1" ] || fail "post-stage-1 fingerprint differs from the rehearsal"
   fi # end of the non-resume path (preconditions → artifacts → backup → stop → stage 1)
 
+  if [ "$RESUME" != "2" ]; then # repair + stage 2 (skipped when the schema is already at F2)
   STAGE="repair-dry-run"
   section "REPAIR — dry-run (stage-1 image code) gated against the company authority"
   run_in_image cardscanner/migrate:b20-stage1 'cd artifacts/api-server && npx tsx scripts/repair-subscriptions.ts' > "$HOME/b20-repair-dry.json" 2>&1 || fail "repair dry-run failed: $(tail -3 "$HOME/b20-repair-dry.json")"
@@ -303,16 +310,34 @@ phase_migrate() {
   section "STAGE 2 — accepted schema $STAGE2_SHA (statements)"
   run_in_image cardscanner/migrate:b20-stage2 'cd lib/db && npx drizzle-kit push --verbose --config ./drizzle.config.ts' 2>&1 | grep -v "Pulling schema" > "$HOME/b20-stage2.log" || true
   grep -E "^(ALTER|CREATE|DROP|TRUNCATE|DELETE|UPDATE|INSERT)" "$HOME/b20-stage2.log" | sed 's/^/  /'
-  echo "statements=$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage2.log") destructive=$(destructive_count "$HOME/b20-stage2.log") result=$(tail -1 "$HOME/b20-stage2.log")"
+  echo "statements=$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage2.log") destructive=$(destructive_count "$HOME/b20-stage2.log") result=$(grep -oE 'Changes applied|No changes detected' "$HOME/b20-stage2.log" | tail -1)"
   classify "$HOME/b20-stage2.log"
   [ "$(grep -cE '^(ALTER|CREATE)' "$HOME/b20-stage2.log")" = "27" ] || fail "stage-2 statement count is not the rehearsed 27"
   [ "$(destructive_count "$HOME/b20-stage2.log")" = "0" ] || fail "stage-2 produced a destructive/unexpected statement"
   grep -q "Changes applied" "$HOME/b20-stage2.log" || fail "stage-2 push did not report 'Changes applied'"
+  fi # end of repair + stage 2
+
+  STAGE="stage2-verify"
+  section "STAGE 2 — verification (schema at the accepted commit, repair canonical, repeat push is a no-op)"
   local f2; f2="$(fingerprint)"; echo "schema_fingerprint=$f2 (expected F2=$EXPECT_F2)"; [ "$f2" = "$EXPECT_F2" ] || fail "post-stage-2 fingerprint differs from the rehearsal"
   echo "check+fk constraints on the five tables: $(q "select count(*) from pg_constraint where conrelid in ('subscriptions'::regclass,'plan_prices'::regclass,'billing_checkout_sessions'::regclass,'billing_provider_events'::regclass,'subscription_usage_reservations'::regclass) and contype in ('c','f')") (expected 28)"
+  [ "$(q "select count(*) from pg_constraint where conrelid in ('subscriptions'::regclass,'plan_prices'::regclass,'billing_checkout_sessions'::regclass,'billing_provider_events'::regclass,'subscription_usage_reservations'::regclass) and contype in ('c','f')")" = "28" ] || fail "constraint count is not 28"
   echo "partial unique indexes: $(q "select string_agg(indexname, ' ' order by indexname) from pg_indexes where tablename in ('subscriptions','billing_checkout_sessions') and indexdef ilike '%where%'")"
-  run_in_image cardscanner/migrate:b20-stage2 'cd lib/db && npx drizzle-kit push --config ./drizzle.config.ts' 2>&1 | tail -1 | tee "$HOME/b20-stage2-repeat.log"
-  grep -q "No changes detected" "$HOME/b20-stage2-repeat.log" || fail "repeat push did not report 'No changes detected'"
+  # Repair verify with the accepted-commit image (repair script identical in both commits): must plan nothing.
+  run_in_image cardscanner/migrate:b20-stage2 'cd artifacts/api-server && npx tsx scripts/repair-subscriptions.ts' > "$HOME/b20-repair-final.json" 2>&1 || fail "final repair verify failed"
+  grep -E '"companies"|"subscriptions"|"plannedCreates"|"plannedUpdates"|"alreadyCanonical"|"conflicts"' "$HOME/b20-repair-final.json" | sed 's/^/  final verify: /'
+  [ "$(jsonnum "$HOME/b20-repair-final.json" plannedUpdates)" = "0" ] || fail "final repair verify still plans updates"
+  [ "$(jsonnum "$HOME/b20-repair-final.json" plannedCreates)" = "0" ] || fail "final repair verify still plans creates"
+  [ "$(jsonnum "$HOME/b20-repair-final.json" conflicts)" = "0" ] || fail "final repair verify reports conflicts"
+  [ "$(q "select count(*) from plans")" = "5" ] || fail "plan catalog is not exactly 5 rows"
+  [ "$(q "select status||'/'||plan||'/'||billing_source from subscriptions where company_id=1")" = "active/free/manual" ] || fail "company 1 subscription is not active/free/manual"
+  [ "$(q "select status||'/'||plan from companies where id=1")" = "active/free" ] || fail "company 1 mirror changed unexpectedly"
+  echo "repair audit rows: $(q "select count(*)||' actions='||coalesce(string_agg(distinct action, ','),'none') from audit_logs where entity_type='subscription' and action like 'subscription.repair_%'")"
+  # The push output ends with npm notices, so the marker is searched in the whole output.
+  run_in_image cardscanner/migrate:b20-stage2 'cd lib/db && npx drizzle-kit push --config ./drizzle.config.ts' 2>&1 | grep -v "Pulling schema" > "$HOME/b20-stage2-repeat.log" || true
+  echo "repeat push: $(grep -oE 'Changes applied|No changes detected' "$HOME/b20-stage2-repeat.log" | tail -1) (statements=$(grep -cE '^(ALTER|CREATE|DROP)' "$HOME/b20-stage2-repeat.log"))"
+  grep -q "No changes detected" "$HOME/b20-stage2-repeat.log" || fail "repeat push did not report 'No changes detected': $(tail -3 "$HOME/b20-stage2-repeat.log" | tr '\n' '|')"
+  [ "$(fingerprint)" = "$EXPECT_F2" ] || fail "repeat push changed the schema fingerprint"
   section "final state (API remains STOPPED — the old code is incompatible with the final schema; the deploy brings the new API up)"
   snapshot_rows
   q "select 'tables='||(select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')||' size='||pg_size_pretty(pg_database_size(current_database()))"
@@ -320,7 +345,7 @@ phase_migrate() {
 
   STAGE="cleanup-worktrees"
   git -C "$APP_DIR" worktree remove --force "$WT_ROOT/stage1"; git -C "$APP_DIR" worktree remove --force "$WT_ROOT/stage2"; git -C "$APP_DIR" worktree prune; rm -rf "$WT_ROOT"
-  rm -f "$HOME"/b20-stage1.log "$HOME"/b20-stage2.log "$HOME"/b20-stage2-repeat.log "$HOME"/b20-repair-dry.json "$HOME"/b20-repair-apply.json "$HOME"/b20-repair-verify.json
+  rm -f "$HOME"/b20-stage1.log "$HOME"/b20-stage2.log "$HOME"/b20-stage2-repeat.log "$HOME"/b20-repair-dry.json "$HOME"/b20-repair-apply.json "$HOME"/b20-repair-verify.json "$HOME"/b20-repair-final.json
   echo "app checkout: $(git -C "$APP_DIR" rev-parse HEAD) dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l) worktrees=$(git -C "$APP_DIR" worktree list | wc -l)"
   STAGE="done"
   log "migrate complete — proceed with the fast-forward of develop and the deploy workflow"
