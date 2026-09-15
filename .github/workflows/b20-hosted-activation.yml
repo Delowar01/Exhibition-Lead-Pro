@@ -31,7 +31,7 @@ on:
         description: "Phase to run"
         required: true
         type: choice
-        options: [preflight, migrate, postdeploy, smoke, smoke-setup, cleanup]
+        options: [preflight, migrate, postdeploy, smoke, supp, smoke-setup, cleanup, supp-preflight, supp-postcheck]
       arg1:
         description: "Phase argument 1 (non-secret)"
         required: false
@@ -62,7 +62,7 @@ env:
 jobs:
   run:
     name: B20 hosted activation phase (one-off)
-    if: github.ref == 'refs/heads/ops/b20-hosted-activation' && inputs.phase != 'smoke' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
+    if: github.ref == 'refs/heads/ops/b20-hosted-activation' && inputs.phase != 'smoke' && inputs.phase != 'supp' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -74,7 +74,7 @@ jobs:
         run: |
           git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
           git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
-          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-act.sh' ':(exclude).github/scripts/b20-smoke.mjs' ':(exclude).github/workflows/b20-hosted-activation.yml')"
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-act.sh' ':(exclude).github/scripts/b20-smoke.mjs' ':(exclude).github/scripts/b20-smoke2.mjs' ':(exclude).github/workflows/b20-hosted-activation.yml')"
           [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
           echo "branch = $BASE_SHA + ops files only"
 
@@ -145,7 +145,7 @@ jobs:
         run: |
           git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
           git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
-          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-act.sh' ':(exclude).github/scripts/b20-smoke.mjs' ':(exclude).github/workflows/b20-hosted-activation.yml')"
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-act.sh' ':(exclude).github/scripts/b20-smoke.mjs' ':(exclude).github/scripts/b20-smoke2.mjs' ':(exclude).github/workflows/b20-hosted-activation.yml')"
           [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
           echo "branch = $BASE_SHA + ops files only"
 
@@ -256,3 +256,161 @@ jobs:
         run: |
           ssh vps 'rm -f "$HOME/b20-act.sh"' < /dev/null || true
           rm -f "$RUNNER_TEMP/b20-creds" artifacts/web-app/.b20-smoke.mjs
+
+  # ── Supplemental hosted smoke (final acceptance): two disposable tenants, four
+  # disposable principals, lifecycle/permission/isolation/limit/workflow/browser QA.
+  # Cleanup and the read-only post-check ALWAYS run afterwards.
+  supp:
+    name: B20 supplemental hosted smoke (disposable tenants, real Chromium)
+    if: github.ref == 'refs/heads/ops/b20-hosted-activation' && github.event_name == 'workflow_dispatch' && inputs.phase == 'supp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      PLATFORM_HOST: https://elite.kaptnow.com
+      TENANT_HOST: https://admin.kaptnow.com
+      SMOKE_DOMAIN: b20smoke.invalid
+      EXISTING_COMPANY_ID: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the branch is the B18 develop commit + the ops files only
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
+          git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-act.sh' ':(exclude).github/scripts/b20-smoke.mjs' ':(exclude).github/scripts/b20-smoke2.mjs' ':(exclude).github/workflows/b20-hosted-activation.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          bash -n .github/scripts/b20-act.sh && node --check .github/scripts/b20-smoke2.mjs
+          echo "branch = $BASE_SHA + ops files only; scripts parse"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+      - name: Install (frozen lockfile) + Chromium for Playwright
+        run: |
+          pnpm install --frozen-lockfile
+          cd artifacts/web-app && npx playwright install --with-deps chromium
+
+      - name: Generate disposable credentials (masked; only the owner hash leaves the runner)
+        run: |
+          set -euo pipefail
+          umask 077
+          TAG="$(openssl rand -hex 4)"
+          gen() { printf 'Sm0ke!%s' "$(openssl rand -base64 33 | tr -dc 'A-Za-z0-9' | cut -c1-26)"; }
+          OWNER_PW="$(gen)"; A_ADMIN_PW="$(gen)"; A_EMP_PW="$(gen)"; B_ADMIN_PW="$(gen)"
+          for v in "$OWNER_PW" "$A_ADMIN_PW" "$A_EMP_PW" "$B_ADMIN_PW"; do echo "::add-mask::$v"; done
+          HASH="$(OWNER_PW="$OWNER_PW" node -e 'const b=require(process.cwd()+"/artifacts/api-server/node_modules/bcryptjs"); process.stdout.write(b.hashSync(process.env.OWNER_PW, 10))')"
+          echo "::add-mask::$HASH"
+          printf "OWNER_PASSWORD='%s'\nA_ADMIN_PASSWORD='%s'\nA_EMPLOYEE_PASSWORD='%s'\nB_ADMIN_PASSWORD='%s'\n" "$OWNER_PW" "$A_ADMIN_PW" "$A_EMP_PW" "$B_ADMIN_PW" > "$RUNNER_TEMP/b20-creds"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "OWNER_EMAIL=b20-smoke-$TAG@$SMOKE_DOMAIN" >> "$GITHUB_ENV"
+          echo "OWNER_HASH=$HASH" >> "$GITHUB_ENV"
+          echo "tag=$TAG owner=b20-smoke-$TAG@$SMOKE_DOMAIN hash_prefix=$(printf '%s' "$HASH" | cut -c1-7) hash_len=${#HASH}"
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the phase script to the VPS
+        run: |
+          ssh vps 'umask 077; cat > "$HOME/b20-act.sh" && chmod 700 "$HOME/b20-act.sh"' < .github/scripts/b20-act.sh
+
+      - name: supp-preflight (read-only preservation + readiness; records the existing-customer baseline)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='supp-preflight' ARG1='$TAG' ARG2='' ARG3='' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/b20-preflight.log"
+          MD5="$(grep -oE '^baseline_md5=[0-9a-f]{32}' "$RUNNER_TEMP/b20-preflight.log" | head -1 | cut -d= -f2)"
+          START="$(grep -oE '^now_epoch_ms=[0-9]+' "$RUNNER_TEMP/b20-preflight.log" | head -1 | cut -d= -f2)"
+          [ -n "$MD5" ] && [ -n "$START" ] || { echo "preflight did not report the baseline"; exit 1; }
+          echo "BASELINE_MD5=$MD5" >> "$GITHUB_ENV"
+          echo "SMOKE_START_MS=$START" >> "$GITHUB_ENV"
+
+      - name: smoke-setup (one disposable platform owner, no company; ids only in the log)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-setup' ARG1='$OWNER_HASH' ARG2='$OWNER_EMAIL' ARG3='' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/b20-setup.log"
+          UID_="$(grep -oE '^disposable_owner_user_id=[0-9]+' "$RUNNER_TEMP/b20-setup.log" | head -1 | cut -d= -f2)"
+          [ -n "$UID_" ] || { echo "no disposable owner id returned"; exit 1; }
+          echo "OWNER_USER_ID=$UID_" >> "$GITHUB_ENV"
+
+      - name: Run the supplemental smoke (real Chromium on the runner; orphan-run phase over SSH)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          OUT_DIR: ${{ runner.temp }}/b20-supp
+          STATE_FILE: ${{ runner.temp }}/b20-supp/state.json
+        run: |
+          set -euo pipefail
+          set -a; . "$RUNNER_TEMP/b20-creds"; set +a
+          mkdir -p "$OUT_DIR"
+          cp .github/scripts/b20-smoke2.mjs artifacts/web-app/.b20-smoke2.mjs
+          node artifacts/web-app/.b20-smoke2.mjs
+
+      - name: Upload evidence (screenshots + summary; no secrets)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b20-supplemental-smoke-evidence
+          path: |
+            ${{ runner.temp }}/b20-supp/*.png
+            ${{ runner.temp }}/b20-supp/summary.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: cleanup (ALWAYS — exactly the recorded disposable rows)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          STATE="$RUNNER_TEMP/b20-supp/state.json"
+          if [ -z "${OWNER_USER_ID:-}" ]; then echo "smoke-setup did not create an owner row; nothing to clean"; exit 0; fi
+          C_IDS="none"; U_IDS="$OWNER_USER_ID"
+          if [ -f "$STATE" ]; then
+            C_IDS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(s.companyIds.length? s.companyIds.join(","):"none")' "$STATE")"
+            U_IDS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(s.userIds.join(","))' "$STATE")"
+          fi
+          echo "cleanup targets: companies=[$C_IDS] users=[$U_IDS] tag=$TAG"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='cleanup' ARG1='$C_IDS' ARG2='$U_IDS' ARG3='$SMOKE_DOMAIN:$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: supp-postcheck (ALWAYS, read-only — zero disposable rows, baseline equality, queue and worker health)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          STATE="$RUNNER_TEMP/b20-supp/state.json"
+          RUNS=""; [ -f "$STATE" ] && RUNS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write((s.runIds||[]).join(","))' "$STATE")"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='supp-postcheck' ARG1='${SMOKE_START_MS:-0}' ARG2='${BASELINE_MD5:-none}' ARG3='$TAG|$RUNS' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: Remove the script and credentials (always)
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b20-act.sh"' < /dev/null || true
+          rm -f "$RUNNER_TEMP/b20-creds" artifacts/web-app/.b20-smoke2.mjs

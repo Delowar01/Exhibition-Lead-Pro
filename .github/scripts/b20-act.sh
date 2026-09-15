@@ -409,42 +409,172 @@ phase_smoke_setup() {
 phase_cleanup() {
   [[ "$ARG1" =~ ^([0-9]+(,[0-9]+)*|none)$ ]] || fail "ARG1 must be a csv of company ids or 'none'"
   [[ "$ARG2" =~ ^[0-9]+(,[0-9]+)*$ ]] || fail "ARG2 must be a csv of user ids"
-  [ "$ARG3" = "b20smoke.invalid" ] || fail "ARG3 must be the disposable domain"
+  [[ "$ARG3" =~ ^b20smoke\.invalid(:[a-z0-9]+)?$ ]] || fail "ARG3 must be the disposable domain, optionally ':<tag>'"
+  local DOM="b20smoke.invalid" TAG=""; [[ "$ARG3" == *:* ]] && TAG="${ARG3##*:}"
   local C U; C="$ARG1"; [ "$C" = "none" ] && C="-1"; U="$ARG2"   # -1 never matches a real id
-  section "guard: every target is a disposable smoke row"
+  section "guard: every target is a disposable smoke row (explicit ids; names/e-mails verified)"
   q "select 'company '||id||': '||case when name like 'B20 SMOKE %' then 'disposable' else 'NOT DISPOSABLE' end from companies where id in ($C) order by id"
-  q "select 'user '||id||': role='||role||' company_id='||coalesce(company_id::text,'null')||' '||case when email like '%@$ARG3' then 'disposable' else 'NOT DISPOSABLE' end from users where id in ($U) or company_id in ($C) order by id"
+  q "select 'user '||id||': role='||role||' company_id='||coalesce(company_id::text,'null')||' '||case when email like '%@$DOM' then 'disposable' else 'NOT DISPOSABLE' end from users where id in ($U) or company_id in ($C) order by id"
   [ "$(q "select count(*) from companies where id in ($C) and name not like 'B20 SMOKE %'")" = "0" ] || fail "a target company is not a smoke tenant"
-  [ "$(q "select count(*) from users where id in ($U) and email not like '%@$ARG3'")" = "0" ] || fail "a target user is not a smoke user"
-  [ "$(q "select count(*) from users where company_id in ($C) and email not like '%@$ARG3'")" = "0" ] || fail "a smoke tenant holds a non-smoke user"
-  section "existing rows BEFORE cleanup (must be untouched afterwards)"
-  local before; before="$(q "select 'companies='||(select count(*) from companies where id not in ($C))||' users='||(select count(*) from users where id not in ($U) and (company_id is null or company_id not in ($C)))||' subscriptions='||(select count(*) from subscriptions where company_id not in ($C))||' audit='||(select count(*) from audit_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))||' activity='||(select count(*) from activity_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))")"; echo "$before"
-  section "delete disposable rows"
+  [ "$(q "select count(*) from users where id in ($U) and email not like '%@$DOM'")" = "0" ] || fail "a target user is not a smoke user"
+  [ "$(q "select count(*) from users where company_id in ($C) and email not like '%@$DOM'")" = "0" ] || fail "a smoke tenant holds a non-smoke user"
+  [ "$(q "select count(*) from users where id in ($U) and company_id is not null and company_id not in ($C)")" = "0" ] || fail "a target user belongs to a non-target company"
+  section "existing rows BEFORE cleanup (everything outside the explicit targets; must be identical afterwards)"
+  local kept_sql="select 'companies='||(select count(*) from companies where id not in ($C))||' users='||(select count(*) from users where id not in ($U) and (company_id is null or company_id not in ($C)))||' subscriptions='||(select count(*) from subscriptions where company_id not in ($C))||' contacts='||(select count(*) from contacts where company_id not in ($C))||' leads='||(select count(*) from leads where company_id not in ($C))||' events='||(select count(*) from events where company_id not in ($C))||' tasks='||(select count(*) from tasks where company_id not in ($C))||' tags='||(select count(*) from tags where company_id not in ($C))||' wf_defs='||(select count(*) from workflow_definitions where company_id not in ($C))||' wf_runs='||(select count(*) from workflow_runs where company_id not in ($C))||' audit='||(select count(*) from audit_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))||' activity='||(select count(*) from activity_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))||' login_attempts='||(select count(*) from login_attempts where email not like 'b20-smoke-${TAG}%@$DOM')"
+  local before; before="$(q "$kept_sql")"; echo "$before"
+  section "delete disposable rows (explicit ids; child tables first, counted)"
   echo "sessions=$(qw "with d as (delete from sessions where user_id in ($U) or user_id in (select id from users where company_id in ($C)) returning 1) select count(*) from d")"
+  echo "notifications=$(qw "with d as (delete from notifications where user_id in ($U) or user_id in (select id from users where company_id in ($C)) returning 1) select count(*) from d")"
+  echo "workflow_action_runs=$(qw "with d as (delete from workflow_action_runs where company_id in ($C) returning 1) select count(*) from d")"
+  echo "workflow_runs=$(qw "with d as (delete from workflow_runs where company_id in ($C) returning 1) select count(*) from d")"
+  echo "workflow_definitions=$(qw "with d as (delete from workflow_definitions where company_id in ($C) returning 1) select count(*) from d")"
+  echo "lead_tags=$(qw "with d as (delete from lead_tags where company_id in ($C) returning 1) select count(*) from d")"
+  echo "tasks=$(qw "with d as (delete from tasks where company_id in ($C) returning 1) select count(*) from d")"
+  echo "leads=$(qw "with d as (delete from leads where company_id in ($C) returning 1) select count(*) from d")"
+  echo "contacts=$(qw "with d as (delete from contacts where company_id in ($C) returning 1) select count(*) from d")"
+  echo "events=$(qw "with d as (delete from events where company_id in ($C) returning 1) select count(*) from d")"
+  echo "tags=$(qw "with d as (delete from tags where company_id in ($C) returning 1) select count(*) from d")"
+  echo "reservations=$(qw "with d as (delete from subscription_usage_reservations where company_id in ($C) returning 1) select count(*) from d")"
+  echo "checkout_intents=$(qw "with d as (delete from billing_checkout_sessions where company_id in ($C) returning 1) select count(*) from d")"
+  echo "invitations=$(qw "with d as (delete from invitations where company_id in ($C) returning 1) select count(*) from d")"
   echo "audit_logs=$(qw "with d as (delete from audit_logs where company_id in ($C) or user_id in ($U) or user_id in (select id from users where company_id in ($C)) returning 1) select count(*) from d")"
   echo "activity_logs=$(qw "with d as (delete from activity_logs where company_id in ($C) or user_id in ($U) or user_id in (select id from users where company_id in ($C)) returning 1) select count(*) from d")"
+  if [ -n "$TAG" ]; then echo "login_attempts=$(qw "with d as (delete from login_attempts where email like 'b20-smoke-${TAG}%@$DOM' returning 1) select count(*) from d")"; fi
   echo "tenant_users=$(qw "with d as (delete from users where company_id in ($C) returning 1) select count(*) from d")"
   echo "owner_users=$(qw "with d as (delete from users where id in ($U) returning 1) select count(*) from d")"
+  echo "subscriptions=$(qw "with d as (delete from subscriptions where company_id in ($C) returning 1) select count(*) from d")"
   echo "companies=$(qw "with d as (delete from companies where id in ($C) returning 1) select count(*) from d")"
   section "verify zero disposable rows remain"
-  q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B20 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$ARG3')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' intents='||(select count(*) from billing_checkout_sessions where company_id in ($C))||' reservations='||(select count(*) from subscription_usage_reservations where company_id in ($C))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' sessions='||(select count(*) from sessions where user_id in ($U))"
-  [ "$(q "select (select count(*) from companies where id in ($C) or name like 'B20 SMOKE %')+(select count(*) from users where id in ($U) or email like '%@$ARG3')+(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))+(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))")" = "0" ] || fail "disposable rows remain"
-  local after_kept; after_kept="$(q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' subscriptions='||(select count(*) from subscriptions)||' audit='||(select count(*) from audit_logs)||' activity='||(select count(*) from activity_logs)")"
-  [ "$after_kept" = "$before" ] || fail "existing rows changed during cleanup: before[$before] after[$after_kept]"
+  local z; z="$(q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B20 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' contacts='||(select count(*) from contacts where company_id in ($C))||' leads='||(select count(*) from leads where company_id in ($C))||' events='||(select count(*) from events where company_id in ($C))||' tasks='||(select count(*) from tasks where company_id in ($C))||' tags='||(select count(*) from tags where company_id in ($C))||' lead_tags='||(select count(*) from lead_tags where company_id in ($C))||' wf_defs='||(select count(*) from workflow_definitions where company_id in ($C))||' wf_runs='||(select count(*) from workflow_runs where company_id in ($C))||' wf_action_runs='||(select count(*) from workflow_action_runs where company_id in ($C))||' intents='||(select count(*) from billing_checkout_sessions where company_id in ($C))||' reservations='||(select count(*) from subscription_usage_reservations where company_id in ($C))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' sessions='||(select count(*) from sessions where user_id in ($U))||' notifications='||(select count(*) from notifications where user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b20-smoke-${TAG:-zzzz}%@$DOM')")"; echo "$z"
+  echo "$z" | grep -vqE '=[1-9]' || fail "disposable rows remain: $z"
   section "existing rows AFTER cleanup"
-  local after; after="$(q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' subscriptions='||(select count(*) from subscriptions)||' audit='||(select count(*) from audit_logs)")"; echo "$after"
+  local after; after="$(q "$kept_sql")"; echo "$after"
+  [ "$after" = "$before" ] || fail "existing rows changed during cleanup: before[$before] after[$after]"
   snapshot_rows
   section "remove stage images and temporary files"
   docker rmi cardscanner/migrate:b20-stage1 cardscanner/migrate:b20-stage2 >/dev/null 2>&1 && echo "stage images removed" || echo "stage images already absent"
   rm -f "$HOME"/b20-*.log "$HOME"/b20-*.json "$HOME"/b20-baseline-*.txt; rm -rf "$HOME/b20-worktrees"; git -C "$APP_DIR" worktree prune
-  echo "leftover temp files: $(ls "$HOME" | grep -c '^b20-' || true); worktrees=$(git -C "$APP_DIR" worktree list | wc -l); app checkout=$(git -C "$APP_DIR" rev-parse HEAD) dirty=$(git -C "$APP_DIR" status --porcelain | wc -l)"
+  echo "leftover temp files (the running phase script counts as 1): $(ls "$HOME" | grep -c '^b20-' || true); worktrees=$(git -C "$APP_DIR" worktree list | wc -l); app checkout=$(git -C "$APP_DIR" rev-parse HEAD) dirty=$(git -C "$APP_DIR" status --porcelain | wc -l)"
   echo "schema_fingerprint=$(fingerprint)"
   echo "readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE)"
   log "cleanup complete"
 }
 
-# Writable SQL — used ONLY by smoke-setup / cleanup (explicit ids) and never by preflight/postdeploy.
+# Writable SQL — used ONLY by smoke-setup / orphan-run / cleanup (explicit ids) and never by preflight/postdeploy/supp-*.
 qw() { compose exec -T postgres sh -c 'exec psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -F "|" -c "$1"' sh "$1"; }
+
+# ── Supplemental smoke support ────────────────────────────────────────────────
+# Existing-customer baseline (company 1 = the only pre-existing tenant): per-table
+# counts + the canonical subscription projection. Sessions/notifications of the
+# existing users are excluded on purpose (legitimate login / scheduler activity).
+existing_baseline() {
+  q "select 'company1: status='||c.status||' plan='||c.plan||' name_md5='||md5(c.name)||' | sub: status='||s.status||' plan='||s.plan||' source='||s.billing_source||' overrides='||s.limit_overrides::text||' trial_expires='||coalesce(s.trial_expires_at::text,'null')||' status_changed='||s.status_changed_at::text||' | users='||(select count(*) from users where company_id=1)||' contacts='||(select count(*) from contacts where company_id=1)||' leads='||(select count(*) from leads where company_id=1)||' events='||(select count(*) from events where company_id=1)||' tasks='||(select count(*) from tasks where company_id=1)||' tags='||(select count(*) from tags where company_id=1)||' lead_tags='||(select count(*) from lead_tags where company_id=1)||' documents='||(select count(*) from documents where company_id=1)||' wf_defs='||(select count(*) from workflow_definitions where company_id=1)||' wf_runs='||(select count(*) from workflow_runs where company_id=1)||' audit='||(select count(*) from audit_logs where company_id=1)||' activity='||(select count(*) from activity_logs where company_id=1)||' intents='||(select count(*) from billing_checkout_sessions where company_id=1)||' reservations='||(select count(*) from subscription_usage_reservations where company_id=1) from companies c join subscriptions s on s.company_id=c.id where c.id=1"
+}
+disposable_counts() {
+  local tag="$1"
+  q "select 'companies='||(select count(*) from companies where name like 'B20 SMOKE %')||' users='||(select count(*) from users where email like '%@b20smoke.invalid')||' login_attempts='||(select count(*) from login_attempts where email like 'b20-smoke-$tag%@b20smoke.invalid')||' subscriptions='||(select count(*) from subscriptions where company_id in (select id from companies where name like 'B20 SMOKE %'))||' wf_defs='||(select count(*) from workflow_definitions where name like 'B20 SMOKE %')||' wf_runs='||(select count(*) from workflow_runs where event_key like '%b20smoke-%' or company_id in (select id from companies where name like 'B20 SMOKE %'))||' leads='||(select count(*) from leads where company_id in (select id from companies where name like 'B20 SMOKE %'))||' events='||(select count(*) from events where company_id in (select id from companies where name like 'B20 SMOKE %'))||' tasks='||(select count(*) from tasks where company_id in (select id from companies where name like 'B20 SMOKE %'))||' tags='||(select count(*) from tags where company_id in (select id from companies where name like 'B20 SMOKE %'))||' contacts='||(select count(*) from contacts where company_id in (select id from companies where name like 'B20 SMOKE %'))||' audit='||(select count(*) from audit_logs where company_id in (select id from companies where name like 'B20 SMOKE %') or user_id in (select id from users where email like '%@b20smoke.invalid'))||' activity='||(select count(*) from activity_logs where company_id in (select id from companies where name like 'B20 SMOKE %') or user_id in (select id from users where email like '%@b20smoke.invalid'))||' sessions='||(select count(*) from sessions where user_id in (select id from users where email like '%@b20smoke.invalid'))"
+}
+
+# supp-preflight: READ-ONLY preservation + readiness checks before any fixture is created.
+# ARG1 = smoke tag (only used to scope the login_attempts count).
+phase_supp_preflight() {
+  section "deploy state"
+  local head cur; head="$(git -C "$APP_DIR" rev-parse HEAD)"; cur="$(cat "$STATE_DIR/current-deploy.sha")"
+  echo "HEAD=$head current-deploy.sha=$cur dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l) worktrees=$(git -C "$APP_DIR" worktree list | wc -l)"
+  [ "$head" = "$STAGE2_SHA" ] && [ "$cur" = "$STAGE2_SHA" ] || fail "hosted checkout / current-deploy.sha is not the accepted commit"
+  [ -z "$(git -C "$APP_DIR" status --porcelain)" ] || fail "hosted checkout is dirty"
+  section "schema"
+  local fp; fp="$(fingerprint)"; echo "schema_fingerprint=$fp"; [ "$fp" = "$EXPECT_F2" ] || fail "schema fingerprint is not the accepted F2"
+  section "containers / volume / health"
+  for svc in postgres api web; do cid="$(compose ps -q "$svc" || true)"; [ -n "$cid" ] || fail "$svc container absent"; docker inspect -f "$svc: id={{.Id}} created={{.Created}} started={{.State.StartedAt}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}" "$cid"; [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}healthy{{end}}' "$cid")" = "healthy" ] || fail "$svc is not healthy"; done
+  for v in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$PG_CID"); do docker volume inspect -f "volume $v: created={{.CreatedAt}}" "$v"; done
+  local rz; rz="$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE)"; echo "readyz=$rz"; echo "$rz" | grep -q '"status":"ok"' || fail "api not ready"
+  section "env (non-secret keys) / billing disabled"
+  for k in JOBS_DRIVER BILLING_PROVIDER BILLING_SELF_SERVICE_CHECKOUT BILLING_STRIPE_MODE; do envkey "$k" yes; done
+  for k in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET BILLING_RETURN_URL SMTP_HOST; do envkey "$k"; done
+  echo "env sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16) mode=$(stat -c '%a' "$ENV_FILE")"
+  local bp; bp="$(grep -E '^BILLING_PROVIDER=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' || true)"
+  { [ -z "$bp" ] || [ "$bp" = "none" ]; } || fail "a billing provider is configured ('$bp')"
+  [ "$(grep -cE '^BILLING_SELF_SERVICE_CHECKOUT=true' "$ENV_FILE" || true)" = "0" ] || fail "self-service checkout enabled"
+  [ "$(grep -cE '^STRIPE_SECRET_KEY=.+' "$ENV_FILE" || true)" = "0" ] || fail "Stripe key present"
+  echo "plan_prices=$(q "select count(*) from plan_prices")"; [ "$(q "select count(*) from plan_prices")" = "0" ] || fail "provider prices registered"
+  section "durable queue"
+  docker logs "$API_CID" 2>&1 | grep -E '"msg":"Durable job queue (selected|started)"' | cut -c1-200 | head -2
+  docker logs "$API_CID" 2>&1 | grep -qE '"driver":"postgres".*"Durable job queue started"' || fail "postgres durable queue not started"
+  q "select 'job_queue: '||coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s"
+  [ "$(q "select count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'")" = "0" ] || fail "dead jobs in the last 24h"
+  section "existing customer baseline (company 1)"
+  local b; b="$(existing_baseline)"; echo "$b"; echo "baseline_md5=$(printf '%s' "$b" | md5sum | cut -c1-32)"
+  echo "$b" | grep -q "company1: status=active plan=free" || fail "company 1 mirror is not active/free"
+  echo "$b" | grep -q "sub: status=active plan=free source=manual overrides={}" || fail "company 1 subscription is not active/free/manual without overrides"
+  section "disposable rows from earlier smokes (must be zero)"
+  local d; d="$(disposable_counts "${ARG1:-none}")"; echo "$d"
+  echo "$d" | grep -vqE '=[1-9]' || fail "disposable rows remain from a previous smoke: $d"
+  echo "now_epoch_ms=$(date +%s%3N)"
+  log "supp-preflight complete (read-only)"
+}
+
+# orphan-run: persist ONE queued workflow run for a DISPOSABLE tenant exactly as
+# dispatch.persistWorkflowRuns would (run row + pending action rows, snapshot copied
+# from the tenant's own definition), back-dated past the recovery grace so the
+# accepted orphan-recovery sweep re-enqueues it. No job is enqueued here — the
+# executor only ever runs it through the recovery integration.
+# ARG1 = company id, ARG2 = workflow definition id, ARG3 = "<leadId>,<actorUserId>,<tag>"
+phase_orphan_run() {
+  [[ "$ARG1" =~ ^[0-9]+$ ]] || fail "ARG1 must be a company id"
+  [[ "$ARG2" =~ ^[0-9]+$ ]] || fail "ARG2 must be a workflow definition id"
+  [[ "$ARG3" =~ ^[0-9]+,[0-9]+,[a-z0-9]+$ ]] || fail "ARG3 must be leadId,actorUserId,tag"
+  local lead actor tag; lead="${ARG3%%,*}"; actor="$(echo "$ARG3" | cut -d, -f2)"; tag="${ARG3##*,}"
+  section "guards (disposable tenant only)"
+  [ "$(q "select count(*) from companies where id=$ARG1 and name like 'B20 SMOKE %'")" = "1" ] || fail "company $ARG1 is not a smoke tenant"
+  [ "$(q "select count(*) from workflow_definitions where id=$ARG2 and company_id=$ARG1 and name like 'B20 SMOKE %'")" = "1" ] || fail "definition $ARG2 is not a smoke definition of company $ARG1"
+  [ "$(q "select count(*) from leads where id=$lead and company_id=$ARG1")" = "1" ] || fail "lead $lead is not in company $ARG1"
+  [ "$(q "select count(*) from users where id=$actor and company_id=$ARG1 and email like '%@b20smoke.invalid'")" = "1" ] || fail "actor $actor is not a smoke user of company $ARG1"
+  echo "definition: $(q "select 'status='||status||' revision='||revision||' actions='||jsonb_array_length(actions) from workflow_definitions where id=$ARG2")"
+  echo "tenant access now: $(q "select status||'/'||billing_source from subscriptions where company_id=$ARG1")"
+  section "insert queued run (back-dated 3 minutes) + pending action rows"
+  local key="lead.created:lead:$lead:b20smoke-$tag-orphan"
+  local rid; rid="$(qw "insert into workflow_runs (company_id, workflow_definition_id, definition_revision, definition_snapshot, trigger_type, entity_type, entity_id, actor_user_id, event_key, status, enqueue_generation, queued_at, created_at, updated_at) select company_id, id, revision, jsonb_build_object('name', name, 'trigger', \"trigger\", 'conditions', conditions, 'actions', actions), 'lead.created', 'lead', $lead, $actor, '$key', 'queued', 1, now() - interval '3 minutes', now(), now() - interval '3 minutes' from workflow_definitions where id=$ARG2 and company_id=$ARG1 returning id")"
+  [[ "$rid" =~ ^[0-9]+$ ]] || fail "run insert failed"
+  echo "action_rows=$(qw "with a as (insert into workflow_action_runs (run_id, company_id, action_index, action_type, status) select $rid, $ARG1, (ord-1)::int, elem->>'type', 'pending' from workflow_definitions d, jsonb_array_elements(d.actions) with ordinality as t(elem, ord) where d.id=$ARG2 returning 1) select count(*) from a")"
+  q "select 'run '||id||': status='||status||' generation='||enqueue_generation||' queued_at='||queued_at||' updated_at='||updated_at||' event_key='||event_key from workflow_runs where id=$rid"
+  q "select 'action '||action_index||': '||action_type||' '||status from workflow_action_runs where run_id=$rid order by action_index"
+  echo "orphan_run_id=$rid"
+  log "orphan-run complete"
+}
+
+# supp-postcheck: READ-ONLY. ARG1 = smoke start epoch ms, ARG2 = expected baseline md5,
+# ARG3 = "<tag>|<csv of run ids>" (queue evidence for the workflow runs).
+phase_supp_postcheck() {
+  local tag="${ARG3%%|*}" runs="${ARG3##*|}"
+  section "deploy / schema / env / containers"
+  echo "HEAD=$(git -C "$APP_DIR" rev-parse HEAD) current-deploy.sha=$(cat "$STATE_DIR/current-deploy.sha") dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l)"
+  [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$STAGE2_SHA" ] && [ "$(cat "$STATE_DIR/current-deploy.sha")" = "$STAGE2_SHA" ] || fail "deploy sha changed"
+  echo "schema_fingerprint=$(fingerprint)"; [ "$(fingerprint)" = "$EXPECT_F2" ] || fail "schema fingerprint changed"
+  echo "env sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16) mode=$(stat -c '%a' "$ENV_FILE")"
+  for svc in postgres api web; do cid="$(compose ps -q "$svc" || true)"; docker inspect -f "$svc: id={{.Id}} created={{.Created}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}" "$cid"; done
+  for v in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$PG_CID"); do docker volume inspect -f "volume $v: created={{.CreatedAt}}" "$v"; done
+  echo "readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE)"
+  section "disposable rows (must be zero)"
+  local d; d="$(disposable_counts "$tag")"; echo "$d"; echo "$d" | grep -vqE '=[1-9]' || fail "disposable rows remain: $d"
+  section "existing customer baseline (company 1) — must equal the preflight baseline"
+  local b; b="$(existing_baseline)"; echo "$b"; local m; m="$(printf '%s' "$b" | md5sum | cut -c1-32)"; echo "baseline_md5=$m expected=$ARG2"
+  [ "$m" = "$ARG2" ] || fail "existing customer baseline changed"
+  section "queue / workers since the smoke started"
+  q "select 'job_queue: '||coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s"
+  q "select 'jobs enqueued during the smoke: '||coalesce(string_agg(name||'='||n, ' ' order by name), 'none') from (select name, count(*) n from job_queue where enqueued_at > to_timestamp($ARG1/1000.0) group by name) s"
+  q "select 'dead jobs during the smoke='||count(*) from job_queue where status='dead' and dead_at > to_timestamp($ARG1/1000.0)"
+  [ "$(q "select count(*) from job_queue where status='dead' and dead_at > to_timestamp($ARG1/1000.0)")" = "0" ] || fail "dead jobs appeared during the smoke"
+  if [ -n "$runs" ] && [ "$runs" != "$ARG3" ]; then
+    for r in $(echo "$runs" | tr ',' ' '); do q "select 'workflow.run job(s) for run $r: '||coalesce(string_agg(dedupe_key||'='||status||'/attempts:'||attempts, ' '), 'none') from job_queue where name='workflow.run' and dedupe_key like 'workflow.run:$r:%'"; done
+  fi
+  echo "api error-level lines since start: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"level":50' || true)"
+  echo "  by error type / status: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -oE '"type":"[A-Za-z_]+"|"statusCode":[0-9]+' | sort | uniq -c | tr '\n' ' ' | tr -s ' ')"
+  echo "  non-AppError error lines: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
+  docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -v '"type":"_AppError"' | grep -viE 'authorization|token|secret|password' | cut -c1-260 | head -10
+  echo "  workflow log lines: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -E '"msg":"(Workflow run (persisted|started|completed|failed)|Orphaned workflow run re-enqueued|Workflow orphan recovery sweep complete)"' | grep -oE '"msg":"[^"]+"' | sort | uniq -c | tr '\n' ' ' | tr -s ' ')"
+  log "supp-postcheck complete (read-only)"
+}
 
 case "$PHASE" in
   preflight) phase_preflight ;;
@@ -452,5 +582,8 @@ case "$PHASE" in
   postdeploy) phase_postdeploy ;;
   smoke-setup) phase_smoke_setup ;;
   cleanup) phase_cleanup ;;
+  supp-preflight) phase_supp_preflight ;;
+  orphan-run) phase_orphan_run ;;
+  supp-postcheck) phase_supp_postcheck ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac
