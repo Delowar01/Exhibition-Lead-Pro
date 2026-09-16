@@ -369,8 +369,11 @@ async function main() {
     const ownerCrm = { contacts: (await own("GET", "/contacts")).status, leads: (await own("GET", "/leads")).status, events: (await own("GET", "/events")).status, subscriptionsCurrent: (await own("GET", "/subscriptions/current")).status, rbacRoles: (await own("GET", "/rbac/roles")).status, aRoleById: (await own("GET", `/rbac/roles/${fx.managerRoleId}`)).status };
     check("platform owner remains fenced from customer CRM and tenant billing (403 on every tenant module)", Object.entries(ownerCrm).filter(([k]) => k !== "rbacRoles" && k !== "aRoleById").every(([, s]) => s === 403), ownerCrm);
     note("platform owner on the tenant RBAC role endpoints (reported, not gated: /rbac is a team-management module, not customer CRM data)", { rbacRoles: ownerCrm.rbacRoles, aRoleById: ownerCrm.aRoleById });
+    const ownerMe = await own("GET", "/auth/me");
+    const ownerLoginPlatform = await api(PLATFORM, "POST", "/auth/login", { email: OWNER_EMAIL, password: OWNER_PASSWORD });
+    check("platform owner's own projection carries no tenant matrix (legacy {} — bypass role, no role join) on login and /auth/me", ownerLoginPlatform.status === 200 && JSON.stringify(ownerLoginPlatform.json?.user?.permissions ?? null) === "{}" && ownerMe.status === 200 && JSON.stringify(ownerMe.json?.permissions ?? null) === "{}", { login: authView(ownerLoginPlatform), me: meView(ownerMe) });
     const ownerLoginOnTenant = await api(TENANT, "POST", "/auth/login", { email: OWNER_EMAIL, password: OWNER_PASSWORD });
-    check("platform owner's own projection carries no tenant matrix (legacy {} — bypass role, no role join)", ownerLoginOnTenant.status === 200 && JSON.stringify(ownerLoginOnTenant.json?.user?.permissions ?? null) === "{}", authView(ownerLoginOnTenant));
+    check("platform owner cannot sign in on the tenant host (403 host routing, no token, no projection)", ownerLoginOnTenant.status === 403 && !ownerLoginOnTenant.json?.token && ownerLoginOnTenant.json?.user == null, authView(ownerLoginOnTenant));
   });
 
   // ── console / page errors ───────────────────────────────────────────────────
