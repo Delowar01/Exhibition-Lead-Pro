@@ -71,6 +71,8 @@ async function uiLogin(page, host, email, password) { await page.goto(`${host}/l
 async function ownerSignIn(page) { await uiLogin(page, PLATFORM, OWNER_EMAIL, OWNER_PASSWORD); await page.waitForURL((u) => u.pathname.startsWith("/platform"), { timeout: 20000 }); await page.waitForTimeout(800); }
 const bodyText = async (page) => (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ");
 const txt = async (page, id) => (await page.getByTestId(id).innerText().catch(() => null))?.replace(/\s+/g, " ").trim() ?? null;
+// The plan badge is rendered with CSS `capitalize`, which innerText applies ("Free"); compare case-insensitively.
+const planTxt = async (page) => ((await txt(page, "detail-plan")) ?? "").toLowerCase();
 const closeManager = (page) => page.getByTestId("sub-detail").getByRole("button", { name: "Close" }).click();
 const auditHas = async (page, label) => (await page.getByTestId("detail-audit").getByText(label, { exact: true }).count()) > 0;
 
@@ -207,7 +209,7 @@ async function main() {
       await p.goto(`${PLATFORM}/platform/companies/${fx.A.cid}`, { waitUntil: "domcontentloaded" });
       await p.getByTestId("company-detail").waitFor({ state: "visible" });
       await p.getByTestId("detail-usage").waitFor({ state: "visible" });
-      const v = { status: await txt(p, "detail-status"), access: await txt(p, "detail-access"), plan: await txt(p, "detail-plan"), contact: await txt(p, "profile-primaryContactName"), users: await txt(p, "count-users"), usageEvents: (await p.getByTestId("detail-usage-events").count()) > 0, allowed: await txt(p, "detail-allowed-actions") };
+      const v = { status: await txt(p, "detail-status"), access: await txt(p, "detail-access"), plan: await planTxt(p), contact: await txt(p, "profile-primaryContactName"), users: await txt(p, "count-users"), usageEvents: (await p.getByTestId("detail-usage-events").count()) > 0, allowed: await txt(p, "detail-allowed-actions") };
       check("tenant page renders the canonical state, profile, footprint and usage", v.status === "Active" && v.access === "Full access" && v.plan === "free" && v.contact === "B21 A contact" && v.users === "2" && v.usageEvents, v);
       const memberRows = await p.getByTestId("detail-users").getByRole("row").count();
       check("administrators and members card lists the tenant's accounts (admin + employee)", (await p.getByTestId("detail-users").getByText(fx.A.adminEmail).count()) === 1 && (await p.getByTestId("detail-users").getByText(empEmail).count()) === 1, { rows: memberRows });
@@ -288,8 +290,8 @@ async function main() {
       await shot(p, "manager-after-actions");
       await closeManager(p);
       await p.getByTestId("sub-detail").waitFor({ state: "hidden" });
-      await waitFor(async () => (await txt(p, "detail-plan")) === "professional" && (await auditHas(p, "Plan changed")) && (await auditHas(p, "Limit overrides changed")), AUDIT_WAIT_MS, 1000);
-      check("tenant page reflects the plan and lists both lifecycle actions on the trail", (await txt(p, "detail-plan")) === "professional" && (await auditHas(p, "Plan changed")) && (await auditHas(p, "Limit overrides changed")));
+      await waitFor(async () => (await planTxt(p)) === "professional" && (await auditHas(p, "Plan changed")) && (await auditHas(p, "Limit overrides changed")), AUDIT_WAIT_MS, 1000);
+      check("tenant page reflects the plan and lists both lifecycle actions on the trail", (await planTxt(p)) === "professional" && (await auditHas(p, "Plan changed")) && (await auditHas(p, "Limit overrides changed")), { plan: await planTxt(p), planChanged: await auditHas(p, "Plan changed"), limitsChanged: await auditHas(p, "Limit overrides changed") });
       // Suspend (confirmed) → blocked; reactivate (confirmed) → restored.
       await p.getByTestId("detail-toggle-status").click();
       await p.getByTestId("company-confirm-dialog").waitFor({ state: "visible" });
@@ -305,7 +307,7 @@ async function main() {
       await waitFor(async () => (await txt(p, "detail-status")) === "Active", 15000);
       const restored = await tenantLogin(fx.A.adminEmail, PW.aAdmin);
       TA = restored.json?.token ?? TA;
-      check("reactivate (confirmed): previous state restored (Active / Full access / professional), tenant login works again", (await txt(p, "detail-status")) === "Active" && (await txt(p, "detail-access")) === "Full access" && (await txt(p, "detail-plan")) === "professional" && restored.status === 200, { login: authView(restored) });
+      check("reactivate (confirmed): previous state restored (Active / Full access / professional), tenant login works again", (await txt(p, "detail-status")) === "Active" && (await txt(p, "detail-access")) === "Full access" && (await planTxt(p)) === "professional" && restored.status === 200, { status: await txt(p, "detail-status"), access: await txt(p, "detail-access"), plan: await planTxt(p), login: authView(restored) });
       await waitFor(async () => (await auditHas(p, "Suspended")) && (await auditHas(p, "Suspension lifted")), AUDIT_WAIT_MS, 1000);
       check("suspension and its lifting are on the tenant's trail", (await auditHas(p, "Suspended")) && (await auditHas(p, "Suspension lifted")));
       await shot(p, "detail-a-reactivated");
@@ -327,7 +329,8 @@ async function main() {
     const stateRows = await waitFor(async () => { const rows = teamRows(await trail(fx.A.cid), fx.A.empId); const d = rows.filter((r) => /\/disable$/.test(String(r.metadata?.path ?? ""))); const e = rows.filter((r) => /\/enable$/.test(String(r.metadata?.path ?? ""))); return d.length && e.length ? { d, e } : null; }, AUDIT_WAIT_MS, 1000);
     check("disable and enable appear exactly once each on tenant A's trail, attributed to the platform owner", stateRows?.d.length === 1 && stateRows?.e.length === 1 && stateRows.d[0].userName === OWNER_EMAIL && stateRows.e[0].userName === OWNER_EMAIL, { disable: stateRows?.d.map(rowView), enable: stateRows?.e.map(rowView) });
     const bTrail = await trail(fx.B.cid);
-    check("tenant B's trail never carries these actions", teamRows(bTrail, fx.A.empId).length === 0 && !(bTrail?.items ?? []).some((r) => r.userName === OWNER_EMAIL && r.entityType === "team"), { bTeamRowsForEmp: teamRows(bTrail, fx.A.empId).length, bTotal: bTrail?.total });
+    const bLeak = (bTrail?.items ?? []).filter((r) => r.entityId === String(fx.A.empId) || String(r.metadata?.path ?? "").includes(`/users/${fx.A.empId}`));
+    check("tenant B's trail never carries these actions (its only team row is its own administrator's creation)", teamRows(bTrail, fx.A.empId).length === 0 && bLeak.length === 0, { bTeamRowsForEmp: teamRows(bTrail, fx.A.empId).length, bLeak: bLeak.length, bTotal: bTrail?.total, bActions: (bTrail?.items ?? []).map((r) => r.action) });
     const secA = await A2.get(`/security/audit?entityType=team&entityId=${fx.A.empId}`);
     const secB = await B.get(`/security/audit?entityType=team&entityId=${fx.A.empId}`);
     const secARows = listOf(secA.json).filter((r) => r.userName === OWNER_EMAIL);
