@@ -1425,6 +1425,18 @@ export interface Company {
   /** @nullable */
   website?: string | null;
   /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  registrationNumber?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  primaryContactName?: string | null;
+  /** @nullable */
+  primaryContactEmail?: string | null;
+  /** @nullable */
   logoUrl?: string | null;
   plan: CompanyPlan;
   status: CompanyStatus;
@@ -1469,6 +1481,18 @@ export interface CompanyInput {
   vatNumber?: string | null;
   /** @nullable */
   website?: string | null;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  registrationNumber?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  primaryContactName?: string | null;
+  /** @nullable */
+  primaryContactEmail?: string | null;
   plan?: CompanyInputPlan;
 }
 
@@ -1484,6 +1508,43 @@ export interface CompanyUpdate {
   vatNumber?: string | null;
   /** @nullable */
   website?: string | null;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  registrationNumber?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  primaryContactName?: string | null;
+  /** @nullable */
+  primaryContactEmail?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type CompanyAuditEntryMetadata = { [key: string]: unknown } | null;
+
+export interface CompanyAuditEntry {
+  id: number;
+  action: string;
+  /** @nullable */
+  entityType: string | null;
+  /** @nullable */
+  entityId: string | null;
+  /** @nullable */
+  userName: string | null;
+  createdAt: string;
+  /** @nullable */
+  metadata: CompanyAuditEntryMetadata;
+}
+
+export interface CompanyAuditList {
+  items: CompanyAuditEntry[];
+  total: number;
+  limit: number;
 }
 
 export type ContactStatus = typeof ContactStatus[keyof typeof ContactStatus];

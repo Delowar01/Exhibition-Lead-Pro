@@ -24,6 +24,7 @@ import VerifyEmail from "@/pages/VerifyEmail";
 import AcceptInvite from "@/pages/AcceptInvite";
 const PlatformDashboard = lazy(() => import("@/pages/platform/Dashboard"));
 const PlatformCompanies = lazy(() => import("@/pages/platform/Companies"));
+const PlatformCompanyDetail = lazy(() => import("@/pages/platform/CompanyDetail"));
 const PlatformUsers = lazy(() => import("@/pages/platform/Users"));
 const PlatformSubscriptions = lazy(() => import("@/pages/platform/Subscriptions"));
 const PlatformAnalytics = lazy(() => import("@/pages/platform/Analytics"));
@@ -226,6 +227,9 @@ function Router() {
       </Route>
       <Route path="/platform/companies">
         {() => <ProtectedRoute component={PlatformCompanies} role="platform" layout={PlatformLayout} />}
+      </Route>
+      <Route path="/platform/companies/:id">
+        {() => <ProtectedRoute component={PlatformCompanyDetail} role="platform" layout={PlatformLayout} />}
       </Route>
       <Route path="/platform/users">
         {() => <ProtectedRoute component={PlatformUsers} role="platform" layout={PlatformLayout} />}

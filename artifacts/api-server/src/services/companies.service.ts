@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as companiesRepo from "../repositories/companies.repository.js";
+import * as auditRepo from "../repositories/audit.repository.js";
 import * as subsRepo from "../repositories/subscriptions.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { ensureStages } from "./pipeline.service.js";
@@ -148,6 +149,42 @@ export async function deleteCompany(user: AuthUser, id: number) {
   if (user.role !== "platform_owner") throw new AppError(403, "Forbidden");
   await companiesRepo.remove(id);
   return { success: true, message: "Company deleted" };
+}
+
+// Batch 21 — the platform admin panel shows a tenant's ADMINISTRATIVE audit trail:
+// subscription lifecycle (written by the lifecycle service with before/after state),
+// company profile / lifecycle requests and team-administration requests (router-level
+// audit rows). CRM modules are never included, IP addresses are never returned and
+// metadata is reduced to an allow-listed set of keys (the lifecycle service already
+// writes no provider ids, payloads or PII).
+export const COMPANY_AUDIT_ENTITY_TYPES = ["subscription", "company", "team"] as const;
+export const COMPANY_AUDIT_LIMIT = 50;
+const COMPANY_AUDIT_METADATA_KEYS = ["before", "after", "changed", "reason", "plan", "trialDays", "trialExpiresAt", "limits", "path", "method", "eventType", "outcome", "providerClosed", "rule", "role", "createdByPlatform"] as const;
+
+function sanitizeAuditMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const out: Record<string, unknown> = {};
+  for (const key of COMPANY_AUDIT_METADATA_KEYS) if (key in metadata) out[key] = metadata[key];
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+export async function listCompanyAudit(id: number) {
+  const company = await companiesRepo.findById(id);
+  if (!company) throw new AppError(404, "Company not found");
+  const { items, total } = await auditRepo.listCompanyAuditByEntityTypes(id, COMPANY_AUDIT_ENTITY_TYPES, COMPANY_AUDIT_LIMIT);
+  return {
+    items: items.map((r) => ({
+      id: r.id,
+      action: r.action,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      userName: r.userName,
+      createdAt: r.createdAt.toISOString(),
+      metadata: sanitizeAuditMetadata(r.metadata),
+    })),
+    total,
+    limit: COMPANY_AUDIT_LIMIT,
+  };
 }
 
 async function logStatus(user: AuthUser, id: number, logType: string, verb: string) {

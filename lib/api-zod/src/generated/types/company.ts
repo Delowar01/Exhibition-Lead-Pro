@@ -23,6 +23,18 @@ export interface Company {
   /** @nullable */
   website?: string | null;
   /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  registrationNumber?: string | null;
+  /** @nullable */
+  timezone?: string | null;
+  /** @nullable */
+  currency?: string | null;
+  /** @nullable */
+  primaryContactName?: string | null;
+  /** @nullable */
+  primaryContactEmail?: string | null;
+  /** @nullable */
   logoUrl?: string | null;
   plan: CompanyPlan;
   status: CompanyStatus;

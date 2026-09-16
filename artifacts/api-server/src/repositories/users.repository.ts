@@ -1,5 +1,5 @@
 import { db, usersTable, companiesTable, loginAttemptsTable, trustedDevicesTable } from "@workspace/db";
-import { eq, ilike, count, desc, and, ne, inArray, type SQL } from "drizzle-orm";
+import { eq, ilike, count, desc, and, ne, inArray, or, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { tenantOnly, notDeleted } from "./base.js";
@@ -25,7 +25,7 @@ export async function list(
   opts: { search?: string; role?: string; companyId?: string; limit: number; offset: number },
 ): Promise<{ rows: UserRow[]; total: number }> {
   const extra = [notDeleted(usersTable.deletedAt)];
-  if (opts.search) extra.push(ilike(usersTable.name, `%${opts.search}%`));
+  if (opts.search) extra.push(or(ilike(usersTable.name, `%${opts.search}%`), ilike(usersTable.email, `%${opts.search}%`))!);
   if (opts.role) extra.push(eq(usersTable.role, opts.role));
   if (user.role === "platform_owner") {
     if (opts.companyId && !isNaN(parseInt(opts.companyId))) extra.push(eq(usersTable.companyId, parseInt(opts.companyId)));

@@ -1,5 +1,5 @@
 import { db, auditLogsTable } from "@workspace/db";
-import { and, desc, eq, gte, lte, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, lte, ilike, or, sql, inArray, type SQL } from "drizzle-orm";
 import { tenantScope, type AuthUser } from "../middlewares/requireAuth.js";
 
 export type AuditLogRow = typeof auditLogsTable.$inferSelect;
@@ -63,5 +63,27 @@ export async function listAuditLogs(
     db.select({ count: sql<number>`count(*)::int` }).from(auditLogsTable).where(where),
   ]);
 
+  return { items, total: countRows[0]?.count ?? 0 };
+}
+
+// Batch 21 — platform-owner view of ONE tenant's administrative trail by explicit
+// company id, restricted to the given entity types (the service passes the
+// platform allow-list: subscription / company / team — never CRM modules).
+// Newest first; `limit` rows plus the total for the same filter.
+export async function listCompanyAuditByEntityTypes(
+  companyId: number,
+  entityTypes: readonly string[],
+  limit: number,
+): Promise<{ items: AuditLogRow[]; total: number }> {
+  const where = or(
+    and(eq(auditLogsTable.companyId, companyId), inArray(auditLogsTable.entityType, [...entityTypes])),
+    // Platform-owner requests on this tenant: the router-level audit rows carry the
+    // OWNER's company id (null) and the target company id as the entity id.
+    and(eq(auditLogsTable.entityType, "company"), eq(auditLogsTable.entityId, String(companyId))),
+  )!;
+  const [items, countRows] = await Promise.all([
+    db.select().from(auditLogsTable).where(where).orderBy(desc(auditLogsTable.createdAt), desc(auditLogsTable.id)).limit(limit),
+    db.select({ count: sql<number>`count(*)::int` }).from(auditLogsTable).where(where),
+  ]);
   return { items, total: countRows[0]?.count ?? 0 };
 }

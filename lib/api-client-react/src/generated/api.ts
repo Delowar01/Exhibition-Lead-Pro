@@ -82,6 +82,7 @@ import type {
   CommunicationInput,
   CommunicationList,
   Company,
+  CompanyAuditList,
   CompanyInput,
   CompanyList,
   CompanyUpdate,
@@ -5667,6 +5668,83 @@ export const useActivateCompany = <TError = ErrorType<unknown>,
       return useMutation(getActivateCompanyMutationOptions(options));
     }
 
+export const getListCompanyAuditUrl = (id: number,) => {
+
+
+
+
+  return `/api/companies/${id}/audit`
+}
+
+/**
+ * @summary Platform-owner administrative audit trail for one tenant — the 50 most recent subscription / company / team entries plus the total count
+ */
+export const listCompanyAudit = async (id: number, options?: RequestInit): Promise<CompanyAuditList> => {
+
+  return customFetch<CompanyAuditList>(getListCompanyAuditUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCompanyAuditQueryKey = (id: number,) => {
+    return [
+    `/api/companies/${id}/audit`
+    ] as const;
+    }
+
+
+export const getListCompanyAuditQueryOptions = <TData = Awaited<ReturnType<typeof listCompanyAudit>>, TError = ErrorType<void>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCompanyAudit>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCompanyAuditQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCompanyAudit>>> = ({ signal }) => listCompanyAudit(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCompanyAudit>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCompanyAuditQueryResult = NonNullable<Awaited<ReturnType<typeof listCompanyAudit>>>
+export type ListCompanyAuditQueryError = ErrorType<void>
+
+
+/**
+ * @summary Platform-owner administrative audit trail for one tenant — the 50 most recent subscription / company / team entries plus the total count
+ */
+
+export function useListCompanyAudit<TData = Awaited<ReturnType<typeof listCompanyAudit>>, TError = ErrorType<void>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCompanyAudit>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCompanyAuditQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getListUsersUrl = (params?: ListUsersParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -5683,7 +5761,7 @@ export const getListUsersUrl = (params?: ListUsersParams,) => {
 }
 
 /**
- * @summary List users (scoped to company or platform)
+ * @summary List users (scoped to company or platform; search matches name or e-mail; companyId filter is honoured for the platform owner only)
  */
 export const listUsers = async (params?: ListUsersParams, options?: RequestInit): Promise<UserList> => {
 
@@ -5730,7 +5808,7 @@ export type ListUsersQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List users (scoped to company or platform)
+ * @summary List users (scoped to company or platform; search matches name or e-mail; companyId filter is honoured for the platform owner only)
  */
 
 export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<unknown>>(

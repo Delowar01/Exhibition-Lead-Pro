@@ -1,4 +1,4 @@
-import { usersTable, db } from "@workspace/db";
+import { usersTable, db, auditLogsTable } from "@workspace/db";
 import { assertCapacity, roleFamily } from "./entitlements.service.js";
 import { normalizeRole, type AuthUser } from "../middlewares/requireAuth.js";
 import { AppError } from "../middlewares/errorHandler.js";
@@ -164,7 +164,7 @@ export async function createUser(user: AuthUser, input: CreateUserInput) {
   const family = cid != null ? roleFamily(role) : null;
   const created = await db.transaction(async (tx) => {
     if (cid != null && family) await assertCapacity(tx, cid, family, 1);
-    return usersRepo.insert(
+    const row = await usersRepo.insert(
       {
         email,
         passwordHash,
@@ -177,6 +177,21 @@ export async function createUser(user: AuthUser, input: CreateUserInput) {
       },
       tx,
     );
+    // Batch 21: an account created for a tenant by the platform owner is recorded on
+    // the TENANT's administrative trail (role only — no e-mail, name or password).
+    if (isPlatform && cid != null && cid !== user.companyId) {
+      await tx.insert(auditLogsTable).values({
+        companyId: cid,
+        userId: user.id,
+        userName: user.email,
+        action: "team.account_created",
+        entityType: "team",
+        entityId: String(row.id),
+        metadata: { role, createdByPlatform: true },
+        ipAddress: null,
+      });
+    }
+    return row;
   });
   const name2 = cid ? await usersRepo.companyName(cid) : null;
   return formatUser(created, name2);

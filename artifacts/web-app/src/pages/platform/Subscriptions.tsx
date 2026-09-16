@@ -1,32 +1,16 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   usePlatformListSubscriptions,
   usePlatformSubscriptionMetrics,
-  usePlatformGetSubscription,
-  usePlatformListSubscriptionEvents,
   usePlatformBillingStatus,
   usePlatformListPrices,
-  usePlatformSetSubscriptionPlan,
-  usePlatformStartTrial,
-  usePlatformActivateSubscription,
-  usePlatformMarkSubscriptionPastDue,
-  usePlatformCancelSubscription,
-  usePlatformExpireSubscription,
-  usePlatformSuspendSubscription,
-  usePlatformReactivateSubscription,
-  usePlatformSetSubscriptionLimits,
-  usePlatformConvertSubscriptionToManual,
-  usePlatformSyncSubscription,
   usePlatformRegisterPrice,
   usePlatformUpdatePrice,
   getPlatformListSubscriptionsQueryKey,
-  getPlatformGetSubscriptionQueryKey,
-  getPlatformListSubscriptionEventsQueryKey,
   getPlatformSubscriptionMetricsQueryKey,
   getPlatformListPricesQueryKey,
-  ApiError,
-  type PlatformSubscriptionDetail,
   type PlatformSubscriptionListItem,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,14 +18,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { PageHeader, MetricCard, StatusBadge, TableSkeleton, EmptyState } from "@/components/ds";
+import { PageHeader, MetricCard, StatusBadge, TableSkeleton, EmptyState, ErrorState } from "@/components/ds";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
-import { CreditCard, Search, Building2, RefreshCw } from "lucide-react";
+import { CreditCard, Search, Building2 } from "lucide-react";
+import { Link } from "wouter";
+import { SubscriptionManager, STATUSES, PLANS, STATUS_LABEL, statusTone, fmt, errMessage, invalidateCompanyQueries } from "@/components/platform/SubscriptionManager";
 
 // Batch 20 — truthful Platform Subscriptions screen. Everything on this page is
 // real API data: canonical subscription rows with filters + pagination, counts by
@@ -49,29 +31,15 @@ import { CreditCard, Search, Building2, RefreshCw } from "lucide-react";
 // from verified provider prices (otherwise "Unavailable" + reason), and manual
 // lifecycle actions with confirmation dialogs. No fake rows, no random numbers,
 // no growth percentages, no non-functional buttons.
+// Batch 21 — the detail / lifecycle dialog lives in components/platform/
+// SubscriptionManager (shared with the Companies list and the tenant detail
+// page); `?company=<id>` deep-links straight into it.
 
 const RETURN_URL_REASON: Record<string, string> = {
   RETURN_URL_MISSING: "not set (BILLING_RETURN_URL / APP_BASE_URL)",
   RETURN_URL_INVALID: "invalid (must be an absolute URL without credentials, query or fragment)",
   RETURN_URL_INSECURE: "insecure (production requires HTTPS)",
   RETURN_URL_LOCALHOST: "localhost is not allowed in production",
-};
-
-const STATUSES = ["trialing", "active", "past_due", "cancelled", "expired", "suspended"] as const;
-const PLANS = ["free", "starter", "professional", "business", "enterprise"] as const;
-const STATUS_LABEL: Record<string, string> = { trialing: "Trial", active: "Active", past_due: "Past due", cancelled: "Cancelled", expired: "Expired", suspended: "Suspended" };
-const ACTION_LABEL: Record<string, string> = {
-  set_plan: "Change plan",
-  start_trial: "Start / extend trial",
-  activate: "Activate",
-  mark_past_due: "Mark past due",
-  cancel: "Cancel (read-only)",
-  expire: "Expire (blocked)",
-  suspend: "Suspend (blocked)",
-  reactivate: "Lift suspension",
-  set_limits: "Set limit overrides",
-  convert_to_manual: "Convert to manual",
-  sync_provider: "Sync from provider",
 };
 const REVENUE_REASON: Record<string, string> = {
   NO_VERIFIED_PRICES: "No provider prices have been registered yet.",
@@ -81,14 +49,6 @@ const REVENUE_REASON: Record<string, string> = {
   PARTIAL_UNPRICED: "Some active subscriptions are not bound to a registered price.",
 };
 
-function tone(status: string): "success" | "warning" | "destructive" | "neutral" {
-  if (status === "active" || status === "trialing") return "success";
-  if (status === "past_due" || status === "cancelled") return "warning";
-  return "destructive";
-}
-function fmt(d: string | null | undefined): string {
-  return d ? format(new Date(d), "MMM d, yyyy") : "—";
-}
 function money(minor: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(minor / 100);
@@ -96,33 +56,37 @@ function money(minor: number, currency: string): string {
     return `${(minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }
 }
-function errMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    const d = err.data as { error?: string; code?: string } | null;
-    return d?.error ? `${d.error}${d.code ? ` (${d.code})` : ""}` : err.message;
-  }
-  return err instanceof Error ? err.message : "Request failed";
-}
 
-type Verb = "set_plan" | "start_trial" | "activate" | "mark_past_due" | "cancel" | "expire" | "suspend" | "reactivate" | "set_limits" | "convert_to_manual" | "sync_provider";
+function companyFromSearch(search: string): number | null {
+  const raw = new URLSearchParams(search).get("company");
+  const id = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
 
 export default function PlatformSubscriptions() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const searchString = useSearch();
+  const [, navigate] = useLocation();
   const [status, setStatus] = useState("all");
   const [plan, setPlan] = useState("all");
   const [source, setSource] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [pending, setPending] = useState<{ verb: Verb; companyId: number } | null>(null);
-  const [planChoice, setPlanChoice] = useState<string>("starter");
-  const [trialDays, setTrialDays] = useState<string>("14");
-  const [reason, setReason] = useState("");
-  const [limitInputs, setLimitInputs] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<number | null>(() => companyFromSearch(searchString));
   const [busy, setBusy] = useState(false);
   const [priceForm, setPriceForm] = useState({ planId: "starter", providerPriceId: "" });
   const limit = 20;
+
+  // Deep link (Companies list / tenant detail → "Manage subscription").
+  useEffect(() => {
+    const fromUrl = companyFromSearch(searchString);
+    if (fromUrl != null) setSelected(fromUrl);
+  }, [searchString]);
+  const closeManager = () => {
+    setSelected(null);
+    if (companyFromSearch(searchString) != null) navigate("/platform/subscriptions", { replace: true });
+  };
 
   const params = useMemo(
     () => ({
@@ -139,107 +103,17 @@ export default function PlatformSubscriptions() {
   const metrics = usePlatformSubscriptionMetrics({ query: { queryKey: getPlatformSubscriptionMetricsQueryKey() } });
   const providerStatus = usePlatformBillingStatus();
   const prices = usePlatformListPrices({ query: { queryKey: getPlatformListPricesQueryKey() } });
-  const detail = usePlatformGetSubscription(selected ?? 0, { query: { enabled: selected != null, queryKey: getPlatformGetSubscriptionQueryKey(selected ?? 0) } });
-  const events = usePlatformListSubscriptionEvents(selected ?? 0, { query: { enabled: selected != null, queryKey: getPlatformListSubscriptionEventsQueryKey(selected ?? 0) } });
-
-  const m = {
-    setPlan: usePlatformSetSubscriptionPlan(),
-    startTrial: usePlatformStartTrial(),
-    activate: usePlatformActivateSubscription(),
-    pastDue: usePlatformMarkSubscriptionPastDue(),
-    cancel: usePlatformCancelSubscription(),
-    expire: usePlatformExpireSubscription(),
-    suspend: usePlatformSuspendSubscription(),
-    reactivate: usePlatformReactivateSubscription(),
-    limits: usePlatformSetSubscriptionLimits(),
-    convert: usePlatformConvertSubscriptionToManual(),
-    sync: usePlatformSyncSubscription(),
-    registerPrice: usePlatformRegisterPrice(),
-    updatePrice: usePlatformUpdatePrice(),
-  };
-
-  const refreshAll = (companyId?: number) => {
-    void queryClient.invalidateQueries({ queryKey: getPlatformListSubscriptionsQueryKey() });
-    void queryClient.invalidateQueries({ queryKey: getPlatformSubscriptionMetricsQueryKey() });
-    if (companyId != null) void queryClient.invalidateQueries({ queryKey: getPlatformGetSubscriptionQueryKey(companyId) });
-  };
-
-  const openAction = (verb: Verb, d: PlatformSubscriptionDetail) => {
-    if (verb === "set_plan") setPlanChoice(d.plan);
-    if (verb === "start_trial") setTrialDays("14");
-    if (verb === "suspend") setReason("");
-    if (verb === "set_limits") {
-      const next: Record<string, string> = {};
-      for (const [k, v] of Object.entries(d.limitOverrides ?? {})) next[k] = v == null ? "" : String(v);
-      setLimitInputs(next);
-    }
-    setPending({ verb, companyId: d.companyId });
-  };
-
-  const runAction = async () => {
-    if (!pending) return;
-    const { verb, companyId } = pending;
-    setBusy(true);
-    try {
-      switch (verb) {
-        case "set_plan":
-          await m.setPlan.mutateAsync({ companyId, data: { plan: planChoice as (typeof PLANS)[number] } });
-          break;
-        case "start_trial":
-          await m.startTrial.mutateAsync({ companyId, data: { trialDays: Math.max(1, Math.min(365, Number(trialDays) || 14)) } });
-          break;
-        case "activate":
-          await m.activate.mutateAsync({ companyId });
-          break;
-        case "mark_past_due":
-          await m.pastDue.mutateAsync({ companyId });
-          break;
-        case "cancel":
-          await m.cancel.mutateAsync({ companyId });
-          break;
-        case "expire":
-          await m.expire.mutateAsync({ companyId });
-          break;
-        case "suspend":
-          await m.suspend.mutateAsync({ companyId, data: { reason: reason.trim() || undefined } });
-          break;
-        case "reactivate":
-          await m.reactivate.mutateAsync({ companyId });
-          break;
-        case "set_limits": {
-          const limits: Record<string, number | null> = {};
-          for (const k of ["contacts", "events", "admins", "employees", "scans", "storageMb"]) {
-            const raw = (limitInputs[k] ?? "").trim();
-            limits[k] = raw === "" ? null : Math.max(0, Math.floor(Number(raw)));
-          }
-          await m.limits.mutateAsync({ companyId, data: { limits } });
-          break;
-        }
-        case "convert_to_manual":
-          await m.convert.mutateAsync({ companyId });
-          break;
-        case "sync_provider":
-          await m.sync.mutateAsync({ companyId });
-          break;
-      }
-      toast({ title: `${ACTION_LABEL[verb]} applied` });
-      refreshAll(companyId);
-      setPending(null);
-    } catch (err) {
-      toast({ title: `${ACTION_LABEL[verb]} failed`, description: errMessage(err), variant: "destructive" });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const registerPriceMutation = usePlatformRegisterPrice();
+  const updatePriceMutation = usePlatformUpdatePrice();
 
   const registerPrice = async () => {
     setBusy(true);
     try {
-      await m.registerPrice.mutateAsync({ data: { planId: priceForm.planId as (typeof PLANS)[number], providerPriceId: priceForm.providerPriceId.trim() } });
+      await registerPriceMutation.mutateAsync({ data: { planId: priceForm.planId as (typeof PLANS)[number], providerPriceId: priceForm.providerPriceId.trim() } });
       toast({ title: "Price registered" });
       setPriceForm({ ...priceForm, providerPriceId: "" });
       void queryClient.invalidateQueries({ queryKey: getPlatformListPricesQueryKey() });
-      refreshAll();
+      invalidateCompanyQueries(queryClient);
     } catch (err) {
       toast({ title: "Price registration failed", description: errMessage(err), variant: "destructive" });
     } finally {
@@ -249,9 +123,9 @@ export default function PlatformSubscriptions() {
 
   const togglePrice = async (id: number, active: boolean) => {
     try {
-      await m.updatePrice.mutateAsync({ id, data: { active } });
+      await updatePriceMutation.mutateAsync({ id, data: { active } });
       void queryClient.invalidateQueries({ queryKey: getPlatformListPricesQueryKey() });
-      refreshAll();
+      invalidateCompanyQueries(queryClient);
     } catch (err) {
       toast({ title: "Price update failed", description: errMessage(err), variant: "destructive" });
     }
@@ -261,11 +135,14 @@ export default function PlatformSubscriptions() {
   const pages = Math.max(1, Math.ceil(total / limit));
   const revenue = metrics.data?.revenue;
   const byStatus = new Map((metrics.data?.byStatus ?? []).map((s) => [s.status, s.count]));
-  const d = detail.data;
 
   return (
     <div className="space-y-6" data-testid="platform-subscriptions">
-      <PageHeader title="Subscriptions" description="Canonical subscription state for every company — manual lifecycle controls and provider billing." />
+      <PageHeader
+        title="Subscriptions"
+        description="Canonical subscription state for every company — manual lifecycle controls and provider billing."
+        actions={<Button asChild variant="outline"><Link href="/platform/companies"><Building2 className="mr-2 h-4 w-4" />Companies</Link></Button>}
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <div data-testid="mrr-card">
@@ -318,6 +195,8 @@ export default function PlatformSubscriptions() {
         <CardContent className="p-0">
           {list.isLoading ? (
             <div className="p-6"><TableSkeleton rows={5} /></div>
+          ) : list.isError ? (
+            <div className="p-6"><ErrorState title="Subscriptions could not be loaded" description={errMessage(list.error)} action={<Button variant="outline" size="sm" onClick={() => void list.refetch()}>Retry</Button>} /></div>
           ) : (list.data?.subscriptions.length ?? 0) === 0 ? (
             <div className="p-6"><EmptyState icon={Building2} title="No subscriptions match" description="Adjust the filters to see other companies." /></div>
           ) : (
@@ -337,9 +216,9 @@ export default function PlatformSubscriptions() {
                 <TableBody>
                   {list.data?.subscriptions.map((s: PlatformSubscriptionListItem) => (
                     <TableRow key={s.id} data-testid={`sub-row-${s.companyId}`}>
-                      <TableCell className="font-medium">{s.companyName}</TableCell>
+                      <TableCell className="font-medium"><Link href={`/platform/companies/${s.companyId}`} className="hover:underline">{s.companyName}</Link></TableCell>
                       <TableCell className="capitalize">{s.plan}</TableCell>
-                      <TableCell><StatusBadge tone={tone(s.status)} showDot>{STATUS_LABEL[s.status] ?? s.status}</StatusBadge></TableCell>
+                      <TableCell><StatusBadge tone={statusTone(s.status)} showDot>{STATUS_LABEL[s.status] ?? s.status}</StatusBadge></TableCell>
                       <TableCell className="capitalize">{s.billingSource}{s.providerLinked ? " · linked" : ""}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{s.accessMode.replace("_", "-")}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{fmt(s.currentPeriodEndsAt ?? s.trialExpiresAt)}{s.cancelAtPeriodEnd ? " (cancels)" : ""}</TableCell>
@@ -379,6 +258,8 @@ export default function PlatformSubscriptions() {
                 <div data-testid="provider-mode">Provider mode: {providerStatus.data.stripeMode ? <Badge variant={providerStatus.data.stripeMode === "live" ? "default" : "secondary"}>{providerStatus.data.stripeMode}</Badge> : <span className="text-destructive">invalid setting</span>}</div>
                 <div data-testid="provider-return-url">Billing return URL: {providerStatus.data.returnUrlConfigured ? "configured" : <span className="text-destructive">{RETURN_URL_REASON[providerStatus.data.returnUrlReason ?? ""] ?? "not usable"} — tenant checkout and portal are unavailable until fixed</span>}</div>
               </>
+            ) : providerStatus.isError ? (
+              <ErrorState title="Provider status unavailable" description={errMessage(providerStatus.error)} />
             ) : (
               <div className="text-muted-foreground">Loading…</div>
             )}
@@ -433,153 +314,7 @@ export default function PlatformSubscriptions() {
         </Card>
       </div>
 
-      {/* ── Detail / manage dialog ───────────────────────────────────────── */}
-      <Dialog open={selected != null} onOpenChange={(o) => !o && !busy && setSelected(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="sub-detail">
-          {/* Title + description are always rendered (accessible name while the detail loads). */}
-          <DialogHeader>
-            <DialogTitle>{d ? (d.companyName ?? `Company ${d.companyId}`) : "Subscription"}</DialogTitle>
-            <DialogDescription>
-              {d ? (
-                <>
-                  <span className="capitalize">{d.plan}</span> · {STATUS_LABEL[d.status] ?? d.status} · {d.billingSource === "stripe" ? "Stripe-managed" : "manual"} · access {d.accessMode.replace("_", "-")}
-                </>
-              ) : (
-                "Loading the canonical subscription…"
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          {d ? (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2 text-sm">
-                <div><span className="text-muted-foreground">Trial ends</span><div data-testid="detail-trial">{fmt(d.trialExpiresAt)}</div></div>
-                <div><span className="text-muted-foreground">Current period ends</span><div>{fmt(d.currentPeriodEndsAt)}{d.cancelAtPeriodEnd ? " (cancels)" : ""}</div></div>
-                <div><span className="text-muted-foreground">Status changed</span><div>{fmt(d.statusChangedAt)}</div></div>
-                <div><span className="text-muted-foreground">Provider</span><div>{d.providerLinked ? `linked (${d.providerCustomerRef ?? "…"})` : "not linked"}{d.providerStatus ? ` · ${d.providerStatus}` : ""}</div></div>
-                {d.suspendedReason && <div className="sm:col-span-2"><span className="text-muted-foreground">Suspension reason</span><div>{d.suspendedReason}</div></div>}
-                {d.providerConflict && (
-                  <div className="sm:col-span-2 text-destructive" data-testid="detail-provider-conflict">
-                    <span className="font-medium">Provider conflict</span>
-                    <div>A second live provider subscription for this company was refused ({d.providerConflict.eventType}, ref {d.providerConflict.eventRef ?? "…"}, {fmt(d.providerConflict.receivedAt)}). Resolve it in the provider dashboard; the canonical subscription was not changed.</div>
-                  </div>
-                )}
-                {d.providerPriceUnmapped && (
-                  <div className="sm:col-span-2 text-destructive" data-testid="detail-price-unmapped">
-                    <span className="font-medium">Unregistered provider price</span>
-                    <div>A provider delivery could not be applied because its price is not registered ({d.providerPriceUnmapped.eventType}, ref {d.providerPriceUnmapped.eventRef ?? "…"}, {fmt(d.providerPriceUnmapped.receivedAt)}, attempts {d.providerPriceUnmapped.attempts ?? 1}). Register the price, then re-sync.</div>
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-sm font-medium mb-2">Usage and effective limits</div>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow><TableHead>Resource</TableHead><TableHead className="text-right">Used</TableHead><TableHead className="text-right">Limit</TableHead><TableHead>Source</TableHead></TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {d.usage.resources.map((r) => (
-                        <TableRow key={r.resource}>
-                          <TableCell className="capitalize">{r.resource}</TableCell>
-                          <TableCell className="text-right">{r.measurable ? r.used : "n/a"}</TableCell>
-                          <TableCell className="text-right">{r.limit == null ? "Unlimited" : r.limit}</TableCell>
-                          <TableCell className="text-muted-foreground">{r.source}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium mb-2">Actions</div>
-                <div className="flex flex-wrap gap-2" data-testid="detail-actions">
-                  {d.allowedActions.map((a) => (
-                    <Button key={a} size="sm" variant={a === "expire" || a === "suspend" || a === "cancel" ? "destructive" : "outline"} onClick={() => openAction(a as Verb, d)} data-testid={`action-${a}`}>
-                      {a === "sync_provider" && <RefreshCw className="mr-1 h-3 w-3" />}
-                      {ACTION_LABEL[a] ?? a}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              {(events.data?.events.length ?? 0) > 0 && (
-                <div>
-                  <div className="text-sm font-medium mb-2">Recent provider events</div>
-                  <ul className="text-xs text-muted-foreground space-y-1">
-                    {events.data?.events.slice(0, 8).map((e) => (
-                      <li key={e.id}>{fmt(e.receivedAt)} · {e.eventType} · {e.outcome ?? e.status}{e.failureCode ? ` · ${e.failureCode}` : ""}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="p-6"><TableSkeleton rows={4} /></div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Confirmation dialog for every lifecycle action ───────────────── */}
-      <AlertDialog open={!!pending} onOpenChange={(o) => !o && !busy && setPending(null)}>
-        <AlertDialogContent data-testid="lifecycle-dialog">
-          {pending && (
-            <>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{ACTION_LABEL[pending.verb]}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {pending.verb === "expire" && "The company will be blocked from signing in. No data is deleted."}
-                  {pending.verb === "suspend" && "The company will be blocked from signing in until the suspension is lifted. No data is deleted."}
-                  {pending.verb === "cancel" && "The company keeps read-only access. No data is deleted."}
-                  {pending.verb === "mark_past_due" && "The company keeps read-only access until it is activated again."}
-                  {pending.verb === "activate" && "The company regains full access on its manual plan."}
-                  {pending.verb === "reactivate" && "The suspension is lifted and the previous state is restored."}
-                  {pending.verb === "set_plan" && "Changes the manual plan. Effective limits follow the plan defaults unless overridden."}
-                  {pending.verb === "start_trial" && "Starts or extends a manual trial; access is full until it ends."}
-                  {pending.verb === "set_limits" && "Overrides replace the plan defaults for this company. Leave a field empty to use the plan default."}
-                  {pending.verb === "convert_to_manual" && "Allowed only when no live provider subscription remains."}
-                  {pending.verb === "sync_provider" && "Re-reads the provider subscription and applies its authoritative state."}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              {pending.verb === "set_plan" && (
-                <div className="space-y-2">
-                  <Label>Plan</Label>
-                  <Select value={planChoice} onValueChange={setPlanChoice}>
-                    <SelectTrigger data-testid="plan-select"><SelectValue /></SelectTrigger>
-                    <SelectContent>{PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-              )}
-              {pending.verb === "start_trial" && (
-                <div className="space-y-2">
-                  <Label htmlFor="trial-days">Trial length (days)</Label>
-                  <Input id="trial-days" type="number" min={1} max={365} value={trialDays} onChange={(e) => setTrialDays(e.target.value)} data-testid="trial-days" />
-                </div>
-              )}
-              {pending.verb === "suspend" && (
-                <div className="space-y-2">
-                  <Label htmlFor="suspend-reason">Reason (optional, shown to the platform team only)</Label>
-                  <Input id="suspend-reason" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} data-testid="suspend-reason" />
-                </div>
-              )}
-              {pending.verb === "set_limits" && (
-                <div className="grid grid-cols-2 gap-3">
-                  {["contacts", "events", "admins", "employees", "scans", "storageMb"].map((k) => (
-                    <div key={k} className="space-y-1">
-                      <Label htmlFor={`limit-${k}`} className="capitalize">{k}</Label>
-                      <Input id={`limit-${k}`} type="number" min={0} placeholder="plan default" value={limitInputs[k] ?? ""} onChange={(e) => setLimitInputs({ ...limitInputs, [k]: e.target.value })} data-testid={`limit-${k}`} />
-                    </div>
-                  ))}
-                </div>
-              )}
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={(e) => { e.preventDefault(); void runAction(); }} disabled={busy} data-testid="lifecycle-confirm">
-                  {busy ? "Applying…" : "Confirm"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </>
-          )}
-        </AlertDialogContent>
-      </AlertDialog>
+      <SubscriptionManager companyId={selected} onClose={closeManager} />
     </div>
   );
 }

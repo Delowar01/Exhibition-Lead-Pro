@@ -439,7 +439,7 @@ contract, and [PROJECT_FILE_MAP.md](PROJECT_FILE_MAP.md) for per-feature file pa
 | `/rbac`, `/roles` | `rbac.ts` | Custom roles + permissions | Web (admin) |
 | `/security` | `security.ts` | Security Center policies/events | Web (admin) |
 | `/profile` | `profile.ts` | Current-user profile, MFA enroll, sessions | Web + mobile |
-| `/companies` | `companies.ts` | CRM organizations (tenant-scoped) | Web + mobile |
+| `/companies` | `companies.ts` | Platform-owner tenant records (list / create / profile / suspend / activate / delete, branding by id, `GET /companies/:id/audit` administrative trail — Batch 21); `platform_owner` only. CRM organizations are `/organizations` | Web (platform) |
 | `/organizations`, `/org` | `organizations.ts`, `org.ts` | Org structure / hierarchy | Web (admin) |
 | `/departments`, `/teams`, `/territories` | `departments.ts`, `teams.ts`, `territories.ts` | Org units + assignment | Web (admin) |
 | `/contacts` | `contacts.ts` | Contact CRUD, dedupe/merge, enrichment | Web + mobile |
@@ -477,7 +477,8 @@ pages are eager, portal pages are lazy-loaded via `React.lazy` + `Suspense`.
 - **Tenant admin shell** — `components/layouts/AdminLayout.tsx` wrapping all
   `/admin/*` pages (`src/pages/admin/`).
 - **Platform Owner pages** — `components/layouts/PlatformLayout.tsx` +
-  `src/pages/platform/`: `Dashboard`, `Companies`, `Users`, `Subscriptions`,
+  `src/pages/platform/`: `Dashboard`, `Companies`, `CompanyDetail` (tenant page,
+  Batch 21), `Users`, `Subscriptions` (+ shared `components/platform/SubscriptionManager`),
   `Analytics`, `Activity`, `AiIntelligence`, `Settings`.
 - **Contact Workspace** — `admin/Contacts`, `ContactNew`, `ContactDetail`
   (+ `:tab`), `Duplicates`.

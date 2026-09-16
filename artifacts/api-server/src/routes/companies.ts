@@ -68,6 +68,12 @@ router.get("/companies/:id/branding/logo", async (req: AuthRequest, res) => {
   sendLogo(res, await branding.readLogo(companyIdParam(req)), "private, max-age=60");
 });
 
+// GET /companies/:id/audit — Batch 21: administrative audit trail of one tenant for
+// the platform admin panel (subscription / company / team entries, sanitized).
+router.get("/companies/:id/audit", async (req: AuthRequest, res) => {
+  res.json(await companies.listCompanyAudit(companyIdParam(req)));
+});
+
 // POST /companies/:id/suspend
 router.post("/companies/:id/suspend", async (req: AuthRequest, res) => {
   res.json(await companies.suspendCompany(req.user!, parseInt(String(req.params.id)), getClientIp(req)));
