@@ -450,12 +450,18 @@ phase_cleanup() {
   echo "audit_logs=$(qw "with d as (delete from audit_logs where company_id in ($C) or user_id in ($U) or user_id in (select id from users where company_id in ($C)) returning 1) select count(*) from d")"
   echo "activity_logs=$(qw "with d as (delete from activity_logs where company_id in ($C) or user_id in ($U) or user_id in (select id from users where company_id in ($C)) returning 1) select count(*) from d")"
   if [ -n "$TAG" ]; then echo "login_attempts=$(qw "with d as (delete from login_attempts where email like 'b20-smoke-${TAG}%@$DOM' returning 1) select count(*) from d")"; fi
+  echo "ai_usage_reservations=$(qw "with d as (delete from ai_usage_reservations where company_id in ($C) returning 1) select count(*) from d")"
+  echo "ai_invocations=$(qw "with d as (delete from ai_invocations where company_id in ($C) or user_id in ($U) or user_id in (select id from users where company_id in ($C)) returning 1) select count(*) from d")"
+  echo "ai_settings=$(qw "with d as (delete from ai_settings where company_id in ($C) returning 1) select count(*) from d")"
+  echo "document_versions=$(qw "with d as (delete from document_versions where company_id in ($C) returning 1) select count(*) from d")"
+  echo "documents=$(qw "with d as (delete from documents where company_id in ($C) returning 1) select count(*) from d")"
+  echo "scans=$(qw "with d as (delete from scans where company_id in ($C) returning 1) select count(*) from d")"
   echo "tenant_users=$(qw "with d as (delete from users where company_id in ($C) returning 1) select count(*) from d")"
   echo "owner_users=$(qw "with d as (delete from users where id in ($U) returning 1) select count(*) from d")"
   echo "subscriptions=$(qw "with d as (delete from subscriptions where company_id in ($C) returning 1) select count(*) from d")"
   echo "companies=$(qw "with d as (delete from companies where id in ($C) returning 1) select count(*) from d")"
   section "verify zero disposable rows remain"
-  local z; z="$(q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B20 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' contacts='||(select count(*) from contacts where company_id in ($C))||' leads='||(select count(*) from leads where company_id in ($C))||' events='||(select count(*) from events where company_id in ($C))||' tasks='||(select count(*) from tasks where company_id in ($C))||' tags='||(select count(*) from tags where company_id in ($C))||' lead_tags='||(select count(*) from lead_tags where company_id in ($C))||' wf_defs='||(select count(*) from workflow_definitions where company_id in ($C))||' wf_runs='||(select count(*) from workflow_runs where company_id in ($C))||' wf_action_runs='||(select count(*) from workflow_action_runs where company_id in ($C))||' intents='||(select count(*) from billing_checkout_sessions where company_id in ($C))||' reservations='||(select count(*) from subscription_usage_reservations where company_id in ($C))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' sessions='||(select count(*) from sessions where user_id in ($U))||' notifications='||(select count(*) from notifications where user_id in ($U))||' roles='||(select count(*) from roles where company_id in ($C) or name like 'B20 SMOKE %')||' user_roles='||(select count(*) from user_roles where user_id in ($U))||' mfa_backup_codes='||(select count(*) from mfa_backup_codes where user_id in ($U))||' verification_tokens='||(select count(*) from verification_tokens where user_id in ($U))||' trusted_devices='||(select count(*) from trusted_devices where user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b20-smoke-${TAG:-zzzz}%@$DOM')")"; echo "$z"
+  local z; z="$(q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B20 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' contacts='||(select count(*) from contacts where company_id in ($C))||' leads='||(select count(*) from leads where company_id in ($C))||' events='||(select count(*) from events where company_id in ($C))||' tasks='||(select count(*) from tasks where company_id in ($C))||' tags='||(select count(*) from tags where company_id in ($C))||' lead_tags='||(select count(*) from lead_tags where company_id in ($C))||' wf_defs='||(select count(*) from workflow_definitions where company_id in ($C))||' wf_runs='||(select count(*) from workflow_runs where company_id in ($C))||' wf_action_runs='||(select count(*) from workflow_action_runs where company_id in ($C))||' intents='||(select count(*) from billing_checkout_sessions where company_id in ($C))||' reservations='||(select count(*) from subscription_usage_reservations where company_id in ($C))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' sessions='||(select count(*) from sessions where user_id in ($U))||' notifications='||(select count(*) from notifications where user_id in ($U))||' roles='||(select count(*) from roles where company_id in ($C) or name like 'B20 SMOKE %')||' user_roles='||(select count(*) from user_roles where user_id in ($U))||' mfa_backup_codes='||(select count(*) from mfa_backup_codes where user_id in ($U))||' verification_tokens='||(select count(*) from verification_tokens where user_id in ($U))||' trusted_devices='||(select count(*) from trusted_devices where user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b20-smoke-${TAG:-zzzz}%@$DOM')||' documents='||(select count(*) from documents where company_id in ($C))||' document_versions='||(select count(*) from document_versions where company_id in ($C))||' scans='||(select count(*) from scans where company_id in ($C))||' ai_invocations='||(select count(*) from ai_invocations where company_id in ($C) or user_id in ($U))||' ai_settings='||(select count(*) from ai_settings where company_id in ($C))||' invitations='||(select count(*) from invitations where company_id in ($C) or email like '%@$DOM')")"; echo "$z"
   echo "$z" | grep -vqE '=[1-9]' || fail "disposable rows remain: $z"
   section "existing rows AFTER cleanup"
   local after; after="$(q "$kept_sql")"; echo "$after"
@@ -482,7 +488,7 @@ existing_baseline() {
 }
 disposable_counts() {
   local tag="$1"
-  q "select 'companies='||(select count(*) from companies where name like 'B20 SMOKE %')||' users='||(select count(*) from users where email like '%@b20smoke.invalid')||' login_attempts='||(select count(*) from login_attempts where email like 'b20-smoke-$tag%@b20smoke.invalid')||' subscriptions='||(select count(*) from subscriptions where company_id in (select id from companies where name like 'B20 SMOKE %'))||' wf_defs='||(select count(*) from workflow_definitions where name like 'B20 SMOKE %')||' wf_runs='||(select count(*) from workflow_runs where event_key like '%b20smoke-%' or company_id in (select id from companies where name like 'B20 SMOKE %'))||' leads='||(select count(*) from leads where company_id in (select id from companies where name like 'B20 SMOKE %'))||' events='||(select count(*) from events where company_id in (select id from companies where name like 'B20 SMOKE %'))||' tasks='||(select count(*) from tasks where company_id in (select id from companies where name like 'B20 SMOKE %'))||' tags='||(select count(*) from tags where company_id in (select id from companies where name like 'B20 SMOKE %'))||' contacts='||(select count(*) from contacts where company_id in (select id from companies where name like 'B20 SMOKE %'))||' audit='||(select count(*) from audit_logs where company_id in (select id from companies where name like 'B20 SMOKE %') or user_id in (select id from users where email like '%@b20smoke.invalid'))||' activity='||(select count(*) from activity_logs where company_id in (select id from companies where name like 'B20 SMOKE %') or user_id in (select id from users where email like '%@b20smoke.invalid'))||' sessions='||(select count(*) from sessions where user_id in (select id from users where email like '%@b20smoke.invalid'))||' roles='||(select count(*) from roles where name like 'B20 SMOKE %')"
+  q "select 'companies='||(select count(*) from companies where name like 'B20 SMOKE %')||' users='||(select count(*) from users where email like '%@b20smoke.invalid')||' login_attempts='||(select count(*) from login_attempts where email like 'b20-smoke-$tag%@b20smoke.invalid')||' subscriptions='||(select count(*) from subscriptions where company_id in (select id from companies where name like 'B20 SMOKE %'))||' wf_defs='||(select count(*) from workflow_definitions where name like 'B20 SMOKE %')||' wf_runs='||(select count(*) from workflow_runs where event_key like '%b20smoke-%' or company_id in (select id from companies where name like 'B20 SMOKE %'))||' leads='||(select count(*) from leads where company_id in (select id from companies where name like 'B20 SMOKE %'))||' events='||(select count(*) from events where company_id in (select id from companies where name like 'B20 SMOKE %'))||' tasks='||(select count(*) from tasks where company_id in (select id from companies where name like 'B20 SMOKE %'))||' tags='||(select count(*) from tags where company_id in (select id from companies where name like 'B20 SMOKE %'))||' contacts='||(select count(*) from contacts where company_id in (select id from companies where name like 'B20 SMOKE %'))||' audit='||(select count(*) from audit_logs where company_id in (select id from companies where name like 'B20 SMOKE %') or user_id in (select id from users where email like '%@b20smoke.invalid'))||' activity='||(select count(*) from activity_logs where company_id in (select id from companies where name like 'B20 SMOKE %') or user_id in (select id from users where email like '%@b20smoke.invalid'))||' sessions='||(select count(*) from sessions where user_id in (select id from users where email like '%@b20smoke.invalid'))||' roles='||(select count(*) from roles where name like 'B20 SMOKE %')||' documents='||(select count(*) from documents where company_id in (select id from companies where name like 'B20 SMOKE %'))||' scans='||(select count(*) from scans where company_id in (select id from companies where name like 'B20 SMOKE %'))||' ai_invocations='||(select count(*) from ai_invocations where company_id in (select id from companies where name like 'B20 SMOKE %') or user_id in (select id from users where email like '%@b20smoke.invalid'))||' invitations='||(select count(*) from invitations where company_id in (select id from companies where name like 'B20 SMOKE %') or email like '%@b20smoke.invalid')"
 }
 
 # supp-preflight: READ-ONLY preservation + readiness checks before any fixture is created.
@@ -697,6 +703,174 @@ phase_c4_legacy_grant() {
   log "c4-legacy-grant complete (one disposable row)"
 }
 
+
+# ── Batch 22 — production & provider verification support (dev VPS) ───────────
+# b22-infra   READ-ONLY infrastructure evidence: published ports / host listeners,
+#             env key presence (values never printed unless allow-listed and
+#             non-secret), the api container's effective environment (presence
+#             only), the GCS credential mount (readability only), durable queue
+#             selection + payload encryption at rest, gateway readiness, provider /
+#             storage / queue log messages (message text only), table counts.
+# b22-objects ARG1 = check|delete, ARG2 = csv of object labels recorded by the smoke
+#             (doc:<uuid> | scan:<companyId>:<scanId> | logo:<companyId>:<id>.<ext>),
+#             ARG3 = tag. Runs a one-off node script INSIDE the api container with
+#             the application's own storage SDK + credential: existence check, and
+#             with `delete` the removal of exactly those objects (guards: every
+#             label must belong to a disposable smoke tenant of this tag). Never
+#             prints bucket names, object URLs or credentials.
+# b22-cleanup ARG1 = smoke start epoch ms, ARG2 = tag, ARG3 = expected number of
+#             email.send jobs the smoke produced. Removes the smoke's queue rows
+#             (exact-count guard; encrypted payloads are never printed) and reports
+#             the queue evidence before deleting.
+# b22-verify  READ-ONLY. ARG1 = smoke start epoch ms, ARG2 = tag, ARG3 = pre|post.
+#             Queue rows / log messages since the smoke started and the disposable
+#             rows in the B22 tables (post: must be zero).
+b22_guard_company() { [ "$(q "select count(*) from companies where id=$1 and name like 'B20 SMOKE $2 %'")" = "1" ] || fail "company $1 is not the disposable smoke tenant of tag $2"; }
+b22_email_jobs() { q "select coalesce(string_agg('email.send job '||id||': status='||status||' attempts='||attempts||'/'||max_attempts||' envelope='||case when payload like 'gcm1.%' then 'gcm1(aes-256-gcm)' else 'OTHER' end||' last_error='||coalesce(last_error,'null')||' enqueued='||to_char(enqueued_at,'HH24:MI:SS')||' completed='||coalesce(to_char(completed_at,'HH24:MI:SS'),'null'), E'\n' order by id), 'none') from job_queue where name='email.send' and enqueued_at > to_timestamp($1/1000.0)"; }
+b22_disposable() {
+  q "select 'documents='||(select count(*) from documents where company_id in (select id from companies where name like 'B20 SMOKE $1 %'))||' document_versions='||(select count(*) from document_versions where company_id in (select id from companies where name like 'B20 SMOKE $1 %'))||' scans='||(select count(*) from scans where company_id in (select id from companies where name like 'B20 SMOKE $1 %'))||' ai_invocations='||(select count(*) from ai_invocations where company_id in (select id from companies where name like 'B20 SMOKE $1 %') or user_id in (select id from users where email like 'b20-smoke-$1%@b20smoke.invalid'))||' ai_settings='||(select count(*) from ai_settings where company_id in (select id from companies where name like 'B20 SMOKE $1 %'))||' ai_usage_reservations='||(select count(*) from ai_usage_reservations where company_id in (select id from companies where name like 'B20 SMOKE $1 %'))||' usage_reservations='||(select count(*) from subscription_usage_reservations where company_id in (select id from companies where name like 'B20 SMOKE $1 %'))||' invitations='||(select count(*) from invitations where company_id in (select id from companies where name like 'B20 SMOKE $1 %') or email like 'b20-smoke-$1%@b20smoke.invalid')||' email_jobs_since_start='||(select count(*) from job_queue where name='email.send' and enqueued_at > to_timestamp($2/1000.0))"
+}
+b22_log_msgs() { # $1 = docker logs --since value or empty; message text only, provider/storage/queue related
+  local since=(); [ -n "${1:-}" ] && since=(--since "$1")
+  { docker logs "${since[@]}" "$API_CID" 2>&1 | grep -iE '"msg":"[^"]*(e-?mail|smtp|storage|bucket|branding|gemini|provider|ai |ocr|scan|durable|queue|worker|scheduler|sweep|recovery)[^"]*"' | grep -oE '"level":[0-9]+|"msg":"[^"]+"' | paste -d' ' - - | sort | uniq -c | sort -rn | head -30; } || echo "(no matching log lines)"
+}
+
+phase_b22_infra() {
+  local tag="${ARG1:-none}"
+  section "read-only guard"
+  if q "create temp table b22_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard did not hold"; else echo "session refuses writes (default_transaction_read_only=on): OK"; fi
+  section "published ports (compose HostConfig.PortBindings — only web on 127.0.0.1:18080 may be published)"
+  for svc in api web postgres; do cid="$(compose ps -q "$svc" || true)"; [ -n "$cid" ] || fail "$svc container absent"; echo "$svc: bindings=$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$cid") exposed=$(docker inspect -f '{{json .Config.ExposedPorts}}' "$cid")"; done
+  [ "$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$(compose ps -q api)")" = "{}" ] || [ "$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$(compose ps -q api)")" = "null" ] || fail "api publishes a host port"
+  [ "$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$PG_CID")" = "{}" ] || [ "$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$PG_CID")" = "null" ] || fail "postgres publishes a host port"
+  docker inspect -f '{{json .HostConfig.PortBindings}}' "$(compose ps -q web)" | grep -q '"127.0.0.1"' || fail "web is not bound to loopback"
+  section "host listeners on the stack's ports (ss; 80/443/8443 belong to the CloudPanel edge)"
+  if command -v ss >/dev/null 2>&1; then ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E ':(18080|8080|5000|5432|80|443|8443)$' | sort -u | sed 's/^/listen /' || echo "(no matching listener)"; else echo "ss unavailable"; fi
+  section "env file keys (allow-listed non-secret values; presence only for everything else)"
+  echo "$(stat -c 'mode=%a owner=%U:%G size=%s mtime=%y' "$ENV_FILE") sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16)"
+  for k in COMPOSE_PROFILES NODE_ENV LOG_LEVEL TRUST_PROXY JOBS_DRIVER JOBS_ASYNC_EMAIL OBJECT_STORAGE_AUTH EMAIL_PROVIDER AI_PROVIDER AI_ENABLE_STUB BILLING_PROVIDER BILLING_SELF_SERVICE_CHECKOUT BILLING_STRIPE_MODE; do envkey "$k" yes; done
+  for k in DEFAULT_OBJECT_STORAGE_BUCKET_ID PUBLIC_OBJECT_SEARCH_PATHS PRIVATE_OBJECT_DIR GOOGLE_APPLICATION_CREDENTIALS GCS_CREDENTIAL_GID GEMINI_API_KEY AI_INTEGRATIONS_GEMINI_API_KEY AI_INTEGRATIONS_GEMINI_BASE_URL SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS EMAIL_FROM EMAIL_FROM_NAME EMAIL_BRAND_NAME APP_BASE_URL BILLING_RETURN_URL JOBS_PAYLOAD_ENCRYPTION_KEY STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET EXPO_ACCESS_TOKEN REPL_ID REPLIT_DOMAINS; do envkey "$k"; done
+  section "api container effective environment (presence only; values printed for allow-listed non-secret keys)"
+  compose exec -T -e B22_KEYS="NODE_ENV,PORT,LOG_LEVEL,TRUST_PROXY,JOBS_DRIVER,JOBS_ASYNC_EMAIL,JOBS_PAYLOAD_ENCRYPTION_KEY,OBJECT_STORAGE_AUTH,DEFAULT_OBJECT_STORAGE_BUCKET_ID,PUBLIC_OBJECT_SEARCH_PATHS,PRIVATE_OBJECT_DIR,GOOGLE_APPLICATION_CREDENTIALS,REPL_ID,AI_PROVIDER,AI_ENABLE_STUB,GEMINI_API_KEY,AI_INTEGRATIONS_GEMINI_API_KEY,AI_INTEGRATIONS_GEMINI_BASE_URL,EMAIL_PROVIDER,SMTP_HOST,SMTP_PORT,SMTP_SECURE,SMTP_USER,SMTP_PASS,EMAIL_FROM,APP_BASE_URL,BILLING_PROVIDER,BILLING_SELF_SERVICE_CHECKOUT,STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET" api node -e 'const allow=new Set(["NODE_ENV","PORT","LOG_LEVEL","TRUST_PROXY","JOBS_DRIVER","JOBS_ASYNC_EMAIL","OBJECT_STORAGE_AUTH","AI_PROVIDER","AI_ENABLE_STUB","EMAIL_PROVIDER","BILLING_PROVIDER","BILLING_SELF_SERVICE_CHECKOUT"]); for (const k of process.env.B22_KEYS.split(",")) { const v = process.env[k]; console.log(k + ": " + (v === undefined ? "unset" : v === "" ? "set-but-empty" : allow.has(k) ? "\x27" + v + "\x27" : "set")); }'
+  section "GCS credential mount (readability only — nothing about the credential is printed)"
+  compose exec -T api sh -c 'p="${GOOGLE_APPLICATION_CREDENTIALS:-}"; if [ -z "$p" ]; then echo "GOOGLE_APPLICATION_CREDENTIALS: unset"; elif [ -r "$p" ]; then echo "credential file: present and readable by the api process (uid $(id -u), groups $(id -G | wc -w))"; else echo "credential file: NOT readable by the api process"; fi'
+  local gcsf=/opt/lead-capture-pro/env/gcs-service-account.json; if [ -f "$gcsf" ]; then echo "host key file: $(stat -c 'mode=%a owner=%U:%G size=%s' "$gcsf")"; else echo "host key file: absent at the documented path"; fi
+  echo "api container supplemental groups: $(docker inspect -f '{{json .HostConfig.GroupAdd}}' "$(compose ps -q api)" | sed -E 's/[0-9]+/<gid>/g')"
+  echo "api container mounts: $(docker inspect -f '{{range .Mounts}}{{.Type}}:{{.Destination}}:{{if .RW}}rw{{else}}ro{{end}} {{end}}' "$(compose ps -q api)")"
+  section "durable queue selection + payload encryption at rest"
+  { docker logs "$API_CID" 2>&1 | grep -E '"msg":"Durable job queue (selected|started)"' | grep -oE '"driver":"[a-z]+"|"concurrency":[0-9]+|"leaseMs":[0-9]+|"msg":"[^"]+"' | tr '\n' ' '; } || true; echo
+  [ "$(docker logs "$API_CID" 2>&1 | grep -cE '"driver":"postgres".*"Durable job queue started"')" -ge 1 ] || fail "postgres durable queue not started"
+  q "select 'job_queue rows='||count(*)||' encrypted_envelope(gcm1.)='||count(*) filter (where payload like 'gcm1.%')||' four_part_envelopes='||count(*) filter (where array_length(string_to_array(payload,'.'),1)=4)||' plaintext_or_other='||count(*) filter (where payload not like 'gcm1.%')||' with_last_error='||count(*) filter (where last_error is not null)||' min_payload_len='||coalesce(min(length(payload))::text,'-')||' max_payload_len='||coalesce(max(length(payload))::text,'-') from job_queue"
+  [ "$(q "select count(*) from job_queue where payload not like 'gcm1.%'")" = "0" ] || fail "job_queue holds a payload outside the encrypted envelope format"
+  q "select 'job_queue by name: '||coalesce(string_agg(name||'='||n, ' ' order by name),'empty') from (select name, count(*) n from job_queue group by name) s"
+  q "select 'job_queue by status: '||coalesce(string_agg(status||'='||n, ' ' order by status),'empty') from (select status, count(*) n from job_queue group by status) s"
+  q "select 'job_queue dead_last_7d='||count(*) from job_queue where status='dead' and dead_at > now() - interval '7 days'"
+  section "readiness / liveness through the stack gateway (loopback)"
+  echo "web healthz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/healthz | tr -d '\n' || echo UNAVAILABLE)"
+  echo "api healthz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/healthz || echo UNAVAILABLE)"
+  local rz; rz="$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE)"; echo "api readyz=$rz"; echo "$rz" | grep -q '"storage":"ok"' || fail "readyz storage probe is not ok"
+  section "api log since container start — provider / storage / queue messages (message text only)"
+  b22_log_msgs ""
+  echo "api error-level lines since container start: $(docker logs "$API_CID" 2>&1 | grep -c '"level":50' || true); non-AppError: $(docker logs "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
+  section "table counts (global, no content)"
+  q "select 'documents='||(select count(*) from documents)||' document_versions='||(select count(*) from document_versions)||' scans='||(select count(*) from scans)||' ai_invocations='||(select count(*) from ai_invocations)||' ai_settings='||(select count(*) from ai_settings)||' ai_usage_reservations='||(select count(*) from ai_usage_reservations)||' usage_reservations='||(select count(*) from subscription_usage_reservations)||' invitations='||(select count(*) from invitations)||' companies='||(select count(*) from companies)||' users_active='||(select count(*) from users where deleted_at is null and is_active)"
+  section "disposable rows in the B22 tables (must be zero before the smoke)"
+  local d; d="$(b22_disposable "$tag" 0 | sed 's/ email_jobs_since_start=.*//')"; echo "$d"; echo "$d" | grep -vqE '=[1-9]' || fail "disposable rows remain: $d"
+  echo "now_epoch_ms=$(date +%s%3N)"
+  log "b22-infra complete (read-only)"
+}
+
+phase_b22_objects() {
+  [[ "$ARG1" =~ ^(check|delete)$ ]] || fail "ARG1 must be check|delete"
+  [[ "$ARG2" =~ ^(none|[a-z]+:[A-Za-z0-9.:-]+(,[a-z]+:[A-Za-z0-9.:-]+)*)$ ]] || fail "ARG2 must be a csv of object labels or 'none'"
+  [[ "$ARG3" =~ ^[a-z0-9]+$ ]] || fail "ARG3 must be the smoke tag"
+  if [ "$ARG2" = "none" ]; then echo "no object labels recorded"; return; fi
+  section "guards ($ARG1): every label must belong to a disposable smoke tenant of tag $ARG3"
+  local lbl rest cid sid file uuid
+  for lbl in ${ARG2//,/ }; do
+    case "$lbl" in
+      doc:*) uuid="${lbl#doc:}"; [[ "$uuid" =~ ^[0-9a-f-]{36}$ ]] || fail "bad doc label"
+        if [ "$ARG1" = "delete" ]; then [ "$(q "select count(*) from document_versions v join companies c on c.id=v.company_id where v.object_path='/objects/uploads/$uuid' and c.name like 'B20 SMOKE $ARG3 %'")" = "1" ] || fail "document object $uuid is not referenced by a disposable smoke tenant of tag $ARG3"; fi
+        echo "$lbl: guard ok" ;;
+      scan:*) rest="${lbl#scan:}"; cid="${rest%%:*}"; sid="${rest##*:}"; [[ "$cid" =~ ^[0-9]+$ && "$sid" =~ ^[0-9]+$ ]] || fail "bad scan label"
+        if [ "$ARG1" = "delete" ]; then b22_guard_company "$cid" "$ARG3"; [ "$(q "select count(*) from scans where id=$sid and company_id=$cid")" = "1" ] || fail "scan $sid is not a row of disposable company $cid"; fi
+        echo "$lbl: guard ok" ;;
+      logo:*) rest="${lbl#logo:}"; cid="${rest%%:*}"; file="${rest#*:}"; [[ "$cid" =~ ^[0-9]+$ && "$file" =~ ^[0-9a-f]{32}\.(png|jpg)$ ]] || fail "bad logo label"
+        if [ "$ARG1" = "delete" ]; then b22_guard_company "$cid" "$ARG3"; fi
+        echo "$lbl: guard ok" ;;
+      *) fail "unknown label kind: $lbl" ;;
+    esac
+  done
+  section "object storage ($ARG1) — inside the api container with the application's own SDK + credential"
+  compose exec -T -e B22_ACTION="$ARG1" -e B22_LABELS="$ARG2" api node -e '
+const { Storage } = require("@google-cloud/storage");
+const s = new Storage();
+const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID || "";
+const priv = (process.env.PRIVATE_OBJECT_DIR || "").split("/").filter(Boolean).slice(1).join("/");
+if (!bucket || !priv) { console.log("object storage is not configured in this container"); process.exit(2); }
+const action = process.env.B22_ACTION, labels = process.env.B22_LABELS.split(",");
+const nameOf = (l) => { const [k, ...r] = l.split(":"); if (k === "doc") return priv + "/uploads/" + r[0]; if (k === "scan") return "scans/" + r[0] + "/" + r[1] + ".jpg"; if (k === "logo") return "branding/" + r[0] + "/" + r[1]; throw new Error("bad label"); };
+(async () => {
+  let rc = 0;
+  for (const l of labels) {
+    try {
+      const f = s.bucket(bucket).file(nameOf(l));
+      const [ex] = await f.exists();
+      let out = l + " exists=" + ex;
+      if (ex) { const [md] = await f.getMetadata(); out += " size=" + (md.size ?? "?") + " contentType=" + (md.contentType ?? "?"); }
+      if (action === "delete") { if (ex) { await f.delete(); const [ex2] = await f.exists(); out += " deleted=true exists_after=" + ex2; if (ex2) rc = 1; } else { out += " deleted=false(already-absent)"; } }
+      console.log(out);
+    } catch (e) { console.log(l + " error=" + (e && e.constructor ? e.constructor.name : "Error") + " code=" + (e && e.code != null ? e.code : "-")); rc = 1; }
+  }
+  process.exit(rc);
+})();'
+  log "b22-objects ($ARG1) complete"
+}
+
+phase_b22_cleanup() {
+  [[ "$ARG1" =~ ^[0-9]+$ ]] || fail "ARG1 must be the smoke start epoch ms"
+  [[ "$ARG2" =~ ^[a-z0-9]+$ ]] || fail "ARG2 must be the smoke tag"
+  [[ "$ARG3" =~ ^[0-9]+$ ]] || fail "ARG3 must be the expected email.send job count"
+  section "disposable tenants of tag $ARG2 (ids only)"
+  echo "companies: $(q "select coalesce(string_agg(id::text, ','),'none') from companies where name like 'B20 SMOKE $ARG2 %'")"
+  section "B22 rows before (documents / scans / AI ledger / invitations / queue)"
+  b22_disposable "$ARG2" "$ARG1"
+  section "queued e-mail jobs produced by the smoke (exact-count guard; encrypted envelopes are never printed)"
+  local n; n="$(q "select count(*) from job_queue where name='email.send' and enqueued_at > to_timestamp($ARG1/1000.0)")"
+  echo "email.send jobs since smoke start: $n (expected $ARG3)"
+  b22_email_jobs "$ARG1"
+  [ "$n" = "$ARG3" ] || fail "email.send job count since start ($n) differs from the smoke's expectation ($ARG3) — no queue row deleted"
+  [ "$(q "select count(*) from job_queue where name='email.send' and enqueued_at > to_timestamp($ARG1/1000.0) and status <> 'completed'")" = "0" ] || fail "an email.send job of the smoke is not completed — no queue row deleted"
+  echo "email_jobs_deleted=$(qw "with d as (delete from job_queue where name='email.send' and enqueued_at > to_timestamp($ARG1/1000.0) returning 1) select count(*) from d")"
+  echo "email_jobs_remaining_since_start=$(q "select count(*) from job_queue where name='email.send' and enqueued_at > to_timestamp($ARG1/1000.0)")"
+  log "b22-cleanup complete (tenant rows are removed by the generic cleanup phase)"
+}
+
+phase_b22_verify() {
+  [[ "$ARG1" =~ ^[0-9]+$ ]] || fail "ARG1 must be the smoke start epoch ms"
+  [[ "$ARG2" =~ ^[a-z0-9]+$ ]] || fail "ARG2 must be the smoke tag"
+  [[ "$ARG3" =~ ^(pre|post)$ ]] || fail "ARG3 must be pre|post"
+  section "read-only guard"
+  if q "create temp table b22_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard did not hold"; else echo "session refuses writes (default_transaction_read_only=on): OK"; fi
+  section "queue rows since the smoke started"
+  q "select 'jobs enqueued since start: '||coalesce(string_agg(name||'='||n||'('||st||')', ' ' order by name, st), 'none') from (select name, status st, count(*) n from job_queue where enqueued_at > to_timestamp($ARG1/1000.0) group by 1,2) s"
+  b22_email_jobs "$ARG1"
+  [ "$(q "select count(*) from job_queue where status='dead' and dead_at > to_timestamp($ARG1/1000.0)")" = "0" ] || fail "dead jobs appeared during the smoke"
+  section "api log since the smoke started — provider / storage / queue messages (message text only)"
+  b22_log_msgs "$(date -u -d @$((ARG1/1000)) +%FT%TZ)"
+  echo "email-skip lines (provider not configured): $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"msg":"Email skipped: provider not configured' || true)"
+  echo "email-sent lines: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"msg":"Email delivered"' || true)"
+  echo "api error-level lines since start: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"level":50' || true)"
+  echo "  by error type / status: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -oE '"type":"[A-Za-z_]+"|"statusCode":[0-9]+' | sort | uniq -c | tr '\n' ' ' | tr -s ' ')"
+  echo "  non-AppError error lines: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
+  { docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -v '"type":"_AppError"' | grep -oE '"msg":"[^"]+"|"type":"[A-Za-z_]+"|"name":"[A-Za-z_]+"' | paste -d' ' - - - | sort | uniq -c | head -10; } || true
+  section "disposable rows in the B22 tables ($ARG3)"
+  local d; d="$(b22_disposable "$ARG2" "$ARG1")"; echo "$d"
+  if [ "$ARG3" = "post" ]; then echo "$d" | grep -vqE '=[1-9]' || fail "disposable B22 rows remain: $d"; fi
+  echo "readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE)"
+  log "b22-verify ($ARG3) complete (read-only)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   migrate) phase_migrate ;;
@@ -709,5 +883,9 @@ case "$PHASE" in
   c4-verify) phase_c4_verify ;;
   c4-perm-column) phase_c4_perm_column ;;
   c4-legacy-grant) phase_c4_legacy_grant ;;
+  b22-infra) phase_b22_infra ;;
+  b22-objects) phase_b22_objects ;;
+  b22-cleanup) phase_b22_cleanup ;;
+  b22-verify) phase_b22_verify ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac
