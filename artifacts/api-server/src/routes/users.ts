@@ -1,14 +1,27 @@
 import { Router } from "express";
-import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
+import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, canAccessCompany, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateUserBody, UpdateOwnProfileBody, UpdateUserBody, SetUserRolesBody } from "@workspace/api-zod";
 import * as users from "../services/users.service.js";
+import * as usersRepo from "../repositories/users.repository.js";
+
+// Batch 21 Correction 1 — a mutation on /users/:id is attributed to the TARGET
+// user's company (verified accessible to the caller) so a platform owner's role /
+// active-state change appears on that tenant's administrative trail. Requests
+// without a target (POST /users, PATCH /users/me) keep the actor's company.
+async function targetUserCompany(req: AuthRequest): Promise<number | null | undefined> {
+  const id = Number.parseInt(String((req.params as Record<string, string>).id ?? ""), 10);
+  if (!Number.isInteger(id) || id <= 0) return undefined;
+  const target = await usersRepo.findByIdForAudit(id);
+  if (!target || !canAccessCompany(req.user, target.companyId)) return undefined;
+  return target.companyId;
+}
 
 const router = Router();
 router.use(requireAuth);
 router.use("/users", blockReadOnlyMutations);
-router.use("/users", auditMutations("team"));
+router.use("/users", auditMutations("team", { companyIdResolver: targetUserCompany }));
 
 // GET /users
 router.get("/users", requirePermission("team", "view"), async (req: AuthRequest, res) => {

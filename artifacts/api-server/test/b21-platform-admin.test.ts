@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq, inArray, like, and } from "drizzle-orm";
+import { eq, inArray, like, and, desc } from "drizzle-orm";
 import { db, companiesTable, usersTable, auditLogsTable, loginAttemptsTable, contactsTable } from "@workspace/db";
 
 // Batch 21 — Platform Owner admin panel, against the LIVE API (localhost:80) like
@@ -291,6 +291,90 @@ describe("management actions — lifecycle through the existing routes, audited"
     const after = await detail(companyA);
     expect(after.userCount).toBe(before.userCount);
     expect(after.subscription).toEqual(before.subscription);
+  });
+});
+
+describe("Correction 1 — platform-owner user actions are attributed to the target tenant's trail", () => {
+  const teamRows = (a: Record<string, any>, entityId: number) => (a.items as any[]).filter((r) => r.entityType === "team" && r.entityId === String(entityId));
+  const pathOf = (r: any) => String(r.metadata?.path ?? "");
+  const TENANT_KEYS = ["action", "createdAt", "entityId", "entityType", "id", "metadata", "userName"];
+
+  it("PUT /users/:id/roles by the platform owner lands exactly once on the target tenant's trail and never on another tenant's", async () => {
+    const role = await api("POST", "/rbac/roles", tokenA, { name: `QA B21 C1 role ${SUFFIX}`, permissions: [{ module: "contacts", action: "view" }] });
+    expect(role.status, await role.clone().text()).toBe(201);
+    const roleId = (await json(role)).id;
+    const set = await api("PUT", `/users/${empAId}/roles`, platformToken, { roleIds: [roleId] });
+    expect(set.status, await set.clone().text()).toBe(200);
+    const rows = teamRows(await audit(companyA), empAId).filter((r) => r.action === "team.put" && /\/users\/\d+\/roles$/.test(pathOf(r)));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].userName).toBe(PLATFORM.email);
+    expect(rows[0].metadata).toEqual({ path: expect.stringMatching(new RegExp(`/users/${empAId}/roles$`)), method: "PUT" });
+    expect(teamRows(await audit(companyB), empAId)).toHaveLength(0);
+    // The stored row itself carries the target tenant; action, actor and entity are the existing router-level values.
+    const [stored] = await db.select().from(auditLogsTable).where(and(eq(auditLogsTable.action, "team.put"), eq(auditLogsTable.entityId, String(empAId)))).orderBy(desc(auditLogsTable.id)).limit(1);
+    expect(stored.companyId).toBe(companyA);
+    expect(stored.userName).toBe(PLATFORM.email);
+    expect(stored.entityType).toBe("team");
+  });
+
+  it("disable / enable by the platform owner are attributed once each and take effect (login refused while disabled)", async () => {
+    const dis = await api("POST", `/users/${empAId}/disable`, platformToken);
+    expect(dis.status, await dis.clone().text()).toBe(200);
+    const refused = await api("POST", "/auth/login", null, { email: `employee-a@${DOMAIN}`, password: PW });
+    expect([401, 403]).toContain(refused.status);
+    const en = await api("POST", `/users/${empAId}/enable`, platformToken);
+    expect(en.status, await en.clone().text()).toBe(200);
+    tokenEmpA = (await login(`employee-a@${DOMAIN}`)).token;
+    const a = await audit(companyA);
+    const disabled = teamRows(a, empAId).filter((r) => /\/disable$/.test(pathOf(r)));
+    const enabled = teamRows(a, empAId).filter((r) => /\/enable$/.test(pathOf(r)));
+    expect(disabled).toHaveLength(1);
+    expect(enabled).toHaveLength(1);
+    expect(disabled[0].userName).toBe(PLATFORM.email);
+    expect(enabled[0].userName).toBe(PLATFORM.email);
+    expect(teamRows(await audit(companyB), empAId)).toHaveLength(0);
+  });
+
+  it("PATCH /users/:id by the platform owner is attributed; tenant admins' own team actions stay on their tenant, once; a foreign attempt records nothing", async () => {
+    const up = await api("PATCH", `/users/${empAId}`, platformToken, { role: "admin" });
+    expect(up.status, await up.clone().text()).toBe(200);
+    const back = await api("PATCH", `/users/${empAId}`, platformToken, { role: "employee" });
+    expect(back.status, await back.clone().text()).toBe(200);
+    const patches = teamRows(await audit(companyA), empAId).filter((r) => r.action === "team.patch");
+    expect(patches).toHaveLength(2);
+    expect(patches.every((r) => r.userName === PLATFORM.email)).toBe(true);
+    // A tenant admin acting on its own member: attributed to its tenant exactly once, actor = the admin.
+    const fl = await api("POST", `/users/${empAId}/force-logout`, tokenA);
+    expect(fl.status, await fl.clone().text()).toBe(200);
+    const revoked = teamRows(await audit(companyA), empAId).filter((r) => /\/force-logout$/.test(pathOf(r)));
+    expect(revoked).toHaveLength(1);
+    expect(revoked[0].userName).toBe(`admin-a@${DOMAIN}`);
+    tokenEmpA = (await login(`employee-a@${DOMAIN}`)).token;
+    // Tenant admin B cannot touch tenant A's user (404) and nothing is recorded for the attempt.
+    const cross = await api("POST", `/users/${empAId}/disable`, tokenB);
+    expect(cross.status).toBe(404);
+    expect(teamRows(await audit(companyB), empAId)).toHaveLength(0);
+    expect(teamRows(await audit(companyA), empAId).filter((r) => r.userName === `admin-b@${DOMAIN}`)).toHaveLength(0);
+    // A self-service profile update has no target id: it stays on the actor's own company.
+    const me = await api("PATCH", "/users/me", tokenA, { name: "Admin A" });
+    expect(me.status, await me.clone().text()).toBe(200);
+    const [selfRow] = await db.select().from(auditLogsTable).where(and(eq(auditLogsTable.action, "team.patch"), eq(auditLogsTable.userName, `admin-a@${DOMAIN}`))).orderBy(desc(auditLogsTable.id)).limit(1);
+    expect(selfRow.companyId).toBe(companyA);
+    expect(selfRow.entityId).toBeNull();
+  });
+
+  it("visibility follows the attribution: tenant A's Security Center lists the owner's action, tenant B's does not; the tenant projection stays sanitized", async () => {
+    const secA = await json(await api("GET", `/security/audit?entityType=team&entityId=${empAId}`, tokenA));
+    expect(secA.items.some((r: any) => r.action === "team.put" && r.userName === PLATFORM.email)).toBe(true);
+    const secB = await json(await api("GET", `/security/audit?entityType=team&entityId=${empAId}`, tokenB));
+    expect(secB.items).toHaveLength(0);
+    const rows = teamRows(await audit(companyA), empAId);
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    for (const r of rows) {
+      expect(Object.keys(r).sort()).toEqual(TENANT_KEYS);
+      expect(Object.keys(r.metadata ?? {}).sort()).toEqual(["method", "path"]);
+      expect(JSON.stringify(r)).not.toMatch(new RegExp(`password|ipAddress|employee-a@${DOMAIN.replace(/\./g, "\\.")}|Employee Alpha`));
+    }
   });
 });
 

@@ -183,6 +183,14 @@ test("tenant detail: edit profile, create the primary administrator (shown-once 
   expect(adminLogin.status, adminLogin.text).toBe(200);
   expect(adminLogin.json.user.companyId).toBe(companyId);
   expect(adminLogin.json.user.role).toBe("primary_admin");
+  // Correction 1: a platform-owner action on this tenant's account is attributed to THIS tenant's trail.
+  const adminId = adminLogin.json.user.id as number;
+  expect((await api("POST", `/users/${adminId}/disable`, {}, platformToken)).status).toBe(200);
+  expect((await api("POST", `/users/${adminId}/enable`, {}, platformToken)).status).toBe(200);
+  await page.reload();
+  await expect(page.getByTestId("detail-audit").getByText("Account disabled")).toBeVisible();
+  await expect(page.getByTestId("detail-audit").getByText("Account enabled")).toBeVisible();
+  await expect(page.getByTestId("detail-audit").getByText(`account #${adminId}`).first()).toBeVisible();
 });
 
 test("subscription management from the tenant page: change plan (confirmed) and suspend / reactivate (confirmed) — access follows on the API", async ({ page }) => {

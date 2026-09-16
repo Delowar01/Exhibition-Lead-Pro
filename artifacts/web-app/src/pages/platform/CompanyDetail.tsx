@@ -112,6 +112,19 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   "team.delete": "Team member removed",
 };
 
+// Router-level team rows carry only the request path; derive a human label from it.
+function auditLabel(e: CompanyAuditEntry): string {
+  const path = String((e.metadata as Record<string, unknown> | null)?.path ?? "");
+  if (e.entityType === "team" && e.entityId) {
+    if (/\/roles(\?|$)/.test(path)) return "Team roles changed";
+    if (/\/enable(\?|$)/.test(path)) return "Account enabled";
+    if (/\/disable(\?|$)/.test(path)) return "Account disabled";
+    if (/\/force-logout(\?|$)/.test(path)) return "Sessions revoked";
+    if (/\/reset-password(\?|$)/.test(path)) return "Password reset requested";
+  }
+  return AUDIT_ACTION_LABEL[e.action] ?? e.action;
+}
+
 function auditSummary(e: CompanyAuditEntry): string {
   const md = (e.metadata ?? {}) as Record<string, any>;
   const parts: string[] = [];
@@ -123,6 +136,7 @@ function auditSummary(e: CompanyAuditEntry): string {
   if (md.limits && typeof md.limits === "object") parts.push(`limits ${Object.entries(md.limits).filter(([, v]) => v != null).map(([k, v]) => `${k}=${v}`).join(", ") || "cleared"}`);
   if (md.trialDays) parts.push(`${md.trialDays} days`);
   if (md.role) parts.push(`role: ${ROLE_LABEL[String(md.role)] ?? String(md.role)}${md.createdByPlatform ? " (by the platform)" : ""}`);
+  if (e.entityType === "team" && e.entityId && !md.role) parts.push(`account #${e.entityId}`);
   if (!parts.length && md.path) parts.push(`${md.method ?? ""} ${String(md.path).replace(/^\/api/, "")}`.trim());
   return parts.join(" · ");
 }
@@ -448,7 +462,7 @@ export default function PlatformCompanyDetail() {
                       {audit.data?.items.map((e) => (
                         <TableRow key={e.id} data-testid={`audit-row-${e.id}`}>
                           <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtDateTime(e.createdAt)}</TableCell>
-                          <TableCell className="text-sm"><span data-testid="audit-action">{AUDIT_ACTION_LABEL[e.action] ?? e.action}</span></TableCell>
+                          <TableCell className="text-sm"><span data-testid="audit-action">{auditLabel(e)}</span></TableCell>
                           <TableCell className="text-sm text-muted-foreground">{e.userName ?? "system"}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{auditSummary(e) || "—"}</TableCell>
                         </TableRow>

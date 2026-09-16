@@ -46,6 +46,15 @@ export async function findById(user: AuthUser, id: number): Promise<UserRow | un
   return row;
 }
 
+// Batch 21 Correction 1 — AUDIT ATTRIBUTION ONLY: unscoped lookup by id that also
+// returns soft-deleted rows (a DELETE has already soft-deleted the target by the
+// time its audit row is written). Callers must verify access with canAccessCompany
+// and must never return the row to a client.
+export async function findByIdForAudit(id: number): Promise<UserRow | undefined> {
+  const [row] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  return row;
+}
+
 export async function insert(values: typeof usersTable.$inferInsert, tx?: Executor): Promise<UserRow> {
   const [row] = await exec(tx).insert(usersTable).values(values).returning();
   return row;
