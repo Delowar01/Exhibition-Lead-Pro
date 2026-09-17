@@ -70,7 +70,7 @@ export interface ErrorResponse {
   error: string;
   /** Correlates this response with server logs (also returned as the X-Request-Id header). */
   requestId?: string;
-  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED). */
+  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when the AI provider holds no credential; no provider call is made). */
   code?: string;
   /** Present on rate-limit responses; mirrors the Retry-After header. */
   retryAfterSeconds?: number;

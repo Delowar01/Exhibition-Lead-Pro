@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { logger } from "./logger.js";
 import { config } from "../config.js";
 import { getProvider } from "../ai/providers/index.js";
+import { assertProviderConfigured } from "../ai/readiness.js";
 import { runAi, extractJson, isTimeoutError, redactError, attemptsOf, categorizeError } from "../ai/runner.js";
 import { estimateCostMicroUsd } from "../ai/pricing.js";
 import { checkAiRateLimit, aiRateLimitError } from "../ai/rate-limit.js";
@@ -297,6 +298,13 @@ async function callJsonWithMeta(opts: {
     model = settings.model;
   }
   const provider = getProvider(providerName);
+
+  // 2b. Provider readiness gate (B22 Correction 1): refuse BEFORE dedup, budget
+  // reservation and the provider call when the resolved provider holds no credential.
+  // Nothing is reserved or called, so no ledger row is written (same as the
+  // AI_DISABLED policy gate above) and the client gets a truthful 503
+  // AI_NOT_CONFIGURED instead of a "could not read the card" failure.
+  assertProviderConfigured(provider, opts.feature);
 
   const req: AiRequest = {
     model,

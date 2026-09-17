@@ -566,6 +566,14 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   (`ai_usage_reservations`, `config.ai.budget.reserveTokens`) counts toward the
   tenant month budget until finalize; abandoned reservations expire
   (`reservationTtlMs`) so a crash can never block a tenant permanently.
+- **Provider readiness gate (B22 Correction 1)** — `ai/readiness.ts`
+  `assertProviderConfigured` runs in the execution seam right after provider/model
+  resolution and before dedup, budget reservation and any provider work. A provider
+  without a credential (e.g. `GEMINI_API_KEY` unset or empty) is refused with
+  **503 `AI_NOT_CONFIGURED`** (provider-agnostic message, WARN with safe metadata);
+  nothing is reserved or called and no ledger row is written — same shape as the
+  `AI_DISABLED` policy gate. Genuine provider/model failures keep their existing
+  outcomes (OCR: 502 "could not read the card", 422 `SCAN_NO_CARD`, 400 image codes).
 - **Rate limiting** — `config.ai.rateLimits`: fixed one-minute windows, per-user,
   per-tenant, and heavier per-user ceiling for heavy features (proposal/executive/
   meeting/call prep). System/platform calls fall into a shared keyed bucket — no
