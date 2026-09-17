@@ -796,7 +796,11 @@ phase_b22_objects() {
         if [ "$ARG1" = "delete" ]; then b22_guard_company "$cid" "$ARG3"; [ "$(q "select count(*) from scans where id=$sid and company_id=$cid")" = "1" ] || fail "scan $sid is not a row of disposable company $cid"; fi
         echo "$lbl: guard ok" ;;
       logo:*) rest="${lbl#logo:}"; cid="${rest%%:*}"; file="${rest#*:}"; [[ "$cid" =~ ^[0-9]+$ && "$file" =~ ^[0-9a-f]{32}\.(png|jpg)$ ]] || fail "bad logo label"
-        if [ "$ARG1" = "delete" ]; then b22_guard_company "$cid" "$ARG3"; fi
+        if [ "$ARG1" = "delete" ]; then
+          # The tenant must be a disposable smoke tenant of this tag — or already removed by the cleanup
+          # (an orphaned logo object of a deleted disposable tenant); a logo of any EXISTING non-smoke tenant is refused.
+          if [ "$(q "select count(*) from companies where id=$cid")" = "0" ]; then echo "$lbl: company $cid no longer exists (orphaned object of a removed disposable tenant)"; else b22_guard_company "$cid" "$ARG3"; fi
+        fi
         echo "$lbl: guard ok" ;;
       *) fail "unknown label kind: $lbl" ;;
     esac

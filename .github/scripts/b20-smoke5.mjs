@@ -223,7 +223,8 @@ async function main() {
     const lg = await raw(TENANT, "POST", "/organization/branding/logo", png, TA, "image/png");
     const lgj = (() => { try { return JSON.parse(lg.bytes.toString("utf8")); } catch { return null; } })();
     const own_ = await raw(TENANT, "GET", "/organization/branding/logo", undefined, TA);
-    const etagFile = (own_.etag ?? "").replace(/"/g, "");
+    // The edge proxy may re-emit the ETag as a weak validator (W/"…"); the object id is the quoted value either way.
+    const etagFile = (own_.etag ?? "").replace(/^W\//, "").replace(/"/g, "");
     const m = etagFile.match(/^([0-9a-f]{32})\.(png|jpg)$/);
     if (m) { state.objects.push(`logo:${fx.A.cid}:${etagFile}`); saveState(); }
     check("managed logo uploaded through the app and stored in the bucket (own-logo read returns the normalized image; ETag = object id)", lg.status === 200 && own_.status === 200 && (own_.contentType ?? "").startsWith("image/") && own_.bytes.length > 0 && !!m, { upload: lg.status, uploadLogoFlag: lgj?.logo ?? lgj?.hasLogo ?? null, read: own_.status, contentType: own_.contentType, bytes: own_.bytes.length, objectTail: etagFile || null });
