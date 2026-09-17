@@ -38,7 +38,7 @@ on:
         description: "Phase to run"
         required: true
         type: choice
-        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects]
+        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener]
       arg1:
         description: "Phase argument 1 (non-secret)"
         required: false

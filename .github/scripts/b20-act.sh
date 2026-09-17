@@ -875,6 +875,36 @@ phase_b22_verify() {
   log "b22-verify ($ARG3) complete (read-only)"
 }
 
+
+# b22-listener  READ-ONLY: identify what listens on the host's loopback port 5432
+#               (owner / service / binding / stack membership). Inspection only —
+#               never stops, restarts or reconfigures anything; prints no secrets.
+phase_b22_listener() {
+  section "listeners on port 5432 (ss, read-only; process names need root — shown when permitted)"
+  { ss -ltnpH 'sport = :5432' 2>/dev/null || ss -ltnH 2>/dev/null | grep ':5432'; } | sed -E 's/users:\(\(([^)]*)\)\)/users:(\1)/' || echo "(none)"
+  if sudo -n true 2>/dev/null; then echo "passwordless sudo: available — read-only ss/lsof with process names:"; sudo -n ss -ltnpH 'sport = :5432' 2>/dev/null || true; command -v lsof >/dev/null 2>&1 && sudo -n lsof -nP -iTCP:5432 -sTCP:LISTEN 2>/dev/null || true; else echo "passwordless sudo: not available (process names of other users are not visible; uid resolved from /proc below)"; fi
+  section "/proc/net/tcp: local 5432 listeners with owning uid → user name"
+  for t in /proc/net/tcp /proc/net/tcp6; do awk -v f="$t" 'NR>1 && $4=="0A" { split($2,a,":"); if (a[2]=="1538") print f ": local=" $2 " uid=" $8 " inode=" $10 }' "$t" 2>/dev/null; done
+  for u in $(for t in /proc/net/tcp /proc/net/tcp6; do awk 'NR>1 && $4=="0A" { split($2,a,":"); if (a[2]=="1538") print $8 }' "$t" 2>/dev/null; done | sort -u); do echo "uid $u = $(getent passwd "$u" | cut -d: -f1,7)"; done
+  section "process candidates (ps, read-only; command line truncated)"
+  ps -eo pid,ppid,user,etimes,comm,args --no-headers 2>/dev/null | grep -iE 'postgres|pgbouncer|docker-proxy.*5432' | grep -v grep | cut -c1-180 || echo "(no postgres-like process visible)"
+  section "systemd units / packages (read-only)"
+  systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null | grep -iE 'postgres|pgbouncer|clp|cloudpanel' | cut -c1-140 || echo "(no matching unit)"
+  for unit in postgresql postgresql@16-main postgresql@15-main postgresql@14-main pgbouncer; do echo "$unit: enabled=$(systemctl is-enabled "$unit" 2>/dev/null || echo n/a) active=$(systemctl is-active "$unit" 2>/dev/null || echo n/a)"; done
+  dpkg -l 2>/dev/null | awk '/^ii/ && /postgres|pgbouncer/ {print "package " $2 " " $3}' || true
+  command -v pg_lsclusters >/dev/null 2>&1 && pg_lsclusters 2>/dev/null || echo "pg_lsclusters: unavailable"
+  section "postgres configuration listen/port (read-only, only if readable)"
+  found=0; for f in /etc/postgresql/*/*/postgresql.conf; do [ -e "$f" ] || continue; found=1; if [ -r "$f" ]; then echo "$f: $(grep -E '^(listen_addresses|port)[[:space:]]*=' "$f" | tr '\n' ' ')"; else echo "$f: not readable by this user"; fi; done; [ "$found" = "1" ] || echo "(no /etc/postgresql/*/*/postgresql.conf)"
+  section "docker: containers publishing 5432 (read-only) — this stack's postgres must show {}"
+  docker ps -a --format '{{.Names}} image={{.Image}} status={{.Status}} ports={{.Ports}}' 2>/dev/null | grep -E '5432' || echo "(no container publishes 5432)"
+  for n in $(docker ps --format '{{.Names}}' 2>/dev/null); do echo "$n: bindings=$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$n" 2>/dev/null)"; done
+  echo "this stack's postgres container: $(docker inspect -f '{{.Name}} bindings={{json .HostConfig.PortBindings}} network_mode={{.HostConfig.NetworkMode}}' "$PG_CID" 2>/dev/null)"
+  section "is the loopback 5432 this stack's database? (read-only probe from the host: server identity only)"
+  if command -v psql >/dev/null 2>&1; then echo "host psql client: present"; else echo "host psql client: absent (no host-side connection attempted)"; fi
+  echo "stack db server_version (inside the container): $(q "select version()" 2>/dev/null | cut -c1-60)"
+  log "b22-listener complete (read-only)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   migrate) phase_migrate ;;
@@ -891,5 +921,6 @@ case "$PHASE" in
   b22-objects) phase_b22_objects ;;
   b22-cleanup) phase_b22_cleanup ;;
   b22-verify) phase_b22_verify ;;
+  b22-listener) phase_b22_listener ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac
