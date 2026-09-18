@@ -1195,10 +1195,10 @@ phase_g6_restore() {
   unset pw
   local i; for i in $(seq 1 90); do docker exec "$cname" pg_isready -q -U g6 -d g6restore 2>/dev/null && break; sleep 1; done
   docker exec "$cname" pg_isready -U g6 -d g6restore >/dev/null || { docker logs --tail 20 "$cname" 2>&1 | g6_mask | cut -c1-160; fail "disposable postgres did not become ready"; }
-  docker inspect -f "isolation: network_mode={{.HostConfig.NetworkMode}} networks=[{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}} {{end}}] published_ports=[{{range \$p,\$b := .NetworkSettings.Ports}}{{\$p}}->{{\$b}} {{end}}] mounts=[{{range .Mounts}}{{.Type}}:{{if .Name}}{{.Name}}{{else}}<backup-file>{{end}}->{{.Destination}}:{{if .RW}}rw{{else}}ro{{end}} {{end}}] image_id={{.Image}} memory={{.HostConfig.Memory}} nanocpus={{.HostConfig.NanoCpus}} pids={{.HostConfig.PidsLimit}}" "$cname"
+  docker inspect -f "isolation: network_mode={{.HostConfig.NetworkMode}} networks=[{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}} {{end}}] published_ports=[{{range \$p,\$b := .NetworkSettings.Ports}}{{\$p}}->{{\$b}} {{end}}] mounts=[{{range .Mounts}}{{.Type}}:{{if eq .Type \"volume\"}}{{.Name}}{{else}}<backup-file>{{end}}->{{.Destination}}:{{if .RW}}rw{{else}}ro{{end}} {{end}}] image_id={{.Image}} memory={{.HostConfig.Memory}} nanocpus={{.HostConfig.NanoCpus}} pids={{.HostConfig.PidsLimit}}" "$cname"
   [ "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$cname")" = "none" ] || fail "disposable instance is not network-isolated"
   [ -z "$(docker inspect -f '{{range $p,$b := .NetworkSettings.Ports}}{{if $b}}{{$p}} {{end}}{{end}}' "$cname")" ] || fail "disposable instance publishes ports"
-  if docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$cname" | grep -q 'card-scanner-pro_pgdata'; then fail "live volume mounted"; fi
+  if docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$cname" | grep -q 'card-scanner-pro_pgdata'; then fail "live volume mounted"; fi
   [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.RW}}{{end}}{{end}}' "$cname")" = "false" ] || fail "backup bind mount is not read-only"
   [ "$(docker inspect -f '{{.Image}}' "$cname")" = "$img" ] || fail "image id differs from the live container"
   echo "server: $(docker exec "$cname" postgres --version) psql: $(docker exec "$cname" psql --version)"
