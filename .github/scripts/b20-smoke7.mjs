@@ -89,7 +89,8 @@ const runView = (r) => pick(r ?? {}, ["id", "companyId", "scheduleId", "entityTy
 function which(bin) { try { execFileSync("sh", ["-c", `command -v ${bin}`], { stdio: ["ignore", "pipe", "ignore"] }); return true; } catch { return false; } }
 const SEVENZ = which("7zz") ? "7zz" : which("7z") ? "7z" : null;
 const UNZIP = which("unzip") ? "unzip" : null;
-function run(bin, args) { try { const out = execFileSync(bin, args, { stdio: ["ignore", "pipe", "pipe"], timeout: 60000 }); return { code: 0, out: out.toString("utf8"), err: "" }; } catch (e) { return { code: e.status ?? -1, out: e.stdout?.toString("utf8") ?? "", err: e.stderr?.toString("utf8") ?? "" }; } }
+// Runs a local archive tool with an argument VECTOR (no shell); never logs its args.
+function sh(bin, args) { try { const out = execFileSync(bin, args, { stdio: ["ignore", "pipe", "pipe"], timeout: 60000 }); return { code: 0, out: out.toString("utf8"), err: "" }; } catch (e) { return { code: e.status ?? -1, out: e.stdout?.toString("utf8") ?? "", err: e.stderr?.toString("utf8") ?? "" }; } }
 // Sanitize tool output before it can reach the log: tool messages never echo the
 // password, but the check detail is scrubbed anyway.
 const scrub = (s) => { let t = String(s ?? ""); for (const p of SECRETS) t = t.split(p).join("[redacted]"); return t.slice(0, 400); };
@@ -231,7 +232,7 @@ async function main() {
       const zipPath = path.join(WORK_DIR, `${method}.zip`);
       fs.writeFileSync(zipPath, bytes);
       const hdr = zipHeaderInfo(bytes);
-      const listing = run(SEVENZ, ["l", "-slt", zipPath]);
+      const listing = sh(SEVENZ, ["l", "-slt", zipPath]);
       const methodLine = (listing.out.match(/^Method = .*$/m) ?? [""])[0];
       const expectedHdr = method === "aes256" ? hdr.encrypted && hdr.method === 99 && hdr.aes?.strength === 3 && hdr.observed === "AES-256" : hdr.encrypted && hdr.method !== 99 && hdr.aes === null && hdr.observed === "ZipCrypto";
       const expectedTool = method === "aes256" ? /AES-256/.test(methodLine) : /ZipCrypto/.test(methodLine);
@@ -241,11 +242,11 @@ async function main() {
       const wrongDir = path.join(WORK_DIR, `${method}-wrong`), rightDir = path.join(WORK_DIR, `${method}-right`);
       fs.mkdirSync(wrongDir, { recursive: true }); fs.mkdirSync(rightDir, { recursive: true });
       const wrongPw = `${PW[method]}x`;
-      const bad = run(SEVENZ, ["x", `-p${wrongPw}`, "-y", `-o${wrongDir}`, zipPath]);
+      const bad = sh(SEVENZ, ["x", `-p${wrongPw}`, "-y", `-o${wrongDir}`, zipPath]);
       const badFiles = fs.readdirSync(wrongDir);
       const badCsvValid = badFiles.some((f) => { try { return parseCsv(fs.readFileSync(path.join(wrongDir, f), "utf8")).some((r) => r.includes(fx.contacts[0].expected.Email)); } catch { return false; } });
       check("the WRONG password cannot extract the CSV (7-Zip fails and no readable fixture data appears)", bad.code !== 0 && !badCsvValid, { exitCode: bad.code, message: scrub((bad.err || bad.out).split("\n").filter((l) => /wrong|password|error|crc|data/i.test(l)).slice(0, 3).join(" | ")), filesLeft: badFiles.length });
-      const good = run(SEVENZ, ["x", `-p${PW[method]}`, "-y", `-o${rightDir}`, zipPath]);
+      const good = sh(SEVENZ, ["x", `-p${PW[method]}`, "-y", `-o${rightDir}`, zipPath]);
       const goodFiles = fs.readdirSync(rightDir).filter((f) => f.endsWith(".csv"));
       let rows = [], header = [], parsed = false;
       if (goodFiles.length === 1) { const text = fs.readFileSync(path.join(rightDir, goodFiles[0]), "utf8"); const all = parseCsv(text); header = all[0] ?? []; rows = all.slice(1); parsed = true; }
@@ -265,8 +266,8 @@ async function main() {
       // Legacy-tool compatibility evidence (the reason zip20 exists) — Info-ZIP unzip.
       if (UNZIP) {
         const compatDir = path.join(WORK_DIR, `${method}-unzip`); fs.mkdirSync(compatDir, { recursive: true });
-        const uz = run(UNZIP, ["-P", PW[method], "-o", "-d", compatDir, zipPath]);
-        const uzWrong = run(UNZIP, ["-P", wrongPw, "-o", "-d", path.join(WORK_DIR, `${method}-unzip-wrong`), zipPath]);
+        const uz = sh(UNZIP, ["-P", PW[method], "-o", "-d", compatDir, zipPath]);
+        const uzWrong = sh(UNZIP, ["-P", wrongPw, "-o", "-d", path.join(WORK_DIR, `${method}-unzip-wrong`), zipPath]);
         if (method === "zip20") check("legacy-tool compatibility: Info-ZIP unzip opens the ZipCrypto archive with the password and refuses the wrong one", uz.code === 0 && fs.readdirSync(compatDir).length === 1 && uzWrong.code !== 0, { unzipExit: uz.code, wrongExit: uzWrong.code, message: scrub((uzWrong.err || uzWrong.out).split("\n").filter((l) => /password|incorrect/i.test(l)).slice(0, 1).join("")) });
         else note("AES-256 archive with Info-ZIP unzip (expected: unsupported — an AES-capable tool such as 7-Zip is required)", { unzipExit: uz.code, message: scrub((uz.err || uz.out).split("\n").filter((l) => /unsupported|compression method|need PK|skipping/i.test(l)).slice(0, 1).join("")) });
         fs.rmSync(compatDir, { recursive: true, force: true }); fs.rmSync(path.join(WORK_DIR, `${method}-unzip-wrong`), { recursive: true, force: true });
