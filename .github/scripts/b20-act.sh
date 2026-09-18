@@ -988,6 +988,293 @@ phase_b22_listener() {
   log "b22-listener complete (read-only)"
 }
 
+# =============================================================================
+# B23 G-6 — backup inventory + ISOLATED restore rehearsal (dev VPS).
+#   g6-inventory : STRICTLY READ-ONLY. UTC baseline, deploy/containers/volumes/
+#                  images, live schema + size, the effective backup script, what
+#                  actually schedules it (cron / systemd timers, as the deploy
+#                  user), the local backup files (size, mode, gzip integrity,
+#                  sha256, dump structure, COPY data-row totals), independent
+#                  off-host evidence (tools/configs presence; the app's own dev
+#                  bucket listed inside the api container — counts only), and the
+#                  capacity gate for the rehearsal. Never prints SQL rows, names,
+#                  credentials or bucket/object names.
+#   g6-restore   : ONE disposable postgres container from the SAME image id the live
+#                  container runs, --network none (no published port, no compose
+#                  network), its own private named volume, memory/cpu capped, the
+#                  chosen backup bind-mounted READ-ONLY, restore with ON_ERROR_STOP
+#                  in a single transaction, verification, then cleanup by trap +
+#                  absence proof. Never touches the live container / volume / env
+#                  and never reads the live credentials (roles referenced by the
+#                  dump are re-created in the disposable instance, names unprinted).
+#   g6-verify    : READ-ONLY post-check — no g6 resource remains, backup files
+#                  unchanged (sha256/mtime), live stack unchanged.
+# =============================================================================
+G6_BACKUP_DIR="${BACKUP_DIR:-/opt/lead-capture-pro/backups/postgres}"
+g6_utc() { date -u +%FT%TZ; }
+g6_mask() { sed -E 's#(postgres(ql)?://)[^[:space:]]+#\1<masked>#g; s/user "[^"]*"/user "<masked>"/g; s/[A-Za-z0-9+\/=_-]{32,}/<masked>/g'; }
+g6_backup_lines() {
+  # One line per backup file (sorted newest first) — metadata + dump structure only.
+  local now f m age gz hdr dfrom dby ct cp done_ rows ext bu
+  now="$(date +%s)"
+  for f in $(ls -1t "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null); do
+    m="$(stat -c %Y "$f")"; age=$(( (now - m) / 3600 ))
+    if gzip -t "$f" 2>/dev/null; then gz=ok; else gz=CORRUPT; fi
+    hdr="?"; dfrom="?"; dby="?"; ct=0; cp=0; done_=0; rows=0; ext=0; bu=0
+    if [ "$gz" = ok ]; then
+      hdr="$(zcat "$f" 2>/dev/null | head -1 | cut -c1-40 || true)"
+      dfrom="$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped from database version [0-9.]+' | awk '{print $NF}' || true)"
+      dby="$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped by pg_dump version [0-9.]+' | awk '{print $NF}' || true)"
+      ct="$(zcat "$f" | grep -c '^CREATE TABLE ' || true)"; cp="$(zcat "$f" | grep -c '^COPY ' || true)"
+      done_="$(zcat "$f" | grep -c '^-- PostgreSQL database dump complete' || true)"
+      rows="$(zcat "$f" | awk '/^COPY /{c=1;next} c&&/^\\\.$/{c=0;next} c{n++} END{print n+0}')"
+      ext="$(zcat "$f" | grep -c '^CREATE EXTENSION' || true)"; bu="$(zcat "$f" | wc -c)"
+    fi
+    echo "backup $(basename "$f"): size=$(stat -c %s "$f") mode=$(stat -c %a "$f") owner=$(stat -c %U:%G "$f") mtime_utc=$(date -u -d @"$m" +%FT%TZ) age_h=$age gzip=$gz sha256=$(sha256sum "$f" | cut -c1-64) header='$hdr' dumped_from=$dfrom pg_dump=$dby create_table=$ct copy_blocks=$cp data_rows=$rows extensions=$ext complete_marker=$done_ uncompressed_bytes=$bu"
+  done
+}
+g6_ctr_exists() { docker ps -a --format '{{.Names}}' | grep -qx "$1"; }
+g6_vol_exists() { docker volume ls -q | grep -qx "$1"; }
+g6_resources() {
+  echo "g6 containers (label): $(docker ps -a -q --filter label=b23.g6 | wc -l) (name prefix): $(docker ps -a --format '{{.Names}}' | grep -c '^g6-restore-' || true) g6 volumes (label): $(docker volume ls -q --filter label=b23.g6 | wc -l) (name prefix): $(docker volume ls -q | grep -c '^g6-restore-' || true) work dirs: $(ls -d "$HOME"/g6-*.?????? 2>/dev/null | wc -l)"
+}
+g6_stack_state() {
+  section "live stack state (read-only)"
+  echo "utc_now=$(g6_utc)"
+  echo "HEAD=$(git -C "$APP_DIR" rev-parse HEAD) current-deploy.sha=$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null || echo none) previous-deploy.sha=$(cat "$STATE_DIR/previous-deploy.sha" 2>/dev/null || echo none) dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l)"
+  for svc in postgres api web; do local cid; cid="$(compose ps -q "$svc" || true)"; [ -n "$cid" ] || fail "$svc container absent"; docker inspect -f "$svc: id={{.Id}} image={{.Config.Image}} image_id={{.Image}} created={{.Created}} started={{.State.StartedAt}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}" "$cid"; done
+  echo "postgres mounts: $(docker inspect -f '{{range .Mounts}}{{.Type}}:{{.Name}}->{{.Destination}} {{end}}' "$PG_CID")"
+  for v in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$PG_CID"); do docker volume inspect -f "volume $v: created={{.CreatedAt}} driver={{.Driver}}" "$v"; done
+  echo "all containers: $(docker ps -a --format '{{.Names}}={{.State}}' | sort | tr '\n' ' ')"
+  echo "all volumes: $(docker volume ls --format '{{.Name}}' | sort | tr '\n' ' ')"
+  echo "images: $(docker images --format '{{.Repository}}:{{.Tag}}@{{.ID}}' | sort | tr '\n' ' ') dangling=$(docker images -q -f dangling=true | wc -l)"
+  echo "env: $(stat -c 'mode=%a size=%s mtime=%y' "$ENV_FILE") sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16)"
+  echo "readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE) healthz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/healthz || echo UNAVAILABLE)"
+  echo "schema_fingerprint=$(fingerprint) (F2 expected $F2_CONST)"
+  q "select 'live: tables='||(select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')||' indexes='||(select count(*) from pg_indexes where schemaname='public')||' fks='||(select count(*) from pg_constraint where connamespace='public'::regnamespace and contype='f')||' extensions='||(select string_agg(extname||':'||extversion, ',' order by extname) from pg_extension)||' db_size_bytes='||pg_database_size(current_database())||' server_version='||current_setting('server_version')"
+  q "select 'live rows: companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' job_queue='||(select count(*) from job_queue)||' workflow_runs='||(select count(*) from workflow_runs)||' billing_checkout_sessions='||(select count(*) from billing_checkout_sessions)||' export_runs='||(select count(*) from export_runs)||' export_schedules='||(select count(*) from export_schedules)||' audit_logs='||(select count(*) from audit_logs)"
+  g6_resources
+}
+
+phase_g6_inventory() {
+  section "read-only guard"
+  if q "create temp table b20_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard did not hold"; else echo "session refuses writes (default_transaction_read_only=on): OK"; fi
+  g6_stack_state
+  section "UTC baseline / host"
+  echo "utc_now=$(g6_utc) host_tz=$(date +%Z) uptime_s=$(cut -d. -f1 /proc/uptime) nproc=$(nproc) load=$(cut -d' ' -f1-3 /proc/loadavg) docker=$(docker version -f '{{.Server.Version}}' 2>/dev/null || echo ?) compose=$(docker compose version --short 2>/dev/null || echo ?)"
+  local prev; prev="$(cat "$STATE_DIR/previous-deploy.sha" 2>/dev/null || true)"
+  if [ -n "$prev" ]; then echo "previous-deploy.sha commit in hosted checkout: present=$(git -C "$APP_DIR" cat-file -e "$prev^{commit}" 2>/dev/null && echo yes || echo no) committed=$(git -C "$APP_DIR" log -1 --format=%cI "$prev" 2>/dev/null || echo n/a) on_origin_develop=$(git -C "$APP_DIR" merge-base --is-ancestor "$prev" origin/develop 2>/dev/null && echo yes || echo unknown)"; fi
+  echo "state files: $(ls -la --time-style=+%FT%TZ "$STATE_DIR"/current-deploy.sha "$STATE_DIR"/previous-deploy.sha 2>&1 | awk '{print $1, $6, $7}' | tr '\n' ';')"
+  section "effective backup script (hosted checkout)"
+  local bs="$APP_DIR/docker/scripts/backup-postgres.sh"
+  [ -f "$bs" ] || fail "backup script absent in the hosted checkout"
+  echo "script: $(stat -c 'mode=%a owner=%U:%G size=%s mtime=%y' "$bs") blob=$(git -C "$APP_DIR" hash-object "$bs") tracked_blob=$(git -C "$APP_DIR" rev-parse HEAD:docker/scripts/backup-postgres.sh) identical=$([ "$(git -C "$APP_DIR" hash-object "$bs")" = "$(git -C "$APP_DIR" rev-parse HEAD:docker/scripts/backup-postgres.sh)" ] && echo yes || echo no)"
+  echo "script defaults: $(grep -oE '^BACKUP_DIR=.*' "$bs") $(grep -oE '^KEEP=.*' "$bs") size_floor_check=$(grep -c 'ge 1024' "$bs" || true) gzip_test=$(grep -c 'gzip -t' "$bs" || true) tmp_then_rename=$(grep -cE '\.tmp|\.part|mv ' "$bs" || true) lock=$(grep -cE 'flock|lockfile' "$bs" || true) checksum_file=$(grep -cE 'sha256sum|md5sum' "$bs" || true) offhost_cmd=$(grep -cE 'rclone|gsutil|gcloud storage|rsync|scp |aws s3|restic|borg' "$bs" || true) alerting=$(grep -cE 'mail|curl|webhook' "$bs" || true)"
+  section "what schedules the backup (as the deploy user; root-only files reported as unknown)"
+  echo "cron daemon: $(systemctl is-active cron 2>/dev/null || systemctl is-active crond 2>/dev/null || echo unknown) enabled=$(systemctl is-enabled cron 2>/dev/null || echo unknown)"
+  local uc; uc="$(crontab -l 2>/dev/null || true)"
+  echo "user crontab: $(printf '%s\n' "$uc" | grep -vE '^\s*(#|$)' | grep -c . || true) active line(s); backup-postgres references=$(printf '%s\n' "$uc" | grep -vE '^\s*#' | grep -c 'backup-postgres' || true)"
+  printf '%s\n' "$uc" | grep -vE '^\s*(#|$)' | g6_mask | cut -c1-220 | sed 's/^/  cron: /' || true
+  echo "/etc/crontab: $( [ -r /etc/crontab ] && echo "readable backup-postgres=$(grep -c backup-postgres /etc/crontab || true)" || echo unreadable)"
+  echo "/etc/cron.d: $( [ -r /etc/cron.d ] && echo "entries=$(ls -1 /etc/cron.d | wc -l) backup-postgres_files=$(grep -rl backup-postgres /etc/cron.d 2>/dev/null | wc -l)" || echo unreadable)"
+  echo "/etc/cron.{hourly,daily,weekly,monthly}: backup-postgres_files=$(grep -rl backup-postgres /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly 2>/dev/null | wc -l) unreadable_dirs=$(for d in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly; do [ -r "$d" ] || echo "$d"; done | wc -l)"
+  echo "root crontab: $( [ -r /var/spool/cron/crontabs/root ] && echo readable || echo 'not readable as this user (unknown)')"
+  echo "other users' crontabs dir: $( [ -r /var/spool/cron/crontabs ] && echo "readable entries=$(ls -1 /var/spool/cron/crontabs | wc -l)" || echo 'not readable (unknown)')"
+  echo "system timers: total=$(systemctl list-timers --all --no-pager --no-legend 2>/dev/null | wc -l) matching(backup|postgres|pg|lead)=$(systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -ciE 'backup|postgres|pg|lead' || true)"
+  systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -iE 'backup|postgres|pg|lead' | cut -c1-200 | sed 's/^/  timer: /' || true
+  echo "user timers: $(systemctl --user list-timers --all --no-pager --no-legend 2>/dev/null | wc -l || echo 0) (user manager: $(systemctl --user is-system-running 2>/dev/null || echo unavailable))"
+  echo "cron journal (last 14 days): $(journalctl -u cron --since '-14 days' --no-pager -q 2>/dev/null | wc -l) lines readable; backup-postgres mentions=$(journalctl -u cron --since '-14 days' --no-pager -q 2>/dev/null | grep -c backup-postgres || true); journal access=$(journalctl -u cron -n 1 --no-pager -q >/dev/null 2>&1 && echo ok || echo denied)"
+  echo "syslog (grep, if readable): backup-postgres mentions=$(grep -h backup-postgres /var/log/syslog /var/log/syslog.1 2>/dev/null | wc -l) readable=$([ -r /var/log/syslog ] && echo yes || echo no)"
+  echo "repo workflows with a schedule trigger: $(grep -l '^\s*schedule:' "$APP_DIR"/.github/workflows/*.yml 2>/dev/null | wc -l)"
+  local bl="$G6_BACKUP_DIR/backup.log"
+  if [ -f "$bl" ]; then echo "backup.log: $(stat -c 'size=%s mode=%a mtime=%y' "$bl") lines=$(wc -l <"$bl") ok_lines=$(grep -c '\[backup\] OK' "$bl" || true) error_lines=$(grep -c 'ERROR' "$bl" || true) first_ok=$(grep -m1 -oE 'leadcapture-[0-9]{8}-[0-9]{6}' "$bl" || echo none) last_ok=$(grep '\[backup\] OK' "$bl" | tail -1 | grep -oE 'leadcapture-[0-9]{8}-[0-9]{6}' || echo none)"; tail -12 "$bl" | g6_mask | cut -c1-200 | sed 's/^/  log: /'; else echo "backup.log: absent (no evidence of cron-driven runs writing the documented log)"; fi
+  section "local backup inventory ($G6_BACKUP_DIR)"
+  if [ ! -d "$G6_BACKUP_DIR" ]; then echo "backup directory ABSENT"; else
+    echo "dir: $(stat -c 'mode=%a owner=%U:%G mtime=%y' "$G6_BACKUP_DIR") filesystem=$(df --output=source,target "$G6_BACKUP_DIR" | tail -1 | tr -s ' ') du_k=$(du -sk "$G6_BACKUP_DIR" | cut -f1) inside_docker_volume=$(case "$G6_BACKUP_DIR" in /var/lib/docker/*) echo yes;; *) echo no;; esac)"
+    echo "entries: total=$(ls -1A "$G6_BACKUP_DIR" | wc -l) backups=$(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | wc -l) other=[$(ls -1A "$G6_BACKUP_DIR" | grep -vE '^leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz$' | tr '\n' ' ')] partial_or_tmp=$(ls -1A "$G6_BACKUP_DIR" | grep -cE '\.(tmp|part|partial)$' || true)"
+    g6_backup_lines
+  fi
+  section "selection (newest complete, gzip-valid backup)"
+  local sel="" sel_sum="" sel_age="" sel_u=0 sel_m=""
+  while read -r line; do
+    [ -n "$line" ] || continue
+    if echo "$line" | grep -q ' gzip=ok ' && echo "$line" | grep -q ' complete_marker=1 '; then
+      sel="$(echo "$line" | sed -E 's/^backup ([^:]+):.*/\1/')"; sel_sum="$(echo "$line" | grep -oE 'sha256=[0-9a-f]{64}' | cut -d= -f2 || true)"; sel_age="$(echo "$line" | grep -oE 'age_h=[0-9]+' | cut -d= -f2 || true)"; sel_u="$(echo "$line" | grep -oE 'uncompressed_bytes=[0-9]+' | cut -d= -f2 || echo 0)"; sel_m="$(echo "$line" | grep -oE 'mtime_utc=[^ ]+' | cut -d= -f2 || true)"; break
+    fi
+  done < <(g6_backup_lines)
+  local newest; newest="$(ls -1t "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | head -1 | xargs -r basename || true)"
+  echo "newest_file=${newest:-none} selected_backup=${sel:-none} selected_sha256=${sel_sum:-none} selected_mtime_utc=${sel_m:-none} selected_age_h=${sel_age:-none} selected_uncompressed_bytes=$sel_u newest_is_selected=$([ -n "$sel" ] && [ "$sel" = "$newest" ] && echo yes || echo no)"
+  section "off-host copy evidence (independent, read-only; presence only)"
+  local t; for t in rclone gsutil gcloud aws restic borg rsync duplicity s3cmd; do printf '%s=%s ' "$t" "$(command -v "$t" >/dev/null 2>&1 && echo present || echo absent)"; done; echo
+  for c in "$HOME/.config/rclone/rclone.conf" "$HOME/.aws/credentials" "$HOME/.config/gcloud" "$HOME/.boto" "$HOME/.s3cfg" "$HOME/.ssh/config" "$HOME/.restic" "$HOME/.config/borg"; do printf '%s=%s ' "$(basename "$c")" "$([ -e "$c" ] && echo present || echo absent)"; done; echo
+  echo "user crontab off-host commands (rclone|gsutil|gcloud|rsync|scp|aws|restic|borg|curl): $(printf '%s\n' "$uc" | grep -vE '^\s*#' | grep -cE 'rclone|gsutil|gcloud|rsync|scp|aws |restic|borg|curl' || true)"
+  echo "app dev bucket (listed inside the api container with the app's own credential; counts only):"
+  compose exec -T api node -e '
+const { Storage } = require("@google-cloud/storage");
+const s = new Storage();
+const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID || "";
+if (!bucket) { console.log("  object storage is not configured in this container"); process.exit(2); }
+(async () => {
+  const [files] = await s.bucket(bucket).getFiles({ autoPaginate: true });
+  const byPrefix = {}; let backupLike = 0; let newestBackupLike = null;
+  for (const f of files) {
+    const p = f.name.split("/")[0] || "(root)"; byPrefix[p] = (byPrefix[p] || 0) + 1;
+    if (/\.sql(\.gz)?$|\.dump$|backup|pgdump|pg_dump/i.test(f.name)) { backupLike++; const u = f.metadata && f.metadata.updated; if (u && (!newestBackupLike || u > newestBackupLike)) newestBackupLike = u; }
+  }
+  console.log("  objects total=" + files.length + " top-level prefixes=" + Object.keys(byPrefix).length + " backup-like objects=" + backupLike + " newest backup-like updated=" + (newestBackupLike || "none"));
+  console.log("  per-prefix counts: " + Object.keys(byPrefix).sort().map((k) => (k.startsWith(".") ? k : "<prefix>") + "=" + byPrefix[k]).join(" "));
+})().catch((e) => { console.log("  list error=" + (e && e.constructor ? e.constructor.name : "Error") + " code=" + (e && e.code != null ? e.code : "-")); process.exit(1); });' || echo "  bucket listing failed (see above)"
+  echo "hosting-provider snapshots/backups (Hostinger panel): not verifiable from inside the VPS — unknown"
+  section "capacity headroom (before creating anything)"
+  local droot; droot="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)"
+  echo "docker_root=$droot"
+  { df -B1 --output=target,size,avail,pcent / "$droot" "$HOME" "$G6_BACKUP_DIR" 2>/dev/null || true; } | awk 'NR>1{print "  disk " $1 " size=" $2 " avail=" $3 " used=" $4}' | sort -u || true
+  awk '/MemTotal|MemAvailable|SwapTotal|SwapFree/{printf "  mem %s %d MiB\n", $1, $2/1024}' /proc/meminfo
+  echo "  postgres image for the rehearsal: id=$(docker inspect -f '{{.Image}}' "$PG_CID") present=$(docker image inspect -f '{{.Id}}' "$(docker inspect -f '{{.Image}}' "$PG_CID")" >/dev/null 2>&1 && echo yes || echo no) size=$(docker image inspect -f '{{.Size}}' "$(docker inspect -f '{{.Image}}' "$PG_CID")" 2>/dev/null || echo ?)"
+  g6_resources
+  local avail_docker avail_home memavail need reasons=""
+  avail_docker="$(df -B1 --output=avail "$droot" 2>/dev/null | tail -1 | tr -d ' ' || true)"; avail_home="$(df -B1 --output=avail "$HOME" 2>/dev/null | tail -1 | tr -d ' ' || true)"
+  memavail="$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo)"
+  need=$(( 1073741824 + sel_u * 30 ))
+  [ -n "$sel" ] || reasons="$reasons no-complete-gzip-valid-backup;"
+  [ "${avail_docker:-0}" -ge "$need" ] || reasons="$reasons docker-root-avail<${need};"
+  [ "${avail_home:-0}" -ge 268435456 ] || reasons="$reasons home-avail<256MiB;"
+  [ "${memavail:-0}" -ge 805306368 ] || reasons="$reasons mem-available<768MiB;"
+  [ "$(docker ps -a -q --filter label=b23.g6 | wc -l)" = "0" ] && [ "$(docker volume ls -q --filter label=b23.g6 | wc -l)" = "0" ] || reasons="$reasons leftover-g6-resources;"
+  docker image inspect "$(docker inspect -f '{{.Image}}' "$PG_CID")" >/dev/null 2>&1 || reasons="$reasons postgres-image-missing;"
+  echo "gate_inputs: docker_root_avail=$avail_docker need=$need home_avail=$avail_home mem_available=$memavail"
+  if [ -z "$reasons" ]; then echo "gate=PASS"; else echo "gate=FAIL reasons=[$reasons]"; fi
+  echo "now_epoch_ms=$(date +%s%3N)"
+  log "g6-inventory complete (read-only)"
+}
+
+phase_g6_restore() {
+  local name="$ARG1" sum="$ARG2" tag="$ARG3"
+  [[ "$name" =~ ^leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz$ ]] || fail "ARG1 must be a backup file name"
+  [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || fail "ARG2 must be the sha256 of the backup"
+  [[ "$tag" =~ ^[a-z0-9]{4,16}$ ]] || fail "ARG3 must be the run tag"
+  local f="$G6_BACKUP_DIR/$name"
+  section "backup selection guard"
+  [ -f "$f" ] || fail "backup $name not found"
+  [ "$(sha256sum "$f" | cut -c1-64)" = "$sum" ] || fail "sha256 of $name does not match the inventory"
+  gzip -t "$f" || fail "gzip integrity check failed"
+  [ "$(zcat "$f" | grep -c '^-- PostgreSQL database dump complete')" = "1" ] || fail "not a complete dump"
+  echo "backup=$name size=$(stat -c %s "$f") mtime_utc=$(date -u -d @"$(stat -c %Y "$f")" +%FT%TZ) sha256=$sum gzip=ok complete_marker=1"
+  local img
+  img="$(docker inspect -f '{{.Image}}' "$PG_CID")"
+  # Globals on purpose: the EXIT trap runs after this function has returned.
+  G6_CNAME="g6-restore-$tag"; G6_VNAME="g6-restore-$tag-pgdata"; G6_WORK="$(mktemp -d "$HOME/g6-$tag.XXXXXX")"; chmod 700 "$G6_WORK"
+  local cname="$G6_CNAME" vname="$G6_VNAME" work="$G6_WORK"
+  ! g6_ctr_exists "$cname" || fail "a container named $cname already exists"
+  ! g6_vol_exists "$vname" || fail "a volume named $vname already exists"
+  g6_cleanup() {
+    local rc=$?
+    set +e
+    section "cleanup (trap; always)"
+    if g6_ctr_exists "$G6_CNAME"; then docker rm -f "$G6_CNAME" >/dev/null 2>&1 && echo "container $G6_CNAME removed" || echo "container $G6_CNAME REMOVAL FAILED"; else echo "container $G6_CNAME absent"; fi
+    if g6_vol_exists "$G6_VNAME"; then docker volume rm -f "$G6_VNAME" >/dev/null 2>&1 && echo "volume $G6_VNAME removed" || echo "volume $G6_VNAME REMOVAL FAILED"; else echo "volume $G6_VNAME absent"; fi
+    rm -rf "$G6_WORK"; echo "work dir removed: $([ -e "$G6_WORK" ] && echo NO || echo yes)"
+    echo "remaining: container_exists=$(g6_ctr_exists "$G6_CNAME" && echo yes || echo no) volume_exists=$(g6_vol_exists "$G6_VNAME" && echo yes || echo no) workdir_exists=$([ -e "$G6_WORK" ] && echo yes || echo no)"
+    g6_resources
+    echo "cleanup_utc=$(g6_utc) phase_exit=$rc"
+    exit "$rc"
+  }
+  trap g6_cleanup EXIT
+  section "disposable isolated postgres (same image id as the live container; --network none; private volume; capped)"
+  local pw; pw="$(openssl rand -hex 24)"
+  docker volume create --label "b23.g6=$tag" "$vname" >/dev/null
+  docker run -d --name "$cname" --label "b23.g6=$tag" --network none --memory 640m --memory-swap 640m --cpus 1 --pids-limit 256 \
+    -e POSTGRES_USER=g6 -e POSTGRES_DB=g6restore -e POSTGRES_PASSWORD="$pw" -e POSTGRES_INITDB_ARGS="--data-checksums" \
+    -v "$vname:/var/lib/postgresql/data" -v "$f:/backup/$name:ro" "$img" >/dev/null
+  unset pw
+  local i; for i in $(seq 1 90); do docker exec "$cname" pg_isready -q -U g6 -d g6restore 2>/dev/null && break; sleep 1; done
+  docker exec "$cname" pg_isready -U g6 -d g6restore >/dev/null || { docker logs --tail 20 "$cname" 2>&1 | g6_mask | cut -c1-160; fail "disposable postgres did not become ready"; }
+  docker inspect -f "isolation: network_mode={{.HostConfig.NetworkMode}} networks=[{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}} {{end}}] published_ports=[{{range \$p,\$b := .NetworkSettings.Ports}}{{\$p}}->{{\$b}} {{end}}] mounts=[{{range .Mounts}}{{.Type}}:{{if .Name}}{{.Name}}{{else}}<backup-file>{{end}}->{{.Destination}}:{{if .RW}}rw{{else}}ro{{end}} {{end}}] image_id={{.Image}} memory={{.HostConfig.Memory}} nanocpus={{.HostConfig.NanoCpus}} pids={{.HostConfig.PidsLimit}}" "$cname"
+  [ "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$cname")" = "none" ] || fail "disposable instance is not network-isolated"
+  [ -z "$(docker inspect -f '{{range $p,$b := .NetworkSettings.Ports}}{{if $b}}{{$p}} {{end}}{{end}}' "$cname")" ] || fail "disposable instance publishes ports"
+  if docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$cname" | grep -q 'card-scanner-pro_pgdata'; then fail "live volume mounted"; fi
+  [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.RW}}{{end}}{{end}}' "$cname")" = "false" ] || fail "backup bind mount is not read-only"
+  [ "$(docker inspect -f '{{.Image}}' "$cname")" = "$img" ] || fail "image id differs from the live container"
+  echo "server: $(docker exec "$cname" postgres --version) psql: $(docker exec "$cname" psql --version)"
+  echo "live container network(s) (for contrast): $(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$PG_CID")"
+  section "roles referenced by the dump → created in the disposable instance (names never printed)"
+  local roles n=0 r
+  roles="$(zcat "$f" | grep -oE '(OWNER TO|GRANT [A-Z, ]+ ON [^;]+ TO) [^;]+' | sed -E 's/.* TO //' | tr -d '"' | grep -vE '^(PUBLIC|pg_[a-z_]+|g6)$' | sort -u || true)"
+  while read -r r; do
+    [ -n "$r" ] || continue
+    [[ "$r" =~ ^[A-Za-z0-9_]+$ ]] || fail "unexpected role token in the dump"
+    docker exec "$cname" psql -q -v ON_ERROR_STOP=1 -U g6 -d g6restore -c "create role \"$r\" login" >/dev/null 2>"$work/role.err" || { g6_mask <"$work/role.err" | cut -c1-120; fail "could not create a referenced role"; }
+    n=$((n + 1))
+  done <<< "$roles"
+  echo "roles_created=$n"
+  section "restore (gunzip → psql, ON_ERROR_STOP=1, --single-transaction, exit status checked)"
+  local t0 t1 t2 rc
+  echo "restore_start_utc=$(g6_utc)"; t0="$(date +%s%3N)"
+  set +e
+  # Decompress inside the disposable container (its own writable layer, removed with
+  # it), then run psql on the file: no pipeline status to reason about.
+  timeout 300 docker exec "$cname" sh -c 'gunzip -c "$0" > /tmp/g6-restore.sql' "/backup/$name" 2>"$work/gunzip.err" || { g6_mask <"$work/gunzip.err" | head -2 | cut -c1-160; fail "gunzip inside the disposable container failed"; }
+  timeout 900 docker exec "$cname" psql -q -X -v ON_ERROR_STOP=1 --single-transaction -U g6 -d g6restore -f /tmp/g6-restore.sql >"$work/restore.out" 2>"$work/restore.err"
+  rc=$?
+  docker exec "$cname" rm -f /tmp/g6-restore.sql || true
+  set -e
+  t1="$(date +%s%3N)"
+  echo "restore_end_utc=$(g6_utc) restore_exit=$rc restore_ms=$((t1 - t0)) stdout_lines=$(wc -l <"$work/restore.out") stderr_lines=$(wc -l <"$work/restore.err") error_lines=$(grep -cE 'ERROR|FATAL|PANIC' "$work/restore.err" || true) warning_lines=$(grep -c 'WARNING' "$work/restore.err" || true)"
+  if [ "$rc" != "0" ] || grep -qE 'ERROR|FATAL|PANIC' "$work/restore.err"; then
+    echo "first stderr lines (truncated; data lines omitted):"; grep -vE '^\s*$' "$work/restore.err" | head -3 | sed -E 's/(COPY|INSERT|VALUES).*/\1 <omitted>/' | g6_mask | cut -c1-160 | sed 's/^/  /'
+    fail "restore FAILED (exit=$rc)"
+  fi
+  [ -s "$work/restore.err" ] && { echo "stderr (non-error) lines:"; head -5 "$work/restore.err" | g6_mask | cut -c1-160 | sed 's/^/  /'; }
+  section "verification (disposable instance; read-only session)"
+  Q() { docker exec "$cname" psql -q -X -v ON_ERROR_STOP=1 -tA -F '|' -U g6 -d g6restore -c "set default_transaction_read_only = on" -c "$1"; }
+  if Q "create temp table g6_should_fail (x int)" >/dev/null 2>&1; then fail "read-only verification session did not hold"; else echo "verification session refuses writes: OK"; fi
+  local cat_; cat_="$(Q "select 'tables='||(select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')||' indexes='||(select count(*) from pg_indexes where schemaname='public')||' fks='||(select count(*) from pg_constraint where connamespace='public'::regnamespace and contype='f')||' pk_unique='||(select count(*) from pg_constraint where connamespace='public'::regnamespace and contype in ('p','u'))||' sequences='||(select count(*) from information_schema.sequences where sequence_schema='public')||' extensions='||(select string_agg(extname||':'||extversion, ',' order by extname) from pg_extension)||' db_size_bytes='||pg_database_size(current_database())")"
+  echo "restored catalog: $cat_"
+  local d_ct d_ci d_fk d_pk d_ext
+  d_ct="$(zcat "$f" | grep -c '^CREATE TABLE ' || true)"; d_ci="$(zcat "$f" | grep -cE '^CREATE (UNIQUE )?INDEX ' || true)"; d_fk="$(zcat "$f" | grep -c 'FOREIGN KEY' || true)"; d_pk="$(zcat "$f" | grep -cE 'ADD CONSTRAINT .* (PRIMARY KEY|UNIQUE) ' || true)"
+  d_ext="$(zcat "$f" | grep -oE '^CREATE EXTENSION IF NOT EXISTS [A-Za-z0-9_"-]+' | awk '{print $NF}' | tr -d '"' | sort | tr '\n' ',' | sed 's/,$//' || true)"
+  echo "dump structure: create_table=$d_ct create_index=$d_ci foreign_key=$d_fk pk_unique=$d_pk extensions=[${d_ext:-none}]"
+  local r_ct r_ci r_fk r_pk
+  r_ct="$(echo "$cat_" | grep -oE 'tables=[0-9]+' | cut -d= -f2)"; r_ci="$(echo "$cat_" | grep -oE 'indexes=[0-9]+' | cut -d= -f2)"; r_fk="$(echo "$cat_" | grep -oE 'fks=[0-9]+' | cut -d= -f2)"; r_pk="$(echo "$cat_" | grep -oE 'pk_unique=[0-9]+' | cut -d= -f2)"
+  echo "structure check: tables $r_ct/$d_ct $([ "$r_ct" = "$d_ct" ] && echo MATCH || echo MISMATCH); foreign keys $r_fk/$d_fk $([ "$r_fk" = "$d_fk" ] && echo MATCH || echo MISMATCH); indexes $r_ci vs create_index+pk_unique=$((d_ci + d_pk)) $([ "$r_ci" = "$((d_ci + d_pk))" ] && echo MATCH || echo MISMATCH)"
+  local ext_missing=0 e; for e in $(echo "$d_ext" | tr ',' ' '); do echo "$cat_" | grep -q "extensions=.*\b$e:" || ext_missing=$((ext_missing + 1)); done; echo "extensions from the dump present: $([ "$ext_missing" = 0 ] && echo ALL || echo "MISSING $ext_missing")"
+  [ "$r_ct" = "$d_ct" ] && [ "$r_fk" = "$d_fk" ] && [ "$ext_missing" = 0 ] || fail "restored structure does not match the dump"
+  local rfp; rfp="$(Q "select md5(string_agg(t, '|' order by t)) from (select table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,'') as t from information_schema.columns where table_schema='public' union all select 'idx:'||indexname||':'||indexdef from pg_indexes where schemaname='public' union all select 'con:'||conrelid::regclass::text||':'||conname||':'||pg_get_constraintdef(oid) from pg_constraint where connamespace='public'::regnamespace) s")"
+  echo "restored schema_fingerprint=$rfp (F0 e839d03d928fa46c20797329d2779e3e / F1 4f5776f7421880daf2d453b7466b6ffb / F2 $F2_CONST) known=$(case "$rfp" in e839d03d928fa46c20797329d2779e3e) echo F0;; 4f5776f7421880daf2d453b7466b6ffb) echo F1;; "$F2_CONST") echo F2;; *) echo other;; esac)"
+  section "row counts: every restored table vs the dump's COPY blocks (aggregate counts only)"
+  local list; list="$(Q "select string_agg(format('select %L||''=''||(select count(*) from %I)', table_name, table_name), ' union all ' order by table_name) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'")"
+  Q "$list" | sort > "$work/restored_counts.txt"
+  zcat "$f" | awk '/^COPY public\./{t=$2; sub(/^public\./,"",t); gsub(/"/,"",t); n=0; c=1; next} c&&/^\\\.$/{print t"="n; c=0; next} c{n++}' | sort > "$work/dump_counts.txt"
+  echo "restored tables=$(wc -l <"$work/restored_counts.txt") total_rows=$(awk -F= '{s+=$2} END{print s+0}' "$work/restored_counts.txt") | dump copy_blocks=$(wc -l <"$work/dump_counts.txt") total_rows=$(awk -F= '{s+=$2} END{print s+0}' "$work/dump_counts.txt")"
+  if diff -q "$work/restored_counts.txt" "$work/dump_counts.txt" >/dev/null; then echo "copy_vs_restored=IDENTICAL (every table, every count)"; else echo "copy_vs_restored=DIFFERENT"; diff "$work/restored_counts.txt" "$work/dump_counts.txt" | head -20; fail "restored row counts differ from the dump"; fi
+  echo "key tables: $(grep -E '^(companies|users|job_queue|workflow_runs|billing_checkout_sessions|export_runs|export_schedules|subscriptions|contacts|audit_logs|sessions)=' "$work/restored_counts.txt" | tr '\n' ' ')"
+  echo "all tables: $(tr '\n' ' ' <"$work/restored_counts.txt")"
+  section "read-only catalog / aggregate queries on the restored database"
+  echo "newest timestamps in the restored data (aggregates): $(Q "select 'companies.max_created='||coalesce((select max(created_at)::text from companies),'-')||' users.max_created='||coalesce((select max(created_at)::text from users),'-')||' audit_logs.max_created='||coalesce((select max(created_at)::text from audit_logs),'-')||' job_queue.max_enqueued='||coalesce((select max(enqueued_at)::text from job_queue),'-')" 2>/dev/null || echo 'n/a (column set differs in this backup)')"
+  echo "aggregates: $(Q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' users_with_company='||(select count(distinct company_id) from users where company_id is not null)||' subscriptions='||(select count(*) from subscriptions)")"
+  echo "integrity spot-check (orphans must be 0): $(Q "select 'users_without_company='||(select count(*) from users u where u.company_id is not null and not exists (select 1 from companies c where c.id=u.company_id))||' subscriptions_without_company='||(select count(*) from subscriptions s where not exists (select 1 from companies c where c.id=s.company_id))")"
+  t2="$(date +%s%3N)"
+  local bm; bm="$(stat -c %Y "$f")"
+  echo "measured: restore_ms=$((t1 - t0)) verify_ms=$((t2 - t1)) total_ms=$((t2 - t0)) backup_mtime_utc=$(date -u -d @"$bm" +%FT%TZ) recovery_point_age_at_rehearsal_h=$(( ($(date +%s) - bm) / 3600 )) verification_end_utc=$(g6_utc)"
+  echo "RESTORE_REHEARSAL=PASS backup=$name"
+  log "g6-restore complete"
+}
+
+phase_g6_verify() {
+  section "read-only guard"
+  if q "create temp table b20_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard did not hold"; else echo "session refuses writes (default_transaction_read_only=on): OK"; fi
+  g6_stack_state
+  section "backup files after the rehearsal (must be identical to the inventory)"
+  g6_backup_lines
+  section "no g6 resource may remain"
+  local r; r="$(g6_resources)"; echo "$r"
+  echo "$r" | grep -qE '\(label\): 0 \(name prefix\): 0 g6 volumes \(label\): 0 \(name prefix\): 0 work dirs: 0' || fail "g6 resources remain: $r"
+  { df -B1 --output=target,avail / "$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)" "$HOME" 2>/dev/null || true; } | awk 'NR>1{print "  disk " $1 " avail=" $2}' | sort -u || true
+  awk '/MemAvailable/{printf "  mem %s %d MiB\n", $1, $2/1024}' /proc/meminfo
+  echo "now_epoch_ms=$(date +%s%3N)"
+  log "g6-verify complete (read-only)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   migrate) phase_migrate ;;
@@ -1007,5 +1294,8 @@ case "$PHASE" in
   b22-listener) phase_b22_listener ;;
   g3-count) phase_g3_count ;;
   g3-verify) phase_g3_verify ;;
+  g6-inventory) phase_g6_inventory ;;
+  g6-restore) phase_g6_restore ;;
+  g6-verify) phase_g6_verify ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac

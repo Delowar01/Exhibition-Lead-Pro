@@ -3,7 +3,7 @@
 # only). One-off operations workflow; NOT the deployment pipeline
 # (deploy-dev-vps.yml is untouched) and NOT application code.
 # =============================================================================
-# Trigger:  workflow_dispatch on the `ops/b23-g3-hosted-smoke` branch ONLY.
+# Trigger:  workflow_dispatch on the `ops/b23-g6-backup-rehearsal` branch ONLY.
 # Guard:    the job refuses any other ref, and refuses to run unless the branch
 #           content equals the deployed develop commit plus the ops files.
 # Phases (input `phase`):
@@ -14,6 +14,9 @@
 #   b22         (b22 job) Batch 22 production & provider verification (GCS / Gemini / SMTP /
 #               runtime; disposable data only, no provider activation) — arg1 = deployed sha, arg2 = previous sha
 #   b22-infra / b22-verify (run job) read-only B22 infrastructure evidence / post-check
+#   g6          (g6 job) B23 G-6 backup inventory (read-only) + isolated restore rehearsal in a
+#               disposable network-less postgres container — arg1 = deployed sha, arg2 = previous sha
+#   g6-inventory / g6-verify (run job) read-only G-6 inventory / post-check (arg3 = tag)
 #   preflight   read-only inspection + schema-only dump (SELECT / catalog / pg_dump -s)
 #   migrate     fresh backup → stop API writers → stage-1 schema → repair → stage-2
 #               schema → verification (every gate stops the run; nothing is restored
@@ -31,14 +34,14 @@ on:
   # non-default branch is not indexed); it runs the READ-ONLY preflight, and only
   # when the commit message opts in with [run-preflight].
   push:
-    branches: [ops/b23-g3-hosted-smoke]
+    branches: [ops/b23-g6-backup-rehearsal]
   workflow_dispatch:
     inputs:
       phase:
         description: "Phase to run"
         required: true
         type: choice
-        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener, b22c1, g3, g3-count, g3-verify]
+        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener, b22c1, g3, g3-count, g3-verify, g6, g6-inventory, g6-restore, g6-verify]
       arg1:
         description: "Phase argument 1 (non-secret)"
         required: false
@@ -69,7 +72,7 @@ env:
 jobs:
   run:
     name: B20 hosted activation phase (one-off)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && inputs.phase != 'smoke' && inputs.phase != 'supp' && inputs.phase != 'c4' && inputs.phase != 'b21' && inputs.phase != 'b22' && inputs.phase != 'b22c1' && inputs.phase != 'g3' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && inputs.phase != 'smoke' && inputs.phase != 'supp' && inputs.phase != 'c4' && inputs.phase != 'b21' && inputs.phase != 'b22' && inputs.phase != 'b22c1' && inputs.phase != 'g3' && inputs.phase != 'g6' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -135,7 +138,7 @@ jobs:
   # The cleanup phase ALWAYS runs afterwards with the recorded ids.
   smoke:
     name: B20 hosted smoke (disposable tenant, real Chromium)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && github.event_name == 'workflow_dispatch' && inputs.phase == 'smoke'
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'smoke'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -269,7 +272,7 @@ jobs:
   # Cleanup and the read-only post-check ALWAYS run afterwards.
   supp:
     name: B20 supplemental hosted smoke (disposable tenants, real Chromium)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && github.event_name == 'workflow_dispatch' && inputs.phase == 'supp'
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'supp'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
@@ -428,7 +431,7 @@ jobs:
   # API. c4-verify runs read-only before (records the baseline) and after cleanup.
   c4:
     name: B20 Correction 4 hosted smoke (disposable tenants, real Chromium)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && github.event_name == 'workflow_dispatch' && inputs.phase == 'c4'
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'c4'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -591,7 +594,7 @@ jobs:
   # c4-verify runs read-only before (records the baseline) and after cleanup.
   b21:
     name: B21 admin-panel hosted smoke (disposable tenants, real Chromium)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && github.event_name == 'workflow_dispatch' && inputs.phase == 'b21'
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'b21'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -748,7 +751,7 @@ jobs:
 
   b22:
     name: B22 production & provider verification (disposable tenants, API-level)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && github.event_name == 'workflow_dispatch' && inputs.phase == 'b22'
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'b22'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -965,7 +968,7 @@ jobs:
 
   b22c1:
     name: B22 Correction 1 hosted smoke (one guarded scan probe, disposable tenant, API-level)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && github.event_name == 'workflow_dispatch' && inputs.phase == 'b22c1'
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'b22c1'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -1192,7 +1195,7 @@ jobs:
 
   g3:
     name: B23 G-3 hosted protected-export verification (two disposable tenants, API-level, real object storage)
-    if: github.ref == 'refs/heads/ops/b23-g3-hosted-smoke' && github.event_name == 'workflow_dispatch' && inputs.phase == 'g3'
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'g3'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -1454,3 +1457,125 @@ jobs:
         run: |
           ssh vps 'rm -f "$HOME/b20-act.sh"' < /dev/null || true
           rm -rf "$RUNNER_TEMP/b20-creds" "$RUNNER_TEMP/g3work"
+
+  # ── B23 G-6: backup inventory + ISOLATED restore rehearsal ─────────────────
+  # Phase 1 is strictly read-only. Phase 2 restores ONE verified local backup into
+  # a disposable postgres container on the VPS (same image id as the live
+  # container, --network none, private named volume, memory/cpu capped, backup
+  # bind-mounted read-only) and removes it by trap. Nothing is uploaded to the
+  # runner or to an artifact: the job log carries counts, checksums and timings.
+  g6:
+    name: B23 G-6 backup inventory + isolated restore rehearsal (read-only inventory; one disposable network-less postgres container; live stack untouched)
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'g6'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHA: ${{ inputs.arg1 }}
+      EXPECTED_PREV_SHA: ${{ inputs.arg2 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the branch is the deployed develop commit (f53c901) + the ops files only; validate inputs
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
+          git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-*' ':(exclude).github/workflows/b20-hosted-activation.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          bash -n .github/scripts/b20-act.sh
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "arg1 must be the deployed commit sha"; exit 1; }
+          [[ "$EXPECTED_PREV_SHA" =~ ^([0-9a-f]{40}|-)$ ]] || { echo "arg2 must be the previous commit sha or '-'"; exit 1; }
+          TAG="$(openssl rand -hex 4)"; echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "branch = $BASE_SHA + ops files only; script parses; expected deploy $EXPECTED_SHA (previous $EXPECTED_PREV_SHA); tag=$TAG; utc=$(date -u +%FT%TZ)"
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOC
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOC
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the phase script to the VPS
+        run: |
+          ssh vps 'umask 077; cat > "$HOME/b20-act.sh" && chmod 700 "$HOME/b20-act.sh"' < .github/scripts/b20-act.sh
+
+      - name: c4-verify BEFORE (read-only — deploy / schema / env / volume / queue / existing-customer baseline; stops on drift)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='c4-verify' ARG1='$EXPECTED_SHA' ARG2='$EXPECTED_PREV_SHA' ARG3='$TAG|none|0' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6-before.log"
+          MD5="$(grep -oE '^baseline_md5=[0-9a-f]{32}' "$RUNNER_TEMP/g6-before.log" | head -1 | cut -d= -f2)"
+          [ -n "$MD5" ] || { echo "c4-verify did not report the baseline"; exit 1; }
+          echo "BASELINE_MD5=$MD5" >> "$GITHUB_ENV"
+          START="$(grep -oE '^now_epoch_ms=[0-9]+' "$RUNNER_TEMP/g6-before.log" | head -1 | cut -d= -f2)"
+          echo "SMOKE_START_MS=${START:-0}" >> "$GITHUB_ENV"
+
+      - name: Phase 1 — g6-inventory (STRICTLY read-only; backups, schedule, off-host evidence, capacity gate)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='g6-inventory' ARG1='' ARG2='' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6-inventory.log"
+          grep -E '^backup leadcapture-' "$RUNNER_TEMP/g6-inventory.log" | sed -E 's/ age_h=[0-9]+//' | sort > "$RUNNER_TEMP/backups-before.txt"
+          grep -E '^(all containers|all volumes|images|postgres mounts|env):' "$RUNNER_TEMP/g6-inventory.log" | sort > "$RUNNER_TEMP/stack-before.txt"
+          SEL="$(grep -oE 'selected_backup=[^ ]+' "$RUNNER_TEMP/g6-inventory.log" | head -1 | cut -d= -f2)"
+          SUM="$(grep -oE 'selected_sha256=[0-9a-f]{64}' "$RUNNER_TEMP/g6-inventory.log" | head -1 | cut -d= -f2 || true)"
+          GATE="$(grep -oE '^gate=.*' "$RUNNER_TEMP/g6-inventory.log" | head -1)"
+          echo "SELECTED_BACKUP=$SEL" >> "$GITHUB_ENV"; echo "SELECTED_SHA256=$SUM" >> "$GITHUB_ENV"
+          echo "selected=$SEL sha256=$SUM $GATE"
+          [ "$GATE" = "gate=PASS" ] || { echo "::error::capacity / integrity gate FAILED — the rehearsal is NOT started ($GATE)"; exit 1; }
+          [[ "$SEL" =~ ^leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz$ ]] && [[ "$SUM" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no complete, gzip-valid backup selected"; exit 1; }
+
+      - name: Phase 2 — g6-restore (ONE disposable network-less postgres container; the selected backup read-only; ON_ERROR_STOP; cleanup by trap)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='g6-restore' ARG1='$SELECTED_BACKUP' ARG2='$SELECTED_SHA256' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6-restore.log"
+          grep -q '^RESTORE_REHEARSAL=PASS' "$RUNNER_TEMP/g6-restore.log" || { echo "::error::the restore rehearsal did not report PASS"; exit 1; }
+
+      - name: g6-verify AFTER (ALWAYS, read-only — no g6 resource remains; backup files, containers, volumes, images and env unchanged)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='g6-verify' ARG1='' ARG2='' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6-after.log"
+          [ -f "$RUNNER_TEMP/backups-before.txt" ] || { echo "no inventory recorded (Phase 1 did not run); nothing to compare"; exit 0; }
+          grep -E '^backup leadcapture-' "$RUNNER_TEMP/g6-after.log" | sed -E 's/ age_h=[0-9]+//' | sort > "$RUNNER_TEMP/backups-after.txt"
+          grep -E '^(all containers|all volumes|images|postgres mounts|env):' "$RUNNER_TEMP/g6-after.log" | sort > "$RUNNER_TEMP/stack-after.txt"
+          if diff -q "$RUNNER_TEMP/backups-before.txt" "$RUNNER_TEMP/backups-after.txt" >/dev/null; then echo "backup files unchanged (same set, sizes, mtimes, sha256)"; else echo "::error::backup files CHANGED during the rehearsal"; diff "$RUNNER_TEMP/backups-before.txt" "$RUNNER_TEMP/backups-after.txt" || true; exit 1; fi
+          if diff -q "$RUNNER_TEMP/stack-before.txt" "$RUNNER_TEMP/stack-after.txt" >/dev/null; then echo "containers / volumes / images / postgres mounts / env unchanged"; else echo "::error::stack inventory CHANGED"; diff "$RUNNER_TEMP/stack-before.txt" "$RUNNER_TEMP/stack-after.txt" || true; exit 1; fi
+
+      - name: c4-verify AFTER (ALWAYS, read-only — baseline equality, deploy/schema/env unchanged, queue and worker health)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='c4-verify' ARG1='$EXPECTED_SHA' ARG2='$EXPECTED_PREV_SHA' ARG3='$TAG|${BASELINE_MD5:-none}|${SMOKE_START_MS:-0}' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: Remove the script from the VPS (always)
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b20-act.sh"' < /dev/null || true
+          rm -f "$RUNNER_TEMP"/g6-*.log "$RUNNER_TEMP"/backups-*.txt "$RUNNER_TEMP"/stack-*.txt
