@@ -211,20 +211,23 @@ Not run during infrastructure preparation.
 
 `bash docker/scripts/backup-postgres.sh` (as `leadpro`) dumps the database
 with `pg_dump` **inside** the postgres container (local socket as
-`POSTGRES_USER` — the password is never read or printed), gzips it to
-`/opt/lead-capture-pro/backups/postgres/leadcapture-<timestamp>.sql.gz`
-(directory `700`, files `600`, outside the database volume), sanity-checks
-the size, keeps the newest 7 and fails loudly otherwise. Suggested daily
-cron (install manually, not automated here):
+`POSTGRES_USER` — the password is never read or printed), gzips it to a unique
+temporary file in `/opt/lead-capture-pro/backups/postgres/`, verifies it
+(`gzip -t`, size floor, dump header and completion marker) and only then
+publishes `leadcapture-<UTC stamp>.sql.gz` (mode 600, directory 700, outside
+the database volume) together with a `.sha256` sidecar. A lock allows one run
+at a time (a second run exits 75), a failed run removes only its own temporary
+file and never prunes, and retention (`KEEP`, default 7) runs only after the
+new file is verified. `docker/scripts/backup-check.sh` reports whether the
+newest backup is fresh and intact.
 
-```
-15 3 * * * bash /opt/lead-capture-pro/app/docker/scripts/backup-postgres.sh >> /opt/lead-capture-pro/backups/postgres/backup.log 2>&1
-```
+The daily schedule, the freshness alert, the activation/rollback procedure and
+the off-host design are documented in `docs/BACKUP_AND_RECOVERY.md`; the
+schedule is a proposal until it is installed there with approval.
 
 > **Off-host copies are required for real protection.** A backup stored only
-> on this VPS does not survive total VPS loss — periodically copy
-> `/opt/lead-capture-pro/backups/postgres/` off the machine (any existing
-> mechanism; no new cloud provider is added by this task).
+> on this VPS does not survive total VPS loss — see
+> `docs/BACKUP_AND_RECOVERY.md` §5 (not configured yet).
 
 ### Restore procedure (documented — never run casually)
 
@@ -242,7 +245,11 @@ curl -fsS http://127.0.0.1:18080/api/readyz   # verify
 
 For a clean-slate restore (drop + recreate the database first), do it
 deliberately inside the container with `dropdb`/`createdb` as
-`POSTGRES_USER` before piping the dump — never by deleting the volume.
+`POSTGRES_USER` before piping the dump — never by deleting the volume. The
+dumps name that role as owner, so the restore must run where it exists; a
+rehearsal into a disposable container (`docs/BACKUP_AND_RECOVERY.md` §4.1)
+creates the role first. Both restore proofs to date (F0 and F2 dumps) used
+that disposable-container method.
 
 ## 8. GCS development bucket (closes the 27 storage-gated tests)
 
