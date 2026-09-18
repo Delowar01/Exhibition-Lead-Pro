@@ -9,7 +9,7 @@
 //   skips, invalid explicit references, loop safety, REAL dual-company tenancy,
 //   the run-history API, and "no AI".
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import {
   db,
   companiesTable,
@@ -59,7 +59,27 @@ let tagA = 0;
 let tagA2 = 0;
 let tagB = 0;
 let stageKeys: string[] = [];
-let apiContactCreations = 0;
+// Contacts created through POST /contacts in this suite. Their background lead
+// scoring is the ONLY AI activity the suite may produce (see "no AI" below).
+const apiScoredContactIds: number[] = [];
+
+// The background lead scoring of POST /contacts is fire-and-forget. Wait until
+// its ledger row exists AND the score has been written back to the contact, so
+// later assertions on the contact and the "no AI" ledger check never race with
+// it. With the stub provider this completes within milliseconds.
+async function waitForLeadScoring(contactId: number, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const rows = await db
+      .select({ id: aiInvocationsTable.id })
+      .from(aiInvocationsTable)
+      .where(and(eq(aiInvocationsTable.feature, "lead_scoring"), eq(aiInvocationsTable.entityType, "contact"), eq(aiInvocationsTable.entityId, contactId)));
+    const [contact] = await db.select({ leadScore: contactsTable.leadScore }).from(contactsTable).where(eq(contactsTable.id, contactId));
+    if (rows.length > 0 && contact?.leadScore != null) return;
+    await sleep(50);
+  }
+  throw new Error(`lead scoring of contact ${contactId} did not complete within ${timeoutMs}ms`);
+}
 
 function headers(token: string) {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
@@ -197,6 +217,20 @@ beforeAll(async () => {
   adminToken = await loginToken({ email: `qa-admin@${DOMAIN}`, password: PW });
   empToken = await loginToken({ email: `qa-emp@${DOMAIN}`, password: PW });
   adminBToken = await loginToken({ email: `qa-admin@${DOMAIN_B}`, password: PW });
+  // Both fixture tenants use the deterministic local stub provider (registered
+  // outside production, never a live call). This makes the "no AI" invariant
+  // below provider-explicit: any AI call this suite triggers — including one a
+  // workflow action might make — is admitted and leaves a ledger row, and the
+  // only rows allowed are the pre-existing background lead scoring of
+  // POST /contacts. (Since B22 Correction 1 an unconfigured provider is refused
+  // before the ledger, so the default tenant provider would make the count
+  // depend on whether this machine holds a Gemini credential.)
+  for (const [label, t] of [["A", adminToken], ["B", adminBToken]] as const) {
+    const ai = await api("PATCH", "/ai/settings", t, { provider: "stub", model: "stub-model" });
+    expect(ai.status, `tenant ${label} opts into the stub provider: ${await ai.clone().text()}`).toBe(200);
+    const health = await (await api("GET", "/ai/health", t)).json();
+    expect(health.provider, `tenant ${label} effective provider`).toBe("stub");
+  }
   const t1 = await api("POST", "/tags", adminToken, { name: `b16-hot-${SUFFIX}` });
   tagA = (await t1.json()).id;
   const t2 = await api("POST", "/tags", adminToken, { name: `b16-alt-${SUFFIX}` });
@@ -301,9 +335,10 @@ describe("triggers", () => {
     const updated = await createDefinition(adminToken, "T contact.updated", { trigger: { type: "contact.updated", config: { fields: ["status"] } }, actions: [{ type: "contact.add_tag", config: { tag: "status-touched" } }] });
     const won = await createDefinition(adminToken, "T status won", { trigger: { type: "contact.status_changed", config: { toStatus: "won" } }, actions: [{ type: "contact.update_fields", config: { fields: { leadTemperature: "hot" } } }] });
     const res = await api("POST", "/contacts", adminToken, { firstName: "Grace", lastName: `Hopper${SUFFIX}`, email: `grace-${SUFFIX}@${DOMAIN}`, dedupeResolution: "create_separate" });
-    apiContactCreations++;
     expect(res.status, await res.clone().text()).toBe(201);
     const contact = await res.json();
+    apiScoredContactIds.push(contact.id);
+    await waitForLeadScoring(contact.id);
     expect((await waitForRuns(created.id, 1))[0].status).toBe("completed");
     let fresh = await (await api("GET", `/contacts/${contact.id}`, adminToken)).json();
     expect(fresh.tags).toContain("auto-created");
@@ -621,9 +656,10 @@ describe("actions", () => {
       ],
     });
     const res = await api("POST", "/contacts", adminToken, { firstName: "Linus", lastName: `T${SUFFIX}`, email: `linus-${SUFFIX}@${DOMAIN}`, tags: ["seed"], dedupeResolution: "create_separate" });
-    apiContactCreations++;
     expect(res.status).toBe(201);
     const c = await res.json();
+    apiScoredContactIds.push(c.id);
+    await waitForLeadScoring(c.id);
     const cruns = await waitForRuns(contactDef.id, 1);
     expect(cruns[0].status, JSON.stringify(cruns[0].error)).toBe("completed");
     const freshC = await (await api("GET", `/contacts/${c.id}`, adminToken)).json();
@@ -799,19 +835,23 @@ describe("run history API", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("no AI", () => {
   it("workflow execution recorded no AI invocation (only the pre-existing contact lead-scoring of POST /contacts appears)", async () => {
+    // Both fixture tenants run on the stub provider (beforeAll), so every AI call
+    // made in this suite was admitted and is visible in the ledger — an AI call
+    // from a workflow action could not hide behind an unconfigured provider.
     const rows = await db
-      .select({ feature: aiInvocationsTable.feature, entityType: aiInvocationsTable.entityType, n: sql<number>`count(*)::int` })
+      .select({ feature: aiInvocationsTable.feature, entityType: aiInvocationsTable.entityType, entityId: aiInvocationsTable.entityId, provider: aiInvocationsTable.provider, status: aiInvocationsTable.status })
       .from(aiInvocationsTable)
-      .where(inArray(aiInvocationsTable.companyId, [companyId, companyBId]))
-      .groupBy(aiInvocationsTable.feature, aiInvocationsTable.entityType);
-    // The two POST /contacts calls of this suite go through the EXISTING capture
-    // pipeline, whose background lead scoring has always produced one ledger row per
-    // created contact — that path predates B16 and is unchanged. Nothing else
-    // (no lead feature, no assignee recommendation, no enrichment) may appear, and
-    // no workflow-executed lead action ever produced a row.
-    expect(rows.every((r) => r.feature === "lead_scoring" && r.entityType === "contact")).toBe(true);
-    const total = rows.reduce((a, r) => a + r.n, 0);
-    expect(total).toBe(apiContactCreations);
+      .where(inArray(aiInvocationsTable.companyId, [companyId, companyBId]));
+    // The POST /contacts calls of this suite go through the EXISTING capture
+    // pipeline, whose background lead scoring produces exactly one ledger row per
+    // created contact — that path predates B16 and is unchanged. Every row must be
+    // attributable to one of those contacts; nothing else (no lead feature, no
+    // assignee recommendation, no enrichment) may appear, and no workflow-executed
+    // action ever produced a row.
+    expect(apiScoredContactIds.length, "the suite created contacts through the API").toBeGreaterThan(0);
+    const offending = rows.filter((r) => !(r.feature === "lead_scoring" && r.entityType === "contact" && r.provider === "stub" && r.status === "success"));
+    expect(offending, "only successful stub lead-scoring rows of API-created contacts are allowed").toEqual([]);
+    expect(rows.map((r) => r.entityId).sort((a, b) => Number(a) - Number(b))).toEqual([...apiScoredContactIds].sort((a, b) => a - b));
     const catalog = await (await api("GET", "/workflows/catalog", adminToken)).json();
     expect(catalog.actions.every((a: any) => !a.type.startsWith("ai"))).toBe(true);
     expect(JSON.stringify(catalog).toLowerCase()).not.toContain("gemini");
