@@ -17,6 +17,9 @@
 #   g6          (g6 job) B23 G-6 backup inventory (read-only) + isolated restore rehearsal in a
 #               disposable network-less postgres container — arg1 = deployed sha, arg2 = previous sha
 #   g6-inventory / g6-verify (run job) read-only G-6 inventory / post-check (arg3 = tag)
+#   g6c1        (g6c1 job) G-6 Correction 1: read-only preflight → ONE fresh backup with KEEP=8 →
+#               isolated restore of that exact file → post-checks — arg1 = deployed sha, arg2 = previous sha
+#   g6c1-preflight (run job) read-only G-6 C1 preflight (arg3 = tag)
 #   preflight   read-only inspection + schema-only dump (SELECT / catalog / pg_dump -s)
 #   migrate     fresh backup → stop API writers → stage-1 schema → repair → stage-2
 #               schema → verification (every gate stops the run; nothing is restored
@@ -41,7 +44,7 @@ on:
         description: "Phase to run"
         required: true
         type: choice
-        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener, b22c1, g3, g3-count, g3-verify, g6, g6-inventory, g6-restore, g6-verify]
+        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener, b22c1, g3, g3-count, g3-verify, g6, g6-inventory, g6-restore, g6-verify, g6c1, g6c1-preflight, g6c1-backup]
       arg1:
         description: "Phase argument 1 (non-secret)"
         required: false
@@ -72,7 +75,7 @@ env:
 jobs:
   run:
     name: B20 hosted activation phase (one-off)
-    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && inputs.phase != 'smoke' && inputs.phase != 'supp' && inputs.phase != 'c4' && inputs.phase != 'b21' && inputs.phase != 'b22' && inputs.phase != 'b22c1' && inputs.phase != 'g3' && inputs.phase != 'g6' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && inputs.phase != 'smoke' && inputs.phase != 'supp' && inputs.phase != 'c4' && inputs.phase != 'b21' && inputs.phase != 'b22' && inputs.phase != 'b22c1' && inputs.phase != 'g3' && inputs.phase != 'g6' && inputs.phase != 'g6c1' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -1579,3 +1582,150 @@ jobs:
         run: |
           ssh vps 'rm -f "$HOME/b20-act.sh"' < /dev/null || true
           rm -f "$RUNNER_TEMP"/g6-*.log "$RUNNER_TEMP"/backups-*.txt "$RUNNER_TEMP"/stack-*.txt
+
+  # ── B23 G-6 Correction 1: fresh current-schema backup + isolated restore proof ──
+  # Read-only preflight (stops on drift, on an active backup, on a newer backup already
+  # present, or on insufficient capacity) → the DEPLOYED backup script runs once with
+  # KEEP=8 (the 7 existing files stay) → the new file is restored into a disposable
+  # network-less container and its fingerprint must equal the live F2 fingerprint seen
+  # at preflight → post-checks prove the 7 old files byte-identical and the live stack
+  # unchanged. Nothing is uploaded to an artifact.
+  g6c1:
+    name: B23 G-6 Correction 1 — fresh F2 backup (KEEP=8) + isolated restore proof (live stack untouched)
+    if: github.ref == 'refs/heads/ops/b23-g6-backup-rehearsal' && github.event_name == 'workflow_dispatch' && inputs.phase == 'g6c1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHA: ${{ inputs.arg1 }}
+      EXPECTED_PREV_SHA: ${{ inputs.arg2 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the branch is the deployed develop commit (f53c901) + the ops files only; validate inputs
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
+          git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-*' ':(exclude).github/workflows/b20-hosted-activation.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          bash -n .github/scripts/b20-act.sh
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "arg1 must be the deployed commit sha"; exit 1; }
+          [[ "$EXPECTED_PREV_SHA" =~ ^([0-9a-f]{40}|-)$ ]] || { echo "arg2 must be the previous commit sha or '-'"; exit 1; }
+          TAG="$(openssl rand -hex 4)"; echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "branch = $BASE_SHA + ops files only; script parses; expected deploy $EXPECTED_SHA (previous $EXPECTED_PREV_SHA); tag=$TAG; utc=$(date -u +%FT%TZ)"
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOC
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOC
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the phase script to the VPS
+        run: |
+          ssh vps 'umask 077; cat > "$HOME/b20-act.sh" && chmod 700 "$HOME/b20-act.sh"' < .github/scripts/b20-act.sh
+
+      - name: c4-verify BEFORE (read-only — deploy / schema / env / volume / queue / existing-customer baseline; stops on drift)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='c4-verify' ARG1='$EXPECTED_SHA' ARG2='$EXPECTED_PREV_SHA' ARG3='$TAG|none|0' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6c1-before.log"
+          MD5="$(grep -oE '^baseline_md5=[0-9a-f]{32}' "$RUNNER_TEMP/g6c1-before.log" | head -1 | cut -d= -f2)"
+          [ -n "$MD5" ] || { echo "c4-verify did not report the baseline"; exit 1; }
+          echo "BASELINE_MD5=$MD5" >> "$GITHUB_ENV"
+          START="$(grep -oE '^now_epoch_ms=[0-9]+' "$RUNNER_TEMP/g6c1-before.log" | head -1 | cut -d= -f2)"
+          echo "SMOKE_START_MS=${START:-0}" >> "$GITHUB_ENV"
+
+      - name: Phase 1 — g6c1-preflight (STRICTLY read-only; complete inventory, schedule uncertainty, no backup running, capacity)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='g6c1-preflight' ARG1='' ARG2='' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6c1-preflight.log"
+          grep -E '^backup leadcapture-' "$RUNNER_TEMP/g6c1-preflight.log" | sed -E 's/ age_h=[0-9]+//' | sort > "$RUNNER_TEMP/backups-before.txt"
+          grep -E '^(all containers|all volumes|images|postgres mounts|env):' "$RUNNER_TEMP/g6c1-preflight.log" | sort > "$RUNNER_TEMP/stack-before.txt"
+          FP="$(grep -oE '^live_fingerprint=[0-9a-f]{32}' "$RUNNER_TEMP/g6c1-preflight.log" | head -1 | cut -d= -f2)"
+          SINCE="$(grep -oE '^backups_since_g6=[0-9]+' "$RUNNER_TEMP/g6c1-preflight.log" | head -1 | cut -d= -f2)"
+          PRE="$(grep -oE '^PREFLIGHT=.*' "$RUNNER_TEMP/g6c1-preflight.log" | head -1)"
+          echo "LIVE_FP=$FP" >> "$GITHUB_ENV"
+          echo "live_fingerprint=$FP backups_since_g6=$SINCE $PRE existing=$(wc -l < "$RUNNER_TEMP/backups-before.txt")"
+          [[ "$FP" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::no live fingerprint reported"; exit 1; }
+          [ "$PRE" = "PREFLIGHT=PASS" ] || { echo "::error::preflight FAILED — no backup is created ($PRE)"; exit 1; }
+          [ "${SINCE:-0}" = "0" ] || { echo "::error::a backup newer than the G-6 rehearsal already exists — not creating a duplicate; review it first"; exit 1; }
+          [ "$(wc -l < "$RUNNER_TEMP/backups-before.txt")" = "7" ] || { echo "::error::expected exactly 7 existing backups"; exit 1; }
+
+      - name: Phase 2a — g6c1-backup (the DEPLOYED script once, KEEP=8; new file identified and verified; 7 old files byte-identical)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='g6c1-backup' ARG1='$TAG' ARG2='$LIVE_FP' ARG3='' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6c1-backup.log"
+          LINE="$(grep -oE '^BACKUP_CAPTURE=PASS new_backup=[^ ]+ new_sha256=[0-9a-f]{64}' "$RUNNER_TEMP/g6c1-backup.log" | head -1)"
+          [ -n "$LINE" ] || { echo "::error::the backup capture did not report PASS"; exit 1; }
+          NB="$(echo "$LINE" | grep -oE 'new_backup=[^ ]+' | cut -d= -f2)"; NS="$(echo "$LINE" | grep -oE 'new_sha256=[0-9a-f]{64}' | cut -d= -f2)"
+          echo "NEW_BACKUP=$NB" >> "$GITHUB_ENV"; echo "NEW_SHA256=$NS" >> "$GITHUB_ENV"
+          echo "new backup: $NB sha256=$NS"
+
+      - name: Phase 2b — g6-restore of the NEW file (disposable network-less postgres; ON_ERROR_STOP; fingerprint must equal the live F2 seen at preflight)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='g6-restore' ARG1='$NEW_BACKUP' ARG2='$NEW_SHA256' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6c1-restore.log"
+          grep -q '^RESTORE_REHEARSAL=PASS' "$RUNNER_TEMP/g6c1-restore.log" || { echo "::error::the restore of the new backup did not report PASS"; exit 1; }
+          RFP="$(grep -oE '^restored schema_fingerprint=[0-9a-f]{32}' "$RUNNER_TEMP/g6c1-restore.log" | head -1 | cut -d= -f2)"
+          echo "restored fingerprint=$RFP live(preflight)=$LIVE_FP"
+          [ "$RFP" = "$LIVE_FP" ] || { echo "::error::restored schema fingerprint differs from the live fingerprint seen at preflight — the new backup does NOT reproduce the live schema (or the live schema changed)"; exit 1; }
+          echo "the new backup restores to the live schema fingerprint (F2)"
+
+      - name: g6-verify AFTER (ALWAYS, read-only — no g6 resource remains; the 7 old files byte-identical; stack unchanged; live fingerprint unchanged)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='g6-verify' ARG1='' ARG2='' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/g6c1-after.log"
+          [ -f "$RUNNER_TEMP/backups-before.txt" ] || { echo "no preflight inventory recorded; nothing to compare"; exit 0; }
+          grep -E '^backup leadcapture-' "$RUNNER_TEMP/g6c1-after.log" | sed -E 's/ age_h=[0-9]+//' | sort > "$RUNNER_TEMP/backups-after.txt"
+          grep -E '^(all containers|all volumes|images|postgres mounts|env):' "$RUNNER_TEMP/g6c1-after.log" | sort > "$RUNNER_TEMP/stack-after.txt"
+          MISSING="$(comm -23 "$RUNNER_TEMP/backups-before.txt" "$RUNNER_TEMP/backups-after.txt" | wc -l)"
+          ADDED="$(comm -13 "$RUNNER_TEMP/backups-before.txt" "$RUNNER_TEMP/backups-after.txt" | wc -l)"
+          echo "pre-existing backup lines missing or changed after: $MISSING; new lines: $ADDED; total after: $(wc -l < "$RUNNER_TEMP/backups-after.txt")"
+          [ "$MISSING" = "0" ] || { echo "::error::a pre-existing backup changed or disappeared"; comm -23 "$RUNNER_TEMP/backups-before.txt" "$RUNNER_TEMP/backups-after.txt"; exit 1; }
+          if [ -n "${NEW_BACKUP:-}" ]; then grep -q "^backup $NEW_BACKUP:" "$RUNNER_TEMP/backups-after.txt" && echo "new backup present in the final inventory: $NEW_BACKUP" || { echo "::error::the new backup is not in the final inventory"; exit 1; }; [ "$ADDED" = "1" ] || { echo "::error::expected exactly one added file"; exit 1; }; else [ "$ADDED" = "0" ] || { echo "::warning::files were added although no backup was reported"; }; fi
+          if diff -q "$RUNNER_TEMP/stack-before.txt" "$RUNNER_TEMP/stack-after.txt" >/dev/null; then echo "containers / volumes / images / postgres mounts / env unchanged"; else echo "::error::stack inventory CHANGED"; diff "$RUNNER_TEMP/stack-before.txt" "$RUNNER_TEMP/stack-after.txt" || true; exit 1; fi
+          AFP="$(grep -oE '^schema_fingerprint=[0-9a-f]{32}' "$RUNNER_TEMP/g6c1-after.log" | head -1 | cut -d= -f2)"
+          [ -z "${LIVE_FP:-}" ] || [ "$AFP" = "$LIVE_FP" ] && echo "live fingerprint unchanged ($AFP)" || { echo "::error::live fingerprint changed during the operation"; exit 1; }
+
+      - name: c4-verify AFTER (ALWAYS, read-only — baseline equality, deploy/schema/env unchanged, queue and worker health)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='c4-verify' ARG1='$EXPECTED_SHA' ARG2='$EXPECTED_PREV_SHA' ARG3='$TAG|${BASELINE_MD5:-none}|${SMOKE_START_MS:-0}' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: Remove the script from the VPS (always)
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b20-act.sh"' < /dev/null || true
+          rm -f "$RUNNER_TEMP"/g6c1-*.log "$RUNNER_TEMP"/backups-*.txt "$RUNNER_TEMP"/stack-*.txt

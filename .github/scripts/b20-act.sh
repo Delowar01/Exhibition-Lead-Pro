@@ -1281,6 +1281,146 @@ phase_g6_verify() {
   log "g6-verify complete (read-only)"
 }
 
+# =============================================================================
+# B23 G-6 Correction 1 — fresh current-schema backup.
+#   g6c1-preflight : STRICTLY READ-ONLY. Live state + fingerprint, complete backup
+#                    list with sha256, backups created since the G-6 rehearsal,
+#                    root crontab / unreadable unit through EXISTING privileges only
+#                    (sudo -n, systemctl show — no new mechanism), "no backup running"
+#                    checks, capacity gate. Prints PREFLIGHT=PASS|FAIL.
+#   g6c1-backup    : runs the DEPLOYED backup script exactly once with KEEP=8 (the 7
+#                    existing files must remain), identifies the one new file by
+#                    before/after diff, verifies it (gzip -t, header, versions, marker,
+#                    table/COPY counts, size, mtime, sha256), proves the 7 old files are
+#                    byte-identical, and on failure removes ONLY the exact new partial
+#                    file. Never prints credentials or rows.
+# =============================================================================
+G6_REHEARSAL_NEWEST="2026-09-15 15:45:10 UTC"
+g6c1_no_backup_running() {
+  local host_procs ctr_procs act
+  host_procs="$(pgrep -fa 'backup-postgres\.sh|pg_dump' 2>/dev/null | grep -v "$$" | grep -vE 'b20-act\.sh|pgrep' | wc -l || true)"
+  ctr_procs="$(compose exec -T postgres sh -c 'ps -o comm= 2>/dev/null | grep -c "^pg_dump" || true' 2>/dev/null | tr -d '[:space:]')"; [ -n "$ctr_procs" ] || ctr_procs="?"
+  act="$(q "select count(*) from pg_stat_activity where application_name = 'pg_dump'" 2>/dev/null || echo "?")"
+  echo "backup processes: host=$host_procs container_pg_dump=$ctr_procs pg_stat_activity_pg_dump=$act lock_file=$([ -e "$G6_BACKUP_DIR/.backup.lock" ] && echo present || echo absent) tmp_files=$(ls -1A "$G6_BACKUP_DIR" 2>/dev/null | grep -cE '\.(tmp|part)$' || true)"
+  [ "$host_procs" = "0" ] && [ "$ctr_procs" = "0" ] && [ "$act" = "0" ]
+}
+phase_g6c1_preflight() {
+  section "read-only guard"
+  if q "create temp table b20_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard did not hold"; else echo "session refuses writes (default_transaction_read_only=on): OK"; fi
+  g6_stack_state
+  section "live schema fingerprint (expected F2 $F2_CONST)"
+  local fp; fp="$(fingerprint)"; echo "live_fingerprint=$fp known=$([ "$fp" = "$F2_CONST" ] && echo F2 || echo other)"
+  q "select 'live: tables='||(select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE')||' db_size_bytes='||pg_database_size(current_database())||' server_version='||current_setting('server_version')"
+  section "complete backup inventory with sha256 ($G6_BACKUP_DIR)"
+  [ -d "$G6_BACKUP_DIR" ] || fail "backup directory absent"
+  echo "dir: $(stat -c 'mode=%a owner=%U:%G' "$G6_BACKUP_DIR") entries=$(ls -1A "$G6_BACKUP_DIR" | wc -l) backups=$(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | wc -l) other=[$(ls -1A "$G6_BACKUP_DIR" | grep -vE '^leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz$' | tr '\n' ' ')]"
+  g6_backup_lines
+  section "backups created since the G-6 rehearsal's newest file ($G6_REHEARSAL_NEWEST)"
+  local since; since="$(find "$G6_BACKUP_DIR" -maxdepth 1 -name 'leadcapture-*.sql.gz' -newermt "$G6_REHEARSAL_NEWEST" -printf '%f\n' 2>/dev/null | sort || true)"
+  echo "backups_since_g6=$(printf '%s\n' "$since" | grep -c . || true) [$(printf '%s' "$since" | tr '\n' ' ')]"
+  section "root crontab / unreadable unit — existing read-only privileges only (no new mechanism)"
+  if sudo -n true >/dev/null 2>&1; then
+    echo "passwordless sudo: available to the deploy user (existing configuration)"
+    echo "root crontab (sudo -n crontab -l -u root): $(sudo -n crontab -l -u root 2>/dev/null | grep -vE '^\s*(#|$)' | grep -c . || true) active line(s); backup-postgres references=$(sudo -n crontab -l -u root 2>/dev/null | grep -c backup-postgres || true)"
+    sudo -n crontab -l -u root 2>/dev/null | grep -vE '^\s*(#|$)' | g6_mask | cut -c1-200 | sed 's/^/  root cron: /' || true
+    echo "crontabs dir (sudo -n ls): $(sudo -n ls -1 /var/spool/cron/crontabs 2>/dev/null | wc -l) user crontab file(s): $(sudo -n ls -1 /var/spool/cron/crontabs 2>/dev/null | tr '\n' ' ')"
+  else
+    echo "passwordless sudo: NOT available to the deploy user — root crontab and other users' crontabs remain UNKNOWN (no privilege escalation attempted)"
+  fi
+  local u="elite-one-desk-backup.service"
+  echo "unit $u via systemctl show (manager properties, no file read):"
+  systemctl show "$u" -p Id,Description,FragmentPath,ExecStart,User,WorkingDirectory,ActiveState,Result,NRestarts 2>/dev/null | g6_mask | cut -c1-260 | sed 's/^/  /' || echo "  systemctl show failed"
+  systemctl show "${u%.service}.timer" -p Id,TimersCalendar,Persistent,LastTriggerUSec,NextElapseUSecRealtime,Unit 2>/dev/null | cut -c1-200 | sed 's/^/  /' || true
+  local frag; frag="$(systemctl show "$u" -p FragmentPath --value 2>/dev/null || true)"
+  if [ -n "$frag" ]; then echo "  fragment: $(ls -l "$frag" 2>&1 | awk '{print $1, $3":"$4, $NF}') readable_by_deploy_user=$([ -r "$frag" ] && echo yes || echo no)"; if [ -r "$frag" ]; then grep -E '^(ExecStart|User|WorkingDirectory)=' "$frag" | g6_mask | cut -c1-200 | sed 's/^/  file: /'; fi; fi
+  echo "  references from the shown ExecStart: backup-postgres=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -c 'backup-postgres' || true) lead-capture-pro=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -c 'lead-capture-pro' || true) card-scanner=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -ci 'card-scanner\|cardscanner' || true) postgres/docker=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -ciE 'postgres|docker|pg_dump' || true)"
+  section "no backup running"
+  if g6c1_no_backup_running; then echo "no backup process detected"; else echo "a backup-related process is active"; fi
+  section "capacity (backup destination filesystem and docker root)"
+  local droot dest_avail droot_avail memavail dbsize need reasons=""
+  droot="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)"
+  dest_avail="$(df -B1 --output=avail "$G6_BACKUP_DIR" 2>/dev/null | tail -1 | tr -d ' ' || true)"; droot_avail="$(df -B1 --output=avail "$droot" 2>/dev/null | tail -1 | tr -d ' ' || true)"
+  memavail="$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo)"; dbsize="$(q "select pg_database_size(current_database())")"
+  need=$(( 536870912 + dbsize * 5 ))
+  echo "dest_avail=$dest_avail docker_root_avail=$droot_avail mem_available=$memavail db_size=$dbsize need_dest=$need"
+  [ "${dest_avail:-0}" -ge "$need" ] || reasons="$reasons dest-avail<$need;"
+  [ "${droot_avail:-0}" -ge 1073741824 ] || reasons="$reasons docker-root-avail<1GiB;"
+  [ "${memavail:-0}" -ge 805306368 ] || reasons="$reasons mem-available<768MiB;"
+  g6c1_no_backup_running >/dev/null || reasons="$reasons backup-process-active;"
+  [ "$fp" = "$F2_CONST" ] || reasons="$reasons live-schema-not-F2;"
+  g6_resources; [ "$(docker ps -a -q --filter label=b23.g6 | wc -l)" = "0" ] && [ "$(docker volume ls -q --filter label=b23.g6 | wc -l)" = "0" ] || reasons="$reasons leftover-g6-resources;"
+  if [ -z "$reasons" ]; then echo "PREFLIGHT=PASS"; else echo "PREFLIGHT=FAIL reasons=[$reasons]"; fi
+  echo "now_epoch_ms=$(date +%s%3N)"
+  log "g6c1-preflight complete (read-only)"
+}
+
+phase_g6c1_backup() {
+  local tag="$ARG1" expect_fp="$ARG2"
+  [[ "$tag" =~ ^[a-z0-9]{4,16}$ ]] || fail "ARG1 must be the run tag"
+  [[ "$expect_fp" =~ ^[0-9a-f]{32}$ ]] || fail "ARG2 must be the live schema fingerprint observed at preflight"
+  local bs="$APP_DIR/docker/scripts/backup-postgres.sh"; [ -f "$bs" ] || fail "deployed backup script absent"
+  section "guards before writing anything"
+  echo "deployed script blob=$(git -C "$APP_DIR" hash-object "$bs") tracked=$(git -C "$APP_DIR" rev-parse HEAD:docker/scripts/backup-postgres.sh)"
+  [ "$(git -C "$APP_DIR" hash-object "$bs")" = "$(git -C "$APP_DIR" rev-parse HEAD:docker/scripts/backup-postgres.sh)" ] || fail "deployed backup script differs from the tracked blob"
+  local fp; fp="$(fingerprint)"; echo "live_fingerprint=$fp expected=$expect_fp"; [ "$fp" = "$expect_fp" ] || fail "live schema changed since preflight — stopping"
+  g6c1_no_backup_running || fail "a backup-related process is active — stopping"
+  local before after n_before; before="$(cd "$G6_BACKUP_DIR" && for f in leadcapture-*.sql.gz; do [ -f "$f" ] && echo "$f $(stat -c %s "$f") $(sha256sum "$f" | cut -c1-64) $(stat -c %Y "$f")"; done | sort)"
+  n_before="$(printf '%s\n' "$before" | grep -c . || true)"
+  echo "before: $n_before backup(s)"; printf '%s\n' "$before" | sed 's/^/  before: /'
+  [ "$n_before" = "7" ] || fail "expected exactly 7 pre-existing backups (found $n_before) — KEEP=8 would not preserve them all; stopping before creating anything"
+  local dbsize dest_avail; dbsize="$(q "select pg_database_size(current_database())")"; dest_avail="$(df -B1 --output=avail "$G6_BACKUP_DIR" | tail -1 | tr -d ' ')"
+  [ "$dest_avail" -ge $(( 536870912 + dbsize * 5 )) ] || fail "insufficient space on the backup filesystem"
+  section "run the DEPLOYED backup script once with KEEP=8 (pg_dump inside the live container over the socket; no restart, no schema/data change)"
+  local work; work="$(mktemp -d "$HOME/g6c1-$tag.XXXXXX")"; chmod 700 "$work"
+  local t0 t1 rc; t0="$(date +%s%3N)"; echo "backup_start_utc=$(g6_utc)"
+  set +e
+  (cd "$APP_DIR" && DEPLOY_PATH="$APP_DIR" KEEP=8 timeout 600 bash docker/scripts/backup-postgres.sh) >"$work/backup.out" 2>&1
+  rc=$?
+  set -e
+  t1="$(date +%s%3N)"; echo "backup_end_utc=$(g6_utc) script_exit=$rc script_ms=$((t1 - t0))"
+  echo "script output (masked):"; g6_mask <"$work/backup.out" | cut -c1-200 | sed 's/^/  /'
+  after="$(cd "$G6_BACKUP_DIR" && for f in leadcapture-*.sql.gz; do [ -f "$f" ] && echo "$f $(stat -c %s "$f") $(sha256sum "$f" | cut -c1-64) $(stat -c %Y "$f")"; done | sort)"
+  local new; new="$(comm -13 <(printf '%s\n' "$before" | awk '{print $1}') <(printf '%s\n' "$after" | awk '{print $1}'))"
+  local n_new; n_new="$(printf '%s\n' "$new" | grep -c . || true)"
+  echo "after: $(printf '%s\n' "$after" | grep -c . || true) backup(s); new file(s): $n_new [$(printf '%s' "$new" | tr '\n' ' ')]"
+  local old_ok; old_ok="$(comm -12 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | wc -l)"
+  echo "pre-existing backups byte-identical (name, size, sha256, mtime): $old_ok/$n_before"
+  if [ "$rc" != "0" ]; then
+    echo "BACKUP SCRIPT FAILED (exit $rc)"
+    if [ "$n_new" = "1" ]; then
+      local nf="$new"; [[ "$nf" =~ ^leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz$ ]] || fail "unexpected new file name after a failed run — left untouched"
+      printf '%s\n' "$before" | awk '{print $1}' | grep -qx "$nf" && fail "the 'new' file already existed — left untouched"
+      echo "removing ONLY the failed run's partial file: $nf ($(stat -c %s "$G6_BACKUP_DIR/$nf") bytes)"; rm -f "$G6_BACKUP_DIR/$nf"; echo "removed=$([ -e "$G6_BACKUP_DIR/$nf" ] && echo NO || echo yes)"
+    else
+      echo "no single new file to remove (new=$n_new)"
+    fi
+    rm -rf "$work"; fail "backup capture failed; pre-existing backups intact: $old_ok/$n_before"
+  fi
+  [ "$n_new" = "1" ] || { rm -rf "$work"; fail "expected exactly one new backup file, found $n_new"; }
+  [ "$old_ok" = "$n_before" ] || { rm -rf "$work"; fail "a pre-existing backup changed or was pruned"; }
+  section "verify the new file"
+  local nf="$new" f; f="$G6_BACKUP_DIR/$nf"
+  gzip -t "$f" || { rm -rf "$work"; fail "gzip integrity check failed on $nf"; }
+  local size mt sum hdr dfrom dby ct cp rows done_
+  size="$(stat -c %s "$f")"; mt="$(stat -c %Y "$f")"; sum="$(sha256sum "$f" | cut -c1-64)"
+  hdr="$(zcat "$f" 2>/dev/null | sed -n 2p | cut -c1-40 || true)"; dfrom="$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped from database version [0-9.]+' | awk '{print $NF}' || true)"; dby="$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped by pg_dump version [0-9.]+' | awk '{print $NF}' || true)"
+  ct="$(zcat "$f" | grep -c '^CREATE TABLE ' || true)"; cp="$(zcat "$f" | grep -c '^COPY ' || true)"; done_="$(zcat "$f" | grep -c '^-- PostgreSQL database dump complete' || true)"
+  rows="$(zcat "$f" | awk '/^COPY /{c=1;next} c&&/^\\\.$/{c=0;next} c{n++} END{print n+0}')"
+  echo "new_backup=$nf size=$size mode=$(stat -c %a "$f") mtime_utc=$(date -u -d @"$mt" +%FT%TZ) sha256=$sum header='$hdr' dumped_from=$dfrom pg_dump=$dby create_table=$ct copy_blocks=$cp data_rows=$rows complete_marker=$done_ uncompressed_bytes=$(zcat "$f" | wc -c)"
+  [ "$hdr" = "-- PostgreSQL database dump" ] || { rm -rf "$work"; fail "unexpected dump header"; }
+  [ "$done_" = "1" ] || { rm -rf "$work"; fail "completion marker missing"; }
+  [ "$size" -ge 1024 ] || { rm -rf "$work"; fail "new backup suspiciously small"; }
+  [ "$(stat -c %a "$f")" = "600" ] || { rm -rf "$work"; fail "new backup is not mode 600"; }
+  local live_tables; live_tables="$(q "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'")"
+  echo "live tables=$live_tables dump CREATE TABLE=$ct $([ "$live_tables" = "$ct" ] && echo MATCH || echo MISMATCH)"
+  [ "$live_tables" = "$ct" ] || { rm -rf "$work"; fail "table count of the new dump differs from the live database"; }
+  local fp2; fp2="$(fingerprint)"; echo "live_fingerprint_after=$fp2 $([ "$fp2" = "$expect_fp" ] && echo unchanged || echo CHANGED)"
+  echo "retention: $(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz | wc -l) file(s) present; oldest still present=$(printf '%s\n' "$before" | awk '{print $1}' | sort | head -1 | xargs -I{} sh -c '[ -f "'"$G6_BACKUP_DIR"'/{}" ] && echo yes || echo no')"
+  rm -rf "$work"
+  echo "BACKUP_CAPTURE=PASS new_backup=$nf new_sha256=$sum"
+  log "g6c1-backup complete"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   migrate) phase_migrate ;;
@@ -1303,5 +1443,7 @@ case "$PHASE" in
   g6-inventory) phase_g6_inventory ;;
   g6-restore) phase_g6_restore ;;
   g6-verify) phase_g6_verify ;;
+  g6c1-preflight) phase_g6c1_preflight ;;
+  g6c1-backup) phase_g6c1_backup ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac
