@@ -54,6 +54,30 @@ Optional — correct localhost values:
   for normal development: email becomes a logged no-op, uploads report
   "not configured", AI degrades gracefully, and nothing Replit-specific is
   needed (see §12).
+- **`LOGIN_RATE_MAX` for a full API-suite run (Batch 23 Correction 1)** — the
+  per-IP failed-login ceiling (`config.security.loginRateLimitMax`, default
+  **20** failures per 15 minutes, failures only) is read **once by the API
+  process at startup**. The full API suite deliberately performs several dozen
+  failed logins from the single loopback IP (lockout, suspended-tenant,
+  wrong-portal-host and MFA cases), so with the default every later login in
+  the same run — including the demo logins of unrelated suites — gets 429 and
+  those tests fail or skip. Before a full run, export a larger ceiling **in the
+  shell that starts the API** (terminal 1 in §5), then start the API:
+
+  ```bash
+  export LOGIN_RATE_MAX=1000     # API shell only, local development only
+  PORT=8080 pnpm --filter @workspace/api-server run dev
+  ```
+
+  Setting it in the vitest shell does nothing (the running API keeps the value
+  it booted with). Do **not** set it on the hosted stack or in production —
+  the default of 20 stays the deployed value, and
+  `test/unit-login-rate-limit.test.ts` pins that default, the override, the
+  failures-only accounting and the 429 after the ceiling in isolation. The
+  per-account lockout (`LOGIN_MAX_ATTEMPTS`, `test/auth-security.test.ts`) and
+  the forgot-password throttle (`FORGOT_PASSWORD_RATE_MAX`,
+  `test/password-reset.test.ts`) are separate guards and keep their normal
+  values and coverage.
 - **Billing (Batch 20)** — leave `BILLING_PROVIDER` unset for plain manual
   billing. The B20 API suites (`test/b20-billing-stripe.test.ts`) and the
   Playwright billing spec (`e2e/x-billing.spec.ts`) require the deterministic
@@ -121,6 +145,7 @@ role the Replit gateway / self-host nginx plays. Use the bundled dev gateway:
 
 ```bash
 # terminal 1 — API (in-process workers + schedulers start automatically)
+export LOGIN_RATE_MAX=1000     # only when the full API suite will run against this process (§3)
 PORT=8080 pnpm --filter @workspace/api-server run dev
 
 # terminal 2 — web dev server (HMR)
@@ -193,8 +218,11 @@ pnpm --filter @workspace/web-app run build      # PASS → dist/public (env-free
 integration suite against the **live** API at `http://localhost:80/api` — the
 full stack (§5) must be up, and the vitest process itself needs `DATABASE_URL`
 and `SESSION_SECRET` exported. The login rate limiter is **stateful in the
-server process**: restart the API server first, then run the suite **exactly
-once**; repeat runs against the same process yield spurious 429s.
+server process** and its ceiling is fixed at API startup: start (or restart)
+the API with `LOGIN_RATE_MAX=1000` exported in **its** shell (§3), then run the
+suite **exactly once**; a second run against the same process, or a run against
+an API started with the default ceiling of 20, yields spurious 429s (the suite's
+own intentional failed logins exhaust the per-IP budget mid-run).
 
 **Playwright** (`artifacts/web-app/playwright.config.ts`): needs the stack up,
 `DATABASE_URL` exported (global-setup talks to Postgres directly), and — off
@@ -221,7 +249,8 @@ NixOS — `PW_CHROMIUM_PATH=/path/to/chrome`. Target override: `E2E_BASE_URL`
 # stop: Ctrl-C each process (or kill the node processes)
 # start again in order: API → web → gateway (web/gateway have no state)
 # after schema edits: pnpm --filter @workspace/db run push, then restart the API
-# ALWAYS restart the API before an API test run (rate-limiter state)
+# ALWAYS restart the API before an API test run (rate-limiter state), with
+# LOGIN_RATE_MAX=1000 exported in the API shell for a full-suite run (§3)
 ```
 
 ## 10. Common errors
@@ -233,7 +262,7 @@ NixOS — `PW_CHROMIUM_PATH=/path/to/chrome`. Target override: `E2E_BASE_URL`
 | Web dev server exits immediately | the **dev server** (not build) requires `PORT` and `BASE_PATH` |
 | Tests: many 401s "login failed" | verification accounts missing — §4 |
 | Tests: `no seeded tenant-A row for <resource>` | TechCorp is not company id 2, or fixture rows missing — §4 |
-| Tests: spurious 429s | API served a previous run — restart it, run once |
+| Tests: spurious 429s (`expected 429 to be 200`, suites skipped after "login failed … 429") | API served a previous run, or was started with the default `LOGIN_RATE_MAX=20` — restart it with `LOGIN_RATE_MAX=1000` in the API shell (§3), run once |
 | Playwright: browser launch error | set `PW_CHROMIUM_PATH` to a real Chromium binary |
 | Uploads fail, `readyz` storage `not_configured` | expected without GCS credentials; harmless for dev |
 | Email "skipped (not configured)" | expected without `SMTP_*`; honest no-op |
