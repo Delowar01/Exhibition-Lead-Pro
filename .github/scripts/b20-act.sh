@@ -1022,7 +1022,7 @@ g6_backup_lines() {
     if gzip -t "$f" 2>/dev/null; then gz=ok; else gz=CORRUPT; fi
     hdr="?"; dfrom="?"; dby="?"; ct=0; cp=0; done_=0; rows=0; ext=0; bu=0
     if [ "$gz" = ok ]; then
-      hdr="$(zcat "$f" 2>/dev/null | head -1 | cut -c1-40 || true)"
+      hdr="$(zcat "$f" 2>/dev/null | sed -n 2p | cut -c1-40 || true)"
       dfrom="$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped from database version [0-9.]+' | awk '{print $NF}' || true)"
       dby="$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped by pg_dump version [0-9.]+' | awk '{print $NF}' || true)"
       ct="$(zcat "$f" | grep -c '^CREATE TABLE ' || true)"; cp="$(zcat "$f" | grep -c '^COPY ' || true)"
@@ -1082,7 +1082,13 @@ phase_g6_inventory() {
   echo "other users' crontabs dir: $( [ -r /var/spool/cron/crontabs ] && echo "readable entries=$(ls -1 /var/spool/cron/crontabs | wc -l)" || echo 'not readable (unknown)')"
   echo "system timers: total=$(systemctl list-timers --all --no-pager --no-legend 2>/dev/null | wc -l) matching(backup|postgres|pg|lead)=$(systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -ciE 'backup|postgres|pg|lead' || true)"
   systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -iE 'backup|postgres|pg|lead' | cut -c1-200 | sed 's/^/  timer: /' || true
+  # What do the matching system timers actually run? (unit text is not secret; values masked anyway)
+  for u in $(systemctl list-timers --all --no-pager --no-legend 2>/dev/null | grep -iE 'backup|postgres|pg|lead' | awk '{print $NF}' | sort -u); do
+    echo "  unit $u: $(systemctl cat "$u" 2>/dev/null | grep -E '^(Description|ExecStart|User|WorkingDirectory)=' | g6_mask | cut -c1-200 | tr '\n' ';' || echo 'not readable')"
+    echo "  unit $u: mentions backup-postgres=$(systemctl cat "$u" 2>/dev/null | grep -c 'backup-postgres' || true) mentions lead-capture-pro=$(systemctl cat "$u" 2>/dev/null | grep -c 'lead-capture-pro' || true) mentions card-scanner=$(systemctl cat "$u" 2>/dev/null | grep -ci 'card-scanner\|cardscanner' || true) last=$(systemctl show -p LastTriggerUSec --value "${u%.service}.timer" 2>/dev/null || echo ?) result=$(systemctl show -p Result --value "$u" 2>/dev/null || echo ?)"
+  done
   echo "user timers: $(systemctl --user list-timers --all --no-pager --no-legend 2>/dev/null | wc -l || echo 0) (user manager: $(systemctl --user is-system-running 2>/dev/null || echo unavailable))"
+  systemctl --user list-timers --all --no-pager --no-legend 2>/dev/null | cut -c1-200 | sed 's/^/  user timer: /' || true
   echo "cron journal (last 14 days): $(journalctl -u cron --since '-14 days' --no-pager -q 2>/dev/null | wc -l) lines readable; backup-postgres mentions=$(journalctl -u cron --since '-14 days' --no-pager -q 2>/dev/null | grep -c backup-postgres || true); journal access=$(journalctl -u cron -n 1 --no-pager -q >/dev/null 2>&1 && echo ok || echo denied)"
   echo "syslog (grep, if readable): backup-postgres mentions=$(grep -h backup-postgres /var/log/syslog /var/log/syslog.1 2>/dev/null | wc -l) readable=$([ -r /var/log/syslog ] && echo yes || echo no)"
   echo "repo workflows with a schedule trigger: $(grep -l '^\s*schedule:' "$APP_DIR"/.github/workflows/*.yml 2>/dev/null | wc -l)"
