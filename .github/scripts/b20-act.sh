@@ -772,6 +772,10 @@ phase_b22_infra() {
   section "api log since container start — provider / storage / queue messages (message text only)"
   b22_log_msgs ""
   echo "api error-level lines since container start: $(docker logs "$API_CID" 2>&1 | grep -c '"level":50' || true); non-AppError: $(docker logs "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
+  section "web container (nginx) log since container start — error-level lines (message text only)"
+  local WEB_CID; WEB_CID="$(compose ps -q web || true)"
+  echo "web nginx error/crit/emerg lines: $(docker logs "$WEB_CID" 2>&1 | grep -ciE '\[(error|crit|emerg|alert)\]' || true); web 5xx access lines: $(docker logs "$WEB_CID" 2>&1 | grep -cE '" 5[0-9]{2} ' || true); web 503 access lines: $(docker logs "$WEB_CID" 2>&1 | grep -cE '" 503 ' || true)"
+  { docker logs "$WEB_CID" 2>&1 | grep -iE '\[(error|crit|emerg|alert)\]' | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g' | cut -c1-200 | tail -3; } || true
   section "table counts (global, no content)"
   q "select 'documents='||(select count(*) from documents)||' document_versions='||(select count(*) from document_versions)||' scans='||(select count(*) from scans)||' ai_invocations='||(select count(*) from ai_invocations)||' ai_settings='||(select count(*) from ai_settings)||' ai_usage_reservations='||(select count(*) from ai_usage_reservations)||' usage_reservations='||(select count(*) from subscription_usage_reservations)||' invitations='||(select count(*) from invitations)||' companies='||(select count(*) from companies)||' users_active='||(select count(*) from users where deleted_at is null and is_active)"
   section "disposable rows in the B22 tables (must be zero before the smoke)"
