@@ -1295,7 +1295,7 @@ phase_g6_verify() {
 #                    byte-identical, and on failure removes ONLY the exact new partial
 #                    file. Never prints credentials or rows.
 # =============================================================================
-G6_REHEARSAL_NEWEST="2026-09-15 15:45:10 UTC"
+G6_REHEARSAL_NEWEST="2026-09-15 15:45:11 UTC"   # the rehearsal's newest file has mtime 15:45:10.58; anything from :11 on is genuinely newer
 g6c1_no_backup_running() {
   local host_procs ctr_procs act
   host_procs="$(pgrep -fa 'backup-postgres\.sh|pg_dump' 2>/dev/null | grep -v "$$" | grep -vE 'b20-act\.sh|pgrep' | wc -l || true)"
@@ -1333,6 +1333,7 @@ phase_g6c1_preflight() {
   systemctl show "${u%.service}.timer" -p Id,TimersCalendar,Persistent,LastTriggerUSec,NextElapseUSecRealtime,Unit 2>/dev/null | cut -c1-200 | sed 's/^/  /' || true
   local frag; frag="$(systemctl show "$u" -p FragmentPath --value 2>/dev/null || true)"
   if [ -n "$frag" ]; then echo "  fragment: $(ls -l "$frag" 2>&1 | awk '{print $1, $3":"$4, $NF}') readable_by_deploy_user=$([ -r "$frag" ] && echo yes || echo no)"; if [ -r "$frag" ]; then grep -E '^(ExecStart|User|WorkingDirectory)=' "$frag" | g6_mask | cut -c1-200 | sed 's/^/  file: /'; fi; fi
+  echo "  ExecStart executable (basename only; the unit belongs to another site): $(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -oE 'path=[^ ;]+' | head -1 | sed 's#.*/##' || echo n/a) argv_count=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -oE 'argv\[\]=[^;]*' | head -1 | wc -w)"
   echo "  references from the shown ExecStart: backup-postgres=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -c 'backup-postgres' || true) lead-capture-pro=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -c 'lead-capture-pro' || true) card-scanner=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -ci 'card-scanner\|cardscanner' || true) postgres/docker=$(systemctl show "$u" -p ExecStart --value 2>/dev/null | grep -ciE 'postgres|docker|pg_dump' || true)"
   section "no backup running"
   if g6c1_no_backup_running; then echo "no backup process detected"; else echo "a backup-related process is active"; fi
