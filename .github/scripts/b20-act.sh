@@ -868,6 +868,16 @@ phase_b22_verify() {
   echo "  by error type / status: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -oE '"type":"[A-Za-z_]+"|"statusCode":[0-9]+' | sort | uniq -c | tr '\n' ' ' | tr -s ' ')"
   echo "  non-AppError error lines: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
   { docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep '"level":50' | grep -v '"type":"_AppError"' | grep -oE '"msg":"[^"]+"|"type":"[A-Za-z_]+"|"name":"[A-Za-z_]+"' | paste -d' ' - - - | sort | uniq -c | head -10; } || true
+  section "scan rows / scan reservations / AI ledger of the disposable tenants (status breakdown)"
+  local CIDS="(select id from companies where name like 'B20 SMOKE $ARG2 %')"
+  q "select 'scans: '||coalesce(string_agg(status||'='||n, ' ' order by status),'none')||' with_stored_image='||(select count(*) from scans where company_id in $CIDS and image_url is not null) from (select status, count(*) n from scans where company_id in $CIDS group by status) s"
+  q "select 'scan_reservations: '||coalesce(string_agg(status||'='||n, ' ' order by status),'none') from (select status, count(*) n from subscription_usage_reservations where company_id in $CIDS group by status) s"
+  q "select 'ai_invocations: '||coalesce(string_agg(feature||'/'||status||'='||n, ' ' order by feature, status),'none') from (select feature, status, count(*) n from ai_invocations where company_id in $CIDS group by feature, status) s"
+  section "api log since the smoke started — AI readiness signals"
+  echo "503 responses logged: $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"statusCode":503' || true)"
+  echo "'AI request refused: provider is not configured' warnings (the correction's expected entry): $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"msg":"AI request refused: provider is not configured' || true)"
+  echo "'AI request failed' errors (the PRE-correction path; must be 0): $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c '"msg":"AI request failed"' || true)"
+  echo "'Gemini is not configured' adapter errors (must be 0): $(docker logs --since "$(date -u -d @$((ARG1/1000)) +%FT%TZ)" "$API_CID" 2>&1 | grep -c 'Gemini is not configured' || true)"
   section "disposable rows in the B22 tables ($ARG3)"
   local d; d="$(b22_disposable "$ARG2" "$ARG1")"; echo "$d"
   if [ "$ARG3" = "post" ]; then echo "$d" | grep -vqE '=[1-9]' || fail "disposable B22 rows remain: $d"; fi

@@ -38,7 +38,7 @@ on:
         description: "Phase to run"
         required: true
         type: choice
-        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener]
+        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener, b22c1]
       arg1:
         description: "Phase argument 1 (non-secret)"
         required: false
@@ -69,7 +69,7 @@ env:
 jobs:
   run:
     name: B20 hosted activation phase (one-off)
-    if: github.ref == 'refs/heads/ops/b20-hosted-activation' && inputs.phase != 'smoke' && inputs.phase != 'supp' && inputs.phase != 'c4' && inputs.phase != 'b21' && inputs.phase != 'b22' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
+    if: github.ref == 'refs/heads/ops/b20-hosted-activation' && inputs.phase != 'smoke' && inputs.phase != 'supp' && inputs.phase != 'c4' && inputs.phase != 'b21' && inputs.phase != 'b22' && inputs.phase != 'b22c1' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-preflight]'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -873,6 +873,233 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: b22-hosted-verification-evidence
+          path: |
+            ${{ runner.temp }}/b22/summary.json
+            ${{ runner.temp }}/b22/state.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: b22-verify PRE-cleanup (read-only queue / log / row evidence)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          [ -n "${SMOKE_START_MS:-}" ] || { echo "no smoke start recorded"; exit 0; }
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b22-verify' ARG1='$SMOKE_START_MS' ARG2='$TAG' ARG3='pre' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: b22-objects CHECK (read-only; the objects the smoke recorded, through the app's own credential)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          STATE="$RUNNER_TEMP/b22/state.json"; LABELS="none"
+          [ -f "$STATE" ] && LABELS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(s.objects.length? s.objects.join(","):"none")' "$STATE")"
+          echo "object labels: $LABELS"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b22-objects' ARG1='check' ARG2='$LABELS' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: b22-objects DELETE (ALWAYS — exactly the recorded disposable objects)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          STATE="$RUNNER_TEMP/b22/state.json"; LABELS="none"
+          [ -f "$STATE" ] && LABELS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(s.objects.length? s.objects.join(","):"none")' "$STATE")"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b22-objects' ARG1='delete' ARG2='$LABELS' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: b22-cleanup (ALWAYS — the smoke's queue rows, exact-count guard)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          [ -n "${SMOKE_START_MS:-}" ] || { echo "no smoke start recorded; nothing to clean"; exit 0; }
+          STATE="$RUNNER_TEMP/b22/state.json"; EXPECTED="0"
+          [ -f "$STATE" ] && EXPECTED="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(s.expectedEmailJobs||0))' "$STATE")"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b22-cleanup' ARG1='$SMOKE_START_MS' ARG2='$TAG' ARG3='$EXPECTED' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: cleanup (ALWAYS — exactly the recorded disposable rows)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          STATE="$RUNNER_TEMP/b22/state.json"
+          if [ -z "${OWNER_USER_ID:-}" ]; then echo "smoke-setup did not create an owner row; nothing to clean"; exit 0; fi
+          C_IDS="none"; U_IDS="$OWNER_USER_ID"
+          if [ -f "$STATE" ]; then
+            C_IDS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(s.companyIds.length? s.companyIds.join(","):"none")' "$STATE")"
+            U_IDS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(s.userIds.join(","))' "$STATE")"
+          fi
+          echo "cleanup targets: companies=[$C_IDS] users=[$U_IDS] tag=$TAG"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='cleanup' ARG1='$C_IDS' ARG2='$U_IDS' ARG3='$SMOKE_DOMAIN:$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: c4-verify AFTER cleanup (ALWAYS, read-only — zero disposable rows, baseline equality, deploy/schema/env unchanged, queue and worker health)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='c4-verify' ARG1='$EXPECTED_SHA' ARG2='$EXPECTED_PREV_SHA' ARG3='$TAG|${BASELINE_MD5:-none}|${SMOKE_START_MS:-0}' bash \"\$HOME/b20-act.sh\"" < /dev/null
+
+      - name: b22-verify POST-cleanup + object re-check (ALWAYS, read-only — zero B22 rows, objects gone)
+        if: always()
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          [ -n "${SMOKE_START_MS:-}" ] || { echo "no smoke start recorded"; exit 0; }
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b22-verify' ARG1='$SMOKE_START_MS' ARG2='$TAG' ARG3='post' bash \"\$HOME/b20-act.sh\"" < /dev/null
+          STATE="$RUNNER_TEMP/b22/state.json"; LABELS="none"
+          [ -f "$STATE" ] && LABELS="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(s.objects.length? s.objects.join(","):"none")' "$STATE")"
+          OUT="$(ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b22-objects' ARG1='check' ARG2='$LABELS' ARG3='$TAG' bash \"\$HOME/b20-act.sh\"" < /dev/null)"; echo "$OUT"
+          if [ "$LABELS" != "none" ]; then echo "$OUT" | grep -q 'exists=true' && { echo "an object of the smoke still exists"; exit 1; } || echo "all recorded objects are absent"; fi
+
+      - name: Remove the script and credentials (always)
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b20-act.sh"' < /dev/null || true
+          rm -f "$RUNNER_TEMP/b20-creds"
+
+  b22c1:
+    name: B22 Correction 1 hosted smoke (one guarded scan probe, disposable tenant, API-level)
+    if: github.ref == 'refs/heads/ops/b20-hosted-activation' && github.event_name == 'workflow_dispatch' && inputs.phase == 'b22c1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PLATFORM_HOST: https://elite.kaptnow.com
+      TENANT_HOST: https://admin.kaptnow.com
+      SMOKE_DOMAIN: b20smoke.invalid
+      EXISTING_COMPANY_ID: "1"
+      EXPECTED_SHA: ${{ inputs.arg1 }}
+      EXPECTED_PREV_SHA: ${{ inputs.arg2 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the branch is the B18 develop commit + the ops files only; validate inputs
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
+          git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b20-*' ':(exclude).github/workflows/b20-hosted-activation.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          bash -n .github/scripts/b20-act.sh && node --check .github/scripts/b20-smoke6.mjs
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "arg1 must be the deployed commit sha"; exit 1; }
+          [[ "$EXPECTED_PREV_SHA" =~ ^([0-9a-f]{40}|-)$ ]] || { echo "arg2 must be the previous commit sha or '-'"; exit 1; }
+          [ -f artifacts/api-server/scripts/ocr-fixtures/english-clean.jpg ] || { echo "OCR fixture missing"; exit 1; }
+          echo "branch = $BASE_SHA + ops files only; scripts parse; expected deploy $EXPECTED_SHA (previous $EXPECTED_PREV_SHA)"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+      - name: Install (frozen lockfile; no browser needed — API-level smoke)
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate disposable credentials (masked; only the owner hash leaves the runner)
+        run: |
+          set -euo pipefail
+          umask 077
+          TAG="$(openssl rand -hex 4)"
+          gen() { printf 'Sm0ke!%s' "$(openssl rand -base64 33 | tr -dc 'A-Za-z0-9' | cut -c1-26)"; }
+          OWNER_PW="$(gen)"; A_ADMIN_PW="$(gen)"; B_ADMIN_PW="$(gen)"; E_PW="$(gen)"
+          for v in "$OWNER_PW" "$A_ADMIN_PW" "$B_ADMIN_PW" "$E_PW"; do echo "::add-mask::$v"; done
+          HASH="$(OWNER_PW="$OWNER_PW" node -e 'const b=require(process.cwd()+"/artifacts/api-server/node_modules/bcryptjs"); process.stdout.write(b.hashSync(process.env.OWNER_PW, 10))')"
+          echo "::add-mask::$HASH"
+          printf "OWNER_PASSWORD='%s'\nA_ADMIN_PASSWORD='%s'\nB_ADMIN_PASSWORD='%s'\nA_EMPLOYEE_PASSWORD='%s'\n" "$OWNER_PW" "$A_ADMIN_PW" "$B_ADMIN_PW" "$E_PW" > "$RUNNER_TEMP/b20-creds"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "OWNER_EMAIL=b20-smoke-$TAG@$SMOKE_DOMAIN" >> "$GITHUB_ENV"
+          echo "OWNER_HASH=$HASH" >> "$GITHUB_ENV"
+          echo "tag=$TAG owner=b20-smoke-$TAG@$SMOKE_DOMAIN hash_prefix=$(printf '%s' "$HASH" | cut -c1-7) hash_len=${#HASH}"
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the phase script to the VPS
+        run: |
+          ssh vps 'umask 077; cat > "$HOME/b20-act.sh" && chmod 700 "$HOME/b20-act.sh"' < .github/scripts/b20-act.sh
+
+      - name: c4-verify BEFORE the smoke (read-only; deploy / schema / env / volume / queue / existing-customer baseline)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='c4-verify' ARG1='$EXPECTED_SHA' ARG2='$EXPECTED_PREV_SHA' ARG3='$TAG|none|0' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/b22-before.log"
+          MD5="$(grep -oE '^baseline_md5=[0-9a-f]{32}' "$RUNNER_TEMP/b22-before.log" | head -1 | cut -d= -f2)"
+          [ -n "$MD5" ] || { echo "c4-verify did not report the baseline"; exit 1; }
+          echo "BASELINE_MD5=$MD5" >> "$GITHUB_ENV"
+
+      - name: b22-infra BEFORE the smoke (read-only infrastructure evidence)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b22-infra' ARG1='$TAG' ARG2='' ARG3='' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/b22-infra.log"
+          START="$(grep -oE '^now_epoch_ms=[0-9]+' "$RUNNER_TEMP/b22-infra.log" | head -1 | cut -d= -f2)"
+          [ -n "$START" ] || { echo "b22-infra did not report the clock"; exit 1; }
+          echo "SMOKE_START_MS=$START" >> "$GITHUB_ENV"
+
+      - name: Credential gate — GEMINI_API_KEY must be absent or EMPTY in the env file AND the api container (values never read); no proxy pair
+        run: |
+          set -euo pipefail
+          L="$RUNNER_TEMP/b22-infra.log"
+          n_key="$(grep -cE '^GEMINI_API_KEY: (unset|set-but-empty)$' "$L" || true)"
+          n_pair="$(grep -cE '^AI_INTEGRATIONS_GEMINI_API_KEY: unset$' "$L" || true)"
+          bad="$(grep -cE '^(GEMINI_API_KEY|AI_INTEGRATIONS_GEMINI_API_KEY): set$' "$L" || true)"
+          echo "GEMINI_API_KEY absent/empty lines: $n_key (env file + container = 2 expected); proxy key unset lines: $n_pair; credential-present lines: $bad"
+          [ "$n_key" = "2" ] && [ "$n_pair" = "2" ] && [ "$bad" = "0" ] || { echo "a Gemini credential appears to be present — the probe must not be sent"; exit 1; }
+
+      - name: smoke-setup (one disposable platform owner, no company; ids only in the log)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-setup' ARG1='$OWNER_HASH' ARG2='$OWNER_EMAIL' ARG3='$EXPECTED_SHA' bash \"\$HOME/b20-act.sh\"" < /dev/null | tee "$RUNNER_TEMP/b20-setup.log"
+          UID_="$(grep -oE '^disposable_owner_user_id=[0-9]+' "$RUNNER_TEMP/b20-setup.log" | head -1 | cut -d= -f2)"
+          [ -n "$UID_" ] || { echo "no disposable owner id returned"; exit 1; }
+          echo "OWNER_USER_ID=$UID_" >> "$GITHUB_ENV"
+
+      - name: Run the B22 Correction 1 smoke (API-level; ONE guarded POST /scans probe)
+        env:
+          OUT_DIR: ${{ runner.temp }}/b22
+          STATE_FILE: ${{ runner.temp }}/b22/state.json
+          FIXTURE_IMAGE: artifacts/api-server/scripts/ocr-fixtures/english-clean.jpg
+        run: |
+          set -euo pipefail
+          set -a; . "$RUNNER_TEMP/b20-creds"; set +a
+          mkdir -p "$OUT_DIR"
+          node .github/scripts/b20-smoke6.mjs
+
+      - name: Upload evidence (summary; no secrets)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b22c1-hosted-smoke-evidence
           path: |
             ${{ runner.temp }}/b22/summary.json
             ${{ runner.temp }}/b22/state.json
