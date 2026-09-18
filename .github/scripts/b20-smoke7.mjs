@@ -178,8 +178,11 @@ async function main() {
       const body = { firstName: "G3", lastName: `Row${i} ${TAG}`, jobTitle: `Export Row ${i}`, contactCompany: `B20 SMOKE ${TAG} Org`, email: `g3-${TAG}-${i}@${DOMAIN}`, mobile: `+97150${String(100000 + i).slice(-6)}`, country: "ZZ", dedupeResolution: "create_separate" };
       const r = await A.post("/contacts", body);
       const id = r.json?.id; if (Number.isInteger(id)) { state.contactIds.push(id); saveState(); }
-      check(`tenant A synthetic contact ${i} created`, r.status === 201 && Number.isInteger(id) && r.json?.email === body.email, { status: r.status, id });
-      fx.contacts.push({ id, expected: { "First Name": body.firstName, "Last Name": body.lastName, "Job Title": body.jobTitle, Company: body.contactCompany, Email: body.email, Mobile: body.mobile, Country: body.country } });
+      const stored = r.json ?? {};
+      const storedMatches = ["firstName", "lastName", "jobTitle", "contactCompany", "email", "mobile", "country"].every((k) => stored[k] === body[k]);
+      check(`tenant A synthetic contact ${i} created and stored verbatim`, r.status === 201 && Number.isInteger(id) && storedMatches, { status: r.status, id, storedMatches });
+      // Expected export values = the values the API stored (recorded BEFORE any export).
+      fx.contacts.push({ id, expected: { "First Name": stored.firstName, "Last Name": stored.lastName, "Job Title": stored.jobTitle, Company: stored.contactCompany, Email: stored.email, Mobile: stored.mobile, Country: stored.country } });
     }
     // One contact in tenant B: its e-mail must NEVER appear in tenant A's exports.
     const rb = await B.post("/contacts", { firstName: "G3", lastName: `OtherTenant ${TAG}`, jobTitle: "Must not leak", contactCompany: `B20 SMOKE ${TAG} Org B`, email: `g3-${TAG}-other-tenant@${DOMAIN}`, mobile: "+971500000999", country: "ZZ", dedupeResolution: "create_separate" });
@@ -255,12 +258,19 @@ async function main() {
         const col = (name) => header.indexOf(name);
         const need = ["First Name", "Last Name", "Job Title", "Company", "Email", "Mobile", "Country"];
         const missingCols = need.filter((n) => col(n) < 0);
+        // The product's CSV/Excel formula-injection defense (lib/export-generate.ts
+        // neutralizeCell) prefixes any cell starting with = + - @ (or tab/CR) with a
+        // single quote, so "+971…" phone numbers are exported as "'+971…". The
+        // expected CSV cell is therefore the stored value passed through that rule.
+        const csvCell = (v) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
         const byEmail = new Map(rows.map((r) => [r[col("Email")], r]));
-        const rowMatches = fx.contacts.map((c) => { const r = byEmail.get(c.expected.Email); if (!r) return { email: c.expected.Email, found: false }; const diffs = need.filter((n) => r[col(n)] !== c.expected[n]); return { found: true, diffs }; });
+        const rowMatches = fx.contacts.map((c) => { const r = byEmail.get(c.expected.Email); if (!r) return { email: c.expected.Email, found: false }; const diffs = need.filter((n) => r[col(n)] !== csvCell(c.expected[n])); return { found: true, diffs }; });
         const allMatch = rowMatches.every((m) => m.found && m.diffs.length === 0);
         const emails = rows.map((r) => r[col("Email")]);
         const foreign = emails.filter((e) => !fx.contacts.some((c) => c.expected.Email === e));
-        check(`CSV rows equal the synthetic fixture: ${ROWS} data rows, every stamped contact exactly once, all compared columns identical`, missingCols.length === 0 && rows.length === ROWS && allMatch && new Set(emails).size === ROWS, { rows: rows.length, expected: ROWS, missingColumns: missingCols, mismatches: rowMatches.filter((m) => !m.found || m.diffs.length).slice(0, 3) });
+        check(`CSV rows equal the synthetic fixture: ${ROWS} data rows, every stamped contact exactly once, all compared columns identical (after the documented cell neutralization)`, missingCols.length === 0 && rows.length === ROWS && allMatch && new Set(emails).size === ROWS, { rows: rows.length, expected: ROWS, missingColumns: missingCols, mismatches: rowMatches.filter((m) => !m.found || m.diffs.length).slice(0, 3) });
+        const mobileCells = rows.map((r) => r[col("Mobile")]);
+        check("formula-injection defense observed: every '+'-prefixed Mobile value is exported with a leading apostrophe and nothing else is altered", mobileCells.length === ROWS && mobileCells.every((v) => v.startsWith("'+")) && fx.contacts.every((c) => mobileCells.includes(`'${c.expected.Mobile}`)), { sample: mobileCells[0]?.replace(/\d{6}$/, "######") ?? null });
         check("the CSV contains no other tenant's data (tenant B's control e-mail absent; no foreign rows at all)", foreign.length === 0 && !emails.includes(fx.B.otherEmail) && rows.every((r) => !r.some((cell) => cell.includes(fx.B.otherEmail))), { foreignRows: foreign.length });
       }
       // Legacy-tool compatibility evidence (the reason zip20 exists) — Info-ZIP unzip.
