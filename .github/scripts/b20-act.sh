@@ -1736,7 +1736,9 @@ phase_g6fc_verify() {
   section "cron execution evidence for $day_iso 03:00–04:00 UTC (journal / syslog, if readable as this user)"
   if journalctl -u cron -n 1 --no-pager -q >/dev/null 2>&1; then
     echo "journal: readable; CMD lines mentioning the two scripts in the window: $(journalctl -u cron --since "$day_iso 03:00:00" --until "$day_iso 04:00:00" --no-pager -q 2>/dev/null | grep -cE 'backup-(postgres|check)\.sh' || true)"
-    journalctl -u cron -o short-iso --since "$day_iso 03:00:00" --until "$day_iso 04:00:00" --no-pager -q 2>/dev/null | grep -E 'backup-(postgres|check)\.sh|CRON' | g6fc_mask | cut -c1-260 | sed 's/^/  journal: /' | head -12 || true
+    journalctl -u cron -o short-iso --since "$day_iso 03:00:00" --until "$day_iso 04:00:00" --no-pager -q 2>/dev/null | grep -E 'backup-(postgres|check)\.sh|CRON' | g6fc_mask | cut -c1-260 | sed 's/^/  journal(cron unit): /' | head -12 || true
+    echo "journal (any unit) lines mentioning the two scripts in the window: $(journalctl --since "$day_iso 03:00:00" --until "$day_iso 04:00:00" --no-pager -q 2>/dev/null | grep -cE 'backup-(postgres|check)\.sh' || true)"
+    journalctl -o short-iso --since "$day_iso 03:00:00" --until "$day_iso 04:00:00" --no-pager -q 2>/dev/null | grep -E 'backup-(postgres|check)\.sh' | g6fc_mask | cut -c1-260 | sed 's/^/  journal(any): /' | head -8 || true
   else echo "journal: not readable as this user (unknown)"; fi
   if [ -r /var/log/syslog ]; then echo "syslog: readable; matching lines=$(grep -h "$day_iso" /var/log/syslog 2>/dev/null | grep -cE 'backup-(postgres|check)\.sh' || true)"; grep -h "${day_iso}T03" /var/log/syslog 2>/dev/null | grep -E 'backup-(postgres|check)\.sh' | g6fc_mask | cut -c1-260 | sed 's/^/  syslog: /' | head -6 || true; else echo "syslog: not readable (unknown)"; fi
   section "protected backup.log (only the two scripts write it, via the crontab redirection; masked, names/sizes/counts only)"
@@ -1825,7 +1827,8 @@ phase_g6fc_verify() {
   q "select 'job_queue dead_last_24h='||count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'"
   [ "$(q "select count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'")" = "0" ] || echo "NOTE: dead jobs in the last 24h"
   echo "maintenance sweep summaries logged by the api since activation (numbers only):"
-  docker logs --since 2026-09-22T15:35:10Z "$API_CID" 2>&1 | grep -E '"msg":"Maintenance sweep complete"' | while read -r l; do echo "  $(g6fc_iso_ms "$(echo "$l" | grep -oE '"time":[0-9]+' | grep -oE '[0-9]+')") $(echo "$l" | grep -oE '"summary":\{[^}]*\}')"; done
+  { docker logs --since 2026-09-22T15:35:10Z "$API_CID" 2>&1 | grep -E '"msg":"Maintenance sweep complete"' || true; } | while read -r l; do [ -n "$l" ] || continue; echo "  $(g6fc_iso_ms "$(echo "$l" | grep -oE '"time":[0-9]+' | grep -oE '[0-9]+')") $(echo "$l" | grep -oE '"summary":\{[^}]*\}')"; done
+  echo "  (none = no sweep has run since activation; the cadence is 6 h from the api start at 15:26:44Z, next 21:27 / 03:27 UTC)"
   echo "api error-level lines since $day_iso 03:00 UTC: $(docker logs --since "${day_iso}T03:00:00Z" "$API_CID" 2>&1 | grep -c '"level":50' || true) (non-AppError: $(docker logs --since "${day_iso}T03:00:00Z" "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true))"
   echo "postgres log lines mentioning pg_dump/backup since $day_iso 03:00 UTC: $(docker logs --since "${day_iso}T03:00:00Z" "$PG_CID" 2>&1 | grep -ciE 'pg_dump|backup' || true)"
   section "verdict"
@@ -1848,7 +1851,7 @@ phase_g6fc_queue() {
   for k in JOBS_DRIVER JOBS_QUEUE_COMPLETED_RETENTION_DAYS JOBS_QUEUE_DEAD_RETENTION_DAYS JOBS_MAINTENANCE_DELAY_MS JOBS_MAINTENANCE_INTERVAL_MS; do envkey "$k" yes; done
   echo "code defaults (artifacts/api-server/src/config.ts at HEAD): $(grep -oE 'queueCompletedDays: numEnv\("JOBS_QUEUE_COMPLETED_RETENTION_DAYS", [0-9]+' "$APP_DIR/artifacts/api-server/src/config.ts" | grep -oE '[0-9]+$') days completed / $(grep -oE 'queueDeadDays: numEnv\("JOBS_QUEUE_DEAD_RETENTION_DAYS", [0-9]+' "$APP_DIR/artifacts/api-server/src/config.ts" | grep -oE '[0-9]+$') days dead; maintenance first delay $(grep -oE 'maintenanceFirstDelayMs: numEnv\("JOBS_MAINTENANCE_DELAY_MS", [0-9_]+' "$APP_DIR/artifacts/api-server/src/config.ts" | grep -oE '[0-9_]+$') ms, interval $(grep -oE 'maintenanceIntervalMs: numEnv\("JOBS_MAINTENANCE_INTERVAL_MS", [^,]+' "$APP_DIR/artifacts/api-server/src/config.ts" | sed 's/.*, //')"
   section "maintenance evidence in the api log (JSON lines; the summary carries counts only)"
-  docker logs "$API_CID" 2>&1 | grep -E '"msg":"Recurring task scheduler started' | head -1 | while read -r l; do echo "scheduler started $(g6fc_iso_ms "$(echo "$l" | grep -oE '"time":[0-9]+' | grep -oE '[0-9]+')") $(echo "$l" | grep -oE '"maintenanceIntervalMs":[0-9]+')"; done
+  { docker logs "$API_CID" 2>&1 | grep -E '"msg":"Recurring task scheduler started' || true; } | head -1 | while read -r l; do [ -n "$l" ] || continue; echo "scheduler started $(g6fc_iso_ms "$(echo "$l" | grep -oE '"time":[0-9]+' | grep -oE '[0-9]+')") $(echo "$l" | grep -oE '"maintenanceIntervalMs":[0-9]+')"; done
   local reported="" n_sweeps=0
   while read -r l; do
     [ -n "$l" ] || continue
