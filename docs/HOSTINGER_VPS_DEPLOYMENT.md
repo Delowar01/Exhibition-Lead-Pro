@@ -219,7 +219,9 @@ the database volume) together with a `.sha256` sidecar. A lock allows one run
 at a time (a second run exits 75), a failed run removes only its own temporary
 file and never prunes, and retention (`KEEP`, default 7) runs only after the
 new file is verified. `docker/scripts/backup-check.sh` reports whether the
-newest backup is fresh and intact.
+newest backup is fresh and intact (the post-run checks pass
+`BACKUP_MAX_AGE_HOURS=4` so a missed nightly run is caught the same morning;
+the 26 h default is the general-purpose meaning).
 
 The daily schedule, the freshness alert, the activation/rollback procedure and
 the off-host design are documented in `docs/BACKUP_AND_RECOVERY.md`; the
@@ -229,7 +231,13 @@ schedule is a proposal until it is installed there with approval.
 > on this VPS does not survive total VPS loss — see
 > `docs/BACKUP_AND_RECOVERY.md` §5 (not configured yet).
 
-### Restore procedure (documented — never run casually)
+### Restore procedure (disaster-recovery PLAN — never rehearsed on the running stack)
+
+> This in-place procedure has not been exercised against the live database.
+> Until a separately approved drill has run it, treat it as a plan, not a
+> verified command. What is verified is the restore of every dump to date into
+> a disposable, network-less container (`docs/BACKUP_AND_RECOVERY.md` §4.1).
+
 
 ```bash
 cd /opt/lead-capture-pro/app/docker
