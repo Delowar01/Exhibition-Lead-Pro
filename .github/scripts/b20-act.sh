@@ -1295,7 +1295,7 @@ phase_g6_verify() {
 #                    byte-identical, and on failure removes ONLY the exact new partial
 #                    file. Never prints credentials or rows.
 # =============================================================================
-G6_REHEARSAL_NEWEST="2026-09-15 15:45:11 UTC"   # the rehearsal's newest file has mtime 15:45:10.58; anything from :11 on is genuinely newer
+G6_REHEARSAL_NEWEST="${G6_SINCE:-2026-09-15 15:45:11 UTC}"   # G-6: the rehearsal's newest file has mtime 15:45:10.58; anything from :11 on is genuinely newer. g6c2 overrides with the C1 capture time.
 g6c1_no_backup_running() {
   local host_procs ctr_procs act
   host_procs="$(pgrep -fa 'backup-postgres\.sh|pg_dump' 2>/dev/null | grep -v "$$" | grep -vE 'b20-act\.sh|pgrep' | wc -l || true)"
@@ -1368,14 +1368,16 @@ phase_g6c1_backup() {
   local before after n_before; before="$(cd "$G6_BACKUP_DIR" && for f in leadcapture-*.sql.gz; do [ -f "$f" ] && echo "$f $(stat -c %s "$f") $(sha256sum "$f" | cut -c1-64) $(stat -c %Y "$f")"; done | sort)"
   n_before="$(printf '%s\n' "$before" | grep -c . || true)"
   echo "before: $n_before backup(s)"; printf '%s\n' "$before" | sed 's/^/  before: /'
-  [ "$n_before" = "7" ] || fail "expected exactly 7 pre-existing backups (found $n_before) — KEEP=8 would not preserve them all; stopping before creating anything"
+  local expect_n="${ARG3:-7}"; [[ "$expect_n" =~ ^[0-9]+$ ]] || fail "ARG3 must be the expected number of pre-existing backups"
+  [ "$n_before" = "$expect_n" ] || fail "expected exactly $expect_n pre-existing backups (found $n_before) — stopping before creating anything"
+  local keep=$((n_before + 1)); echo "KEEP for this run = $keep (existing $n_before + 1: nothing may be pruned)"
   local dbsize dest_avail; dbsize="$(q "select pg_database_size(current_database())")"; dest_avail="$(df -B1 --output=avail "$G6_BACKUP_DIR" | tail -1 | tr -d ' ')"
   [ "$dest_avail" -ge $(( 536870912 + dbsize * 5 )) ] || fail "insufficient space on the backup filesystem"
-  section "run the DEPLOYED backup script once with KEEP=8 (pg_dump inside the live container over the socket; no restart, no schema/data change)"
+  section "run the DEPLOYED backup script once with KEEP=$keep (pg_dump inside the live container over the socket; no restart, no schema/data change)"
   local work; work="$(mktemp -d "$HOME/g6c1-$tag.XXXXXX")"; chmod 700 "$work"
   local t0 t1 rc; t0="$(date +%s%3N)"; echo "backup_start_utc=$(g6_utc)"
   set +e
-  (cd "$APP_DIR" && DEPLOY_PATH="$APP_DIR" KEEP=8 timeout 600 bash docker/scripts/backup-postgres.sh) >"$work/backup.out" 2>&1
+  (cd "$APP_DIR" && DEPLOY_PATH="$APP_DIR" KEEP="$keep" timeout 600 bash docker/scripts/backup-postgres.sh) >"$work/backup.out" 2>&1
   rc=$?
   set -e
   t1="$(date +%s%3N)"; echo "backup_end_utc=$(g6_utc) script_exit=$rc script_ms=$((t1 - t0))"
@@ -1422,6 +1424,35 @@ phase_g6c1_backup() {
   log "g6c1-backup complete"
 }
 
+
+# g6c2-preflight : STRICTLY READ-ONLY. g6c1-preflight with the C1 capture as the
+#                  "since" reference, plus the bridging-backup decision: the newest
+#                  complete, gzip-valid backup is "suitable" when it is ≤ 26 h old and
+#                  its CREATE TABLE count equals the live table count (the restore proof
+#                  then re-checks the fingerprint). Prints bridge_needed=yes|no.
+phase_g6c2_preflight() {
+  G6_REHEARSAL_NEWEST="2026-09-18 23:40:37 UTC"   # the C1 capture (leadcapture-20260918-234035.sql.gz) has mtime 23:40:36.x
+  phase_g6c1_preflight
+  section "bridging-backup decision (newest complete backup ≤ 26 h old AND CREATE TABLE = live tables → no bridge)"
+  local line sel="" age="" ct="" sum="" n live_tables reason
+  while read -r line; do
+    [ -n "$line" ] || continue
+    if echo "$line" | grep -q ' gzip=ok ' && echo "$line" | grep -q ' complete_marker=1 '; then
+      sel="$(echo "$line" | sed -E 's/^backup ([^:]+):.*/\1/')"; age="$(echo "$line" | grep -oE 'age_h=[0-9]+' | cut -d= -f2 || true)"; ct="$(echo "$line" | grep -oE 'create_table=[0-9]+' | cut -d= -f2 || true)"; sum="$(echo "$line" | grep -oE 'sha256=[0-9a-f]{64}' | cut -d= -f2 || true)"; break
+    fi
+  done < <(g6_backup_lines)
+  n="$(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | wc -l)"
+  live_tables="$(q "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'")"
+  echo "newest_complete=${sel:-none} age_h=${age:-?} create_table=${ct:-?} live_tables=$live_tables sha256=${sum:-?}"
+  if [ -n "$sel" ] && [ "${age:-999}" -le 26 ] && [ "$ct" = "$live_tables" ]; then
+    reason="newest complete backup $sel is ${age} h old and its table count matches the live schema"; echo "bridge_needed=no existing_backups=$n keep_for_bridge=$((n + 1)) reason=[$reason]"
+  else
+    if [ -z "$sel" ]; then reason="no complete backup"; elif [ "${age:-999}" -gt 26 ]; then reason="newest complete backup $sel is ${age} h old (> 26 h)"; else reason="newest complete backup $sel has $ct tables, live has $live_tables"; fi
+    echo "bridge_needed=yes existing_backups=$n keep_for_bridge=$((n + 1)) reason=[$reason]"
+  fi
+  log "g6c2-preflight complete (read-only)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   migrate) phase_migrate ;;
@@ -1446,5 +1477,6 @@ case "$PHASE" in
   g6-verify) phase_g6_verify ;;
   g6c1-preflight) phase_g6c1_preflight ;;
   g6c1-backup) phase_g6c1_backup ;;
+  g6c2-preflight) phase_g6c2_preflight ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac
