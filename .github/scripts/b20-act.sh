@@ -1656,6 +1656,230 @@ phase_g6act_cron() {
   log "g6act-cron ($mode) complete"
 }
 
+# =============================================================================
+# B23 G-6 — first scheduled backup cycle verification (STRICTLY READ-ONLY).
+#   g6fc-verify : ARG1 = expected deployed sha, ARG2 = UTC day of the cycle (YYYYMMDD),
+#                 ARG3 = "<tag>|<expected company-1 core baseline md5 or none>|<api id prefix>|<postgres id prefix>|<web id prefix>"
+#                 (the three container prefixes are optional; use none). Stops on drift
+#                 (HEAD / current-deploy.sha / F2); then reads the crontab, the cron
+#                 journal where readable, the protected backup.log, the newest backup +
+#                 sidecar, the directory hygiene and the ordinary scheduler activity.
+#                 Prints FIRST_CYCLE=PASS|FAIL with every reason; never runs a backup,
+#                 never edits cron, never prints rows or credentials.
+#   g6fc-queue  : ARG1 = epoch seconds of the "before" completed-count observation,
+#                 ARG2 = epoch seconds of the "after" observation, ARG3 = "<before>|<after>".
+#                 Reads the maintenance-sweep evidence (api log summary lines, the
+#                 recurring.sweep rows, retention cut-off) and reconciles the counts.
+#                 Prints QUEUE_DELTA=PROVEN|UNEXPLAINED.
+# =============================================================================
+g6fc_mask() {
+  # Like g6_mask but keeps 40/64-hex words (git shas and backup checksums are evidence, not
+  # secrets) and never masks file paths; connection strings and quoted role/user/database
+  # names are masked, and any other long token is masked as well.
+  if command -v perl >/dev/null 2>&1; then
+    perl -pe 's#(postgres(ql)?://)\S+#$1<masked>#g; s/(role|user|database|password) "[^"]*"/$1 "<masked>"/g; my @k; s/\b([0-9a-f]{40}|[0-9a-f]{64})\b/push @k,$1; "\x01".$#k."\x01"/ge; s/[A-Za-z0-9+=_-]{32,}/<masked>/g; s/\x01(\d+)\x01/$k[$1]/g'
+  else
+    g6_mask
+  fi
+}
+g6fc_iso_ms() { date -u -d @"$(( ${1:-0} / 1000 ))" +%FT%TZ 2>/dev/null || echo "?"; }
+g6fc_stamp_ok() { # $1 = day (YYYYMMDD) — the cron entry fires at 03:15 UTC; the stamp is taken at script start
+  [[ "$2" =~ ^leadcapture-${1}-031[5-9][0-9]{2}\.sql\.gz$ ]]
+}
+
+phase_g6fc_verify() {
+  local sha="$ARG1" day="$ARG2"
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || fail "ARG1 must be the expected deployed commit sha"
+  [[ "$day" =~ ^20[0-9]{6}$ ]] || fail "ARG2 must be the UTC day of the cycle (YYYYMMDD)"
+  local tag md5 exp_api exp_pg exp_web
+  tag="$(echo "$ARG3" | cut -d'|' -f1)"; md5="$(echo "$ARG3" | cut -d'|' -f2)"; exp_api="$(echo "$ARG3" | cut -d'|' -f3)"; exp_pg="$(echo "$ARG3" | cut -d'|' -f4)"; exp_web="$(echo "$ARG3" | cut -d'|' -f5)"
+  [[ "$tag" =~ ^[a-z0-9]{4,16}$ ]] || fail "ARG3 tag must be alphanumeric"; [ -n "$md5" ] || md5=none
+  [ -n "$exp_api" ] || exp_api=none; [ -n "$exp_pg" ] || exp_pg=none; [ -n "$exp_web" ] || exp_web=none
+  local day_iso="${day:0:4}-${day:4:2}-${day:6:2}" reasons="" bl="$G6_BACKUP_DIR/backup.log"
+  section "read-only guard"
+  if q "create temp table b20_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard did not hold"; else echo "session refuses writes (default_transaction_read_only=on): OK"; fi
+  section "expected deployed state (stop on drift: HEAD = current-deploy.sha = $sha, schema F2)"
+  local head cur prev; head="$(git -C "$APP_DIR" rev-parse HEAD)"; cur="$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null || echo none)"; prev="$(cat "$STATE_DIR/previous-deploy.sha" 2>/dev/null || echo none)"
+  echo "HEAD=$head current-deploy.sha=$cur previous-deploy.sha=$prev dirty_entries=$(git -C "$APP_DIR" status --porcelain | wc -l) state_files_mtime=$(stat -c %y "$STATE_DIR/current-deploy.sha" | cut -c1-19)"
+  [ "$head" = "$sha" ] && [ "$cur" = "$sha" ] || fail "DRIFT: hosted checkout / current-deploy.sha is not $sha — stopping"
+  [ -z "$(git -C "$APP_DIR" status --porcelain)" ] || fail "DRIFT: hosted checkout is dirty — stopping"
+  local fp; fp="$(fingerprint)"; echo "schema_fingerprint=$fp (F2 expected $F2_CONST)"; [ "$fp" = "$F2_CONST" ] || fail "DRIFT: schema fingerprint is not F2 — stopping"
+  g6_stack_state
+  local api_id pg_id web_id; api_id="$(docker inspect -f '{{.Id}}' "$API_CID")"; pg_id="$(docker inspect -f '{{.Id}}' "$PG_CID")"; web_id="$(docker inspect -f '{{.Id}}' "$(compose ps -q web)")"
+  local stack_same=yes
+  for pair in "api:$exp_api:$api_id" "postgres:$exp_pg:$pg_id" "web:$exp_web:$web_id"; do
+    local n e a; n="${pair%%:*}"; e="$(echo "$pair" | cut -d: -f2)"; a="${pair##*:}"
+    [ "$e" != "none" ] || continue
+    if [ "${a:0:${#e}}" = "$e" ]; then echo "$n container unchanged since activation: yes (${a:0:12})"; else echo "$n container unchanged since activation: NO (now ${a:0:12}, expected prefix $e)"; stack_same=no; fi
+  done
+  echo "STACK_UNCHANGED=$stack_same"
+  section "existing customer baseline (company 1 core state; activity reported)"
+  local b m; b="$(existing_core)"; echo "$b"; m="$(printf '%s' "$b" | md5sum | cut -c1-32)"; echo "baseline_md5=$m expected=$md5"
+  if [ "$md5" != "none" ]; then echo "BASELINE_UNCHANGED=$([ "$m" = "$md5" ] && echo yes || echo NO)"; fi
+  existing_activity
+  section "schedule as installed (deploy user)"
+  g6act_env_checks
+  [ "$(date +%Z)" = "UTC" ] || reasons="$reasons host-not-UTC;"
+  [ "$(systemctl is-active cron 2>/dev/null)" = "active" ] || reasons="$reasons cron-not-active;"
+  local ct n_bp n_bc n_any; ct="$(crontab -l 2>/dev/null || true)"
+  n_bp="$(printf '%s\n' "$ct" | grep -c '^15 3 \* \* \* DEPLOY_PATH=/opt/lead-capture-pro/app BACKUP_DIR=/opt/lead-capture-pro/backups/postgres KEEP=14 bash /opt/lead-capture-pro/app/docker/scripts/backup-postgres\.sh >> /opt/lead-capture-pro/backups/postgres/backup\.log 2>&1$' || true)"
+  n_bc="$(printf '%s\n' "$ct" | grep -c '^45 3 \* \* \* BACKUP_DIR=/opt/lead-capture-pro/backups/postgres BACKUP_MAX_AGE_HOURS=4 bash /opt/lead-capture-pro/app/docker/scripts/backup-check\.sh >> /opt/lead-capture-pro/backups/postgres/backup\.log 2>&1$' || true)"
+  n_any="$(printf '%s\n' "$ct" | grep -cE 'backup-(postgres|check)\.sh' || true)"
+  echo "crontab: $(printf '%s\n' "$ct" | grep -c . || true) line(s); exact 03:15 backup entry (KEEP=14)=$n_bp exact 03:45 check entry (BACKUP_MAX_AGE_HOURS=4)=$n_bc any backup-postgres/backup-check mention=$n_any"
+  printf '%s\n' "$ct" | grep -vE '^\s*$' | g6fc_mask | cut -c1-230 | sed 's/^/  crontab: /' || true
+  [ "$n_bp" = "1" ] && [ "$n_bc" = "1" ] && [ "$n_any" = "2" ] || reasons="$reasons crontab-entries-not-exactly-two;"
+  local s; for s in backup-postgres.sh backup-check.sh; do
+    local p="/opt/lead-capture-pro/app/docker/scripts/$s"
+    echo "$s: path_in_crontab_exists=$([ -f "$p" ] && echo yes || echo NO) executable=$([ -x "$p" ] && echo yes || echo NO) mode=$(stat -c %a "$p" 2>/dev/null || echo ?) blob=$(git -C "$APP_DIR" hash-object "$p" 2>/dev/null || echo ?) HEAD_blob=$(git -C "$APP_DIR" rev-parse "HEAD:docker/scripts/$s") identical_to_HEAD=$([ "$(git -C "$APP_DIR" hash-object "$p" 2>/dev/null)" = "$(git -C "$APP_DIR" rev-parse "HEAD:docker/scripts/$s")" ] && echo yes || echo NO) same_file_as_app_dir=$([ "$p" -ef "$APP_DIR/docker/scripts/$s" ] && echo yes || echo NO)"
+    [ "$(git -C "$APP_DIR" hash-object "$p" 2>/dev/null)" = "$(git -C "$APP_DIR" rev-parse "HEAD:docker/scripts/$s")" ] || reasons="$reasons $s-differs-from-deployed;"
+  done
+  section "cron execution evidence for $day_iso 03:00–04:00 UTC (journal / syslog, if readable as this user)"
+  if journalctl -u cron -n 1 --no-pager -q >/dev/null 2>&1; then
+    echo "journal: readable; CMD lines mentioning the two scripts in the window: $(journalctl -u cron --since "$day_iso 03:00:00" --until "$day_iso 04:00:00" --no-pager -q 2>/dev/null | grep -cE 'backup-(postgres|check)\.sh' || true)"
+    journalctl -u cron -o short-iso --since "$day_iso 03:00:00" --until "$day_iso 04:00:00" --no-pager -q 2>/dev/null | grep -E 'backup-(postgres|check)\.sh|CRON' | g6fc_mask | cut -c1-260 | sed 's/^/  journal: /' | head -12 || true
+  else echo "journal: not readable as this user (unknown)"; fi
+  if [ -r /var/log/syslog ]; then echo "syslog: readable; matching lines=$(grep -h "$day_iso" /var/log/syslog 2>/dev/null | grep -cE 'backup-(postgres|check)\.sh' || true)"; grep -h "${day_iso}T03" /var/log/syslog 2>/dev/null | grep -E 'backup-(postgres|check)\.sh' | g6fc_mask | cut -c1-260 | sed 's/^/  syslog: /' | head -6 || true; else echo "syslog: not readable (unknown)"; fi
+  section "protected backup.log (only the two scripts write it, via the crontab redirection; masked, names/sizes/counts only)"
+  local bk_dump bk_ok bk_ret ck_ok n_fail n_err n_day
+  if [ ! -f "$bl" ]; then echo "backup.log: ABSENT"; reasons="$reasons backup.log-absent;"; bk_dump=""; bk_ok=""; bk_ret=""; ck_ok=""; n_fail=0; n_err=0; n_day=0; else
+    echo "backup.log: $(stat -c 'mode=%a owner=%U size=%s mtime=%y' "$bl") lines=$(wc -l <"$bl")"
+    [ "$(stat -c %a "$bl")" = "600" ] || reasons="$reasons backup.log-mode-not-600;"
+    n_day="$(grep -c "^\[backup\(-check\)\?\] ${day_iso}T" "$bl" || true)"
+    bk_dump="$(grep -E "^\[backup\] ${day_iso}T03:[0-9]{2}:[0-9]{2}Z dumping to a temporary file" "$bl" || true)"
+    bk_ok="$(grep -E "^\[backup\] ${day_iso}T03:[0-9]{2}:[0-9]{2}Z OK " "$bl" || true)"
+    bk_ret="$(grep -E "^\[backup\] ${day_iso}T03:[0-9]{2}:[0-9]{2}Z [0-9]+ backup\(s\) retained \(KEEP=14\)" "$bl" || true)"
+    ck_ok="$(grep -E "^\[backup-check\] ${day_iso}T03:4[5-9]:[0-9]{2}Z OK: " "$bl" || true)"
+    n_fail="$(grep -c 'FAIL:' "$bl" || true)"; n_err="$(grep -c 'ERROR' "$bl" || true)"
+    echo "lines dated $day_iso=$n_day backup_start_lines=$(printf '%s' "$bk_dump" | grep -c . || true) backup_ok_lines=$(printf '%s' "$bk_ok" | grep -c . || true) retained_lines=$(printf '%s' "$bk_ret" | grep -c . || true) check_ok_lines_0345=$(printf '%s' "$ck_ok" | grep -c . || true) FAIL_lines_total=$n_fail ERROR_lines_total=$n_err"
+    echo "-- full log (last 40 lines, masked) --"; tail -n 40 "$bl" | g6fc_mask | cut -c1-300 | sed 's/^/  log: /'
+    [ "$(printf '%s' "$bk_dump" | grep -c . || true)" = "1" ] || reasons="$reasons no-single-0315-backup-start-line;"
+    [ "$(printf '%s' "$bk_ok" | grep -c . || true)" = "1" ] || reasons="$reasons no-single-0315-backup-OK-line;"
+    [ "$(printf '%s' "$bk_ret" | grep -c . || true)" = "1" ] || reasons="$reasons no-single-retained-KEEP14-line;"
+    [ "$(printf '%s' "$ck_ok" | grep -c . || true)" = "1" ] || reasons="$reasons no-single-0345-check-OK-line;"
+    [ "$n_fail" = "0" ] && [ "$n_err" = "0" ] || reasons="$reasons FAIL-or-ERROR-lines-in-log;"
+  fi
+  local bk_file bk_sha bk_bytes bk_t0 bk_t1 ck_t ck_age ck_limit ck_gen ck_legacy ck_ver
+  bk_file="$(printf '%s\n' "$bk_ok" | grep -oE 'leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz' | head -1 || true)"
+  bk_sha="$(printf '%s\n' "$bk_ok" | grep -oE 'sha256=[0-9a-f]{64}' | head -1 | cut -d= -f2 || true)"
+  bk_bytes="$(printf '%s\n' "$bk_ok" | grep -oE '\([0-9]+ bytes\)' | head -1 | grep -oE '[0-9]+' || true)"
+  bk_t0="$(printf '%s\n' "$bk_dump" | grep -oE "${day_iso}T[0-9:]{8}Z" | head -1 || true)"; bk_t1="$(printf '%s\n' "$bk_ok" | grep -oE "${day_iso}T[0-9:]{8}Z" | head -1 || true)"
+  ck_t="$(printf '%s\n' "$ck_ok" | grep -oE "${day_iso}T[0-9:]{8}Z" | head -1 || true)"
+  ck_age="$(printf '%s\n' "$ck_ok" | grep -oE 'age=[0-9]+min' | head -1 || true)"; ck_limit="$(printf '%s\n' "$ck_ok" | grep -oE 'limit [0-9]+h' | head -1 || true)"
+  ck_ver="$(printf '%s\n' "$ck_ok" | grep -oE 'sidecars verified=[0-9]+' | head -1 || true)"; ck_gen="$(printf '%s\n' "$ck_ok" | grep -oE 'generation from leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz' | head -1 || true)"; ck_legacy="$(printf '%s\n' "$ck_ok" | grep -oE 'pre-sidecar backups=[0-9]+' | head -1 || true)"
+  echo "parsed: backup_started=${bk_t0:-none} backup_published=${bk_t1:-none} file=${bk_file:-none} bytes=${bk_bytes:-none} sha256=${bk_sha:-none}"
+  echo "parsed: check_at=${ck_t:-none} ${ck_age:-age=none} ${ck_limit:-limit=none} ${ck_ver:-sidecars=none} ${ck_gen:-generation=none} ${ck_legacy:-legacy=none} check_names_the_new_file=$([ -n "$bk_file" ] && printf '%s\n' "$ck_ok" | grep -q "OK: $bk_file " && echo yes || echo NO)"
+  [ "$ck_limit" = "limit 4h" ] || reasons="$reasons check-limit-not-4h;"
+  [ -n "$bk_file" ] && printf '%s\n' "$ck_ok" | grep -q "OK: $bk_file " || reasons="$reasons check-does-not-name-the-new-file;"
+  echo "exit evidence: the backup script prints its 'OK' and 'retained' lines only on the success path (set -e; retention runs after publication); the check prints exactly one 'OK:' line on exit 0 and one 'FAIL:' line on exit 1 — no other exit information is recorded by the documented crontab lines"
+  section "newest backup file (must be the scheduled $day_iso 03:15 UTC run)"
+  local newest_m newest_n
+  newest_m="$(ls -1t "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | head -1 | xargs -r basename || true)"
+  newest_n="$(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | xargs -r -n1 basename | sort | tail -1 || true)"
+  echo "newest_by_mtime=${newest_m:-none} newest_by_name=${newest_n:-none} log_file=${bk_file:-none} stamp_matches_${day}-0315xx=$(g6fc_stamp_ok "$day" "${newest_n:-x}" && echo yes || echo NO)"
+  [ -n "$newest_n" ] && [ "$newest_m" = "$newest_n" ] || reasons="$reasons newest-by-mtime-and-by-name-differ;"
+  g6fc_stamp_ok "$day" "${newest_n:-x}" || reasons="$reasons newest-file-is-not-a-${day}-0315-stamp;"
+  [ -n "$bk_file" ] && [ "$bk_file" = "$newest_n" ] || reasons="$reasons log-file-is-not-the-newest-file;"
+  if [ -n "$newest_n" ] && [ -f "$G6_BACKUP_DIR/$newest_n" ]; then
+    local f="$G6_BACKUP_DIR/$newest_n" fm fsz fsha fmode smode sc_sha sc_name gz hdr done_ ct cp rows bu live_tables now
+    now="$(date +%s)"; fm="$(stat -c %Y "$f")"; fsz="$(stat -c %s "$f")"; fmode="$(stat -c %a "$f")"; fsha="$(sha256sum "$f" | cut -c1-64)"
+    echo "file: $newest_n size=$fsz mode=$fmode owner=$(stat -c %U "$f") owner_is_deploy_user=$([ "$(stat -c %U "$f")" = "$(id -un)" ] && echo yes || echo NO) mtime_utc=$(date -u -d @"$fm" +%FT%TZ) age_min=$(( (now - fm) / 60 )) mtime_in_0315_window=$([ "$fm" -ge "$(date -u -d "$day_iso 03:15:00" +%s)" ] && [ "$fm" -lt "$(date -u -d "$day_iso 03:20:00" +%s)" ] && echo yes || echo NO)"
+    echo "file: sha256=$fsha equals_log_sha256=$([ -n "$bk_sha" ] && [ "$fsha" = "$bk_sha" ] && echo yes || echo NO) size_equals_log_bytes=$([ -n "$bk_bytes" ] && [ "$fsz" = "$bk_bytes" ] && echo yes || echo NO)"
+    [ "$fmode" = "600" ] || reasons="$reasons backup-mode-not-600;"
+    [ -n "$bk_sha" ] && [ "$fsha" = "$bk_sha" ] || reasons="$reasons file-sha256-differs-from-log;"
+    [ "$fm" -ge "$(date -u -d "$day_iso 03:15:00" +%s)" ] && [ "$fm" -lt "$(date -u -d "$day_iso 03:20:00" +%s)" ] || reasons="$reasons mtime-outside-0315-window;"
+    if [ -f "$f.sha256" ]; then
+      smode="$(stat -c %a "$f.sha256")"; sc_sha="$(cut -c1-64 "$f.sha256")"; sc_name="$(awk '{print $2}' "$f.sha256")"
+      echo "sidecar: $newest_n.sha256 mode=$smode size=$(stat -c %s "$f.sha256") mtime_utc=$(date -u -d @"$(stat -c %Y "$f.sha256")" +%FT%TZ) names_the_file=$([ "$sc_name" = "$newest_n" ] && echo yes || echo NO) sha256_equals_file=$([ "$sc_sha" = "$fsha" ] && echo yes || echo NO) sha256sum_-c=$( (cd "$G6_BACKUP_DIR" && sha256sum -c --quiet "$newest_n.sha256" >/dev/null 2>&1) && echo OK || echo FAIL)"
+      [ "$smode" = "600" ] || reasons="$reasons sidecar-mode-not-600;"
+      ( cd "$G6_BACKUP_DIR" && sha256sum -c --quiet "$newest_n.sha256" >/dev/null 2>&1 ) || reasons="$reasons sha256sum-c-failed;"
+      [ "$sc_name" = "$newest_n" ] || reasons="$reasons sidecar-names-another-file;"
+    else echo "sidecar: ABSENT"; reasons="$reasons sidecar-absent;"; fi
+    if gzip -t "$f" 2>/dev/null; then gz=ok; else gz=CORRUPT; reasons="$reasons gzip-t-failed;"; fi
+    hdr="$(zcat "$f" 2>/dev/null | sed -n 2p | cut -c1-40 || true)"; done_="$(zcat "$f" 2>/dev/null | tail -c 4096 | grep -c '^-- PostgreSQL database dump complete$' || true)"
+    ct="$(zcat "$f" 2>/dev/null | grep -c '^CREATE TABLE ' || true)"; cp="$(zcat "$f" 2>/dev/null | grep -c '^COPY ' || true)"; rows="$(zcat "$f" 2>/dev/null | awk '/^COPY /{c=1;next} c&&/^\\\.$/{c=0;next} c{n++} END{print n+0}')"; bu="$(zcat "$f" 2>/dev/null | wc -c)"
+    live_tables="$(q "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'")"
+    echo "dump: gzip=$gz header='$hdr' dumped_from=$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped from database version [0-9.]+' | awk '{print $NF}') pg_dump=$(zcat "$f" 2>/dev/null | grep -m1 -oE 'Dumped by pg_dump version [0-9.]+' | awk '{print $NF}') complete_marker=$done_ create_table=$ct live_tables=$live_tables copy_blocks=$cp data_rows=$rows uncompressed_bytes=$bu size_floor_1024=$([ "$fsz" -ge 1024 ] && echo yes || echo NO)"
+    [ "$hdr" = "-- PostgreSQL database dump" ] || reasons="$reasons dump-header-missing;"
+    [ "$done_" = "1" ] || reasons="$reasons completion-marker-missing;"
+    [ "$ct" = "$live_tables" ] && [ "$ct" = "72" ] || reasons="$reasons create-table-count-$ct-vs-live-$live_tables;"
+    [ "$fsz" -ge 1024 ] || reasons="$reasons size-below-floor;"
+    local prevf; prevf="$(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | xargs -r -n1 basename | sort | tail -2 | head -1 || true)"
+    if [ -n "$prevf" ] && [ "$prevf" != "$newest_n" ]; then echo "previous newest: $prevf size=$(stat -c %s "$G6_BACKUP_DIR/$prevf") new_vs_previous_size_pct=$(( fsz * 100 / $(stat -c %s "$G6_BACKUP_DIR/$prevf") ))"; fi
+  else echo "newest file: none found"; reasons="$reasons no-backup-file;"; fi
+  section "retention and hygiene (KEEP=14)"
+  local nb ns ntmp norph
+  nb="$(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz 2>/dev/null | wc -l)"; ns="$(ls -1 "$G6_BACKUP_DIR"/leadcapture-*.sql.gz.sha256 2>/dev/null | wc -l)"
+  ntmp="$(ls -1A "$G6_BACKUP_DIR" 2>/dev/null | grep -cE '\.(tmp|part|partial)$' || true)"
+  norph=0; for sc in "$G6_BACKUP_DIR"/leadcapture-*.sql.gz.sha256; do [ -e "$sc" ] || continue; [ -e "${sc%.sha256}" ] || norph=$((norph + 1)); done
+  echo "dir: $(stat -c 'mode=%a owner=%U' "$G6_BACKUP_DIR") backups=$nb (limit 14) sidecars=$ns temporary_files=$ntmp orphan_sidecars=$norph other_entries=[$(ls -1A "$G6_BACKUP_DIR" | grep -vE '^leadcapture-[0-9]{8}-[0-9]{6}\.sql\.gz(\.sha256)?$' | tr '\n' ' ')] lock_file=$([ -e "$G6_BACKUP_DIR/.backup.lock" ] && echo "present (created by the script's flock; expected)" || echo absent)"
+  [ "$nb" -le 14 ] || reasons="$reasons more-than-14-backups;"
+  [ "$ntmp" = "0" ] && [ "$norph" = "0" ] || reasons="$reasons temporary-or-orphan-files;"
+  [ "$(stat -c %a "$G6_BACKUP_DIR")" = "700" ] || reasons="$reasons dir-mode-not-700;"
+  g6c1_no_backup_running || reasons="$reasons backup-process-running;"
+  echo "-- complete inventory (newest first; compare with the activation after-list) --"; g6_backup_lines
+  section "ordinary scheduler activity since the activation (reported separately; not caused by this verification)"
+  q "select 'job_queue now: '||coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s"
+  q "select 'recurring sweeps since 2026-09-22T15:35:10Z: '||coalesce(string_agg(k||'='||n||'/'||st, ' ' order by k, st), 'none') from (select split_part(coalesce(dedupe_key,''), ':', 2) k, status st, count(*) n from job_queue where name='recurring.sweep' and enqueued_at > to_timestamp(1790091310) group by 1,2) s"
+  q "select 'maintenance sweeps since activation: '||coalesce(string_agg('id='||id||' status='||status||' completed='||coalesce(to_char(completed_at,'YYYY-MM-DD HH24:MI:SS'),'null'), '; ' order by id), 'none') from job_queue where name='recurring.sweep' and dedupe_key like 'recurring:maintenance:%' and enqueued_at > to_timestamp(1790091310)"
+  q "select 'non-recurring jobs since activation: '||coalesce(string_agg(name||'='||n, ' ' order by name), 'none') from (select name, count(*) n from job_queue where name<>'recurring.sweep' and enqueued_at > to_timestamp(1790091310) group by name) s"
+  q "select 'job_queue dead_last_24h='||count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'"
+  [ "$(q "select count(*) from job_queue where status='dead' and dead_at > now() - interval '24 hours'")" = "0" ] || echo "NOTE: dead jobs in the last 24h"
+  echo "maintenance sweep summaries logged by the api since activation (numbers only):"
+  docker logs --since 2026-09-22T15:35:10Z "$API_CID" 2>&1 | grep -E '"msg":"Maintenance sweep complete"' | while read -r l; do echo "  $(g6fc_iso_ms "$(echo "$l" | grep -oE '"time":[0-9]+' | grep -oE '[0-9]+')") $(echo "$l" | grep -oE '"summary":\{[^}]*\}')"; done
+  echo "api error-level lines since $day_iso 03:00 UTC: $(docker logs --since "${day_iso}T03:00:00Z" "$API_CID" 2>&1 | grep -c '"level":50' || true) (non-AppError: $(docker logs --since "${day_iso}T03:00:00Z" "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true))"
+  echo "postgres log lines mentioning pg_dump/backup since $day_iso 03:00 UTC: $(docker logs --since "${day_iso}T03:00:00Z" "$PG_CID" 2>&1 | grep -ciE 'pg_dump|backup' || true)"
+  section "verdict"
+  echo "now_epoch_ms=$(date +%s%3N)"
+  if [ -z "$reasons" ]; then echo "FIRST_CYCLE=PASS file=${newest_n:-none} sha256=${bk_sha:-none}"; else echo "FIRST_CYCLE=FAIL reasons=[$reasons]"; fail "first scheduled cycle verification failed: $reasons"; fi
+  log "g6fc-verify complete (read-only)"
+}
+
+phase_g6fc_queue() {
+  local t1="$ARG1" t2="$ARG2" before after
+  [[ "$t1" =~ ^[0-9]{10}$ ]] && [[ "$t2" =~ ^[0-9]{10}$ ]] && [ "$t2" -gt "$t1" ] || fail "ARG1/ARG2 must be epoch seconds (before < after)"
+  before="$(echo "$ARG3" | cut -d'|' -f1)"; after="$(echo "$ARG3" | cut -d'|' -f2)"
+  [[ "$before" =~ ^[0-9]+$ ]] && [[ "$after" =~ ^[0-9]+$ ]] || fail "ARG3 must be <before>|<after> counts"
+  section "read-only guard"
+  if q "create temp table b20_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard did not hold"; else echo "session refuses writes (default_transaction_read_only=on): OK"; fi
+  section "window: before=$before at $(date -u -d @"$t1" +%FT%TZ)  after=$after at $(date -u -d @"$t2" +%FT%TZ)"
+  docker inspect -f "api: id={{.Id}} created={{.Created}} started={{.State.StartedAt}}" "$API_CID"
+  echo "api log covers from: $(docker logs --timestamps "$API_CID" 2>&1 | head -1 | cut -c1-30) (container logs start at container creation; the previous container's log is gone with it)"
+  section "retention configuration in effect (non-secret numeric keys; unset = code default)"
+  for k in JOBS_DRIVER JOBS_QUEUE_COMPLETED_RETENTION_DAYS JOBS_QUEUE_DEAD_RETENTION_DAYS JOBS_MAINTENANCE_DELAY_MS JOBS_MAINTENANCE_INTERVAL_MS; do envkey "$k" yes; done
+  echo "code defaults (artifacts/api-server/src/config.ts at HEAD): $(grep -oE 'queueCompletedDays: numEnv\("JOBS_QUEUE_COMPLETED_RETENTION_DAYS", [0-9]+' "$APP_DIR/artifacts/api-server/src/config.ts" | grep -oE '[0-9]+$') days completed / $(grep -oE 'queueDeadDays: numEnv\("JOBS_QUEUE_DEAD_RETENTION_DAYS", [0-9]+' "$APP_DIR/artifacts/api-server/src/config.ts" | grep -oE '[0-9]+$') days dead; maintenance first delay $(grep -oE 'maintenanceFirstDelayMs: numEnv\("JOBS_MAINTENANCE_DELAY_MS", [0-9_]+' "$APP_DIR/artifacts/api-server/src/config.ts" | grep -oE '[0-9_]+$') ms, interval $(grep -oE 'maintenanceIntervalMs: numEnv\("JOBS_MAINTENANCE_INTERVAL_MS", [^,]+' "$APP_DIR/artifacts/api-server/src/config.ts" | sed 's/.*, //')"
+  section "maintenance evidence in the api log (JSON lines; the summary carries counts only)"
+  docker logs "$API_CID" 2>&1 | grep -E '"msg":"Recurring task scheduler started' | head -1 | while read -r l; do echo "scheduler started $(g6fc_iso_ms "$(echo "$l" | grep -oE '"time":[0-9]+' | grep -oE '[0-9]+')") $(echo "$l" | grep -oE '"maintenanceIntervalMs":[0-9]+')"; done
+  local reported="" n_sweeps=0
+  while read -r l; do
+    [ -n "$l" ] || continue
+    local ts summ; ts="$(echo "$l" | grep -oE '"time":[0-9]+' | grep -oE '[0-9]+')"; summ="$(echo "$l" | grep -oE '"summary":\{[^}]*\}')"
+    echo "maintenance sweep complete at $(g6fc_iso_ms "$ts") $summ"
+    if [ $((ts / 1000)) -gt "$t1" ] && [ $((ts / 1000)) -le "$t2" ]; then n_sweeps=$((n_sweeps + 1)); reported="$(echo "$summ" | grep -oE '"queueJobs":[0-9]+' | grep -oE '[0-9]+$')"; fi
+  done < <(docker logs "$API_CID" 2>&1 | grep -E '"msg":"Maintenance sweep complete"')
+  echo "maintenance task failures logged: $(docker logs "$API_CID" 2>&1 | grep -cE '"msg":"(Maintenance task failed|Scheduled task dispatch failed)"' || true)"
+  echo "sweeps inside the window: $n_sweeps reported_queueJobs_deleted=${reported:-none}"
+  section "maintenance sweep rows in job_queue (metadata only, no payload)"
+  q "select 'sweep id='||id||' status='||status||' attempts='||attempts||' key='||coalesce(dedupe_key,'')||' enqueued='||to_char(enqueued_at,'YYYY-MM-DD HH24:MI:SS.MS')||' started='||coalesce(to_char(started_at,'HH24:MI:SS.MS'),'null')||' completed='||coalesce(to_char(completed_at,'YYYY-MM-DD HH24:MI:SS.MS'),'null')||' worker='||coalesce(worker_id,'null')||' last_error='||coalesce(last_error,'null') from job_queue where name='recurring.sweep' and dedupe_key like 'recurring:maintenance:%' order by id desc limit 8"
+  local sweep_in_window; sweep_in_window="$(q "select count(*) from job_queue where name='recurring.sweep' and dedupe_key like 'recurring:maintenance:%' and completed_at > to_timestamp($t1) and completed_at <= to_timestamp($t2)")"
+  echo "maintenance sweep rows completed inside the window: $sweep_in_window"
+  section "completed-row age profile vs the 7-day retention cut-off"
+  q "select 'completed rows now='||count(*)||' min_completed_at='||coalesce(min(completed_at)::text,'null')||' max_completed_at='||coalesce(max(completed_at)::text,'null') from job_queue where status='completed'"
+  q "select 'sweep '||to_char(completed_at,'YYYY-MM-DD HH24:MI:SS')||': cutoff='||to_char(completed_at - interval '7 days','YYYY-MM-DD HH24:MI:SS')||' completed rows older than that cutoff still present='||(select count(*) from job_queue j where j.status='completed' and j.completed_at < s.completed_at - interval '7 days') from job_queue s where s.name='recurring.sweep' and s.dedupe_key like 'recurring:maintenance:%' and s.completed_at > to_timestamp($t1) and s.completed_at <= to_timestamp($t2) order by s.id"
+  q "select 'rows completed in the 7 days before the window start (would survive a sweep at window start)='||count(*) from job_queue where status='completed' and completed_at >= to_timestamp($t1) - interval '7 days' and completed_at <= to_timestamp($t1)"
+  section "reconciliation"
+  local added; added="$(q "select count(*) from job_queue where enqueued_at > to_timestamp($t1) and enqueued_at <= to_timestamp($t2)")"
+  q "select 'rows enqueued inside the window by task: '||coalesce(string_agg(k||'='||n, ' ' order by k), 'none') from (select coalesce(nullif(split_part(coalesce(dedupe_key,''), ':', 2),''), name) k, count(*) n from job_queue where enqueued_at > to_timestamp($t1) and enqueued_at <= to_timestamp($t2) group by 1) s"
+  q "select 'rows enqueued inside the window (metadata only): '||coalesce(string_agg('id='||id||' task='||coalesce(nullif(split_part(coalesce(dedupe_key,''), ':', 2),''), name)||' status='||status||' enqueued='||to_char(enqueued_at,'HH24:MI:SS.MS')||' completed='||coalesce(to_char(completed_at,'HH24:MI:SS.MS'),'null'), '; ' order by id), 'none') from job_queue where enqueued_at > to_timestamp($t1) and enqueued_at <= to_timestamp($t2)"
+  q "select 'rows enqueued within 3 s of either window edge (boundary check): '||coalesce(string_agg('id='||id||' enqueued='||to_char(enqueued_at,'HH24:MI:SS.MS'), '; ' order by id), 'none') from job_queue where (enqueued_at between to_timestamp($t1) - interval '3 seconds' and to_timestamp($t1) + interval '3 seconds') or (enqueued_at between to_timestamp($t2) - interval '3 seconds' and to_timestamp($t2) + interval '3 seconds')"
+  local surviving; surviving="$(q "select count(*) from job_queue where enqueued_at <= to_timestamp($t1)")"
+  local implied=$(( before + added - after ))
+  echo "before=$before + enqueued_in_window=$added - after=$after => implied_deleted=$implied ; rows enqueued before the window and still present=$surviving (before - implied_deleted = $(( before - implied )))"
+  echo "reported by the maintenance summary inside the window: queueJobs=${reported:-none} (sweeps in window: $n_sweeps; sweep rows completed in window: $sweep_in_window)"
+  echo "now_epoch_ms=$(date +%s%3N)"
+  if [ "$n_sweeps" = "1" ] && [ "$sweep_in_window" = "1" ] && [ -n "$reported" ] && [ "$reported" = "$implied" ]; then echo "QUEUE_DELTA=PROVEN cause=maintenance-sweep(cleanupQueueJobs) deleted=$reported"; else echo "QUEUE_DELTA=UNEXPLAINED implied=$implied reported=${reported:-none} sweeps=$n_sweeps"; fi
+  log "g6fc-queue complete (read-only)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   migrate) phase_migrate ;;
@@ -1684,5 +1908,7 @@ case "$PHASE" in
   g6act-postdeploy) phase_g6act_postdeploy ;;
   g6act-backup) phase_g6act_backup ;;
   g6act-cron) phase_g6act_cron ;;
+  g6fc-verify) phase_g6fc_verify ;;
+  g6fc-queue) phase_g6fc_queue ;;
   *) fail "phase '$PHASE' is not implemented in this revision of the ops script" ;;
 esac

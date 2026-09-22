@@ -29,6 +29,10 @@
 #               missed-run simulation, then the two daily crontab entries for the deploy user
 #               — arg1 = deployed sha, arg2 = previous sha, arg3 = 'bp=<blob>|bc=<blob>' of the two scripts
 #   g6act-postdeploy / g6act-cron verify (run job) read-only activation checks
+#   g6fc-verify (run job) READ-ONLY first scheduled cycle verification — arg1 = deployed sha, arg2 = UTC day
+#               (YYYYMMDD), arg3 = '<tag>|<baseline md5|none>|<api id prefix|none>|<postgres id prefix|none>|<web id prefix|none>'
+#   g6fc-queue  (run job) READ-ONLY job_queue count reconciliation — arg1/arg2 = epoch seconds of the two
+#               observations, arg3 = '<before>|<after>'
 #   preflight   read-only inspection + schema-only dump (SELECT / catalog / pg_dump -s)
 #   migrate     fresh backup → stop API writers → stage-1 schema → repair → stage-2
 #               schema → verification (every gate stops the run; nothing is restored
@@ -53,7 +57,7 @@ on:
         description: "Phase to run"
         required: true
         type: choice
-        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener, b22c1, g3, g3-count, g3-verify, g6, g6-inventory, g6-restore, g6-verify, g6c1, g6c1-preflight, g6c1-backup, g6c2, g6c2-preflight, g6act, g6act-postdeploy, g6act-backup, g6act-cron]
+        options: [preflight, migrate, postdeploy, smoke, supp, c4, b21, b22, smoke-setup, cleanup, supp-preflight, supp-postcheck, c4-verify, b22-infra, b22-verify, b22-objects, b22-listener, b22c1, g3, g3-count, g3-verify, g6, g6-inventory, g6-restore, g6-verify, g6c1, g6c1-preflight, g6c1-backup, g6c2, g6c2-preflight, g6act, g6act-postdeploy, g6act-backup, g6act-cron, g6fc-verify, g6fc-queue]
       arg1:
         description: "Phase argument 1 (non-secret)"
         required: false
