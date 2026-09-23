@@ -1,0 +1,228 @@
+# =============================================================================
+# Lead Capture Pro — external hosted backup-health alert (READ-ONLY on the VPS)
+# =============================================================================
+# Daily at 04:30 UTC — after the 03:15 UTC cron backup and the 03:45 UTC local
+# freshness check on the dev VPS — this workflow connects over SSH, pipes
+# .github/scripts/verify-hosted-backup.sh on standard input (nothing is copied
+# to the host) and verifies, read-only, that the daily backup is healthy:
+# deployment marker vs checkout, the two crontab lines, cron service, deployed
+# scripts, the deployed backup-check.sh with a 4 h limit, and an independent
+# check of the newest backup (name, age, mode, owner, sidecar, sha256sum -c,
+# gzip -t, dump header, completion marker, CREATE TABLE / COPY blocks).
+#
+# Durable external signal: the run stays FAILED and ONE deduplicated GitHub
+# Issue "[Backup Alert] Hosted PostgreSQL backup unhealthy" is created on the
+# first failure, commented on repeated failures, and closed with a recovery
+# comment by the next healthy run. Issue handling never turns a failed
+# verification green.
+#
+# Never: deploy, create a backup, edit cron, restore, touch the database or
+# retention, or print secret values. Scheduled workflows run from the
+# repository default branch only — the schedule is active once this file is
+# on that branch.
+# =============================================================================
+name: backup-health-alert
+
+on:
+  schedule:
+    # 04:30 UTC daily: 75 min after the 03:15 backup, 45 min after the 03:45
+    # local check (BACKUP_MAX_AGE_HOURS=4 tolerates scheduler delay).
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: "TEST ONLY: after the read-only health check has completed, fail the workflow in control flow to exercise the alert path. Never touches the backup, cron or database."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: backup-health-alert
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ALERT_TITLE: "[Backup Alert] Hosted PostgreSQL backup unhealthy"
+
+jobs:
+  verify:
+    name: Read-only hosted backup verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      summary: ${{ steps.summary.outputs.summary }}
+      simulated: ${{ steps.simulate.outputs.simulated }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/verify-hosted-backup.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Validate the connection secrets (format only; values are never printed)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || { echo "::error::VPS_HOST is missing or has an unexpected format"; exit 1; }
+          [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]] || { echo "::error::VPS_PORT is missing or not a port number"; exit 1; }
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "::error::VPS_USER is missing or has an unexpected format"; exit 1; }
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]{1,200}$ ]] || { echo "::error::VPS_DEPLOY_PATH is missing or not a plain absolute path"; exit 1; }
+          { [ -n "$VPS_SSH_KEY" ] && [ -n "$VPS_KNOWN_HOSTS" ]; } || { echo "::error::VPS_SSH_KEY or VPS_KNOWN_HOSTS is missing"; exit 1; }
+          echo "connection secrets present and well-formed"
+
+      - name: Install the SSH key and the pinned host key (no ssh-keyscan)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/backup_alert_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          {
+            echo "Host vps"
+            echo "  HostName $VPS_HOST"
+            echo "  Port $VPS_PORT"
+            echo "  User $VPS_USER"
+            echo "  IdentityFile ~/.ssh/backup_alert_key"
+            echo "  IdentitiesOnly yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  StrictHostKeyChecking yes"
+            echo "  BatchMode yes"
+            echo "  ConnectTimeout 20"
+            echo "  ServerAliveInterval 15"
+            echo "  ServerAliveCountMax 4"
+            echo "  LogLevel ERROR"
+          } > ~/.ssh/config
+          echo "ssh client configured with the pinned host key"
+
+      - name: Run the read-only verifier over SSH (script piped on stdin; nothing is copied to the VPS)
+        id: run
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          # VPS_DEPLOY_PATH was validated above as a plain absolute path, so the
+          # single-quoted remote assignment cannot be broken out of. No
+          # workflow input reaches this command.
+          set +e
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' BACKUP_MAX_AGE_HOURS=4 EXPECTED_KEEP=14 bash -s" \
+            < .github/scripts/verify-hosted-backup.sh > "$RUNNER_TEMP/verify.log" 2>&1
+          rc=$?
+          set -e
+          echo "exit=$rc" >> "$GITHUB_OUTPUT"
+          # The verifier prints names, sizes, counts, ages and status codes only.
+          sed 's/^/  /' "$RUNNER_TEMP/verify.log"
+          echo "verifier_exit=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::hosted backup verification failed (exit $rc)"
+            exit "$rc"
+          fi
+
+      - name: Extract the sanitized summary line
+        id: summary
+        if: always()
+        env:
+          VERIFIER_EXIT: ${{ steps.run.outputs.exit }}
+        run: |
+          line=""
+          if [ -f "$RUNNER_TEMP/verify.log" ]; then
+            line="$(grep -m1 -E '^BACKUP_HEALTH=(PASS|FAIL)( [A-Za-z0-9_]+=[A-Za-z0-9_.,=-]+)*$' "$RUNNER_TEMP/verify.log" || true)"
+          fi
+          if [ -z "$line" ]; then
+            case "${VERIFIER_EXIT:-none}" in
+              255) line="BACKUP_HEALTH=FAIL reason=ssh-connection-failed (host unreachable, host key or authentication failure)" ;;
+              *)   line="BACKUP_HEALTH=FAIL reason=no-summary-from-verifier exit=${VERIFIER_EXIT:-none}" ;;
+            esac
+          fi
+          echo "summary=$line" >> "$GITHUB_OUTPUT"
+          echo "$line"
+
+      - name: Simulated failure (TEST ONLY; manual dispatch with simulate_failure=true)
+        id: simulate
+        if: github.event_name == 'workflow_dispatch' && inputs.simulate_failure == true
+        run: |
+          echo "simulated=true" >> "$GITHUB_OUTPUT"
+          echo "::error::SIMULATED FAILURE (test): the read-only health check above already completed; failing the workflow in control flow only. No backup, cron or database was touched."
+          exit 1
+
+  alert:
+    name: Durable alert (one deduplicated GitHub Issue)
+    needs: verify
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERIFY_RESULT: ${{ needs.verify.result }}
+      SUMMARY: ${{ needs.verify.outputs.summary }}
+      SIMULATED: ${{ needs.verify.outputs.simulated }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+      TRIGGER: ${{ github.event_name }}
+    steps:
+      - name: Find the open alert issue (exact title match)
+        id: find
+        run: |
+          number="$(gh issue list --repo "$GH_REPO" --state open --limit 100 --search '"Backup Alert" in:title' --json number,title \
+            | jq -r --arg t "$ALERT_TITLE" '[.[] | select(.title == $t)] | sort_by(.number) | .[0].number // empty')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "open alert issue: ${number:-none}"
+
+      - name: Unhealthy — create the alert issue or comment on the open one
+        if: env.VERIFY_RESULT != 'success'
+        env:
+          NUMBER: ${{ steps.find.outputs.number }}
+        run: |
+          now="$(date -u +%FT%TZ)"
+          test_note=""
+          if [ "$SIMULATED" = "true" ]; then
+            test_note="**SIMULATED FAILURE (test).** The read-only health check completed; the failure was injected in the workflow control flow. No backup, cron or database was touched."$'\n\n'
+          fi
+          summary="${SUMMARY:-BACKUP_HEALTH=FAIL reason=no-summary}"
+          body="$(printf '%s- **Time (UTC):** %s\n- **Verification job result:** %s (trigger: %s)\n- **Sanitized summary:** `%s`\n- **Workflow run:** %s\n' \
+            "$test_note" "$now" "$VERIFY_RESULT" "$TRIGGER" "$summary" "$RUN_URL")"
+          if [ -z "$NUMBER" ]; then
+            intro="The daily external health check of the hosted dev PostgreSQL backup did not pass. This issue is deduplicated: repeated failures are added as comments and it is closed automatically by the next healthy run. Runbook: docs/BACKUP_AND_RECOVERY.md (develop branch)."$'\n\n'
+            gh issue create --repo "$GH_REPO" --title "$ALERT_TITLE" --body "${intro}${body}"
+          else
+            gh issue comment "$NUMBER" --repo "$GH_REPO" --body "$body"
+          fi
+
+      - name: Healthy — recovery comment and close the open alert issue
+        if: env.VERIFY_RESULT == 'success' && steps.find.outputs.number != ''
+        env:
+          NUMBER: ${{ steps.find.outputs.number }}
+        run: |
+          now="$(date -u +%FT%TZ)"
+          body="$(printf -- '- **Recovered (UTC):** %s\n- **Sanitized summary:** `%s`\n- **Workflow run:** %s\n\nClosing this alert; a later failure opens a new issue.' \
+            "$now" "${SUMMARY:-BACKUP_HEALTH=PASS}" "$RUN_URL")"
+          gh issue comment "$NUMBER" --repo "$GH_REPO" --body "$body"
+          gh issue close "$NUMBER" --repo "$GH_REPO"
+
+      - name: Result
+        run: |
+          if [ "$VERIFY_RESULT" = "success" ]; then
+            echo "hosted backup healthy: $SUMMARY"
+          else
+            echo "::error::hosted backup verification result: $VERIFY_RESULT — $SUMMARY (the run stays failed)"
+          fi
