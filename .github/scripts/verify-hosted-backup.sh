@@ -56,7 +56,13 @@ trap 'rc=$?; echo "BACKUP_HEALTH=FAIL reason=unexpected-error step=$STEP exit=$r
 
 fail() { echo "BACKUP_HEALTH=FAIL reason=$1${2:+ $2}"; exit 1; }
 # Output of the deployed checker is names/ages/sizes/counts only; mask defensively anyway.
-sanitize() { sed -E 's#(postgres(ql)?://)[^[:space:]]+#\1<masked>#g; s/[A-Za-z0-9+\/=_-]{40,}/<masked>/g' | cut -c1-300 | head -n 12; }
+# awk consumes the whole input (a `head` here would close the pipe early on long
+# output and turn the upstream SIGPIPE into a false failure under pipefail):
+# at most 12 lines are shown, each cut to 300 characters.
+sanitize() {
+  sed -E 's#(postgres(ql)?://)[^[:space:]]+#\1<masked>#g; s/[A-Za-z0-9+\/=_-]{40,}/<masked>/g' |
+    awk 'NR <= 12 { print substr($0, 1, 300) }'
+}
 
 main() {
   STEP=inputs
