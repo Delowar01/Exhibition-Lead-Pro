@@ -6,9 +6,12 @@
 # .github/scripts/verify-hosted-backup.sh on standard input (nothing is copied
 # to the host) and verifies, read-only, that the daily backup is healthy:
 # deployment marker vs checkout, the two crontab lines, cron service, deployed
-# scripts, the deployed backup-check.sh with a 4 h limit, and an independent
-# check of the newest backup (name, age, mode, owner, sidecar, sha256sum -c,
-# gzip -t, dump header, completion marker, CREATE TABLE / COPY blocks).
+# scripts, an independent check of the newest backup (it must belong to the
+# most recent expected 03:15 UTC slot by filename stamp AND mtime — GitHub may
+# start this run hours late, so freshness is slot-aware, not a fixed age — plus
+# mode, owner, sidecar, sha256sum -c, gzip -t, dump header, completion marker,
+# CREATE TABLE / COPY blocks), and finally the deployed backup-check.sh with a
+# limit computed from the slot age (the VPS-local 03:45 check keeps its 4 h).
 #
 # Durable external signal: the run stays FAILED and ONE deduplicated GitHub
 # Issue "[Backup Alert] Hosted PostgreSQL backup unhealthy" is created on the
@@ -26,7 +29,7 @@ name: backup-health-alert
 on:
   schedule:
     # 04:30 UTC daily: 75 min after the 03:15 backup, 45 min after the 03:45
-    # local check (BACKUP_MAX_AGE_HOURS=4 tolerates scheduler delay).
+    # local check. GitHub may start it late; the slot-aware verifier tolerates that.
     - cron: "30 4 * * *"
   workflow_dispatch:
     inputs:
@@ -123,7 +126,9 @@ jobs:
           # single-quoted remote assignment cannot be broken out of. No
           # workflow input reaches this command.
           set +e
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' BACKUP_MAX_AGE_HOURS=4 EXPECTED_KEEP=14 bash -s" \
+          # Freshness is slot-aware inside the verifier (expected 03:15 UTC slot from the
+          # VPS clock), so a late GitHub start cannot produce a false backup-too-old alert.
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' EXPECTED_KEEP=14 bash -s" \
             < .github/scripts/verify-hosted-backup.sh > "$RUNNER_TEMP/verify.log" 2>&1
           rc=$?
           set -e
