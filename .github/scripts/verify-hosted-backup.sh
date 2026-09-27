@@ -5,7 +5,7 @@
 # Runs ON the dev VPS as the deploy user. .github/workflows/backup-health-alert.yml
 # pipes it over SSH standard input, so nothing is copied to the host:
 #
-#     ssh vps "DEPLOY_PATH='<checkout>' BACKUP_MAX_AGE_HOURS=4 bash -s" \
+#     ssh vps "DEPLOY_PATH='<checkout>' EXPECTED_KEEP=14 bash -s" \
 #         < .github/scripts/verify-hosted-backup.sh
 #
 # What it never does: create a backup, edit cron, restore, connect to the
@@ -37,7 +37,7 @@
 # only the pure slot functions (for the deterministic test harness) and runs nothing.
 #
 # Exit 0 and print exactly one summary line
-#     BACKUP_HEALTH=PASS file=<name> age_minutes=<n> size_bytes=<n>
+#     BACKUP_HEALTH=PASS file=<name> slot=<YYYYMMDD-HHMM> age_minutes=<n> size_bytes=<n>
 # only when EVERY assertion below holds. Otherwise print
 #     BACKUP_HEALTH=FAIL reason=<code>[ detail=<safe values>]
 # and exit 1. Any unexpected error fails closed through the ERR trap.
@@ -56,7 +56,10 @@
 #              (not in the future, not malformed), size >= 1024, mode 600, owned
 #              by the deploy user; .sha256 sidecar present (mode 600), single line that
 #              names this file; sha256sum -c passes; gzip -t passes; the stream
-#              starts as a PostgreSQL dump, ends with the completion marker and
+#              starts as a PostgreSQL dump, carries the exact completion-marker
+#              line inside its FINAL 4096 decompressed bytes (the same rule as the
+#              deployed backup-check.sh; pg_dump >= 16.10 appends a "\unrestrict
+#              <key>" line after the marker, so no fixed last-N-lines rule) and
 #              contains at least one CREATE TABLE and one COPY block (the table
 #              count is deliberately NOT pinned — additive migrations change it)
 #   check      finally the deployed backup-check.sh itself passes with a limit
@@ -108,6 +111,16 @@ checker_limit_hours() {
   [ "$h" -ge "$CHECKER_LIMIT_MIN_HOURS" ] || h="$CHECKER_LIMIT_MIN_HOURS"
   [ "$h" -le "$CHECKER_LIMIT_MAX_HOURS" ] || h="$CHECKER_LIMIT_MAX_HOURS"
   echo "$h"
+}
+
+# dump_completion_marker_in_tail FILE.gz → 0 iff the exact line
+# "-- PostgreSQL database dump complete" occurs inside the FINAL 4096 decompressed
+# bytes (the deployed backup-check.sh rule). A marker that only appears earlier, a
+# substring/altered marker, or more than 4096 bytes of trailing content all fail.
+# `tail -c` and awk both consume their whole input, so the pipeline never closes
+# early (no SIGPIPE false failure under pipefail); the verdict is awk's exit status.
+dump_completion_marker_in_tail() {
+  zcat "$1" 2>/dev/null | tail -c 4096 | awk '$0 == "-- PostgreSQL database dump complete" { found = 1 } END { exit(found ? 0 : 1) }'
 }
 
 # ── library mode ends here (nothing below runs when sourced for tests) ──
@@ -240,17 +253,16 @@ main() {
   [ "$actual" = "$sc_sum" ] || fail checksum-mismatch
   ( cd "$backup_dir" && sha256sum -c --quiet --strict "$name.sha256" >/dev/null 2>&1 ) || fail checksum-mismatch "detail=sha256sum-c"
   gzip -t "$newest" 2>/dev/null || fail gzip-invalid
-  local stats hdr ct_n cp_n done_n last_n
+  local stats hdr ct_n cp_n
   stats="$(zcat "$newest" 2>/dev/null | awk '
       NR<=3 && $0=="-- PostgreSQL database dump" {hdr=1}
       /^CREATE TABLE /{ct++}
       /^COPY /{cp++}
-      $0=="-- PostgreSQL database dump complete" {done=NR}
-      {last=NR}
-      END{printf "%d|%d|%d|%d|%d\n", hdr+0, ct+0, cp+0, done+0, last+0}')" || fail dump-unreadable
-  IFS='|' read -r hdr ct_n cp_n done_n last_n <<< "$stats"
+      END{printf "%d|%d|%d\n", hdr+0, ct+0, cp+0}')" || fail dump-unreadable
+  IFS='|' read -r hdr ct_n cp_n <<< "$stats"
   [ "$hdr" = "1" ] || fail dump-header-missing
-  { [ "$done_n" -gt 0 ] && [ $(( last_n - done_n )) -le 3 ]; } || fail completion-marker-missing
+  # completion marker: exact line inside the final 4096 decompressed bytes (Correction 3C)
+  if ! dump_completion_marker_in_tail "$newest"; then fail completion-marker-missing; fi
   [ "$ct_n" -ge 1 ] || fail no-create-table
   [ "$cp_n" -ge 1 ] || fail no-copy-block
   echo "newest: file=$name stamp_utc=$(date -u -d @"$stamp_epoch" +%FT%TZ) mtime_utc=$(date -u -d @"$mtime" +%FT%TZ) slot=$slot_lbl age_minutes=$age_min size_bytes=$size mode=600 owner=ok sidecar=ok sha256_prefix=${sc_sum:0:12} sha256sum_c=ok gzip=ok header=ok completion_marker=ok create_table=$ct_n copy_blocks=$cp_n"

@@ -12,8 +12,11 @@
 #      no write/backup/restore/cron-edit/database command);
 #   3. an end-to-end run of the verifier (fed on stdin like production) against a
 #      synthetic hosted layout in a temporary directory with crontab/systemctl
-#      shims. Set BACKUP_TEST_CHECKER / BACKUP_TEST_BACKUP_SCRIPT to the real
-#      deployed scripts to exercise them; otherwise minimal stand-ins are used.
+#      shims, with classic (pre-16.10) and restricted-mode (pg_dump >= 16.10,
+#      "\restrict"/"\unrestrict <key>") dump trailers. Set BACKUP_TEST_CHECKER /
+#      BACKUP_TEST_BACKUP_SCRIPT to the real deployed scripts to exercise them
+#      (otherwise minimal stand-ins are used) and BACKUP_TEST_REAL_DUMP to a real
+#      plain pg_dump file to verify it as the current-slot backup.
 #
 #     bash .github/scripts/test/verify-hosted-backup.test.sh
 # =============================================================================
@@ -95,6 +98,38 @@ expect_eq "sweep every 15 min across a slot: 4 <= limit <= 25 and the checker's 
 expect_eq "incident: file age 370 min <= 8 h * 60"           "$(( 370 <= 8 * 60 ))" "1"
 expect_eq "manual 13:53: file age 638 min <= 12 h * 60"      "$(( 638 <= 12 * 60 ))" "1"
 
+echo "== 4b. completion-marker rule: exact line inside the final 4096 decompressed bytes =="
+MT="$(mktemp -d)"; trap 'rm -rf "$MT"' EXIT
+mkplain() { # $1 = style → prints a plain dump to stdout
+  local key="TestKey0123456789abcdefghijklmnop"
+  case "$1" in
+    classic)     printf -- '--\n-- PostgreSQL database dump\n--\n\nCREATE TABLE public.a (x integer);\nCOPY public.a (x) FROM stdin;\n1\n\\.\n\n--\n-- PostgreSQL database dump complete\n--\n\n' ;;
+    restricted)  printf -- '--\n-- PostgreSQL database dump\n--\n\n\\restrict %s\n\n-- Dumped from database version 16.15\n-- Dumped by pg_dump version 16.15\n\nCREATE TABLE public.a (x integer);\nCOPY public.a (x) FROM stdin;\n1\n\\.\n\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict %s\n\n' "$key" "$key" ;;
+    nomarker)    printf -- '--\n-- PostgreSQL database dump\n--\n\nCREATE TABLE public.a (x integer);\nCOPY public.a (x) FROM stdin;\n1\n\\.\n\n--\n' ;;
+    farmarker)   mkplain classic; for i in $(seq 1 120); do printf -- '-- trailing content after the marker, line %03d ........................................\n' "$i"; done ;;
+    altered)     mkplain classic | sed 's/^-- PostgreSQL database dump complete$/-- PostgreSQL database dump complete!/' ;;
+    substring)   mkplain classic | sed 's/^-- PostgreSQL database dump complete$/-- PostgreSQL database dump completed/' ;;
+    indented)    mkplain classic | sed 's/^-- PostgreSQL database dump complete$/ -- PostgreSQL database dump complete/' ;;
+  esac
+}
+for style in classic restricted nomarker farmarker altered substring indented; do mkplain "$style" | gzip -c > "$MT/$style.sql.gz"; done
+expect_eq "restricted fixture reproduces the live layout: last_line - marker_line = 4" "$(zcat "$MT/restricted.sql.gz" | awk '$0=="-- PostgreSQL database dump complete"{m=NR} {l=NR} END{print l-m}')" "4"
+expect_eq "restricted fixture: \\restrict follows the header, \\unrestrict follows the marker" "$(zcat "$MT/restricted.sql.gz" | awk '$0=="-- PostgreSQL database dump"{h=NR} /^\\restrict /{r=NR} $0=="-- PostgreSQL database dump complete"{m=NR} /^\\unrestrict /{u=NR} END{print (h<r && m<u) ? "yes" : "no"}')" "yes"
+expect_eq "farmarker fixture: more than 4096 bytes follow the marker" "$(( $(zcat "$MT/farmarker.sql.gz" | awk '$0=="-- PostgreSQL database dump complete"{p=1; next} p{n+=length($0)+1} END{print n}') > 4096 ))" "1"
+expect_true  "P1 classic pre-16.10 trailer passes"                      dump_completion_marker_in_tail "$MT/classic.sql.gz"
+expect_true  "P2 restricted-mode (16.10+/16.15) trailer passes"         dump_completion_marker_in_tail "$MT/restricted.sql.gz"
+expect_false "N6 missing completion marker fails"                        dump_completion_marker_in_tail "$MT/nomarker.sql.gz"
+expect_false "N7/N8 marker only before the final 4096 bytes (>4096 B trailing) fails" dump_completion_marker_in_tail "$MT/farmarker.sql.gz"
+expect_false "N9 altered marker ('complete!') fails"                    dump_completion_marker_in_tail "$MT/altered.sql.gz"
+expect_false "N9 substring marker ('completed') fails"                  dump_completion_marker_in_tail "$MT/substring.sql.gz"
+expect_false "N9 indented marker fails (exact line only)"               dump_completion_marker_in_tail "$MT/indented.sql.gz"
+expect_false "unreadable/absent file fails closed"                       dump_completion_marker_in_tail "$MT/does-not-exist.sql.gz"
+printf 'not gzip' > "$MT/notgz.sql.gz"; expect_false "non-gzip input fails closed" dump_completion_marker_in_tail "$MT/notgz.sql.gz"
+{ mkplain classic; head -c 200000 /dev/zero | tr '\0' 'x'; printf '\n-- PostgreSQL database dump complete\n--\n'; } | gzip -c > "$MT/large.sql.gz"
+expect_true  "large dump (200 kB of padding before the marker) passes and the pipeline consumes it fully" dump_completion_marker_in_tail "$MT/large.sql.gz"
+expect_eq "fixed last-N-lines rule is gone from the verifier" "$(grep -cE 'last_n - done_n|done_n' "$VERIFIER")" "0"
+expect_eq "rule uses tail -c 4096 and an exact-line awk comparison" "$(grep -c "tail -c 4096 | awk '\$0 == \"-- PostgreSQL database dump complete\"" "$VERIFIER")" "1"
+
 echo "== 5. summary lines match the workflow's strict summary regex =="
 REGEX="$(grep -oE "'\^BACKUP_HEALTH=[^']*'" "$WORKFLOW" | head -1 | tr -d "'")"
 expect_true "regex extracted from the workflow" test -n "$REGEX"
@@ -170,8 +205,21 @@ git -C "$T/app" init -q && git -C "$T/app" -c user.name=t -c user.email=t@t add 
 printf '#!/bin/bash\n[ "$1" = "-l" ] || exit 2\ncat "%s/crontab.txt"\n' "$T" > "$T/bin/crontab"
 printf '#!/bin/bash\n[ "$1" = "is-active" ] && { echo active; exit 0; }\nexit 1\n' > "$T/bin/systemctl"; chmod 755 "$T/bin/"*
 printf '15 3 * * * DEPLOY_PATH=%s BACKUP_DIR=%s KEEP=14 bash %s/docker/scripts/backup-postgres.sh >> %s/backup.log 2>&1\n45 3 * * * BACKUP_DIR=%s BACKUP_MAX_AGE_HOURS=4 bash %s/docker/scripts/backup-check.sh >> %s/backup.log 2>&1\n' "$T/app" "$T/backups" "$T/app" "$T/backups" "$T/backups" "$T/app" "$T/backups" > "$T/crontab.txt"
-mkdump() { # $1 = name, $2 = mtime epoch
-  { printf -- '--\n-- PostgreSQL database dump\n--\n'; printf 'CREATE TABLE public.a (x integer, y text);\nCOPY public.a (x, y) FROM stdin;\n'; for i in $(seq 1 40); do printf '%d\t%s\n' "$i" "$(head -c 60 /dev/urandom | base64 -w0)"; done; printf '\\.\n--\n-- PostgreSQL database dump complete\n--\n\n'; } | gzip -c > "$T/backups/$1"
+mkbody() { for i in $(seq 1 40); do printf '%d\t%s\n' "$i" "$(head -c 60 /dev/urandom | base64 -w0)"; done; }
+mkdump() { # $1 = name, $2 = mtime epoch, $3 = style (classic | restricted | nomarker | farmarker | altered), default classic
+  local key="E2eKey0123456789abcdefghijklmnopq" style="${3:-classic}"
+  {
+    printf -- '--\n-- PostgreSQL database dump\n--\n\n'
+    [ "$style" = restricted ] && printf -- '\\restrict %s\n\n-- Dumped from database version 16.15\n-- Dumped by pg_dump version 16.15\n\n' "$key"
+    printf 'CREATE TABLE public.a (x integer, y text);\nCOPY public.a (x, y) FROM stdin;\n'; mkbody; printf '\\.\n\n'
+    case "$style" in
+      nomarker)   printf -- '--\n' ;;
+      altered)    printf -- '--\n-- PostgreSQL database dump complete!\n--\n\n' ;;
+      farmarker)  printf -- '--\n-- PostgreSQL database dump complete\n--\n\n'; for i in $(seq 1 120); do printf -- '-- trailing content after the marker, line %03d ........................................\n' "$i"; done ;;
+      restricted) printf -- '--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict %s\n\n' "$key" ;;
+      *)          printf -- '--\n-- PostgreSQL database dump complete\n--\n\n' ;;
+    esac
+  } | gzip -c > "$T/backups/$1"
   chmod 600 "$T/backups/$1"; ( cd "$T/backups" && sha256sum "$1" > "$1.sha256" && chmod 600 "$1.sha256" ); touch -d "@$2" "$T/backups/$1" "$T/backups/$1.sha256"
 }
 run() { PATH="$T/bin:$PATH" DEPLOY_PATH="$T/app" STATE_DIR="$T/env" BACKUP_DIR="$T/backups" bash -s < "$VERIFIER" > "$T/out.txt" 2>&1; echo $?; }
@@ -192,8 +240,19 @@ clean; mkdump "$CUR" "$((NOW_E + 3600))"; rc=$(run); expect_eq "E6 future mtime 
 clean; rc=$(run); expect_eq "E7 no backup file → no-backup-file" "$(health)" "BACKUP_HEALTH=FAIL reason=no-backup-file"
 clean; mkdump "$CUR" "$((SLOT_E + 3))"; mkdump "$PREV" "$((PREV_E + 3))"; rc=$(run); expect_eq "E8 current + previous files → PASS on the current one" "$(health | cut -d' ' -f1-2)" "BACKUP_HEALTH=PASS file=$CUR"
 clean; LATE="leadcapture-$(date -u -d @"$((SLOT_E + 3600))" +%Y%m%d-%H%M%S).sql.gz"; if [ "$((SLOT_E + 3600))" -le "$NOW_E" ]; then mkdump "$LATE" "$((SLOT_E + 3602))"; rc=$(run); expect_eq "E9 controlled recovery backup one hour into the slot → PASS" "$(health | cut -d' ' -f1-2)" "BACKUP_HEALTH=PASS file=$LATE"; else echo "skip E9 (slot started less than an hour ago)"; fi
+clean; mkdump "$CUR" "$((SLOT_E + 3))" restricted; rc=$(run); expect_eq "E15 restricted-mode trailer (pg_dump >= 16.10, last-marker=4) → PASS" "$(health | cut -d' ' -f1-2)" "BACKUP_HEALTH=PASS file=$CUR"; expect_eq "E15 last_line - marker_line of the fixture" "$(zcat "$T/backups/$CUR" | awk '$0=="-- PostgreSQL database dump complete"{m=NR} {l=NR} END{print l-m}')" "4"; expect_eq "E15 deployed checker received the computed limit" "$(grep -c "deployed-check: .*(limit $(checker_limit_hours "$NOW_E" "$SLOT_E")h)" "$T/out.txt")" "1"; expect_eq "E15 exactly one BACKUP_HEALTH line" "$(grep -c '^BACKUP_HEALTH=' "$T/out.txt")" "1"
+clean; if [ "$((SLOT_E + 3600))" -le "$NOW_E" ]; then mkdump "$LATE" "$((SLOT_E + 3602))" restricted; rc=$(run); expect_eq "E16 same-slot recovery dump with restricted trailer → PASS" "$(health | cut -d' ' -f1-2)" "BACKUP_HEALTH=PASS file=$LATE"; else echo "skip E16 (slot started less than an hour ago)"; fi
+clean; mkdump "$CUR" "$((SLOT_E + 3))" nomarker; rc=$(run); expect_eq "E17 missing completion marker → completion-marker-missing" "$(health)" "BACKUP_HEALTH=FAIL reason=completion-marker-missing"
+clean; mkdump "$CUR" "$((SLOT_E + 3))" farmarker; rc=$(run); expect_eq "E18 marker followed by >4096 bytes of trailing content → completion-marker-missing" "$(health)" "BACKUP_HEALTH=FAIL reason=completion-marker-missing"
+clean; mkdump "$CUR" "$((SLOT_E + 3))" altered; rc=$(run); expect_eq "E19 altered marker → completion-marker-missing" "$(health)" "BACKUP_HEALTH=FAIL reason=completion-marker-missing"
+clean; mkdump "$CUR" "$((SLOT_E + 3))"; cp "$T/backups/$CUR" "$T/good.gz"; head -c 1100 "$T/good.gz" > "$T/backups/$CUR"; ( cd "$T/backups" && sha256sum "$CUR" > "$CUR.sha256" ); rc=$(run); expect_eq "E20 invalid gzip (re-signed) still fails at the gzip check" "$(health)" "BACKUP_HEALTH=FAIL reason=gzip-invalid"
+if [ -n "${BACKUP_TEST_REAL_DUMP:-}" ] && [ -f "$BACKUP_TEST_REAL_DUMP" ]; then
+  clean; gzip -c "$BACKUP_TEST_REAL_DUMP" > "$T/backups/$CUR"; chmod 600 "$T/backups/$CUR"; ( cd "$T/backups" && sha256sum "$CUR" > "$CUR.sha256" && chmod 600 "$CUR.sha256" ); touch -d "@$((SLOT_E + 3))" "$T/backups/$CUR" "$T/backups/$CUR.sha256"
+  echo "   real dump: $(wc -c < "$BACKUP_TEST_REAL_DUMP") B, $(awk '$0=="-- PostgreSQL database dump complete"{m=NR} /^\\unrestrict /{u=NR} {l=NR} END{print "marker_line=" m " unrestrict_line=" u " last_line=" l " last-marker=" l-m}' "$BACKUP_TEST_REAL_DUMP")"
+  rc=$(run); expect_eq "E21 REAL pg_dump plain dump (BACKUP_TEST_REAL_DUMP) verified as the current-slot backup → PASS" "$(health | cut -d' ' -f1-2)" "BACKUP_HEALTH=PASS file=$CUR"
+else echo "skip E21 (set BACKUP_TEST_REAL_DUMP=<plain pg_dump file> to verify a real dump)"; fi
 clean; mkdump "$CUR" "$((SLOT_E + 3))"; rm -f "$T/backups/$CUR.sha256"; rc=$(run); expect_eq "E10 integrity checks preserved: missing sidecar → sidecar-missing" "$(health)" "BACKUP_HEALTH=FAIL reason=sidecar-missing"
-clean; mkdump "$CUR" "$((SLOT_E + 3))"; sed -i 's/^\(.\)/X/' "$T/backups/$CUR.sha256"; sed -i 's/^X/f/' "$T/backups/$CUR.sha256"; rc=$(run); expect_eq "E11 integrity checks preserved: checksum mismatch" "$(health)" "BACKUP_HEALTH=FAIL reason=checksum-mismatch"
+clean; mkdump "$CUR" "$((SLOT_E + 3))"; sed -i 's/^[0-9a-e]/f/; t; s/^f/0/' "$T/backups/$CUR.sha256"; rc=$(run); expect_eq "E11 integrity checks preserved: checksum mismatch" "$(health)" "BACKUP_HEALTH=FAIL reason=checksum-mismatch"
 clean; mkdump "$CUR" "$((SLOT_E + 3))"; echo 0000000000000000000000000000000000000000 > "$T/env/current-deploy.sha"; rc=$(run); expect_eq "E12 deployment drift still detected first" "$(health | cut -d' ' -f2)" "reason=deployment-drift"; git -C "$T/app" rev-parse HEAD > "$T/env/current-deploy.sha"
 clean; mkdump "$CUR" "$((SLOT_E + 3))"; sed -i 's/^45 3/#45 3/' "$T/crontab.txt"; rc=$(run); expect_eq "E13 cron checks preserved: commented 03:45 entry" "$(health | cut -d' ' -f2)" "reason=check-cron-not-exactly-once"; sed -i 's/^#45 3/45 3/' "$T/crontab.txt"
 rc=$(PATH="$T/bin:$PATH" DEPLOY_PATH="$T/app'; echo pwned; '" STATE_DIR="$T/env" BACKUP_DIR="$T/backups" bash -s < "$VERIFIER" > "$T/out.txt" 2>&1; echo $?); expect_eq "E14 invalid DEPLOY_PATH (injection attempt) rejected" "$(health)" "BACKUP_HEALTH=FAIL reason=invalid-deploy-path"
