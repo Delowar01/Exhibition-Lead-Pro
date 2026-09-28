@@ -1,0 +1,189 @@
+# =============================================================================
+# Lead Capture Pro — independent off-host backup audit and alert (list-only, keyless)
+# =============================================================================
+# Daily at 05:00 UTC — after the 03:15 UTC backup, the 03:30 UTC off-host copy
+# and the 03:45 UTC local check — this workflow audits, from Cloud Storage
+# LIST metadata only, that the dedicated backup bucket holds exactly one
+# completed canonical three-object set (dump, sidecar, manifest schema
+# lcp-offhost-manifest/2) for the expected UTC slot and the two previous
+# slots (.github/scripts/verify-offhost-backup.sh). It never SSHes to the
+# VPS, never downloads, creates, updates or deletes an object, and never
+# touches bucket configuration.
+#
+# Authentication is keyless: the job's GitHub OIDC token is exchanged at the
+# STS endpoint (Workload Identity Federation) for a short-lived token whose
+# authority is `storage.objects.list` only. No key file, no stored token.
+#
+# Durable signal: the run stays FAILED and ONE deduplicated GitHub Issue
+# "[Backup Alert] Off-host backup copy unhealthy" is created on the first
+# failure, commented on repeated failures, and closed with a recovery comment
+# by the next healthy run. A local `pending-audit` receipt on the VPS is
+# resolved by a remotely valid set without any write-back. Scheduled
+# workflows run from the repository default branch only.
+# =============================================================================
+name: backup-offhost-alert
+
+on:
+  schedule:
+    # 05:00 UTC daily; GitHub may start it late — the audit is slot-aware.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: "TEST ONLY: after the read-only audit has completed, fail the workflow in control flow to exercise the alert path. Never touches the bucket, the VPS or any backup."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-offhost-alert
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ALERT_TITLE: "[Backup Alert] Off-host backup copy unhealthy"
+
+jobs:
+  audit:
+    name: Independent off-host audit (objects.list only, keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      summary: ${{ steps.summary.outputs.summary }}
+      simulated: ${{ steps.simulate.outputs.simulated }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/verify-offhost-backup.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Validate the audit configuration (format only; nothing is printed)
+        env:
+          OFFHOST_BUCKET: ${{ secrets.OFFHOST_BUCKET }}
+          OFFHOST_WIF_AUDIENCE: ${{ secrets.OFFHOST_WIF_AUDIENCE }}
+        run: |
+          [[ "$OFFHOST_BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]] || { echo "::error::OFFHOST_BUCKET is missing or has an unexpected format"; exit 1; }
+          [[ "$OFFHOST_WIF_AUDIENCE" =~ ^//iam\.googleapis\.com/projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+$ ]] || { echo "::error::OFFHOST_WIF_AUDIENCE is missing or has an unexpected format"; exit 1; }
+          echo "audit configuration present and well-formed"
+
+      - name: Run the list-only audit (OIDC → STS, objects.list, evaluate)
+        id: audit
+        env:
+          OFFHOST_BUCKET: ${{ secrets.OFFHOST_BUCKET }}
+          OFFHOST_WIF_AUDIENCE: ${{ secrets.OFFHOST_WIF_AUDIENCE }}
+          OFFHOST_PREFIX: dev/postgres
+          OFFHOST_BLOCKING_SLOTS: "2"
+          OFFHOST_MONTHLY_WARN_DAY: "8"
+        run: |
+          set +e
+          bash .github/scripts/verify-offhost-backup.sh > "$RUNNER_TEMP/audit.log" 2>&1
+          rc=$?
+          set -e
+          echo "exit=$rc" >> "$GITHUB_OUTPUT"
+          # The audit prints object names, sizes, counts, generations, hash prefixes and
+          # status codes only; the sanitizer below is a belt-and-braces guard.
+          sed -E 's/[A-Za-z0-9+\/=_-]{40,}/<masked>/g' "$RUNNER_TEMP/audit.log" | awk 'NR <= 200 { print "  " substr($0, 1, 300) }'
+          echo "audit_exit=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::off-host backup audit failed (exit $rc)"
+            exit "$rc"
+          fi
+
+      - name: Extract the sanitized summary line
+        id: summary
+        if: always()
+        env:
+          AUDIT_EXIT: ${{ steps.audit.outputs.exit }}
+        run: |
+          line=""
+          if [ -f "$RUNNER_TEMP/audit.log" ]; then
+            line="$(grep -m1 -E '^OFFHOST_HEALTH=(PASS|FAIL)( [A-Za-z0-9_]+=[A-Za-z0-9_.,:/-]+)*$' "$RUNNER_TEMP/audit.log" || true)"
+          fi
+          if [ -z "$line" ]; then
+            line="OFFHOST_HEALTH=FAIL reason=remote-audit-unavailable detail=no-summary exit=${AUDIT_EXIT:-none}"
+          fi
+          echo "summary=$line" >> "$GITHUB_OUTPUT"
+          echo "$line"
+
+      - name: Simulated failure (TEST ONLY; manual dispatch with simulate_failure=true)
+        id: simulate
+        if: github.event_name == 'workflow_dispatch' && inputs.simulate_failure == true
+        run: |
+          echo "simulated=true" >> "$GITHUB_OUTPUT"
+          echo "::error::simulated failure requested — the audit above completed; failing in control flow only"
+          exit 1
+
+  alert:
+    name: Durable alert (one deduplicated GitHub Issue)
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      AUDIT_RESULT: ${{ needs.audit.result }}
+      SUMMARY: ${{ needs.audit.outputs.summary }}
+      SIMULATED: ${{ needs.audit.outputs.simulated }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+      TRIGGER: ${{ github.event_name }}
+    steps:
+      - name: Find the open alert issue (exact title match)
+        id: find
+        run: |
+          number="$(gh issue list --repo "$GH_REPO" --state open --limit 100 --search '"Backup Alert" in:title' --json number,title \
+            | jq -r --arg t "$ALERT_TITLE" '[.[] | select(.title == $t)] | sort_by(.number) | .[0].number // empty')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "open alert issue: ${number:-none}"
+
+      - name: Unhealthy — create the alert issue or comment on the open one
+        if: env.AUDIT_RESULT != 'success'
+        env:
+          NUMBER: ${{ steps.find.outputs.number }}
+        run: |
+          now="$(date -u +%FT%TZ)"
+          test_note=""
+          if [ "$SIMULATED" = "true" ]; then
+            test_note="**SIMULATED FAILURE (test).** The list-only audit completed; the failure was injected in the workflow control flow. No bucket, backup or VPS state was touched."$'\n\n'
+          fi
+          summary="${SUMMARY:-OFFHOST_HEALTH=FAIL reason=no-summary}"
+          body="$(printf '%s- **Time (UTC):** %s\n- **Audit job result:** %s (trigger: %s)\n- **Sanitized summary:** `%s`\n- **Workflow run:** %s\n' \
+            "$test_note" "$now" "$AUDIT_RESULT" "$TRIGGER" "$summary" "$RUN_URL")"
+          if [ -z "$NUMBER" ]; then
+            intro="The daily independent audit of the off-host copy of the hosted dev PostgreSQL backup did not pass. This issue is deduplicated: repeated failures are added as comments and it is closed automatically by the next healthy audit. The local backup alert is separate. Runbook: docs/BACKUP_AND_RECOVERY.md §5 (develop branch)."$'\n\n'
+            gh issue create --repo "$GH_REPO" --title "$ALERT_TITLE" --body "${intro}${body}"
+          else
+            gh issue comment "$NUMBER" --repo "$GH_REPO" --body "$body"
+          fi
+
+      - name: Healthy — recovery comment and close the open alert issue
+        if: env.AUDIT_RESULT == 'success' && steps.find.outputs.number != ''
+        env:
+          NUMBER: ${{ steps.find.outputs.number }}
+        run: |
+          now="$(date -u +%FT%TZ)"
+          body="$(printf -- '- **Recovered (UTC):** %s\n- **Sanitized summary:** `%s`\n- **Workflow run:** %s\n\nClosing this alert; a later failure opens a new issue.' \
+            "$now" "${SUMMARY:-OFFHOST_HEALTH=PASS}" "$RUN_URL")"
+          gh issue comment "$NUMBER" --repo "$GH_REPO" --body "$body"
+          gh issue close "$NUMBER" --repo "$GH_REPO"
+
+      - name: Result
+        run: |
+          if [ "$AUDIT_RESULT" = "success" ]; then
+            echo "off-host copy healthy: $SUMMARY"
+          else
+            echo "::error::off-host audit result: $AUDIT_RESULT — $SUMMARY (the run stays failed)"
+          fi
