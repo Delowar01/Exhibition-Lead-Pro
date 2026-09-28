@@ -229,7 +229,11 @@ schedule is a proposal until it is installed there with approval.
 
 > **Off-host copies are required for real protection.** A backup stored only
 > on this VPS does not survive total VPS loss — see
-> `docs/BACKUP_AND_RECOVERY.md` §5 (not configured yet).
+> `docs/BACKUP_AND_RECOVERY.md` §5: the uploader
+> (`docker/scripts/backup-offhost.sh`), its cron manager
+> (`docker/scripts/offhost-cron.sh`) and the example configuration
+> (`docker/offhost.env.example`) are implemented but **not activated**; no
+> bucket, identity or cron entry exists until the gated activation.
 
 ### Restore procedure (disaster-recovery PLAN — never rehearsed on the running stack)
 
