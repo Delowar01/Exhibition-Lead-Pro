@@ -264,33 +264,41 @@ A live restore adds the API stop/start (seconds) and any schema migration.
 ## 5. Off-host copy — implemented (B23 G-6D), NOT activated
 
 Design of record: the accepted "Off-Host Backup Architecture" (Corrections 1
-and 2). Implementation on the review branch `claude/b23-g6d-offhost-uploader`;
-the independent GitHub auditor lives on `claude/b23-g6d-offhost-alert`
-(`.github/workflows/backup-offhost-alert.yml`, `.github/scripts/verify-offhost-backup.sh`).
-**Nothing is activated**: no bucket, project, Workload Identity pool, cron
-entry or receipt directory exists on the VPS until the gated activation below.
+and 2) and the Gate 0.5 keyless identity decision (GitHub Actions OIDC). The
+uploader lives on the review branch `claude/b23-g6d-offhost-uploader`; the
+workflow that orchestrates it and the independent auditor live on
+`claude/b23-g6d-offhost-alert` (`.github/workflows/backup-offhost.yml`,
+`.github/scripts/verify-offhost-backup.sh`). **GitHub orchestrates the off-host
+upload**: the workflow connects over the pinned SSH channel, streams a
+short-lived GitHub OIDC token into a temporary `/dev/shm` file (mode 600) and
+invokes `backup-offhost.sh` with `OFFHOST_SUBJECT_TOKEN_FILE` for that run only;
+the VPS exchanges the token at Google STS and uploads directly to Cloud
+Storage — the runner never receives backup bytes. **There is no off-host
+uploader cron on the VPS**; local backup generation (03:15 UTC) and the local
+check (03:45 UTC) remain the VPS cron jobs of §3. **Nothing is activated**: no
+bucket, project, Workload Identity pool, GitHub environment, secret or receipt
+directory exists until the gated activation below.
 
 | Aspect | Implementation |
 |---|---|
-| Destination | dedicated Google Cloud Storage bucket, **Standard** class, region **`me-central2`** (Dammam), in a dedicated GCP project used for nothing else; object prefix `dev/postgres/` |
+| Destination | dedicated Google Cloud Storage bucket, **Standard** class, region **`me-central2`** (Dammam) in a dedicated GCP project used for nothing else; object prefix `dev/postgres/`. **Region pending**: `me-central2` requires KSA purchasing through CNTXT and access confirmation before any resource is created. Indicative Standard storage price ≈ $0.02/GiB-month (US regions; the pricing page showed $0.03/GiB-month for Dammam on 2026-09-29) — operators must verify the live GCP SKU before creation |
 | Remote set (atomic, three objects) | `daily/<set>` (dump, byte-identical), `daily/<set>.sha256` (sidecar, byte-identical), `daily/<set>.manifest.json` (schema `lcp-offhost-manifest/2`, **created last**). A dump alone, or dump + sidecar without manifest, is not a completed backup |
 | Canonical slot selection | UTC slot = 03:15:00 → next day 03:14:59 by filename stamp; eligible = stamp round-trips, stamp and mtime in the same slot, regular file, one-line sidecar naming the dump, `sha256sum -c --strict`, `gzip -t`, header, completion marker in the final 4096 decompressed bytes; canonical = earliest eligible stamp (tie: filename, `LC_ALL=C`); later backups of a slot are listed as non-canonical and never copied to `daily/`; current slot + 7 previous slots per run, oldest first |
 | Transport | `docker/scripts/backup-offhost.sh`: Cloud Storage JSON API via curl — resumable upload for the dump (session URI in memory only, status query after an ambiguous response), single-request `uploadType=multipart` for sidecar and manifest, **`ifGenerationMatch=0` on every create**; nothing is ever read, listed, overwritten or deleted; bounded backoff for 429/5xx; deterministic 4xx and validation failures are not retried |
-| Credentials | short-lived only: a subject token (file or URL, mode 600) is exchanged at the STS endpoint (Workload Identity Federation, scope `devstorage.read_write`), optionally impersonating the create-only uploader service account (`roles/storage.objectCreator`); **no service-account key, no long-lived token, no credential in logs, receipts or manifests** |
-| Local state | `/opt/lead-capture-pro/backups/offhost-receipts/` (700): one `<set>.receipt` per set (600, written by temporary file + `mv`), `.inprogress` markers, `.offhost.lock`, `offhost.log`, `crontab.before.*` snapshots; retention 60 days, scoped to that directory. The PostgreSQL backup directory is only read; `backup-postgres.sh` and `backup-check.sh` are unchanged |
+| Credentials | short-lived only: the GitHub OIDC subject token delivered per run (temporary `/dev/shm` file, mode 600, provided in the environment — never a persistent path in `offhost.env`) is read only when the first upload needs credentials and exchanged at the STS endpoint (Workload Identity Federation, scope `devstorage.read_write`), directly bound (`roles/storage.objectCreator` on the `offhost-upload` principal set) or, as tested fallback, impersonating a keyless uploader service account; every GitHub-derived credential is treated as a **five-minute** credential (`OFFHOST_CREDENTIAL_WINDOW_SECONDS`, default 300): no object create starts outside the window and an expired credential fails with 401 without overwriting anything; the workflow deletes the token file; **no service-account key, no Google access-token input, no credential in logs, receipts or manifests**; all endpoints `https://` (http:// only for loopback in the test harness) |
+| Local state | `/opt/lead-capture-pro/backups/offhost-receipts/` (700): one `<set>.receipt` per set (600, written by temporary file + `mv`), `.inprogress` markers, `.offhost.lock`, `offhost.log`; retention 60 days, scoped to that directory. The PostgreSQL backup directory is only read; `backup-postgres.sh` and `backup-check.sh` are unchanged |
 | Receipt states | `uploaded` (three validated create responses), `pending-audit` (set exists remotely, at least one object unobserved — the auditor decides), `exists-unverified` (dump/sidecar exists, manifest not yet created — retried next run), `failed` (reason code, retried when recoverable). Receipts are operational state only; the remote manifest validated by the auditor is authoritative |
 | Manifest observation | `create-responses-validated` (generations and provider hashes observed) or `remote-audit-required` (a 412 or lost response left an object unobserved: generation `null`, expected size/sha256/md5 still mandatory); the auditor reconciles from `objects.list` metadata |
 | Monthly copy | on a later run, the first daily set of the month whose receipt is `uploaded` is copied again under `monthly/` (same three objects, manifest `derived_from`); never derived from `pending-audit`; absence from day 8 is an auditor warning only |
-| Cron | `docker/scripts/offhost-cron.sh install|remove|status` manages ONE block (`# BEGIN LCP OFFHOST BACKUP` / `30 3 * * * OFFHOST_CONFIG=… bash …/backup-offhost.sh >> …/offhost.log 2>&1` / `# END LCP OFFHOST BACKUP`) from files only: every unrelated byte preserved, candidate validated before `crontab FILE`, installed crontab re-read and compared with `cmp -s`, rollback from the saved file on any post-install failure, snapshot in the receipt directory |
-| Configuration | `/opt/lead-capture-pro/env/offhost.env` (600) from `docker/offhost.env.example` — bucket, prefix, audience, subject-token source, receipt directory; no secret value |
-| Tests | `docker/scripts/test/backup-offhost.test.sh` (fake STS/GCS with fault injection, controlled clock, stub crontab): canonical selection, request order, 412 per object, lost responses, crashes after each step, retries from every receipt state, bounded backoff, poisoned key, monthly, retention, cron byte-preservation and rollback, static security |
-| Auditor (separate branch) | GitHub OIDC → STS (keyless), `storage.objects.list` only, explicit `prefix=dev/postgres/`; validates exactly one completed canonical set per slot (keys, sizes, md5, sha256 metadata, generations when observed, manifest not earlier than its objects); blocking window = current slot + previous two; `historical_unresolved=N`; one deduplicated issue `[Backup Alert] Off-host backup copy unhealthy` |
+| Trigger | the GitHub workflow `backup-offhost.yml` (one schedule `0 5 * * *` plus manual dispatch; jobs `upload → audit → alert`); the VPS has **no** off-host cron entry and no cron manager. GitHub may start the run hours late; canonical selection is by filename stamp, so the 03:15 backup is copied whenever the run starts and the 7-slot catch-up absorbs missed days |
+| Configuration | `/opt/lead-capture-pro/env/offhost.env` (600) from `docker/offhost.env.example` — bucket, prefix, audience, receipt directory, credential window; no secret value and no token path (the subject-token file is provided per run by the workflow) |
+| Tests | `docker/scripts/test/backup-offhost.test.sh` (fake STS/GCS with fault injection, controlled clock): canonical selection, request order, 412 per object, lost responses, crashes after each step, retries from every receipt state, bounded backoff, poisoned key, expired credential, credential window, monthly, retention, GitHub-JWT file interface, HTTPS enforcement, static security |
+| Auditor (same workflow, own identity) | GitHub OIDC → STS (keyless, environment `offhost-audit`), `storage.objects.list` only, explicit `prefix=dev/postgres/`, no SSH; runs even when the upload job failed and is the **source of truth** for off-host health: validates exactly one completed canonical set per slot (keys, sizes, md5, sha256 metadata, generations when observed, manifest not earlier than its objects); blocking window = current slot + previous two; `historical_unresolved=N`; one deduplicated issue `[Backup Alert] Off-host backup copy unhealthy` (an upload failure with a remotely valid set is diagnostics, not an alert) |
 
-Plan mode (read-only, no network, no writes) shows what a run would do:
+Plan mode (read-only, no network, no writes, no token) shows what a run would do:
 
 ```bash
 OFFHOST_CONFIG=/opt/lead-capture-pro/env/offhost.env bash /opt/lead-capture-pro/app/docker/scripts/backup-offhost.sh plan
-bash /opt/lead-capture-pro/app/docker/scripts/offhost-cron.sh status
 ```
 
 ### Activation gates (each needs explicit owner approval; none has been passed)
@@ -299,25 +307,34 @@ bash /opt/lead-capture-pro/app/docker/scripts/offhost-cron.sh status
    retention policy), production bucket (`me-central2`, Standard, uniform
    access, public-access prevention, 30-day retention policy **unlocked**,
    soft delete 30 days, lifecycle `daily/` 35 days / `monthly/` 400 days),
-   custom auditor role (`storage.objects.list` only), uploader service account
-   (`roles/storage.objectCreator`), Workload Identity pool/providers for the
-   VPS identity source and for GitHub, budget alert.
-2. **G2 credential installation** — subject-token source on the VPS (out of
-   band; never through chat, repo, logs or issues); no key file anywhere.
+   custom auditor role (`storage.objects.list` only), Workload Identity pool
+   and GitHub OIDC provider with the trust contract of
+   `.github/wif/offhost-trust-contract.md` (repository, owner and repository
+   IDs, `refs/heads/export-ready`, exact workflow path, `schedule`/`workflow_dispatch`,
+   environments `offhost-upload` / `offhost-audit`), create-only binding for the
+   upload principal set and list-only binding for the audit principal set,
+   budget alert. Blocked until CNTXT access to `me-central2` is confirmed.
+2. **G2 GitHub configuration** — environments `offhost-upload` and
+   `offhost-audit` restricted to `export-ready` (no required reviewers: runs are
+   unattended), secrets `OFFHOST_BUCKET`, `OFFHOST_WIF_AUDIENCE_UPLOAD`,
+   `OFFHOST_WIF_AUDIENCE_AUDIT`; `offhost.env` on the VPS (no token path, no key).
 3. **G3 disposable-bucket proofs** — real-provider behaviour that the local
    harness cannot prove: `ifGenerationMatch=0` on resumable sessions, no object
    from an incomplete session, uploader denials (list/get/download/overwrite/
    update/delete), auditor denials and list fields, WIF subject/repository/ref
    rejection, a download-and-restore with short-lived owner impersonation.
-4. **G4 hosted activation** — deploy the branch, create `offhost.env`,
-   `offhost-cron.sh install`, land the auditor workflow on the default branch.
+4. **G4 hosted activation** — deploy the branch, create `offhost.env`, land the
+   workflow on the default branch (the VPS gets no cron entry). Blocked while
+   the VPS is unreachable: issue #3 (local monitor, SSH timeout on 2026-09-29)
+   is a hosted-activation blocker, not a code blocker.
 5. **G5 lifecycle verification** — one manual and one genuine scheduled
    lifecycle, a restore rehearsal from the production bucket, then lock the
    retention policy and delete the test bucket.
 
-Rollback: `offhost-cron.sh remove` (unrelated crontab lines preserved),
-remove `offhost.env` and the subject-token source, disable the Workload
-Identity provider; remote objects stay protected by the retention policy.
+Rollback: disable the workflow (or remove it from the default branch), remove
+`offhost.env`, disable the Workload Identity provider; nothing is installed on
+the VPS crontab; remote objects stay protected by the retention policy, which
+remains **unlocked** until provider tests and restore verification pass.
 
 ## 6. Remaining approvals
 

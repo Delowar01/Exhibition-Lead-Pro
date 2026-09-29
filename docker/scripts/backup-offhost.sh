@@ -15,19 +15,37 @@
 # Transport: the Cloud Storage JSON API called directly with curl — resumable
 # upload for the dump, single-request multipart uploads for sidecar and
 # manifest, and ifGenerationMatch=0 on EVERY create. Nothing is ever read,
-# listed, overwritten or deleted remotely. Credentials are short-lived only:
-# an external subject token (file or URL) is exchanged at the STS endpoint
-# (Workload Identity Federation); no service-account key is ever read,
-# embedded or written, and no token is ever logged.
+# listed, overwritten or deleted remotely.
 #
-# Local operational state (receipts, lock, log, cron snapshots) lives in
-# $OFFHOST_RECEIPT_DIR — NEVER in the PostgreSQL backup directory, which this
-# script only reads. Receipts are not the source of truth: the independent
-# GitHub auditor validates the remote sets from provider list metadata.
+# Orchestration and credentials (B23 G-6D Correction 1): there is NO local
+# off-host cron. The GitHub workflow backup-offhost.yml invokes this script
+# over the pinned SSH channel and streams a short-lived GitHub OIDC token into
+# a temporary /dev/shm file (mode 600) that it names in
+# OFFHOST_SUBJECT_TOKEN_FILE for that run only. The token is read here only
+# when the first upload needs credentials, exchanged once at the STS endpoint
+# (Workload Identity Federation), never printed, never copied into receipts or
+# manifests and never placed in process arguments; the workflow — not this
+# script — deletes the temporary file afterwards. No service-account key and
+# no Google access token is ever accepted, read, embedded or written.
+# Conservative credential window: every GitHub-derived credential is treated
+# as usable for at most five minutes (OFFHOST_CREDENTIAL_WINDOW_SECONDS, default
+# 300, counted from the moment the subject token is read); an object create is
+# never started outside that window, and an expired credential fails safely
+# with a 401 — nothing is ever overwritten.
 #
-# Usage (deploy user):
-#   OFFHOST_CONFIG=/opt/lead-capture-pro/env/offhost.env bash docker/scripts/backup-offhost.sh      # upload run
-#   OFFHOST_CONFIG=… bash docker/scripts/backup-offhost.sh plan   # read-only slot plan: no network, no writes
+# Endpoints: STS, IAM Credentials, storage and a subject-token URL must be
+# https://. http:// is accepted only for loopback (127.0.0.1, localhost, [::1])
+# and only when OFFHOST_TEST_ALLOW_INSECURE_LOOPBACK=1 is set in the ENVIRONMENT
+# (the deterministic harness); the config file cannot enable it.
+#
+# Local operational state (receipts, lock, log) lives in $OFFHOST_RECEIPT_DIR —
+# NEVER in the PostgreSQL backup directory, which this script only reads.
+# Receipts are not the source of truth: the independent GitHub auditor
+# validates the remote sets from provider list metadata.
+#
+# Usage (invoked remotely by the workflow as the deploy user):
+#   OFFHOST_CONFIG=/opt/lead-capture-pro/env/offhost.env OFFHOST_SUBJECT_TOKEN_FILE=/dev/shm/<tmp> bash docker/scripts/backup-offhost.sh
+#   OFFHOST_CONFIG=… bash docker/scripts/backup-offhost.sh plan   # read-only slot plan: no network, no writes, no token
 #
 # Exit codes: 0 every processed set uploaded; 3 at least one set ambiguous
 # (pending-audit / exists-unverified) and no hard failure; 1 hard failure or
@@ -57,8 +75,29 @@ log()  { echo "[offhost] $(date -u +%FT%TZ) $*"; }
 warn() { echo "[offhost] $(date -u +%FT%TZ) WARN: $*" >&2; }
 die()  { echo "[offhost] $(date -u +%FT%TZ) ERROR: $*" >&2; exit 1; }
 
+# ── HTTPS enforcement: https:// always; http:// only for loopback under the test flag ─
+# The flag is read from the ENVIRONMENT only (it is not a config-file key) and never
+# admits a non-loopback http:// host.
+INSECURE_LOOPBACK="${OFFHOST_TEST_ALLOW_INSECURE_LOOPBACK:-0}"
+endpoint_ok() {   # NAME URL → returns 0 or dies before any credential is read
+  local name="$1" u="$2" hostport host
+  case "$u" in
+    https://*) return 0 ;;
+    http://*)
+      [ "$INSECURE_LOOPBACK" = 1 ] || die "$name must use https:// (http:// is refused; the loopback override is for the test harness only)"
+      hostport="${u#http://}"; hostport="${hostport%%/*}"; hostport="${hostport%%\?*}"
+      case "$hostport" in
+        127.0.0.1|127.0.0.1:*|localhost|localhost:*|"[::1]"|"[::1]:"*) return 0 ;;
+      esac
+      die "$name may use http:// only for loopback (127.0.0.1, localhost, [::1]) in tests" ;;
+    *) die "$name has an unexpected scheme (https:// required)" ;;
+  esac
+}
+
 # ── configuration (environment wins over the config file; plain values only) ─
-readonly CONFIG_KEYS=" OFFHOST_BUCKET OFFHOST_PREFIX OFFHOST_ENV_LABEL OFFHOST_REGION OFFHOST_BACKFILL_SLOTS OFFHOST_STORAGE_ENDPOINT OFFHOST_STS_ENDPOINT OFFHOST_WIF_AUDIENCE OFFHOST_SCOPE OFFHOST_SUBJECT_TOKEN_FILE OFFHOST_SUBJECT_TOKEN_URL OFFHOST_SUBJECT_TOKEN_TYPE OFFHOST_IMPERSONATE_SA OFFHOST_IAMCREDENTIALS_ENDPOINT OFFHOST_RECEIPT_DIR BACKUP_DIR OFFHOST_RETRY_MAX OFFHOST_RETRY_BASE_SECONDS OFFHOST_CONNECT_TIMEOUT OFFHOST_MAX_TIME OFFHOST_RECEIPT_KEEP_DAYS "
+# The subject-token source is deliberately NOT a config-file key: the workflow
+# provides OFFHOST_SUBJECT_TOKEN_FILE per run in the environment.
+readonly CONFIG_KEYS=" OFFHOST_BUCKET OFFHOST_PREFIX OFFHOST_ENV_LABEL OFFHOST_REGION OFFHOST_BACKFILL_SLOTS OFFHOST_STORAGE_ENDPOINT OFFHOST_STS_ENDPOINT OFFHOST_WIF_AUDIENCE OFFHOST_SCOPE OFFHOST_SUBJECT_TOKEN_TYPE OFFHOST_IMPERSONATE_SA OFFHOST_IAMCREDENTIALS_ENDPOINT OFFHOST_RECEIPT_DIR BACKUP_DIR OFFHOST_RETRY_MAX OFFHOST_RETRY_BASE_SECONDS OFFHOST_CONNECT_TIMEOUT OFFHOST_MAX_TIME OFFHOST_RECEIPT_KEEP_DAYS OFFHOST_CREDENTIAL_WINDOW_SECONDS "
 load_config() {
   local f="${OFFHOST_CONFIG:-}" line key val mode
   [ -n "$f" ] || return 0
@@ -94,9 +133,11 @@ RETRY_BASE="${OFFHOST_RETRY_BASE_SECONDS:-2}"
 CONNECT_TIMEOUT="${OFFHOST_CONNECT_TIMEOUT:-20}"
 MAX_TIME="${OFFHOST_MAX_TIME:-600}"
 KEEP_DAYS="${OFFHOST_RECEIPT_KEEP_DAYS:-60}"
+CREDENTIAL_WINDOW="${OFFHOST_CREDENTIAL_WINDOW_SECONDS:-300}"
 NOW="${OFFHOST_NOW:-$(date -u +%s)}"
 BUCKET="${OFFHOST_BUCKET:-}"
 AUDIENCE="${OFFHOST_WIF_AUDIENCE:-}"
+[[ "$CREDENTIAL_WINDOW" =~ ^[0-9]+$ ]] && [ "$CREDENTIAL_WINDOW" -le 300 ] || die "OFFHOST_CREDENTIAL_WINDOW_SECONDS must be 0..300 (GitHub-derived credentials are treated as five-minute credentials)"
 
 [[ "$BACKFILL" =~ ^[0-9]+$ ]] && [ "$BACKFILL" -le 60 ] || die "OFFHOST_BACKFILL_SLOTS must be 0..60"
 [[ "$RETRY_MAX" =~ ^[0-9]+$ ]] || die "OFFHOST_RETRY_MAX must be an integer"
@@ -113,13 +154,19 @@ case "$BACKUP_DIR" in "$RECEIPT_DIR"|"$RECEIPT_DIR"/*) die "the backup directory
 if [ "$MODE" = run ]; then
   [[ "$BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]] || die "OFFHOST_BUCKET is missing or has an unexpected format"
   [[ "$AUDIENCE" =~ ^//iam\.googleapis\.com/projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+$ ]] || die "OFFHOST_WIF_AUDIENCE is missing or has an unexpected format"
-  [[ "$STORAGE_EP" =~ ^https?://[A-Za-z0-9.:-]+$ ]] || die "OFFHOST_STORAGE_ENDPOINT has an unexpected format"
-  [[ "$STS_EP" =~ ^https?://[A-Za-z0-9.:/-]+$ ]] || die "OFFHOST_STS_ENDPOINT has an unexpected format"
-  [[ "$IAMCRED_EP" =~ ^https?://[A-Za-z0-9.:-]+$ ]] || die "OFFHOST_IAMCREDENTIALS_ENDPOINT has an unexpected format"
+  # scheme first (before any credential is read), then format
+  endpoint_ok OFFHOST_STORAGE_ENDPOINT "$STORAGE_EP"
+  endpoint_ok OFFHOST_STS_ENDPOINT "$STS_EP"
+  endpoint_ok OFFHOST_IAMCREDENTIALS_ENDPOINT "$IAMCRED_EP"
+  [ -z "$SUBJ_URL" ] || endpoint_ok OFFHOST_SUBJECT_TOKEN_URL "$SUBJ_URL"
+  ep_re='^https?://[][A-Za-z0-9.:-]+$'; sts_re='^https?://[][A-Za-z0-9.:/-]+$'
+  [[ "$STORAGE_EP" =~ $ep_re ]] || die "OFFHOST_STORAGE_ENDPOINT has an unexpected format"
+  [[ "$STS_EP" =~ $sts_re ]] || die "OFFHOST_STS_ENDPOINT has an unexpected format"
+  [[ "$IAMCRED_EP" =~ $ep_re ]] || die "OFFHOST_IAMCREDENTIALS_ENDPOINT has an unexpected format"
   [[ "$SCOPE" =~ ^https://www\.googleapis\.com/auth/[a-z_.-]+$ ]] || die "OFFHOST_SCOPE has an unexpected format"
   [ -z "$IMPERSONATE" ] || [[ "$IMPERSONATE" =~ ^[a-z][a-z0-9-]{4,29}@[a-z0-9-]+\.iam\.gserviceaccount\.com$ ]] || die "OFFHOST_IMPERSONATE_SA has an unexpected format"
   if [ -n "$SUBJ_FILE" ] && [ -n "$SUBJ_URL" ]; then die "set only one of OFFHOST_SUBJECT_TOKEN_FILE / OFFHOST_SUBJECT_TOKEN_URL"; fi
-  [ -n "$SUBJ_FILE" ] || [ -n "$SUBJ_URL" ] || die "OFFHOST_SUBJECT_TOKEN_FILE or OFFHOST_SUBJECT_TOKEN_URL is required"
+  [ -n "$SUBJ_FILE" ] || [ -n "$SUBJ_URL" ] || die "OFFHOST_SUBJECT_TOKEN_FILE (per-run, provided by the workflow) or OFFHOST_SUBJECT_TOKEN_URL is required"
   for t in curl python3 openssl base64 gzip sha256sum flock; do command -v "$t" >/dev/null 2>&1 || die "required tool missing: $t"; done
 fi
 
@@ -234,7 +281,9 @@ receipt_save() {   # ID (writes R atomically: temporary file + rename, mode 600)
 }
 
 # ── HTTP helpers (curl; the bearer token only ever lives in a 600 header file) ─
-AUTH_HDR="$WORK/auth.hdr"; TOKEN_READY=0; TOKEN_FAIL_REASON=
+AUTH_HDR="$WORK/auth.hdr"; TOKEN_READY=0; TOKEN_FAIL_REASON=; TOKEN_READ_AT=0
+# credential_fresh → 0 while the conservative five-minute window since the subject token was read still holds
+credential_fresh() { [ "$TOKEN_READY" = 1 ] || return 0; [ $(( $(date +%s) - TOKEN_READ_AT )) -le "$CREDENTIAL_WINDOW" ]; }
 HTTP_CODE=000; CURL_RC=0
 http() {   # METHOD URL [curl args…] — authenticated; body → $WORK/resp.body, headers → $WORK/resp.hdr
   local m="$1" u="$2"; shift 2
@@ -307,6 +356,7 @@ acquire_token() {
   else
     subj="$(curl -sS --fail --connect-timeout "$CONNECT_TIMEOUT" --max-time 30 "$SUBJ_URL" 2>/dev/null | tr -d '\r\n')" || { TOKEN_FAIL_REASON=subject-token-fetch-failed; return 1; }
   fi
+  TOKEN_READ_AT="$(date +%s)"   # the five-minute window starts when the subject token is read
   [[ "$subj" =~ ^[A-Za-z0-9._-]{20,}$ ]] || { TOKEN_FAIL_REASON=subject-token-format; return 1; }
   printf '{"grantType":"%s","audience":"%s","scope":"%s","requestedTokenType":"%s","subjectToken":"%s","subjectTokenType":"%s"}' \
     "$STS_GRANT" "$AUDIENCE" "$SCOPE" "$STS_REQUESTED" "$subj" "$SUBJ_TYPE" >"$WORK/sts.req"
@@ -434,6 +484,10 @@ create_resumable() {
     esac
   done
   [[ "$session" =~ ^https?://[^[:space:]]+$ ]] || { OBJ_STATE=failed; OBJ_REASON=session-uri-format; return; }
+  case "$session" in
+    https://*) ;;
+    http://*) [ "$INSECURE_LOOPBACK" = 1 ] && [[ "$session" =~ ^http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?/ ]] || { OBJ_STATE=failed; OBJ_REASON=session-uri-insecure; return; } ;;
+  esac
   # 2. send the bytes; on ambiguity ask the session for its status (Content-Range: bytes */SIZE)
   attempt=0
   http PUT "$session" -H "Content-Type: $ctype" --data-binary "@$file"
@@ -508,6 +562,7 @@ process_set() {
 
   # 1. dump (resumable) — skipped when already created (resource recorded) or known to exist
   if [ "${R[dump]}" != created ] && [ "${R[dump]}" != exists ]; then
+    credential_fresh || { finish failed credential-window-exceeded failed; return 0; }
     insert_metadata_json "$dkey" application/gzip "${R[dump_md5_expected]}" "$sha" "$slot" "$set" "$kind" >"$WORK/dump.meta"
     create_resumable "$dkey" "$file" application/gzip "$WORK/dump.meta" "$sha"
     case "$OBJ_STATE" in
@@ -519,6 +574,7 @@ process_set() {
   fi
   # 2. sidecar (multipart)
   if [ "${R[sidecar]}" != created ] && [ "${R[sidecar]}" != exists ]; then
+    credential_fresh || { finish failed credential-window-exceeded failed; return 0; }
     insert_metadata_json "$skey" text/plain "${R[sidecar_md5_expected]}" "$sha" "$slot" "$set" "$kind" >"$WORK/sidecar.meta"
     create_multipart "$skey" "$file.sha256" text/plain "$WORK/sidecar.meta" "$sha"
     case "$OBJ_STATE" in
@@ -532,6 +588,7 @@ process_set() {
   fi
   # 3. manifest (multipart, ALWAYS last)
   if [ "${R[manifest]}" != created ] && [ "${R[manifest]}" != exists ]; then
+    credential_fresh || { finish failed credential-window-exceeded failed; return 0; }
     local observation=remote-audit-required
     if [ "${R[dump]}" = created ] && [ "${R[sidecar]}" = created ]; then observation=create-responses-validated; fi
     R[observation]="$observation"
@@ -660,7 +717,7 @@ for f in "$RECEIPT_DIR"/leadcapture-*.receipt "$RECEIPT_DIR"/leadcapture-*.inpro
   e="$(stamp_epoch "$n")" || continue
   if [ $(( NOW - e )) -gt $(( KEEP_DAYS * DAY )) ]; then rm -f "$f"; pruned=$((pruned + 1)); fi
 done
-for f in "$RECEIPT_DIR"/monthly-*.receipt "$RECEIPT_DIR"/crontab.before.*; do
+for f in "$RECEIPT_DIR"/monthly-*.receipt; do
   [ -e "$f" ] || continue
   if [ $(( NOW - $(stat -c %Y "$f") )) -gt $(( KEEP_DAYS * DAY )) ]; then rm -f "$f"; pruned=$((pruned + 1)); fi
 done

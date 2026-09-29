@@ -230,10 +230,13 @@ schedule is a proposal until it is installed there with approval.
 > **Off-host copies are required for real protection.** A backup stored only
 > on this VPS does not survive total VPS loss — see
 > `docs/BACKUP_AND_RECOVERY.md` §5: the uploader
-> (`docker/scripts/backup-offhost.sh`), its cron manager
-> (`docker/scripts/offhost-cron.sh`) and the example configuration
-> (`docker/offhost.env.example`) are implemented but **not activated**; no
-> bucket, identity or cron entry exists until the gated activation.
+> (`docker/scripts/backup-offhost.sh`) and the example configuration
+> (`docker/offhost.env.example`) are implemented but **not activated**. The
+> upload is orchestrated by the GitHub workflow `backup-offhost.yml` over the
+> pinned SSH channel with a short-lived GitHub OIDC token; the VPS has **no**
+> off-host cron and holds no Google credential. No bucket, identity or
+> GitHub environment exists until the gated activation (`me-central2` pending
+> CNTXT access; VPS reachability issue #3 pending).
 
 ### Restore procedure (disaster-recovery PLAN — never rehearsed on the running stack)
 
