@@ -1,0 +1,283 @@
+# =============================================================================
+# Lead Capture Pro — off-host backup: keyless upload, independent audit, alert
+# =============================================================================
+# Daily at 05:00 UTC (GitHub may start it hours late; every step is slot-aware)
+# and on manual dispatch, three sequential jobs:
+#
+#   upload  (environment offhost-upload)  requests a GitHub OIDC token for the
+#           uploader's Workload Identity audience IMMEDIATELY before opening the
+#           pinned SSH channel, streams it as the only stdin line of the remote
+#           command (.github/scripts/offhost-upload-remote.sh), which stores it
+#           in a mode-600 /dev/shm file, verifies the hosted checkout and the
+#           deployed uploader, runs docker/scripts/backup-offhost.sh with
+#           OFFHOST_SUBJECT_TOKEN_FILE and deletes the file on any exit. The VPS
+#           exchanges the token at Google STS and uploads straight to Cloud
+#           Storage; the runner never receives backup bytes.
+#   audit   (environment offhost-audit, needs upload, always)  obtains its own
+#           OIDC token, no SSH, STS + storage.objects.list only, and is the
+#           SOURCE OF TRUTH for off-host health (current slot + previous two).
+#   alert   (needs upload+audit, always)  one deduplicated issue
+#           "[Backup Alert] Off-host backup copy unhealthy" driven by the audit
+#           verdict; the upload result is sanitized context only. An upload
+#           failure with a remotely valid canonical set never opens an issue.
+#
+# No service-account key, no stored token, no local off-host cron, no deploy,
+# no database or restore command. Scheduled workflows run from the default
+# branch only; the trust contract is .github/wif/offhost-trust-contract.md.
+# =============================================================================
+name: backup-offhost
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: "TEST ONLY: after the read-only audit has completed, fail the audit job in control flow to exercise the alert path. Never touches the bucket, the VPS or any backup."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-offhost
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ALERT_TITLE: "[Backup Alert] Off-host backup copy unhealthy"
+
+jobs:
+  upload:
+    name: Keyless upload (OIDC over pinned SSH; the VPS uploads to Cloud Storage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: offhost-upload
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      summary: ${{ steps.run.outputs.summary }}
+      exit: ${{ steps.run.outputs.exit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/offhost-upload-runner.sh
+            .github/scripts/offhost-upload-remote.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Validate the connection and audience configuration (format only; nothing is printed)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          OFFHOST_WIF_AUDIENCE: ${{ secrets.OFFHOST_WIF_AUDIENCE_UPLOAD }}
+        run: |
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || { echo "::error::VPS_HOST is missing or has an unexpected format"; exit 1; }
+          [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]] || { echo "::error::VPS_PORT is missing or not a port number"; exit 1; }
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "::error::VPS_USER is missing or has an unexpected format"; exit 1; }
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]{1,200}$ ]] || { echo "::error::VPS_DEPLOY_PATH is missing or not a plain absolute path"; exit 1; }
+          { [ -n "$VPS_SSH_KEY" ] && [ -n "$VPS_KNOWN_HOSTS" ]; } || { echo "::error::VPS_SSH_KEY or VPS_KNOWN_HOSTS is missing"; exit 1; }
+          [[ "$OFFHOST_WIF_AUDIENCE" =~ ^//iam\.googleapis\.com/projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+$ ]] || { echo "::error::OFFHOST_WIF_AUDIENCE_UPLOAD is missing or has an unexpected format"; exit 1; }
+          echo "connection secrets and audience present and well-formed"
+
+      - name: Install the SSH key and the pinned host key (no ssh-keyscan)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/offhost_upload_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          {
+            echo "Host vps"
+            echo "  HostName $VPS_HOST"
+            echo "  Port $VPS_PORT"
+            echo "  User $VPS_USER"
+            echo "  IdentityFile ~/.ssh/offhost_upload_key"
+            echo "  IdentitiesOnly yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  StrictHostKeyChecking yes"
+            echo "  BatchMode yes"
+            echo "  ConnectTimeout 20"
+            echo "  ServerAliveInterval 15"
+            echo "  ServerAliveCountMax 4"
+            echo "  LogLevel ERROR"
+          } > ~/.ssh/config
+          echo "ssh client configured with the pinned host key"
+
+      - name: Request the OIDC token and run the uploader on the VPS (token on stdin only)
+        id: run
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          OFFHOST_WIF_AUDIENCE: ${{ secrets.OFFHOST_WIF_AUDIENCE_UPLOAD }}
+          OFFHOST_SSH_TIMEOUT: "240"
+        run: |
+          set +e
+          OFFHOST_UPLOAD_LOG="$RUNNER_TEMP/offhost-upload.log" bash .github/scripts/offhost-upload-runner.sh
+          rc=$?
+          set -e
+          # the runner already printed the sanitized diagnostics and wrote summary/exit to GITHUB_OUTPUT
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::off-host upload job failed (exit $rc) — the independent audit below decides off-host health"
+            exit "$rc"
+          fi
+
+  audit:
+    name: Independent off-host audit (objects.list only, keyless)
+    needs: upload
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: offhost-audit
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      summary: ${{ steps.summary.outputs.summary }}
+      simulated: ${{ steps.simulate.outputs.simulated }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/verify-offhost-backup.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Validate the audit configuration (format only; nothing is printed)
+        env:
+          OFFHOST_BUCKET: ${{ secrets.OFFHOST_BUCKET }}
+          OFFHOST_WIF_AUDIENCE: ${{ secrets.OFFHOST_WIF_AUDIENCE_AUDIT }}
+        run: |
+          [[ "$OFFHOST_BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]] || { echo "::error::OFFHOST_BUCKET is missing or has an unexpected format"; exit 1; }
+          [[ "$OFFHOST_WIF_AUDIENCE" =~ ^//iam\.googleapis\.com/projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+$ ]] || { echo "::error::OFFHOST_WIF_AUDIENCE_AUDIT is missing or has an unexpected format"; exit 1; }
+          echo "audit configuration present and well-formed"
+
+      - name: Run the list-only audit (OIDC → STS, objects.list, evaluate)
+        id: audit
+        env:
+          OFFHOST_BUCKET: ${{ secrets.OFFHOST_BUCKET }}
+          OFFHOST_WIF_AUDIENCE: ${{ secrets.OFFHOST_WIF_AUDIENCE_AUDIT }}
+          OFFHOST_PREFIX: dev/postgres
+          OFFHOST_BLOCKING_SLOTS: "2"
+          OFFHOST_MONTHLY_WARN_DAY: "8"
+        run: |
+          set +e
+          bash .github/scripts/verify-offhost-backup.sh > "$RUNNER_TEMP/audit.log" 2>&1
+          rc=$?
+          set -e
+          echo "exit=$rc" >> "$GITHUB_OUTPUT"
+          sed -E 's/[A-Za-z0-9+\/=_-]{40,}/<masked>/g' "$RUNNER_TEMP/audit.log" | awk 'NR <= 200 { print "  " substr($0, 1, 300) }'
+          echo "audit_exit=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::off-host backup audit failed (exit $rc)"
+            exit "$rc"
+          fi
+
+      - name: Extract the sanitized summary line
+        id: summary
+        if: always()
+        env:
+          AUDIT_EXIT: ${{ steps.audit.outputs.exit }}
+        run: |
+          line=""
+          if [ -f "$RUNNER_TEMP/audit.log" ]; then
+            line="$(grep -m1 -E '^OFFHOST_HEALTH=(PASS|FAIL)( [A-Za-z0-9_]+=[A-Za-z0-9_.,:/-]+)*$' "$RUNNER_TEMP/audit.log" || true)"
+          fi
+          if [ -z "$line" ]; then
+            line="OFFHOST_HEALTH=FAIL reason=remote-audit-unavailable detail=no-summary exit=${AUDIT_EXIT:-none}"
+          fi
+          echo "summary=$line" >> "$GITHUB_OUTPUT"
+          echo "$line"
+
+      - name: Simulated failure (TEST ONLY; manual dispatch with simulate_failure=true)
+        id: simulate
+        if: github.event_name == 'workflow_dispatch' && inputs.simulate_failure == true
+        run: |
+          echo "simulated=true" >> "$GITHUB_OUTPUT"
+          echo "::error::simulated failure requested — the audit above completed; failing in control flow only"
+          exit 1
+
+  alert:
+    name: Durable alert (one deduplicated GitHub Issue, driven by the audit verdict)
+    needs: [upload, audit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      AUDIT_RESULT: ${{ needs.audit.result }}
+      UPLOAD_RESULT: ${{ needs.upload.result }}
+      SUMMARY: ${{ needs.audit.outputs.summary }}
+      UPLOAD_SUMMARY: ${{ needs.upload.outputs.summary }}
+      SIMULATED: ${{ needs.audit.outputs.simulated }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+      TRIGGER: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/offhost-alert-decision.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Find the open alert issue (exact title match)
+        id: find
+        run: |
+          number="$(gh issue list --repo "$GH_REPO" --state open --limit 100 --search '"Backup Alert" in:title' --json number,title \
+            | jq -r --arg t "$ALERT_TITLE" '[.[] | select(.title == $t)] | sort_by(.number) | .[0].number // empty')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "open alert issue: ${number:-none}"
+
+      - name: Decide (audit verdict is the source of truth; upload is context)
+        id: decide
+        env:
+          OPEN_ISSUE: ${{ steps.find.outputs.number }}
+        run: |
+          bash .github/scripts/offhost-alert-decision.sh > "$RUNNER_TEMP/decision.txt"
+          action="$(grep -m1 '^action=' "$RUNNER_TEMP/decision.txt" | cut -d= -f2)"
+          health="$(grep -m1 '^health=' "$RUNNER_TEMP/decision.txt" | cut -d= -f2)"
+          sed -n '/^---BODY---$/,$p' "$RUNNER_TEMP/decision.txt" | tail -n +2 > "$RUNNER_TEMP/body.md"
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+          echo "health=$health" >> "$GITHUB_OUTPUT"
+          echo "decision: action=$action health=$health"
+
+      - name: Act on the issue (create / comment / recover-and-close / no-op)
+        env:
+          NUMBER: ${{ steps.find.outputs.number }}
+          ACTION: ${{ steps.decide.outputs.action }}
+        run: |
+          case "$ACTION" in
+            create)  gh issue create --repo "$GH_REPO" --title "$ALERT_TITLE" --body-file "$RUNNER_TEMP/body.md" ;;
+            comment) gh issue comment "$NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/body.md" ;;
+            close)   gh issue comment "$NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/body.md"; gh issue close "$NUMBER" --repo "$GH_REPO" ;;
+            noop)    echo "no issue action needed" ;;
+            *)       echo "::error::unknown decision"; exit 1 ;;
+          esac
+
+      - name: Result
+        env:
+          HEALTH: ${{ steps.decide.outputs.health }}
+        run: |
+          if [ "$HEALTH" = "PASS" ]; then
+            echo "off-host copy healthy: $SUMMARY (upload: $UPLOAD_SUMMARY)"
+          else
+            echo "::error::off-host audit result: $AUDIT_RESULT — $SUMMARY (upload: $UPLOAD_SUMMARY) — the run stays failed"
+          fi

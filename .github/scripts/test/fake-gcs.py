@@ -255,8 +255,13 @@ class Handler(BaseHTTPRequestHandler):
                     OBJECTS[k] = {"live": res, "data": data, "noncurrent": OBJECTS.get(k, {}).get("noncurrent", [])}
                 return self.send(200, {"ok": True, "resource": res})
             if u.path == "/__control/oidc":
-                # stand-in for the GitHub Actions OIDC token endpoint (ACTIONS_ID_TOKEN_REQUEST_URL)
-                return self.send(200, {"value": "eyJhbGciOiJSUzI1NiJ9.FAKEGITHUBOIDC-SECRETTOKEN." + uuid.uuid4().hex})
+                # stand-in for the GitHub Actions OIDC token endpoint (ACTIONS_ID_TOKEN_REQUEST_URL);
+                # the harness compares the sha256 of what the VPS received with what was issued
+                tok = "eyJhbGciOiJSUzI1NiJ9.FAKEGITHUBOIDC-SECRETTOKEN." + uuid.uuid4().hex
+                REQLOG.append({"method": "GET", "path": u.path, "kind": "oidc", "audience": q.get("audience", [""])[0],
+                               "bearer": "present" if (self.headers.get("Authorization") or "").lower().startswith("bearer ") else "none",
+                               "token_sha256": hashlib.sha256(tok.encode()).hexdigest(), "t": time.time()})
+                return self.send(200, {"value": tok})
             if u.path == "/__control/clock":
                 CLOCK[0] = float(payload.get("offset", 0))
                 return self.send(200, {"ok": True})

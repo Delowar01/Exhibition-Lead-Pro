@@ -33,7 +33,7 @@ def shift(ts, secs):
     base, frac = ts[:-1].split(".") if "." in ts else (ts[:-1], "000")
     dt = datetime.datetime.strptime(base, "%Y-%m-%dT%H:%M:%S")
     e = calendar.timegm(dt.timetuple()) + int(secs)
-    return datetime.datetime.utcfromtimestamp(e).strftime("%Y-%m-%dT%H:%M:%S") + "." + frac + "Z"
+    return datetime.datetime.fromtimestamp(e, tz=datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "." + frac + "Z"
 
 
 dt_s = int(opt.get("dt_sidecar", "1")); dt_m = int(opt.get("dt_manifest", "2"))
@@ -43,7 +43,7 @@ slot = setname[len("leadcapture-"):len("leadcapture-") + 13]   # YYYYMMDD-HHMM o
 import datetime, calendar
 stamp = datetime.datetime.strptime(setname[len("leadcapture-"):-len(".sql.gz")], "%Y%m%d-%H%M%S")
 e = calendar.timegm(stamp.timetuple()); idx = (e - (3 * 3600 + 15 * 60)) // 86400
-slot = datetime.datetime.utcfromtimestamp(idx * 86400 + 3 * 3600 + 15 * 60).strftime("%Y%m%d-%H%M")
+slot = datetime.datetime.fromtimestamp(idx * 86400 + 3 * 3600 + 15 * 60, tz=datetime.timezone.utc).strftime("%Y%m%d-%H%M")
 if opt.get("wrong_slot"):
     slot = "20200101-0315"
 

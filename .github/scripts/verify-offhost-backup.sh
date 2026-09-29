@@ -62,8 +62,28 @@ OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL:-}"; OIDC_BEARER="${ACTIONS_ID_TOKEN_RE
 [[ "$BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]] || fail configuration detail=bucket-format
 [[ "$AUDIENCE" =~ ^//iam\.googleapis\.com/projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+$ ]] || fail configuration detail=audience-format
 [[ "$PREFIX" =~ ^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$ ]] || fail configuration detail=prefix-format
-[[ "$STORAGE_EP" =~ ^https?://[A-Za-z0-9.:-]+$ ]] || fail configuration detail=storage-endpoint
-[[ "$STS_EP" =~ ^https?://[A-Za-z0-9.:/-]+$ ]] || fail configuration detail=sts-endpoint
+# HTTPS enforcement: https:// always; http:// only for loopback under the harness flag (environment only)
+INSECURE_LOOPBACK="${OFFHOST_TEST_ALLOW_INSECURE_LOOPBACK:-0}"
+endpoint_ok() {   # NAME URL → 0 or fail (before any credential is requested)
+  local name="$1" u="$2" hostport
+  case "$u" in
+    https://*) return 0 ;;
+    http://*)
+      [ "$INSECURE_LOOPBACK" = 1 ] || fail configuration "detail=$name-must-use-https"
+      hostport="${u#http://}"; hostport="${hostport%%/*}"; hostport="${hostport%%\?*}"
+      case "$hostport" in 127.0.0.1|127.0.0.1:*|localhost|localhost:*|"[::1]"|"[::1]:"*) return 0 ;; esac
+      fail configuration "detail=$name-http-only-loopback" ;;
+    *) fail configuration "detail=$name-scheme" ;;
+  esac
+}
+endpoint_ok storage-endpoint "$STORAGE_EP"
+endpoint_ok sts-endpoint "$STS_EP"
+endpoint_ok iamcredentials-endpoint "$IAMCRED_EP"
+[ -z "$OIDC_URL" ] || endpoint_ok oidc-request-url "$OIDC_URL"
+ep_re='^https?://[][A-Za-z0-9.:-]+$'; sts_re='^https?://[][A-Za-z0-9.:/-]+$'
+[[ "$STORAGE_EP" =~ $ep_re ]] || fail configuration detail=storage-endpoint
+[[ "$STS_EP" =~ $sts_re ]] || fail configuration detail=sts-endpoint
+[[ "$IAMCRED_EP" =~ $ep_re ]] || fail configuration detail=iamcredentials-endpoint
 [[ "$SCOPE" =~ ^https://www\.googleapis\.com/auth/[a-z_.-]+$ ]] || fail configuration detail=scope
 [[ "$BLOCKING" =~ ^[0-9]+$ ]] && [[ "$WARN_DAY" =~ ^[0-9]+$ ]] && [[ "$NOW" =~ ^[0-9]+$ ]] && [[ "$RETRY_MAX" =~ ^[0-9]+$ ]] && [[ "$RETRY_BASE" =~ ^[0-9]+$ ]] || fail configuration detail=numeric
 [ -z "$IMPERSONATE" ] || [[ "$IMPERSONATE" =~ ^[a-z][a-z0-9-]{4,29}@[a-z0-9-]+\.iam\.gserviceaccount\.com$ ]] || fail configuration detail=impersonate-format
@@ -197,7 +217,7 @@ def stamp_epoch(name):
 def slot_index(t):
     return (t - SLOT_OFFSET) // DAY
 def slot_label(i):
-    return datetime.datetime.utcfromtimestamp(i * DAY + SLOT_OFFSET).strftime("%Y%m%d-%H%M")
+    return datetime.datetime.fromtimestamp(i * DAY + SLOT_OFFSET, tz=datetime.timezone.utc).strftime("%Y%m%d-%H%M")
 def parse_ts(s):
     m = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z$", s or "")
     if not m:
@@ -316,7 +336,7 @@ for i, entries in slot_sets.items():
 if unexpected and verdict_fail is None:
     verdict_fail = {"reason": "remote-metadata-mismatch", "slot": slot_label(cur), "set": clean(unexpected[0].split("/")[-1]), "detail": "unexpected-object"}
 # monthly: warning only
-slot_date = datetime.datetime.utcfromtimestamp(cur * DAY + SLOT_OFFSET)
+slot_date = datetime.datetime.fromtimestamp(cur * DAY + SLOT_OFFSET, tz=datetime.timezone.utc)
 month = slot_date.strftime("%Y%m")
 monthly = "not-due"
 if slot_date.day >= warn_day:
