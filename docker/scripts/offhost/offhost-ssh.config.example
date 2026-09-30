@@ -1,0 +1,34 @@
+# =============================================================================
+# Lead Capture Pro — primary VPS pinned ssh_config for the sender (EXAMPLE)
+# =============================================================================
+# /opt/lead-capture-pro/env/offhost-ssh.config   (owner leadpro, mode 0600)
+# Two aliases, two keys, one pinned known_hosts file (no ssh-keyscan, no
+# StrictHostKeyChecking=accept-new). The sender additionally passes
+# BatchMode/StrictHostKeyChecking/IdentitiesOnly on the command line.
+Host lcp-vault-upload
+  HostName <BACKUP-VPS-ADDRESS>
+  Port <BACKUP-VPS-SSH-PORT>
+  User lcp-receive
+  IdentityFile ~/.ssh/lcp_offhost_upload_ed25519
+  IdentitiesOnly yes
+  UserKnownHostsFile /opt/lead-capture-pro/env/offhost-known_hosts
+  StrictHostKeyChecking yes
+  BatchMode yes
+  ConnectTimeout 20
+  ServerAliveInterval 15
+  ServerAliveCountMax 4
+  LogLevel ERROR
+
+Host lcp-vault-audit
+  HostName <BACKUP-VPS-ADDRESS>
+  Port <BACKUP-VPS-SSH-PORT>
+  User lcp-audit
+  IdentityFile ~/.ssh/lcp_offhost_audit_ed25519
+  IdentitiesOnly yes
+  UserKnownHostsFile /opt/lead-capture-pro/env/offhost-known_hosts
+  StrictHostKeyChecking yes
+  BatchMode yes
+  ConnectTimeout 20
+  ServerAliveInterval 15
+  ServerAliveCountMax 4
+  LogLevel ERROR

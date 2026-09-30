@@ -1,0 +1,26 @@
+# =============================================================================
+# Lead Capture Pro — backup VPS authorized_keys (EXAMPLE, B23 G-6D C1)
+# =============================================================================
+# Two separate local accounts on the BACKUP VPS, each with exactly ONE key and
+# exactly ONE forced command. `restrict` disables PTY allocation, agent, X11
+# and TCP forwarding and user rc files; the client's requested command is
+# handed to the forced command in SSH_ORIGINAL_COMMAND and parsed as the
+# two-verb LCP-OFFHOST/1 protocol — a shell is never reachable.
+#
+# Public keys only ever appear here. Private keys: the upload key lives in the
+# primary VPS deploy user's ~/.ssh (mode 600); the audit key lives in the
+# primary deploy user's ~/.ssh AND as a GitHub Actions secret; neither is
+# committed anywhere. Replace the <…> placeholders during activation.
+#
+# /home/lcp-receive/.ssh/authorized_keys   (owner lcp-receive, mode 600)
+restrict,command="/opt/lcp-offhost/bin/offhost-receive.sh" ssh-ed25519 <UPLOAD-PUBLIC-KEY-BASE64> lcp-offhost-upload@primary
+
+# /home/lcp-audit/.ssh/authorized_keys     (owner lcp-audit, mode 600)
+restrict,command="/opt/lcp-offhost/bin/offhost-audit.sh" ssh-ed25519 <AUDIT-PUBLIC-KEY-BASE64> lcp-offhost-audit
+
+# sshd_config on the backup VPS (activation prerequisite):
+#   PasswordAuthentication no
+#   PubkeyAuthentication yes
+#   PermitRootLogin no
+#   AllowUsers lcp-receive lcp-audit <operator-account>
+# The vault identity (lcp-vault) and the publisher have NO SSH login at all.

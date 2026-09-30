@@ -1,0 +1,264 @@
+# =============================================================================
+# Lead Capture Pro — Hostinger off-host backup health check (READ-ONLY)
+# =============================================================================
+# B23 G-6D Correction 1 (Hostinger-only architecture). Daily at 05:00 UTC —
+# after the 03:15 UTC backup on the primary VPS, its 03:45 UTC local check and
+# the documented 03:50 UTC transfer to the SEPARATE Hostinger backup VPS —
+# this workflow connects to the BACKUP VPS with the audit identity (a
+# forced-command, list-only SSH key), captures the sanitized AUDIT listing and
+# evaluates it ON THE RUNNER with .github/scripts/verify-offhost-hostinger.sh:
+# protocol header, remote clock, the backup VPS is NOT the primary VPS (pinned
+# and self-reported host-key fingerprints, never hostnames), no stale incoming
+# or orphan files, and a COMPLETE encrypted generation for the expected 03:15
+# UTC slot. Freshness is slot-aware with a transfer grace: a run that starts
+# early or hours late never produces a false stale verdict.
+#
+# GitHub Actions is monitoring, verification and alerting ONLY: no backup is
+# initiated here, nothing is uploaded, no dump byte reaches the runner (the
+# audit identity cannot read archives), and the runner is never a durable
+# destination. The primary-side sender's own result is not an input here — the
+# remote audit is authoritative.
+#
+# Durable external signal: the run stays FAILED and ONE deduplicated GitHub
+# Issue "[Backup Alert] Hostinger off-host backup unhealthy" is created on the
+# first failure, commented on repeated failures, and closed with a recovery
+# comment by the next healthy run. The local backup alert
+# ("[Backup Alert] Hosted PostgreSQL backup unhealthy") is a separate issue and
+# is never touched. Issue handling never turns a failed verification green.
+#
+# Never: deploy, create a backup, upload, restore, touch retention or the
+# database, run ssh-keyscan, or print secret values. Scheduled workflows run
+# from the repository default branch only — the schedule is active once this
+# file is on that branch AND the secrets below exist (activation is an owner
+# decision; this branch does not activate anything).
+#
+# Secrets (values never printed):
+#   BACKUP_VPS_HOST, BACKUP_VPS_PORT, BACKUP_VPS_AUDIT_USER   backup VPS, audit account
+#   BACKUP_VPS_AUDIT_SSH_KEY                                  audit private key (forced command)
+#   BACKUP_VPS_KNOWN_HOSTS                                    pinned host key of the backup VPS
+#   VPS_KNOWN_HOSTS                                           pinned host key of the PRIMARY VPS (already
+#                                                             used by backup-health-alert.yml) — for the
+#                                                             same-host rejection
+#   BACKUP_VPS_MACHINE_HASH (optional)                        sha256 of the backup VPS machine-id
+# =============================================================================
+name: backup-offhost-hostinger
+
+on:
+  schedule:
+    # 05:00 UTC daily: 70 min after the documented 03:50 UTC transfer. GitHub may
+    # start it late; the slot-aware verifier tolerates that.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: "TEST ONLY: after the read-only audit has completed, fail the workflow in control flow to exercise the alert path. Never touches a backup, the vault or a VPS."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-offhost-hostinger
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ALERT_TITLE: "[Backup Alert] Hostinger off-host backup unhealthy"
+
+jobs:
+  audit:
+    name: Read-only off-host audit (backup VPS, audit identity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      summary: ${{ steps.summary.outputs.summary }}
+      simulated: ${{ steps.simulate.outputs.simulated }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/verify-offhost-hostinger.sh
+            docker/scripts/offhost/offhost-lib.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Validate the connection secrets (format only; values are never printed)
+        env:
+          BACKUP_VPS_HOST: ${{ secrets.BACKUP_VPS_HOST }}
+          BACKUP_VPS_PORT: ${{ secrets.BACKUP_VPS_PORT }}
+          BACKUP_VPS_AUDIT_USER: ${{ secrets.BACKUP_VPS_AUDIT_USER }}
+          BACKUP_VPS_AUDIT_SSH_KEY: ${{ secrets.BACKUP_VPS_AUDIT_SSH_KEY }}
+          BACKUP_VPS_KNOWN_HOSTS: ${{ secrets.BACKUP_VPS_KNOWN_HOSTS }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          BACKUP_VPS_MACHINE_HASH: ${{ secrets.BACKUP_VPS_MACHINE_HASH }}
+        run: |
+          [[ "$BACKUP_VPS_HOST" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || { echo "::error::BACKUP_VPS_HOST is missing or has an unexpected format"; exit 1; }
+          [[ "$BACKUP_VPS_PORT" =~ ^[0-9]{1,5}$ ]] || { echo "::error::BACKUP_VPS_PORT is missing or not a port number"; exit 1; }
+          [[ "$BACKUP_VPS_AUDIT_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "::error::BACKUP_VPS_AUDIT_USER is missing or has an unexpected format"; exit 1; }
+          { [ -n "$BACKUP_VPS_AUDIT_SSH_KEY" ] && [ -n "$BACKUP_VPS_KNOWN_HOSTS" ]; } || { echo "::error::BACKUP_VPS_AUDIT_SSH_KEY or BACKUP_VPS_KNOWN_HOSTS is missing"; exit 1; }
+          [ -n "$VPS_KNOWN_HOSTS" ] || { echo "::error::VPS_KNOWN_HOSTS (pinned PRIMARY host key, needed for the same-host rejection) is missing"; exit 1; }
+          [ -z "$BACKUP_VPS_MACHINE_HASH" ] || [[ "$BACKUP_VPS_MACHINE_HASH" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::BACKUP_VPS_MACHINE_HASH has an unexpected format"; exit 1; }
+          echo "connection secrets present and well-formed"
+
+      - name: Install the audit key and the pinned host keys (no ssh-keyscan)
+        env:
+          BACKUP_VPS_HOST: ${{ secrets.BACKUP_VPS_HOST }}
+          BACKUP_VPS_PORT: ${{ secrets.BACKUP_VPS_PORT }}
+          BACKUP_VPS_AUDIT_USER: ${{ secrets.BACKUP_VPS_AUDIT_USER }}
+          BACKUP_VPS_AUDIT_SSH_KEY: ${{ secrets.BACKUP_VPS_AUDIT_SSH_KEY }}
+          BACKUP_VPS_KNOWN_HOSTS: ${{ secrets.BACKUP_VPS_KNOWN_HOSTS }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$BACKUP_VPS_AUDIT_SSH_KEY" > ~/.ssh/offhost_audit_key
+          printf '%s\n' "$BACKUP_VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/primary_known_hosts
+          {
+            echo "Host vault"
+            echo "  HostName $BACKUP_VPS_HOST"
+            echo "  Port $BACKUP_VPS_PORT"
+            echo "  User $BACKUP_VPS_AUDIT_USER"
+            echo "  IdentityFile ~/.ssh/offhost_audit_key"
+            echo "  IdentitiesOnly yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  StrictHostKeyChecking yes"
+            echo "  BatchMode yes"
+            echo "  ConnectTimeout 20"
+            echo "  ServerAliveInterval 15"
+            echo "  ServerAliveCountMax 4"
+            echo "  LogLevel ERROR"
+          } > ~/.ssh/config
+          echo "ssh client configured with the pinned host key of the backup VPS"
+
+      - name: Capture the AUDIT listing over SSH (forced command; list-only; nothing is sent)
+        id: capture
+        run: |
+          # The audit account's forced command ignores anything but the verbs HELLO
+          # and AUDIT; no script is piped, no file is transferred in either direction.
+          set +e
+          ssh vault AUDIT > "$RUNNER_TEMP/audit.log" 2> "$RUNNER_TEMP/audit.err" < /dev/null
+          rc=$?
+          set -e
+          echo "exit=$rc" >> "$GITHUB_OUTPUT"
+          # The listing holds names, sizes, timestamps, states and counts only; mask defensively anyway.
+          sed -E 's/[A-Za-z0-9+\/=_-]{40,}/<masked>/g' "$RUNNER_TEMP/audit.log" | awk 'NR <= 200 { print "  " substr($0, 1, 300) }'
+          echo "ssh_exit=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the audit listing could not be captured (ssh exit $rc)"
+            exit "$rc"
+          fi
+
+      - name: Evaluate the listing on the runner (read-only verifier)
+        id: run
+        env:
+          AUDIT_LOG: ${{ runner.temp }}/audit.log
+          TRANSFER_GRACE_MINUTES: "90"
+          EXPECTED_MACHINE: ${{ secrets.BACKUP_VPS_MACHINE_HASH }}
+        run: |
+          set +e
+          BACKUP_KNOWN_HOSTS=~/.ssh/known_hosts PRIMARY_KNOWN_HOSTS=~/.ssh/primary_known_hosts \
+            bash .github/scripts/verify-offhost-hostinger.sh > "$RUNNER_TEMP/verify.log" 2>&1
+          rc=$?
+          set -e
+          echo "exit=$rc" >> "$GITHUB_OUTPUT"
+          sed 's/^/  /' "$RUNNER_TEMP/verify.log"
+          echo "verifier_exit=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::off-host backup verification failed (exit $rc)"
+            exit "$rc"
+          fi
+
+      - name: Extract the sanitized summary line
+        id: summary
+        if: always()
+        env:
+          CAPTURE_EXIT: ${{ steps.capture.outputs.exit }}
+          VERIFIER_EXIT: ${{ steps.run.outputs.exit }}
+        run: |
+          line=""
+          if [ -f "$RUNNER_TEMP/verify.log" ]; then
+            line="$(grep -m1 -E '^OFFHOST_HEALTH=(PASS|FAIL)( [A-Za-z0-9_]+=[A-Za-z0-9_.,=-]+)*$' "$RUNNER_TEMP/verify.log" || true)"
+          fi
+          if [ -z "$line" ]; then
+            case "${CAPTURE_EXIT:-none}" in
+              0)   line="OFFHOST_HEALTH=FAIL reason=no-summary-from-verifier exit=${VERIFIER_EXIT:-none}" ;;
+              255) line="OFFHOST_HEALTH=FAIL reason=ssh-connection-failed (host unreachable, host key or authentication failure)" ;;
+              *)   line="OFFHOST_HEALTH=FAIL reason=audit-capture-failed exit=${CAPTURE_EXIT:-none}" ;;
+            esac
+          fi
+          echo "summary=$line" >> "$GITHUB_OUTPUT"
+          echo "$line"
+
+      - name: Simulated failure (TEST ONLY; manual dispatch with simulate_failure=true)
+        id: simulate
+        if: github.event_name == 'workflow_dispatch' && inputs.simulate_failure == true
+        run: |
+          echo "simulated=true" >> "$GITHUB_OUTPUT"
+          echo "::error::SIMULATED FAILURE (test): the read-only audit above already completed; failing the workflow in control flow only. No backup, vault or VPS state was touched."
+          exit 1
+
+  alert:
+    name: Durable alert (one deduplicated GitHub Issue)
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERIFY_RESULT: ${{ needs.audit.result }}
+      SUMMARY: ${{ needs.audit.outputs.summary }}
+      SIMULATED: ${{ needs.audit.outputs.simulated }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+      TRIGGER: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts/offhost-hostinger-alert-decision.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Find the open alert issue (exact title match; the local backup alert is a different title)
+        id: find
+        run: |
+          number="$(gh issue list --repo "$GH_REPO" --state open --limit 100 --search '"Backup Alert" in:title' --json number,title \
+            | jq -r --arg t "$ALERT_TITLE" '[.[] | select(.title == $t)] | sort_by(.number) | .[0].number // empty')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "open off-host alert issue: ${number:-none}"
+
+      - name: Decide (deterministic truth table) and act
+        env:
+          OPEN_ISSUE: ${{ steps.find.outputs.number }}
+        run: |
+          bash .github/scripts/offhost-hostinger-alert-decision.sh > "$RUNNER_TEMP/decision.txt"
+          action="$(sed -n 's/^action=//p' "$RUNNER_TEMP/decision.txt" | head -n 1)"
+          health="$(sed -n 's/^health=//p' "$RUNNER_TEMP/decision.txt" | head -n 1)"
+          body="$(sed '1,/^---BODY---$/d' "$RUNNER_TEMP/decision.txt")"
+          echo "decision: action=$action health=$health open_issue=${OPEN_ISSUE:-none}"
+          case "$action" in
+            create)  gh issue create --repo "$GH_REPO" --title "$ALERT_TITLE" --body "$body" ;;
+            comment) gh issue comment "$OPEN_ISSUE" --repo "$GH_REPO" --body "$body" ;;
+            close)   gh issue comment "$OPEN_ISSUE" --repo "$GH_REPO" --body "$body"; gh issue close "$OPEN_ISSUE" --repo "$GH_REPO" ;;
+            noop)    echo "healthy and no open alert issue: nothing to do" ;;
+            *)       echo "::error::unexpected decision"; exit 1 ;;
+          esac
+
+      - name: Result
+        run: |
+          if [ "$VERIFY_RESULT" = "success" ] && [ "$SIMULATED" != "true" ]; then
+            echo "off-host backup healthy: $SUMMARY"
+          else
+            echo "::error::off-host backup audit result: $VERIFY_RESULT — $SUMMARY (the run stays failed)"
+          fi
