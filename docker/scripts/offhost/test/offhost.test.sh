@@ -35,13 +35,14 @@ expect_false() { local d="$1"; shift; if "$@" >/dev/null 2>&1; then bad "$d" "un
 has()    { if grep -qE -- "$2" "$1"; then ok "$3"; else bad "$3" "pattern '$2' absent"; fi; }
 nothas() { if grep -qE -- "$2" "$1"; then bad "$3" "pattern '$2' present"; else ok "$3"; fi; }
 ts() { date -u -d "$1" +%s; }
+code() { grep -vE '^[[:space:]]*#' "$@"; }   # non-comment lines of the given files
 
 echo "== 0. syntax =="
-for f in offhost-lib.sh offhost-send.sh offhost-receive.sh offhost-publish.sh offhost-audit.sh offhost-retain.sh; do
+for f in offhost-lib.sh offhost-send.sh offhost-receive.sh offhost-publish.sh offhost-audit.sh offhost-retain.sh offhost-install-check.sh; do
   expect_true "bash -n $f" bash -n "$OH/$f"
 done
 expect_true "bash -n this test" bash -n "${BASH_SOURCE[0]}"
-for t in age age-keygen sha256sum gzip flock python3 openssl base64 realpath; do
+for t in age age-keygen sha256sum gzip flock python3 openssl base64 realpath timeout; do
   command -v "$t" >/dev/null 2>&1 || { echo "required tool missing: $t"; exit 1; }
 done
 
@@ -97,7 +98,10 @@ PUBLISH_WRAPPER="$T/bin/publish-wrapper.sh"
 cat >"$PUBLISH_WRAPPER" <<EOF
 #!/bin/bash
 # stands in for the sudoers-limited publisher entry (env is reset by sudo: the clock and config come from root-owned files)
-export OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="\$(cat "$T/now")"
+export OFFHOST_CONFIG="\${OFFHOST_CONFIG_OVERRIDE:-$T/offhost.env}" OFFHOST_NOW="\$(cat "$T/now")"
+# simulated free space: $T/free for every call, $T/free-after for the publish call only (a change between preflight and publication)
+if [ "\$1" != --preflight ] && [ -f "$T/free-after" ]; then export LCP_FREE_BYTES_OVERRIDE="\$(cat "$T/free-after")"
+elif [ -f "$T/free" ]; then export LCP_FREE_BYTES_OVERRIDE="\$(cat "$T/free")"; fi
 exec bash "$OH/offhost-publish.sh" "\$@"
 EOF
 chmod 755 "$PUBLISH_WRAPPER"
@@ -109,12 +113,21 @@ OFFHOST_VAULT_USER=$VAULT_USER
 OFFHOST_AUDIT_GROUP=$AUDIT_GROUP
 OFFHOST_RECEIVE_USER=$RECEIVE_USER
 OFFHOST_SLOT_WINDOW=2
+OFFHOST_MAX_ARCHIVE_BYTES=${VCFG_MAX_ARCHIVE:-2147483648}
+OFFHOST_MAX_GENERATIONS_PER_SLOT=${VCFG_MAX_GEN:-2}
+OFFHOST_MIN_FREE_BYTES=${VCFG_MIN_FREE:-104857600}
 OFFHOST_STALE_SECONDS=21600
-OFFHOST_RETAIN_DAYS=35
-OFFHOST_PROTECT_NEWEST=7
+OFFHOST_RETAIN_DAYS=${VCFG_RETAIN_DAYS:-35}
+OFFHOST_PROTECT_NEWEST=${VCFG_PROTECT:-7}
 OFFHOST_QUARANTINE_AFTER_DAYS=2
 EOF
   chmod 644 "$T/offhost.env"
+}
+# write_vault_config_variant FILE KEY=value… → a copy of the shared settings with overrides
+write_vault_config_variant() {
+  local f="$1"; shift
+  grep -vE "^($(printf '%s\n' "$@" | sed 's/=.*//' | paste -sd'|'))=" "$T/offhost.env" >"$f"
+  printf '%s\n' "$@" >>"$f"; chmod 644 "$f"
 }
 PUBLISH_CMD="sudo -n $PUBLISH_WRAPPER"; write_vault_config
 if [ "$ROOT_MODE" = 1 ]; then
@@ -137,15 +150,17 @@ cat >"$T/bin/ssh" <<EOF
 target="\${@: -2:1}"; cmd="\${@: -1}"
 printf '%s\t%s\n' "\$target" "\$cmd" >>"$T/ssh.calls"
 NOWV="\$(cat "$T/now")"
-recv() {   # MACHINE_ID_FILE HOSTKEY_DIR
-  $( [ "$ROOT_MODE" = 1 ] && echo 'runuser -u lcpt-receive --' ) env SSH_ORIGINAL_COMMAND="\$cmd" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="\$NOWV" LCP_MACHINE_ID_FILE="\$1" LCP_HOSTKEY_DIR="\$2" bash "$OH/offhost-receive.sh"
+FREE=""; [ -f "$T/free" ] && FREE="\$(cat "$T/free")"
+recv() {   # MACHINE_ID_FILE HOSTKEY_DIR [FSID]
+  $( [ "$ROOT_MODE" = 1 ] && echo 'runuser -u lcpt-receive --' ) env SSH_ORIGINAL_COMMAND="\$cmd" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="\$NOWV" LCP_MACHINE_ID_FILE="\$1" LCP_HOSTKEY_DIR="\$2" LCP_FSID_OVERRIDE="\${3:-}" bash "$OH/offhost-receive.sh"
 }
-audit() {
-  $( [ "$ROOT_MODE" = 1 ] && echo 'runuser -u lcpt-audit --' ) env SSH_ORIGINAL_COMMAND="\$cmd" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="\$NOWV" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" bash "$OH/offhost-audit.sh"
+audit() {   # MACHINE_ID_FILE HOSTKEY_DIR ROOT [FSID] [NOW]
+  $( [ "$ROOT_MODE" = 1 ] && echo 'runuser -u lcpt-audit --' ) env SSH_ORIGINAL_COMMAND="\$cmd" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_ROOT="\$3" OFFHOST_NOW="\${5:-\$NOWV}" LCP_MACHINE_ID_FILE="\$1" LCP_HOSTKEY_DIR="\$2" LCP_FSID_OVERRIDE="\${4:-}" LCP_FREE_BYTES_OVERRIDE="\$FREE" bash "$OH/offhost-audit.sh"
 }
+count_call() { local c=0; [ -f "$T/calls.\$1" ] && c="\$(cat "$T/calls.\$1")"; c=\$((c + 1)); echo "\$c" >"$T/calls.\$1"; echo "\$c"; }
 case "\$target" in
   vault-upload)          recv "$T/vault.mid" "$T/vk" ;;
-  vault-audit)           audit ;;
+  vault-audit)           audit "$T/vault.mid" "$T/vk" "$ROOT" ;;
   same-machine-upload)   recv "$T/primary.mid" "$T/vk" ;;
   same-hostkey-upload)   recv "$T/vault.mid" "$T/pk" ;;
   unknown-machine-upload) recv "$T/nonexistent.mid" "$T/vk" ;;
@@ -153,11 +168,30 @@ case "\$target" in
   drop-manifest-upload)  case "\$cmd" in PUT*manifest*) cat >/dev/null; exit 255 ;; *) recv "$T/vault.mid" "$T/vk" ;; esac ;;
   lost-reply-upload)     case "\$cmd" in PUT*manifest*) recv "$T/vault.mid" "$T/vk" >/dev/null; exit 255 ;; *) recv "$T/vault.mid" "$T/vk" ;; esac ;;
   dead-audit)            exit 255 ;;
+  # identity binding (Blocker A): the audit alias reaches a different machine / file system / host keys
+  hostb-audit)           audit "$T/hostb.mid" "$T/hkB" "$T/vaultB/root" ;;
+  otherfs-audit)         audit "$T/vault.mid" "$T/vk" "$ROOT" deadbeef0badf00d ;;
+  otherkeys-audit)       audit "$T/vault.mid" "$T/vk2" "$ROOT" ;;
+  dupheader-audit)       audit "$T/vault.mid" "$T/vk" "$ROOT" | awk 'NR == 1 { print; print; next } { print }' ;;
+  malformed-audit)       audit "$T/vault.mid" "$T/vk" "$ROOT" | sed 's/^LCP-OFFHOST\/1 AUDIT now_utc=/LCP-OFFHOST\/1 AUDIT nowutc=/' ;;
+  skew-audit)            audit "$T/vault.mid" "$T/vk" "$ROOT" "" "\$((NOWV + 7200))" ;;
+  v2-audit)              audit "$T/vault.mid" "$T/vk" "$ROOT" | sed '1s/^LCP-OFFHOST\/1 /LCP-OFFHOST\/2 /' ;;
+  dupgen-audit)          audit "$T/vault.mid" "$T/vk" "$ROOT" | awk '/^generation / && !d { print; d = 1 } { print }' ;;
+  # overall deadline (Blocker B): sleeping endpoints (killed by the sender's timeout)
+  slow-hello)            case "\$cmd" in HELLO) sleep 30 ;; *) recv "$T/vault.mid" "$T/vk" ;; esac ;;
+  slow-audit)            sleep 30 ;;
+  slow-post-audit)       if [ "\$(count_call post)" -ge 2 ]; then sleep 30; else audit "$T/vault.mid" "$T/vk" "$ROOT"; fi ;;
+  slow-put-archive)      case "\$cmd" in PUT*.age\ *) sleep 30 ;; *) recv "$T/vault.mid" "$T/vk" ;; esac ;;
+  slow-put-manifest)     case "\$cmd" in PUT*manifest*) sleep 30 ;; *) recv "$T/vault.mid" "$T/vk" ;; esac ;;
+  slow-all-upload)       sleep 2; recv "$T/vault.mid" "$T/vk" ;;
+  slow-all-audit)        sleep 2; audit "$T/vault.mid" "$T/vk" "$ROOT" ;;
   *) echo "stub ssh: unknown target" >&2; exit 255 ;;
 esac
 EOF
 chmod 755 "$T/bin/ssh"
 printf '#!/bin/bash\necho "age: simulated failure" >&2\nexit 1\n' >"$T/bin/age-fail"; chmod 755 "$T/bin/age-fail"
+# a slow age: writes a partial output first (as a cut-off encryption would), then hangs
+printf '#!/bin/bash\nout=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done\n[ -n "$out" ] && printf "age-encryption.org/v1\\npartial" >"$out"\nsleep 30\n' >"$T/bin/age-slow"; chmod 755 "$T/bin/age-slow"
 : >"$T/primary/env/ssh.config"
 
 # ── primary fixtures: valid dumps with a canary row ───────────────────────────
@@ -182,6 +216,7 @@ send() {
     BACKUP_DIR="$T/primary/backups/postgres" OFFHOST_STATE_DIR="$T/primary/state" OFFHOST_SSH_CONFIG="$T/primary/env/ssh.config" \
     OFFHOST_UPLOAD_TARGET="${UPLOAD_TARGET:-vault-upload}" OFFHOST_AUDIT_TARGET="${AUDIT_TARGET:-vault-audit}" \
     OFFHOST_RECIPIENT="${RECIPIENT_OVERRIDE:-$RECIPIENT}" OFFHOST_EXPECTED_MACHINE="${EXPECTED_MACHINE:-}" \
+    OFFHOST_MAX_TIME="${MAX_TIME_OVERRIDE:-120}" \
     bash "$OH/offhost-send.sh" "$@" >"$T/out/$case.log" 2>&1
   echo $?
 }
@@ -189,17 +224,22 @@ summary() { grep -m1 -E '^OFFHOST_UPLOAD=' "$T/out/$1.log" || true; }
 # receiver_put CASE NAME SIZE SHA FILE [MID HK] → runs the receiver directly (as the upload identity)
 receiver_put() {
   local case="$1" name="$2" size="$3" sha="$4" file="$5"
-  as_receive env SSH_ORIGINAL_COMMAND="PUT $name $size $sha" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$(cat "$T/now")" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" \
+  as_receive env SSH_ORIGINAL_COMMAND="PUT $name $size $sha" OFFHOST_CONFIG="${RCFG:-$T/offhost.env}" OFFHOST_CONFIG_OVERRIDE="${RCFG:-}" OFFHOST_NOW="$(cat "$T/now")" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" \
     bash "$OH/offhost-receive.sh" <"$file" >"$T/out/$case.log" 2>&1
   echo $?
 }
+# receiver_put_nostream CASE NAME SIZE SHA → PUT with an EMPTY stdin: a reply other
+# than short-read proves the request was decided before any byte was read
+receiver_put_nostream() { receiver_put "$1" "$2" "$3" "$4" /dev/null; }
+reason_of() { grep -m1 -oE 'reason=[a-z0-9-]+' "$T/out/$1.log" | cut -d= -f2; }
 receiver_cmd() {   # CASE COMMAND
   as_receive env SSH_ORIGINAL_COMMAND="$2" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$(cat "$T/now")" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" \
     bash "$OH/offhost-receive.sh" </dev/null >"$T/out/$1.log" 2>&1
   echo $?
 }
 audit_cmd() {   # CASE COMMAND
-  as_audit env SSH_ORIGINAL_COMMAND="$2" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$(cat "$T/now")" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" \
+  local free=""; [ -f "$T/free" ] && free="$(cat "$T/free")"
+  as_audit env SSH_ORIGINAL_COMMAND="$2" OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$(cat "$T/now")" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" LCP_FREE_BYTES_OVERRIDE="$free" \
     bash "$OH/offhost-audit.sh" </dev/null >"$T/out/$1.log" 2>&1
   echo $?
 }
@@ -436,12 +476,12 @@ has "$T/out/samemid.log" "^OFFHOST_UPLOAD=FAIL reason=same-host-destination deta
 expect_eq "same host key → FAIL" "$(UPLOAD_TARGET=same-hostkey-upload send samehk)" 1
 has "$T/out/samehk.log" "^OFFHOST_UPLOAD=FAIL reason=same-host-destination detail=hostkey$" "same-host-destination (hostkey)"
 expect_eq "unverifiable destination identity → FAIL" "$(UPLOAD_TARGET=unknown-machine-upload send unkmid)" 1
-has "$T/out/unkmid.log" "^OFFHOST_UPLOAD=FAIL reason=destination-identity-unverifiable$" "destination-identity-unverifiable"
+has "$T/out/unkmid.log" "^OFFHOST_UPLOAD=FAIL reason=destination-identity-unverifiable detail=machine$" "destination-identity-unverifiable"
 expect_eq "pinned machine mismatch → FAIL" "$(EXPECTED_MACHINE="$(printf 'c%.0s' $(seq 64))" send pinmis)" 1
 has "$T/out/pinmis.log" "^OFFHOST_UPLOAD=FAIL reason=destination-identity-mismatch$" "destination-identity-mismatch"
 expect_eq "no PUT in any of the refused runs" "$(grep -c '	PUT ' "$T/ssh.calls")" 0
 expect_eq "pinned machine match → PASS" "$(EXPECTED_MACHINE="$(LCP_MACHINE_ID_FILE="$T/vault.mid" lcp_machine_hash)" send pinok)" 0
-expect_eq "unreachable audit identity → FAIL" "$(AUDIT_TARGET=dead-audit send deadaudit >/dev/null; grep -c '^OFFHOST_UPLOAD=FAIL reason=audit-unreachable detail=phase=before$' "$T/out/deadaudit.log")" 1
+expect_eq "unreachable audit identity → FAIL" "$(AUDIT_TARGET=dead-audit send deadaudit >/dev/null; grep -c '^OFFHOST_UPLOAD=FAIL reason=audit-unreachable detail=step=pre-audit,ssh_exit=255$' "$T/out/deadaudit.log")" 1
 
 echo "== 15. upload identity: forced command only, no listing/reading/deleting =="
 for c in AUDIT "ls" "cat $SET.age" "rm $SET.age" "scp -f x" "sftp"; do
@@ -554,15 +594,229 @@ expect_eq "test hooks are not config keys" "$(OFFHOST_SEND_CONFIG="$T/send2.env"
 expect_eq "state dir inside the backup dir refused" "$(OFFHOST_STATE_DIR="$T/primary/backups/postgres/state" env OFFHOST_STATE_DIR="$T/primary/backups/postgres/state" BACKUP_DIR="$T/primary/backups/postgres" bash "$OH/offhost-send.sh" plan 2>/dev/null)" "OFFHOST_UPLOAD=FAIL reason=state-dir-inside-backup-dir"
 expect_eq "upload and audit targets must differ" "$(env BACKUP_DIR="$T/primary/backups/postgres" OFFHOST_STATE_DIR="$T/primary/state" OFFHOST_UPLOAD_TARGET=same OFFHOST_AUDIT_TARGET=same bash "$OH/offhost-send.sh" plan 2>/dev/null)" "OFFHOST_UPLOAD=FAIL reason=upload-and-audit-target-identical"
 
+echo "== 23. identity binding: the audit listing must come from the upload destination =="
+# host B: a different machine with an apparently valid, COMPLETE generation of the current set
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"; send fillA >/dev/null
+rm -rf "${T:?}/vaultB"; mkdir -p "$T/vaultB"; cp -a "$ROOT" "$T/vaultB/root"; chmod 755 "$T/vaultB"
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
+mkdir -p "$T/hkB" "$T/vk2"; mkkey "$T/hkB/ssh_host_ed25519_key.pub"; mkkey "$T/vk2/ssh_host_ed25519_key.pub"; chmod 755 "$T/hkB" "$T/vk2"
+printf '%s\n' "$(printf 'c%.0s' $(seq 32))" >"$T/hostb.mid"; chmod 644 "$T/hostb.mid"
+expect_eq "host B holds a complete generation for the current set" "$(OFFHOST_CONFIG=/nonexistent OFFHOST_ROOT="$T/vaultB/root" OFFHOST_NOW="$NOW" LCP_MACHINE_ID_FILE="$T/hostb.mid" LCP_HOSTKEY_DIR="$T/hkB" SSH_ORIGINAL_COMMAND=AUDIT bash "$OH/offhost-audit.sh" | grep -c "set=$SET .* complete=yes$")" 1
+: >"$T/ssh.calls"
+expect_eq "upload alias → host A, audit alias → host B → FAIL" "$(AUDIT_TARGET=hostb-audit send bindB)" 1
+has "$T/out/bindB.log" "^OFFHOST_UPLOAD=FAIL reason=audit-destination-mismatch detail=machine$" "audit-destination-mismatch detail=machine"
+nothas "$T/out/bindB.log" "encrypted:" "…before encryption"
+expect_eq "…before any PUT" "$(grep -c '	PUT ' "$T/ssh.calls")" 0
+expect_eq "…no stage created" "$(find "$T/primary/state/stage" -type f 2>/dev/null | wc -l)" 0
+expect_eq "…vault A untouched" "$(pub_ls | wc -l)" 0
+expect_eq "same machine, different file system → FAIL" "$(AUDIT_TARGET=otherfs-audit send bindfs)" 1
+has "$T/out/bindfs.log" "^OFFHOST_UPLOAD=FAIL reason=audit-destination-mismatch detail=filesystem$" "audit-destination-mismatch detail=filesystem"
+expect_eq "same machine and file system, disjoint host keys → FAIL" "$(AUDIT_TARGET=otherkeys-audit send bindhk)" 1
+has "$T/out/bindhk.log" "^OFFHOST_UPLOAD=FAIL reason=audit-destination-mismatch detail=hostkey$" "audit-destination-mismatch detail=hostkey"
+expect_eq "duplicate audit header → FAIL" "$(AUDIT_TARGET=dupheader-audit send binddup)" 1
+has "$T/out/binddup.log" "^OFFHOST_UPLOAD=FAIL reason=audit-header-duplicate$" "audit-header-duplicate"
+expect_eq "malformed audit header → FAIL" "$(AUDIT_TARGET=malformed-audit send bindmal)" 1
+has "$T/out/bindmal.log" "^OFFHOST_UPLOAD=FAIL reason=audit-header-invalid( detail=missing)?$" "audit-header-invalid"
+expect_eq "excessive audit clock skew → FAIL" "$(AUDIT_TARGET=skew-audit send bindskew)" 1
+has "$T/out/bindskew.log" "^OFFHOST_UPLOAD=FAIL reason=audit-clock-skew detail=seconds=7200,max=900$" "audit-clock-skew"
+expect_eq "protocol version drift → FAIL" "$(AUDIT_TARGET=v2-audit send bindv2)" 1
+has "$T/out/bindv2.log" "^OFFHOST_UPLOAD=FAIL reason=audit-protocol-version$" "audit-protocol-version"
+expect_eq "no PUT in any of the refused runs" "$(grep -c '	PUT ' "$T/ssh.calls")" 0
+expect_eq "correct upload/audit identities still pass" "$(send bindok)" 0
+has "$T/out/bindok.log" "pre-audit: destination=bound generation=absent" "…listing bound to the HELLO identity"
+expect_eq "duplicate generation record in the post-audit → FAIL" "$(AUDIT_TARGET=dupgen-audit send binddupgen >/dev/null; grep -c '^OFFHOST_UPLOAD=FAIL reason=audit-generation-duplicate$' "$T/out/binddupgen.log")" 1
+
+echo "== 24. overall deadline (OFFHOST_MAX_TIME is a single monotonic budget) =="
+one_summary() { expect_eq "$1: exactly one summary line, no unexpected-error" "$(grep -c '^OFFHOST_UPLOAD=' "$T/out/$2.log")/$(grep -c 'unexpected-error' "$T/out/$2.log")" "1/0"; }
+no_work_dirs() { expect_eq "$1: temporary work directories removed" "$(find "$T/primary/state" -maxdepth 1 -name '.work.*' | wc -l)" 0; }
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
+expect_eq "encryption timeout → FAIL" "$(MAX_TIME_OVERRIDE=2 AGE_BIN_OVERRIDE="$T/bin/age-slow" send to-enc)" 1
+has "$T/out/to-enc.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=encrypt$" "operation-timeout step=encrypt"
+one_summary "encryption timeout" to-enc; no_work_dirs "encryption timeout"
+expect_eq "cut-off ciphertext is NOT kept as a stage" "$(find "$T/primary/state/stage" -type f 2>/dev/null | wc -l)" 0
+expect_eq "HELLO timeout → FAIL" "$(MAX_TIME_OVERRIDE=2 UPLOAD_TARGET=slow-hello send to-hello)" 1
+has "$T/out/to-hello.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=hello$" "operation-timeout step=hello"
+one_summary "HELLO timeout" to-hello; no_work_dirs "HELLO timeout"
+expect_eq "pre-audit timeout → FAIL" "$(MAX_TIME_OVERRIDE=2 AUDIT_TARGET=slow-audit send to-pre)" 1
+has "$T/out/to-pre.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=pre-audit$" "operation-timeout step=pre-audit"
+one_summary "pre-audit timeout" to-pre
+expect_eq "archive transfer timeout → FAIL" "$(MAX_TIME_OVERRIDE=3 UPLOAD_TARGET=slow-put-archive send to-arc)" 1
+has "$T/out/to-arc.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=put-archive$" "operation-timeout step=put-archive"
+one_summary "archive timeout" to-arc; no_work_dirs "archive timeout"
+expect_eq "…the complete, valid ciphertext stage is kept" "$(find "$T/primary/state/stage/$SET" -type f 2>/dev/null | wc -l)" 2
+expect_eq "…and a later normal run resumes it" "$(send to-arc-resume)" 0
+has "$T/out/to-arc-resume.log" "^OFFHOST_UPLOAD=PASS .* upload=resumed audit=complete$" "resumed after an archive timeout"
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
+expect_eq "manifest transfer timeout → FAIL" "$(MAX_TIME_OVERRIDE=3 UPLOAD_TARGET=slow-put-manifest send to-man)" 1
+has "$T/out/to-man.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=put-manifest$" "operation-timeout step=put-manifest"
+one_summary "manifest timeout" to-man
+expect_eq "…stage kept, archive already published" "$(find "$T/primary/state/stage/$SET" -type f | wc -l)/$(pub_ls | grep -c '\.age$')" "2/1"
+expect_eq "…a later normal run completes the manifest" "$(send to-man-resume >/dev/null; grep -c 'upload=resumed audit=complete$' "$T/out/to-man-resume.log")" 1
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"; rm -f "$T/calls.post"
+expect_eq "post-audit timeout → FAIL" "$(MAX_TIME_OVERRIDE=4 AUDIT_TARGET=slow-post-audit send to-post)" 1
+has "$T/out/to-post.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=post-audit$" "operation-timeout step=post-audit"
+one_summary "post-audit timeout" to-post
+# cumulative budget: every endpoint answers after 2 s (plus process overhead); each
+# call alone fits easily, but HELLO + AUDIT + PUT + PUT + AUDIT cannot fit in 7 s
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
+t0=$SECONDS
+expect_eq "cumulative slow operations exhaust the single budget" "$(MAX_TIME_OVERRIDE=7 UPLOAD_TARGET=slow-all-upload AUDIT_TARGET=slow-all-audit send to-cum)" 1
+elapsed=$((SECONDS - t0))
+has "$T/out/to-cum.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=(put-archive|put-manifest|post-audit)$" "…fails in a later step, never by a fresh per-operation budget"
+has "$T/out/to-cum.log" "^\[offhost-send\].* encrypted: " "…after HELLO, pre-audit and encryption had already consumed budget"
+expect_true "…total run time bounded by the budget plus the kill grace (${elapsed}s)" [ "$elapsed" -le 16 ]
+one_summary "cumulative timeout" to-cum
+expect_eq "normal run remains green after the timeout tests" "$(send after-timeouts)" 0
+expect_eq "plan reports the configured budget" "$(MAX_TIME_OVERRIDE=77 send plan-budget plan >/dev/null; grep -c 'max_time=77$' "$T/out/plan-budget.log")" 1
+
+echo "== 25. storage exhaustion: per-slot generation cap, free-space reserve, per-archive maximum =="
+S2=leadcapture-20260930-040000.sql.gz; S3=leadcapture-20260930-050000.sql.gz
+mk_vault; rm -f "$T/free" "$T/free-after"
+mk_age "$T/c1.age" 4096; C1="$(sha256sum "$T/c1.age" | cut -c1-64)"
+mk_age "$T/c2.age" 4096; C2="$(sha256sum "$T/c2.age" | cut -c1-64)"
+mk_age "$T/c3.age" 4096; C3="$(sha256sum "$T/c3.age" | cut -c1-64)"
+expect_eq "first generation of the slot accepted" "$(receiver_put cap1 "$SET.age" 4096 "$C1" "$T/c1.age")" 0
+expect_eq "second generation of the slot accepted" "$(receiver_put cap2 "$S2.age" 4096 "$C2" "$T/c2.age")" 0
+expect_eq "third archive name in the slot rejected before a byte is read" "$(receiver_put_nostream cap3 "$S3.age" 4096 "$C3" >/dev/null; reason_of cap3)" slot-generation-limit
+expect_eq "…the incomplete second archive (no manifest) counted toward the cap" "$(pub_ls | grep -c 'manifest')" 0
+mkman "$T/c2.json" 4096 "$C2"; sed -i "s/$SET/$S2/g" "$T/c2.json"; CS="$(stat -c %s "$T/c2.json")"; CH="$(sha256sum "$T/c2.json" | cut -c1-64)"
+expect_eq "manifest completion remains allowed at the cap" "$(receiver_put cap4 "$S2.manifest.json" "$CS" "$CH" "$T/c2.json")" 0
+expect_eq "re-upload of an existing generation is idempotent (EXISTS, nothing read)" "$(receiver_put_nostream cap5 "$SET.age" 4096 "$C1" >/dev/null; grep -c "^LCP-OFFHOST/1 EXISTS name=$SET.age$" "$T/out/cap5.log")" 1
+expect_eq "audit: current slot at the cap, state ok" "$(audit_cmd capaudit AUDIT >/dev/null; grep -cE '^LCP-OFFHOST/1 CAPACITY state=ok free_state=above-reserve max_generations_per_slot=2 current_slot_generations=2 over_cap_slots=0 reserve_bytes=104857600 free_bytes=[0-9]+$' "$T/out/capaudit.log")" 1
+write_vault_config_variant "$T/offhost-cap1.env" OFFHOST_MAX_GENERATIONS_PER_SLOT=1
+expect_eq "audit detects a slot over its configured cap" "$(as_audit env SSH_ORIGINAL_COMMAND=AUDIT OFFHOST_CONFIG="$T/offhost-cap1.env" OFFHOST_NOW="$NOW" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" bash "$OH/offhost-audit.sh" >"$T/out/capover.log" 2>&1; grep -c '^LCP-OFFHOST/1 CAPACITY state=over-cap free_state=above-reserve max_generations_per_slot=1 current_slot_generations=2 over_cap_slots=1 ' "$T/out/capover.log")" 1
+mk_vault
+echo 1000 >"$T/free"; chmod 644 "$T/free"
+expect_eq "insufficient free space rejected before a byte is read" "$(receiver_put_nostream capfree "$SET.age" 4096 "$C1" >/dev/null; reason_of capfree)" insufficient-capacity
+expect_eq "audit reports free space below the reserve" "$(audit_cmd caplow AUDIT >/dev/null; grep -cE '^LCP-OFFHOST/1 CAPACITY state=low free_state=below-reserve .* free_bytes=1000$' "$T/out/caplow.log")" 1
+echo unknown >"$T/free"
+expect_eq "undeterminable capacity rejected" "$(receiver_put_nostream capunk "$SET.age" 4096 "$C1" >/dev/null; reason_of capunk)" capacity-unavailable
+rm -f "$T/free"
+echo 99999999999 >"$T/free"; echo 1000 >"$T/free-after"; chmod 644 "$T/free" "$T/free-after"
+expect_eq "capacity lost between preflight and publication is caught by the publisher" "$(receiver_put capchg "$SET.age" 4096 "$C1" "$T/c1.age" >/dev/null; reason_of capchg)" insufficient-capacity
+expect_eq "…nothing published, nothing pending" "$(pub_ls | wc -l)/$(inc_count)" "0/0"
+rm -f "$T/free" "$T/free-after"
+write_vault_config_variant "$T/offhost-small.env" OFFHOST_MAX_ARCHIVE_BYTES=1048576
+mk_age "$T/big2.age" 2000000; BIG2="$(sha256sum "$T/big2.age" | cut -c1-64)"
+expect_eq "archive above the per-archive maximum rejected before a byte is read" "$(RCFG="$T/offhost-small.env" receiver_put_nostream captoobig "$SET.age" 2000000 "$BIG2" >/dev/null; reason_of captoobig)" archive-too-large
+for bad in OFFHOST_MIN_FREE_BYTES=0 OFFHOST_MAX_GENERATIONS_PER_SLOT=0 OFFHOST_MAX_ARCHIVE_BYTES=0 OFFHOST_MAX_ARCHIVE_BYTES=99999999999999 OFFHOST_MIN_FREE_BYTES=1 OFFHOST_MAX_GENERATIONS_PER_SLOT=100; do
+  write_vault_config_variant "$T/offhost-bad.env" "$bad"
+  expect_eq "unsafe limit refused: $bad" "$(SSH_ORIGINAL_COMMAND=HELLO OFFHOST_CONFIG="$T/offhost-bad.env" bash "$OH/offhost-receive.sh" 2>/dev/null)" "LCP-OFFHOST/1 REJECTED reason=config-invalid"
+done
+# repeated rejected uploads leave no persistent temporary data
+mk_vault
+receiver_put capr0 "$SET.age" 4096 "$C1" "$T/c1.age" >/dev/null; receiver_put capr1 "$S2.age" 4096 "$C2" "$T/c2.age" >/dev/null
+for i in 1 2 3; do
+  receiver_put_nostream "caprA$i" "$S3.age" 4096 "$C3" >/dev/null
+  receiver_put "caprB$i" "$S3.age" 4096 "$C1" "$T/c3.age" >/dev/null       # cap again (preflight)
+  receiver_put "caprC$i" "$SET.manifest.json" 300 "$C1" "$T/c3.age" >/dev/null   # checksum/size mismatch after reading
+done
+expect_eq "repeated rejected uploads leave no pending/partial data" "$(inc_count)" 0
+expect_eq "…and the published set is unchanged (slot dir, two archives, two receipts)" "$(pub_ls | wc -l)" 5
+# retention cannot bypass the protected-newest rule even with an aggressive retention window
+mk_vault
+for d in 0 1 2; do
+  day="$(date -u -d "2026-09-30 -$d day" +%Y%m%d)"; sx="leadcapture-$day-031501.sql.gz"
+  echo "$(ts "$(date -u -d "2026-09-30 -$d day" +%F) 05:00:00")" >"$T/now"
+  mk_age "$T/r.age" 4096; RS="$(sha256sum "$T/r.age" | cut -c1-64)"
+  receiver_put "ret$d" "$sx.age" 4096 "$RS" "$T/r.age" >/dev/null
+  mkman "$T/r.json" 4096 "$RS" "" "$day-0315"; sed -i "s/$SET/$sx/g" "$T/r.json"; RJ="$(stat -c %s "$T/r.json")"; RH="$(sha256sum "$T/r.json" | cut -c1-64)"
+  receiver_put "retm$d" "$sx.manifest.json" "$RJ" "$RH" "$T/r.json" >/dev/null
+done
+echo "$((NOW + 10 * 86400))" >"$T/now"
+write_vault_config_variant "$T/offhost-aggr.env" OFFHOST_RETAIN_DAYS=1 OFFHOST_PROTECT_NEWEST=3
+BEFORE_R="$(pub_ls | sha256sum)"
+expect_eq "aggressive retention still protects the newest complete generations" "$(as_vault env OFFHOST_CONFIG="$T/offhost-aggr.env" OFFHOST_NOW="$(cat "$T/now")" bash "$OH/offhost-retain.sh" --apply 2>/dev/null | tail -n 1)" "OFFHOST_RETAIN=APPLIED generations=3 kept=3 protected=3 deleted=0 quarantined=0 purged=0"
+expect_eq "…nothing deleted" "$(pub_ls | sha256sum)" "$BEFORE_R"
+echo "$NOW" >"$T/now"
+
+echo "== 26. installation-integrity check (offhost-install-check.sh) =="
+expect_true "bash -n offhost-install-check.sh" bash -n "$OH/offhost-install-check.sh"
+if [ "$ROOT_MODE" = 1 ]; then
+  INST="$T/inst"; IBIN="$INST/opt/lcp-offhost/bin"
+  mkdir -p "$IBIN" "$INST/etc" "$INST/home/lcpt-receive/.ssh" "$INST/home/lcpt-audit/.ssh" "$INST/home/lcpt-vault"
+  for f in offhost-lib.sh offhost-receive.sh offhost-publish.sh offhost-audit.sh offhost-retain.sh; do cp "$OH/$f" "$IBIN/$f"; done
+  chmod 755 "$IBIN"/offhost-{receive,publish,audit,retain}.sh; chmod 644 "$IBIN/offhost-lib.sh"; chmod 755 "$INST/opt/lcp-offhost" "$IBIN"; chown -R root:root "$INST/opt"
+  cp "$T/offhost.env" "$INST/etc/offhost.env"; chmod 644 "$INST/etc/offhost.env"; chown root:root "$INST/etc/offhost.env"
+  printf 'Defaults:lcpt-receive env_reset, !requiretty\nlcpt-receive ALL=(root) NOPASSWD: %s/offhost-publish.sh\n' "$IBIN" >"$INST/etc/sudoers"; chmod 0440 "$INST/etc/sudoers"; chown root:root "$INST/etc/sudoers"
+  printf 'restrict,command="%s/offhost-receive.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIX lcp-offhost-upload@primary\n' "$IBIN" >"$INST/home/lcpt-receive/.ssh/authorized_keys"
+  printf '# primary and github audit keys\nrestrict,command="%s/offhost-audit.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIY lcp-offhost-audit@primary\nrestrict,command="%s/offhost-audit.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIZ lcp-offhost-audit@github-actions\n' "$IBIN" "$IBIN" >"$INST/home/lcpt-audit/.ssh/authorized_keys"
+  chmod 700 "$INST/home/lcpt-receive/.ssh" "$INST/home/lcpt-audit/.ssh"; chmod 600 "$INST/home/lcpt-receive/.ssh/authorized_keys" "$INST/home/lcpt-audit/.ssh/authorized_keys"
+  chown -R lcpt-receive:lcpt-receive "$INST/home/lcpt-receive"; chown -R lcpt-audit:lcpt-audit "$INST/home/lcpt-audit"; chown -R lcpt-vault:lcpt-vault "$INST/home/lcpt-vault"
+  chmod 755 "$INST" "$INST/home" "$INST/etc" "$INST/opt"
+  printf 'passwordauthentication no\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\n' >"$T/sshd-T.txt"
+  printf '#!/bin/bash\n[ "$1" = -T ] && cat "%s"\n' "$T/sshd-T.txt" >"$T/bin/sshd"; chmod 755 "$T/bin/sshd"
+  icheck() {   # CASE [VAR=value …]
+    local case="$1"; shift
+    env OFFHOST_INSTALL_ROOT="$INST/opt/lcp-offhost" OFFHOST_BIN_DIR="$IBIN" OFFHOST_CONFIG="$INST/etc/offhost.env" OFFHOST_SUDOERS="$INST/etc/sudoers" \
+      OFFHOST_RECEIVE_USER=lcpt-receive OFFHOST_AUDIT_USER=lcpt-audit OFFHOST_VAULT_USER=lcpt-vault OFFHOST_SSHD_BIN="$T/bin/sshd" OFFHOST_HOME_BASE="$INST/home" "$@" \
+      bash "$OH/offhost-install-check.sh" >"$T/out/$case.log" 2>&1; echo $?
+  }
+  expect_eq "correct installation → PASS" "$(icheck inst-ok)" 0
+  has "$T/out/inst-ok.log" "^OFFHOST_INSTALL=PASS checks=9$" "…nine checks"
+  has "$T/out/inst-ok.log" "^install: hash offhost-publish.sh=[0-9a-f]{12}$" "…publisher hash recorded (prefix)"
+  has "$T/out/inst-ok.log" "^install: hash offhost-lib.sh=[0-9a-f]{12}$" "…library hash recorded (prefix)"
+  reasons() { grep -m1 -oE '^OFFHOST_INSTALL=FAIL reasons=.*' "$T/out/$1.log" | sed 's/^OFFHOST_INSTALL=FAIL reasons=//'; }
+  chmod g+w "$IBIN/offhost-lib.sh"; expect_eq "group-writable library → FAIL" "$(icheck inst-w >/dev/null; reasons inst-w)" "bin-file-writable"; chmod 644 "$IBIN/offhost-lib.sh"
+  chown lcpt-receive "$IBIN/offhost-publish.sh"; expect_eq "non-root publisher owner → FAIL" "$(icheck inst-o >/dev/null; reasons inst-o)" "bin-file-owner"; chown root "$IBIN/offhost-publish.sh"
+  ln -s /etc/hostname "$IBIN/stray"; expect_eq "symlink in the bin directory → FAIL" "$(icheck inst-s >/dev/null; reasons inst-s)" "bin-file-symlink"; rm -f "$IBIN/stray"
+  chmod 666 "$INST/etc/offhost.env"; expect_eq "world-writable config → FAIL" "$(icheck inst-c >/dev/null; reasons inst-c)" "config-mode"; chmod 644 "$INST/etc/offhost.env"
+  chmod 644 "$INST/etc/sudoers"; expect_eq "sudoers not 0440 → FAIL" "$(icheck inst-sm >/dev/null; reasons inst-sm)" "sudoers-mode"; chmod 0440 "$INST/etc/sudoers"
+  cp "$INST/etc/sudoers" "$T/sudoers.bak"; printf 'lcpt-receive ALL=(root) NOPASSWD: /bin/ls\n' >>"$INST/etc/sudoers"
+  expect_eq "extra sudoers rule → FAIL" "$(icheck inst-sr >/dev/null; reasons inst-sr)" "sudoers-rule-count"; cp "$T/sudoers.bak" "$INST/etc/sudoers"; chmod 0440 "$INST/etc/sudoers"; chown root:root "$INST/etc/sudoers"
+  cp "$INST/home/lcpt-receive/.ssh/authorized_keys" "$T/ak.bak"; sed -i 's/^restrict,command="[^"]*" //' "$INST/home/lcpt-receive/.ssh/authorized_keys"
+  expect_eq "upload key without the forced command → FAIL" "$(icheck inst-ak >/dev/null; reasons inst-ak)" "authorized-keys-receive-unrestricted"; cp "$T/ak.bak" "$INST/home/lcpt-receive/.ssh/authorized_keys"; chown lcpt-receive:lcpt-receive "$INST/home/lcpt-receive/.ssh/authorized_keys"; chmod 600 "$INST/home/lcpt-receive/.ssh/authorized_keys"
+  chmod 644 "$INST/home/lcpt-audit/.ssh/authorized_keys"; expect_eq "audit authorized_keys not 0600 → FAIL" "$(icheck inst-am >/dev/null; reasons inst-am)" "authorized-keys-audit-file"; chmod 600 "$INST/home/lcpt-audit/.ssh/authorized_keys"
+  mkdir -p "$INST/home/lcpt-vault/.ssh"; echo "ssh-ed25519 AAAA x" >"$INST/home/lcpt-vault/.ssh/authorized_keys"
+  expect_eq "vault account with an SSH key → FAIL" "$(icheck inst-v >/dev/null; reasons inst-v)" "vault-ssh-key-present"; rm -rf "$INST/home/lcpt-vault/.ssh"
+  printf 'passwordauthentication yes\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\n' >"$T/sshd-T.txt"
+  expect_eq "sshd with password authentication → FAIL" "$(icheck inst-pw >/dev/null; reasons inst-pw)" "sshd-password-auth"
+  printf 'passwordauthentication no\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\n' >"$T/sshd-T.txt"
+  expect_eq "sshd unavailable → FAIL" "$(icheck inst-nos OFFHOST_SSHD_BIN="$T/bin/no-such-sshd" >/dev/null; reasons inst-nos)" "sshd-unavailable"
+  expect_eq "non-root invocation refused" "$(runuser -u lcpt-audit -- bash "$OH/offhost-install-check.sh" 2>/dev/null | tail -n 1)" "OFFHOST_INSTALL=FAIL reasons=install-check-not-root"
+  expect_eq "the check changed nothing (fixture still passes)" "$(icheck inst-again)" 0
+else
+  skip "installation-integrity fixture (requires root and the test accounts)"
+fi
+
+echo "== 27. every documented configuration key is exercised (no placeholder settings) =="
+# For each whitelisted key, the consuming script must assign it to a variable
+# (VAR="${KEY:-…}") AND use that variable in code outside the assignment.
+check_key_used() {   # KEY FILE…
+  local key="$1" f var used=0; shift
+  for f in "$@"; do
+    var="$(grep -oE "^[A-Z_]+=\"\\\$\\{$key:-" "$f" | head -n 1 | sed -E 's/=.*//')"
+    [ -n "$var" ] || continue
+    if [ "$(code "$f" | grep -vE "^$var=\"\\\$\\{$key:-" | grep -cE "\\\$\\{?$var([^A-Z_]|$)")" -ge 1 ]; then used=1; fi
+  done
+  [ "$used" = 1 ]
+}
+SEND_KEYS="$(grep -oE 'readonly CONFIG_KEYS=" [^"]+ "' "$OH/offhost-send.sh" | sed -E 's/readonly CONFIG_KEYS=" //; s/ "$//')"
+for k in $SEND_KEYS; do expect_true "sender key exercised: $k" check_key_used "$k" "$OH/offhost-send.sh"; done
+VAULT_KEYS="$(grep -oE 'readonly LCP_VAULT_CONFIG_KEYS=" [^"]+ "' "$OH/offhost-lib.sh" | sed -E 's/readonly LCP_VAULT_CONFIG_KEYS=" //; s/ "$//')"
+for k in $VAULT_KEYS; do expect_true "vault key exercised: $k" check_key_used "$k" "$OH/offhost-receive.sh" "$OH/offhost-publish.sh" "$OH/offhost-audit.sh" "$OH/offhost-retain.sh"; done
+expect_eq "OFFHOST_MAX_TIME drives the monotonic budget" "$(code "$OH/offhost-send.sh" | grep -c 'REM=$(( MAX_TIME - (SECONDS - START_SECONDS) ))')" 1
+expect_eq "every blocking operation runs under run_limited" "$(code "$OH/offhost-send.sh" | grep -cE '^\s*run_limited "\$(SSH_BIN|AGE_BIN)"')" 2
+expect_eq "timeout uses --foreground with a kill-after grace" "$(code "$OH/offhost-send.sh" | grep -c 'timeout --foreground -k 5 "$REM"')" 1
+expect_eq "the clock-skew limit is applied to the audit header" "$(code "$OH/offhost-send.sh" | grep -c '\-le "$MAX_SKEW"')" 1
+expect_eq "capacity limits are applied by the publisher" "$(code "$OH/offhost-publish.sh" | grep -cE 'MAX_ARCHIVE|MIN_FREE|MAX_GEN' )" "$(code "$OH/offhost-publish.sh" | grep -cE 'MAX_ARCHIVE|MIN_FREE|MAX_GEN')"
+expect_true "publisher applies the per-archive maximum" grep -q '"$SIZE" -gt "$MAX_ARCHIVE"' "$OH/offhost-publish.sh"
+expect_true "publisher applies the free-space reserve" grep -q 'copies \* SIZE )) -ge "$MIN_FREE"' "$OH/offhost-publish.sh"
+expect_true "publisher applies the per-slot cap" grep -q '"$n" -lt "$MAX_GEN"' "$OH/offhost-publish.sh"
+expect_true "auditor reports capacity from the same limits" grep -q 'lcp_capacity_line "$ROOT" "$MAX_GEN" "$MIN_FREE"' "$OH/offhost-audit.sh"
+expect_eq "the receiver never touches published/" "$(code "$OH/offhost-receive.sh" | grep -c '/published')" 0
+
 echo "== 21. static: no cloud-storage provider assumptions in the scripts =="
-code() { grep -vE '^[[:space:]]*#' "$@"; }
 for term in 'storage\.googleapis' 'gserviceaccount' 'workloadIdentity' 'sts\.googleapis' 'iamcredentials' 'gcloud' 'GOOGLE_' 'ifGenerationMatch' 'me-central2' 'CNTXT' 'gsutil' 'OFFHOST_BUCKET' 'x-goog'; do
   if code "$OH"/*.sh "$OH"/*.example | grep -qiE -- "$term"; then bad "no reference to '$term' in the off-host scripts"; else ok "no reference to '$term' in the off-host scripts"; fi
 done
 expect_eq "sender pins the ssh channel (BatchMode, StrictHostKeyChecking, IdentitiesOnly)" "$(code "$OH/offhost-send.sh" | grep -c 'BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes')" 1
 expect_eq "no ssh-keyscan anywhere" "$(code "$OH"/*.sh "$OH"/*.example | grep -c 'ssh-keyscan')" 0
-expect_eq "authorized_keys example uses restrict + forced command for both identities" "$(grep -cE '^restrict,command="/opt/lcp-offhost/bin/offhost-(receive|audit)\.sh" ssh-ed25519 <' "$OH/authorized_keys.example")" 2
+expect_eq "authorized_keys example uses restrict + forced command for every key" "$(grep -cE '^restrict,command="/opt/lcp-offhost/bin/offhost-(receive|audit)\.sh" ssh-ed25519 <' "$OH/authorized_keys.example")" 3
 expect_eq "no private key material in the examples" "$(cat "$OH"/*.example | grep -cE 'AGE-SECRET-KEY|PRIVATE KEY')" 0
+expect_eq "examples define three key pairs (upload, primary audit, GitHub audit)" "$(grep -cE '^restrict,command="/opt/lcp-offhost/bin/offhost-(receive|audit)\.sh" ssh-ed25519 <' "$OH/authorized_keys.example")" 3
+expect_eq "example storage limits are bounded and validated" "$(source "$OH/offhost-lib.sh"; lcp_capacity_settings_ok "$(sed -n 's/^OFFHOST_MAX_GENERATIONS_PER_SLOT=//p' "$OH/offhost.env.example")" "$(sed -n 's/^OFFHOST_MIN_FREE_BYTES=//p' "$OH/offhost.env.example")" "$(sed -n 's/^OFFHOST_MAX_ARCHIVE_BYTES=//p' "$OH/offhost.env.example")" && echo bounded)" bounded
+expect_eq "example per-archive maximum is below the former unrestricted 20 GiB" "$(( $(sed -n 's/^OFFHOST_MAX_ARCHIVE_BYTES=//p' "$OH/offhost.env.example") < 21474836480 ))" 1
 
 echo "== 22. leak scan over every captured output =="
 cat "$T/out"/*.log >"$T/all-output.txt"

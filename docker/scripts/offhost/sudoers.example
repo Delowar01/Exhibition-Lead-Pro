@@ -1,14 +1,17 @@
 # =============================================================================
-# Lead Capture Pro — backup VPS sudoers drop-in (EXAMPLE, B23 G-6D C1)
+# Lead Capture Pro — backup VPS sudoers drop-in (EXAMPLE, B23 G-6D C1/C2)
 # =============================================================================
-# /etc/sudoers.d/lcp-offhost   (owner root, mode 0440; validate with visudo -cf)
+# /etc/sudoers.d/lcp-offhost   (owner root:root, mode 0440; validate with visudo -cf)
 #
-# The upload identity may run exactly one privileged program: the publisher,
-# which moves a validated pending file into the vault-owned published tree as
-# a brand-new inode. Arguments are validated by the publisher itself (plain
-# tokens: object name, size, sha256). The environment is reset (sudo default),
-# so the publisher reads its non-secret settings from /etc/lcp-offhost/offhost.env.
-# No other command, no shell, no password prompt (NOPASSWD + -n in the receiver).
+# The upload identity may run exactly one privileged program: the publisher.
+# It is invoked twice per object — first `--preflight <name> <size> <sha256>`
+# (READ-ONLY capacity/cap/exists check from the vault the upload identity
+# cannot see), then `<name> <size> <sha256>` to publish a validated pending
+# file into the vault-owned published tree as a brand-new inode. Arguments are
+# validated by the publisher itself (plain tokens only). The environment is
+# reset (sudo default), so the publisher reads its non-secret settings from
+# /etc/lcp-offhost/offhost.env. No other command, no shell, no password
+# prompt (NOPASSWD + -n in the receiver).
 Defaults:lcp-receive env_reset, !requiretty, use_pty
 lcp-receive ALL=(root) NOPASSWD: /opt/lcp-offhost/bin/offhost-publish.sh
 
@@ -16,3 +19,6 @@ lcp-receive ALL=(root) NOPASSWD: /opt/lcp-offhost/bin/offhost-publish.sh
 #   crontab -u lcp-vault -e
 #   20 4 * * * OFFHOST_CONFIG=/etc/lcp-offhost/offhost.env bash /opt/lcp-offhost/bin/offhost-retain.sh --apply >> /var/log/lcp-offhost/retain.log 2>&1
 # (dry-run first: the same line without --apply; NOT activated by this branch)
+# Retention is a housekeeping control only: the storage boundary is the
+# per-slot generation cap, the free-space reserve, the per-archive maximum
+# and the dedicated backup file system / quota required at activation.

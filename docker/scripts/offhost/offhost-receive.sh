@@ -11,11 +11,21 @@
 #
 #   HELLO                      → identity line (machine-id hash, host-key
 #                                fingerprints, file-system id, root state)
-#   PUT <name> <size> <sha256> → receive exactly <size> bytes on stdin into a
-#                                private temporary file, validate (exact size,
-#                                sha256, format, slot window, no future stamp),
-#                                hand the file to the privileged publisher and
-#                                relay its single-line verdict
+#   PUT <name> <size> <sha256> → capacity preflight through the privileged
+#                                publisher (read-only), then receive exactly
+#                                <size> bytes on stdin into a private temporary
+#                                file, validate (exact size, sha256, format,
+#                                slot window, no future stamp), hand the file
+#                                to the privileged publisher and relay its
+#                                single-line verdict
+#
+# Storage exhaustion (B23 G-6D C2): before a single byte of a PUT is read, the
+# publisher's read-only preflight confirms — as root, because this user can
+# neither list nor read published/ — that the declared object fits above the
+# configured free-space reserve, is below the per-archive maximum, and that
+# the slot has not reached its generation cap. The publisher repeats the same
+# checks immediately before publication. The uploader only ever sees a stable
+# reason code, never a path, mount or free-space figure.
 #
 # The receiver chooses and validates every destination itself; the client can
 # name an object but never a path. It writes only under <root>/incoming/
@@ -32,8 +42,9 @@
 #
 # Non-secret configuration: OFFHOST_CONFIG (default /etc/lcp-offhost/offhost.env,
 # root-owned): OFFHOST_ROOT, OFFHOST_PUBLISH_CMD, OFFHOST_MAX_ARCHIVE_BYTES,
-# OFFHOST_MAX_MANIFEST_BYTES, OFFHOST_SLOT_WINDOW. Environment-only test hooks:
-# OFFHOST_NOW, LCP_MACHINE_ID_FILE, LCP_HOSTKEY_DIR.
+# OFFHOST_MAX_MANIFEST_BYTES, OFFHOST_MAX_GENERATIONS_PER_SLOT,
+# OFFHOST_MIN_FREE_BYTES, OFFHOST_SLOT_WINDOW. Environment-only test hooks:
+# OFFHOST_NOW, LCP_MACHINE_ID_FILE, LCP_HOSTKEY_DIR, LCP_FSID_OVERRIDE.
 # Never printed: paths, file contents, checksums beyond a 12-character prefix.
 # =============================================================================
 set -Eeuo pipefail
@@ -52,13 +63,16 @@ trap cleanup EXIT
 lcp_load_config "${OFFHOST_CONFIG:-/etc/lcp-offhost/offhost.env}" "$LCP_VAULT_CONFIG_KEYS" 2>/dev/null || reject config-invalid
 ROOT="${OFFHOST_ROOT:-/srv/lcp-offhost}"
 PUBLISH_CMD="${OFFHOST_PUBLISH_CMD:-sudo -n /opt/lcp-offhost/bin/offhost-publish.sh}"
-MAX_ARCHIVE="${OFFHOST_MAX_ARCHIVE_BYTES:-21474836480}"
+MAX_ARCHIVE="${OFFHOST_MAX_ARCHIVE_BYTES:-$LCP_DEFAULT_MAX_ARCHIVE_BYTES}"
 MAX_MANIFEST="${OFFHOST_MAX_MANIFEST_BYTES:-65536}"
+MAX_GEN="${OFFHOST_MAX_GENERATIONS_PER_SLOT:-$LCP_DEFAULT_MAX_GENERATIONS_PER_SLOT}"
+MIN_FREE="${OFFHOST_MIN_FREE_BYTES:-$LCP_DEFAULT_MIN_FREE_BYTES}"
 WINDOW="${OFFHOST_SLOT_WINDOW:-2}"
 NOW="${OFFHOST_NOW:-$(date -u +%s)}"
 [[ "$ROOT" =~ $LCP_PATH_RE ]] || reject config-invalid
 [[ "$PUBLISH_CMD" =~ ^[A-Za-z0-9_./-]+( [A-Za-z0-9_./-]+)*$ ]] || reject config-invalid
-[[ "$MAX_ARCHIVE" =~ $LCP_SIZE_RE ]] && [[ "$MAX_MANIFEST" =~ $LCP_SIZE_RE ]] || reject config-invalid
+[[ "$MAX_MANIFEST" =~ $LCP_SIZE_RE ]] && [ "$MAX_MANIFEST" -le 1048576 ] || reject config-invalid
+lcp_capacity_settings_ok "$MAX_GEN" "$MIN_FREE" "$MAX_ARCHIVE" || reject config-invalid
 [[ "$WINDOW" =~ ^[0-9]{1,2}$ ]] || reject config-invalid
 [[ "$NOW" =~ ^[0-9]+$ ]] || reject config-invalid
 
@@ -85,7 +99,7 @@ STAMP="$(lcp_stamp_epoch "$SET")"; IDX="$(lcp_slot_index "$STAMP")"; CUR="$(lcp_
 [[ "$SIZE" =~ $LCP_SIZE_RE ]] || reject invalid-size
 [[ "$SHA" =~ $LCP_SHA256_RE ]] || reject invalid-checksum
 case "$KIND" in
-  archive)  [ "$SIZE" -ge 64 ] && [ "$SIZE" -le "$MAX_ARCHIVE" ] || reject size-out-of-range ;;
+  archive)  [ "$SIZE" -ge 64 ] || reject size-out-of-range; [ "$SIZE" -le "$MAX_ARCHIVE" ] || reject archive-too-large ;;
   manifest) [ "$SIZE" -le "$MAX_MANIFEST" ] || reject size-out-of-range ;;
 esac
 SLOT="$(lcp_slot_label "$IDX")"
@@ -99,6 +113,15 @@ exec 8>"$INCOMING/.receive.lock"
 flock -n 8 || reject concurrent-upload
 PENDING="$INCOMING/$NAME.pending"
 if [ -e "$PENDING" ] || [ -L "$PENDING" ]; then rm -f -- "${PENDING:?}"; fi
+
+# ── privileged, read-only capacity preflight BEFORE reading the stream ───────
+# (this user cannot see published/; the publisher answers with a sanitized code)
+# shellcheck disable=SC2086
+PF="$($PUBLISH_CMD --preflight "$NAME" "$SIZE" "$SHA" 2>/dev/null </dev/null)" || true
+PFL="$(printf '%s\n' "$PF" | grep -E '^(PREFLIGHT ok|EXISTS |REJECTED )' | tail -n 1 || true)"
+if [[ "$PFL" =~ ^EXISTS\ name=([^ ]+)$ ]] && [ "${BASH_REMATCH[1]}" = "$NAME" ]; then reply "EXISTS name=$NAME"; exit 0; fi
+if [[ "$PFL" =~ ^REJECTED\ reason=([a-z0-9-]+)$ ]]; then reject "${BASH_REMATCH[1]}"; fi
+[ "$PFL" = "PREFLIGHT ok" ] || reject capacity-unavailable
 
 # ── receive exactly SIZE bytes into a private temporary file ─────────────────
 TMP="$(mktemp "$INCOMING/.$NAME.XXXXXXXX.partial")"

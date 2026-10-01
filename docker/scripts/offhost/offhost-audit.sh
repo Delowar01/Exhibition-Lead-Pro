@@ -2,12 +2,14 @@
 # =============================================================================
 # Lead Capture Pro — off-host backup auditor (BACKUP VPS, forced command)
 # =============================================================================
-# The ONLY program the audit identity can run (bound in
-# ~lcp-audit/.ssh/authorized_keys with restrict,command="…/offhost-audit.sh").
-# It is strictly LIST-ONLY: it answers
+# The ONLY program the audit identities can run (both audit public keys — the
+# primary VPS's and GitHub's — are bound in ~lcp-audit/.ssh/authorized_keys
+# with restrict,command="…/offhost-audit.sh"). It is strictly LIST-ONLY: it
+# answers
 #
 #   HELLO → the same sanitized identity line as the receiver
-#   AUDIT → one header line, one line per published generation, one footer
+#   AUDIT → one header line, one CAPACITY line, one line per published
+#           generation, one footer
 #
 # and never uploads, reads an archive, renames, overwrites, deletes or runs
 # anything else. The audit user has traverse+list rights on published/ and
@@ -18,14 +20,17 @@
 # Output (sanitized: names, sizes, timestamps, states, counts — never paths,
 # contents or complete checksums):
 #   LCP-OFFHOST/1 AUDIT now_utc=… machine=… hostkeys=… fsid=… root=ok current_slot=<label> window=<n>
+#   LCP-OFFHOST/1 CAPACITY state=ok|low|over-cap|unavailable free_state=above-reserve|below-reserve|unknown max_generations_per_slot=<n> current_slot_generations=<n> over_cap_slots=<n> reserve_bytes=<n> free_bytes=<n|unknown>
 #   generation slot=<label> set=<set> archive=present|missing archive_size=<n> archive_mtime_utc=<ts|none> archive_sha256_prefix=<12|none> archive_receipt=ok|missing|invalid manifest=present|missing manifest_receipt=ok|missing|invalid manifest_valid=yes|no complete=yes|no
 #   LCP-OFFHOST/1 AUDIT_END generations=<n> complete=<n> incomplete=<n> pending=<n> pending_stale=<n> partial=<n> partial_stale=<n> orphans=<n> quarantine=<n> current_slot_complete=yes|no
 #
-# Consumers: the primary-side sender (post-upload verification) and the
-# GitHub workflow backup-offhost-hostinger.yml (daily read-only health check).
+# Consumers: the primary-side sender (pre- and post-upload verification, bound
+# to the upload HELLO identity) and the GitHub workflow
+# backup-offhost-hostinger.yml (daily read-only health check).
 # Non-secret configuration (OFFHOST_CONFIG): OFFHOST_ROOT, OFFHOST_SLOT_WINDOW,
-# OFFHOST_STALE_SECONDS. Environment-only test hooks: OFFHOST_NOW,
-# LCP_MACHINE_ID_FILE, LCP_HOSTKEY_DIR.
+# OFFHOST_STALE_SECONDS, OFFHOST_MAX_GENERATIONS_PER_SLOT, OFFHOST_MIN_FREE_BYTES,
+# OFFHOST_MAX_ARCHIVE_BYTES. Environment-only test hooks: OFFHOST_NOW,
+# LCP_MACHINE_ID_FILE, LCP_HOSTKEY_DIR, LCP_FSID_OVERRIDE, LCP_FREE_BYTES_OVERRIDE.
 # =============================================================================
 set -Eeuo pipefail
 umask 077
@@ -41,8 +46,12 @@ lcp_load_config "${OFFHOST_CONFIG:-/etc/lcp-offhost/offhost.env}" "$LCP_VAULT_CO
 ROOT="${OFFHOST_ROOT:-/srv/lcp-offhost}"
 WINDOW="${OFFHOST_SLOT_WINDOW:-2}"
 STALE="${OFFHOST_STALE_SECONDS:-21600}"
+MAX_ARCHIVE="${OFFHOST_MAX_ARCHIVE_BYTES:-$LCP_DEFAULT_MAX_ARCHIVE_BYTES}"
+MAX_GEN="${OFFHOST_MAX_GENERATIONS_PER_SLOT:-$LCP_DEFAULT_MAX_GENERATIONS_PER_SLOT}"
+MIN_FREE="${OFFHOST_MIN_FREE_BYTES:-$LCP_DEFAULT_MIN_FREE_BYTES}"
 NOW="${OFFHOST_NOW:-$(date -u +%s)}"
 [[ "$ROOT" =~ $LCP_PATH_RE ]] && [[ "$WINDOW" =~ ^[0-9]{1,2}$ ]] && [[ "$STALE" =~ ^[0-9]{1,8}$ ]] && [[ "$NOW" =~ ^[0-9]+$ ]] || reject config-invalid
+lcp_capacity_settings_ok "$MAX_GEN" "$MIN_FREE" "$MAX_ARCHIVE" || reject config-invalid
 
 CMD="${SSH_ORIGINAL_COMMAND:-}"
 [ -n "$CMD" ] || reject no-command
@@ -55,6 +64,7 @@ lcp_root_ok "$ROOT" || reject root-unavailable
 PUB="$ROOT/published"; INCOMING="$ROOT/incoming"; QUAR="$ROOT/quarantine"
 CUR="$(lcp_slot_index "$NOW")"; CUR_LABEL="$(lcp_slot_label "$CUR")"
 echo "$LCP_PROTOCOL AUDIT now_utc=$(lcp_utc "$NOW") machine=$(lcp_machine_hash) hostkeys=$(lcp_local_hostkey_fingerprints) fsid=$(lcp_fs_id "$ROOT") root=ok current_slot=$CUR_LABEL window=$WINDOW"
+lcp_capacity_line "$ROOT" "$MAX_GEN" "$MIN_FREE" "$CUR_LABEL"
 
 generations=0; complete=0; incomplete=0; orphans=0; cur_complete=no
 if [ -d "$PUB" ]; then

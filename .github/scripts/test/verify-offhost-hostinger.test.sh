@@ -74,9 +74,12 @@ BFP="$(lcp_hostkey_fingerprint "$T/bk.pub")"; PFP="$(lcp_hostkey_fingerprint "$T
 MACHINE="$(printf 'vault' | sha256sum | cut -c1-64)"
 NOWH="$(ts '2026-09-30 05:00:00')"
 # mk_audit FILE NOW_UTC HOSTKEYS ROOT CUR_SLOT FOOTER_COUNTS GEN_LINE…
+CAP_OK="LCP-OFFHOST/1 CAPACITY state=ok free_state=above-reserve max_generations_per_slot=2 current_slot_generations=1 over_cap_slots=0 reserve_bytes=5368709120 free_bytes=40000000000"
+CAP_LINE="$CAP_OK"   # tests may override temporarily
 mk_audit() {
   local f="$1" now="$2" hk="$3" root="$4" cur="$5" footer="$6"; shift 6
   { echo "LCP-OFFHOST/1 AUDIT now_utc=$now machine=$MACHINE hostkeys=$hk fsid=65b3a49f09c069d5 root=$root current_slot=$cur window=2"
+    [ -z "$CAP_LINE" ] || echo "$CAP_LINE"
     for l in "$@"; do echo "$l"; done
     echo "LCP-OFFHOST/1 AUDIT_END $footer"; } >"$f"
 }
@@ -95,17 +98,18 @@ summary() { grep -m1 -E '^OFFHOST_HEALTH=' "$T/out/$1.log" || true; }
 
 mk_audit "$T/healthy.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$PREV" "$PREVSET" yes)" "$(gen "$CUR" "$CURSET" yes)"
 expect_eq "healthy at 05:00 → PASS" "$(run_v healthy "$NOWH")" 0
-expect_eq "…summary" "$(summary healthy)" "OFFHOST_HEALTH=PASS slot=$CUR set=$CURSET archive_size=12345 generations=2 complete=2 expected=current"
+expect_eq "…summary" "$(summary healthy)" "OFFHOST_HEALTH=PASS slot=$CUR set=$CURSET archive_size=12345 generations=2 complete=2 expected=current capacity=ok"
+has "$T/out/healthy.log" "^capacity: state=ok free_state=above-reserve current_slot_generations=1/2$" "capacity line evaluated"
 expect_eq "exactly one summary line" "$(grep -c '^OFFHOST_HEALTH=' "$T/out/healthy.log")" 1
 has "$T/out/healthy.log" "^identity: backup_vps_machine=[0-9a-f]{12} same_host=no pinned_hostkey=reported$" "identity line is sanitized"
 
 cp "$T/healthy.audit" "$T/late.audit"; sed -i 's/now_utc=2026-09-30T05:00:07Z/now_utc=2026-09-30T22:59:50Z/' "$T/late.audit"
 expect_eq "GitHub start 18 h late → still PASS (slot-aware)" "$(run_v late "$(ts '2026-09-30 23:00:00')")" 0
-has "$T/out/late.log" "expected=current$" "…expects the current slot"
+has "$T/out/late.log" "expected=current capacity=ok$" "…expects the current slot"
 
 mk_audit "$T/early.audit" 2026-09-30T03:20:01Z "$BFP" ok "$CUR" "generations=1 complete=1 incomplete=0 pending=0 pending_stale=0 partial=0 partial_stale=0 orphans=0 quarantine=0 current_slot_complete=no" "$(gen "$PREV" "$PREVSET" yes)"
 expect_eq "run before the transfer grace with only yesterday's generation → PASS" "$(run_v early "$(ts '2026-09-30 03:20:00')")" 0
-expect_eq "…expects the previous slot" "$(summary early)" "OFFHOST_HEALTH=PASS slot=$PREV set=$PREVSET archive_size=12345 generations=1 complete=1 expected=previous"
+expect_eq "…expects the previous slot" "$(summary early)" "OFFHOST_HEALTH=PASS slot=$PREV set=$PREVSET archive_size=12345 generations=1 complete=1 expected=previous capacity=ok"
 
 cp "$T/early.audit" "$T/missing.audit"; sed -i 's/now_utc=2026-09-30T03:20:01Z/now_utc=2026-09-30T05:00:01Z/' "$T/missing.audit"
 expect_eq "after the grace with only yesterday's generation → FAIL" "$(run_v missing "$NOWH")" 1
@@ -167,10 +171,55 @@ has "$T/out/nofooter.log" "reason=audit-footer-missing$" "audit-footer-missing"
 expect_eq "missing known_hosts → FAIL" "$(run_v nokh "$NOWH" AUDIT_LOG="$T/healthy.audit" PRIMARY_KNOWN_HOSTS="$T/none")" 1
 has "$T/out/nokh.log" "reason=primary-known-hosts-missing$" "primary-known-hosts-missing"
 
+echo "== 2b. capacity health and listing structure =="
+CAP_LINE=""; mk_audit "$T/capmiss.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$PREV" "$PREVSET" yes)" "$(gen "$CUR" "$CURSET" yes)"; CAP_LINE="$CAP_OK"
+expect_eq "capacity line absent → FAIL" "$(run_v capmiss "$NOWH")" 1
+has "$T/out/capmiss.log" "^OFFHOST_HEALTH=FAIL reason=capacity-missing$" "capacity-missing"
+cp "$T/healthy.audit" "$T/capdup.audit"; sed -i "2p" "$T/capdup.audit"
+expect_eq "duplicate capacity line → FAIL" "$(run_v capdup "$NOWH")" 1
+has "$T/out/capdup.log" "^OFFHOST_HEALTH=FAIL reason=capacity-duplicate detail=count=2$" "capacity-duplicate"
+CAP_LINE="LCP-OFFHOST/1 CAPACITY state=ok free=lots"; mk_audit "$T/capbad.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)"; CAP_LINE="$CAP_OK"
+expect_eq "malformed capacity line → FAIL" "$(run_v capbad "$NOWH")" 1
+has "$T/out/capbad.log" "^OFFHOST_HEALTH=FAIL reason=capacity-invalid$" "capacity-invalid"
+CAP_LINE="LCP-OFFHOST/1 CAPACITY state=low free_state=below-reserve max_generations_per_slot=2 current_slot_generations=1 over_cap_slots=0 reserve_bytes=5368709120 free_bytes=1000"
+mk_audit "$T/caplow.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)"; CAP_LINE="$CAP_OK"
+expect_eq "free space below the reserve → FAIL" "$(run_v caplow "$NOWH")" 1
+has "$T/out/caplow.log" "^OFFHOST_HEALTH=FAIL reason=free-space-below-reserve$" "free-space-below-reserve"
+CAP_LINE="LCP-OFFHOST/1 CAPACITY state=ok free_state=above-reserve max_generations_per_slot=2 current_slot_generations=1 over_cap_slots=0 reserve_bytes=5368709120 free_bytes=100"
+mk_audit "$T/capincons.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)"; CAP_LINE="$CAP_OK"
+expect_eq "reported free bytes below the reserve despite state=ok → FAIL" "$(run_v capincons "$NOWH")" 1
+has "$T/out/capincons.log" "^OFFHOST_HEALTH=FAIL reason=free-space-below-reserve detail=reported$" "free-space-below-reserve (reported)"
+CAP_LINE="LCP-OFFHOST/1 CAPACITY state=over-cap free_state=above-reserve max_generations_per_slot=2 current_slot_generations=3 over_cap_slots=1 reserve_bytes=5368709120 free_bytes=40000000000"
+mk_audit "$T/capover.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)"; CAP_LINE="$CAP_OK"
+expect_eq "slot over its configured cap → FAIL" "$(run_v capover "$NOWH")" 1
+has "$T/out/capover.log" "^OFFHOST_HEALTH=FAIL reason=slot-over-cap detail=over_cap_slots=1,current_slot_generations=3,max=2$" "slot-over-cap"
+CAP_LINE="LCP-OFFHOST/1 CAPACITY state=unavailable free_state=unknown max_generations_per_slot=2 current_slot_generations=1 over_cap_slots=0 reserve_bytes=5368709120 free_bytes=unknown"
+mk_audit "$T/capunav.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)"; CAP_LINE="$CAP_OK"
+expect_eq "capacity undeterminable → FAIL" "$(run_v capunav "$NOWH")" 1
+has "$T/out/capunav.log" "^OFFHOST_HEALTH=FAIL reason=capacity-unhealthy detail=free_state=unknown$" "capacity-unhealthy"
+CAP_LINE="LCP-OFFHOST/1 CAPACITY state=ok free_state=above-reserve max_generations_per_slot=2 current_slot_generations=2 over_cap_slots=0 reserve_bytes=5368709120 free_bytes=40000000000"
+mk_audit "$T/capfull.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)"; CAP_LINE="$CAP_OK"
+expect_eq "slot exactly at the cap is healthy" "$(run_v capfull "$NOWH")" 0
+cp "$T/healthy.audit" "$T/hdrdup.audit"; sed -i "1p" "$T/hdrdup.audit"
+expect_eq "duplicate header → FAIL" "$(run_v hdrdup "$NOWH")" 1
+has "$T/out/hdrdup.log" "^OFFHOST_HEALTH=FAIL reason=audit-header-duplicate detail=count=2$" "audit-header-duplicate"
+cp "$T/healthy.audit" "$T/ftrdup.audit"; tail -n 1 "$T/healthy.audit" >>"$T/ftrdup.audit"
+expect_eq "duplicate footer → FAIL" "$(run_v ftrdup "$NOWH")" 1
+has "$T/out/ftrdup.log" "^OFFHOST_HEALTH=FAIL reason=audit-footer-duplicate detail=count=2$" "audit-footer-duplicate"
+cp "$T/healthy.audit" "$T/v2.audit"; sed -i "2s|^LCP-OFFHOST/1 |LCP-OFFHOST/2 |" "$T/v2.audit"
+expect_eq "protocol version drift → FAIL" "$(run_v v2 "$NOWH")" 1
+has "$T/out/v2.log" "^OFFHOST_HEALTH=FAIL reason=audit-protocol-version$" "audit-protocol-version"
+mk_audit "$T/gendup.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)" "$(gen "$CUR" "$CURSET" yes)"
+expect_eq "duplicate generation record → FAIL" "$(run_v gendup "$NOWH")" 1
+has "$T/out/gendup.log" "^OFFHOST_HEALTH=FAIL reason=audit-generation-duplicate$" "audit-generation-duplicate"
+mk_audit "$T/genbad.audit" 2026-09-30T05:00:07Z "$BFP" ok "$CUR" "$CLEAN" "$(gen "$CUR" "$CURSET" yes)" "generation slot=$PREV set=$PREVSET archive=present extra=1"
+expect_eq "malformed generation record → FAIL" "$(run_v genbad "$NOWH")" 1
+has "$T/out/genbad.log" "^OFFHOST_HEALTH=FAIL reason=audit-generation-line-invalid$" "audit-generation-line-invalid"
+
 echo "== 3. summary line compatibility with the workflow extraction regex =="
 WF_RE="$(grep -oE "grep -m1 -E '\^OFFHOST_HEALTH=[^']+'" "$WORKFLOW" | head -n 1 | sed -E "s/^grep -m1 -E '//; s/'$//")"
 expect_true "workflow extraction regex found" test -n "$WF_RE"
-for c in healthy early missing incomplete stale skew rejected; do
+for c in healthy early missing incomplete stale skew rejected caplow capover; do
   line="$(summary "$c")"
   if printf '%s\n' "$line" | grep -qE "$WF_RE"; then ok "summary of '$c' matches the workflow regex"; else bad "summary of '$c' matches the workflow regex" "$line"; fi
 done
@@ -229,6 +278,14 @@ expect_eq "the simulated failure runs after the verifier, in the audit job" "$(w
 expect_eq "simulate step gated on a manual dispatch with the input" "$(wf '[s for s in d["jobs"]["audit"]["steps"] if s.get("id")=="simulate"][0]["if"]')" "github.event_name == 'workflow_dispatch' && inputs.simulate_failure == true"
 expect_eq "the alert job uses the decision script" "$(grep -c 'offhost-hostinger-alert-decision.sh' "$WORKFLOW")" 2
 expect_eq "audit job has no issues permission" "$(wf '"issues" in d["jobs"]["audit"]["permissions"]')" False
+echo "== 5b. immutable action pins =="
+USES="$(grep -E '^\s+-? ?uses:' "$WORKFLOW" | sed -E 's/^\s+-? ?uses:\s*//')"
+expect_eq "exactly two external action references" "$(printf '%s\n' "$USES" | grep -c .)" 2
+expect_eq "every uses: is pinned to a full 40-character commit SHA with the release tag as a comment" "$(printf '%s\n' "$USES" | grep -cE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$')" 2
+expect_eq "no mutable tag or branch reference (@v4, @main, @master, @latest)" "$(printf '%s\n' "$USES" | grep -cE '@(v[0-9.]*|main|master|latest|[A-Za-z][A-Za-z0-9._-]*)( |$)')" 0
+expect_eq "checkout pinned to the upstream v4.4.0 commit" "$(printf '%s\n' "$USES" | grep -c '^actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0$')" 2
+expect_eq "both checkouts keep persist-credentials: false" "$(wf 'sum(1 for j in d["jobs"].values() for s in j["steps"] if "uses" in s and s.get("with",{}).get("persist-credentials") is False)')" 2
+expect_eq "sparse checkout of the alert job unchanged" "$(wf 'd["jobs"]["alert"]["steps"][0]["with"]["sparse-checkout"].split()')" "['.github/scripts/offhost-hostinger-alert-decision.sh']"
 
 echo "== 6. static: no cloud-storage provider assumptions; no dump bytes on the runner =="
 code() { grep -vE '^[[:space:]]*#' "$@"; }

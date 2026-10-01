@@ -34,12 +34,20 @@
 #
 # Secrets (values never printed):
 #   BACKUP_VPS_HOST, BACKUP_VPS_PORT, BACKUP_VPS_AUDIT_USER   backup VPS, audit account
-#   BACKUP_VPS_AUDIT_SSH_KEY                                  audit private key (forced command)
+#   BACKUP_VPS_AUDIT_SSH_KEY                                  the GITHUB-to-backup audit private key:
+#                                                             a third key pair, distinct from the primary
+#                                                             VPS's audit key, bound to the same forced
+#                                                             read-only audit command, separately
+#                                                             revocable and attributable (B23 G-6D C2)
 #   BACKUP_VPS_KNOWN_HOSTS                                    pinned host key of the backup VPS
 #   VPS_KNOWN_HOSTS                                           pinned host key of the PRIMARY VPS (already
 #                                                             used by backup-health-alert.yml) — for the
 #                                                             same-host rejection
 #   BACKUP_VPS_MACHINE_HASH (optional)                        sha256 of the backup VPS machine-id
+#
+# Supply chain (B23 G-6D C2): every external action is pinned to a full
+# 40-character commit SHA resolved from the official upstream repository; the
+# release tag is kept as a comment for readability only.
 # =============================================================================
 name: backup-offhost-hostinger
 
@@ -81,7 +89,7 @@ jobs:
       summary: ${{ steps.summary.outputs.summary }}
       simulated: ${{ steps.simulate.outputs.simulated }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           sparse-checkout: |
             .github/scripts/verify-offhost-hostinger.sh
@@ -223,7 +231,7 @@ jobs:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
       TRIGGER: ${{ github.event_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           sparse-checkout: |
             .github/scripts/offhost-hostinger-alert-decision.sh

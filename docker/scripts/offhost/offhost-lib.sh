@@ -39,7 +39,17 @@ readonly LCP_AGE_HEADER='age-encryption.org/v1'
 readonly LCP_ROOT_MARKER='.lcp-offhost-root'
 # keys of the ONE shared non-secret backup-VPS configuration file
 # (/etc/lcp-offhost/offhost.env) read by receiver, publisher, auditor and retention
-readonly LCP_VAULT_CONFIG_KEYS=" OFFHOST_ROOT OFFHOST_PUBLISH_CMD OFFHOST_VAULT_USER OFFHOST_AUDIT_GROUP OFFHOST_RECEIVE_USER OFFHOST_SLOT_WINDOW OFFHOST_MAX_ARCHIVE_BYTES OFFHOST_MAX_MANIFEST_BYTES OFFHOST_STALE_SECONDS OFFHOST_RETAIN_DAYS OFFHOST_PROTECT_NEWEST OFFHOST_QUARANTINE_AFTER_DAYS "
+readonly LCP_VAULT_CONFIG_KEYS=" OFFHOST_ROOT OFFHOST_PUBLISH_CMD OFFHOST_VAULT_USER OFFHOST_AUDIT_GROUP OFFHOST_RECEIVE_USER OFFHOST_SLOT_WINDOW OFFHOST_MAX_ARCHIVE_BYTES OFFHOST_MAX_MANIFEST_BYTES OFFHOST_MAX_GENERATIONS_PER_SLOT OFFHOST_MIN_FREE_BYTES OFFHOST_STALE_SECONDS OFFHOST_RETAIN_DAYS OFFHOST_PROTECT_NEWEST OFFHOST_QUARANTINE_AFTER_DAYS "
+# storage limits (B23 G-6D C2): a compromised upload key must never fill the vault.
+# Defaults are deliberately small for the dev database (daily gzip dump well below
+# 100 MiB); raise them consciously at activation. Zero/unbounded values are refused.
+readonly LCP_DEFAULT_MAX_ARCHIVE_BYTES=2147483648        # 2 GiB per archive
+readonly LCP_DEFAULT_MAX_GENERATIONS_PER_SLOT=2
+readonly LCP_DEFAULT_MIN_FREE_BYTES=5368709120           # 5 GiB reserve that uploads may never consume
+readonly LCP_MIN_MAX_ARCHIVE_BYTES=1048576               # 1 MiB
+readonly LCP_MAX_MAX_ARCHIVE_BYTES=68719476736           # 64 GiB
+readonly LCP_MIN_MIN_FREE_BYTES=104857600                # 100 MiB
+readonly LCP_MAX_MIN_FREE_BYTES=10000000000000           # 10 TB
 
 # ── slot arithmetic (UTC epoch integers only; deterministic) ─────────────────
 lcp_slot_index() { [[ "$1" =~ ^[0-9]+$ ]] || return 1; echo $(( ($1 - LCP_SLOT_OFFSET) / LCP_DAY )); }
@@ -131,7 +141,27 @@ lcp_lists_intersect() {
   return 1
 }
 # lcp_fs_id PATH → hexadecimal file-system id of the path's file system
-lcp_fs_id() { stat -f -c %i "$1" 2>/dev/null || echo unknown; }
+# (LCP_FSID_OVERRIDE is an environment-only hook for the deterministic harness)
+lcp_fs_id() {
+  if [ -n "${LCP_FSID_OVERRIDE:-}" ]; then echo "$LCP_FSID_OVERRIDE"; return 0; fi
+  stat -f -c %i "$1" 2>/dev/null || echo unknown
+}
+# lcp_free_bytes PATH → bytes available to unprivileged users on the path's file
+# system, or "unknown" (LCP_FREE_BYTES_OVERRIDE: environment-only test hook)
+lcp_free_bytes() {
+  local a s
+  if [ -n "${LCP_FREE_BYTES_OVERRIDE:-}" ]; then echo "$LCP_FREE_BYTES_OVERRIDE"; return 0; fi
+  a="$(stat -f -c %a "$1" 2>/dev/null)" && s="$(stat -f -c %S "$1" 2>/dev/null)" || { echo unknown; return 0; }
+  [[ "$a" =~ ^[0-9]+$ ]] && [[ "$s" =~ ^[0-9]+$ ]] || { echo unknown; return 0; }
+  echo $(( a * s ))
+}
+# lcp_capacity_settings_ok MAX_GEN MIN_FREE MAX_ARCHIVE → 0 iff every limit is
+# a bounded positive value (unsafe zero/unbounded settings are refused)
+lcp_capacity_settings_ok() {
+  [[ "$1" =~ ^[0-9]{1,2}$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 99 ] || return 1
+  [[ "$2" =~ ^[0-9]{1,14}$ ]] && [ "$2" -ge "$LCP_MIN_MIN_FREE_BYTES" ] && [ "$2" -le "$LCP_MAX_MIN_FREE_BYTES" ] || return 1
+  [[ "$3" =~ ^[0-9]{1,12}$ ]] && [ "$3" -ge "$LCP_MIN_MAX_ARCHIVE_BYTES" ] && [ "$3" -le "$LCP_MAX_MAX_ARCHIVE_BYTES" ] || return 1
+}
 
 # ── dump checks (read-only; identical rules to the local G-6 checker) ────────
 lcp_dump_header_ok() { zcat "$1" 2>/dev/null | awk 'NR <= 3 && $0 == "-- PostgreSQL database dump" { f = 1 } END { exit(f ? 0 : 1) }'; }
@@ -275,6 +305,38 @@ lcp_generation_state() {
   fi
   [ "$arc_state" = present ] && [ "$arc_rc" = ok ] && [ "$man_state" = present ] && [ "$man_rc" = ok ] && [ "$man_valid" = yes ] && complete=yes
   echo "archive=$arc_state archive_size=$arc_size archive_mtime_utc=$arc_mtime archive_sha256_prefix=$arc_pfx archive_receipt=$arc_rc manifest=$man_state manifest_receipt=$man_rc manifest_valid=$man_valid complete=$complete"
+}
+# lcp_slot_archive_count SLOTDIR → number of published archives (validated names,
+# regular files) in a generation directory; an archive counts even without its
+# manifest, so an interrupted generation still consumes the slot cap
+lcp_slot_archive_count() {
+  local f n c=0
+  for f in "$1"/leadcapture-*.sql.gz.age; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    n="${f##*/}"; lcp_object_kind "$n" || continue
+    c=$((c + 1))
+  done
+  echo "$c"
+}
+# lcp_capacity_line ROOT MAX_GEN MIN_FREE CUR_LABEL → the sanitized CAPACITY line
+# of the audit protocol (states and numbers only, never paths)
+lcp_capacity_line() {
+  local root="$1" max_gen="$2" min_free="$3" cur="$4" pub="$1/published" free free_state state cur_n=0 over=0 d label n
+  free="$(lcp_free_bytes "$pub")"
+  if [ "$free" = unknown ]; then free_state=unknown; state=unavailable
+  elif [ "$free" -lt "$min_free" ]; then free_state=below-reserve; state=low
+  else free_state=above-reserve; state=ok; fi
+  if [ -d "$pub" ]; then
+    for d in "$pub"/*; do
+      [ -d "$d" ] && [ ! -L "$d" ] || continue
+      label="${d##*/}"; [[ "$label" =~ $LCP_SLOT_LABEL_RE ]] || continue
+      n="$(lcp_slot_archive_count "$d")"
+      [ "$label" = "$cur" ] && cur_n="$n"
+      [ "$n" -le "$max_gen" ] || over=$((over + 1))
+    done
+  fi
+  [ "$over" = 0 ] || state=over-cap
+  echo "$LCP_PROTOCOL CAPACITY state=$state free_state=$free_state max_generations_per_slot=$max_gen current_slot_generations=$cur_n over_cap_slots=$over reserve_bytes=$min_free free_bytes=$free"
 }
 # lcp_slot_sets SLOTDIR → the set names found in a generation directory (archives
 # and manifests, validated names only; unknown entries are ignored here and
