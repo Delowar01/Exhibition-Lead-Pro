@@ -1,5 +1,5 @@
 # =============================================================================
-# Lead Capture Pro — backup VPS authorized_keys (EXAMPLE, B23 G-6D C1/C2)
+# Lead Capture Pro — backup VPS authorized_keys (EXAMPLE, B23 G-6D C1/C2/C5)
 # =============================================================================
 # Two local accounts on the BACKUP VPS, THREE key pairs, each with exactly ONE
 # forced command. `restrict` disables PTY allocation, agent, X11 and TCP
@@ -36,14 +36,51 @@ restrict,command="/opt/lcp-offhost/bin/offhost-audit.sh" ssh-ed25519 <GITHUB-AUD
 
 # /home/lcp-vault/.ssh/authorized_keys     MUST NOT EXIST (the vault identity has no SSH login)
 
-# sshd_config on the backup VPS (activation prerequisite; the checker verifies
-# the EFFECTIVE configuration globally with `sshd -T` AND per restricted
-# account with `sshd -T -C user=lcp-receive,…` / `user=lcp-audit,…`, so a
-# `Match User` block re-enabling passwords for one account is caught; every
-# Match block may use the User criterion only, Includes must stay inside
-# sshd_config.d, and the three service accounts must have locked passwords):
+# sshd_config on the backup VPS (activation prerequisite). The checker verifies
+# the EFFECTIVE configuration of the INSPECTED FILE — `sshd -T -f
+# /etc/ssh/sshd_config` globally AND `sshd -T -f /etc/ssh/sshd_config -C
+# user=lcp-receive,host=<host>,addr=<addr>` / `user=lcp-audit,…` per restricted
+# account — so a `Match User` block that widens one account is caught and the
+# daemon's compiled-in default can never stand in for the installed file. The
+# inspected path must be canonical (no symlinked component) inside a real
+# root-owned, non-writable directory; every Match block may use the User
+# criterion only; Includes must stay inside sshd_config.d; the three service
+# accounts must have locked passwords. Required effective values (a directive
+# that is ABSENT from the dump fails — absence is never read as "none"):
+#
+#   PermitRootLogin no
 #   PasswordAuthentication no
 #   KbdInteractiveAuthentication no
 #   PubkeyAuthentication yes
-#   PermitRootLogin no
-#   AllowUsers lcp-receive lcp-audit <operator-account>   (never lcp-vault)
+#   AuthenticationMethods publickey          # exactly this; "any" fails
+#   HostbasedAuthentication no
+#   GSSAPIAuthentication no
+#   KerberosAuthentication no
+#   PermitEmptyPasswords no
+#   AuthorizedKeysFile .ssh/authorized_keys  # ONE file; the Ubuntu default
+#                                            # adds .ssh/authorized_keys2 → fails
+#   AuthorizedKeysCommand none               # no key command (and no command user)
+#   TrustedUserCAKeys none                   # no certificate CA
+#   AuthorizedPrincipalsFile none            # no principals file or command
+#   AuthorizedPrincipalsCommand none
+#   ForceCommand none                        # the key-line command stays controlling;
+#                                            # no global or Match ForceCommand override
+#   StrictModes yes
+#   PermitUserEnvironment no                 # no client-controlled environment
+#   AcceptEnv LANG LC_*                      # locale only — never OFFHOST_*, LCP_*,
+#                                            # PATH, BASH_ENV, ENV, SHELLOPTS,
+#                                            # BASHOPTS, LD_* or a broad pattern
+#   # no SetEnv for the service accounts
+#   AllowUsers lcp-receive lcp-audit <operator-account>
+#     literal user names only: no `*`, `?`, `!negation`, `user@host`, comma or
+#     bracket/backslash pattern; each service account exactly once; never
+#     lcp-vault; every other name must be listed in OFFHOST_SSHD_OPERATOR_USERS
+#     (comma-separated) when the checker runs, e.g.
+#     OFFHOST_SSHD_OPERATOR_USERS=<operator-account>
+#
+# Evidence to record in the activation record (output of the real daemon on
+# the backup VPS, names and values only — never the file itself):
+#   sshd -T -f /etc/ssh/sshd_config | grep -Ei '^(permitrootlogin|passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication|forcecommand|permituserenvironment|allowusers) '
+#   sshd -T -f /etc/ssh/sshd_config -C user=lcp-receive,host=$(hostname),addr=127.0.0.1 | grep -Ei '^(authenticationmethods|authorizedkeysfile|authorizedkeyscommand|authorizedkeyscommanduser|trustedusercakeys|authorizedprincipalsfile|authorizedprincipalscommand|authorizedprincipalscommanduser|forcecommand|strictmodes|permituserenvironment|acceptenv|setenv|hostbasedauthentication|gssapiauthentication|kerberosauthentication|permitemptypasswords) '
+#   (and the same `-C user=lcp-audit,…` line), followed by
+#   OFFHOST_SSHD_OPERATOR_USERS=<operator-account> offhost-install-check.sh → OFFHOST_INSTALL=PASS

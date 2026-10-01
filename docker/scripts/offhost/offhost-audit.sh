@@ -34,7 +34,8 @@
 # =============================================================================
 set -Eeuo pipefail
 umask 077
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin   # fixed before any external tool (B23 G-6D C5)
+HERE="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)"
 # shellcheck source=offhost-lib.sh
 source "$HERE/offhost-lib.sh"
 

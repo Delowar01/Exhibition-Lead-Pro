@@ -24,6 +24,16 @@
 # complete checksums (12-character prefixes only) or unrestricted paths.
 # =============================================================================
 
+# Deterministic execution environment (B23 G-6D C5): every script that sources
+# this library — the forced commands, the privileged publisher, retention, the
+# installation check and the sender — resolves tools under a fixed PATH and
+# parses text under a fixed locale. sshd may pass LANG/LC_* through AcceptEnv
+# and cron/sudo environments vary; none of that may influence command
+# resolution, sorting, number or date handling, or the identity helpers.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C LANG=C LANGUAGE=C
+unset BASH_ENV ENV CDPATH GLOBIGNORE IFS 2>/dev/null || true
+
 readonly LCP_PROTOCOL="LCP-OFFHOST/1"
 readonly LCP_MANIFEST_SCHEMA="lcp-offhost-manifest/3"
 readonly LCP_RECEIPT_SCHEMA="lcp-offhost-receipt/2"

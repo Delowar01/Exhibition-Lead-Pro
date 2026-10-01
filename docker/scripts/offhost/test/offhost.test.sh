@@ -48,6 +48,7 @@ done
 
 # ── workspace ────────────────────────────────────────────────────────────────
 T="$(mktemp -d "${TMPDIR:-/tmp}/lcp-offhost-test.XXXXXXXX")"; chmod 755 "$T"
+T="$(realpath -e "$T")"   # every fixture path canonical (the checker requires canonical configuration paths)
 SUDOERS_FILE=""
 cleanup() { [ -n "$SUDOERS_FILE" ] && rm -f -- "$SUDOERS_FILE"; if [ "${OFFHOST_TEST_KEEP:-0}" = 1 ]; then echo "kept: $T"; else rm -rf "${T:?}"; fi; }
 trap cleanup EXIT
@@ -844,24 +845,31 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@
 restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@github-actions"
   write_keys "$RECV_OK" "$AUD_OK"
   chmod 755 "$INST" "$INST/home" "$INST/etc" "$INST/opt"
-  # fake sshd: -T answers from the GLOBAL fixture, -T -C user=U,... from the per-account fixture (never one static result)
+  # sshd fixtures: normalized `sshd -T` shape (lowercase keyword, value; AllowUsers/AcceptEnv one token per line,
+  # AuthorizedKeysFile and AuthenticationMethods on one line) for a safe restricted account and the global policy
   mkdir -p "$T/sshd/sshd_config.d"
-  sshd_global() { printf 'passwordauthentication no\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\nallowusers lcpt-receive\nallowusers lcpt-audit\nallowusers operator\n'; }
-  sshd_user_ok() { printf 'passwordauthentication no\npubkeyauthentication yes\nkbdinteractiveauthentication no\n'; }
+  sshd_user_ok() { printf 'passwordauthentication no\npubkeyauthentication yes\nkbdinteractiveauthentication no\nhostbasedauthentication no\ngssapiauthentication no\nkerberosauthentication no\npermitemptypasswords no\nauthenticationmethods publickey\nauthorizedkeysfile .ssh/authorized_keys\nauthorizedkeyscommand none\nauthorizedkeyscommanduser none\ntrustedusercakeys none\nauthorizedprincipalsfile none\nauthorizedprincipalscommand none\nauthorizedprincipalscommanduser none\nforcecommand none\nstrictmodes yes\npermituserenvironment no\nacceptenv LANG\nacceptenv LC_*\n'; }
+  sshd_global() { sshd_user_ok; printf 'permitrootlogin no\nallowusers lcpt-receive\nallowusers lcpt-audit\nallowusers operator\n'; }
   sshd_reset() { sshd_global >"$T/sshd/global.txt"; sshd_user_ok >"$T/sshd/user-lcpt-receive.txt"; sshd_user_ok >"$T/sshd/user-lcpt-audit.txt"; }
   sshd_reset
+  # fake sshd: requires "-T -f <file>" (plus "-C user=U,host=H,addr=A" for one account), records every
+  # invocation, answers ONLY for the inspected fixture file (global or per-account fixture), never one static result
+  : >"$T/sshd-invocations.log"
   cat >"$T/bin/sshd" <<EOF
 #!/bin/bash
-# fake sshd for the harness: "-T" prints the global fixture; "-T -C user=U,host=H,addr=A" prints the per-account fixture
-user=""; want_T=0
+user=""; want_T=0; cfg=""
 while [ \$# -gt 0 ]; do
   case "\$1" in
     -T) want_T=1 ;;
+    -f) shift; cfg="\${1:-}" ;;
     -C) shift; [[ "\${1:-}" =~ (^|,)user=([^,]+) ]] && user="\${BASH_REMATCH[2]}" ;;
   esac
   shift
 done
+printf 'f=%s user=%s\n' "\$cfg" "\$user" >>"$T/sshd-invocations.log"
 [ "\$want_T" = 1 ] || { echo "fake sshd: only -T is supported" >&2; exit 1; }
+[ -n "\$cfg" ] || { echo "fake sshd: -f <file> is required" >&2; exit 1; }
+[ "\$cfg" = "$T/sshd/sshd_config" ] || { echo "fake sshd: asked to evaluate a file other than the inspected fixture" >&2; exit 1; }
 if [ -n "\$user" ]; then [ -f "$T/sshd/user-\$user.txt" ] && cat "$T/sshd/user-\$user.txt"; exit 0; fi
 cat "$T/sshd/global.txt"
 EOF
@@ -879,7 +887,7 @@ EOF
     env OFFHOST_INSTALL_ROOT="$INST/opt/lcp-offhost" OFFHOST_BIN_DIR="$IBIN" OFFHOST_CONFIG="$INST/etc/offhost.env" OFFHOST_SUDOERS="$SUDOERS_FILE" \
       OFFHOST_RECEIVE_USER=lcpt-receive OFFHOST_AUDIT_USER=lcpt-audit OFFHOST_VAULT_USER=lcpt-vault OFFHOST_SSHD_BIN="$T/bin/sshd" \
       OFFHOST_SSHD_CONFIG="$T/sshd/sshd_config" OFFHOST_SSHD_PROBE_HOST=backup-fixture OFFHOST_SSHD_PROBE_ADDR=127.0.0.1 \
-      OFFHOST_SHADOW_SOURCE="$T/shadow.txt" OFFHOST_HOME_BASE="$INST/home" OFFHOST_SSH_KEYGEN_BIN="$KEYGEN_BIN" "$@" \
+      OFFHOST_SHADOW_SOURCE="$T/shadow.txt" OFFHOST_HOME_BASE="$INST/home" OFFHOST_SSH_KEYGEN_BIN="$KEYGEN_BIN" OFFHOST_SSHD_OPERATOR_USERS=operator "$@" \
       bash "$OH/offhost-install-check.sh" >"$T/out/$case.log" 2>&1; echo $?
   }
   reasons() { grep -m1 -oE '^OFFHOST_INSTALL=FAIL reasons=.*' "$T/out/$1.log" | sed 's/^OFFHOST_INSTALL=FAIL reasons=//'; }
@@ -996,7 +1004,9 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@
   shadow_reset
   nothas "$T/out/inst-p1.log" 'fixturehash|\$6\$' "no password hash printed"
   # ── sshd: per-account effective configuration ──
-  expect_eq "fake sshd distinguishes global from per-account answers" "$(sshd_user_ok | sed 's/passwordauthentication no/passwordauthentication yes/' >"$T/sshd/user-lcpt-receive.txt"; "$T/bin/sshd" -T | grep -c '^passwordauthentication no$')/$("$T/bin/sshd" -T -C user=lcpt-receive,host=h,addr=127.0.0.1 | grep -c '^passwordauthentication yes$')" "1/1"
+  expect_eq "fake sshd distinguishes global from per-account answers" "$(sshd_user_ok | sed 's/passwordauthentication no/passwordauthentication yes/' >"$T/sshd/user-lcpt-receive.txt"; "$T/bin/sshd" -T -f "$T/sshd/sshd_config" | grep -c '^passwordauthentication no$')/$("$T/bin/sshd" -T -f "$T/sshd/sshd_config" -C user=lcpt-receive,host=h,addr=127.0.0.1 | grep -c '^passwordauthentication yes$')" "1/1"
+  expect_false "fake sshd refuses -T without -f" "$T/bin/sshd" -T
+  expect_false "fake sshd refuses evaluating a file other than the inspected one" "$T/bin/sshd" -T -f "$T/sshd/global.txt"
   expect_eq "safe global policy + Match User override enabling passwords for receive → FAIL" "$(icheck inst-m1 >/dev/null; reasons inst-m1)" "sshd-receive-password-auth"
   sshd_reset; sshd_user_ok | sed 's/passwordauthentication no/passwordauthentication yes/' >"$T/sshd/user-lcpt-audit.txt"
   expect_eq "the equivalent audit-account override → FAIL" "$(icheck inst-m2 >/dev/null; reasons inst-m2)" "sshd-audit-password-auth"
@@ -1063,6 +1073,94 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@
   sshd_cfg_reset; printf 'Match All\n    PubkeyAuthentication yes\n' >"$SD/60-all.conf"
   expect_eq "documented main config + safe root-owned .conf fragments (incl. Match All) → PASS" "$(icheck inst-i0)" 0
   rm -f "$SD/60-all.conf" "$T/sshd/extra.cfg"; sshd_cfg_reset
+  # ── C5: the inspected file is what sshd evaluates (-f), recorded by the fake ──
+  : >"$T/sshd-invocations.log"
+  expect_eq "baseline passes with the full normalized fixture" "$(icheck inst-f0)" 0
+  expect_eq "checker evaluated the inspected file globally and per account (-f recorded)" "$(grep -c "^f=$T/sshd/sshd_config user=$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-receive$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-audit$" "$T/sshd-invocations.log")" "1/1/1"
+  expect_eq "no evaluation of any other file" "$(grep -vc "^f=$T/sshd/sshd_config " "$T/sshd-invocations.log")" 0
+  cp "$T/sshd/sshd_config" "$T/sshd/other_config"; : >"$T/sshd-invocations.log"
+  expect_eq "checker told to inspect another file asks sshd for exactly that file (fake refuses → FAIL closed)" "$(icheck inst-f1 OFFHOST_SSHD_CONFIG="$T/sshd/other_config" >/dev/null; reasons inst-f1)/$(grep -c "^f=$T/sshd/other_config user=$" "$T/sshd-invocations.log")" "sshd-unavailable/1"
+  rm -f "$T/sshd/other_config"
+  ln -s "$T/sshd" "$T/sshdlink"
+  expect_eq "non-canonical (symlinked) configuration path → FAIL" "$(icheck inst-f2 OFFHOST_SSHD_CONFIG="$T/sshdlink/sshd_config" >/dev/null; reasons inst-f2)" "sshd-config-noncanonical"
+  rm -f "$T/sshdlink"
+  chmod 777 "$T/sshd"
+  expect_eq "group/world-writable configuration directory → FAIL" "$(icheck inst-f3 >/dev/null; reasons inst-f3)" "sshd-config-dir"
+  chmod 755 "$T/sshd"; chown lcpt-audit "$T/sshd"
+  expect_eq "configuration directory not owned by root → FAIL" "$(icheck inst-f4 >/dev/null; reasons inst-f4)" "sshd-config-dir"
+  chown root "$T/sshd"
+  # ── C5: per-account authorization boundary (each mutation on the normalized per-account dump) ──
+  umut() {   # CASE ACCOUNT SED-EXPR EXPECTED-REASONS DESCRIPTION
+    sshd_reset; sshd_user_ok | sed -E "$3" >"$T/sshd/user-lcpt-$2.txt"
+    expect_eq "$5" "$(icheck "$1" >/dev/null; reasons "$1")" "$4"
+  }
+  uadd() {   # CASE ACCOUNT EXTRA-LINES EXPECTED-REASONS DESCRIPTION
+    sshd_reset; { sshd_user_ok; printf '%b\n' "$3"; } >"$T/sshd/user-lcpt-$2.txt"
+    expect_eq "$5" "$(icheck "$1" >/dev/null; reasons "$1")" "$4"
+  }
+  umut inst-a1 receive 's|^authorizedkeysfile .*|authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2|' sshd-receive-authorized-keys-file "second authorized_keys2 path → FAIL"
+  umut inst-a2 receive 's|^authorizedkeysfile .*|authorizedkeysfile .ssh/other_keys|' sshd-receive-authorized-keys-file "another relative key file → FAIL"
+  umut inst-a3 audit 's|^authorizedkeysfile .*|authorizedkeysfile /etc/ssh/keys/%u|' sshd-audit-authorized-keys-file "absolute key file → FAIL"
+  umut inst-a4 audit 's|^authorizedkeysfile .*|authorizedkeysfile /etc/ssh/%u/*|' sshd-audit-authorized-keys-file "wildcard/tokenized key file → FAIL"
+  umut inst-a5 receive '/^authorizedkeysfile /d' sshd-receive-authorized-keys-file "AuthorizedKeysFile absent from the dump → FAIL (absence is not none)"
+  umut inst-a6 receive 's|^authorizedkeyscommand .*|authorizedkeyscommand /usr/bin/fetch-keys|' sshd-receive-authorized-keys-command "AuthorizedKeysCommand set → FAIL"
+  umut inst-a7 receive 's|^authorizedkeyscommanduser .*|authorizedkeyscommanduser nobody|' sshd-receive-authorized-keys-command "AuthorizedKeysCommandUser set → FAIL"
+  umut inst-a8 receive '/^authorizedkeyscommand /d' sshd-receive-authorized-keys-command "AuthorizedKeysCommand absent from the dump → FAIL"
+  umut inst-a9 audit 's|^trustedusercakeys .*|trustedusercakeys /etc/ssh/ca.pub|' sshd-audit-trusted-user-ca "TrustedUserCAKeys set → FAIL"
+  umut inst-a10 receive 's|^authorizedprincipalsfile .*|authorizedprincipalsfile /etc/ssh/principals/%u|' sshd-receive-authorized-principals "AuthorizedPrincipalsFile set → FAIL"
+  umut inst-a11 receive 's|^authorizedprincipalscommand .*|authorizedprincipalscommand /usr/bin/principals|' sshd-receive-authorized-principals "AuthorizedPrincipalsCommand set → FAIL"
+  umut inst-a12 audit 's|^forcecommand .*|forcecommand /bin/sh|' sshd-audit-force-command "Match User ForceCommand → FAIL"
+  sshd_reset; for f in global.txt user-lcpt-receive.txt user-lcpt-audit.txt; do sed -i 's|^forcecommand .*|forcecommand /bin/bash|' "$T/sshd/$f"; done
+  expect_eq "global ForceCommand → FAIL (global and both accounts)" "$(icheck inst-a13 >/dev/null; reasons inst-a13)" "sshd-force-command,sshd-receive-force-command,sshd-audit-force-command"
+  umut inst-a14 audit 's|^strictmodes .*|strictmodes no|' sshd-audit-strict-modes "StrictModes no → FAIL"
+  umut inst-a15 receive 's|^authenticationmethods .*|authenticationmethods publickey,password|' sshd-receive-authentication-methods "AuthenticationMethods publickey,password → FAIL"
+  umut inst-a16 receive 's|^authenticationmethods .*|authenticationmethods any|' sshd-receive-authentication-methods "AuthenticationMethods any (daemon default) → FAIL"
+  umut inst-a17 receive 's|^authenticationmethods .*|authenticationmethods publickey publickey,keyboard-interactive|' sshd-receive-authentication-methods "AuthenticationMethods with an alternative list → FAIL"
+  umut inst-a18 receive '/^authenticationmethods /d' sshd-receive-authentication-methods "AuthenticationMethods absent from the dump → FAIL"
+  umut inst-a19 receive 's|^hostbasedauthentication .*|hostbasedauthentication yes|' sshd-receive-alternate-auth "HostbasedAuthentication yes → FAIL"
+  umut inst-a20 audit 's|^gssapiauthentication .*|gssapiauthentication yes|' sshd-audit-alternate-auth "GSSAPIAuthentication yes → FAIL"
+  umut inst-a21 audit 's|^permitemptypasswords .*|permitemptypasswords yes|' sshd-audit-alternate-auth "PermitEmptyPasswords yes → FAIL"
+  # ── C5: environment injection policy ──
+  umut inst-e1 receive 's|^permituserenvironment .*|permituserenvironment yes|' sshd-receive-user-environment "PermitUserEnvironment yes (account) → FAIL"
+  sshd_reset; for f in global.txt user-lcpt-receive.txt user-lcpt-audit.txt; do sed -i 's|^permituserenvironment .*|permituserenvironment yes|' "$T/sshd/$f"; done
+  expect_eq "PermitUserEnvironment yes (global) → FAIL everywhere" "$(icheck inst-e2 >/dev/null; reasons inst-e2)" "sshd-user-environment,sshd-receive-user-environment,sshd-audit-user-environment"
+  for tok in 'OFFHOST_*' 'OFFHOST_NOW' 'LCP_*' 'LCP_MACHINE_ID_FILE' 'PATH' 'BASH_ENV' 'ENV' 'SHELLOPTS' 'BASHOPTS' 'LD_*' 'LD_PRELOAD' '*' 'L*' '?ATH' 'LC_*ALL' 'LC_ALL *'; do
+    uadd "inst-e-$(printf '%s' "$tok" | tr -c 'A-Za-z0-9' '_')" receive "acceptenv $tok" sshd-receive-acceptenv "dangerous AcceptEnv token on a later line → FAIL: $tok"
+  done
+  uadd inst-e3 audit 'setenv LCP_MACHINE_ID_FILE=/tmp/x' sshd-audit-setenv "SetEnv of an identity hook → FAIL"
+  uadd inst-e4 audit 'setenv PATH=/tmp/bin' sshd-audit-setenv "SetEnv PATH → FAIL"
+  uadd inst-e5 audit 'acceptenv LANG\nacceptenv LC_TIME\nacceptenv LANGUAGE' "" "locale-only AcceptEnv tokens remain accepted → PASS"
+  # ── C5: AllowUsers literal-user profile ──
+  gadd() {   # CASE EXTRA-GLOBAL-LINES EXPECTED DESCRIPTION
+    sshd_reset; { sshd_global; printf '%b\n' "$2"; } >"$T/sshd/global.txt"
+    expect_eq "$4" "$(icheck "$1" >/dev/null; reasons "$1")" "$3"
+  }
+  gadd inst-u1 'allowusers *' sshd-allowusers-pattern "AllowUsers * → FAIL"
+  gadd inst-u2 'allowusers ?' sshd-allowusers-pattern "AllowUsers ? → FAIL"
+  gadd inst-u3 'allowusers !lcpt-vault' sshd-allowusers-pattern "negated AllowUsers pattern → FAIL"
+  gadd inst-u4 'allowusers lcpt-receive@10.0.0.1' sshd-allowusers-pattern "user@host AllowUsers form → FAIL"
+  gadd inst-u5 'allowusers lcpt-*' sshd-allowusers-pattern "glob AllowUsers able to admit the vault → FAIL"
+  gadd inst-u6 'allowusers lcpt-receive,lcpt-audit' sshd-allowusers-pattern "comma pattern → FAIL"
+  gadd inst-u7 'allowusers [l]cpt-receive' sshd-allowusers-pattern "bracket pattern → FAIL"
+  gadd inst-u8 'allowusers lcpt\\-receive' sshd-allowusers-pattern "backslash form → FAIL"
+  gadd inst-u9 'allowusers lcpt-receive' sshd-allowusers-duplicate "duplicate service-user entry → FAIL"
+  gadd inst-u10 'allowusers someone' sshd-allowusers-unexpected "literal account outside the approved operator list → FAIL"
+  sshd_reset
+  expect_eq "operator account not approved explicitly → FAIL" "$(icheck inst-u11 OFFHOST_SSHD_OPERATOR_USERS= >/dev/null; reasons inst-u11)" "sshd-allowusers-unexpected"
+  expect_eq "malformed operator list refused" "$(icheck inst-u12 OFFHOST_SSHD_OPERATOR_USERS='op;x' >/dev/null; reasons inst-u12)" "invalid-operator-users"
+  expect_eq "literal AllowUsers entries only, operator approved → PASS" "$(icheck inst-u0)" 0
+  # ── C5: forced scripts are immune to a caller-influenced PATH and locale ──
+  printf 'PATH=/nonexistent\nexport PATH\n' >"$T/hostile.env"; chmod 644 "$T/hostile.env"
+  # (stdout only: bash itself may warn on stderr about an unknown locale before the library resets it)
+  clean_hello="$(as_receive env SSH_ORIGINAL_COMMAND=HELLO OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$NOW" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" /bin/bash "$OH/offhost-receive.sh" 2>/dev/null)"
+  hostile_hello="$(as_receive env PATH=/nonexistent LANG=C.UTF-8 LC_ALL=de_DE.UTF-8 LC_TIME=tr_TR.UTF-8 LANGUAGE=de BASH_ENV="$T/hostile.env" SSH_ORIGINAL_COMMAND=HELLO OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$NOW" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" /bin/bash "$OH/offhost-receive.sh" 2>/dev/null)"
+  expect_eq "receiver HELLO identical under a hostile PATH, BASH_ENV and locale" "$hostile_hello" "$clean_hello"
+  expect_eq "…and it is a valid identity line" "$(printf '%s\n' "$hostile_hello" | grep -cE '^LCP-OFFHOST/1 HELLO machine=[0-9a-f]{64} hostkeys=SHA256:')" 1
+  clean_audit="$(as_audit env SSH_ORIGINAL_COMMAND=AUDIT OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$NOW" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" /bin/bash "$OH/offhost-audit.sh" 2>/dev/null)"
+  hostile_audit="$(as_audit env PATH=/nonexistent LANG=C.UTF-8 LC_ALL=de_DE.UTF-8 LC_NUMERIC=de_DE.UTF-8 BASH_ENV="$T/hostile.env" SSH_ORIGINAL_COMMAND=AUDIT OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$NOW" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" /bin/bash "$OH/offhost-audit.sh" 2>/dev/null)"
+  expect_eq "auditor AUDIT identical under a hostile PATH, BASH_ENV and locale" "$hostile_audit" "$clean_audit"
+  expect_eq "…and it carries the AUDIT_END footer" "$(printf '%s\n' "$hostile_audit" | grep -c '^LCP-OFFHOST/1 AUDIT_END ')" 1
+  sshd_reset; sshd_cfg_reset
   expect_eq "sshd unavailable → FAIL" "$(icheck inst-nos OFFHOST_SSHD_BIN="$T/bin/no-such-sshd" >/dev/null; reasons inst-nos)" "sshd-unavailable"
   expect_eq "non-root invocation refused" "$(runuser -u lcpt-audit -- bash "$OH/offhost-install-check.sh" 2>/dev/null | tail -n 1)" "OFFHOST_INSTALL=FAIL reasons=install-check-not-root"
   BEFORE_TREE="$(tree_hash)"
@@ -1110,8 +1208,15 @@ expect_true "auditor reports capacity from the same limits" grep -q 'lcp_capacit
 expect_eq "the receiver never touches published/" "$(code "$OH/offhost-receive.sh" | grep -c '/published')" 0
 # installation checker statics (Correction 3)
 IC="$OH/offhost-install-check.sh"
-expect_eq "checker evaluates sshd per restricted account with -T -C user=…" "$(code "$IC" | grep -c '"$SSHD_BIN" -T -C "user=$u,host=$PROBE_HOST,addr=$PROBE_ADDR"')" 1
-expect_eq "checker evaluates the global sshd policy too" "$(code "$IC" | grep -c '"$SSHD_BIN" -T 2>/dev/null')" 1
+expect_eq "checker evaluates sshd per restricted account with -T -f <inspected file> -C user=…" "$(code "$IC" | grep -c '"$SSHD_BIN" -T -f "$SSHD_CONFIG" -C "user=$u,host=$PROBE_HOST,addr=$PROBE_ADDR"')" 1
+expect_eq "checker evaluates the global policy of the inspected file (-T -f)" "$(code "$IC" | grep -c '"$SSHD_BIN" -T -f "$SSHD_CONFIG" 2>/dev/null')" 1
+expect_eq "checker never evaluates sshd without -f" "$(code "$IC" | grep -E '"\$SSHD_BIN" -T' | grep -vc -- '-T -f "$SSHD_CONFIG"')" 0
+expect_eq "checker requires the exact single authorized-key file" "$(code "$IC" | grep -c '= ".ssh/authorized_keys" \]')" 1
+expect_eq "checker requires none for key command, CA, principals and ForceCommand" "$(code "$IC" | grep -oE 'v "\$e" (authorizedkeyscommand|trustedusercakeys|authorizedprincipalsfile|authorizedprincipalscommand|forcecommand)\)" = none' | wc -l)" 5
+expect_eq "checker requires publickey-only authentication, StrictModes and no user environment" "$(code "$IC" | grep -cE 'authenticationmethods\)" = publickey|strictmodes\)" = yes|permituserenvironment\)" = no')" 4
+expect_eq "checker applies the literal-user AllowUsers grammar" "$(code "$IC" | grep -c "USERNAME_RE='\^\[a-z_\]\[a-z0-9_-\]{0,31}\$'")" 1
+expect_eq "checker rejects dangerous AcceptEnv tokens and any SetEnv" "$(code "$IC" | grep -cE 'accept_env_token_ok "\$tok"|== "setenv"')" 2
+expect_eq "library pins PATH and the locale for every backup-side script" "$(code "$OH/offhost-lib.sh" | grep -cE '^export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin$|^export LC_ALL=C LANG=C LANGUAGE=C$')" 2
 expect_eq "checker requires exactly one receive key and two audit keys" "$(code "$IC" | grep -cE 'check_keys "\$RECEIVE_USER" "\$BIN_DIR/offhost-receive.sh" receive 1|check_keys "\$AUDIT_USER" "\$BIN_DIR/offhost-audit.sh" audit 2')" 2
 expect_eq "checker requires distinct key fingerprints" "$(code "$IC" | grep -c 'authorized-keys-duplicate')" 1
 expect_eq "checker lists the effective sudo privileges read-only (-n -l -U)" "$(code "$IC" | grep -c '"$SUDO_BIN" -n -l -U "$RECEIVE_USER"')" 1

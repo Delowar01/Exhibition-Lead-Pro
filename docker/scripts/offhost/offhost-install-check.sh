@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Lead Capture Pro — backup VPS installation-integrity check (B23 G-6D C2/C3)
+# Lead Capture Pro — backup VPS installation-integrity check (B23 G-6D C2–C5)
 # =============================================================================
 # Runs as root ON THE BACKUP VPS before activation and at any later review.
 # STRICTLY READ-ONLY: it inspects ownership, modes, sudoers and the EFFECTIVE
@@ -44,12 +44,25 @@
 #   sshd-config    every `Match` block in sshd_config (+ sshd_config.d) matches on
 #                  User (or All) only, and every Include stays inside sshd_config.d,
 #                  so the per-user evaluation below is authoritative
-#   sshd           global `sshd -T`: permitrootlogin no, passwordauthentication no,
-#                  pubkeyauthentication yes, interactive auth off; AllowUsers lists
-#                  the receive and audit accounts and not the vault;
-#                  per account `sshd -T -C user=<account>,host=…,addr=…`:
-#                  passwordauthentication no, kbdinteractiveauthentication no (or
-#                  challengeresponseauthentication no), pubkeyauthentication yes
+#   sshd           `sshd -T -f <inspected file>` (global): permitrootlogin no,
+#                  passwordauthentication no, pubkeyauthentication yes, interactive
+#                  auth off, forcecommand none, permituserenvironment no;
+#                  AllowUsers literal user names only (no wildcard, negation,
+#                  pattern, bracket, backslash or user@host), the receive and
+#                  audit accounts exactly once, never the vault, other names only
+#                  from OFFHOST_SSHD_OPERATOR_USERS;
+#                  per account `sshd -T -f <inspected file> -C user=<account>,…`:
+#                  passwordauthentication no, interactive auth off,
+#                  pubkeyauthentication yes, authenticationmethods publickey,
+#                  hostbased/gssapi/kerberos/empty-password auth off,
+#                  authorizedkeysfile exactly .ssh/authorized_keys,
+#                  authorizedkeyscommand none, trustedusercakeys none,
+#                  authorizedprincipalsfile/-command none, forcecommand none,
+#                  strictmodes yes, permituserenvironment no, no setenv, and
+#                  acceptenv limited to LANG/LANGUAGE/LC_* (a token able to
+#                  match OFFHOST_*, LCP_*, PATH, BASH_ENV, ENV, SHELLOPTS,
+#                  BASHOPTS or LD_* is refused). The inspected path must be
+#                  canonical inside a real root-owned directory.
 #   hashes         sha256 prefix of every bin file, for the activation record
 #                  (record the full `sha256sum` output separately)
 #
@@ -60,7 +73,8 @@
 # (/etc/sudoers.d/lcp-offhost), OFFHOST_RECEIVE_USER, OFFHOST_AUDIT_USER,
 # OFFHOST_VAULT_USER, OFFHOST_SSHD_BIN (sshd), OFFHOST_SSHD_CONFIG
 # (/etc/ssh/sshd_config), OFFHOST_SSHD_PROBE_HOST (hostname),
-# OFFHOST_SSHD_PROBE_ADDR (127.0.0.1), OFFHOST_SUDO_BIN (sudo).
+# OFFHOST_SSHD_PROBE_ADDR (127.0.0.1), OFFHOST_SSHD_OPERATOR_USERS (comma-
+# separated literal operator accounts permitted in AllowUsers), OFFHOST_SUDO_BIN (sudo).
 # Environment-only test hooks: OFFHOST_HOME_BASE (home directories under
 # <base>/<user> instead of passwd), OFFHOST_SHADOW_SOURCE (a shadow-format file
 # instead of `getent shadow`).
@@ -70,7 +84,8 @@
 # the real keys before activation; nothing here claims that.
 # =============================================================================
 set -uo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin   # fixed before any external tool (B23 G-6D C5)
+HERE="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)"
 # shellcheck source=offhost-lib.sh
 source "$HERE/offhost-lib.sh"
 
@@ -86,6 +101,7 @@ SSHD_CONFIG="${OFFHOST_SSHD_CONFIG:-/etc/ssh/sshd_config}"
 PROBE_HOST="${OFFHOST_SSHD_PROBE_HOST:-$(hostname 2>/dev/null || echo localhost)}"
 PROBE_ADDR="${OFFHOST_SSHD_PROBE_ADDR:-127.0.0.1}"
 SUDO_BIN="${OFFHOST_SUDO_BIN:-sudo}"
+OPERATOR_USERS="${OFFHOST_SSHD_OPERATOR_USERS:-}"   # comma-separated literal operator accounts allowed in AllowUsers
 HOME_BASE="${OFFHOST_HOME_BASE:-}"
 SHADOW_SOURCE="${OFFHOST_SHADOW_SOURCE:-}"
 FAILS=(); CHECKS=0
@@ -99,6 +115,8 @@ finish() {
 for v in INSTALL_ROOT BIN_DIR CONFIG SUDOERS SSHD_CONFIG; do [[ "${!v}" =~ $LCP_PATH_RE ]] || { bad "invalid-${v,,}"; finish; }; done
 for v in RECEIVE_USER AUDIT_USER VAULT_USER; do [[ "${!v}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { bad "invalid-${v,,}"; finish; }; done
 [[ "$PROBE_HOST" =~ ^[A-Za-z0-9.-]{1,253}$ ]] && [[ "$PROBE_ADDR" =~ ^[0-9A-Fa-f.:]{1,45}$ ]] || { bad invalid-probe; finish; }
+USERNAME_RE='^[a-z_][a-z0-9_-]{0,31}$'
+[ -z "$OPERATOR_USERS" ] || [[ "$OPERATOR_USERS" =~ ^[a-z_][a-z0-9_-]{0,31}(,[a-z_][a-z0-9_-]{0,31})*$ ]] || { bad invalid-operator-users; finish; }
 PUBLISHER="$BIN_DIR/offhost-publish.sh"
 mode_ok() { local m; m="$(stat -c %a "$1" 2>/dev/null)" || return 1; [ $(( 8#$m & 8#022 )) = 0 ]; }   # no group/world write
 root_owned() { [ "$(stat -c %u:%g "$1" 2>/dev/null)" = "0:0" ]; }
@@ -362,8 +380,15 @@ match_criteria_ok() {
   return 0
 }
 cfg_dir="$(dirname "$SSHD_CONFIG")"
+SSHD_PATH_OK=1
+# the inspected path must resolve canonically to itself (no symlinked component) and
+# live in a real, root-owned, non-group/world-writable directory
+if [ "$(realpath -e "$SSHD_CONFIG" 2>/dev/null)" != "$SSHD_CONFIG" ]; then bad sshd-config-noncanonical; SSHD_PATH_OK=0
+elif ! { [ -d "$cfg_dir" ] && [ ! -L "$cfg_dir" ] && [ "$(realpath -e "$cfg_dir" 2>/dev/null)" = "$cfg_dir" ] && root_owned "$cfg_dir" && mode_ok "$cfg_dir"; }; then bad sshd-config-dir; SSHD_PATH_OK=0; fi
 cfg_r="$(sshd_file_ok "$SSHD_CONFIG")"
-if [ "$cfg_r" != ok ]; then
+if [ "$SSHD_PATH_OK" != 1 ]; then :
+elif [ "$cfg_r" != ok ]; then
+  SSHD_PATH_OK=0
   case "$cfg_r" in not-regular|unreadable) bad sshd-config-missing ;; *) bad "sshd-config-$cfg_r" ;; esac
 else
   r=ok; includes=0; frag_files=()
@@ -412,30 +437,84 @@ else
   esac
 fi
 
-# ── effective sshd configuration: global, then per restricted account ────────
-if ! command -v "$SSHD_BIN" >/dev/null 2>&1 || ! eff="$("$SSHD_BIN" -T 2>/dev/null)"; then bad sshd-unavailable
+# ── effective sshd configuration of the INSPECTED file, globally and per account ─
+# Both evaluations name the inspected file explicitly (-f), so what sshd
+# resolves is exactly what the Include/Match scan above covered. Directive
+# spellings follow the normalized `sshd -T` dump: lowercase keyword then the
+# value; AllowUsers, AcceptEnv and SetEnv one token per line; AuthorizedKeysFile
+# and AuthenticationMethods on one line. A required directive that is absent
+# from the dump fails — absence is never read as "none" or "no".
+v()     { printf '%s\n' "$1" | awk -v k="$2" 'tolower($1) == k { print tolower($2); exit }'; }
+vline() { printf '%s\n' "$1" | awk -v k="$2" 'tolower($1) == k { $1 = ""; sub(/^ +/, ""); print; exit }'; }   # whole value, original case
+vall()  { printf '%s\n' "$1" | awk -v k="$2" 'tolower($1) == k { for (i = 2; i <= NF; i++) print $i }'; }     # every token of every line
+# accept_env_token_ok TOKEN → 0 iff the AcceptEnv token can only name a locale variable
+accept_env_token_ok() {
+  case "$1" in
+    LANG|LANGUAGE|'LC_*') return 0 ;;
+    LC_*) [[ "$1" =~ ^LC_[A-Z_]+$ ]] && return 0 ;;
+  esac
+  return 1
+}
+# account_boundary EFF LABEL → the authorization and environment boundary of one restricted account
+account_boundary() {
+  local e="$1" label="$2" r=ok tok
+  [ "$(v "$e" passwordauthentication)" = no ] || { bad "sshd-$label-password-auth"; r=bad; }
+  [ "$(v "$e" kbdinteractiveauthentication)" = no ] || [ "$(v "$e" challengeresponseauthentication)" = no ] || { bad "sshd-$label-interactive-auth"; r=bad; }
+  [ "$(v "$e" pubkeyauthentication)" = yes ] || { bad "sshd-$label-pubkey-auth"; r=bad; }
+  # only the public-key flow: AuthenticationMethods exactly "publickey", every other method off
+  [ "$(vline "$e" authenticationmethods)" = publickey ] || { bad "sshd-$label-authentication-methods"; r=bad; }
+  { [ "$(v "$e" hostbasedauthentication)" = no ] && [ "$(v "$e" gssapiauthentication)" = no ] && [ "$(v "$e" kerberosauthentication)" = no ] && [ "$(v "$e" permitemptypasswords)" = no ]; } || { bad "sshd-$label-alternate-auth"; r=bad; }
+  # exactly one authorized-key source — the file the inventory check reads — and nothing else
+  [ "$(vline "$e" authorizedkeysfile)" = ".ssh/authorized_keys" ] || { bad "sshd-$label-authorized-keys-file"; r=bad; }
+  { [ "$(v "$e" authorizedkeyscommand)" = none ] && [ "$(v "$e" authorizedkeyscommanduser)" = none ]; } || { bad "sshd-$label-authorized-keys-command"; r=bad; }
+  [ "$(v "$e" trustedusercakeys)" = none ] || { bad "sshd-$label-trusted-user-ca"; r=bad; }
+  { [ "$(v "$e" authorizedprincipalsfile)" = none ] && [ "$(v "$e" authorizedprincipalscommand)" = none ] && [ "$(v "$e" authorizedprincipalscommanduser)" = none ]; } || { bad "sshd-$label-authorized-principals"; r=bad; }
+  # the forced command attached to each key line must stay controlling
+  [ "$(v "$e" forcecommand)" = none ] || { bad "sshd-$label-force-command"; r=bad; }
+  [ "$(v "$e" strictmodes)" = yes ] || { bad "sshd-$label-strict-modes"; r=bad; }
+  # no remotely or server-side controllable environment for the forced scripts
+  [ "$(v "$e" permituserenvironment)" = no ] || { bad "sshd-$label-user-environment"; r=bad; }
+  [ "$(printf '%s\n' "$e" | awk 'tolower($1) == "setenv"' | wc -l)" = 0 ] || { bad "sshd-$label-setenv"; r=bad; }
+  while IFS= read -r tok; do
+    [ -n "$tok" ] || continue
+    accept_env_token_ok "$tok" || { bad "sshd-$label-acceptenv"; r=bad; break; }
+  done < <(vall "$e" acceptenv)
+  [ "$r" = ok ]
+}
+if [ "$SSHD_PATH_OK" != 1 ]; then :   # already reported: the inspected path is not trustworthy
+elif ! command -v "$SSHD_BIN" >/dev/null 2>&1 || ! eff="$("$SSHD_BIN" -T -f "$SSHD_CONFIG" 2>/dev/null)" || [ -z "$eff" ]; then bad sshd-unavailable
 else
-  v() { printf '%s\n' "$1" | awk -v k="$2" 'tolower($1) == k { print tolower($2); exit }'; }
   r=ok
   [ "$(v "$eff" permitrootlogin)" = no ] || { bad sshd-root-login; r=bad; }
   [ "$(v "$eff" passwordauthentication)" = no ] || { bad sshd-password-auth; r=bad; }
   [ "$(v "$eff" pubkeyauthentication)" = yes ] || { bad sshd-pubkey-auth; r=bad; }
   [ "$(v "$eff" kbdinteractiveauthentication)" = no ] || [ "$(v "$eff" challengeresponseauthentication)" = no ] || { bad sshd-interactive-auth; r=bad; }
-  allow="$(printf '%s\n' "$eff" | awk 'tolower($1) == "allowusers" { for (i = 2; i <= NF; i++) print $i }')"
+  [ "$(v "$eff" forcecommand)" = none ] || { bad sshd-force-command; r=bad; }
+  [ "$(v "$eff" permituserenvironment)" = no ] || { bad sshd-user-environment; r=bad; }
+  # AllowUsers: literal user names only — no wildcard, negation, pattern list,
+  # bracket, backslash or user@host form; the two service accounts exactly once,
+  # never the vault, and no account outside the approved operator list
+  allow="$(vall "$eff" allowusers)"
   if [ -z "$allow" ]; then bad sshd-allowusers-missing; r=bad
   else
-    printf '%s\n' "$allow" | grep -qx "$RECEIVE_USER" || { bad sshd-allowusers-receive; r=bad; }
-    printf '%s\n' "$allow" | grep -qx "$AUDIT_USER" || { bad sshd-allowusers-audit; r=bad; }
-    ! printf '%s\n' "$allow" | grep -qx "$VAULT_USER" || { bad sshd-allowusers-vault; r=bad; }
+    pat=0; while IFS= read -r tok; do [[ "$tok" =~ $USERNAME_RE ]] || pat=1; done <<<"$allow"
+    [ "$pat" = 0 ] || { bad sshd-allowusers-pattern; r=bad; }
+    n="$(printf '%s\n' "$allow" | grep -cx -- "$RECEIVE_USER")"
+    if [ "$n" = 0 ]; then bad sshd-allowusers-receive; r=bad; elif [ "$n" != 1 ]; then bad sshd-allowusers-duplicate; r=bad; fi
+    n="$(printf '%s\n' "$allow" | grep -cx -- "$AUDIT_USER")"
+    if [ "$n" = 0 ]; then bad sshd-allowusers-audit; r=bad; elif [ "$n" != 1 ]; then bad sshd-allowusers-duplicate; r=bad; fi
+    ! printf '%s\n' "$allow" | grep -qx -- "$VAULT_USER" || { bad sshd-allowusers-vault; r=bad; }
+    while IFS= read -r tok; do
+      [[ "$tok" =~ $USERNAME_RE ]] || continue
+      case "$tok" in "$RECEIVE_USER"|"$AUDIT_USER"|"$VAULT_USER") continue ;; esac
+      printf '%s\n' "$OPERATOR_USERS" | tr ',' '\n' | grep -qx -- "$tok" || { bad sshd-allowusers-unexpected; r=bad; break; }
+    done <<<"$allow"
   fi
   [ "$r" = ok ] && ok sshd-global
   for pair in "$RECEIVE_USER:receive" "$AUDIT_USER:audit"; do
-    u="${pair%%:*}"; label="${pair##*:}"; r=ok
-    if ! ueff="$("$SSHD_BIN" -T -C "user=$u,host=$PROBE_HOST,addr=$PROBE_ADDR" 2>/dev/null)" || [ -z "$ueff" ]; then bad "sshd-$label-unavailable"; continue; fi
-    [ "$(v "$ueff" passwordauthentication)" = no ] || { bad "sshd-$label-password-auth"; r=bad; }
-    [ "$(v "$ueff" kbdinteractiveauthentication)" = no ] || [ "$(v "$ueff" challengeresponseauthentication)" = no ] || { bad "sshd-$label-interactive-auth"; r=bad; }
-    [ "$(v "$ueff" pubkeyauthentication)" = yes ] || { bad "sshd-$label-pubkey-auth"; r=bad; }
-    [ "$r" = ok ] && ok "sshd-$label"
+    u="${pair%%:*}"; label="${pair##*:}"
+    if ! ueff="$("$SSHD_BIN" -T -f "$SSHD_CONFIG" -C "user=$u,host=$PROBE_HOST,addr=$PROBE_ADDR" 2>/dev/null)" || [ -z "$ueff" ]; then bad "sshd-$label-unavailable"; continue; fi
+    account_boundary "$ueff" "$label" && ok "sshd-$label"
   done
 fi
 
