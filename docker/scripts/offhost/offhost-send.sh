@@ -79,11 +79,20 @@ source "$HERE/offhost-lib.sh"
 
 MODE="${1:-run}"
 case "$MODE" in run|plan) ;; *) echo "usage: offhost-send.sh [run|plan]" >&2; exit 2 ;; esac
-log()  { echo "[offhost-send] $(date -u +%FT%TZ) $*"; }
-fail() { echo "OFFHOST_UPLOAD=FAIL reason=$1${2:+ detail=$2}"; exit 1; }
-trap 'rc=$?; echo "OFFHOST_UPLOAD=FAIL reason=unexpected-error detail=step=${STEP:-init},exit=$rc"; exit 1' ERR
+# Log lines and the single summary line always go to the script's ORIGINAL
+# stdout (descriptor 3), never into a per-operation output file: helper
+# functions run with their stdout redirected into the work directory, and a
+# summary written there would vanish with the cleanup.
+exec 3>&1
+log()  { echo "[offhost-send] $(date -u +%FT%TZ) $*" >&3; }
+fail() { echo "OFFHOST_UPLOAD=FAIL reason=$1${2:+ detail=$2}" >&3; exit 1; }
+trap 'rc=$?; echo "OFFHOST_UPLOAD=FAIL reason=unexpected-error detail=step=${STEP:-init},exit=$rc" >&3; exit 1' ERR
 STEP=config
 START_SECONDS=$SECONDS   # monotonic origin of the single overall budget
+# environment-only harness hook: "<step>=<seconds>" charges the budget once,
+# right before that step's blocking call, to exercise the exhausted-before-
+# operation path deterministically (never a configuration key)
+BUDGET_CHARGE="${OFFHOST_TEST_BUDGET_CHARGE:-}"
 
 readonly CONFIG_KEYS=" BACKUP_DIR OFFHOST_STATE_DIR OFFHOST_SSH_CONFIG OFFHOST_UPLOAD_TARGET OFFHOST_AUDIT_TARGET OFFHOST_RECIPIENT OFFHOST_EXPECTED_MACHINE OFFHOST_EXPECTED_HOSTKEYS OFFHOST_ENV_LABEL OFFHOST_CONNECT_TIMEOUT OFFHOST_MAX_TIME OFFHOST_MAX_CLOCK_SKEW_SECONDS OFFHOST_RECEIPT_KEEP_DAYS "
 if [ -n "${OFFHOST_SEND_CONFIG:-}" ]; then
@@ -176,11 +185,13 @@ remaining() { REM=$(( MAX_TIME - (SECONDS - START_SECONDS) )); [ "$REM" -gt 0 ];
 # run_limited CMD… → runs CMD under the remaining allowance (never a fresh full
 # budget); RUN_RC holds its exit code, TIMED_OUT=1 when the deadline cut it off
 run_limited() {
+  if [ -n "$BUDGET_CHARGE" ] && [ "${BUDGET_CHARGE%%=*}" = "$STEP" ]; then SECONDS=$(( SECONDS + ${BUDGET_CHARGE#*=} )); BUDGET_CHARGE=""; fi
   remaining || fail operation-timeout "step=$STEP"
   RUN_RC=0; TIMED_OUT=0
-  # the lock descriptor (9) is closed for the child so that a stuck or orphaned
-  # process can never keep the sender's lock alive after this run has ended
-  timeout --foreground -k 5 "$REM" "$@" 9>&- || RUN_RC=$?
+  # the lock descriptor (9) and the summary descriptor (3) are closed for the
+  # child so that a stuck or orphaned process can neither keep the sender's
+  # lock alive nor write into the sender's output after this run has ended
+  timeout --foreground -k 5 "$REM" "$@" 9>&- 3>&- || RUN_RC=$?
   case "$RUN_RC" in 124|137) TIMED_OUT=1 ;; esac
 }
 timed_out_fail() { [ "$TIMED_OUT" = 0 ] || fail operation-timeout "step=$STEP"; }

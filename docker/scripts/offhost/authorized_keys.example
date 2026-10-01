@@ -17,7 +17,11 @@
 #      secret BACKUP_VPS_AUDIT_SSH_KEY; never installed on either VPS
 # Keys 2 and 3 are bound to the same read-only audit command but are separate
 # key pairs: each can be revoked and attributed on its own (sshd logs the
-# fingerprint; the comment field names the holder).
+# fingerprint; the comment field names the holder). offhost-install-check.sh
+# enforces this inventory EXACTLY: one receive key, two audit keys, every line
+# `restrict,command="…"` with no other option, a supported ed25519 type whose
+# decoded blob carries that type, and three DISTINCT fingerprints (a reused or
+# duplicated key fails; comments alone never count as distinct keys).
 #
 # /home/lcp-receive/.ssh/authorized_keys   (owner lcp-receive:lcp-receive, mode 0600; ~/.ssh mode 0700)
 restrict,command="/opt/lcp-offhost/bin/offhost-receive.sh" ssh-ed25519 <UPLOAD-PUBLIC-KEY-BASE64> lcp-offhost-upload@primary
@@ -28,10 +32,14 @@ restrict,command="/opt/lcp-offhost/bin/offhost-audit.sh" ssh-ed25519 <GITHUB-AUD
 
 # /home/lcp-vault/.ssh/authorized_keys     MUST NOT EXIST (the vault identity has no SSH login)
 
-# sshd_config on the backup VPS (activation prerequisite; verify the EFFECTIVE
-# configuration with `sshd -T`, see offhost-install-check.sh):
+# sshd_config on the backup VPS (activation prerequisite; the checker verifies
+# the EFFECTIVE configuration globally with `sshd -T` AND per restricted
+# account with `sshd -T -C user=lcp-receive,…` / `user=lcp-audit,…`, so a
+# `Match User` block re-enabling passwords for one account is caught; every
+# Match block may use the User criterion only, Includes must stay inside
+# sshd_config.d, and the three service accounts must have locked passwords):
 #   PasswordAuthentication no
 #   KbdInteractiveAuthentication no
 #   PubkeyAuthentication yes
 #   PermitRootLogin no
-#   AllowUsers lcp-receive lcp-audit <operator-account>
+#   AllowUsers lcp-receive lcp-audit <operator-account>   (never lcp-vault)

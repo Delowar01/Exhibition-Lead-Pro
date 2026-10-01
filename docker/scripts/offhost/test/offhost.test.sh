@@ -216,7 +216,7 @@ send() {
     BACKUP_DIR="$T/primary/backups/postgres" OFFHOST_STATE_DIR="$T/primary/state" OFFHOST_SSH_CONFIG="$T/primary/env/ssh.config" \
     OFFHOST_UPLOAD_TARGET="${UPLOAD_TARGET:-vault-upload}" OFFHOST_AUDIT_TARGET="${AUDIT_TARGET:-vault-audit}" \
     OFFHOST_RECIPIENT="${RECIPIENT_OVERRIDE:-$RECIPIENT}" OFFHOST_EXPECTED_MACHINE="${EXPECTED_MACHINE:-}" \
-    OFFHOST_MAX_TIME="${MAX_TIME_OVERRIDE:-120}" \
+    OFFHOST_MAX_TIME="${MAX_TIME_OVERRIDE:-120}" OFFHOST_TEST_BUDGET_CHARGE="${BUDGET_CHARGE_OVERRIDE:-}" \
     bash "$OH/offhost-send.sh" "$@" >"$T/out/$case.log" 2>&1
   echo $?
 }
@@ -666,6 +666,20 @@ has "$T/out/to-cum.log" "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=st
 has "$T/out/to-cum.log" "^\[offhost-send\].* encrypted: " "…after HELLO, pre-audit and encryption had already consumed budget"
 expect_true "…total run time bounded by the budget plus the kill grace (${elapsed}s)" [ "$elapsed" -le 16 ]
 one_summary "cumulative timeout" to-cum
+# budget exhausted BEFORE an operation starts (not during it): the summary must still reach the log
+pre_exhaust() {   # STEP → runs the sender with the budget charged right before STEP
+  expect_eq "budget exhausted right before $1 → FAIL with one summary" "$(BUDGET_CHARGE_OVERRIDE="$1=999" send "to-pre-$1" >/dev/null; grep -c "^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=$1$" "$T/out/to-pre-$1.log")/$(grep -c '^OFFHOST_UPLOAD=' "$T/out/to-pre-$1.log")" "1/1"
+  no_work_dirs "exhausted before $1"
+}
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
+for st in hello pre-audit encrypt put-archive; do pre_exhaust "$st"; done
+expect_eq "…the stage left by the exhaustion before the archive PUT is resumed" "$(send to-pre-resume1 >/dev/null; grep -c 'upload=resumed audit=complete$' "$T/out/to-pre-resume1.log")" 1
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
+pre_exhaust put-manifest
+expect_eq "…archive published, manifest completed by the next run" "$(send to-pre-resume2 >/dev/null; grep -c 'upload=resumed audit=complete$' "$T/out/to-pre-resume2.log")" 1
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
+pre_exhaust post-audit
+expect_eq "…both objects published before the post-audit: the next run finds the generation complete" "$(send to-pre-resume3 >/dev/null; grep -c 'upload=already-published audit=complete$' "$T/out/to-pre-resume3.log")" 1
 expect_eq "normal run remains green after the timeout tests" "$(send after-timeouts)" 0
 expect_eq "plan reports the configured budget" "$(MAX_TIME_OVERRIDE=77 send plan-budget plan >/dev/null; grep -c 'max_time=77$' "$T/out/plan-budget.log")" 1
 
@@ -738,43 +752,195 @@ if [ "$ROOT_MODE" = 1 ]; then
   for f in offhost-lib.sh offhost-receive.sh offhost-publish.sh offhost-audit.sh offhost-retain.sh; do cp "$OH/$f" "$IBIN/$f"; done
   chmod 755 "$IBIN"/offhost-{receive,publish,audit,retain}.sh; chmod 644 "$IBIN/offhost-lib.sh"; chmod 755 "$INST/opt/lcp-offhost" "$IBIN"; chown -R root:root "$INST/opt"
   cp "$T/offhost.env" "$INST/etc/offhost.env"; chmod 644 "$INST/etc/offhost.env"; chown root:root "$INST/etc/offhost.env"
-  printf 'Defaults:lcpt-receive env_reset, !requiretty\nlcpt-receive ALL=(root) NOPASSWD: %s/offhost-publish.sh\n' "$IBIN" >"$INST/etc/sudoers"; chmod 0440 "$INST/etc/sudoers"; chown root:root "$INST/etc/sudoers"
-  printf 'restrict,command="%s/offhost-receive.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIX lcp-offhost-upload@primary\n' "$IBIN" >"$INST/home/lcpt-receive/.ssh/authorized_keys"
-  printf '# primary and github audit keys\nrestrict,command="%s/offhost-audit.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIY lcp-offhost-audit@primary\nrestrict,command="%s/offhost-audit.sh" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIXTUREFIZ lcp-offhost-audit@github-actions\n' "$IBIN" "$IBIN" >"$INST/home/lcpt-audit/.ssh/authorized_keys"
-  chmod 700 "$INST/home/lcpt-receive/.ssh" "$INST/home/lcpt-audit/.ssh"; chmod 600 "$INST/home/lcpt-receive/.ssh/authorized_keys" "$INST/home/lcpt-audit/.ssh/authorized_keys"
-  chown -R lcpt-receive:lcpt-receive "$INST/home/lcpt-receive"; chown -R lcpt-audit:lcpt-audit "$INST/home/lcpt-audit"; chown -R lcpt-vault:lcpt-vault "$INST/home/lcpt-vault"
+  # the REAL drop-in is used for the fixture so that the effective `sudo -l -U` listing is exercised; restored at the end
+  cp "$SUDOERS_FILE" "$T/sudoers.main"
+  sudoers_fixture() { printf 'Defaults:lcpt-receive env_reset, !requiretty, use_pty\nlcpt-receive ALL=(root) NOPASSWD: NOSETENV: %s/offhost-publish.sh\n' "$IBIN"; }
+  install_sudoers() { printf '%s\n' "$1" >"$SUDOERS_FILE"; chmod 0440 "$SUDOERS_FILE"; chown root:root "$SUDOERS_FILE"; }
+  install_sudoers "$(sudoers_fixture)"
+  EXTRA_SUDOERS="/etc/sudoers.d/lcpt-offhost-test2"
+  # three structurally valid, distinct ed25519 key blobs (random, never real identities)
+  mkblob() { { printf '\0\0\0\vssh-ed25519\0\0\0 '; head -c 32 /dev/urandom; } | base64 -w0; }
+  K_UP="$(mkblob)"; K_A1="$(mkblob)"; K_A2="$(mkblob)"
+  K_RSA="$( { printf '\0\0\0\assh-rsa\0\0\0 '; head -c 32 /dev/urandom; } | base64 -w0)"
+  write_keys() {   # RECEIVE-CONTENT AUDIT-CONTENT (full authorized_keys texts)
+    printf '%s\n' "$1" >"$INST/home/lcpt-receive/.ssh/authorized_keys"
+    printf '%s\n' "$2" >"$INST/home/lcpt-audit/.ssh/authorized_keys"
+    chmod 700 "$INST/home/lcpt-receive/.ssh" "$INST/home/lcpt-audit/.ssh"; chmod 600 "$INST/home/lcpt-receive/.ssh/authorized_keys" "$INST/home/lcpt-audit/.ssh/authorized_keys"
+    chown -R lcpt-receive:lcpt-receive "$INST/home/lcpt-receive"; chown -R lcpt-audit:lcpt-audit "$INST/home/lcpt-audit"; chown -R lcpt-vault:lcpt-vault "$INST/home/lcpt-vault"
+  }
+  RECV_OK="restrict,command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $K_UP lcp-offhost-upload@primary"
+  AUD_OK="# primary and github audit keys
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@github-actions"
+  write_keys "$RECV_OK" "$AUD_OK"
   chmod 755 "$INST" "$INST/home" "$INST/etc" "$INST/opt"
-  printf 'passwordauthentication no\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\n' >"$T/sshd-T.txt"
-  printf '#!/bin/bash\n[ "$1" = -T ] && cat "%s"\n' "$T/sshd-T.txt" >"$T/bin/sshd"; chmod 755 "$T/bin/sshd"
+  # fake sshd: -T answers from the GLOBAL fixture, -T -C user=U,... from the per-account fixture (never one static result)
+  mkdir -p "$T/sshd/sshd_config.d"
+  sshd_global() { printf 'passwordauthentication no\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\nallowusers lcpt-receive\nallowusers lcpt-audit\nallowusers operator\n'; }
+  sshd_user_ok() { printf 'passwordauthentication no\npubkeyauthentication yes\nkbdinteractiveauthentication no\n'; }
+  sshd_reset() { sshd_global >"$T/sshd/global.txt"; sshd_user_ok >"$T/sshd/user-lcpt-receive.txt"; sshd_user_ok >"$T/sshd/user-lcpt-audit.txt"; }
+  sshd_reset
+  cat >"$T/bin/sshd" <<EOF
+#!/bin/bash
+# fake sshd for the harness: "-T" prints the global fixture; "-T -C user=U,host=H,addr=A" prints the per-account fixture
+user=""; want_T=0
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    -T) want_T=1 ;;
+    -C) shift; [[ "\${1:-}" =~ (^|,)user=([^,]+) ]] && user="\${BASH_REMATCH[2]}" ;;
+  esac
+  shift
+done
+[ "\$want_T" = 1 ] || { echo "fake sshd: only -T is supported" >&2; exit 1; }
+if [ -n "\$user" ]; then [ -f "$T/sshd/user-\$user.txt" ] && cat "$T/sshd/user-\$user.txt"; exit 0; fi
+cat "$T/sshd/global.txt"
+EOF
+  chmod 755 "$T/bin/sshd"
+  sshd_cfg_reset() {
+    printf 'Include %s/sshd_config.d/*.conf\nPasswordAuthentication no\nPermitRootLogin no\nMatch User lcpt-receive\n    PubkeyAuthentication yes\n' "$T/sshd" >"$T/sshd/sshd_config"
+    printf 'Match User lcpt-audit\n    PubkeyAuthentication yes\n' >"$T/sshd/sshd_config.d/10-audit.conf"
+  }
+  sshd_cfg_reset
+  shadow_reset() { printf 'lcpt-receive:!:19000:0:99999:7:::\nlcpt-audit:*:19000:0:99999:7:::\nlcpt-vault:!:19000:0:99999:7:::\n' >"$T/shadow.txt"; chmod 600 "$T/shadow.txt"; }
+  shadow_reset
   icheck() {   # CASE [VAR=value …]
     local case="$1"; shift
-    env OFFHOST_INSTALL_ROOT="$INST/opt/lcp-offhost" OFFHOST_BIN_DIR="$IBIN" OFFHOST_CONFIG="$INST/etc/offhost.env" OFFHOST_SUDOERS="$INST/etc/sudoers" \
-      OFFHOST_RECEIVE_USER=lcpt-receive OFFHOST_AUDIT_USER=lcpt-audit OFFHOST_VAULT_USER=lcpt-vault OFFHOST_SSHD_BIN="$T/bin/sshd" OFFHOST_HOME_BASE="$INST/home" "$@" \
+    sudo -n -l -U lcpt-receive >"$T/out/$case.sudo-listing" 2>&1 || true   # diagnostic only (not part of the leak-scanned outputs)
+    env OFFHOST_INSTALL_ROOT="$INST/opt/lcp-offhost" OFFHOST_BIN_DIR="$IBIN" OFFHOST_CONFIG="$INST/etc/offhost.env" OFFHOST_SUDOERS="$SUDOERS_FILE" \
+      OFFHOST_RECEIVE_USER=lcpt-receive OFFHOST_AUDIT_USER=lcpt-audit OFFHOST_VAULT_USER=lcpt-vault OFFHOST_SSHD_BIN="$T/bin/sshd" \
+      OFFHOST_SSHD_CONFIG="$T/sshd/sshd_config" OFFHOST_SSHD_PROBE_HOST=backup-fixture OFFHOST_SSHD_PROBE_ADDR=127.0.0.1 \
+      OFFHOST_SHADOW_SOURCE="$T/shadow.txt" OFFHOST_HOME_BASE="$INST/home" "$@" \
       bash "$OH/offhost-install-check.sh" >"$T/out/$case.log" 2>&1; echo $?
   }
+  reasons() { grep -m1 -oE '^OFFHOST_INSTALL=FAIL reasons=.*' "$T/out/$1.log" | sed 's/^OFFHOST_INSTALL=FAIL reasons=//'; }
+  tree_hash() { find "$INST" "$SUDOERS_FILE" "$T/sshd" "$T/shadow.txt" -exec stat -c '%n %a %U %G %s %Y' {} + 2>/dev/null | sort | sha256sum | cut -c1-16; }
   expect_eq "correct installation → PASS" "$(icheck inst-ok)" 0
-  has "$T/out/inst-ok.log" "^OFFHOST_INSTALL=PASS checks=9$" "…nine checks"
+  has "$T/out/inst-ok.log" "^OFFHOST_INSTALL=PASS checks=15$" "…fifteen checks (incl. effective sudo, exact keys, locks, per-account sshd)"
+  has "$T/out/inst-ok.log" "^install: sudo-effective=ok$" "…effective sudo authority verified from the real listing"
+  has "$T/out/inst-ok.log" "^install: authorized-keys-distinct=ok$" "…three distinct key fingerprints"
+  has "$T/out/inst-ok.log" "^install: accounts-locked=ok$" "…service-account passwords locked"
+  has "$T/out/inst-ok.log" "^install: sshd-receive=ok$" "…per-account sshd evaluation (receive)"
+  has "$T/out/inst-ok.log" "^install: sshd-audit=ok$" "…per-account sshd evaluation (audit)"
   has "$T/out/inst-ok.log" "^install: hash offhost-publish.sh=[0-9a-f]{12}$" "…publisher hash recorded (prefix)"
   has "$T/out/inst-ok.log" "^install: hash offhost-lib.sh=[0-9a-f]{12}$" "…library hash recorded (prefix)"
-  reasons() { grep -m1 -oE '^OFFHOST_INSTALL=FAIL reasons=.*' "$T/out/$1.log" | sed 's/^OFFHOST_INSTALL=FAIL reasons=//'; }
+  # ── file shape mutations (Correction 2 assertions kept) ──
   chmod g+w "$IBIN/offhost-lib.sh"; expect_eq "group-writable library → FAIL" "$(icheck inst-w >/dev/null; reasons inst-w)" "bin-file-writable"; chmod 644 "$IBIN/offhost-lib.sh"
   chown lcpt-receive "$IBIN/offhost-publish.sh"; expect_eq "non-root publisher owner → FAIL" "$(icheck inst-o >/dev/null; reasons inst-o)" "bin-file-owner"; chown root "$IBIN/offhost-publish.sh"
   ln -s /etc/hostname "$IBIN/stray"; expect_eq "symlink in the bin directory → FAIL" "$(icheck inst-s >/dev/null; reasons inst-s)" "bin-file-symlink"; rm -f "$IBIN/stray"
   chmod 666 "$INST/etc/offhost.env"; expect_eq "world-writable config → FAIL" "$(icheck inst-c >/dev/null; reasons inst-c)" "config-mode"; chmod 644 "$INST/etc/offhost.env"
-  chmod 644 "$INST/etc/sudoers"; expect_eq "sudoers not 0440 → FAIL" "$(icheck inst-sm >/dev/null; reasons inst-sm)" "sudoers-mode"; chmod 0440 "$INST/etc/sudoers"
-  cp "$INST/etc/sudoers" "$T/sudoers.bak"; printf 'lcpt-receive ALL=(root) NOPASSWD: /bin/ls\n' >>"$INST/etc/sudoers"
-  expect_eq "extra sudoers rule → FAIL" "$(icheck inst-sr >/dev/null; reasons inst-sr)" "sudoers-rule-count"; cp "$T/sudoers.bak" "$INST/etc/sudoers"; chmod 0440 "$INST/etc/sudoers"; chown root:root "$INST/etc/sudoers"
-  cp "$INST/home/lcpt-receive/.ssh/authorized_keys" "$T/ak.bak"; sed -i 's/^restrict,command="[^"]*" //' "$INST/home/lcpt-receive/.ssh/authorized_keys"
-  expect_eq "upload key without the forced command → FAIL" "$(icheck inst-ak >/dev/null; reasons inst-ak)" "authorized-keys-receive-unrestricted"; cp "$T/ak.bak" "$INST/home/lcpt-receive/.ssh/authorized_keys"; chown lcpt-receive:lcpt-receive "$INST/home/lcpt-receive/.ssh/authorized_keys"; chmod 600 "$INST/home/lcpt-receive/.ssh/authorized_keys"
+  chmod 644 "$SUDOERS_FILE"; expect_eq "sudoers not 0440 → FAIL" "$(icheck inst-sm >/dev/null; reasons inst-sm)" "sudoers-mode"; chmod 0440 "$SUDOERS_FILE"
+  # ── sudo: drop-in content and EFFECTIVE authority ──
+  install_sudoers "$(sudoers_fixture)
+lcpt-receive ALL=(root) NOPASSWD: /bin/ls"
+  expect_eq "extra rule inside the drop-in → FAIL (file and effective)" "$(icheck inst-sr >/dev/null; reasons inst-sr)" "sudoers-rule-count,sudo-effective-extra-command"
+  install_sudoers "$(printf 'Defaults:lcpt-receive env_reset, use_pty\nlcpt-receive ALL=(root) NOPASSWD: NOSETENV: %s/offhost-publish.sh\n' "$IBIN")"
+  expect_eq "missing required Defaults (!requiretty) → FAIL (file and effective)" "$(icheck inst-sd >/dev/null; reasons inst-sd)" "sudoers-defaults,sudo-effective-defaults"
+  install_sudoers "$(printf 'Defaults:lcpt-receive env_reset, !requiretty, use_pty\nlcpt-receive ALL=(root) NOPASSWD: SETENV: %s/offhost-publish.sh\n' "$IBIN")"
+  expect_eq "SETENV on the publisher rule → FAIL (file and effective)" "$(icheck inst-se >/dev/null; reasons inst-se)" "sudoers-setenv,sudo-effective-setenv"
+  install_sudoers "$(printf 'Defaults:lcpt-receive env_reset, !requiretty, use_pty\nlcpt-receive ALL=(root) NOPASSWD: %s/offhost-publish.sh\n' "$IBIN")"
+  expect_eq "publisher rule without NOSETENV → FAIL (file and effective tags)" "$(icheck inst-ns >/dev/null; reasons inst-ns)" "sudoers-rule,sudo-effective-tags"
+  install_sudoers "$(sudoers_fixture)"
+  printf 'lcpt-receive ALL=(root) NOPASSWD: /bin/ls\n' >"$EXTRA_SUDOERS"; chmod 0440 "$EXTRA_SUDOERS"
+  expect_eq "additional command granted by ANOTHER sudoers file → FAIL" "$(icheck inst-x1 >/dev/null; reasons inst-x1)" "sudo-effective-extra-command"
+  printf 'lcpt-receive ALL=(ALL) ALL\n' >"$EXTRA_SUDOERS"; chmod 0440 "$EXTRA_SUDOERS"
+  expect_eq "effective ALL grant from another file → FAIL" "$(icheck inst-x2 >/dev/null; reasons inst-x2)" "sudo-effective-extra-command"
+  printf 'lcpt-receive ALL=(root) NOPASSWD: /bin/bash\n' >"$EXTRA_SUDOERS"; chmod 0440 "$EXTRA_SUDOERS"
+  expect_eq "effective shell grant from another file → FAIL" "$(icheck inst-x3 >/dev/null; reasons inst-x3)" "sudo-effective-extra-command"
+  printf 'lcpt-receive ALL=(root) SETENV: NOPASSWD: /opt/other/tool\n' >"$EXTRA_SUDOERS"; chmod 0440 "$EXTRA_SUDOERS"
+  expect_eq "effective SETENV grant from another file → FAIL" "$(icheck inst-x4 >/dev/null; reasons inst-x4)" "sudo-effective-setenv"
+  rm -f "$EXTRA_SUDOERS"
+  mv "$SUDOERS_FILE" "$T/sudoers.tmp"
+  expect_eq "drop-in absent → FAIL (file and no effective grant)" "$(icheck inst-ng >/dev/null; reasons inst-ng)" "sudoers-missing,sudo-effective-no-grant"
+  mv "$T/sudoers.tmp" "$SUDOERS_FILE"; chmod 0440 "$SUDOERS_FILE"
+  expect_eq "intended publisher-only effective grant passes again" "$(icheck inst-sok)" 0
+  # ── key inventory: exactly one receive key + two distinct audit keys ──
+  write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary"
+  expect_eq "only one audit key → FAIL" "$(icheck inst-k1 >/dev/null; reasons inst-k1)" "authorized-keys-audit-count"
+  write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@github-actions"
+  expect_eq "duplicated primary/GitHub audit key (different comments) → FAIL" "$(icheck inst-k2 >/dev/null; reasons inst-k2)" "authorized-keys-duplicate"
+  write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_UP lcp-offhost-audit@github-actions"
+  expect_eq "upload key reused as an audit key → FAIL" "$(icheck inst-k3 >/dev/null; reasons inst-k3)" "authorized-keys-duplicate"
+  write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA!!notbase64 lcp-offhost-audit@github-actions"
+  expect_eq "malformed base64 blob → FAIL" "$(icheck inst-k4 >/dev/null; reasons inst-k4)" "authorized-keys-audit-malformed"
+  write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_RSA lcp-offhost-audit@github-actions"
+  expect_eq "blob whose embedded type differs from the declared type → FAIL" "$(icheck inst-k5 >/dev/null; reasons inst-k5)" "authorized-keys-audit-malformed"
+  write_keys "$RECV_OK
+restrict,command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $(mkblob) second-upload" "$AUD_OK"
+  expect_eq "extra receive key → FAIL (design is exact-three)" "$(icheck inst-k6 >/dev/null; reasons inst-k6)" "authorized-keys-receive-count"
+  write_keys "$RECV_OK" "$AUD_OK
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $(mkblob) third-audit"
+  expect_eq "third audit key → FAIL" "$(icheck inst-k7 >/dev/null; reasons inst-k7)" "authorized-keys-audit-count"
+  write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@github-actions"
+  expect_eq "audit key forced to the wrong script → FAIL" "$(icheck inst-k8 >/dev/null; reasons inst-k8)" "authorized-keys-audit-unrestricted"
+  write_keys "restrict,no-pty,command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $K_UP lcp-offhost-upload@primary" "$AUD_OK"
+  expect_eq "unrecognised extra option on the upload key → FAIL" "$(icheck inst-k9 >/dev/null; reasons inst-k9)" "authorized-keys-receive-unrestricted"
+  write_keys "command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $K_UP lcp-offhost-upload@primary" "$AUD_OK"
+  expect_eq "upload key without restrict → FAIL" "$(icheck inst-k10 >/dev/null; reasons inst-k10)" "authorized-keys-receive-unrestricted"
+  write_keys "ssh-ed25519 $K_UP lcp-offhost-upload@primary" "$AUD_OK"
+  expect_eq "upload key without any forced command → FAIL" "$(icheck inst-ak >/dev/null; reasons inst-ak)" "authorized-keys-receive-unrestricted"
+  write_keys "$RECV_OK" "$AUD_OK"
   chmod 644 "$INST/home/lcpt-audit/.ssh/authorized_keys"; expect_eq "audit authorized_keys not 0600 → FAIL" "$(icheck inst-am >/dev/null; reasons inst-am)" "authorized-keys-audit-file"; chmod 600 "$INST/home/lcpt-audit/.ssh/authorized_keys"
-  mkdir -p "$INST/home/lcpt-vault/.ssh"; echo "ssh-ed25519 AAAA x" >"$INST/home/lcpt-vault/.ssh/authorized_keys"
+  mkdir -p "$INST/home/lcpt-vault/.ssh"; echo "ssh-ed25519 $K_A2 x" >"$INST/home/lcpt-vault/.ssh/authorized_keys"
   expect_eq "vault account with an SSH key → FAIL" "$(icheck inst-v >/dev/null; reasons inst-v)" "vault-ssh-key-present"; rm -rf "$INST/home/lcpt-vault/.ssh"
-  printf 'passwordauthentication yes\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\n' >"$T/sshd-T.txt"
-  expect_eq "sshd with password authentication → FAIL" "$(icheck inst-pw >/dev/null; reasons inst-pw)" "sshd-password-auth"
-  printf 'passwordauthentication no\npubkeyauthentication yes\npermitrootlogin no\nkbdinteractiveauthentication no\n' >"$T/sshd-T.txt"
+  expect_eq "one receive key plus two distinct audit keys passes again" "$(icheck inst-kok)" 0
+  # ── account password locks (shadow-format fixture; nothing is printed) ──
+  printf 'lcpt-receive:$6$fixturesalt$fixturehash:19000:0:99999:7:::\nlcpt-audit:*:19000:0:99999:7:::\nlcpt-vault:!:19000:0:99999:7:::\n' >"$T/shadow.txt"
+  expect_eq "receive account with a usable password → FAIL" "$(icheck inst-p1 >/dev/null; reasons inst-p1)" "account-receive-password-unlocked"
+  printf 'lcpt-receive:!:19000:0:99999:7:::\nlcpt-audit::19000:0:99999:7:::\nlcpt-vault:!:19000:0:99999:7:::\n' >"$T/shadow.txt"
+  expect_eq "audit account with an empty password → FAIL" "$(icheck inst-p2 >/dev/null; reasons inst-p2)" "account-audit-password-unlocked"
+  printf 'lcpt-receive:!:19000:0:99999:7:::\nlcpt-audit:*:19000:0:99999:7:::\nlcpt-vault:$y$j9T$fixture$fixturehash:19000:0:99999:7:::\n' >"$T/shadow.txt"
+  expect_eq "vault account with a usable password → FAIL" "$(icheck inst-p3 >/dev/null; reasons inst-p3)" "account-vault-password-unlocked"
+  printf 'lcpt-receive:!:19000:0:99999:7:::\nlcpt-vault:!:19000:0:99999:7:::\n' >"$T/shadow.txt"
+  expect_eq "audit account missing from the shadow source → FAIL" "$(icheck inst-p4 >/dev/null; reasons inst-p4)" "account-audit-shadow-unreadable"
+  shadow_reset
+  nothas "$T/out/inst-p1.log" 'fixturehash|\$6\$' "no password hash printed"
+  # ── sshd: per-account effective configuration ──
+  expect_eq "fake sshd distinguishes global from per-account answers" "$(sshd_user_ok | sed 's/passwordauthentication no/passwordauthentication yes/' >"$T/sshd/user-lcpt-receive.txt"; "$T/bin/sshd" -T | grep -c '^passwordauthentication no$')/$("$T/bin/sshd" -T -C user=lcpt-receive,host=h,addr=127.0.0.1 | grep -c '^passwordauthentication yes$')" "1/1"
+  expect_eq "safe global policy + Match User override enabling passwords for receive → FAIL" "$(icheck inst-m1 >/dev/null; reasons inst-m1)" "sshd-receive-password-auth"
+  sshd_reset; sshd_user_ok | sed 's/passwordauthentication no/passwordauthentication yes/' >"$T/sshd/user-lcpt-audit.txt"
+  expect_eq "the equivalent audit-account override → FAIL" "$(icheck inst-m2 >/dev/null; reasons inst-m2)" "sshd-audit-password-auth"
+  sshd_reset; sshd_user_ok | sed 's/kbdinteractiveauthentication no/kbdinteractiveauthentication yes/' >"$T/sshd/user-lcpt-audit.txt"
+  expect_eq "interactive authentication enabled for audit → FAIL" "$(icheck inst-m3 >/dev/null; reasons inst-m3)" "sshd-audit-interactive-auth"
+  sshd_reset; sshd_user_ok | sed 's/kbdinteractiveauthentication no/kbdinteractiveauthentication yes/' >"$T/sshd/user-lcpt-receive.txt"
+  expect_eq "interactive authentication enabled for receive → FAIL" "$(icheck inst-m4 >/dev/null; reasons inst-m4)" "sshd-receive-interactive-auth"
+  sshd_reset; sshd_user_ok | sed 's/pubkeyauthentication yes/pubkeyauthentication no/' >"$T/sshd/user-lcpt-receive.txt"
+  expect_eq "public-key authentication disabled for receive → FAIL" "$(icheck inst-m5 >/dev/null; reasons inst-m5)" "sshd-receive-pubkey-auth"
+  sshd_reset; sshd_user_ok | sed 's/pubkeyauthentication yes/pubkeyauthentication no/' >"$T/sshd/user-lcpt-audit.txt"
+  expect_eq "public-key authentication disabled for audit → FAIL" "$(icheck inst-m6 >/dev/null; reasons inst-m6)" "sshd-audit-pubkey-auth"
+  sshd_reset; sshd_global | sed 's/permitrootlogin no/permitrootlogin yes/' >"$T/sshd/global.txt"
+  expect_eq "root login permitted globally → FAIL" "$(icheck inst-m7 >/dev/null; reasons inst-m7)" "sshd-root-login"
+  sshd_reset; sshd_global | sed 's/passwordauthentication no/passwordauthentication yes/' >"$T/sshd/global.txt"
+  expect_eq "password authentication enabled globally → FAIL" "$(icheck inst-pw >/dev/null; reasons inst-pw)" "sshd-password-auth"
+  sshd_reset; sshd_global | grep -v 'allowusers lcpt-audit' >"$T/sshd/global.txt"
+  expect_eq "AllowUsers without the audit account → FAIL" "$(icheck inst-m8 >/dev/null; reasons inst-m8)" "sshd-allowusers-audit"
+  sshd_reset; { sshd_global; echo 'allowusers lcpt-vault'; } >"$T/sshd/global.txt"
+  expect_eq "AllowUsers permitting the vault account → FAIL" "$(icheck inst-m9 >/dev/null; reasons inst-m9)" "sshd-allowusers-vault"
+  sshd_reset; sshd_global | grep -v allowusers >"$T/sshd/global.txt"
+  expect_eq "AllowUsers absent → FAIL" "$(icheck inst-m10 >/dev/null; reasons inst-m10)" "sshd-allowusers-missing"
+  sshd_reset
+  printf 'Include %s/sshd_config.d/*.conf\nMatch Address 10.0.0.0/8\n    PasswordAuthentication yes\n' "$T/sshd" >"$T/sshd/sshd_config"
+  expect_eq "Match block on a non-User criterion → FAIL" "$(icheck inst-m11 >/dev/null; reasons inst-m11)" "sshd-match-criteria"
+  printf 'Include /etc/other/*.conf\n' >"$T/sshd/sshd_config"
+  expect_eq "Include outside sshd_config.d → FAIL" "$(icheck inst-m12 >/dev/null; reasons inst-m12)" "sshd-include-unsupported"
+  sshd_cfg_reset
   expect_eq "sshd unavailable → FAIL" "$(icheck inst-nos OFFHOST_SSHD_BIN="$T/bin/no-such-sshd" >/dev/null; reasons inst-nos)" "sshd-unavailable"
   expect_eq "non-root invocation refused" "$(runuser -u lcpt-audit -- bash "$OH/offhost-install-check.sh" 2>/dev/null | tail -n 1)" "OFFHOST_INSTALL=FAIL reasons=install-check-not-root"
-  expect_eq "the check changed nothing (fixture still passes)" "$(icheck inst-again)" 0
+  BEFORE_TREE="$(tree_hash)"
+  expect_eq "correct effective configuration and locked accounts pass" "$(icheck inst-again)" 0
+  expect_eq "the checker is read-only (fixture tree, sudoers, sshd and shadow fixtures unchanged)" "$(tree_hash)" "$BEFORE_TREE"
+  expect_eq "no privileged command was executed by the checks (no publish artefacts)" "$(find "$INST" -name '*.publish' -o -name '*.pending' -o -name '*.receipt' | wc -l)" 0
+  cat "$T/out"/inst-*.log >"$T/inst-all.txt"
+  nothas "$T/inst-all.txt" "$K_UP|$K_A1|$K_A2|$K_RSA" "no public-key blob in any checker output"
+  nothas "$T/inst-all.txt" "SHA256:" "no fingerprint in any checker output"
+  nothas "$T/inst-all.txt" "backup-fixture|127\.0\.0\.1| vm[: ]|$(hostname)" "no host name or address in any checker output"
+  nothas "$T/inst-all.txt" "fixturehash|:19000:" "no shadow data in any checker output"
+  # restore the harness drop-in used by the sender tests
+  install_sudoers "$(cat "$T/sudoers.main")"
 else
   skip "installation-integrity fixture (requires root and the test accounts)"
 fi
@@ -798,6 +964,8 @@ for k in $VAULT_KEYS; do expect_true "vault key exercised: $k" check_key_used "$
 expect_eq "OFFHOST_MAX_TIME drives the monotonic budget" "$(code "$OH/offhost-send.sh" | grep -c 'REM=$(( MAX_TIME - (SECONDS - START_SECONDS) ))')" 1
 expect_eq "every blocking operation runs under run_limited" "$(code "$OH/offhost-send.sh" | grep -cE '^\s*run_limited "\$(SSH_BIN|AGE_BIN)"')" 2
 expect_eq "timeout uses --foreground with a kill-after grace" "$(code "$OH/offhost-send.sh" | grep -c 'timeout --foreground -k 5 "$REM"')" 1
+expect_eq "summary and log lines go to the saved stdout descriptor (never a redirected helper)" "$(code "$OH/offhost-send.sh" | grep -cE '^(log|fail)\(\).*>&3')" 2
+expect_eq "children of the budgeted call cannot inherit the lock or the summary descriptor" "$(code "$OH/offhost-send.sh" | grep -c '9>&- 3>&-')" 1
 expect_eq "the clock-skew limit is applied to the audit header" "$(code "$OH/offhost-send.sh" | grep -c '\-le "$MAX_SKEW"')" 1
 expect_eq "capacity limits are applied by the publisher" "$(code "$OH/offhost-publish.sh" | grep -cE 'MAX_ARCHIVE|MIN_FREE|MAX_GEN' )" "$(code "$OH/offhost-publish.sh" | grep -cE 'MAX_ARCHIVE|MIN_FREE|MAX_GEN')"
 expect_true "publisher applies the per-archive maximum" grep -q '"$SIZE" -gt "$MAX_ARCHIVE"' "$OH/offhost-publish.sh"
@@ -805,6 +973,19 @@ expect_true "publisher applies the free-space reserve" grep -q 'copies \* SIZE )
 expect_true "publisher applies the per-slot cap" grep -q '"$n" -lt "$MAX_GEN"' "$OH/offhost-publish.sh"
 expect_true "auditor reports capacity from the same limits" grep -q 'lcp_capacity_line "$ROOT" "$MAX_GEN" "$MIN_FREE"' "$OH/offhost-audit.sh"
 expect_eq "the receiver never touches published/" "$(code "$OH/offhost-receive.sh" | grep -c '/published')" 0
+# installation checker statics (Correction 3)
+IC="$OH/offhost-install-check.sh"
+expect_eq "checker evaluates sshd per restricted account with -T -C user=…" "$(code "$IC" | grep -c '"$SSHD_BIN" -T -C "user=$u,host=$PROBE_HOST,addr=$PROBE_ADDR"')" 1
+expect_eq "checker evaluates the global sshd policy too" "$(code "$IC" | grep -c '"$SSHD_BIN" -T 2>/dev/null')" 1
+expect_eq "checker requires exactly one receive key and two audit keys" "$(code "$IC" | grep -cE 'check_keys "\$RECEIVE_USER" "\$BIN_DIR/offhost-receive.sh" receive 1|check_keys "\$AUDIT_USER" "\$BIN_DIR/offhost-audit.sh" audit 2')" 2
+expect_eq "checker requires distinct key fingerprints" "$(code "$IC" | grep -c 'authorized-keys-duplicate')" 1
+expect_eq "checker lists the effective sudo privileges read-only (-n -l -U)" "$(code "$IC" | grep -c '"$SUDO_BIN" -n -l -U "$RECEIVE_USER"')" 1
+expect_eq "checker requires the publisher as the only effective command" "$(code "$IC" | grep -c '\[ "$command" != "$PUBLISHER" \]')" 1
+expect_eq "checker requires NOSETENV on the publisher rule" "$(code "$IC" | grep -c 'NOSETENV')" "$(code "$IC" | grep -c 'NOSETENV')"
+expect_true "checker refuses SETENV (file and effective)" bash -c "code() { grep -vE '^[[:space:]]*#' \"\$@\"; }; code '$IC' | grep -q 'bad sudoers-setenv' && code '$IC' | grep -q 'bad sudo-effective-setenv'"
+expect_eq "checker never runs sudo with a command (listing only)" "$(code "$IC" | grep -E '"\$SUDO_BIN"' | grep -vc -- '-n -l -U')" 0
+expect_eq "checker verifies locked passwords for receive, audit and vault" "$(code "$IC" | grep -c '"$RECEIVE_USER:receive" "$AUDIT_USER:audit" "$VAULT_USER:vault"')" 1
+expect_eq "sudoers example carries NOSETENV and the required Defaults" "$(grep -cE '^Defaults:lcp-receive env_reset, !requiretty, use_pty$|^lcp-receive ALL=\(root\) NOPASSWD: NOSETENV: /opt/lcp-offhost/bin/offhost-publish\.sh$' "$OH/sudoers.example")" 2
 
 echo "== 21. static: no cloud-storage provider assumptions in the scripts =="
 for term in 'storage\.googleapis' 'gserviceaccount' 'workloadIdentity' 'sts\.googleapis' 'iamcredentials' 'gcloud' 'GOOGLE_' 'ifGenerationMatch' 'me-central2' 'CNTXT' 'gsutil' 'OFFHOST_BUCKET' 'x-goog'; do

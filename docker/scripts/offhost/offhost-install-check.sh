@@ -1,12 +1,15 @@
 #!/bin/bash
 # =============================================================================
-# Lead Capture Pro — backup VPS installation-integrity check (B23 G-6D C2)
+# Lead Capture Pro — backup VPS installation-integrity check (B23 G-6D C2/C3)
 # =============================================================================
 # Runs as root ON THE BACKUP VPS before activation and at any later review.
-# STRICTLY READ-ONLY: it inspects ownership, modes, sudoers, forced-command
-# keys, group membership, the effective sshd configuration and records script
-# hashes. It changes nothing and prints no secret (key material is never
-# read beyond the option prefix of each authorized_keys line).
+# STRICTLY READ-ONLY: it inspects ownership, modes, sudoers and the EFFECTIVE
+# sudo authority, the forced-command key inventory, account locks, group
+# membership, the effective sshd configuration PER RESTRICTED ACCOUNT and
+# records script hashes. It changes nothing, executes no privileged command
+# and prints no secret: no key material, no fingerprint, no password hash or
+# shadow data, no host name or address, no user name beyond the documented
+# service-account labels.
 #
 #   sudo OFFHOST_CONFIG=/etc/lcp-offhost/offhost.env bash /opt/lcp-offhost/bin/offhost-install-check.sh
 #
@@ -20,17 +23,33 @@
 #   config         OFFHOST_CONFIG regular, root:root, not group/world-writable,
 #                  parses against the whitelist, capacity limits bounded
 #   sudoers        OFFHOST_SUDOERS regular, root:root, mode 0440, `visudo -cf`
-#                  passes, exactly one rule and it names the publisher path only
-#   authorized-keys  receive and audit accounts: ~/.ssh 0700 and
-#                  authorized_keys 0600, both owned by the account, at least one
-#                  key, every key line restricted to the right forced command
+#                  passes, Defaults for the receive user include env_reset,
+#                  !requiretty and use_pty, exactly one rule and it is
+#                  `<receive> ALL=(root) NOPASSWD: NOSETENV: <bin>/offhost-publish.sh`
+#   sudo-effective read-only `sudo -n -l -U <receive>`: the EFFECTIVE privileges
+#                  from every sudoers source are exactly one command — the
+#                  publisher — as root with NOPASSWD and NOSETENV, and the
+#                  effective Defaults include env_reset, !requiretty, use_pty
+#                  (no shell, wildcard, ALL, SETENV or grant from another file)
+#   authorized-keys  exactly ONE key for the receive account forced to
+#                  offhost-receive.sh and exactly TWO keys for the audit account
+#                  forced to offhost-audit.sh (primary audit + GitHub audit); every
+#                  line is `restrict,command="<script>" <type> <base64>` with a
+#                  supported type and a structurally valid blob whose embedded
+#                  type matches; all three fingerprints distinct
 #   vault-no-ssh   the vault account has no authorized key and a nologin shell
+#   accounts-locked receive, audit and vault have no usable password
 #   groups         receive and audit are not members of the vault group;
 #                  receive and vault are not members of the audit group
-#   sshd           `sshd -T` effective configuration: passwordauthentication no,
-#                  kbdinteractiveauthentication no (or
-#                  challengeresponseauthentication no), pubkeyauthentication
-#                  yes, permitrootlogin no
+#   sshd-config    every `Match` block in sshd_config (+ sshd_config.d) matches on
+#                  User (or All) only, and every Include stays inside sshd_config.d,
+#                  so the per-user evaluation below is authoritative
+#   sshd           global `sshd -T`: permitrootlogin no, passwordauthentication no,
+#                  pubkeyauthentication yes, interactive auth off; AllowUsers lists
+#                  the receive and audit accounts and not the vault;
+#                  per account `sshd -T -C user=<account>,host=…,addr=…`:
+#                  passwordauthentication no, kbdinteractiveauthentication no (or
+#                  challengeresponseauthentication no), pubkeyauthentication yes
 #   hashes         sha256 prefix of every bin file, for the activation record
 #                  (record the full `sha256sum` output separately)
 #
@@ -39,8 +58,12 @@
 # Inputs: OFFHOST_INSTALL_ROOT (/opt/lcp-offhost), OFFHOST_BIN_DIR
 # (<root>/bin), OFFHOST_CONFIG (/etc/lcp-offhost/offhost.env), OFFHOST_SUDOERS
 # (/etc/sudoers.d/lcp-offhost), OFFHOST_RECEIVE_USER, OFFHOST_AUDIT_USER,
-# OFFHOST_VAULT_USER, OFFHOST_SSHD_BIN (sshd). Environment-only test hook:
-# OFFHOST_HOME_BASE (home directories under <base>/<user> instead of passwd).
+# OFFHOST_VAULT_USER, OFFHOST_SSHD_BIN (sshd), OFFHOST_SSHD_CONFIG
+# (/etc/ssh/sshd_config), OFFHOST_SSHD_PROBE_HOST (hostname),
+# OFFHOST_SSHD_PROBE_ADDR (127.0.0.1), OFFHOST_SUDO_BIN (sudo).
+# Environment-only test hooks: OFFHOST_HOME_BASE (home directories under
+# <base>/<user> instead of passwd), OFFHOST_SHADOW_SOURCE (a shadow-format file
+# instead of `getent shadow`).
 #
 # This script proves the INSTALLED SHAPE only. Real forced-command semantics
 # (restrict, SSH_ORIGINAL_COMMAND) must be exercised on the real server with
@@ -59,7 +82,12 @@ RECEIVE_USER="${OFFHOST_RECEIVE_USER:-lcp-receive}"
 AUDIT_USER="${OFFHOST_AUDIT_USER:-lcp-audit}"
 VAULT_USER="${OFFHOST_VAULT_USER:-lcp-vault}"
 SSHD_BIN="${OFFHOST_SSHD_BIN:-sshd}"
+SSHD_CONFIG="${OFFHOST_SSHD_CONFIG:-/etc/ssh/sshd_config}"
+PROBE_HOST="${OFFHOST_SSHD_PROBE_HOST:-$(hostname 2>/dev/null || echo localhost)}"
+PROBE_ADDR="${OFFHOST_SSHD_PROBE_ADDR:-127.0.0.1}"
+SUDO_BIN="${OFFHOST_SUDO_BIN:-sudo}"
 HOME_BASE="${OFFHOST_HOME_BASE:-}"
+SHADOW_SOURCE="${OFFHOST_SHADOW_SOURCE:-}"
 FAILS=(); CHECKS=0
 ok()   { CHECKS=$((CHECKS + 1)); echo "install: $1=ok"; }
 bad()  { FAILS+=("$1"); echo "install: $1=FAIL${2:+ ($2)}"; }
@@ -68,14 +96,21 @@ finish() {
   echo "OFFHOST_INSTALL=FAIL reasons=$(IFS=,; echo "${FAILS[*]}")"; exit 1
 }
 [ "$(id -u)" = 0 ] || { bad install-check-not-root; finish; }
-for v in INSTALL_ROOT BIN_DIR CONFIG SUDOERS; do [[ "${!v}" =~ $LCP_PATH_RE ]] || { bad "invalid-${v,,}"; finish; }; done
+for v in INSTALL_ROOT BIN_DIR CONFIG SUDOERS SSHD_CONFIG; do [[ "${!v}" =~ $LCP_PATH_RE ]] || { bad "invalid-${v,,}"; finish; }; done
 for v in RECEIVE_USER AUDIT_USER VAULT_USER; do [[ "${!v}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { bad "invalid-${v,,}"; finish; }; done
+[[ "$PROBE_HOST" =~ ^[A-Za-z0-9.-]{1,253}$ ]] && [[ "$PROBE_ADDR" =~ ^[0-9A-Fa-f.:]{1,45}$ ]] || { bad invalid-probe; finish; }
+PUBLISHER="$BIN_DIR/offhost-publish.sh"
 mode_ok() { local m; m="$(stat -c %a "$1" 2>/dev/null)" || return 1; [ $(( 8#$m & 8#022 )) = 0 ]; }   # no group/world write
 root_owned() { [ "$(stat -c %u:%g "$1" 2>/dev/null)" = "0:0" ]; }
 home_of() {
   if [ -n "$HOME_BASE" ]; then echo "$HOME_BASE/$1"; else getent passwd "$1" | cut -d: -f6; fi
 }
 shell_of() { getent passwd "$1" | cut -d: -f7; }
+# shadow_field USER → the password field of the account (never printed)
+shadow_field() {
+  if [ -n "$SHADOW_SOURCE" ]; then awk -F: -v u="$1" '$1 == u { print $2; exit }' "$SHADOW_SOURCE" 2>/dev/null
+  else getent shadow "$1" 2>/dev/null | cut -d: -f2; fi
+}
 
 # ── install root and bin directory ───────────────────────────────────────────
 r=ok
@@ -117,38 +152,104 @@ if { [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ]; }; then
   fi
 else bad config-missing; fi
 
-# ── sudoers drop-in ──────────────────────────────────────────────────────────
+# ── sudoers drop-in: file shape, intended Defaults, exactly one NOSETENV rule ──
 if { [ -f "$SUDOERS" ] && [ ! -L "$SUDOERS" ]; }; then
   if ! root_owned "$SUDOERS"; then bad sudoers-owner
   elif [ "$(stat -c %a "$SUDOERS")" != 440 ]; then bad sudoers-mode
   elif ! command -v visudo >/dev/null 2>&1; then bad sudoers-visudo-unavailable
   elif ! visudo -cf "$SUDOERS" >/dev/null 2>&1; then bad sudoers-syntax
   else
+    defaults_opts="$(grep -E "^[[:space:]]*Defaults:$RECEIVE_USER[[:space:]]" "$SUDOERS" | sed -E "s/^[[:space:]]*Defaults:$RECEIVE_USER[[:space:]]+//" | tr ',' '\n' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
     rules="$(grep -vE '^[[:space:]]*(#|Defaults|$)' "$SUDOERS" || true)"
-    if [ "$(printf '%s\n' "$rules" | grep -c .)" != 1 ]; then bad sudoers-rule-count
-    elif ! printf '%s\n' "$rules" | grep -qxE "$RECEIVE_USER ALL=\(root\) NOPASSWD: $BIN_DIR/offhost-publish\.sh"; then bad sudoers-rule
+    if ! printf '%s\n' "$defaults_opts" | grep -qx 'env_reset' || ! printf '%s\n' "$defaults_opts" | grep -qx '!requiretty' || ! printf '%s\n' "$defaults_opts" | grep -qx 'use_pty'; then bad sudoers-defaults
+    elif printf '%s\n' "$rules" | grep -qE '(^|[[:space:]])SETENV:'; then bad sudoers-setenv
+    elif [ "$(printf '%s\n' "$rules" | grep -c .)" != 1 ]; then bad sudoers-rule-count
+    elif ! printf '%s\n' "$rules" | grep -qxE "$RECEIVE_USER ALL=\(root\) (NOPASSWD: NOSETENV: |NOSETENV: NOPASSWD: )$PUBLISHER"; then bad sudoers-rule
     else ok sudoers; fi
   fi
 else bad sudoers-missing; fi
 
-# ── forced-command authorized_keys ───────────────────────────────────────────
-check_keys() {   # USER FORCED-SCRIPT LABEL
-  local u="$1" script="$2" label="$3" h d f n line
+# ── effective sudo authority of the receive account (read-only listing) ──────
+# `sudo -l -U` lists what every sudoers source grants; nothing is executed.
+SUDO_CMD_RE='^\(([^)]*)\) ((([A-Z]+:) )*)(.*)$'   # "(runas) TAG: TAG: command"
+if ! command -v "$SUDO_BIN" >/dev/null 2>&1 || ! listing="$("$SUDO_BIN" -n -l -U "$RECEIVE_USER" 2>/dev/null)"; then bad sudo-effective-unparseable
+elif printf '%s\n' "$listing" | grep -q 'is not allowed to run sudo'; then bad sudo-effective-no-grant
+elif ! printf '%s\n' "$listing" | grep -q 'may run the following commands'; then bad sudo-effective-unparseable
+else
+  # sudo wraps long lines at a default width even when writing to a file:
+  # rebuild the logical entries first (continuation lines are indented and do
+  # not start with "("), then evaluate them.
+  sect=""; eff_defaults_joined=""; cmds=()
+  while IFS= read -r line; do
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in
+      "Matching Defaults entries"*) sect=defaults; continue ;;
+      "User "*" may run the following commands"*) sect=cmds; continue ;;
+    esac
+    if [ -z "$stripped" ]; then sect=""; continue; fi
+    case "$sect" in
+      defaults) eff_defaults_joined="$eff_defaults_joined $stripped" ;;
+      cmds) if [[ "$stripped" == \(* ]]; then cmds+=("$stripped"); elif [ "${#cmds[@]}" -gt 0 ]; then cmds[${#cmds[@]}-1]="${cmds[${#cmds[@]}-1]} $stripped"; fi ;;
+    esac
+  done <<<"$listing"
+  eff_defaults="$(printf '%s\n' "$eff_defaults_joined" | tr ',' '\n' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' | grep -v '^$')"
+  ncmd="${#cmds[@]}"
+  all_cmds="$(printf '%s\n' "${cmds[@]+"${cmds[@]}"}")"
+  if ! printf '%s\n' "$eff_defaults" | grep -qx 'env_reset' || ! printf '%s\n' "$eff_defaults" | grep -qx '!requiretty' || ! printf '%s\n' "$eff_defaults" | grep -qx 'use_pty'; then bad sudo-effective-defaults
+  elif printf '%s\n' "$all_cmds" | grep -qE '(^|[[:space:]])SETENV:'; then bad sudo-effective-setenv
+  elif [ "$ncmd" != 1 ]; then bad sudo-effective-extra-command "commands=$ncmd"
+  elif ! [[ "${cmds[0]}" =~ $SUDO_CMD_RE ]]; then bad sudo-effective-unparseable
+  else
+    runas="${BASH_REMATCH[1]}"; tags="${BASH_REMATCH[2]}"; command="${BASH_REMATCH[5]}"
+    command="$(printf '%s' "$command" | sed -E 's/[[:space:]]+$//')"
+    if [ "$command" != "$PUBLISHER" ]; then bad sudo-effective-extra-command "not-publisher"
+    elif [ "$runas" != root ]; then bad sudo-effective-runas
+    elif ! [[ " $tags" =~ \ NOPASSWD:\  ]] || ! [[ " $tags" =~ \ NOSETENV:\  ]]; then bad sudo-effective-tags
+    else ok sudo-effective; fi
+  fi
+fi
+
+# ── forced-command key inventory: exactly 1 receive key + 2 audit keys, distinct ─
+# lcp_ssh_blob_type BLOB → the key type embedded in the decoded blob (never printed)
+blob_type() {
+  local raw len
+  raw="$(printf '%s' "$1" | base64 -d 2>/dev/null | od -An -v -tu1 | tr -s ' \n' ' ')" || return 1
+  set -- $raw
+  [ "$#" -ge 4 ] || return 1
+  len=$(( ($1 << 24) | ($2 << 16) | ($3 << 8) | $4 )); shift 4
+  [ "$len" -ge 1 ] && [ "$len" -le 64 ] && [ "$#" -ge "$len" ] || return 1
+  local i=0 out=""
+  for b in "$@"; do i=$((i + 1)); [ "$i" -le "$len" ] || break; out="$out$(printf "\\$(printf '%03o' "$b")")"; done
+  printf '%s' "$out"
+}
+KEY_FPS=()
+check_keys() {   # USER FORCED-SCRIPT LABEL EXPECTED-COUNT
+  local u="$1" script="$2" label="$3" want="$4" h d f n=0 line opts type blob fp etype
   h="$(home_of "$u")"; [ -n "$h" ] && [ -d "$h" ] || { bad "authorized-keys-$label-home"; return; }
   d="$h/.ssh"; f="$d/authorized_keys"
   { [ -d "$d" ] && [ ! -L "$d" ] && [ "$(stat -c %U "$d")" = "$u" ] && [ "$(stat -c %a "$d")" = 700 ]; } || { bad "authorized-keys-$label-dir"; return; }
   { [ -f "$f" ] && [ ! -L "$f" ] && [ "$(stat -c %U "$f")" = "$u" ] && [ "$(stat -c %a "$f")" = 600 ]; } || { bad "authorized-keys-$label-file"; return; }
-  n=0
   while IFS= read -r line || [ -n "$line" ]; do
     [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
     n=$((n + 1))
-    [[ "$line" =~ ^restrict,command=\"$script\"\ (ssh-ed25519|sk-ssh-ed25519@openssh\.com)\  ]] || { bad "authorized-keys-$label-unrestricted"; return; }
+    # options must be exactly restrict + the forced command; nothing else, nothing missing
+    [[ "$line" =~ ^restrict,command=\"([^\"]*)\"\ (ssh-ed25519|sk-ssh-ed25519@openssh\.com)\ ([^[:space:]]+)([[:space:]].*)?$ ]] || { bad "authorized-keys-$label-unrestricted"; return; }
+    opts="${BASH_REMATCH[1]}"; type="${BASH_REMATCH[2]}"; blob="${BASH_REMATCH[3]}"
+    [ "$opts" = "$script" ] || { bad "authorized-keys-$label-unrestricted"; return; }
+    [[ "$blob" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || { bad "authorized-keys-$label-malformed"; return; }
+    etype="$(blob_type "$blob")" || { bad "authorized-keys-$label-malformed"; return; }
+    [ "$etype" = "$type" ] || { bad "authorized-keys-$label-malformed"; return; }
+    fp="$(lcp_blob_fingerprint "$blob")" || { bad "authorized-keys-$label-malformed"; return; }
+    KEY_FPS+=("$fp")
   done <"$f"
-  [ "$n" -ge 1 ] || { bad "authorized-keys-$label-empty"; return; }
+  [ "$n" = "$want" ] || { bad "authorized-keys-$label-count" "keys=$n"; return; }
   ok "authorized-keys-$label"
 }
-check_keys "$RECEIVE_USER" "$BIN_DIR/offhost-receive.sh" receive
-check_keys "$AUDIT_USER" "$BIN_DIR/offhost-audit.sh" audit
+check_keys "$RECEIVE_USER" "$BIN_DIR/offhost-receive.sh" receive 1
+check_keys "$AUDIT_USER" "$BIN_DIR/offhost-audit.sh" audit 2
+if [ "${#KEY_FPS[@]}" -ge 2 ]; then
+  if [ "$(printf '%s\n' "${KEY_FPS[@]}" | sort | uniq -d | wc -l)" = 0 ]; then ok authorized-keys-distinct; else bad authorized-keys-duplicate; fi
+fi
 
 # ── vault account: no SSH key, no login shell ────────────────────────────────
 vh="$(home_of "$VAULT_USER")"
@@ -157,6 +258,19 @@ else
   case "$(shell_of "$VAULT_USER")" in */nologin|*/false) ok vault-no-ssh ;; *) bad vault-shell ;; esac
 fi
 
+# ── service accounts: no usable password (shadow field locked: '!' or '*') ──
+r=ok
+for pair in "$RECEIVE_USER:receive" "$AUDIT_USER:audit" "$VAULT_USER:vault"; do
+  u="${pair%%:*}"; label="${pair##*:}"
+  if [ -n "$SHADOW_SOURCE" ]; then readable=0; grep -qE "^$u:" "$SHADOW_SOURCE" 2>/dev/null && readable=1
+  else readable=0; getent shadow "$u" >/dev/null 2>&1 && readable=1; fi
+  if [ "$readable" != 1 ]; then bad "account-$label-shadow-unreadable"; r=bad; continue; fi
+  field="$(shadow_field "$u")"
+  case "$field" in '!'*|'*'*) ;; *) bad "account-$label-password-unlocked"; r=bad ;; esac
+  field=""
+done
+[ "$r" = ok ] && ok accounts-locked
+
 # ── group separation ─────────────────────────────────────────────────────────
 vg="$(id -gn "$VAULT_USER" 2>/dev/null)"; ag="$(id -gn "$AUDIT_USER" 2>/dev/null)"
 if [ -z "$vg" ] || [ -z "$ag" ]; then bad groups-account-missing
@@ -164,15 +278,56 @@ elif id -Gn "$RECEIVE_USER" 2>/dev/null | grep -qw "$vg" || id -Gn "$AUDIT_USER"
 elif id -Gn "$RECEIVE_USER" 2>/dev/null | grep -qw "$ag" || id -Gn "$VAULT_USER" 2>/dev/null | grep -qw "$ag"; then bad groups-audit-member
 else ok groups; fi
 
-# ── effective sshd configuration ─────────────────────────────────────────────
+# ── sshd configuration files: Match criteria and Includes must keep the
+#    per-user evaluation authoritative ─────────────────────────────────────────
+if { [ -f "$SSHD_CONFIG" ] && [ ! -L "$SSHD_CONFIG" ]; }; then
+  cfg_dir="$(dirname "$SSHD_CONFIG")"
+  cfg_files=("$SSHD_CONFIG")
+  for f in "$cfg_dir"/sshd_config.d/*.conf; do [ -f "$f" ] && cfg_files+=("$f"); done
+  r=ok
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in
+      [Mm][Aa][Tt][Cc][Hh]\ *|[Mm][Aa][Tt][Cc][Hh]$'\t'*)
+        set -- $line; shift
+        while [ "$#" -ge 1 ]; do
+          case "${1,,}" in user|all) ;; *) r=criteria; break 2 ;; esac
+          shift 2 2>/dev/null || break
+        done ;;
+      [Ii][Nn][Cc][Ll][Uu][Dd][Ee]\ *|[Ii][Nn][Cc][Ll][Uu][Dd][Ee]$'\t'*)
+        set -- $line; shift
+        for inc in "$@"; do case "$inc" in "$cfg_dir"/sshd_config.d/*) ;; *) r=include; break 2 ;; esac; done ;;
+    esac
+  done < <(grep -hviE '^[[:space:]]*#' "${cfg_files[@]}" 2>/dev/null)
+  case "$r" in ok) ok sshd-config ;; criteria) bad sshd-match-criteria ;; include) bad sshd-include-unsupported ;; esac
+else bad sshd-config-missing; fi
+
+# ── effective sshd configuration: global, then per restricted account ────────
 if ! command -v "$SSHD_BIN" >/dev/null 2>&1 || ! eff="$("$SSHD_BIN" -T 2>/dev/null)"; then bad sshd-unavailable
 else
-  v() { printf '%s\n' "$eff" | awk -v k="$1" 'tolower($1) == k { print tolower($2); exit }'; }
-  if [ "$(v passwordauthentication)" != no ]; then bad sshd-password-auth
-  elif [ "$(v pubkeyauthentication)" != yes ]; then bad sshd-pubkey-auth
-  elif [ "$(v permitrootlogin)" != no ]; then bad sshd-root-login
-  elif [ "$(v kbdinteractiveauthentication)" != no ] && [ "$(v challengeresponseauthentication)" != no ]; then bad sshd-interactive-auth
-  else ok sshd; fi
+  v() { printf '%s\n' "$1" | awk -v k="$2" 'tolower($1) == k { print tolower($2); exit }'; }
+  r=ok
+  [ "$(v "$eff" permitrootlogin)" = no ] || { bad sshd-root-login; r=bad; }
+  [ "$(v "$eff" passwordauthentication)" = no ] || { bad sshd-password-auth; r=bad; }
+  [ "$(v "$eff" pubkeyauthentication)" = yes ] || { bad sshd-pubkey-auth; r=bad; }
+  [ "$(v "$eff" kbdinteractiveauthentication)" = no ] || [ "$(v "$eff" challengeresponseauthentication)" = no ] || { bad sshd-interactive-auth; r=bad; }
+  allow="$(printf '%s\n' "$eff" | awk 'tolower($1) == "allowusers" { for (i = 2; i <= NF; i++) print $i }')"
+  if [ -z "$allow" ]; then bad sshd-allowusers-missing; r=bad
+  else
+    printf '%s\n' "$allow" | grep -qx "$RECEIVE_USER" || { bad sshd-allowusers-receive; r=bad; }
+    printf '%s\n' "$allow" | grep -qx "$AUDIT_USER" || { bad sshd-allowusers-audit; r=bad; }
+    ! printf '%s\n' "$allow" | grep -qx "$VAULT_USER" || { bad sshd-allowusers-vault; r=bad; }
+  fi
+  [ "$r" = ok ] && ok sshd-global
+  for pair in "$RECEIVE_USER:receive" "$AUDIT_USER:audit"; do
+    u="${pair%%:*}"; label="${pair##*:}"; r=ok
+    if ! ueff="$("$SSHD_BIN" -T -C "user=$u,host=$PROBE_HOST,addr=$PROBE_ADDR" 2>/dev/null)" || [ -z "$ueff" ]; then bad "sshd-$label-unavailable"; continue; fi
+    [ "$(v "$ueff" passwordauthentication)" = no ] || { bad "sshd-$label-password-auth"; r=bad; }
+    [ "$(v "$ueff" kbdinteractiveauthentication)" = no ] || [ "$(v "$ueff" challengeresponseauthentication)" = no ] || { bad "sshd-$label-interactive-auth"; r=bad; }
+    [ "$(v "$ueff" pubkeyauthentication)" = yes ] || { bad "sshd-$label-pubkey-auth"; r=bad; }
+    [ "$r" = ok ] && ok "sshd-$label"
+  done
 fi
 
 # ── hashes for the activation record (prefixes only here) ────────────────────
