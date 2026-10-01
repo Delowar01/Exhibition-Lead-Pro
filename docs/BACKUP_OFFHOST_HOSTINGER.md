@@ -1,4 +1,4 @@
-# Off-Host Backup — Hostinger-Only Architecture (B23 G-6D Corrections 1–3)
+# Off-Host Backup — Hostinger-Only Architecture (B23 G-6D Corrections 1–4)
 
 **Status: design and code under review. Nothing in this document is activated,
 deployed, or verified against a real backup VPS.** The deterministic harnesses
@@ -128,11 +128,20 @@ pairs: each appears as its own `authorized_keys` line with its own comment
 the fingerprint used, and either can be revoked without touching the other.
 The installation check enforces the inventory **exactly**: one receive key,
 two audit keys (three in total), every line `restrict,command="…"` with no
-other option, a supported ed25519 type whose decoded blob carries that type,
-and three **distinct fingerprints** — a reused upload key, a duplicated audit
-key, a malformed blob, a missing or extra key, or a comment-only difference
-all fail (`authorized-keys-*-count`, `-malformed`, `-unrestricted`,
-`authorized-keys-duplicate`). All three service accounts must have **locked
+other option, and three **distinct fingerprints** — a reused upload key, a
+duplicated audit key, a missing or extra key, or a comment-only difference
+all fail (`authorized-keys-*-count`, `-unrestricted`,
+`authorized-keys-duplicate`). Every key must be a **complete OpenSSH-valid
+public key**: the checker parses the entire wire structure (strict base64,
+type string equal to the declared `ssh-ed25519` /
+`sk-ssh-ed25519@openssh.com`, a key field of exactly 32 bytes, the
+application string for sk keys, every length inside the data, no trailing
+bytes) **and** runs the OpenSSH tooling itself (`ssh-keygen -l -f -`, output
+suppressed); a type-only, short, long, trailing-garbage, overflowing,
+type-mismatched or badly padded blob is `authorized-keys-*-malformed`, and a
+backup VPS without `ssh-keygen` fails closed with
+`authorized-keys-validator-unavailable`. Neither the blob nor a fingerprint
+is ever printed. All three service accounts must have **locked
 passwords** (`account-*-password-unlocked`). The receive and vault accounts
 must **not** be members of the `lcp-audit` group and no account other than
 `lcp-vault` may be in the vault group (the harness and the install check
@@ -386,29 +395,48 @@ activation record:
   `lcp-receive ALL=(root) NOPASSWD: NOSETENV: /opt/lcp-offhost/bin/offhost-publish.sh`
   (`sudoers-defaults`, `sudoers-setenv`, `sudoers-rule-count`, `sudoers-rule`).
 - **Effective sudo authority**, not merely the drop-in: the read-only listing
-  `sudo -n -l -U lcp-receive` (nothing is executed) must show the required
-  effective Defaults and exactly one command — the publisher, as root, with
-  `NOPASSWD` and `NOSETENV`; any further command, shell, wildcard, `ALL`,
-  `SETENV` or grant from another sudoers source fails
-  (`sudo-effective-defaults`, `sudo-effective-setenv`,
+  `sudo -n -l -U lcp-receive` under `LC_ALL=C` (nothing is executed; wrapped
+  lines are rebuilt) must show the required effective Defaults **and none of
+  their inverses** — `env_reset` without `!env_reset`, `!requiretty` without
+  `requiretty`, `use_pty` without `!use_pty`, because a later entry from
+  another sudoers source wins for sudo (`sudo-effective-env-reset`,
+  `sudo-effective-requiretty`, `sudo-effective-use-pty`) — and exactly one
+  command — the publisher, as root, with `NOPASSWD` and `NOSETENV`; any
+  further command, shell, wildcard, `ALL`, `SETENV` or grant from another
+  sudoers source fails (`sudo-effective-setenv`,
   `sudo-effective-extra-command`, `sudo-effective-tags`,
   `sudo-effective-runas`, `sudo-effective-no-grant`,
   `sudo-effective-unparseable`).
 - `~lcp-receive/.ssh` 0700 / `authorized_keys` 0600 owned by the account with
   **exactly one** key line `restrict,command="…/offhost-receive.sh"`; the
   same for `lcp-audit` with `offhost-audit.sh` and **exactly two** keys
-  (primary audit, GitHub audit); supported type, structurally valid blob,
-  three distinct fingerprints (`authorized-keys-*`).
+  (primary audit, GitHub audit); every key a complete OpenSSH-valid public
+  key (full wire-structure parse plus `ssh-keygen -l -f -`; `ssh-keygen`
+  must be installed, otherwise the check fails closed); three distinct
+  fingerprints (`authorized-keys-*`, `authorized-keys-validator-unavailable`).
 - `lcp-vault` has **no** authorized key and a nologin shell (`vault-*`).
 - `lcp-receive`, `lcp-audit` and `lcp-vault` have **no usable password**
   (shadow field locked with `!`/`*`; the receive and audit accounts keep the
   shell the forced commands need) (`account-*-password-unlocked`).
 - `lcp-receive` and `lcp-audit` not in the vault group; `lcp-receive` and
   `lcp-vault` not in the audit group (`groups-*`).
-- sshd configuration files: every `Match` block matches on `User` (or `All`)
-  only and every `Include` stays inside `sshd_config.d`
-  (`sshd-match-criteria`, `sshd-include-unsupported`), so the per-account
-  evaluation below is authoritative.
+- sshd configuration — **strict installation profile**, so the set of files
+  sshd reads is completely accounted for: the main `sshd_config` is a
+  regular, root-owned, non-writable file (`sshd-config-missing|symlink|
+  owner|writable`); it may carry at most one `Include` and that Include must
+  be exactly `/etc/ssh/sshd_config.d/*.conf` (`sshd-include-unsupported`
+  for any other path, pattern, extra argument, non-`.conf` file or second
+  Include); when present, `sshd_config.d` must exist as a root-owned,
+  non-writable directory (`sshd-include-missing|owner|writable`) and every
+  file the pattern matches is scanned and must be a regular, non-symlink,
+  root-owned, non-group/world-writable, readable file
+  (`sshd-include-symlink|not-regular|owner|writable|unreadable`); a fragment
+  may not `Include` anything (`sshd-include-nested`, so nested or secondary
+  includes are refused rather than trusted); every `Match` block, in the
+  main file or a fragment, may use only `User …` pairs and/or `All`
+  (`sshd-match-criteria` for Address, Group, LocalAddress, LocalPort,
+  RDomain, LocalNetwork, Exec, combined or unknown criteria). Only then is
+  the per-account evaluation below authoritative.
 - Effective sshd configuration **globally** (`sshd -T`): `permitrootlogin
   no`, `passwordauthentication no`, `pubkeyauthentication yes`, interactive
   authentication off, and `AllowUsers` listing `lcp-receive` and `lcp-audit`
@@ -425,13 +453,15 @@ activation record:
 - Full `sha256sum` of `offhost-publish.sh` and `offhost-lib.sh` (and the
   other bin files) recorded before activation; the check prints 12-character
   prefixes for comparison.
-- **Real forced-command semantics tested on the future backup VPS before
-  activation — still mandatory**: with the real keys, `ssh lcp-receive@… 'ls'`
-  must answer `REJECTED reason=unsupported-command`, a PTY request must be
-  refused, a password login attempt for each service account must be refused,
-  and `HELLO`/`AUDIT` must answer as documented. The sandbox harness cannot
-  prove this (no OpenSSH; the fake `sshd` only answers `-T`/`-T -C` from
-  fixtures), and nothing here claims it.
+- **Real forced-command semantics and password-login refusal tested on the
+  future backup VPS before activation — still mandatory**: with the real
+  keys, `ssh lcp-receive@… 'ls'` must answer `REJECTED
+  reason=unsupported-command`, a PTY request must be refused, a password
+  login attempt for each of the three service accounts must be refused, and
+  `HELLO`/`AUDIT` must answer as documented. The sandbox harness cannot prove
+  this (no OpenSSH: the fake `sshd` answers `-T`/`-T -C` from fixtures and
+  `ssh-keygen -l -f -` is answered by the cryptography library's OpenSSH key
+  loader when the real tool is absent), and nothing here claims it.
 
 Scope reminder for this check (and this whole design): it hardens the
 **PostgreSQL off-host backup**, which is Hostinger-only. The product's object
@@ -591,9 +621,19 @@ limitation but is explicitly out of scope by the owner's decision.
   an audit key, a malformed blob, an extra key, a wrong forced command, a
   missing `restrict` all fail) and real `sudo -n -l -U` effective listings
   (missing Defaults, `SETENV`, an extra grant from a second sudoers file, an
-  effective `ALL` or shell grant all fail; the checker is proven read-only);
-  every documented configuration key exercised; configuration hygiene; static
-  provider scan; leak scan.
+  effective `ALL` or shell grant, and inverse Defaults — `!env_reset`,
+  `requiretty`, `!use_pty`, alone or together — appended by another sudoers
+  source all fail; the checker is proven read-only), complete key-structure
+  validation (three freshly generated real Ed25519 keys pass; type-only,
+  short, long, trailing-garbage, overflowing, type-mismatched and badly
+  padded blobs fail; a missing validator fails closed), the strict Include
+  profile (non-`.conf` include, nested include, symlinked / foreign-owned /
+  writable / non-regular / missing fragments, escaping or duplicate Includes
+  and foreign Match criteria all fail; the documented layout with `Match All`
+  passes), and the sender's test-only budget hook (sixteen malformed values
+  each produce one sanitized `invalid-test-hook` summary); every documented
+  configuration key exercised; configuration hygiene; static provider scan;
+  leak scan.
 - `.github/scripts/test/verify-offhost-hostinger.test.sh` — expected-slot
   function, verifier against canned listings (healthy, early, 18 h late,
   missing, incomplete, too small, same-host pinned/reported, host-key
@@ -621,7 +661,7 @@ GitHub secrets, and a recovery from a real backup VPS.
 | `docker/scripts/offhost/offhost-publish.sh` | backup (root via sudo) | read-only preflight, exclusive publisher and receipts |
 | `docker/scripts/offhost/offhost-audit.sh` | backup (forced, `lcp-audit`) | list-only auditor incl. the `CAPACITY` line |
 | `docker/scripts/offhost/offhost-retain.sh` | backup (`lcp-vault`) | retention, dry-run by default |
-| `docker/scripts/offhost/offhost-install-check.sh` | backup (root) | installation-integrity check: ownership/modes, drop-in + effective sudo, exact three-key inventory, account locks, groups, per-account sshd (§13) |
+| `docker/scripts/offhost/offhost-install-check.sh` | backup (root) | installation-integrity check: ownership/modes, drop-in + effective sudo (inverse Defaults rejected), exact three-key inventory with complete OpenSSH-valid keys, account locks, groups, strict sshd Include profile, per-account sshd (§13) |
 | `docker/scripts/offhost/*.example` | — | authorized_keys (three keys), sudoers, shared settings with limits, sender settings, pinned ssh_config |
 | `docker/scripts/offhost/test/offhost.test.sh` | sandbox | deterministic ops harness |
 | `.github/workflows/backup-offhost-hostinger.yml` | GitHub | daily read-only audit + alert, SHA-pinned actions |

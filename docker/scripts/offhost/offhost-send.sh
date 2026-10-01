@@ -91,8 +91,15 @@ STEP=config
 START_SECONDS=$SECONDS   # monotonic origin of the single overall budget
 # environment-only harness hook: "<step>=<seconds>" charges the budget once,
 # right before that step's blocking call, to exercise the exhausted-before-
-# operation path deterministically (never a configuration key)
+# operation path deterministically (never a configuration key). It is
+# validated BEFORE any arithmetic: exactly one known step and a positive
+# integer of at most six digits; anything else (empty value, negative, too
+# large, variables, arrays, substitutions, unknown steps) fails closed with
+# one sanitized summary, and the value is never echoed. Unset = no effect.
 BUDGET_CHARGE="${OFFHOST_TEST_BUDGET_CHARGE:-}"
+if [ -n "$BUDGET_CHARGE" ] && ! [[ "$BUDGET_CHARGE" =~ ^(hello|pre-audit|encrypt|put-archive|put-manifest|post-audit)=[1-9][0-9]{0,5}$ ]]; then
+  fail invalid-test-hook
+fi
 
 readonly CONFIG_KEYS=" BACKUP_DIR OFFHOST_STATE_DIR OFFHOST_SSH_CONFIG OFFHOST_UPLOAD_TARGET OFFHOST_AUDIT_TARGET OFFHOST_RECIPIENT OFFHOST_EXPECTED_MACHINE OFFHOST_EXPECTED_HOSTKEYS OFFHOST_ENV_LABEL OFFHOST_CONNECT_TIMEOUT OFFHOST_MAX_TIME OFFHOST_MAX_CLOCK_SKEW_SECONDS OFFHOST_RECEIPT_KEEP_DAYS "
 if [ -n "${OFFHOST_SEND_CONFIG:-}" ]; then

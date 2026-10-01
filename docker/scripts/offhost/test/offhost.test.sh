@@ -680,6 +680,15 @@ expect_eq "…archive published, manifest completed by the next run" "$(send to-
 mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"
 pre_exhaust post-audit
 expect_eq "…both objects published before the post-audit: the next run finds the generation complete" "$(send to-pre-resume3 >/dev/null; grep -c 'upload=already-published audit=complete$' "$T/out/to-pre-resume3.log")" 1
+# the test-only hook is validated before any arithmetic: one known step and a bounded positive integer
+mk_vault; rm -rf "${T:?}/primary/state"; mkdir -p "$T/primary/state"; i=0
+for v in 'encrypt=-1' 'encrypt=' 'encrypt=0' 'encrypt=1000000' 'encrypt=abc' 'encrypt=$x' 'encrypt=${x}' 'encrypt=a[0]' 'encrypt=$(id)' 'encrypt=`id`' 'unknown=5' 'encrypt=5;id' '5' 'encrypt=5=5' 'ENCRYPT=5' 'encrypt=1 2'; do
+  i=$((i + 1)); c="hook$i"
+  rc="$(BUDGET_CHARGE_OVERRIDE="$v" send "$c")"
+  if [ "$rc" = 1 ] && [ "$(grep -c '^OFFHOST_UPLOAD=FAIL reason=invalid-test-hook$' "$T/out/$c.log")" = 1 ] && [ "$(grep -c '^OFFHOST_UPLOAD=' "$T/out/$c.log")" = 1 ] && ! grep -q 'unexpected-error' "$T/out/$c.log" && ! grep -qF -- "$v" "$T/out/$c.log"; then ok "invalid budget hook rejected with one sanitized summary: $(printf '%q' "$v")"; else bad "invalid budget hook rejected with one sanitized summary: $(printf '%q' "$v")" "rc=$rc"; fi
+done
+expect_eq "no stage, work or receipt is created by a rejected hook" "$(find "$T/primary/state" -mindepth 1 -not -name '.send.lock' | wc -l)" 0
+expect_eq "a valid hook value is accepted (budget charged before encrypt)" "$(BUDGET_CHARGE_OVERRIDE='encrypt=999999' send hook-ok >/dev/null; grep -c '^OFFHOST_UPLOAD=FAIL reason=operation-timeout detail=step=encrypt$' "$T/out/hook-ok.log")" 1
 expect_eq "normal run remains green after the timeout tests" "$(send after-timeouts)" 0
 expect_eq "plan reports the configured budget" "$(MAX_TIME_OVERRIDE=77 send plan-budget plan >/dev/null; grep -c 'max_time=77$' "$T/out/plan-budget.log")" 1
 
@@ -755,13 +764,74 @@ if [ "$ROOT_MODE" = 1 ]; then
   # the REAL drop-in is used for the fixture so that the effective `sudo -l -U` listing is exercised; restored at the end
   cp "$SUDOERS_FILE" "$T/sudoers.main"
   sudoers_fixture() { printf 'Defaults:lcpt-receive env_reset, !requiretty, use_pty\nlcpt-receive ALL=(root) NOPASSWD: NOSETENV: %s/offhost-publish.sh\n' "$IBIN"; }
-  install_sudoers() { printf '%s\n' "$1" >"$SUDOERS_FILE"; chmod 0440 "$SUDOERS_FILE"; chown root:root "$SUDOERS_FILE"; }
+  install_sudoers() { printf '%s\n' "$1" >"$SUDOERS_FILE"; chmod 0440 "$SUDOERS_FILE"; chown root:root "$SUDOERS_FILE"; expect_true "visudo -cf accepts the drop-in fixture" visudo -cf "$SUDOERS_FILE"; }
+  install_extra()   { printf '%s\n' "$1" >"$EXTRA_SUDOERS"; chmod 0440 "$EXTRA_SUDOERS"; chown root:root "$EXTRA_SUDOERS"; expect_true "visudo -cf accepts the extra sudoers source" visudo -cf "$EXTRA_SUDOERS"; }
   install_sudoers "$(sudoers_fixture)"
   EXTRA_SUDOERS="/etc/sudoers.d/lcpt-offhost-test2"
-  # three structurally valid, distinct ed25519 key blobs (random, never real identities)
-  mkblob() { { printf '\0\0\0\vssh-ed25519\0\0\0 '; head -c 32 /dev/urandom; } | base64 -w0; }
-  K_UP="$(mkblob)"; K_A1="$(mkblob)"; K_A2="$(mkblob)"
-  K_RSA="$( { printf '\0\0\0\assh-rsa\0\0\0 '; head -c 32 /dev/urandom; } | base64 -w0)"
+  # ── key validator: real ssh-keygen when present; otherwise `ssh-keygen -l -f -` is answered
+  #    by the cryptography library's OpenSSH public-key loader (a real parser), never a fixed answer
+  PYCRYPTO=""
+  for py in /usr/bin/python3.12 /usr/bin/python3.13 /usr/bin/python3 python3; do
+    command -v "$py" >/dev/null 2>&1 && "$py" -c 'from cryptography.hazmat.primitives.serialization import load_ssh_public_key' 2>/dev/null && { PYCRYPTO="$(command -v "$py")"; break; }
+  done
+  if command -v ssh-keygen >/dev/null 2>&1; then KEYGEN_BIN="$(command -v ssh-keygen)"; KEYGEN_MODE=real
+  else
+    KEYGEN_BIN="$T/bin/ssh-keygen"; KEYGEN_MODE=library
+    cat >"$KEYGEN_BIN" <<EOF
+#!/bin/bash
+# stand-in for OpenSSH ssh-keygen in the harness (the sandbox has no OpenSSH): only "-l -f -" is
+# implemented, by the cryptography library's OpenSSH public-key loader; exit 0 = valid key, 255 = rejected
+[ "\$1" = -l ] && [ "\$2" = -f ] && [ "\$3" = - ] || { echo "ssh-keygen stand-in: unsupported arguments" >&2; exit 2; }
+[ -n "$PYCRYPTO" ] || { echo "ssh-keygen stand-in: no OpenSSH key parser available" >&2; exit 2; }
+# the key arrives on stdin exactly as for ssh-keygen; the parser is given inline so stdin stays the key
+exec "$PYCRYPTO" -c 'import sys
+from cryptography.hazmat.primitives.serialization import load_ssh_public_key
+data = sys.stdin.buffer.read().strip()
+try:
+    load_ssh_public_key(data)
+    sys.exit(0)
+except Exception:
+    sys.exit(255)'
+EOF
+    chmod 755 "$KEYGEN_BIN"
+  fi
+  echo "key validator: $KEYGEN_MODE ($([ "$KEYGEN_MODE" = real ] && echo OpenSSH || echo "cryptography loader via ${PYCRYPTO:-none}"))"
+  # ── three REAL, freshly generated, distinct Ed25519 public keys (disposable; removed with $T) ──
+  mkdir -p "$T/keys"; chmod 700 "$T/keys"
+  mkkey_real() {   # NAME → prints the base64 blob of a newly generated Ed25519 public key
+    if [ "$KEYGEN_MODE" = real ]; then
+      ssh-keygen -q -t ed25519 -N '' -C "harness-$1" -f "$T/keys/$1" >/dev/null 2>&1 && awk '{print $2}' "$T/keys/$1.pub"
+    else
+      "$PYCRYPTO" - "$T/keys/$1.pub" <<'PY'
+import sys
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+pub = Ed25519PrivateKey.generate().public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode()
+open(sys.argv[1], "w").write(pub + "\n")
+print(pub.split()[1])
+PY
+    fi
+  }
+  K_UP="$(mkkey_real up)"; K_A1="$(mkkey_real audit-primary)"; K_A2="$(mkkey_real audit-github)"
+  expect_eq "three real Ed25519 keys generated and distinct" "$(printf '%s\n' "$K_UP" "$K_A1" "$K_A2" | grep -cE '^AAAAC3NzaC1lZDI1NTE5AAAAI[A-Za-z0-9+/]{43}$')/$(printf '%s\n' "$K_UP" "$K_A1" "$K_A2" | sort -u | wc -l)" "3/3"
+  # malformed blobs built from the wire format (python standard library; no key material)
+  mkbad() {   # VARIANT → base64 blob
+    python3 - "$1" <<'PY'
+import base64, struct, sys, os
+def s(b): return struct.pack(">I", len(b)) + b
+v = sys.argv[1]; key = os.urandom(32)
+blobs = {
+  "typeonly":     s(b"ssh-ed25519"),
+  "short":        s(b"ssh-ed25519") + s(key[:31]),
+  "long":         s(b"ssh-ed25519") + s(key + b"\x01"),
+  "trailing":     s(b"ssh-ed25519") + s(key) + b"\x00",
+  "typemismatch": s(b"ssh-rsa") + s(key),
+  "overflow":     s(b"ssh-ed25519") + struct.pack(">I", 32) + key[:10],
+}
+print(base64.b64encode(blobs[v]).decode())
+PY
+  }
+  K_RSA="$(mkbad typemismatch)"
   write_keys() {   # RECEIVE-CONTENT AUDIT-CONTENT (full authorized_keys texts)
     printf '%s\n' "$1" >"$INST/home/lcpt-receive/.ssh/authorized_keys"
     printf '%s\n' "$2" >"$INST/home/lcpt-audit/.ssh/authorized_keys"
@@ -809,7 +879,7 @@ EOF
     env OFFHOST_INSTALL_ROOT="$INST/opt/lcp-offhost" OFFHOST_BIN_DIR="$IBIN" OFFHOST_CONFIG="$INST/etc/offhost.env" OFFHOST_SUDOERS="$SUDOERS_FILE" \
       OFFHOST_RECEIVE_USER=lcpt-receive OFFHOST_AUDIT_USER=lcpt-audit OFFHOST_VAULT_USER=lcpt-vault OFFHOST_SSHD_BIN="$T/bin/sshd" \
       OFFHOST_SSHD_CONFIG="$T/sshd/sshd_config" OFFHOST_SSHD_PROBE_HOST=backup-fixture OFFHOST_SSHD_PROBE_ADDR=127.0.0.1 \
-      OFFHOST_SHADOW_SOURCE="$T/shadow.txt" OFFHOST_HOME_BASE="$INST/home" "$@" \
+      OFFHOST_SHADOW_SOURCE="$T/shadow.txt" OFFHOST_HOME_BASE="$INST/home" OFFHOST_SSH_KEYGEN_BIN="$KEYGEN_BIN" "$@" \
       bash "$OH/offhost-install-check.sh" >"$T/out/$case.log" 2>&1; echo $?
   }
   reasons() { grep -m1 -oE '^OFFHOST_INSTALL=FAIL reasons=.*' "$T/out/$1.log" | sed 's/^OFFHOST_INSTALL=FAIL reasons=//'; }
@@ -834,7 +904,7 @@ EOF
 lcpt-receive ALL=(root) NOPASSWD: /bin/ls"
   expect_eq "extra rule inside the drop-in → FAIL (file and effective)" "$(icheck inst-sr >/dev/null; reasons inst-sr)" "sudoers-rule-count,sudo-effective-extra-command"
   install_sudoers "$(printf 'Defaults:lcpt-receive env_reset, use_pty\nlcpt-receive ALL=(root) NOPASSWD: NOSETENV: %s/offhost-publish.sh\n' "$IBIN")"
-  expect_eq "missing required Defaults (!requiretty) → FAIL (file and effective)" "$(icheck inst-sd >/dev/null; reasons inst-sd)" "sudoers-defaults,sudo-effective-defaults"
+  expect_eq "missing required Defaults (!requiretty) → FAIL (file and effective)" "$(icheck inst-sd >/dev/null; reasons inst-sd)" "sudoers-defaults,sudo-effective-requiretty"
   install_sudoers "$(printf 'Defaults:lcpt-receive env_reset, !requiretty, use_pty\nlcpt-receive ALL=(root) NOPASSWD: SETENV: %s/offhost-publish.sh\n' "$IBIN")"
   expect_eq "SETENV on the publisher rule → FAIL (file and effective)" "$(icheck inst-se >/dev/null; reasons inst-se)" "sudoers-setenv,sudo-effective-setenv"
   install_sudoers "$(printf 'Defaults:lcpt-receive env_reset, !requiretty, use_pty\nlcpt-receive ALL=(root) NOPASSWD: %s/offhost-publish.sh\n' "$IBIN")"
@@ -849,6 +919,20 @@ lcpt-receive ALL=(root) NOPASSWD: /bin/ls"
   printf 'lcpt-receive ALL=(root) SETENV: NOPASSWD: /opt/other/tool\n' >"$EXTRA_SUDOERS"; chmod 0440 "$EXTRA_SUDOERS"
   expect_eq "effective SETENV grant from another file → FAIL" "$(icheck inst-x4 >/dev/null; reasons inst-x4)" "sudo-effective-setenv"
   rm -f "$EXTRA_SUDOERS"
+  # inverse Defaults appended by ANOTHER sudoers source (the later entry wins for sudo)
+  install_extra 'Defaults:lcpt-receive !env_reset'
+  expect_eq "expected Defaults plus a later !env_reset → FAIL" "$(icheck inst-d1 >/dev/null; reasons inst-d1)" "sudo-effective-env-reset"
+  install_extra 'Defaults:lcpt-receive requiretty'
+  expect_eq "expected Defaults plus a later requiretty → FAIL" "$(icheck inst-d2 >/dev/null; reasons inst-d2)" "sudo-effective-requiretty"
+  install_extra 'Defaults:lcpt-receive !use_pty'
+  expect_eq "expected Defaults plus a later !use_pty → FAIL" "$(icheck inst-d3 >/dev/null; reasons inst-d3)" "sudo-effective-use-pty"
+  install_extra 'Defaults:lcpt-receive !env_reset, requiretty, !use_pty'
+  expect_eq "multiple inverse overrides together → FAIL (every category reported)" "$(icheck inst-d4 >/dev/null; reasons inst-d4)" "sudo-effective-env-reset,sudo-effective-requiretty,sudo-effective-use-pty"
+  install_extra 'Defaults:lcpt-receive !use_pty
+lcpt-receive ALL=(root) NOPASSWD: /bin/ls'
+  expect_eq "inverse Default and an extra command from another source → both reported" "$(icheck inst-d5 >/dev/null; reasons inst-d5)" "sudo-effective-use-pty,sudo-effective-extra-command"
+  rm -f "$EXTRA_SUDOERS"
+  expect_eq "expected Defaults only → PASS" "$(icheck inst-d0)" 0
   mv "$SUDOERS_FILE" "$T/sudoers.tmp"
   expect_eq "drop-in absent → FAIL (file and no effective grant)" "$(icheck inst-ng >/dev/null; reasons inst-ng)" "sudoers-missing,sudo-effective-no-grant"
   mv "$T/sudoers.tmp" "$SUDOERS_FILE"; chmod 0440 "$SUDOERS_FILE"
@@ -868,11 +952,23 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA
   write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
 restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_RSA lcp-offhost-audit@github-actions"
   expect_eq "blob whose embedded type differs from the declared type → FAIL" "$(icheck inst-k5 >/dev/null; reasons inst-k5)" "authorized-keys-audit-malformed"
+  for v in typeonly short long trailing overflow; do
+    write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $(mkbad "$v") lcp-offhost-audit@github-actions"
+    expect_eq "incomplete key structure ($v) → FAIL" "$(icheck "inst-k-$v" >/dev/null; reasons "inst-k-$v")" "authorized-keys-audit-malformed"
+  done
+  write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA lcp-offhost-audit@github-actions"
+  expect_eq "base64 with missing padding (passes the alphabet check) → FAIL" "$(icheck inst-k-pad >/dev/null; reasons inst-k-pad)" "authorized-keys-audit-malformed"
+  write_keys "$RECV_OK" "$AUD_OK"
+  expect_eq "OpenSSH validator unavailable → FAIL closed (no key accepted)" "$(icheck inst-k-nov OFFHOST_SSH_KEYGEN_BIN="$T/bin/no-such-ssh-keygen" >/dev/null; reasons inst-k-nov)" "authorized-keys-validator-unavailable"
+  expect_false "the formerly accepted type-only blob is rejected by the key validator ($KEYGEN_MODE)" bash -c "printf 'ssh-ed25519 %s\n' '$(mkbad typeonly)' | '$KEYGEN_BIN' -l -f - >/dev/null 2>&1"
+  expect_true  "a real generated key is accepted by the key validator ($KEYGEN_MODE)" bash -c "printf 'ssh-ed25519 %s\n' '$K_UP' | '$KEYGEN_BIN' -l -f - >/dev/null 2>&1"
   write_keys "$RECV_OK
-restrict,command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $(mkblob) second-upload" "$AUD_OK"
+restrict,command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $(mkkey_real extra-upload) second-upload" "$AUD_OK"
   expect_eq "extra receive key → FAIL (design is exact-three)" "$(icheck inst-k6 >/dev/null; reasons inst-k6)" "authorized-keys-receive-count"
   write_keys "$RECV_OK" "$AUD_OK
-restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $(mkblob) third-audit"
+restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $(mkkey_real extra-audit) third-audit"
   expect_eq "third audit key → FAIL" "$(icheck inst-k7 >/dev/null; reasons inst-k7)" "authorized-keys-audit-count"
   write_keys "$RECV_OK" "restrict,command=\"$IBIN/offhost-receive.sh\" ssh-ed25519 $K_A1 lcp-offhost-audit@primary
 restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@github-actions"
@@ -928,6 +1024,45 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@
   printf 'Include /etc/other/*.conf\n' >"$T/sshd/sshd_config"
   expect_eq "Include outside sshd_config.d → FAIL" "$(icheck inst-m12 >/dev/null; reasons inst-m12)" "sshd-include-unsupported"
   sshd_cfg_reset
+  # ── strict Include profile: the complete set of files sshd reads is scanned ──
+  SD="$T/sshd/sshd_config.d"
+  printf 'Match Address 10.0.0.0/8\n    PasswordAuthentication yes\n' >"$T/sshd/extra.cfg"
+  printf 'Include %s/extra.cfg\nPasswordAuthentication no\n' "$T/sshd" >"$T/sshd/sshd_config"
+  expect_eq "main config including a non-.conf file (with Match Address) → FAIL" "$(icheck inst-i1 >/dev/null; reasons inst-i1)" "sshd-include-unsupported"
+  sshd_cfg_reset; printf 'Include %s/nested.cfg\n' "$T/sshd" >"$SD/20-nested.conf"; printf 'Match Group wheel\n    PasswordAuthentication yes\n' >"$T/sshd/nested.cfg"
+  expect_eq "a .conf fragment including a second file → FAIL" "$(icheck inst-i2 >/dev/null; reasons inst-i2)" "sshd-include-nested"
+  printf 'Include %s/*.conf\n' "$SD" >"$SD/20-nested.conf"
+  expect_eq "a nested include carrying an unsupported Match criterion is refused before it is trusted" "$(icheck inst-i3 >/dev/null; reasons inst-i3)" "sshd-include-nested"
+  rm -f "$SD/20-nested.conf" "$T/sshd/nested.cfg"
+  ln -s "$T/sshd/extra.cfg" "$SD/30-link.conf"
+  expect_eq "symlinked included file → FAIL" "$(icheck inst-i4 >/dev/null; reasons inst-i4)" "sshd-include-symlink"
+  rm -f "$SD/30-link.conf"
+  printf 'PubkeyAuthentication yes\n' >"$SD/40-owned.conf"; chown lcpt-audit "$SD/40-owned.conf"
+  expect_eq "included file not owned by root → FAIL" "$(icheck inst-i5 >/dev/null; reasons inst-i5)" "sshd-include-owner"
+  chown root "$SD/40-owned.conf"; chmod 664 "$SD/40-owned.conf"
+  expect_eq "group-writable included file → FAIL" "$(icheck inst-i6 >/dev/null; reasons inst-i6)" "sshd-include-writable"
+  rm -f "$SD/40-owned.conf"
+  printf 'Include /etc/other/sshd_config.d/*.conf\n' >"$T/sshd/sshd_config"
+  expect_eq "Include escaping the approved tree → FAIL" "$(icheck inst-i7 >/dev/null; reasons inst-i7)" "sshd-include-unsupported"
+  sshd_cfg_reset; mv "$SD" "$T/sshd/away"
+  expect_eq "Include directory missing → FAIL" "$(icheck inst-i8 >/dev/null; reasons inst-i8)" "sshd-include-missing"
+  mv "$T/sshd/away" "$SD"; mkdir "$SD/50-dir.conf"
+  expect_eq "included entry that is not a regular file → FAIL" "$(icheck inst-i9 >/dev/null; reasons inst-i9)" "sshd-include-not-regular"
+  rmdir "$SD/50-dir.conf"
+  printf 'Include %s/*.conf\nInclude %s/*.conf\n' "$SD" "$SD" >"$T/sshd/sshd_config"
+  expect_eq "a second Include directive → FAIL" "$(icheck inst-i10 >/dev/null; reasons inst-i10)" "sshd-include-unsupported"
+  sshd_cfg_reset; printf 'Match User lcpt-audit Address 10.0.0.1\n    PasswordAuthentication yes\n' >"$SD/10-audit.conf"
+  expect_eq "combined foreign criterion (User + Address) → FAIL" "$(icheck inst-i11 >/dev/null; reasons inst-i11)" "sshd-match-criteria"
+  printf 'Match Exec /bin/true\n' >"$SD/10-audit.conf"
+  expect_eq "Match Exec → FAIL" "$(icheck inst-i12 >/dev/null; reasons inst-i12)" "sshd-match-criteria"
+  printf 'Match LocalPort 22\n' >"$SD/10-audit.conf"
+  expect_eq "Match LocalPort → FAIL" "$(icheck inst-i13 >/dev/null; reasons inst-i13)" "sshd-match-criteria"
+  sshd_cfg_reset; chmod 664 "$T/sshd/sshd_config"
+  expect_eq "group-writable main config → FAIL" "$(icheck inst-i14 >/dev/null; reasons inst-i14)" "sshd-config-writable"
+  chmod 644 "$T/sshd/sshd_config"
+  sshd_cfg_reset; printf 'Match All\n    PubkeyAuthentication yes\n' >"$SD/60-all.conf"
+  expect_eq "documented main config + safe root-owned .conf fragments (incl. Match All) → PASS" "$(icheck inst-i0)" 0
+  rm -f "$SD/60-all.conf" "$T/sshd/extra.cfg"; sshd_cfg_reset
   expect_eq "sshd unavailable → FAIL" "$(icheck inst-nos OFFHOST_SSHD_BIN="$T/bin/no-such-sshd" >/dev/null; reasons inst-nos)" "sshd-unavailable"
   expect_eq "non-root invocation refused" "$(runuser -u lcpt-audit -- bash "$OH/offhost-install-check.sh" 2>/dev/null | tail -n 1)" "OFFHOST_INSTALL=FAIL reasons=install-check-not-root"
   BEFORE_TREE="$(tree_hash)"
@@ -985,6 +1120,15 @@ expect_eq "checker requires NOSETENV on the publisher rule" "$(code "$IC" | grep
 expect_true "checker refuses SETENV (file and effective)" bash -c "code() { grep -vE '^[[:space:]]*#' \"\$@\"; }; code '$IC' | grep -q 'bad sudoers-setenv' && code '$IC' | grep -q 'bad sudo-effective-setenv'"
 expect_eq "checker never runs sudo with a command (listing only)" "$(code "$IC" | grep -E '"\$SUDO_BIN"' | grep -vc -- '-n -l -U')" 0
 expect_eq "checker verifies locked passwords for receive, audit and vault" "$(code "$IC" | grep -c '"$RECEIVE_USER:receive" "$AUDIT_USER:audit" "$VAULT_USER:vault"')" 1
+expect_true "visudo -cf accepts sudoers.example" visudo -cf "$OH/sudoers.example"
+expect_eq "checker validates keys with the OpenSSH tooling (ssh-keygen -l -f -)" "$(code "$IC" | grep -c '"$SSH_KEYGEN_BIN" -l -f - >/dev/null 2>&1')" 1
+expect_eq "checker fails closed without the key validator" "$(code "$IC" | grep -c 'bad authorized-keys-validator-unavailable')" 1
+expect_eq "checker's structure parser requires a 32-byte key and no trailing bytes" "$(code "$IC" | grep -cE 'len\(key\) != 32|off != len\(raw\)')" 2
+expect_eq "checker rejects inverse sudo Defaults (!env_reset, requiretty, !use_pty)" "$(code "$IC" | grep -cE "has_tok '!env_reset'|has_tok requiretty|has_tok '!use_pty'")" 3
+expect_eq "checker lists sudo privileges under LC_ALL=C" "$(code "$IC" | grep -c 'LC_ALL=C "$SUDO_BIN" -n -l -U')" 1
+expect_eq "checker permits only the exact documented Include pattern and scans every match" "$(code "$IC" | grep -c '"$1" = "$cfg_dir/sshd_config.d/\*.conf"')" 1
+expect_eq "checker refuses Includes inside fragments" "$(code "$IC" | grep -c 'r=include-nested')" 1
+expect_eq "sender validates the test-only budget hook before arithmetic" "$(code "$OH/offhost-send.sh" | grep -c '=\[1-9\]\[0-9\]{0,5}\$ \]\]; then')" 1
 expect_eq "sudoers example carries NOSETENV and the required Defaults" "$(grep -cE '^Defaults:lcp-receive env_reset, !requiretty, use_pty$|^lcp-receive ALL=\(root\) NOPASSWD: NOSETENV: /opt/lcp-offhost/bin/offhost-publish\.sh$' "$OH/sudoers.example")" 2
 
 echo "== 21. static: no cloud-storage provider assumptions in the scripts =="

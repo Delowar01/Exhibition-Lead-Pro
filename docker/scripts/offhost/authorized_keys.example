@@ -19,9 +19,13 @@
 # key pairs: each can be revoked and attributed on its own (sshd logs the
 # fingerprint; the comment field names the holder). offhost-install-check.sh
 # enforces this inventory EXACTLY: one receive key, two audit keys, every line
-# `restrict,command="…"` with no other option, a supported ed25519 type whose
-# decoded blob carries that type, and three DISTINCT fingerprints (a reused or
-# duplicated key fails; comments alone never count as distinct keys).
+# `restrict,command="…"` with no other option, and three DISTINCT fingerprints
+# (a reused or duplicated key fails; comments alone never count as distinct
+# keys). Every key must be a COMPLETE OpenSSH public key: the checker parses
+# the whole wire structure (type string, exactly 32 key bytes, no missing or
+# trailing data) AND runs `ssh-keygen -l -f -` on it; a truncated, padded,
+# oversized or type-mismatched blob fails, and a backup VPS without ssh-keygen
+# fails closed (authorized-keys-validator-unavailable).
 #
 # /home/lcp-receive/.ssh/authorized_keys   (owner lcp-receive:lcp-receive, mode 0600; ~/.ssh mode 0700)
 restrict,command="/opt/lcp-offhost/bin/offhost-receive.sh" ssh-ed25519 <UPLOAD-PUBLIC-KEY-BASE64> lcp-offhost-upload@primary
