@@ -19,6 +19,14 @@
 // ownership marker when the write stream does not expose it), and the public
 // delete REFUSES to run without an exact generation precondition. No code path
 // can issue a bare provider delete.
+//
+// B25 Correction 7 — a generation is an OPAQUE DECIMAL STRING. The provider
+// reports a 64-bit integer as a decimal string; JavaScript numbers are exact
+// only up to 2^53 − 1, so the value is never parsed, coerced, rounded or
+// converted to a number anywhere: it travels verbatim from the provider's
+// metadata (FileMetadata.generation → ObjectHead / PutResult) to the delete
+// precondition (`ifGenerationMatch: opts.ifGeneration`). The create-only
+// precondition `ifGenerationMatch: 0` is the sole numeric value in this file.
 // =============================================================================
 import { randomBytes, randomUUID } from "node:crypto";
 import { PassThrough, type Readable } from "node:stream";
@@ -49,11 +57,22 @@ function gcsStatus(err: unknown): number | null {
 /** Custom-metadata key carrying the inventory row id (durable ownership marker, B25 Correction 3). */
 export const OWNER_METADATA_KEY = "lcp-object-id";
 
+/** A GCS object generation exactly as the JSON API reports it: a canonical decimal string (a positive 64-bit integer; most real values exceed Number.MAX_SAFE_INTEGER). */
+const CANONICAL_GENERATION = /^[1-9]\d*$/;
+
+/**
+ * The generation carried by provider metadata, as the exact string — or null
+ * when nothing exact is available (the caller then recovers it through HEAD or
+ * fails closed). B25 Correction 7: the SDK types the field as string | number;
+ * a number is accepted only while it is still exact (a safe integer, rendered
+ * as its decimal text) — a larger number has already lost precision and is
+ * never stringified into a wrong generation.
+ */
 function generationOf(metadata: unknown): string | null {
   if (typeof metadata !== "object" || metadata === null) return null;
   const g = (metadata as { generation?: unknown }).generation;
-  if (typeof g === "number" && Number.isFinite(g)) return String(g);
-  if (typeof g === "string" && /^\d+$/.test(g)) return g;
+  if (typeof g === "string") return CANONICAL_GENERATION.test(g) ? g : null;
+  if (typeof g === "number" && Number.isSafeInteger(g) && g > 0) return String(g);
   return null;
 }
 
@@ -207,15 +226,22 @@ export class GcsStorageDriver implements StorageDriver {
    * without one the provider is never contacted. Every caller proves the
    * generation first (its own put result, or a HEAD that showed the ownership
    * marker); there is no bare-key delete anywhere.
+   *
+   * B25 Correction 7: the generation is passed to the SDK VERBATIM as the
+   * caller's string. A value that is not a canonical decimal string (or not a
+   * string at all) fails closed before the provider is contacted — it is never
+   * parsed into a number, which would silently round every generation above
+   * Number.MAX_SAFE_INTEGER onto a neighbouring one.
    */
   async delete(key: string, opts: DeleteOptions = {}): Promise<void> {
     if (opts.ifGeneration === undefined) throw new StorageError("STORAGE_UNAVAILABLE", "a GCS delete requires the exact generation to remove", undefined, "GENERATION_REQUIRED");
+    if (typeof opts.ifGeneration !== "string" || !CANONICAL_GENERATION.test(opts.ifGeneration)) throw new StorageError("STORAGE_UNAVAILABLE", "a GCS delete requires a canonical decimal generation string", undefined, "GENERATION_INVALID");
     try {
-      await this.file(key).delete({ ignoreNotFound: true, ifGenerationMatch: Number(opts.ifGeneration) });
+      await this.file(key).delete({ ignoreNotFound: true, ifGenerationMatch: opts.ifGeneration });
     } catch (err) {
       // Precondition failed: the object at this key is a DIFFERENT generation —
       // not ours to remove. Report it; never fall back to an unconditional delete.
-      if (opts.ifGeneration !== undefined && gcsStatus(err) === 412) throw new StorageError("STORAGE_CONFLICT", "object generation changed", err, "GENERATION_MISMATCH");
+      if (gcsStatus(err) === 412) throw new StorageError("STORAGE_CONFLICT", "object generation changed", err, "GENERATION_MISMATCH");
       if (gcsStatus(err) === 404) return;
       throw mapGcsError(err);
     }
