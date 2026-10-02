@@ -90,7 +90,7 @@ on an **Honor Magic V5, Android 16** (no device pass has been recorded since).
 verified on the hosted dev stack** (activation run 36972460934). **Current
 batch: B25 — product object storage off Google Cloud** (owner decision *Option
 B — remove Google Cloud completely*; it does not depend on the second backup
-VPS). **Phase 1, Correction 1 and Correction 2 are implemented and verified
+VPS). **Phase 1 and Corrections 1–3 are implemented and verified
 locally** on `claude/b25-object-storage-hostinger`: a provider-neutral storage
 contract, an encrypted filesystem driver, the `storage_objects` inventory,
 authenticated private byte routes (no credential in any URL) that re-prove the
@@ -98,8 +98,11 @@ live feature association on every download, one CAS-fenced publication attempt
 per upload intent with ownership-proven (generation-safe) cleanup, automatic
 pre-B25 compatibility while GCS is primary, streaming integrity verification of
 GCS rollback copies, tombstone-first lifecycle, fail-closed company deletion,
-sanitized storage logging and the resumable migration command whose dry-run /
-verify never write (not even the target root) (`B25_OBJECT_STORAGE.md`). **Not merged, not hosted, not migrated**: the hosted
+sanitized storage logging (storage errors never carry a raw cause), crash-durable
+late-publication cleanup (hard upload lifetime, reconciled tombstones), durable
+GCS ownership (object-metadata marker + generation-conditioned deletes) and the
+resumable migration command whose dry-run / verify never write (not even the
+target root) (`B25_OBJECT_STORAGE.md`). **Not merged, not hosted, not migrated**: the hosted
 stack still runs Google Cloud Storage unchanged and GCS stays in the code only
 as the temporary legacy / migration / fallback driver until the owner-approved
 hosted phases complete. **B25 is not complete.** Open owner decisions: G-4 (mobile per-entity Workflow /
@@ -116,9 +119,9 @@ source); `main` is unrelated historical history. The lines diverge; their
 reconciliation is a later owner-approved task (see `CLAUDE.md`).
 
 **Latest verified baseline totals** — maintained in one place:
-[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B25 Correction 2 run
+[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B25 Correction 3 run
 (2026-10-02, filesystem object-storage driver, no Google Cloud credentials):
-API **1448 passed / 0 failed / 1 skipped of 1449 (95 files)**, Playwright **152/152**, mobile **114/114**,
+API **1466 passed / 0 failed / 1 skipped of 1467 (98 files)**, Playwright **152/152**, mobile **114/114**,
 workspace typecheck exit 0, API and web production builds PASS. (Pre-B25
 reference, B24 without object storage: 1248 passed / 9 storage-gated / 28
 skipped of 1285.)
@@ -675,7 +678,7 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   tenants); restart/seed before a full run. Detail in
   [LOCAL_AND_STAGING_RUNBOOK.md](LOCAL_AND_STAGING_RUNBOOK.md).
 - **Current totals** — see [LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md)
-  (B25 Correction 2 run with the filesystem driver: API **1448 passed / 0 failed / 1 skipped of 1449 (95 files)**, Playwright
+  (B25 Correction 3 run with the filesystem driver: API **1466 passed / 0 failed / 1 skipped of 1467 (98 files)**, Playwright
   **152/152**, mobile **114/114**, workspace typecheck exit 0; no
   storage-gated failures or skips remain). Start the API with
   `LOGIN_RATE_MAX=1000` in its shell for a full run; `JOBS_DRIVER=postgres` in

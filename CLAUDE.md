@@ -146,8 +146,11 @@ Center / Workflow Intelligence / Executive Intelligence.
   cleanup, live feature-association checks on private downloads, streaming
   integrity verification of GCS rollback copies, dry-run/verify that never
   create the target root, fail-closed company deletion on un-inventoriable
-  references, sanitized storage logging) are implemented and verified
-  LOCALLY on
+  references, sanitized storage logging) and **Correction 3** (crash-durable
+  late-publication cleanup with a hard upload lifetime and reconciled
+  tombstones, durable GCS ownership via object-metadata markers and
+  generation-conditioned deletes, complete storage log containment) are
+  implemented and verified LOCALLY on
   `claude/b25-object-storage-hostinger` — NOT merged, NOT hosted, NOT
   migrated; the hosted stack still runs Google Cloud Storage unchanged, and
   GCS remains in the code only as the temporary legacy / migration / fallback
@@ -210,9 +213,9 @@ pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-**Authoritative baseline (B25 Correction 2 run, 2026-10-02, filesystem object
-storage driver, no Google Cloud credentials):** API **1448 passed / 0 failed / 1 skipped of 1449 (95 files)**,
-Playwright **152/152**, mobile **114/114** (Correction 1: 1409 / 0 / 1 of 1410, 88 files; Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
+**Authoritative baseline (B25 Correction 3 run, 2026-10-02, filesystem object
+storage driver, no Google Cloud credentials):** API **1466 passed / 0 failed / 1 skipped of 1467 (98 files)**,
+Playwright **152/152**, mobile **114/114** (Correction 2: 1448 / 0 / 1 of 1449, 95 files; Correction 1: 1409 / 0 / 1 of 1410, 88 files; Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
 storage-gated set (documents 24, ocr-pipeline reprocess, executive-intelligence
 2) now runs green on the fs driver; every remaining skip is classified in
 `docs/LOCALHOST_DEVELOPMENT.md` §7 (no storage-gated skips remain). Pre-B25
