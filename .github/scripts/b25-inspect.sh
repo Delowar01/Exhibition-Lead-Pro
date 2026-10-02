@@ -54,11 +54,13 @@ existing_core() {
 # in an environment variable of the exec'd process (never on disk, never via
 # stdin); stderr is reduced to one masked line (no path, url or bucket).
 api_node() {
-  local js="$1" errf="$HOME/.b25-node.err" out
-  if out="$(timeout 120 compose exec -T -e B25_JS="$js" api sh -c 'exec node -e "$B25_JS"' 2>"$errf")"; then
+  local js="$1" errf="$HOME/.b25-node.err" out b64
+  b64="$(printf '%s' "$js" | base64 -w0)"
+  # `timeout` cannot run a shell function, so the compose command is spelled out.
+  if out="$(timeout 120 docker compose -f docker-compose.yml -f compose.vps.yml exec -T -e B25_JS_B64="$b64" api sh -c 'exec node -e "$(printf "%s" "$B25_JS_B64" | base64 -d)"' 2>"$errf")"; then
     printf '%s\n' "$out"
   else
-    echo "unavailable (reason: $(grep -m1 -E 'Error|error' "$errf" | sed -E 's#gs://[^[:space:]]*#<gs>#g; s#https?://[^[:space:]]*#<url>#g; s#/[^[:space:]]+#<path>#g' | cut -c1-160 || echo unknown))"
+    echo "unavailable (reason: $(head -1 "$errf" | sed -E 's#gs://[^[:space:]]*#<gs>#g; s#https?://[^[:space:]]*#<url>#g; s#/[^[:space:]]+#<path>#g' | cut -c1-160))"
   fi
   rm -f "$errf"
 }
