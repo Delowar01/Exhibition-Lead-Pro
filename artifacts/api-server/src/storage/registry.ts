@@ -115,12 +115,41 @@ export function legacyFallbackEnabled(): boolean {
   return config.objectStorage.legacyFallback && !!config.objectStorage.bucketId;
 }
 
+export interface StorageTiming {
+  uploadLeaseMs: number;
+  putTimeoutMs: number;
+  uploadHardLifetimeMs: number;
+}
+
+/**
+ * B25 Correction 4 — the timing relationships a bounded upload depends on
+ * (checked at startup; the messages are fixed and never carry a configured
+ * value or a path):
+ *   • put time bound < hard upload lifetime — otherwise no put can ever start
+ *     (a put may start only when it can finish before the deadline);
+ *   • put time bound ≤ upload lease — otherwise a put that uses its full bound
+ *     always outlives the lease it needs to stage (a lost lease is never
+ *     reclaimed), i.e. a slow-but-legitimate upload can never be published;
+ *   • upload lease ≤ hard upload lifetime — a lease may never promise a writer
+ *     more time than the intent can exist at all.
+ * With the strict mirror on, one intent performs two puts; the lease should be
+ * planned for both (documented, not enforced: the bound is a ceiling).
+ */
+export function validateStorageTiming(t: StorageTiming): void {
+  if (!(t.putTimeoutMs < t.uploadHardLifetimeMs)) throw new StorageConfigError("OBJECT_STORAGE_PUT_TIMEOUT_MS must be smaller than OBJECT_STORAGE_UPLOAD_HARD_LIFETIME_MS (no bounded upload could ever start)");
+  if (!(t.putTimeoutMs <= t.uploadLeaseMs)) throw new StorageConfigError("OBJECT_STORAGE_PUT_TIMEOUT_MS must not exceed OBJECT_STORAGE_UPLOAD_LEASE_MS (a put using its full bound could never be staged)");
+  if (!(t.uploadLeaseMs <= t.uploadHardLifetimeMs)) throw new StorageConfigError("OBJECT_STORAGE_UPLOAD_LEASE_MS must not exceed OBJECT_STORAGE_UPLOAD_HARD_LIFETIME_MS (a lease may not outlive the upload intent)");
+}
+
 /**
  * Startup validation (index.ts). Fails fast on a misconfigured fs driver so a
- * production node never boots with an unusable or plaintext object store. A
- * "none" configuration is allowed (storage optional) and only logged.
+ * production node never boots with an unusable or plaintext object store, and
+ * (B25 Correction 4) on timing relationships that make a bounded upload
+ * impossible. A "none" configuration is allowed (storage optional) and only
+ * logged.
  */
 export async function initStorage(): Promise<void> {
+  validateStorageTiming(config.objectStorage);
   const mode = config.objectStorage.driver;
   if (mode === "none") {
     logger.warn({ reason: config.objectStorage.driverReason }, "Object storage: NOT configured — uploads answer 503, readiness reports not_configured");
