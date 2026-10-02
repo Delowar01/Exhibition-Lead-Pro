@@ -19,7 +19,7 @@ import { PassThrough, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Storage, File } from "@google-cloud/storage";
 import { StorageError, readAll, type DeleteOptions, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
-import { HashingLimiter, toReadable, verifyExpected } from "./hashing.js";
+import { HashingLimiter, assertBeforeDeadline, mapAbort, putSignal, toReadable, verifyExpected } from "./hashing.js";
 import { assertValidStorageKey, healthKey } from "./keys.js";
 
 export interface GcsLocation {
@@ -39,6 +39,9 @@ function gcsStatus(err: unknown): number | null {
   const code = (err as { code?: unknown }).code;
   return typeof code === "number" ? code : null;
 }
+
+/** Custom-metadata key carrying the inventory row id (durable ownership marker, B25 Correction 3). */
+export const OWNER_METADATA_KEY = "lcp-object-id";
 
 function generationOf(metadata: unknown): string | null {
   if (typeof metadata !== "object" || metadata === null) return null;
@@ -90,15 +93,23 @@ export class GcsStorageDriver implements StorageDriver {
     // driver. Only a write we KNOW succeeded (generation in hand) may remove
     // its own generation again (integrity failure below).
     const preconditionOpts = opts.allowOverwrite ? undefined : { ifGenerationMatch: 0 };
+    // B25 Correction 3 — every publication is bounded: never start past the
+    // deadline, never run longer than the put time bound (an aborted upload is
+    // an AMBIGUOUS outcome handled by the ownership rules, never by a bare
+    // delete), and carry the durable ownership marker as object metadata.
+    assertBeforeDeadline(opts.publishDeadline);
+    const signal = putSignal(opts.timeoutMs);
+    const customMetadata = opts.owner ? { [OWNER_METADATA_KEY]: opts.owner } : undefined;
     try {
       await pipeline(
         toReadable(source),
         limiter,
-        f.createWriteStream({ contentType: opts.contentType, resumable: false, metadata: { cacheControl: "private, max-age=0" }, ...(preconditionOpts ? { preconditionOpts } : {}) }),
+        f.createWriteStream({ contentType: opts.contentType, resumable: false, metadata: { cacheControl: "private, max-age=0", ...(customMetadata ? { metadata: customMetadata } : {}) }, ...(preconditionOpts ? { preconditionOpts } : {}) }),
+        signal ? { signal } : {},
       );
     } catch (err) {
       if (gcsStatus(err) === 412) throw new StorageError("STORAGE_CONFLICT", undefined, err);
-      throw mapGcsError(err);
+      throw mapAbort(err) ?? mapGcsError(err);
     }
     const generation = generationOf(f.metadata);
     const result: PutResult = { sizeBytes: limiter.size, sha256: limiter.sha256, ...(generation ? { generation } : {}) };
@@ -141,7 +152,9 @@ export class GcsStorageDriver implements StorageDriver {
     try {
       const [meta] = await f.getMetadata();
       const size = meta.size === undefined ? null : Number(meta.size);
-      return { sizeBytes: Number.isFinite(size as number) ? (size as number) : null, contentType: (meta.contentType as string | undefined) ?? null };
+      const custom = (meta as { metadata?: Record<string, unknown> }).metadata;
+      const owner = custom && typeof custom[OWNER_METADATA_KEY] === "string" ? (custom[OWNER_METADATA_KEY] as string) : null;
+      return { sizeBytes: Number.isFinite(size as number) ? (size as number) : null, contentType: (meta.contentType as string | undefined) ?? null, generation: generationOf(meta), owner };
     } catch (err) {
       if (gcsStatus(err) === 404) return null;
       throw mapGcsError(err);

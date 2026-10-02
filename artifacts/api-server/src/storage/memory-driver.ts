@@ -13,11 +13,16 @@
 // object untouched). Every delete is recorded for the fault-injection suites,
 // and the failure hooks can carry an arbitrary (secret-laden) error object so
 // the log-sanitization suite can prove nothing of it leaks.
+//
+// B25 Correction 3 — the fake also keeps the OWNERSHIP MARKER a write carries
+// (`owner` → object metadata, reported by `head`), honours the publication
+// deadline and the put time bound, and can simulate a write that the provider
+// committed although the client saw a failure (`commitThenFailNextPut`).
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { PassThrough } from "node:stream";
 import { StorageError, type DeleteOptions, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver, type StorageDriverKind } from "./contract.js";
-import { HashingLimiter, toReadable, verifyExpected } from "./hashing.js";
+import { HashingLimiter, assertBeforeDeadline, mapAbort, putSignal, toReadable, verifyExpected } from "./hashing.js";
 import { assertValidStorageKey } from "./keys.js";
 
 interface StoredObject {
@@ -26,6 +31,8 @@ interface StoredObject {
   sha256: string;
   /** Monotonic per-driver object generation (string, like the GCS metadata value). */
   generation: string;
+  /** Ownership marker stored with the object (inventory row id), when the write carried one. */
+  owner: string | null;
 }
 
 export interface MemoryDriverOptions {
@@ -51,6 +58,8 @@ export class MemoryStorageDriver implements StorageDriver {
   failNextGetWith: unknown = undefined;
   failNextHeadWith: unknown = undefined;
   failNextDeleteWith: unknown = undefined;
+  /** The next put is COMMITTED by the store but reported as failed to the caller (lost response). */
+  commitThenFailNextPut = false;
   private generationCounter = 0;
 
   constructor(private readonly opts: MemoryDriverOptions = {}) {
@@ -77,19 +86,30 @@ export class MemoryStorageDriver implements StorageDriver {
   async put(key: string, source: Readable | Buffer, opts: PutOptions & { allowOverwrite?: boolean }): Promise<PutResult> {
     this.check(key);
     this.takeInjected("failNextPut", "failNextPutWith");
+    assertBeforeDeadline(opts.publishDeadline);
     const limiter = new HashingLimiter(opts.maxBytes);
     const chunks: Buffer[] = [];
     const sink = new PassThrough();
     sink.on("data", (c: Buffer) => chunks.push(c));
-    await pipeline(toReadable(source), limiter, sink);
+    const signal = putSignal(opts.timeoutMs);
+    try {
+      await pipeline(toReadable(source), limiter, sink, signal ? { signal } : {});
+    } catch (err) {
+      throw mapAbort(err) ?? err;
+    }
     const result = { sizeBytes: limiter.size, sha256: limiter.sha256 };
     verifyExpected(result, opts);
     if (this.opts.beforePublish) await this.opts.beforePublish(key);
+    assertBeforeDeadline(opts.publishDeadline);
     // Atomic publication: the existence check and the set happen in one
     // synchronous step (no await in between) — like ifGenerationMatch: 0.
     if (!opts.allowOverwrite && this.objects.has(key)) throw new StorageError("STORAGE_CONFLICT");
     const generation = String(++this.generationCounter);
-    this.objects.set(key, { bytes: Buffer.concat(chunks), contentType: opts.contentType, sha256: result.sha256, generation });
+    this.objects.set(key, { bytes: Buffer.concat(chunks), contentType: opts.contentType, sha256: result.sha256, generation, owner: opts.owner ?? null });
+    if (this.commitThenFailNextPut) {
+      this.commitThenFailNextPut = false;
+      throw new StorageError("STORAGE_UNAVAILABLE", "simulated lost response after commit");
+    }
     return { ...result, generation };
   }
 
@@ -106,7 +126,7 @@ export class MemoryStorageDriver implements StorageDriver {
     this.check(key);
     this.takeInjected(null, "failNextHeadWith");
     const o = this.objects.get(key);
-    return o ? { sizeBytes: o.bytes.length, contentType: o.contentType } : null;
+    return o ? { sizeBytes: o.bytes.length, contentType: o.contentType, generation: o.generation, owner: o.owner } : null;
   }
 
   async exists(key: string): Promise<boolean> {

@@ -419,10 +419,17 @@ export const config = {
     // B25 Correction 1: downloads carry NO capability — the byte route uses the
     // normal session — so the former OBJECT_STORAGE_DOWNLOAD_TTL_SEC is retired.
     uploadTtlSec: numEnv("OBJECT_STORAGE_UPLOAD_TTL_SEC", 900, 60),
-    // B25 Correction 1 — upload publication lease: one writer per upload intent;
-    // an expired lease is reclaimable (crash recovery). Must exceed the longest
-    // acceptable single upload.
+    // B25 Correction 1 / 2 — upload publication lease: one writer per upload
+    // intent; an expired lease is LOST (never reclaimed). Must exceed the
+    // longest acceptable single upload.
     uploadLeaseMs: numEnv("OBJECT_STORAGE_UPLOAD_LEASE_MS", 15 * 60 * 1000, 10_000),
+    // B25 Correction 3 — HARD lifetime of an upload intent measured from the
+    // row's creation: no publication (primary or mirror) may happen after it,
+    // which is what makes tombstone reconciliation after that horizon final.
+    uploadHardLifetimeMs: numEnv("OBJECT_STORAGE_UPLOAD_HARD_LIFETIME_MS", 60 * 60 * 1000, 60_000),
+    // B25 Correction 3 — time bound of a single put (primary or mirror); a
+    // write never starts when it could not finish before the hard lifetime.
+    putTimeoutMs: numEnv("OBJECT_STORAGE_PUT_TIMEOUT_MS", 15 * 60 * 1000, 1_000),
     // Lifecycle sweeps: reserved-but-never-uploaded and uploaded-but-never-attached
     // objects are removed after these windows; deleting rows are retried.
     pendingTtlMs: numEnv("OBJECT_STORAGE_PENDING_TTL_MS", 60 * 60 * 1000, 60_000),

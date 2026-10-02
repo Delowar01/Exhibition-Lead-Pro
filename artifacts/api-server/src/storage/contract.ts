@@ -25,13 +25,83 @@ export type StorageErrorCode =
   | "STORAGE_CONFLICT"
   | "STORAGE_INTEGRITY";
 
+/**
+ * Sanitized description of any error (B25 Correction 3). Lives here (no
+ * imports) so the storage contract, the global error handler and the log
+ * sanitizer share one shape: a stable class, a stable code / status, an
+ * optional sanitized reason and a retryable hint — never a message, cause,
+ * stack, key, path, bucket, token, SQL text or parameter.
+ */
+export interface ErrorShape {
+  class: string;
+  code?: string;
+  status?: number;
+  reason?: string;
+  retryable?: boolean;
+}
+
+const SAFE_CODE = /^[A-Z][A-Z0-9_]{1,40}$/;
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+const RETRYABLE_ERRNO = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN", "EPIPE", "EBUSY", "EAGAIN"]);
+
+export function describeError(err: unknown): ErrorShape {
+  if (typeof err !== "object" || err === null) return { class: err === null ? "null" : typeof err };
+  const e = err as { name?: unknown; code?: unknown; severity?: unknown; statusCode?: unknown; reason?: unknown };
+  if (err instanceof Error && e.name === "StorageError") {
+    const out: ErrorShape = { class: "StorageError", retryable: e.code === "STORAGE_UNAVAILABLE" };
+    if (typeof e.code === "string" && SAFE_CODE.test(e.code)) out.code = e.code;
+    if (typeof e.reason === "string" && SAFE_CODE.test(e.reason)) out.reason = e.reason;
+    return out;
+  }
+  if (err instanceof Error && e.name === "StorageConfigError") return { class: "StorageConfigError" };
+  if (err instanceof Error && e.name === "AppError") {
+    const out: ErrorShape = { class: "AppError" };
+    if (typeof e.statusCode === "number") out.status = e.statusCode;
+    if (typeof e.code === "string" && SAFE_CODE.test(e.code)) out.code = e.code;
+    return out;
+  }
+  if (err instanceof Error && e.name === "EnvelopeError") return { class: "EnvelopeError", code: typeof e.code === "string" && SAFE_CODE.test(e.code) ? e.code : undefined };
+  if (typeof e.code === "number" && Number.isFinite(e.code)) {
+    // Google / HTTP API errors expose the status as a numeric `code`.
+    return { class: "ProviderError", status: e.code, retryable: e.code === 429 || e.code >= 500 };
+  }
+  if (typeof e.code === "string") {
+    if (SQLSTATE.test(e.code) && (typeof e.severity === "string" || /^[0-9]/.test(e.code))) {
+      // node-postgres errors: SQLSTATE in `code`, `severity`, and SQL / parameters that are never echoed.
+      return { class: "DatabaseError", code: e.code, retryable: e.code.startsWith("08") || e.code === "57P01" || e.code === "40001" || e.code === "40P01" };
+    }
+    if (SAFE_CODE.test(e.code)) {
+      // Node system errors (ENOENT, EACCES, ECONNRESET …): the errno name only — never `path` / `dest` / message.
+      return { class: "SystemError", code: e.code, retryable: RETRYABLE_ERRNO.has(e.code) };
+    }
+  }
+  if (err instanceof Error) return { class: typeof e.name === "string" && /^[A-Za-z][A-Za-z0-9]{0,40}$/.test(e.name) ? e.name : "Error" };
+  return { class: "object" };
+}
+
+/** A storage CONFIGURATION problem (fixed, path-free message that startup may print). */
+export class StorageConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StorageConfigError";
+  }
+}
+
 export class StorageError extends Error {
   /** Optional sanitized reason code (e.g. NO_READABLE_COPY) — never a path or key. */
   reason?: string;
-  constructor(readonly code: StorageErrorCode, message?: string, readonly cause?: unknown, reason?: string) {
+  /**
+   * Sanitized summary of the underlying error (B25 Correction 3). The RAW cause
+   * is never retained: pino serializes cause chains, so a provider / filesystem
+   * / database error kept here would carry bucket names, host paths, SQL and
+   * parameters into any `{ err }` log.
+   */
+  readonly causeInfo?: ErrorShape;
+  constructor(readonly code: StorageErrorCode, message?: string, cause?: unknown, reason?: string) {
     super(message ?? STORAGE_ERROR_MESSAGES[code]);
     this.name = "StorageError";
     if (reason) this.reason = reason;
+    if (cause !== undefined) this.causeInfo = describeError(cause);
   }
 }
 
@@ -57,6 +127,17 @@ export interface PutOptions {
   /** When set, the write fails with STORAGE_INTEGRITY if the computed digest/size differ. */
   expectedSha256?: string;
   expectedSize?: number;
+  /**
+   * B25 Correction 3 — durable ownership marker: the inventory row id, stored
+   * as object metadata by providers that keep metadata (GCS: custom metadata
+   * `lcp-object-id`). Automated cleanup deletes a bucket object only when the
+   * marker names the row (and only the generation it observed).
+   */
+  owner?: string;
+  /** B25 Correction 3 — never publish after this instant (checked right before publication). */
+  publishDeadline?: Date;
+  /** B25 Correction 3 — abort the write when it runs longer than this (bounds every publication). */
+  timeoutMs?: number;
 }
 
 export interface PutResult {
@@ -86,6 +167,10 @@ export interface ObjectHead {
   /** PLAINTEXT size when the driver knows it (gcs/memory); null when only ciphertext size is known (fs). */
   sizeBytes: number | null;
   contentType: string | null;
+  /** Provider object generation when the provider has one (gcs / fake adapter). */
+  generation?: string | null;
+  /** Ownership marker (inventory row id) stored with the object, when the provider keeps metadata. */
+  owner?: string | null;
 }
 
 export interface GetOptions {

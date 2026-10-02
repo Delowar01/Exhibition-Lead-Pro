@@ -24,9 +24,9 @@ import path from "node:path";
 import { PassThrough, Writable, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
-import { StorageError, readAll, type DeleteOptions, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
+import { StorageConfigError, StorageError, readAll, type DeleteOptions, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
 import { DecryptStream, EncryptStream, EnvelopeError, DEFAULT_CHUNK_SIZE } from "./envelope.js";
-import { HashingLimiter, toReadable, verifyExpected } from "./hashing.js";
+import { HashingLimiter, assertBeforeDeadline, mapAbort, putSignal, toReadable, verifyExpected } from "./hashing.js";
 import { assertValidStorageKey, healthKey } from "./keys.js";
 
 export interface FsDriverOptions {
@@ -92,8 +92,8 @@ export class FsStorageDriver implements StorageDriver {
 
   constructor(opts: FsDriverOptions) {
     const problem = validateFsRoot(opts.root);
-    if (problem) throw new Error(problem);
-    if (opts.key.length !== 32) throw new Error("object-storage encryption key must be 32 bytes");
+    if (problem) throw new StorageConfigError(problem);
+    if (opts.key.length !== 32) throw new StorageConfigError("object-storage encryption key must be 32 bytes");
     this.root = path.resolve(opts.root);
     this.key = opts.key;
     this.chunkSize = opts.chunkSize ?? DEFAULT_CHUNK_SIZE;
@@ -111,8 +111,8 @@ export class FsStorageDriver implements StorageDriver {
     if (this.initialized) return;
     try {
       const st = await lstat(this.root);
-      if (st.isSymbolicLink()) throw new Error("OBJECT_STORAGE_FS_ROOT must not be a symbolic link");
-      if (!st.isDirectory()) throw new Error("OBJECT_STORAGE_FS_ROOT must be a directory");
+      if (st.isSymbolicLink()) throw new StorageConfigError("OBJECT_STORAGE_FS_ROOT must not be a symbolic link");
+      if (!st.isDirectory()) throw new StorageConfigError("OBJECT_STORAGE_FS_ROOT must be a directory");
     } catch (err) {
       if (!isErrno(err, "ENOENT")) throw err;
       if (this.readOnly) {
@@ -176,6 +176,7 @@ export class FsStorageDriver implements StorageDriver {
   async put(key: string, source: Readable | Buffer, opts: PutOptions & { allowOverwrite?: boolean }): Promise<PutResult> {
     await this.init();
     if (this.readOnly) this.refuseWrite();
+    assertBeforeDeadline(opts.publishDeadline);
     const final = this.pathFor(key);
     const dir = path.dirname(final);
     await this.assertSafeTree(key, { allowMissing: true });
@@ -200,7 +201,12 @@ export class FsStorageDriver implements StorageDriver {
           fh.sync().then(() => cb(), cb);
         },
       });
-      await pipeline(input, limiter, encrypt, sink);
+      const signal = putSignal(opts.timeoutMs);
+      try {
+        await pipeline(input, limiter, encrypt, sink, signal ? { signal } : {});
+      } catch (err) {
+        throw mapAbort(err) ?? err;
+      }
       await fh.close();
       const result = { sizeBytes: limiter.size, sha256: limiter.sha256 };
       verifyExpected(result, opts);
@@ -208,6 +214,7 @@ export class FsStorageDriver implements StorageDriver {
         throw new StorageError("STORAGE_INTEGRITY");
       }
       if (this.beforePublish) await this.beforePublish(key);
+      assertBeforeDeadline(opts.publishDeadline); // B25 Correction 3: never publish past the hard lifetime
       // Publication (B25 Correction 1): a no-overwrite write publishes with an
       // atomic hard LINK, which fails with EEXIST when the final path already
       // exists — an exists() check followed by rename() would let two writers

@@ -8,7 +8,10 @@
 import { randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
-import { StorageError, type StorageDriver } from "./contract.js";
+import { StorageConfigError, StorageError, type StorageDriver } from "./contract.js";
+import { sanitizeStorageError } from "./log-safety.js";
+
+export { StorageConfigError };
 import { parseEncryptionKey } from "./envelope.js";
 import { FsStorageDriver, validateFsRoot } from "./fs-driver.js";
 import { GcsStorageDriver } from "./gcs-driver.js";
@@ -41,7 +44,7 @@ function loadKey(): Buffer {
     }
     return encryptionKey;
   }
-  throw new Error("OBJECT_STORAGE_ENCRYPTION_KEY is required for the filesystem object-storage driver");
+  throw new StorageConfigError("OBJECT_STORAGE_ENCRYPTION_KEY is required for the filesystem object-storage driver");
 }
 
 async function gcsClient() {
@@ -65,7 +68,7 @@ export async function getPrimaryDriver(): Promise<StorageDriver> {
   switch (config.objectStorage.driver) {
     case "fs": {
       const problem = validateFsRoot(config.objectStorage.fsRoot);
-      if (problem) throw new Error(problem);
+      if (problem) throw new StorageConfigError(problem);
       const driver = new FsStorageDriver({ root: config.objectStorage.fsRoot, key: loadKey() });
       await driver.init();
       primary = driver;
@@ -75,7 +78,7 @@ export async function getPrimaryDriver(): Promise<StorageDriver> {
       primary = new GcsStorageDriver(await gcsClient(), config.objectStorage.bucketId);
       break;
     case "memory":
-      if (config.isProduction) throw new Error("memory object-storage driver is forbidden in production");
+      if (config.isProduction) throw new StorageConfigError("memory object-storage driver is forbidden in production");
       primary = new MemoryStorageDriver();
       break;
     default:
@@ -136,6 +139,16 @@ export async function initStorage(): Promise<void> {
     },
     "Object storage initialized",
   );
+}
+
+/**
+ * B25 Correction 3 — the ONLY way a startup initialization failure is logged:
+ * a sanitized error summary, plus the fixed configuration reason when the
+ * failure is a StorageConfigError (those messages never carry a path or key).
+ */
+export function reportStorageInitFailure(err: unknown): void {
+  const reason = err instanceof StorageConfigError ? err.message : undefined;
+  logger.error({ error: sanitizeStorageError(err), ...(reason ? { reason } : {}) }, "Object storage initialization failed — refusing to start");
 }
 
 /** Test support (non-production): swap drivers / reset the registry. */
