@@ -1,12 +1,21 @@
-// B25 Correction 2 / 3 — deterministic fake of the Google Cloud Storage SDK surface
-// the real GcsStorageDriver uses (bucket/file: createWriteStream with
+// B25 Correction 2 / 3 / 4 — deterministic fake of the Google Cloud Storage SDK
+// surface the real GcsStorageDriver uses (bucket/file: createWriteStream with
 // preconditionOpts + custom metadata, delete with ifGenerationMatch, getMetadata,
-// exists, createReadStream). Models object GENERATIONS and custom metadata so the
-// ownership rules can be proven without Google. Never used in production.
+// exists, createReadStream). Models object GENERATIONS and custom metadata so
+// the ownership rules can be proven without Google, and (Correction 4) models a
+// provider whose commit is DECOUPLED from the client's view of the request:
+//   • "late-commit"  the client sees a transport failure now; the provider
+//                    commits the object later, when the test calls
+//                    store.commitPending(name)
+//   • "hold"         the request never answers (the writer is considered dead);
+//                    the provider may still commit later via commitPending
+//   • onWriteStart / interceptFinal hooks observe the exact moment the provider
+//     request starts / is about to commit (ordering proofs)
+// Never used in production.
 import { Readable, Writable } from "node:stream";
 import type { Storage } from "@google-cloud/storage";
 
-export type FailMode = "transport" | "after-commit" | null;
+export type FailMode = "transport" | "after-commit" | "late-commit" | "hold" | null;
 
 export interface FakeObject {
   bytes: Buffer;
@@ -19,13 +28,28 @@ export class FakeBucketStore {
   objects = new Map<string, FakeObject>();
   gen = 0;
   deleteCalls: Array<{ name: string; opts: Record<string, unknown> | undefined }> = [];
+  /** Object names whose provider request started (first chunk written), in order. */
+  writeStarts: string[] = [];
+  /** Provider commits still outstanding after the client gave up / died (late-commit, hold). */
+  pending = new Map<string, () => FakeObject>();
   failWrite: (name: string) => FailMode = () => null;
+  onWriteStart?: (name: string) => void;
+  /** Awaited right before the provider decides the request's outcome. */
+  interceptFinal?: (name: string) => Promise<void> | void;
 
   /** Place an object the way an unrelated writer would (no ownership marker). */
   seed(name: string, bytes: Buffer, contentType = "application/octet-stream", metadata: Record<string, string> = {}): FakeObject {
     const o = { bytes, generation: ++this.gen, contentType, metadata };
     this.objects.set(name, o);
     return o;
+  }
+
+  /** The provider finally commits a request the client already gave up on. */
+  commitPending(name: string): FakeObject {
+    const commit = this.pending.get(name);
+    if (!commit) throw new Error(`no pending provider commit for ${name}`);
+    this.pending.delete(name);
+    return commit();
   }
 }
 
@@ -44,22 +68,52 @@ class FakeFile {
     const store = this.store;
     const name = this.name;
     const self = this;
+    let started = false;
     return new Writable({
       write(chunk: Buffer, _enc, cb) {
+        if (!started) {
+          started = true;
+          store.writeStarts.push(name);
+          store.onWriteStart?.(name);
+        }
         chunks.push(Buffer.from(chunk));
         cb();
       },
       final(cb) {
-        const mode = store.failWrite(name);
-        if (mode === "transport") return cb(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }));
-        const existing = store.objects.get(name);
-        if (opts?.preconditionOpts?.ifGenerationMatch === 0 && existing) return cb(apiError(412, "Precondition Failed"));
-        const generation = ++store.gen;
-        const bytes = Buffer.concat(chunks);
-        store.objects.set(name, { bytes, generation, contentType: opts?.contentType ?? "application/octet-stream", metadata: { ...(opts?.metadata?.metadata ?? {}) } });
-        self.metadata = { generation: String(generation), size: String(bytes.length), metadata: { ...(opts?.metadata?.metadata ?? {}) } };
-        if (mode === "after-commit") return cb(Object.assign(new Error("response lost after commit"), { code: "ECONNRESET" }));
-        cb();
+        void (async () => {
+          try {
+            await store.interceptFinal?.(name);
+          } catch (err) {
+            return cb(err as Error);
+          }
+          const mode = store.failWrite(name);
+          if (mode === "transport") return cb(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }));
+          const commit = (): FakeObject => {
+            const existing = store.objects.get(name);
+            if (opts?.preconditionOpts?.ifGenerationMatch === 0 && existing) throw apiError(412, "Precondition Failed");
+            const generation = ++store.gen;
+            const bytes = Buffer.concat(chunks);
+            const o = { bytes, generation, contentType: opts?.contentType ?? "application/octet-stream", metadata: { ...(opts?.metadata?.metadata ?? {}) } };
+            store.objects.set(name, o);
+            self.metadata = { generation: String(generation), size: String(bytes.length), metadata: { ...o.metadata } };
+            return o;
+          };
+          if (mode === "late-commit") {
+            store.pending.set(name, commit);
+            return cb(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }));
+          }
+          if (mode === "hold") {
+            store.pending.set(name, commit);
+            return; // the request never answers
+          }
+          try {
+            commit();
+          } catch (err) {
+            return cb(err as Error);
+          }
+          if (mode === "after-commit") return cb(Object.assign(new Error("response lost after commit"), { code: "ECONNRESET" }));
+          cb();
+        })();
       },
     });
   }

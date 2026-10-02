@@ -170,12 +170,19 @@ describe("A. late publication survives writer death only until the durable sweep
     await latePublish(primary, row.storageKey, row.id, bytes); // (and a crashed writer may even re-link its primary)
 
     const now = new Date();
-    await storage.sweepStorage(new Date(now.getTime() + 2 * H));
+    const later = await storage.sweepStorage(new Date(now.getTime() + 2 * H));
     expect(gcs.objects.has(row.mirrorKey!)).toBe(false);
     expect(primary.objects.has(row.storageKey)).toBe(false);
-    expect((await repo.findById(r.objectId))!.reconciledAt).toBeInstanceOf(Date);
+    expect(later.lateCopiesReclaimed).toBeGreaterThanOrEqual(2);
+    // B25 Correction 4: the writer died while a request to the REMOTE mirror was
+    // outstanding, so the row carries persisted provider uncertainty — it is
+    // re-checked by every sweep but never reconciled or purged by automation.
+    const kept = (await repo.findById(r.objectId))!;
+    expect(kept.state).toBe("deleted");
+    expect(kept.publicationUncertainAt).toBeInstanceOf(Date);
+    expect(kept.reconciledAt).toBeNull();
     await storage.sweepStorage(new Date(now.getTime() + PURGE_AGE));
-    expect(await repo.findById(r.objectId)).toBeUndefined();
+    expect((await repo.findById(r.objectId))?.state).toBe("deleted"); // never purged while uncertain
     await assertNoUntracked(cid);
   });
 
