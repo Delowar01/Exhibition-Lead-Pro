@@ -1,0 +1,162 @@
+# =============================================================================
+# TEMPORARY — B25 Phase 2A hosted READ-ONLY inspection of the dev VPS and
+# schema-push rehearsal on the runner. One-off operations workflow; NOT the
+# deployment pipeline (deploy-dev-vps.yml is untouched) and NOT application code.
+# =============================================================================
+# Trigger:  push to `ops/b25-hosted-inspection` or workflow_dispatch on it ONLY.
+# Guard:    the job refuses any other ref, and refuses to run unless the branch
+#           content equals the accepted B25 review commit (dff27bc) plus these
+#           four ops files.
+# What it does (nothing on the VPS is mutated):
+#   1. uploads a READ-ONLY inspection script to the VPS (mode 700, removed in
+#      the always-step) and runs it: deploy state (stop on drift from 5a072fd),
+#      containers / volumes / health, database counts + schema fingerprint,
+#      env-file metadata (no values), queue + log health, existing-tenant
+#      baseline, legacy-reference inventory (counts only), Google Cloud
+#      boundary (presence / readability / bounded LIST census), filesystem
+#      readiness, request-size layers, encryption-key presence, backup position;
+#   2. streams a SCHEMA-ONLY pg_dump of the hosted database to the runner's temp
+#      dir (never printed, never uploaded as an artifact, deleted at the end),
+#      restores it into the job's throw-away PostgreSQL 16 service container,
+#      proves the hosted fingerprint, runs `drizzle-kit push --verbose` from the
+#      accepted code against that scratch database, classifies every statement
+#      and requires the second push to report "No changes detected";
+#   3. probes the public upload route with headers only (Expect: 100-continue)
+#      to establish the effective edge request-size limit.
+# Secrets used (same as deploy-dev-vps.yml, nothing new):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+# Remove this workflow (and the branch) once the inspection is recorded.
+
+name: b25-hosted-inspection
+
+on:
+  push:
+    branches: [ops/b25-hosted-inspection]
+  workflow_dispatch:
+
+# Serialize with the deployment workflow so the inspection never overlaps a deploy.
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  # Accepted B25 review commit (Correction 5); the ops branch is this commit + the ops files.
+  BASE_SHA: dff27bc13ca0bef0ba7e3f7aaead7d16fe567f9a
+  # Application commit expected on the VPS before B25 (B24 Release-Gate Closure).
+  EXPECTED_HOSTED_SHA: 5a072fdc50e3448bd548574698f81076191cd9bc
+  # Schema fingerprint of the local development database at BASE_SHA (informational cross-check).
+  EXPECTED_LOCAL_FP: 30c4ecbd867cd2cd59abcb58581ecb04
+  SCRATCH_URL: postgresql://scratch:scratch-only@localhost:5432/scratch
+
+jobs:
+  inspect:
+    name: B25 hosted read-only inspection + schema-push rehearsal (one-off)
+    if: github.ref == 'refs/heads/ops/b25-hosted-inspection'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: scratch
+          POSTGRES_PASSWORD: scratch-only
+          POSTGRES_DB: scratch
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scratch -d scratch"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the branch is the accepted B25 commit (dff27bc) + the four ops files only
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
+          git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b25-inspect.sh' ':(exclude).github/scripts/b25-schema-push.sh' ':(exclude).github/scripts/b25-edge-probe.cjs' ':(exclude).github/workflows/b25-hosted-inspection.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          bash -n .github/scripts/b25-inspect.sh && bash -n .github/scripts/b25-schema-push.sh && node --check .github/scripts/b25-edge-probe.cjs
+          grep -q 'default_transaction_read_only = on' .github/scripts/b25-inspect.sh || { echo "script is missing the read-only session guard"; exit 1; }
+          echo "branch = $BASE_SHA + ops files only; scripts parse; read-only guard present"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+      - name: Install (frozen lockfile; drizzle-kit for the scratch rehearsal)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install SSH key and pinned host key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            BatchMode yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Upload the read-only inspection script to the VPS (mode 700)
+        run: |
+          ssh vps 'umask 077; cat > "$HOME/b25-inspect.sh" && chmod 700 "$HOME/b25-inspect.sh"' < .github/scripts/b25-inspect.sh
+
+      - name: Hosted read-only inspection (stops on drift from the expected hosted commit)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='inspect' EXPECTED_HEAD='$EXPECTED_HOSTED_SHA' bash \"\$HOME/b25-inspect.sh\"" < /dev/null | tee "$RUNNER_TEMP/inspect.log"
+          FP="$(grep -oE '^schema_fingerprint=[0-9a-f]{32}' "$RUNNER_TEMP/inspect.log" | head -1 | cut -d= -f2)"
+          [[ "$FP" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::no hosted schema fingerprint reported"; exit 1; }
+          echo "HOSTED_FP=$FP" >> "$GITHUB_ENV"
+
+      - name: Schema-only dump of the hosted database (to the runner temp dir only; never printed)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='schema-dump' bash \"\$HOME/b25-inspect.sh\"" < /dev/null > "$RUNNER_TEMP/schema.sql"
+          echo "dump bytes=$(stat -c %s "$RUNNER_TEMP/schema.sql") lines=$(wc -l < "$RUNNER_TEMP/schema.sql") sha256_prefix=$(sha256sum "$RUNNER_TEMP/schema.sql" | cut -c1-16) create_table=$(grep -c '^CREATE TABLE' "$RUNNER_TEMP/schema.sql" || true) data_rows=$(grep -cE '^(INSERT|COPY) ' "$RUNNER_TEMP/schema.sql" || true)"
+          [ "$(grep -cE '^(INSERT|COPY) ' "$RUNNER_TEMP/schema.sql" || true)" = "0" ] || { echo "::error::the dump contains data statements"; exit 1; }
+
+      - name: Schema-push rehearsal on the runner's scratch PostgreSQL 16 (hosted database untouched)
+        env:
+          DUMP: ${{ runner.temp }}/schema.sql
+          OUT: ${{ runner.temp }}
+          REPO: ${{ github.workspace }}
+          EXPECTED_HOSTED_FP: ${{ env.HOSTED_FP }}
+        run: |
+          set -euo pipefail
+          command -v psql >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          echo "psql client: $(psql --version)"
+          bash .github/scripts/b25-schema-push.sh
+
+      - name: Edge upload-limit probe from the runner (headers only; no body, no session)
+        run: node .github/scripts/b25-edge-probe.cjs
+
+      - name: Remove the script from the VPS and the dump from the runner (always)
+        if: always()
+        run: |
+          ssh vps 'rm -f "$HOME/b25-inspect.sh"' < /dev/null || true
+          rm -f "$RUNNER_TEMP/schema.sql" "$RUNNER_TEMP/schema.restore.sql" "$RUNNER_TEMP/push1.log" "$RUNNER_TEMP/push2.log" "$RUNNER_TEMP/restore.log" "$RUNNER_TEMP/inspect.log"
+          echo "cleanup done"
