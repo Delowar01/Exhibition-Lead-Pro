@@ -1,13 +1,19 @@
 # Backup and recovery — hosted development stack (dev.kaptnow.com)
 
 Document of record for the bundled-PostgreSQL backups of the development VPS
-(B23 G-6, G-6 Correction 1 and Correction 2). It describes what exists and is
-proven, the hardened backup script, the **proposed** daily schedule (not
-installed), the **proposed** off-host copy (not configured, not verified), the
-restore procedures and the exact commands to inspect success. Nothing here applies to a production
-deployment; production must use a managed database with provider backups.
+(B23 G-6, Corrections 1–3C, G-6D; status refreshed in B24). It describes what
+exists and is proven, the hardened backup script, the daily schedule
+(**installed and verified** 2026-09-22), the external slot-aware health alert
+(**live** from the default branch), the restore procedures, the exact commands
+to inspect success, and the off-host status (**code complete, activation
+deferred by the owner**). Nothing here applies to a production deployment;
+production must use a managed database with provider backups.
 
-## 1. What exists and what is proven (as of 2026-09-18)
+> B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. The off-host deferral is not a blocker for product development, testing, B24, B25, or later feature batches.
+>
+> **Interim limitation.** Current scheduled PostgreSQL backups and integrity monitoring protect against several database and operational failures, but they do not protect against complete loss of the application VPS or a Hostinger account/provider-wide failure. Product object files currently use Google Cloud Storage and have no independently verified project-controlled recovery copy.
+
+## 1. What exists and what is proven (as of 2026-10-02, B24 status refresh)
 
 | Item | State | Evidence |
 |---|---|---|
@@ -15,8 +21,9 @@ deployment; production must use a managed database with provider backups.
 | Backup location | `/opt/lead-capture-pro/backups/postgres/` on the VPS root filesystem, directory `700`, files `600`, owner = deploy user; outside every Docker volume | G-6 inventory (Actions runs 35404789095, 35405027051) |
 | Local backups | 7 activation-time dumps (2026-09-02 … 2026-09-15, schema F0 or older, no sidecar) + `leadcapture-20260918-234035.sql.gz` (F2, 72 tables, 3,525 rows, sha256 `9d51ae6d…0693`) + the Correction 2 bridging capture of 2026-09-22 (F2; see `docs/B23_FINAL_RECONCILIATION.md` §1.8). All were made by the pre-sidecar script and have no `.sha256` sidecar. | G-6 C1 run 35406595433, G-6 C2 run (§1.8) |
 | Restore proof | the 2026-09-15 dump (F0), the 2026-09-18 dump (F2) and the 2026-09-22 bridging dump (F2) were each restored into a disposable, network-less `postgres:16-alpine` container with `ON_ERROR_STOP`; every table's row count equalled the dump's COPY blocks; both F2 restores reproduced the live schema fingerprint | runs 35405027051, 35406595433, §1.8 |
-| Schedule | **none installed** — no cron entry, timer or workflow runs the script (root's crontab is not readable by the deploy user and remains unknown) | G-6 / G-6 C1 preflights |
-| Off-host copy | **none evidenced** (no tool configuration for the deploy user, 0 backup-like objects in the app's dev bucket; hosting-panel snapshots not verifiable from the VPS) | G-6 preflight |
+| Schedule | **installed and verified** — the two crontab lines of §3 (03:15 UTC backup `KEEP=14`, 03:45 UTC check `BACKUP_MAX_AGE_HOURS=4`) were installed idempotently by the G-6 activation job, which also verified the deployed script blobs, took the first hardened backup, restore-verified it in a disposable container and verified the crontab; the **first scheduled cycle passed** (`FIRST_CYCLE=PASS`, `leadcapture-20260927-031501.sql.gz`, newest file fresh, sidecar verified, directory hygiene, no dead jobs). Daily dumps have accumulated since 2026-09-23 on the application VPS | activation: Actions run 35748260340 (2026-09-22, `ops/b23-g6-activation` @ `301a673`); first cycle: run 36306438328 (2026-09-27, @ `afa7762`) |
+| External health alert | **live** — `.github/workflows/backup-health-alert.yml` + `.github/scripts/verify-hosted-backup.sh` on the `export-ready` default branch (G-6 C3 `8b3dc87`/`fb3bdd1`, C3B slot-aware freshness `46c1351`, C3C pg_dump ≥ 16.10 restricted-mode trailer `7cae8f9`), scheduled daily. Verified behaviour: genuine scheduled runs; a failure opens one deduplicated issue "[Backup Alert] Hosted PostgreSQL backup unhealthy" and a healthy run closes it with a recovery comment — run 36557926707 (2026-09-29, `ssh-connection-failed`) opened issue #3, run 36703539725 (2026-09-30, healthy) closed it, run 36853150738 (2026-10-01) healthy | Actions runs listed; commit messages of C3B/C3C cite the runs that motivated them (35981131556, 36306335713) |
+| Off-host copy | **none activated.** B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. The Hostinger-only design (separate backup VPS, forced-command SSH identities, age-encrypted archives, independent audit, installation-integrity checker) is complete and reviewed on `claude/b23-g6d-hostinger-only` (`e82e5cb…`, Corrections 1–6; `docs/BACKUP_OFFHOST_HOSTINGER.md` on that branch). The owner has deferred purchasing the second VPS until product development and testing are substantially complete. Current backups remain on the application VPS only. Hostinger-managed VPS snapshots: Optional owner verification during development; not a substitute for the deferred off-host recovery design. | §5 |
 | Rollback / live restore | deploy rollback mechanism present in `deploy-vps.sh`, never exercised; the live `dropdb`/`createdb` restore (§4.2) is a **disaster-recovery plan that has never been rehearsed on the running stack** | G-6 §9 |
 
 ## 2. The backup script
@@ -116,7 +123,7 @@ wrong sidecar; and the **missed-run scenarios with controlled timestamps**:
 a successful run passes at 03:45 and 04:30 UTC with the 4 h limit, a missed
 run fails at both times with 4 h and would wrongly pass with 26 h.
 
-## 3. Proposed daily schedule — NOT installed (activation needs approval)
+## 3. Daily schedule — INSTALLED 2026-09-22 (run 35748260340), first cycle verified 2026-09-27 (run 36306438328)
 
 **Mechanism:** the deploy user's own crontab. Reasons: the cron daemon is
 active and enabled on the VPS, the deploy user owns the checkout and the
@@ -133,7 +140,7 @@ freshness check runs at 03:45 UTC with a **4 h** limit: a backup that did not
 happen at 03:15 is reported that morning (yesterday's file is ~24.5 h old,
 which the general-purpose 26 h default would accept).
 
-Proposed entries (`crontab -e` as `leadpro`):
+Installed entries (`crontab -l` as `leadpro`; verified byte-identical by the activation job):
 
 ```
 # Lead Capture Pro — daily PostgreSQL backup (UTC) and freshness check
@@ -153,16 +160,21 @@ Proposed entries (`crontab -e` as `leadpro`):
   to the log, and the external alert below turns red (tested with controlled
   timestamps in the harness). A user timer with `Persistent=true` is the alternative if
   catch-up is wanted.
-- **Backup-age alert (external, so a dead VPS is also noticed):** a scheduled
-  GitHub Actions workflow (proposed name `backup-check.yml`, `schedule: 30 4 * * *`)
-  that reuses the existing deploy SSH secrets, runs
-  `BACKUP_MAX_AGE_HOURS=4 bash docker/scripts/backup-check.sh` over SSH (the
-  same 4 h post-run limit — 26 h would accept a missed run) and fails the run
-  otherwise;
-  GitHub notifies the owner of a failed scheduled run. Constraint: scheduled
-  workflows run only from the repository's default branch (`export-ready`
-  today), so the workflow file must land there (or the default branch must
-  change) before it fires — a separate approval.
+- **Backup-age alert (external, so a dead VPS is also noticed) — LIVE:**
+  `.github/workflows/backup-health-alert.yml` (scheduled daily) with
+  `.github/scripts/verify-hosted-backup.sh`, both on the repository's default
+  branch `export-ready` (scheduled workflows run only from the default
+  branch; these files are **not** on `develop` — see the branch model in
+  `CLAUDE.md`). The verifier reuses the deploy SSH secrets, checks the
+  deployed checkout and script blobs, the exact crontab lines, directory and
+  file modes, the newest dump's sidecar / `gzip -t` / completion marker within
+  the final 4096 decompressed bytes (pg_dump ≥ 16.10 appends a restricted-mode
+  trailer — Correction 3C), and **slot-aware freshness** (Correction 3B: the
+  expected 03:15 UTC slot rather than a fixed age). A failing run creates one
+  deduplicated GitHub issue, repeats are added as comments, and the next
+  healthy run closes it with a recovery comment (verified: runs 36557926707 →
+  issue #3 opened 2026-09-29; 36703539725 → closed 2026-09-30; 36853150738
+  healthy 2026-10-01).
 - **Concurrency with activations:** an ops phase that takes a backup (e.g. a
   schema migration) will exit 75 if the nightly job is running; re-run it.
 
@@ -178,7 +190,9 @@ Proposed entries (`crontab -e` as `leadpro`):
 3. Install the two crontab lines (`crontab -e`), then `crontab -l` to confirm.
 4. Next day: `tail -n 20 backup.log`, `ls -lt --time-style=+%FT%TZ`,
    `bash docker/scripts/backup-check.sh`.
-5. Record the first scheduled run in `docs/B23_FINAL_RECONCILIATION.md`.
+5. Record the first scheduled run — **done**: `FIRST_CYCLE=PASS` on
+   2026-09-27 (run 36306438328), recorded in §1 and in the B24 status addendum
+   of `docs/B23_FINAL_RECONCILIATION.md`.
 
 ### Rollback of the schedule
 
@@ -261,9 +275,56 @@ time.
 
 A live restore adds the API stop/start (seconds) and any schema migration.
 
-## 5. Proposed off-host copy — NOT configured (needs approval and credentials)
+## 5. Off-host copy — Hostinger-only design CODE COMPLETE, ACTIVATION DEFERRED BY OWNER
 
-| Aspect | Proposal |
+B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. The off-host deferral is not a blocker for product development, testing, B24, B25, or later feature batches.
+
+**What exists (reviewed, frozen, not activated):** branch
+`claude/b23-g6d-hostinger-only` at `e82e5cb7767d7ac3ee47c919fcf711a52fe229ab`
+(Corrections 1–6) carries the complete design and code — a separate Hostinger
+backup VPS as destination, three forced-command SSH identities (upload, primary
+audit, GitHub audit), age-encrypted archives with sanitized manifests, a
+list-only independent audit, retention (dry-run by default), the
+installation-integrity checker (`offhost-install-check.sh`, including the
+effective-OpenSSH authorization boundary) and the daily off-host health
+workflow `backup-offhost-hostinger.yml` — with `docs/BACKUP_OFFHOST_HOSTINGER.md`
+as its document of record. It must not be amended, rebased, merged, activated
+or dispatched until the owner activates it. Landing its scheduled workflow on
+the default branch before the destination and its secrets exist would only
+produce avoidable daily failures and alert noise.
+
+**Deferred operational items (not blockers for development; not completed;
+they stay on the final production-readiness checklist):** (1) purchase of the
+second Hostinger VPS; (2) backup-VPS storage boundary or quota; (3) backup-VPS
+user, SSH and firewall configuration; (4) real forced-command, password and
+PTY rejection tests; (5) production age encryption key generation and offline
+custody; (6) first encrypted PostgreSQL transfer; (7) off-host retention
+activation; (8) off-host GitHub secrets; (9) scheduled off-host monitoring
+activation; (10) recovery drill from the real second VPS.
+
+**Interim position.** Current scheduled PostgreSQL backups and integrity monitoring protect against several database and operational failures, but they do not protect against complete loss of the application VPS or a Hostinger account/provider-wide failure. Product object files currently use Google Cloud Storage and have no independently verified project-controlled recovery copy. Hostinger-managed VPS
+snapshots: Optional owner verification during development; not a substitute for the deferred off-host recovery design.
+
+**Separate concern — product object storage.** PostgreSQL off-host backup
+(this section) and product object-storage migration are separate concerns.
+The owner chose *Option B — remove Google Cloud completely*. **B25** (planned,
+not started) will migrate product object storage off Google Cloud **without
+depending on the purchase of the second backup VPS**: a provider-neutral
+storage interface; a Hostinger-current-VPS / local encrypted-volume driver
+suitable for development and hosted-dev testing; tenant-prefixed object keys;
+authenticated API-mediated access; object inventory with size and checksum
+verification; lifecycle deletion and orphan handling; resumable
+copy-and-verify migration; dual-read / rollback during migration; removal of
+GCS credentials and dependencies only after verified migration; off-host
+protection of the object store added when the second VPS is purchased. Until
+then the migrated objects carry the same single-host durability risk as the
+database backups, and that risk is documented rather than hidden.
+
+The superseded GCP proposal is kept below for the record (it is **not** the
+design that was approved; it was replaced by the Hostinger-only architecture
+in G-6D Correction 1 and must not be configured):
+
+| Aspect | Superseded GCP proposal (not approved, not configured) |
 |---|---|
 | Destination | a **separate private GCS bucket** in the existing project (e.g. `<project>-lcp-dev-db-backups`), uniform bucket-level access, public access prevention on, **not** the application's object bucket |
 | Credential | a **dedicated service account** with `roles/storage.objectCreator` on that bucket only (write-only: it cannot read or delete existing objects); key file at `/opt/lead-capture-pro/env/backup-uploader.json`, owner `leadpro`, mode 600. The application's runtime credential (`gcs-service-account.json`) is never reused |
@@ -273,14 +334,22 @@ A live restore adds the API stop/start (seconds) and any schema migration.
 | Independent verification | a **read-only** principal (`roles/storage.objectViewer` on the bucket, key held only in a GitHub secret or used from the owner's workstation) lists the bucket daily from outside the VPS: newest object age ≤ 26 h, size > 0, sha256 sidecar present; a quarterly rehearsal restores the newest off-host object into a disposable container (procedure 4.1) |
 | Not claimed | **off-host protection is unverified**: until a copy has been listed and restored from the destination with the read-only principal, and the uploader permissions have been tested as above, no off-host protection exists |
 
-## 6. Remaining approvals
+## 6. Remaining approvals (status as of B24, 2026-10-02)
 
-1. Install the two crontab lines on the VPS (§3) — after this revision of the
-   script is deployed.
-2. Create the off-host bucket, the write-only and read-only service accounts,
-   and place the key file on the VPS (§5).
-3. Land the scheduled GitHub check on the default branch (§3, alert).
-4. Permissions test of the `objectCreator`-only uploader with `rclone copy
-   --immutable` (§5) before any off-host schedule.
+1. ~~Install the two crontab lines on the VPS (§3)~~ — **done** 2026-09-22
+   (run 35748260340); first cycle verified 2026-09-27 (run 36306438328).
+2. ~~Create the off-host GCS bucket and service accounts~~ — **superseded**:
+   the GCP design was replaced by the Hostinger-only off-host design (§5),
+   which is code complete and whose activation the owner has deferred
+   (items (1)–(10) in §5).
+3. ~~Land the scheduled GitHub check on the default branch~~ — **done**
+   (`backup-health-alert.yml` live on `export-ready`, §3).
+4. ~~Permissions test of the `objectCreator`-only uploader~~ — **superseded**
+   with item 2.
 5. A separately approved drill of the live restore plan (§4.2) and of the
-   deploy rollback (`docs/B23_FINAL_RECONCILIATION.md` §1.6).
+   deploy rollback (`docs/B23_FINAL_RECONCILIATION.md` §1.6) — **still
+   open; both remain unrehearsed.**
+6. Off-host activation items (1)–(10) of §5 — **deferred by the owner**; they
+   are needed for final off-host activation and recovery testing only.
+7. B25 — product object storage off Google Cloud (separate batch; needs
+   approval; does not depend on the second VPS).

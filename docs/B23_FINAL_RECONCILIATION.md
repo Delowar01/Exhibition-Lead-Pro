@@ -1,5 +1,39 @@
 # Batch 23 — Final Phase 1–9 Reconciliation: Audit and Release Gate Report
 
+> **Status addendum (B24, 2026-10-02).** This audit is a point-in-time record
+> (2026-09-18); the tables below are kept as written. Current status of its
+> items: **G-1, G-2 — done** (Correction 1, merged to `develop`). **G-3 —
+> passed**: the hosted protected-export smoke ran on `ops/b23-g3-hosted-smoke`
+> (`1db0b01`), Actions run 35400485008 (2026-09-18, success; two earlier
+> attempts fixed the smoke script itself). **G-5 — done in B24** (this
+> addendum, `CLAUDE.md`, the brief, file map, deployment, localhost, VPS and
+> backup documents). **G-6 — schedule installed and verified**: activation run
+> 35748260340 (2026-09-22, `ops/b23-g6-activation`: post-deploy verification,
+> first hardened backup, isolated restore, cron install + verify) and first
+> scheduled cycle `FIRST_CYCLE=PASS` run 36306438328 (2026-09-27); external
+> slot-aware health alert with PostgreSQL ≥ 16.10 trailer handling live from
+> the `export-ready` default branch (G-6 C3/C3B/C3C); issue creation,
+> deduplication, recovery and genuine scheduled-run behaviour verified (runs
+> 36557926707 → issue #3, 36703539725 → closed, 36853150738 healthy); current
+> local backups remain on the application VPS; the live destructive restore
+> procedure and the deploy rollback **remain unrehearsed**; the second
+> Hostinger backup VPS and real off-host recovery **remain deferred** —
+> B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY
+> OWNER (`claude/b23-g6d-hostinger-only` @ `e82e5cb…`). The off-host deferral
+> is not a blocker for product development, testing, B24, B25, or later
+> feature batches. **G-9 — fixed and documented in B24**: `/metrics` reads
+> `jobs.pending` live from the durable queue (never `-1`; 503
+> `METRICS_UNAVAILABLE` when unreadable) and the opt-in audit-log retention
+> contract is documented (`security-and-privacy.md`,
+> `HOSTINGER_VPS_DEPLOYMENT.md`, `.env.example`). **G-10 — fixed in B24**: the
+> workspace-wide `pnpm run typecheck` exits 0 with `mockup-sandbox` included
+> (single `@types/react` identity via `paths`). **G-4, G-7, G-8 — open owner
+> decisions.** External verifications (live Gemini, SMTP, Stripe, device pass)
+> remain unperformed by decision. Release readiness still cannot be claimed;
+> the next planned batch is **B25 — product object storage off Google Cloud**
+> (owner decision Option B), which does not depend on the second backup VPS.
+> Current test totals live in `LOCALHOST_DEVELOPMENT.md` §7.
+
 **Scope:** audit only. No product code, schema, contract, generated client, UI, hosted
 configuration, secret, container, queue, GCS object or host service was changed. Every
 statement below is tied to a commit SHA, a test log produced in this audit, or a GitHub

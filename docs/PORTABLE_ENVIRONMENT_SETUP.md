@@ -1,5 +1,10 @@
 # Portable Environment Setup — Exact Post-Export Replacement Map
 
+> **Current status (B24, 2026-10-02):** this is the export-era replacement map.
+> The hosted environment today is the Hostinger dev VPS
+> ([HOSTINGER_VPS_DEPLOYMENT.md](HOSTINGER_VPS_DEPLOYMENT.md)); product object
+> storage still uses Google Cloud Storage until B25 (planned) migrates it.
+
 Project: **Card Scanner Pro** (spec name: *Lead Capture Pro*) · Date: 2026-08-06 · Scope: everything that must be **configured or replaced** after exporting this repository out of Replit.
 
 This is the spec §4 replacement map. It complements — and does not duplicate — the authoritative variable reference in [`.env.example`](../.env.example) (read that for the full list, required-vs-optional markers, and placeholder values) and the audit narrative in [`docs/SECRET_AND_PORTABILITY_AUDIT.md`](./SECRET_AND_PORTABILITY_AUDIT.md).

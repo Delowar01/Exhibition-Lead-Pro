@@ -16,18 +16,37 @@ field-capture client (EN/AR with RTL, light/dark).
 ## Official baseline & source of truth
 
 - **GitHub is the permanent source of truth**: `Delowar01/Exhibition-Lead-Pro`.
-- **Baseline branch: `export-ready`** at commit `303bf40f4747ef0626090afbda35d8c3b36870ac`.
-- The old `main` branch is an outdated historical version. **Never** develop
-  from `main`, merge `main`, rebase onto `main`, force-push, or rewrite history.
-- Every development branch is created from the latest approved baseline
-  (`export-ready`). **Never push feature work directly to `export-ready` or
-  `main`** — one branch per approved batch (e.g. `claude/batch-09-reports`).
-- Docs of record: `docs/PROJECT_TECHNICAL_BRIEF.md` (architecture),
-  `docs/PROJECT_FILE_MAP.md`, `.env.example` (environment contract),
-  `docs/LOCALHOST_DEVELOPMENT.md` (local workflow),
-  `docs/LOCAL_AND_STAGING_RUNBOOK.md`, `docs/PORTABLE_ENVIRONMENT_SETUP.md`,
-  `replit.md` (operational summary). **When docs and code disagree, the code
-  is authoritative** — report the contradiction, don't silently "fix" it.
+- **Branch model (reconciled in B24, 2026-10-02):**
+  - `develop` — the **product integration line** and the **only application
+    auto-deploy source** (`.github/workflows/deploy-dev-vps.yml` → Hostinger
+    dev VPS). B9–B23 and every later batch live here. Every batch branch is
+    created from `origin/develop` (`claude/b<nn>-<topic>`), reviewed, then
+    merged to `develop`.
+  - `export-ready` — the **GitHub default branch** and the **backup-alert
+    line**: the August 2026 export baseline (`303bf40…`, localhost docs
+    `283b15e…`) plus the external backup-health workflow (B23 G-6 C3/C3B/C3C,
+    head `7cae8f9…`). It is **not** the current product source — it does not
+    carry B9–B23. Scheduled workflows run from it. Do not branch product
+    work from it.
+  - `main` — unrelated historical history (June 2026, no common commit with
+    `develop`). **Never** develop from `main`, merge `main`, rebase onto
+    `main`, force-push, or rewrite history.
+  - The two lines diverge (merge base `283b15e…`: the four backup-alert
+    commits exist only on `export-ready`, the product only on `develop`).
+    **Branch-line reconciliation is a later, owner-approved task** — never
+    merge either way inside a product batch. **Never push feature work
+    directly to `develop`, `export-ready` or `main`.**
+- Docs of record (living): `docs/PROJECT_TECHNICAL_BRIEF.md` (architecture
+  and status), `docs/PROJECT_FILE_MAP.md`, `.env.example` (environment
+  contract), `docs/LOCALHOST_DEVELOPMENT.md` (local workflow and the **single
+  authoritative test baseline**), `docs/HOSTINGER_VPS_DEPLOYMENT.md` (hosted
+  dev stack), `docs/BACKUP_AND_RECOVERY.md`, `docs/B23_FINAL_RECONCILIATION.md`
+  (gap register with its B24 status addendum), `replit.md` (operational
+  summary). `docs/LOCAL_AND_STAGING_RUNBOOK.md` and
+  `docs/PORTABLE_ENVIRONMENT_SETUP.md` are the export-era references; files
+  under `docs/reports/` are archived point-in-time reports and are not
+  rewritten. **When docs and code disagree, the code is authoritative** —
+  report the contradiction, don't silently "fix" it.
 
 ## Monorepo (pnpm workspaces, Node 24, TS 5.9)
 
@@ -108,9 +127,18 @@ Center / Workflow Intelligence / Executive Intelligence.
   infrastructure, abstractions, or phases.
 - Never claim provider, production, or device verification unless actually
   performed (last device pass: Honor Magic V5, Android 16).
-- Batches 1–8 are complete and device-verified. **Next approved batch:
-  Batch 9 — Reports and Export Center Completion** (do not start without
-  approval).
+- Batches 1–8 are complete and device-verified; **B9–B23 are complete,
+  merged to `develop` and deployed to the hosted dev stack**
+  (`docs/B23_FINAL_RECONCILIATION.md`). **Current batch: B24 — Release-Gate
+  Closure** (live `/metrics` pending count, workspace typecheck, audit-retention
+  contract, documentation of record). **Planned next: B25 — product object
+  storage off Google Cloud** (owner decision: *Option B — remove Google Cloud
+  completely*; not started; proceeds without the second backup VPS).
+  Feature items G-4 / G-7 / G-8 await owner decisions and are not approved
+  batches. Do not start B25 or any feature batch without approval.
+- B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. Frozen on
+  `claude/b23-g6d-hostinger-only` at `e82e5cb7767d7ac3ee47c919fcf711a52fe229ab`;
+  do not amend, rebase, merge, activate or dispatch it. The off-host deferral is not a blocker for product development, testing, B24, B25, or later feature batches.
 
 ## Localhost workflow (details: docs/LOCALHOST_DEVELOPMENT.md)
 
@@ -121,7 +149,12 @@ to the Hostinger VPS via GitHub Actions (`.github/workflows/deploy-dev-vps.yml`
 → `docker/scripts/deploy-vps.sh`, web bound to `127.0.0.1:18080` behind
 CloudPanel — see docs/HOSTINGER_VPS_DEPLOYMENT.md). Only `develop` deploys;
 never deploy `export-ready`/`main`/feature branches, and never store app
-runtime secrets in GitHub. The web app and API must share one
+runtime secrets in GitHub. The hosted stack runs the **durable PostgreSQL
+job queue** (`JOBS_DRIVER=postgres`); locally the default is `in-process` —
+export `JOBS_DRIVER=postgres` and a local `JOBS_PAYLOAD_ENCRYPTION_KEY` in
+the API **and** test shells to exercise the durable `/metrics` assertion
+(without it that one B24 test skips with an explicit reason). The web app
+and API must share one
 origin: run the dev gateway on **:80** (`/api/*` → API on **:8080**, everything
 else → web dev server on **:3000**); the test suites hard-code
 `http://localhost:80`.
@@ -143,21 +176,24 @@ uploads report "not configured", AI uses the stub).
 ## Tests & expected baseline
 
 ```bash
-pnpm run typecheck                                  # all packages — PASS
-pnpm --filter @workspace/api-server run test        # 1225 tests (restart API first with LOGIN_RATE_MAX=1000 in the API shell, run ONCE)
-pnpm --filter @workspace/web-app run test:e2e       # 142/142 (stack running; set PW_CHROMIUM_PATH)
-pnpm --filter @workspace/mobile run test            # 114/114
+pnpm run typecheck                                  # whole workspace incl. mockup-sandbox — exit 0 (B24)
+pnpm --filter @workspace/api-server run test        # restart the API first with LOGIN_RATE_MAX=1000 in the API shell, run ONCE
+pnpm --filter @workspace/web-app run test:e2e       # stack running; set PW_CHROMIUM_PATH
+pnpm --filter @workspace/mobile run test
 pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-Without GCS object-storage credentials the API suite reports **1188 passed /
-9 failed / 28 skipped** — the failures are exactly the documented storage-gated
-set (documents.test.ts 6 failed + 18 skipped, ocr-pipeline 1, executive-
-intelligence 2); everything else must be green. The B20 billing suites and the
-Playwright billing spec need `BILLING_PROVIDER=fake` + `STRIPE_WEBHOOK_SECRET`
-(any local value) + `BILLING_SELF_SERVICE_CHECKOUT=true` in the API and test
-shells. Details: `docs/LOCALHOST_DEVELOPMENT.md` §3, §7.
+**Authoritative baseline (B24 run, 2026-10-02, no object-storage
+credentials):** API **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285**, Playwright **152/152**, mobile
+**114/114**. The API failures are exactly the documented storage-gated
+set (documents.test.ts 6 failed + 18 skipped, ocr-pipeline 1,
+executive-intelligence 2); everything else must be green. Pre-B24 reference
+(B23 Correction 1): 1234 passed / 9 / 28 of 1271, 152/152, 114/114. The B20
+billing suites and the Playwright billing spec need `BILLING_PROVIDER=fake` +
+`STRIPE_WEBHOOK_SECRET` (any local value) + `BILLING_SELF_SERVICE_CHECKOUT=true`
+in the API and test shells. `docs/LOCALHOST_DEVELOPMENT.md` §7 is the single
+place where these totals are maintained; other documents point there.
 
 The API suite is integration-against-live-API: the login rate limiter is
 stateful, so **restart the API server before the suite and run it exactly

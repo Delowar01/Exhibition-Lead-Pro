@@ -4,7 +4,9 @@ Copy-pasteable, verified operating instructions for **Card Scanner Pro** (spec n
 
 This document is authoritative for **running, testing, building, and connecting** the project locally and against staging. It complements — and must stay consistent with — `.env.example` (the environment contract), `docs/PORTABLE_ENVIRONMENT_SETUP.md` (the replacement map), `docs/architecture.md`, `docs/api-guide.md`, `docs/deployment.md`, and `docs/gotchas.md`.
 
-> Every command below was verified against the actual `package.json` scripts and source as of **2026-08-06**. Where a step is Replit-only or optional, it is called out explicitly.
+> Every command below was verified against the actual `package.json` scripts and source as of **2026-08-06** (export era, Replit-era topology). Where a step is Replit-only or optional, it is called out explicitly.
+>
+> **Current status (B24, 2026-10-02):** the hosted environment is the Hostinger dev VPS (`docs/HOSTINGER_VPS_DEPLOYMENT.md`), local development follows `docs/LOCALHOST_DEVELOPMENT.md`, and the **single authoritative test baseline** is `docs/LOCALHOST_DEVELOPMENT.md` §7. The three "Baseline" lines below are the export-era counts and are kept as history.
 
 ---
 
@@ -173,7 +175,7 @@ The API tests are **integration tests that hit the running server** at `http://l
 pnpm --filter @workspace/api-server run test    # vitest run
 ```
 
-**Baseline:** 705/705 passing.
+**Baseline (export era, 2026-08-06):** 705/705 passing — current totals: `docs/LOCALHOST_DEVELOPMENT.md` §7.
 
 ### 3.2 Mobile suite — vitest
 
@@ -183,7 +185,7 @@ pnpm --filter @workspace/mobile run test         # vitest run
 
 Pure unit tests (no server, no device required). Config: `artifacts/mobile/vitest.config.ts`.
 
-**Baseline:** 107/107 passing.
+**Baseline (export era, 2026-08-06):** 107/107 passing — current totals: `docs/LOCALHOST_DEVELOPMENT.md` §7.
 
 ### 3.3 Web suite — Playwright (E2E)
 
@@ -203,7 +205,7 @@ export E2E_BASE_URL="http://localhost:80"
 pnpm --filter @workspace/web-app run test:e2e
 ```
 
-**Baseline:** 43/43 passing.
+**Baseline (export era, 2026-08-06):** 43/43 passing — current totals: `docs/LOCALHOST_DEVELOPMENT.md` §7.
 
 ### 3.4 OCR live verification (optional, spends live Gemini calls)
 

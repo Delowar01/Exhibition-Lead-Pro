@@ -1,5 +1,11 @@
 # Developer Guide
 
+> **Current status (B24, 2026-10-02):** Replit workflows and the Replit preview
+> are historical. Local development runs per
+> [LOCALHOST_DEVELOPMENT.md](LOCALHOST_DEVELOPMENT.md) (dev gateway on :80, API
+> :8080, web :3000); the hosted environment is the Hostinger dev VPS
+> ([HOSTINGER_VPS_DEPLOYMENT.md](HOSTINGER_VPS_DEPLOYMENT.md)).
+
 _Local setup, running the apps, codegen, tests, and coding conventions._
 
 ## 1. Prerequisites

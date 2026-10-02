@@ -9,6 +9,27 @@ the `company_id` tenant boundary (cross-tenant reads return 404, not 403), the
 permissions matrix, the subscription lifecycle access gates (`evaluateCompanyAccess`),
 and the append-only `audit_logs` design.
 
+## Audit log retention (operator contract, documented in B24)
+
+- `audit_logs` is **append-only through every product API**: there is no
+  application delete route and no cascade; `auditMutations(module)` and
+  `writeAudit` only insert.
+- The **only** mechanism that ever removes audit rows is the recurring
+  `maintenance` job (`lib/jobs/maintenance.ts`, `cleanupOldAuditLogs`), which
+  runs inside the API process on the job queue (every
+  `JOBS_MAINTENANCE_INTERVAL_MS`, default 6 h) and deletes rows older than
+  `JOBS_AUDIT_RETENTION_DAYS` days **only when that variable is explicitly set
+  to a positive value**. The default `0` disables deletion entirely. It is an
+  operator-controlled retention mechanism, not a tenant-facing mutation, and no
+  endpoint exposes or triggers it.
+- Operators verify the configured value without printing secrets (one numeric
+  variable): `grep -c '^JOBS_AUDIT_RETENTION_DAYS=' <env file>` (0 lines =
+  default 0 = never delete) — see `HOSTINGER_VPS_DEPLOYMENT.md`. The hosted
+  dev stack runs with the default; its maintenance summaries report
+  `oldAuditLogs: 0` on every sweep.
+- Changing the default, adding an endpoint, or narrowing audit coverage is out
+  of bounds without an owner decision.
+
 **Scope privacy** for analytics and workflow rollups (employee sees own only /
 team lead sees own team / dept head sees own dept / company overview is
 manager-only) is described per-feature in [Product](product.md); the enforcement

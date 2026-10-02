@@ -1,9 +1,27 @@
 # Deployment Guide
 
-_Replit autoscale is the primary deployment target; external Docker self-hosting
-is documented separately._
+_The current hosted environment is the **Hostinger development VPS** (Docker
+stack behind CloudPanel, `https://dev.kaptnow.com`), deployed automatically
+from `develop` by `.github/workflows/deploy-dev-vps.yml` — see
+[HOSTINGER_VPS_DEPLOYMENT.md](HOSTINGER_VPS_DEPLOYMENT.md). Replit autoscale
+was the original (export-era) target and is kept below for reference only; it
+is no longer the deployment target._
 
-## 1. Primary: Replit Autoscale
+## 0. Current: Hostinger dev VPS (auto-deploy from `develop`)
+
+- Only pushes to `develop` deploy (`verify` job: typechecks, mobile unit suite,
+  API + web builds; `deploy` job: SSH with a pinned host key, `deploy-vps.sh`).
+  `export-ready`, `main` and feature branches are never auto-deployed.
+- Runtime secrets live only in the VPS env file; GitHub holds the `VPS_*`
+  deploy secrets.
+- Hosted settings of note: `JOBS_DRIVER=postgres` (durable queue),
+  `OBJECT_STORAGE_AUTH=google` (product object storage still on Google Cloud
+  Storage until B25), Gemini / SMTP / Stripe deliberately unset.
+- Backups: daily PostgreSQL dump on the VPS with an external slot-aware
+  health alert ([BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md)).
+  B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER.
+
+## 1. Historical: Replit Autoscale (no longer the deployment target)
 
 The project deploys on Replit using the **autoscale** target, configured in
 [`.replit`](../.replit):

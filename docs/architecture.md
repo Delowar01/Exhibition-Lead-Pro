@@ -89,7 +89,10 @@ centralized and consistently applied.
 
 ## 5. Audit & logging
 
-- **Audit:** `audit_logs` is append-only (no delete route, no cascade FK).
+- **Audit:** `audit_logs` is append-only through the product APIs (no delete
+  route, no cascade FK); the only deletion is the operator-controlled, opt-in
+  maintenance retention (`JOBS_AUDIT_RETENTION_DAYS`, default 0 = never) — see
+  [Security & Privacy](security-and-privacy.md).
   `auditMutations(module)` records one row per successful non-GET request;
   `writeAudit` handles explicit events (e.g. login). Guards must be **path-scoped**
   to a module base, because sub-routers mount path-less on a shared parent (see
@@ -157,7 +160,7 @@ These are out of scope for Stage 1 (foundation only) and are captured in the
 | Contract-first pipeline | ✅ Meets bar |
 | Multi-tenant isolation | ✅ Meets bar (implemented surface) |
 | AuthN / AuthZ / role hierarchy | ✅ Meets bar |
-| Audit (append-only) | ✅ Meets bar |
+| Audit (append-only via APIs; opt-in operator retention, default off) | ✅ Meets bar |
 | Structured logging | ✅ Meets bar |
 | Centralized config | ✅ Delivered (Stage 1) |
 | Global error handling | ✅ Delivered (Stage 1) |

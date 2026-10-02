@@ -83,17 +83,31 @@ NFC, business card, email signature, QR, LinkedIn QR, manual entry.**
 
 ## B. Current project status
 
-**Batch 8 is complete and device-verified.** Physical-device testing passed on an
-**Honor Magic V5, Android 16**.
+**B9–B23 are complete, merged to `develop` and deployed to the hosted dev stack
+(Hostinger VPS, `https://dev.kaptnow.com`).** Batches 1–8 were device-verified
+on an **Honor Magic V5, Android 16** (no device pass has been recorded since).
+**Current batch: B24 — Release-Gate Closure** (live `/metrics` pending count,
+workspace typecheck, audit-retention contract, documentation of record).
+**Planned next: B25 — product object storage off Google Cloud** (owner decision
+*Option B — remove Google Cloud completely*; not started; it does not depend on
+the second backup VPS). Open owner decisions: G-4 (mobile per-entity Workflow /
+Copilot sections), G-7 (`/platform/analytics` placeholder), G-8 (Phase 4/6/7/9
+remainders). Gap register and release gates: `B23_FINAL_RECONCILIATION.md`.
 
-**Latest verified baseline totals**
+B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. Frozen on `claude/b23-g6d-hostinger-only`
+(`e82e5cb…`). The off-host deferral is not a blocker for product development, testing, B24, B25, or later feature batches.
 
-| Suite | Result |
-|---|---|
-| API (vitest, integration + unit) | **705 / 705** |
-| Web e2e (Playwright, chromium) | **43 / 43** |
-| Mobile (vitest) | **107 / 107** |
-| API / web / mobile typechecks | **clean** |
+**Branch model** — `develop` is the product integration line and the only
+auto-deploy source; `export-ready` is the GitHub default branch carrying the
+export baseline plus the external backup-health workflow (not the product
+source); `main` is unrelated historical history. The lines diverge; their
+reconciliation is a later owner-approved task (see `CLAUDE.md`).
+
+**Latest verified baseline totals** — maintained in one place:
+[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B24 run (2026-10-02,
+no object-storage credentials): API **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285**, Playwright
+**152/152**, mobile **114/114**, workspace typecheck exit 0, API and
+web production builds PASS.
 
 **Batch history summary** — the product was built in stages and later hardening
 batches. Stages 1–5 delivered the server foundation, multi-tenant CRM, org
@@ -115,12 +129,15 @@ the Expo mobile client.
 
 **Current limitations** — object storage requires GCS configuration (uploads fail
 without it, server still boots); email is a logged no-op without SMTP config; AI
-features degrade gracefully without a Gemini credential; readiness "storage" is a
-*configured* check, not a live reachability probe; DB schema is synced via
-`drizzle-kit push` (no versioned SQL migrations).
+features degrade gracefully without a Gemini credential; `/readyz` performs a
+live, least-privilege storage reachability probe (`ok` / `error` /
+`not_configured`); DB schema is synced via `drizzle-kit push` (no versioned
+SQL migrations). Product object files currently use Google Cloud Storage and have no independently verified project-controlled recovery copy.
 
-**Next approved work area** — export-readiness / portability / documentation polish
-(this task). **Batch 9 has not been started.** No new product features are in scope.
+
+**Next approved work** — B24 (current) as described above; B25 planned and
+awaiting approval. No feature batch is approved; G-4 / G-7 / G-8 are owner
+decisions.
 
 **Features that must not be reintroduced** — the six permanent scope removals in
 §A, plus: no second AI/OCR/email/draft system, no direct-to-Gemini calls that
@@ -150,7 +167,7 @@ spec generates the API client, React Query hooks, and shared Zod validators.
 | Email | SMTP (only built-in transport), queued via the in-process job queue; no-op when unconfigured |
 | AI provider | **Gemini `gemini-2.5-flash` ONLY** via the Enterprise AI Layer; deterministic stub provider for dev/test |
 | OCR | Gemini vision extraction (thinkingBudget 0) through the same AI Layer |
-| Background jobs | In-process job queue (`JOBS_DRIVER=in-process`) — email, notifications, recurring maintenance/exports/alerts |
+| Background jobs | Provider-agnostic `JobQueue` with two drivers: **durable PostgreSQL queue** (`JOBS_DRIVER=postgres`, encrypted payloads, leases, at-least-once — the hosted stack) and the in-process default for local runs — email, notifications, recurring maintenance/exports/alerts |
 | Testing | vitest (API + mobile), Playwright (web e2e, Nix chromium) |
 
 **Current deployment environments** — local dev; **staging = this Repl published**
@@ -353,7 +370,7 @@ Delivery is queued (`JOBS_ASYNC_EMAIL=true`) through the job queue; unconfigured
 degrades to a logged no-op. Links use `config.email.appBaseUrl` (a localhost warning
 is logged when unset in production).
 
-**Background jobs** — the in-process queue (`lib/jobs/`, `JOBS_DRIVER=in-process`)
+**Background jobs** — the job queue (`lib/jobs/`; `JOBS_DRIVER=postgres` durable queue on the hosted stack, `in-process` default locally)
 runs email/notification delivery plus recurring sweeps configured in `config.jobs`:
 follow-up reminders, maintenance/retention (sessions, read notifications), scheduled
 exports (`export.service.ts` → `export_schedules`/`export_runs`), and Stage 5F
@@ -612,10 +629,12 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   the **live** API (the api-server workflow must be running and seeded with demo
   tenants); restart/seed before a full run. Detail in
   [LOCAL_AND_STAGING_RUNBOOK.md](LOCAL_AND_STAGING_RUNBOOK.md).
-- **Current totals (Batch 20)** — API **1153** tests (1116 passed / 9 failed /
-  28 skipped without object storage — the failures are the documented
-  storage-gated subset), Playwright **142/142**, mobile **114/114**, all
-  typechecks clean.
+- **Current totals** — see [LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md)
+  (B24 run: API **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285** without object storage — the failures are the
+  documented storage-gated subset — Playwright **152/152**, mobile
+  **114/114**, workspace typecheck exit 0). Start the API with
+  `LOGIN_RATE_MAX=1000` in its shell for a full run; `JOBS_DRIVER=postgres` in
+  both shells to exercise the durable `/metrics` assertion.
 - **Playwright setup** — `artifacts/web-app/playwright.config.ts` resolves a Nix-store
   chromium via `executablePath` (newest `-playwright-browsers-chromium` build);
   override with `PW_CHROMIUM_PATH`; target with `E2E_BASE_URL` (default
@@ -672,15 +691,18 @@ everything else degrades gracefully.
 
 ## M. Staging and production topology
 
-- **Hosting / staging** — staging is **this Repl, published** at
-  `https://contact-aggregator--DelowarHossain1.replit.app` (Replit Publish). The
-  same host serves the API (`/api`) and the built web app.
-- **Mobile → staging** — that staging URL is **baked into `artifacts/mobile/eas.json`**
-  as `EXPO_PUBLIC_API_URL` for both the `preview` and `production` EAS profiles, so
-  APKs built from those profiles talk to staging out of the box. Mobile APKs ship via
-  the **EAS `preview`** profile (internal-distribution APK). For local mobile dev
-  against staging, set `EXPO_PUBLIC_API_URL` to the staging URL (or
-  `EXPO_PUBLIC_DOMAIN`).
+- **Hosting / hosted development** — the hosted environment is the **Hostinger
+  dev VPS** (Docker stack behind CloudPanel, `https://dev.kaptnow.com`; the
+  customer portal and API on `admin.kaptnow.com`), deployed automatically from
+  `develop` by `.github/workflows/deploy-dev-vps.yml` — see
+  [HOSTINGER_VPS_DEPLOYMENT.md](HOSTINGER_VPS_DEPLOYMENT.md). The Replit
+  publish URL of the export era is historical and no longer the deployment
+  target ([deployment.md](deployment.md)).
+- **Mobile → hosted API** — `artifacts/mobile/eas.json` bakes
+  `EXPO_PUBLIC_API_URL=https://admin.kaptnow.com` into the `preview` and
+  `production` EAS profiles. Mobile APKs ship via the **EAS `preview`** profile
+  (internal-distribution APK). For local mobile dev set `EXPO_PUBLIC_API_URL`
+  (or `EXPO_PUBLIC_DOMAIN`) to the API you are targeting.
 - **Production topology** — the app is portable: the API needs standard env vars
   (`DATABASE_URL`, `SESSION_SECRET`, optional Gemini/SMTP/GCS/push) supplied via a
   local `.env`, shell, CI secret store, or a hosting provider's secret store — **no
@@ -699,7 +721,7 @@ everything else degrades gracefully.
 
 Hard rules for anyone extending this project:
 
-- **Work one approved batch at a time.** Do not begin Batch 9 or any new business
+- **Work one approved batch at a time.** Do not begin B25 or any new business
   feature until it is explicitly approved. Do not add unnecessary features or
   abstractions.
 - **`gemini-2.5-flash` only.** No other model, and **no direct Gemini calls** — every

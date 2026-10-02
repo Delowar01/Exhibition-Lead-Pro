@@ -35,14 +35,18 @@ Browser ── https://dev.kaptnow.com
 ## 2. Branch & deployment strategy
 
 ```
-export-ready (protected approved baseline)
-   └─ develop (created from export-ready after this infrastructure is approved)
-        ├─ claude/batch-XX  → review/tests → merge to develop
+export-ready  (GitHub default branch: export baseline 283b15e + the external
+   │           backup-health workflow — NOT the product source)
+   └─ develop (forked at 283b15e; the product integration line: B9–B24 …)
+        ├─ claude/b<nn>-<topic>  → review/tests → merge to develop
         └─ every push to develop → GitHub Actions → VPS → dev.kaptnow.com
 ```
 
 - Only `develop` deploys automatically. Feature branches, `export-ready` and
   the historical `main` are never auto-deployed (workflow guard enforces it).
+- The two lines have diverged (the four backup-alert commits exist only on
+  `export-ready`; the product only on `develop`). Reconciling them is a later,
+  owner-approved task — not done in a product batch (B24 recorded this).
 - Local dev remains per `docs/LOCALHOST_DEVELOPMENT.md`; the pre-merge gate
   (full API + Playwright suites) still runs on a developer machine.
 
@@ -53,11 +57,12 @@ for the `develop` ref). Sequence:
 
 1. **verify** — pnpm 10.26.1 (from `packageManager`) on Node 24.13.0, frozen
    install, `typecheck:libs`, API/web/mobile typechecks, the mobile unit suite
-   (107 tests, infra-free), API + web production builds.
-   *Honest limitation:* the API integration suite (728) and Playwright (43)
-   need a live seeded stack (Postgres, API on :80, Chromium, GCS for the
-   storage subset) and are deliberately **not** run on the hosted runner —
-   they are not faked, they remain the developer-machine pre-merge gate.
+   (114 tests, infra-free), API + web production builds.
+   *Honest limitation:* the API integration suite and Playwright (current
+   totals: `docs/LOCALHOST_DEVELOPMENT.md` §7) need a live seeded stack
+   (Postgres, API on :80, Chromium, GCS for the storage subset) and are
+   deliberately **not** run on the hosted runner — they are not faked, they
+   remain the developer-machine pre-merge gate.
 2. **deploy** — installs the SSH key from `VPS_SSH_KEY`, pins the host key
    from `VPS_KNOWN_HOSTS` (`StrictHostKeyChecking=yes`; never `=no`), then
    over SSH: fetch, detach-checkout the exact `GITHUB_SHA`, run
@@ -223,13 +228,39 @@ newest backup is fresh and intact (the post-run checks pass
 `BACKUP_MAX_AGE_HOURS=4` so a missed nightly run is caught the same morning;
 the 26 h default is the general-purpose meaning).
 
-The daily schedule, the freshness alert, the activation/rollback procedure and
-the off-host design are documented in `docs/BACKUP_AND_RECOVERY.md`; the
-schedule is a proposal until it is installed there with approval.
+The daily schedule **is installed and verified**: the two crontab lines
+(03:15 UTC backup with `KEEP=14`, 03:45 UTC check with
+`BACKUP_MAX_AGE_HOURS=4`) were installed and verified by the G-6 activation run
+on 2026-09-22 (Actions run 35748260340 on `ops/b23-g6-activation`: post-deploy
+verification, first hardened backup, isolated restore, cron install + verify,
+all passed) and the first scheduled cycle was verified read-only on 2026-09-27
+(run 36306438328, `FIRST_CYCLE=PASS` for `leadcapture-20260927-031501.sql.gz`).
+The external slot-aware health alert (`backup-health-alert.yml`, on the
+`export-ready` default branch) runs daily; its activation/rollback procedure,
+the restore procedures and the off-host status are in
+`docs/BACKUP_AND_RECOVERY.md`.
 
-> **Off-host copies are required for real protection.** A backup stored only
-> on this VPS does not survive total VPS loss — see
-> `docs/BACKUP_AND_RECOVERY.md` §5 (not configured yet).
+> **Interim limitation.** Current scheduled PostgreSQL backups and integrity monitoring protect against several database and operational failures, but they do not protect against complete loss of the application VPS or a Hostinger account/provider-wide failure.
+> B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. The off-host deferral is not a blocker for product development, testing, B24, B25, or later feature batches.
+> Product object files currently use Google Cloud Storage and have no independently verified project-controlled recovery copy. Hostinger-managed VPS snapshots: Optional owner verification during development; not a substitute for the deferred off-host recovery design.
+
+### Audit-log retention — operator contract (B24)
+
+- `audit_logs` has **no application delete route** and no cascade; through the
+  product APIs it is append-only (`auditMutations`, `writeAudit`).
+- The **only** mechanism that removes audit rows is the recurring
+  `maintenance` job inside the api container (`JOBS_MAINTENANCE_INTERVAL_MS`,
+  default every 6 h), and only when `JOBS_AUDIT_RETENTION_DAYS` is explicitly
+  set to a positive number of days. The default `0` disables deletion
+  entirely. This is an operational retention control, not a tenant-facing
+  mutation; no endpoint exposes it.
+- The hosted stack runs with the default: every maintenance summary logged
+  since the G-6 activation reports `oldAuditLogs: 0` (run 36306438328).
+- Verify the configured value without printing any secret:
+  `grep -c '^JOBS_AUDIT_RETENTION_DAYS=' /opt/lead-capture-pro/env/.env`
+  (`0` = unset → default 0, never delete) or, inside the running container,
+  `docker compose -f docker-compose.yml -f compose.vps.yml exec -T api sh -c 'echo "${JOBS_AUDIT_RETENTION_DAYS:-unset (default 0 = never delete)}"'`.
+  Changing the value is an owner-approved operational change.
 
 ### Restore procedure (disaster-recovery PLAN — never rehearsed on the running stack)
 
@@ -300,9 +331,11 @@ bucket, no second storage implementation):
   `iam.serviceAccounts.signBlob` / `roles/iam.serviceAccountTokenCreator`
   is **not required and must not be granted** (those exist only for keyless
   ADC/impersonation setups, which this deployment does not use).
-- **Result:** `readyz` reports storage `ok`; the API baseline target returns
-  to a literal **728/728** (storage failures are fixed by configuration,
-  never by skipping tests).
+- **Result:** `readyz` reports storage `ok`; the storage-gated subset of the
+  API suite turns green and the run reaches the fully green total
+  (`docs/LOCALHOST_DEVELOPMENT.md` §7) — storage failures are fixed by
+  configuration, never by skipping tests. B25 (planned) replaces this Google
+  Cloud dependency.
 
 ## 9. CloudPanel reverse proxy (manual, after approval)
 

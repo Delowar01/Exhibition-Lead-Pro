@@ -4,8 +4,9 @@ How to develop, run, and regression-test Lead Capture Pro (Card Scanner Pro)
 entirely on a local machine — no Replit, no cloud deploys. Complements
 [`LOCAL_AND_STAGING_RUNBOOK.md`](LOCAL_AND_STAGING_RUNBOOK.md) and the
 authoritative env reference [`.env.example`](../.env.example); where this guide
-and older docs disagree, the code is authoritative (differences called out
-below were verified against the code at baseline `303bf40`).
+and older docs disagree, the code is authoritative (first verified against the
+export baseline `303bf40`; re-verified against the `develop` product line in
+B24, 2026-10-02 — `develop` is where B9–B24 live, see `CLAUDE.md`).
 
 ## 1. Required software
 
@@ -198,21 +199,43 @@ PORT=8081 EXPO_PUBLIC_API_URL="http://<YOUR-LAN-IP>:8080" pnpm exec expo start -
 ## 7. Typechecks, tests, builds — expected baseline
 
 ```bash
-pnpm run typecheck                              # all packages — PASS
-pnpm --filter @workspace/api-server run test    # 1225 tests; 1225/1225 only with storage configured (see note)
-pnpm --filter @workspace/web-app run test:e2e   # 142/142 (needs the Batch 20 billing env, §3)
-pnpm --filter @workspace/mobile run test        # 114/114
+pnpm run typecheck                              # whole workspace incl. mockup-sandbox — exit 0 (B24)
+pnpm --filter @workspace/api-server run test    # fully green only with storage configured (see note)
+pnpm --filter @workspace/web-app run test:e2e   # needs the Batch 20 billing env, §3
+pnpm --filter @workspace/mobile run test
 pnpm --filter @workspace/api-server run build   # PASS → dist/index.mjs
 pnpm --filter @workspace/web-app run build      # PASS → dist/public (env-free)
 ```
 
+**Authoritative baseline — this section is the single place the totals are
+maintained** (other documents point here; `docs/reports/` are archived
+point-in-time reports and keep their historical counts).
+
+| Suite | B24 run (2026-10-02, no object-storage credentials) | Pre-B24 reference (B23 Correction 1, 2026-09-18) |
+|---|---|---|
+| API (`vitest run`, once, API started with `LOGIN_RATE_MAX=1000` and `JOBS_DRIVER=postgres`) | **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285** | 1234 passed / 9 failed / 28 skipped of 1271 |
+| Playwright (`playwright test`, chromium) | **152/152** | 152/152 |
+| Mobile (`vitest run`) | **114/114** | 114/114 |
+| Typechecks (libs, api, web, mobile, scripts, pitch-deck, mockup-sandbox; root `pnpm run typecheck`) | **all exit 0** | root run failed in `mockup-sandbox` (B23 G-10, fixed in B24) |
+| API / web production builds | **PASS** | PASS |
+
 > **Object-storage-gated subset:** 27 of the API tests exercise GCS-backed
 > uploads (document upload/download/versioning, the stored-scan-image
 > reprocess, executive report export artifacts). Without object-storage
-> credentials the local result is **1188 passed / 9 failed / 28 skipped of
-> 1225 — the 9 failures and 18 of the skips are that storage subset; everything
-> else green**. Configure the GCS vars from `.env.example` §1d (dev bucket +
-> service account, never production) to reach a fully green run.
+> credentials the 9 failures and 18 of the skips are exactly that subset
+> (`documents.test.ts` 6 failed + 18 skipped, `ocr-pipeline` 1,
+> `executive-intelligence` 2); everything else must be green. Configure the
+> GCS vars from `.env.example` §1d (dev bucket + service account, never
+> production) to reach a fully green run — until B25 moves product object
+> storage off Google Cloud.
+>
+> **Durable `/metrics` assertion (B24):** `test/b24-metrics-pending.test.ts`
+> proves the live pending count against the real `job_queue` table with its own
+> durable queue instance regardless of the API's driver; its one HTTP-level
+> durable assertion runs only when `JOBS_DRIVER=postgres` is exported in the
+> vitest shell **and** the API was started with `JOBS_DRIVER=postgres` +
+> `JOBS_PAYLOAD_ENCRYPTION_KEY` (the hosted configuration); otherwise that
+> single test skips with an explicit reason.
 
 **API suite rules** (`artifacts/api-server/vitest.config.ts`): it is an
 integration suite against the **live** API at `http://localhost:80/api` — the
