@@ -13,6 +13,11 @@ echo "[entrypoint] Card Scanner Pro API"
 echo "[entrypoint]   NODE_ENV=${NODE_ENV:-production}"
 echo "[entrypoint]   PORT=${PORT}"
 echo "[entrypoint]   LOG_LEVEL=${LOG_LEVEL:-info}"
+# Batch 25 — object storage: non-secret context only (never the key, never a path).
+echo "[entrypoint]   OBJECT_STORAGE_DRIVER=${OBJECT_STORAGE_DRIVER:-<auto>}"
+if [ -n "${OBJECT_STORAGE_FS_ROOT:-}" ]; then echo "[entrypoint]   OBJECT_STORAGE_FS_ROOT=(set)"; else echo "[entrypoint]   OBJECT_STORAGE_FS_ROOT=(not set)"; fi
+if [ -n "${OBJECT_STORAGE_ENCRYPTION_KEY:-}" ]; then echo "[entrypoint]   OBJECT_STORAGE_ENCRYPTION_KEY=(set)"; else echo "[entrypoint]   OBJECT_STORAGE_ENCRYPTION_KEY=(not set)"; fi
+echo "[entrypoint]   OBJECT_STORAGE_LEGACY_FALLBACK=${OBJECT_STORAGE_LEGACY_FALLBACK:-false} OBJECT_STORAGE_MIRROR=${OBJECT_STORAGE_MIRROR:-off}"
 
 if [ -z "${DATABASE_URL:-}" ]; then
   echo "[entrypoint] WARNING: DATABASE_URL is not set — the server will fail to start." >&2

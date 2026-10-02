@@ -40,7 +40,9 @@ server {
         proxy_set_header X-Forwarded-Proto $client_proto;
         proxy_read_timeout 60s;
         # Card images are sent as base64 JSON bodies (API accepts up to 15mb).
-        client_max_body_size 20m;
+        # Batch 25: document uploads stream through /api/files/uploads/* (25 MiB
+        # ceiling enforced by the API); the proxy limit stays above it.
+        client_max_body_size 30m;
     }
 
     # Static assets with long cache lifetime (filenames are content-hashed).

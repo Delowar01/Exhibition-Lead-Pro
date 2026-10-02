@@ -35,9 +35,29 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Optional integrations (left empty by default).
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Legacy Google Cloud Storage (Batch 25: TEMPORARY migration source /
+      # fallback / mirror only; removed after the owner-approved migration).
       DEFAULT_OBJECT_STORAGE_BUCKET_ID: ${DEFAULT_OBJECT_STORAGE_BUCKET_ID:-}
       PUBLIC_OBJECT_SEARCH_PATHS: ${PUBLIC_OBJECT_SEARCH_PATHS:-}
       PRIVATE_OBJECT_DIR: ${PRIVATE_OBJECT_DIR:-}
+      # Batch 25 — provider-neutral object storage (docs/B25_OBJECT_STORAGE.md).
+      # Leave every OBJECT_STORAGE_* value EMPTY to keep the pre-B25 behaviour
+      # (the bucket above when configured, otherwise "not configured"). Setting
+      #   OBJECT_STORAGE_DRIVER=fs
+      #   OBJECT_STORAGE_FS_ROOT=/data/objects
+      #   OBJECT_STORAGE_ENCRYPTION_KEY=<64 hex chars; keep an offline copy>
+      # switches product files to encrypted files on the private `objectdata`
+      # volume mounted below (api container only; never served by nginx).
+      OBJECT_STORAGE_DRIVER: ${OBJECT_STORAGE_DRIVER:-}
+      OBJECT_STORAGE_FS_ROOT: ${OBJECT_STORAGE_FS_ROOT:-}
+      OBJECT_STORAGE_ENCRYPTION_KEY: ${OBJECT_STORAGE_ENCRYPTION_KEY:-}
+      OBJECT_STORAGE_LEGACY_FALLBACK: ${OBJECT_STORAGE_LEGACY_FALLBACK:-}
+      OBJECT_STORAGE_MIRROR: ${OBJECT_STORAGE_MIRROR:-}
+      OBJECT_STORAGE_LEGACY_DELETE: ${OBJECT_STORAGE_LEGACY_DELETE:-}
+    volumes:
+      # Batch 25 — private object volume (encrypted product files). Inert until
+      # the fs driver is selected via the variables above.
+      - objectdata:/data/objects
     ports:
       # Expose the API directly too (handy for debugging / mobile clients).
       - "${API_PORT:-5000}:8080"
@@ -127,3 +147,6 @@ services:
 volumes:
   pgdata:
   redisdata:
+  # Batch 25 — encrypted product files (fs driver). Back it up together with
+  # the database AND the OBJECT_STORAGE_ENCRYPTION_KEY (docs/BACKUP_AND_RECOVERY.md).
+  objectdata:

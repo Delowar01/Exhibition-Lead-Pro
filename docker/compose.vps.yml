@@ -41,6 +41,17 @@ services:
       - "${GCS_CREDENTIAL_GID:?GCS_CREDENTIAL_GID is required}"
     volumes:
       - /opt/lead-capture-pro/env/gcs-service-account.json:/secrets/gcs-service-account.json:ro
+      # Batch 25 — PREPARED, NOT ACTIVE. The hosted activation (a separate,
+      # owner-approved task — docs/B25_OBJECT_STORAGE.md "Hosted activation")
+      # replaces the base file's named `objectdata` volume with a private host
+      # directory on this VPS, outside the web root and outside Git, owned by
+      # the container's app uid/gid and mode 700, e.g.
+      #   sudo install -d -m 700 -o <app-uid> -g <app-gid> /opt/lead-capture-pro/data/objects
+      # and sets OBJECT_STORAGE_DRIVER=fs, OBJECT_STORAGE_FS_ROOT=/data/objects
+      # and OBJECT_STORAGE_ENCRYPTION_KEY in the VPS-only env file. Until then
+      # every OBJECT_STORAGE_* variable stays unset and the api keeps the
+      # pre-B25 Google Cloud driver unchanged. Uncomment ONLY at activation:
+      # - /opt/lead-capture-pro/data/objects:/data/objects
 
   web:
     ports: !override

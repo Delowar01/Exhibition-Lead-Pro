@@ -67,6 +67,10 @@ WORKDIR /app
 # Run as a dedicated non-root user. Secrets come only from the environment;
 # nothing sensitive is baked into the image.
 RUN groupadd --system app && useradd --system --gid app --create-home app
+# Batch 25 — private object directory (fs driver root when OBJECT_STORAGE_FS_ROOT
+# =/data/objects). Owned by the app user, mode 700; a named volume mounted here
+# inherits this ownership on first use. Never served by nginx.
+RUN install -d -m 700 -o app -g app /data/objects
 
 # Production dependencies (includes the externalized native sharp binaries).
 COPY --from=build --chown=app:app /prod/api/node_modules ./node_modules
