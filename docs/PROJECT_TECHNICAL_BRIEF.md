@@ -129,9 +129,9 @@ source); `main` is unrelated historical history. The lines diverge; their
 reconciliation is a later owner-approved task (see `CLAUDE.md`).
 
 **Latest verified baseline totals** — maintained in one place:
-[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B25 Correction 6 run
+[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B25 Correction 7 run
 (2026-10-02, filesystem object-storage driver, no Google Cloud credentials):
-API **1509 passed / 0 failed / 1 skipped of 1510 (104 files)**, Playwright **152/152**, mobile **142/142**,
+API **1529 passed / 0 failed / 1 skipped of 1530 (105 files)**, Playwright **152/152**, mobile **142/142**,
 workspace typecheck exit 0, API and web production builds PASS. (Pre-B25
 reference, B24 without object storage: 1248 passed / 9 storage-gated / 28
 skipped of 1285.)
@@ -688,7 +688,7 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   tenants); restart/seed before a full run. Detail in
   [LOCAL_AND_STAGING_RUNBOOK.md](LOCAL_AND_STAGING_RUNBOOK.md).
 - **Current totals** — see [LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md)
-  (B25 Correction 6 run with the filesystem driver: API **1509 passed / 0 failed / 1 skipped of 1510 (104 files)**, Playwright
+  (B25 Correction 7 run with the filesystem driver: API **1529 passed / 0 failed / 1 skipped of 1530 (105 files)**, Playwright
   **152/152**, mobile **142/142**, workspace typecheck exit 0; no
   storage-gated failures or skips remain). Start the API with
   `LOGIN_RATE_MAX=1000` in its shell for a full run; `JOBS_DRIVER=postgres` in

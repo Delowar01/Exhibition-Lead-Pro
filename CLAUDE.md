@@ -163,7 +163,13 @@ Center / Workflow Intelligence / Executive Intelligence.
   generation or fails closed; mobile private-file client safe across an API
   rollback: one trusted-URL classifier, bearer + capability only to the
   first-party API origin, pre-B25 signed GCS URLs without any Lead Capture
-  credential, everything else refused) are
+  credential, everything else refused) and **Correction 7** (exact GCS
+  generation strings — a generation is an opaque decimal string never parsed,
+  coerced, rounded or converted to a number; every delete receives the exact
+  string from the successful put or the ownership-proving HEAD, non-canonical
+  values fail closed before the SDK, create-only `ifGenerationMatch: 0` is the
+  sole numeric exception; closes the remaining Correction 6 activation
+  blocker) are
   implemented and verified LOCALLY on
   `claude/b25-object-storage-hostinger` — NOT merged, NOT hosted, NOT
   migrated; the hosted stack still runs Google Cloud Storage unchanged, and
@@ -227,9 +233,9 @@ pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-**Authoritative baseline (B25 Correction 6 run, 2026-10-02, filesystem object
-storage driver, no Google Cloud credentials):** API **1509 passed / 0 failed / 1 skipped of 1510 (104 files)**,
-Playwright **152/152**, mobile **142/142** (Correction 5: 1497 / 0 / 1 of 1498, 102 files, mobile 114; Correction 4: 1480 / 0 / 1 of 1481, 100 files; Correction 3: 1466 / 0 / 1 of 1467, 98 files; Correction 2: 1448 / 0 / 1 of 1449, 95 files; Correction 1: 1409 / 0 / 1 of 1410, 88 files; Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
+**Authoritative baseline (B25 Correction 7 run, 2026-10-02, filesystem object
+storage driver, no Google Cloud credentials):** API **1529 passed / 0 failed / 1 skipped of 1530 (105 files)**,
+Playwright **152/152**, mobile **142/142** (Correction 6: 1509 / 0 / 1 of 1510, 104 files, mobile 142; Correction 5: 1497 / 0 / 1 of 1498, 102 files, mobile 114; Correction 4: 1480 / 0 / 1 of 1481, 100 files; Correction 3: 1466 / 0 / 1 of 1467, 98 files; Correction 2: 1448 / 0 / 1 of 1449, 95 files; Correction 1: 1409 / 0 / 1 of 1410, 88 files; Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
 storage-gated set (documents 24, ocr-pipeline reprocess, executive-intelligence
 2) now runs green on the fs driver; every remaining skip is classified in
 `docs/LOCALHOST_DEVELOPMENT.md` §7 (no storage-gated skips remain). Pre-B25

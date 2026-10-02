@@ -53,7 +53,9 @@
 > row-update errors; Correction 5: ambiguous database commit outcomes resolved
 > from the durable row (committed writes never deleted, fence-before-delete
 > rollbacks, branding commit-outcome model); Correction 6: no generationless
-> GCS delete, mobile client safe across an API rollback —
+> GCS delete, mobile client safe across an API rollback; Correction 7: exact
+> GCS generation strings (never converted to numbers; closes the remaining
+> Correction 6 activation blocker) —
 > is implemented and verified **locally only** on
 > `claude/b25-object-storage-hostinger` (`B25_OBJECT_STORAGE.md`): not merged,
 > not hosted, not migrated; the hosted stack still uses Google Cloud Storage,
