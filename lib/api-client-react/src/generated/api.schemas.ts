@@ -48,11 +48,56 @@ export type MetricsSnapshotJobs = {
   deadLettered: number;
 };
 
+export type MetricsSnapshotStorageDriver = typeof MetricsSnapshotStorageDriver[keyof typeof MetricsSnapshotStorageDriver];
+
+
+export const MetricsSnapshotStorageDriver = {
+  fs: 'fs',
+  gcs: 'gcs',
+  memory: 'memory',
+  none: 'none',
+} as const;
+
+/**
+ * Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0).
+ */
+export type MetricsSnapshotStorage = {
+  driver: MetricsSnapshotStorageDriver;
+  /** Whether references without an inventory row may still be served from the legacy bucket. */
+  legacyFallback: boolean;
+  /** Whether strict mirrored writes (filesystem + legacy bucket) are active. */
+  mirror: boolean;
+  /** @minimum 0 */
+  primaryFailures: number;
+  /** @minimum 0 */
+  legacyFallbackReads: number;
+  /** @minimum 0 */
+  mirrorFailures: number;
+  /** @minimum 0 */
+  migrationVerifyFailures: number;
+  /** @minimum 0 */
+  deleteFailures: number;
+  /**
+     * Reserved or uploaded-but-not-yet-attached objects.
+     * @minimum 0
+     * @nullable
+     */
+  pendingUploads: number | null;
+  /**
+     * Tombstoned objects whose bytes are still being removed.
+     * @minimum 0
+     * @nullable
+     */
+  pendingDeletes: number | null;
+};
+
 export interface MetricsSnapshot {
   uptimeSeconds: number;
   timestamp: string;
   requests: MetricsSnapshotRequests;
   jobs: MetricsSnapshotJobs;
+  /** Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0). */
+  storage: MetricsSnapshotStorage;
 }
 
 export interface SuccessResponse {
@@ -5849,8 +5894,20 @@ export interface DocumentUploadUrlInput {
 }
 
 export interface DocumentUploadUrlResponse {
+  /** Opaque, short-lived capability URL — PUT the raw file bytes here with the file's Content-Type. */
   uploadURL: string;
+  /** Opaque object handle (`/objects/{id}`) bound to the caller's tenant; echo it back unchanged when creating the document or version. */
   objectPath: string;
+}
+
+export interface FileUploadReceipt {
+  /**
+     * Plaintext bytes stored (verified).
+     * @minimum 0
+     */
+  sizeBytes: number;
+  /** Lowercase hex SHA-256 of the stored plaintext (for client-side verification). */
+  sha256: string;
 }
 
 export interface DocumentDownloadResponse {

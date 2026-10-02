@@ -7,10 +7,13 @@
  */
 import type { MetricsSnapshotJobs } from './metricsSnapshotJobs';
 import type { MetricsSnapshotRequests } from './metricsSnapshotRequests';
+import type { MetricsSnapshotStorage } from './metricsSnapshotStorage';
 
 export interface MetricsSnapshot {
   uptimeSeconds: number;
   timestamp: Date;
   requests: MetricsSnapshotRequests;
   jobs: MetricsSnapshotJobs;
+  /** Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0). */
+  storage: MetricsSnapshotStorage;
 }

@@ -148,6 +148,7 @@ import type {
   ExportScheduleInput,
   ExportScheduleList,
   ExportScheduleUpdate,
+  FileUploadReceipt,
   FollowUp,
   FollowUpInput,
   FollowUpList,
@@ -610,6 +611,157 @@ export function useGetMetrics<TData = Awaited<ReturnType<typeof getMetrics>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMetricsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUploadFileBytesUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/uploads/${id}`
+}
+
+/**
+ * The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the PUT operation and expires; the object must still be awaiting its upload. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Clients do not call this route by hand — they PUT to the opaque `uploadURL` exactly as returned.
+ * @summary Upload the bytes of a reserved object (capability URL)
+ */
+export const uploadFileBytes = async (id: string,
+    uploadFileBytesBody: Blob, options?: RequestInit): Promise<FileUploadReceipt> => {
+
+  return customFetch<FileUploadReceipt>(getUploadFileBytesUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: JSON.stringify(
+      uploadFileBytesBody,)
+  }
+);}
+
+
+
+
+export const getUploadFileBytesMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadFileBytes>>, TError,{id: string;data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadFileBytes>>, TError,{id: string;data: BodyType<Blob>}, TContext> => {
+
+const mutationKey = ['uploadFileBytes'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadFileBytes>>, {id: string;data: BodyType<Blob>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  uploadFileBytes(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadFileBytesMutationResult = NonNullable<Awaited<ReturnType<typeof uploadFileBytes>>>
+    export type UploadFileBytesMutationBody = BodyType<Blob>
+    export type UploadFileBytesMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Upload the bytes of a reserved object (capability URL)
+ */
+export const useUploadFileBytes = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadFileBytes>>, TError,{id: string;data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadFileBytes>>,
+        TError,
+        {id: string;data: BodyType<Blob>},
+        TContext
+      > => {
+      return useMutation(getUploadFileBytesMutationOptions(options));
+    }
+
+export const getDownloadFileBytesUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}`
+}
+
+/**
+ * The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the GET operation and expires; the object must still be active (a deleted object answers 404 even with a valid token). The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. `HEAD` is supported.
+ * @summary Download the bytes of a stored object (capability URL)
+ */
+export const downloadFileBytes = async (id: string, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadFileBytesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadFileBytesQueryKey = (id: string,) => {
+    return [
+    `/api/files/${id}`
+    ] as const;
+    }
+
+
+export const getDownloadFileBytesQueryOptions = <TData = Awaited<ReturnType<typeof downloadFileBytes>>, TError = ErrorType<ErrorResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadFileBytes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadFileBytesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadFileBytes>>> = ({ signal }) => downloadFileBytes(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadFileBytes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadFileBytesQueryResult = NonNullable<Awaited<ReturnType<typeof downloadFileBytes>>>
+export type DownloadFileBytesQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Download the bytes of a stored object (capability URL)
+ */
+
+export function useDownloadFileBytes<TData = Awaited<ReturnType<typeof downloadFileBytes>>, TError = ErrorType<ErrorResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadFileBytes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadFileBytesQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -23858,7 +24010,8 @@ export const getRequestDocumentUploadUrlUrl = () => {
 }
 
 /**
- * @summary Request a presigned upload URL for a document file
+ * Validates the declared type and size, reserves an object bound to the caller's tenant and returns a short-lived capability `uploadURL` (PUT the raw bytes there with the file's `Content-Type`) plus the opaque `objectPath` handle to echo back on `POST /documents` / `POST /documents/{id}/versions`. Both values are opaque — never construct, persist or share them (Batch 25: served by the API's `/files` routes; no cloud-provider URL).
+ * @summary Request an upload URL for a document file
  */
 export const requestDocumentUploadUrl = async (documentUploadUrlInput: DocumentUploadUrlInput, options?: RequestInit): Promise<DocumentUploadUrlResponse> => {
 
@@ -23907,7 +24060,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RequestDocumentUploadUrlMutationError = ErrorType<unknown>
 
     /**
- * @summary Request a presigned upload URL for a document file
+ * @summary Request an upload URL for a document file
  */
 export const useRequestDocumentUploadUrl = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestDocumentUploadUrl>>, TError,{data: BodyType<DocumentUploadUrlInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -24522,7 +24675,8 @@ export const getGetDocumentDownloadUrlUrl = (id: number,) => {
 }
 
 /**
- * @summary Get a signed download/preview URL for a document's current version
+ * The returned `url` is a short-lived, single-object capability URL served by the API itself (`GET /files/{id}`); it is opaque to clients and must be fetched promptly, never persisted.
+ * @summary Get a short-lived download/preview URL for a document's current version
  */
 export const getDocumentDownloadUrl = async (id: number, options?: RequestInit): Promise<DocumentDownloadResponse> => {
 
@@ -24569,7 +24723,7 @@ export type GetDocumentDownloadUrlQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get a signed download/preview URL for a document's current version
+ * @summary Get a short-lived download/preview URL for a document's current version
  */
 
 export function useGetDocumentDownloadUrl<TData = Awaited<ReturnType<typeof getDocumentDownloadUrl>>, TError = ErrorType<unknown>>(
@@ -24600,7 +24754,8 @@ export const getGetDocumentVersionDownloadUrlUrl = (id: number,
 }
 
 /**
- * @summary Get a signed download/preview URL for a specific document version
+ * Same contract as `GET /documents/{id}/download` — an opaque, short-lived capability URL served by the API.
+ * @summary Get a short-lived download/preview URL for a specific document version
  */
 export const getDocumentVersionDownloadUrl = async (id: number,
     versionId: number, options?: RequestInit): Promise<DocumentDownloadResponse> => {
@@ -24650,7 +24805,7 @@ export type GetDocumentVersionDownloadUrlQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get a signed download/preview URL for a specific document version
+ * @summary Get a short-lived download/preview URL for a specific document version
  */
 
 export function useGetDocumentVersionDownloadUrl<TData = Awaited<ReturnType<typeof getDocumentVersionDownloadUrl>>, TError = ErrorType<unknown>>(
@@ -25049,7 +25204,8 @@ export const getGetExportRunDownloadUrlUrl = (id: number,) => {
 }
 
 /**
- * @summary Get a signed download URL for a completed export run
+ * The returned `url` is a short-lived, single-object capability URL served by the API itself (`GET /files/{id}`); opaque to clients, never persisted.
+ * @summary Get a short-lived download URL for a completed export run
  */
 export const getExportRunDownloadUrl = async (id: number, options?: RequestInit): Promise<ExportDownloadResponse> => {
 
@@ -25096,7 +25252,7 @@ export type GetExportRunDownloadUrlQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get a signed download URL for a completed export run
+ * @summary Get a short-lived download URL for a completed export run
  */
 
 export function useGetExportRunDownloadUrl<TData = Awaited<ReturnType<typeof getExportRunDownloadUrl>>, TError = ErrorType<unknown>>(

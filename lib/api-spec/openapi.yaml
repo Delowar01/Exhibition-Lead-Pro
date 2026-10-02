@@ -58,6 +58,8 @@ tags:
     description: Sales territory definitions
   - name: ai
     description: AI platform settings, usage & cost visibility, and provider health
+  - name: files
+    description: "Batch 25 — product-file byte routes. Upload targets and download links are short-lived capability URLs minted by the feature endpoints (documents, exports, executive reports) AFTER the normal authentication, tenant and permission checks; clients treat them as opaque strings and never construct, persist or share them. The API itself serves the bytes — no cloud-provider URL is ever exposed."
   - name: workflows
     description: Deterministic CRM automation — workflow definitions (trigger → conditions → ordered actions) and their execution history. A published definition is active and executes on future matching CRM events; drafts are inactive and editable; archived definitions are inactive terminal history.
 
@@ -109,6 +111,95 @@ paths:
                 $ref: "#/components/schemas/MetricsSnapshot"
         "503":
           description: Job-queue state could not be read (code METRICS_UNAVAILABLE); no metrics are returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # FILES (Batch 25 — capability-URL byte routes)
+  /files/uploads/{id}:
+    put:
+      operationId: uploadFileBytes
+      tags: [files]
+      summary: Upload the bytes of a reserved object (capability URL)
+      description: "The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the PUT operation and expires; the object must still be awaiting its upload. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Clients do not call this route by hand — they PUT to the opaque `uploadURL` exactly as returned."
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Bytes stored and verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileUploadReceipt"
+        "403":
+          description: Capability invalid, expired, for another object/tenant, or the object is no longer awaiting its upload (code STORAGE_UPLOAD_INVALID)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The upload was already completed (code STORAGE_CONFLICT)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: The body exceeds the permitted size for this object kind (code STORAGE_TOO_LARGE)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Object storage is unavailable (code STORAGE_UNAVAILABLE); nothing was stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /files/{id}:
+    get:
+      operationId: downloadFileBytes
+      tags: [files]
+      summary: Download the bytes of a stored object (capability URL)
+      description: "The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the GET operation and expires; the object must still be active (a deleted object answers 404 even with a valid token). The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. `HEAD` is supported."
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The object bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: Capability invalid or expired (code STORAGE_DOWNLOAD_INVALID)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The object no longer exists (deleted, never completed, or not this tenant's)
           content:
             application/json:
               schema:
@@ -7062,7 +7153,8 @@ paths:
     post:
       operationId: requestDocumentUploadUrl
       tags: [documents]
-      summary: Request a presigned upload URL for a document file
+      summary: Request an upload URL for a document file
+      description: "Validates the declared type and size, reserves an object bound to the caller's tenant and returns a short-lived capability `uploadURL` (PUT the raw bytes there with the file's `Content-Type`) plus the opaque `objectPath` handle to echo back on `POST /documents` / `POST /documents/{id}/versions`. Both values are opaque — never construct, persist or share them (Batch 25: served by the API's `/files` routes; no cloud-provider URL)."
       requestBody:
         required: true
         content:
@@ -7280,7 +7372,8 @@ paths:
     get:
       operationId: getDocumentDownloadUrl
       tags: [documents]
-      summary: Get a signed download/preview URL for a document's current version
+      summary: Get a short-lived download/preview URL for a document's current version
+      description: "The returned `url` is a short-lived, single-object capability URL served by the API itself (`GET /files/{id}`); it is opaque to clients and must be fetched promptly, never persisted."
       parameters:
         - name: id
           in: path
@@ -7299,7 +7392,8 @@ paths:
     get:
       operationId: getDocumentVersionDownloadUrl
       tags: [documents]
-      summary: Get a signed download/preview URL for a specific document version
+      summary: Get a short-lived download/preview URL for a specific document version
+      description: "Same contract as `GET /documents/{id}/download` — an opaque, short-lived capability URL served by the API."
       parameters:
         - name: id
           in: path
@@ -7430,7 +7524,8 @@ paths:
     get:
       operationId: getExportRunDownloadUrl
       tags: [exports]
-      summary: Get a signed download URL for a completed export run
+      summary: Get a short-lived download URL for a completed export run
+      description: "The returned `url` is a short-lived, single-object capability URL served by the API itself (`GET /files/{id}`); opaque to clients, never persisted."
       parameters:
         - name: id
           in: path
@@ -8294,7 +8389,7 @@ components:
 
     MetricsSnapshot:
       type: object
-      required: [uptimeSeconds, timestamp, requests, jobs]
+      required: [uptimeSeconds, timestamp, requests, jobs, storage]
       properties:
         uptimeSeconds:
           type: integer
@@ -8345,6 +8440,43 @@ components:
               type: integer
             deadLettered:
               type: integer
+        storage:
+          type: object
+          description: "Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0)."
+          required: [driver, legacyFallback, mirror, primaryFailures, legacyFallbackReads, mirrorFailures, migrationVerifyFailures, deleteFailures, pendingUploads, pendingDeletes]
+          properties:
+            driver:
+              type: string
+              enum: [fs, gcs, memory, none]
+            legacyFallback:
+              type: boolean
+              description: Whether references without an inventory row may still be served from the legacy bucket.
+            mirror:
+              type: boolean
+              description: Whether strict mirrored writes (filesystem + legacy bucket) are active.
+            primaryFailures:
+              type: integer
+              minimum: 0
+            legacyFallbackReads:
+              type: integer
+              minimum: 0
+            mirrorFailures:
+              type: integer
+              minimum: 0
+            migrationVerifyFailures:
+              type: integer
+              minimum: 0
+            deleteFailures:
+              type: integer
+              minimum: 0
+            pendingUploads:
+              type: ["integer", "null"]
+              minimum: 0
+              description: Reserved or uploaded-but-not-yet-attached objects.
+            pendingDeletes:
+              type: ["integer", "null"]
+              minimum: 0
+              description: Tombstoned objects whose bytes are still being removed.
 
     SuccessResponse:
       type: object
@@ -16058,8 +16190,22 @@ components:
       properties:
         uploadURL:
           type: string
+          description: "Opaque, short-lived capability URL — PUT the raw file bytes here with the file's Content-Type."
         objectPath:
           type: string
+          description: "Opaque object handle (`/objects/{id}`) bound to the caller's tenant; echo it back unchanged when creating the document or version."
+
+    FileUploadReceipt:
+      type: object
+      required: [sizeBytes, sha256]
+      properties:
+        sizeBytes:
+          type: integer
+          minimum: 0
+          description: Plaintext bytes stored (verified).
+        sha256:
+          type: string
+          description: Lowercase hex SHA-256 of the stored plaintext (for client-side verification).
 
     DocumentDownloadResponse:
       type: object

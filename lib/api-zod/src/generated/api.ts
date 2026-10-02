@@ -34,6 +34,20 @@ export const ReadinessCheckResponse = zod.object({
  */
 export const getMetricsResponseJobsPendingMin = 0;
 
+export const getMetricsResponseStoragePrimaryFailuresMin = 0;
+
+export const getMetricsResponseStorageLegacyFallbackReadsMin = 0;
+
+export const getMetricsResponseStorageMirrorFailuresMin = 0;
+
+export const getMetricsResponseStorageMigrationVerifyFailuresMin = 0;
+
+export const getMetricsResponseStorageDeleteFailuresMin = 0;
+
+export const getMetricsResponseStoragePendingUploadsMin = 0;
+
+export const getMetricsResponseStoragePendingDeletesMin = 0;
+
 
 
 export const GetMetricsResponse = zod.object({
@@ -59,7 +73,46 @@ export const GetMetricsResponse = zod.object({
   "completed": zod.number(),
   "failed": zod.number(),
   "deadLettered": zod.number()
+}),
+  "storage": zod.object({
+  "driver": zod.enum(['fs', 'gcs', 'memory', 'none']),
+  "legacyFallback": zod.boolean().describe('Whether references without an inventory row may still be served from the legacy bucket.'),
+  "mirror": zod.boolean().describe('Whether strict mirrored writes (filesystem + legacy bucket) are active.'),
+  "primaryFailures": zod.number().min(getMetricsResponseStoragePrimaryFailuresMin),
+  "legacyFallbackReads": zod.number().min(getMetricsResponseStorageLegacyFallbackReadsMin),
+  "mirrorFailures": zod.number().min(getMetricsResponseStorageMirrorFailuresMin),
+  "migrationVerifyFailures": zod.number().min(getMetricsResponseStorageMigrationVerifyFailuresMin),
+  "deleteFailures": zod.number().min(getMetricsResponseStorageDeleteFailuresMin),
+  "pendingUploads": zod.number().min(getMetricsResponseStoragePendingUploadsMin).nullable().describe('Reserved or uploaded-but-not-yet-attached objects.'),
+  "pendingDeletes": zod.number().min(getMetricsResponseStoragePendingDeletesMin).nullable().describe('Tombstoned objects whose bytes are still being removed.')
+}).describe('Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0).')
 })
+
+
+/**
+ * The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the PUT operation and expires; the object must still be awaiting its upload. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Clients do not call this route by hand — they PUT to the opaque `uploadURL` exactly as returned.
+ * @summary Upload the bytes of a reserved object (capability URL)
+ */
+export const UploadFileBytesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const uploadFileBytesResponseSizeBytesMin = 0;
+
+
+
+export const UploadFileBytesResponse = zod.object({
+  "sizeBytes": zod.number().min(uploadFileBytesResponseSizeBytesMin).describe('Plaintext bytes stored (verified).'),
+  "sha256": zod.string().describe('Lowercase hex SHA-256 of the stored plaintext (for client-side verification).')
+})
+
+
+/**
+ * The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the GET operation and expires; the object must still be active (a deleted object answers 404 even with a valid token). The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. `HEAD` is supported.
+ * @summary Download the bytes of a stored object (capability URL)
+ */
+export const DownloadFileBytesParams = zod.object({
+  "id": zod.coerce.string().uuid()
 })
 
 
@@ -10203,7 +10256,8 @@ export const GetDocumentCategoriesResponse = zod.object({
 
 
 /**
- * @summary Request a presigned upload URL for a document file
+ * Validates the declared type and size, reserves an object bound to the caller's tenant and returns a short-lived capability `uploadURL` (PUT the raw bytes there with the file's `Content-Type`) plus the opaque `objectPath` handle to echo back on `POST /documents` / `POST /documents/{id}/versions`. Both values are opaque — never construct, persist or share them (Batch 25: served by the API's `/files` routes; no cloud-provider URL).
+ * @summary Request an upload URL for a document file
  */
 export const RequestDocumentUploadUrlBody = zod.object({
   "fileName": zod.string(),
@@ -10212,8 +10266,8 @@ export const RequestDocumentUploadUrlBody = zod.object({
 })
 
 export const RequestDocumentUploadUrlResponse = zod.object({
-  "uploadURL": zod.string(),
-  "objectPath": zod.string()
+  "uploadURL": zod.string().describe('Opaque, short-lived capability URL — PUT the raw file bytes here with the file\'s Content-Type.'),
+  "objectPath": zod.string().describe('Opaque object handle (`\/objects\/{id}`) bound to the caller\'s tenant; echo it back unchanged when creating the document or version.')
 })
 
 
@@ -10521,7 +10575,8 @@ export const AddDocumentVersionBody = zod.object({
 
 
 /**
- * @summary Get a signed download/preview URL for a document's current version
+ * The returned `url` is a short-lived, single-object capability URL served by the API itself (`GET /files/{id}`); it is opaque to clients and must be fetched promptly, never persisted.
+ * @summary Get a short-lived download/preview URL for a document's current version
  */
 export const GetDocumentDownloadUrlParams = zod.object({
   "id": zod.coerce.number()
@@ -10535,7 +10590,8 @@ export const GetDocumentDownloadUrlResponse = zod.object({
 
 
 /**
- * @summary Get a signed download/preview URL for a specific document version
+ * Same contract as `GET /documents/{id}/download` — an opaque, short-lived capability URL served by the API.
+ * @summary Get a short-lived download/preview URL for a specific document version
  */
 export const GetDocumentVersionDownloadUrlParams = zod.object({
   "id": zod.coerce.number(),
@@ -10665,7 +10721,8 @@ export const ListExportRunsResponse = zod.object({
 
 
 /**
- * @summary Get a signed download URL for a completed export run
+ * The returned `url` is a short-lived, single-object capability URL served by the API itself (`GET /files/{id}`); opaque to clients, never persisted.
+ * @summary Get a short-lived download URL for a completed export run
  */
 export const GetExportRunDownloadUrlParams = zod.object({
   "id": zod.coerce.number()

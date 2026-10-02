@@ -7,6 +7,8 @@
  */
 
 export interface DocumentUploadUrlResponse {
+  /** Opaque, short-lived capability URL — PUT the raw file bytes here with the file's Content-Type. */
   uploadURL: string;
+  /** Opaque object handle (`/objects/{id}`) bound to the caller's tenant; echo it back unchanged when creating the document or version. */
   objectPath: string;
 }
