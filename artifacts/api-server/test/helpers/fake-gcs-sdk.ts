@@ -11,11 +11,15 @@
 //                    the provider may still commit later via commitPending
 //   • onWriteStart / interceptFinal hooks observe the exact moment the provider
 //     request starts / is about to commit (ordering proofs)
+//   • "no-generation" (Correction 6): the provider commits the object but the
+//     write stream's file metadata exposes NO generation (the SDK contract makes
+//     it optional); afterCommit observes the commit; failHead makes getMetadata
+//     fail for a name (generation recovery cannot complete)
 // Never used in production.
 import { Readable, Writable } from "node:stream";
 import type { Storage } from "@google-cloud/storage";
 
-export type FailMode = "transport" | "after-commit" | "late-commit" | "hold" | null;
+export type FailMode = "transport" | "after-commit" | "late-commit" | "hold" | "no-generation" | null;
 
 export interface FakeObject {
   bytes: Buffer;
@@ -36,6 +40,10 @@ export class FakeBucketStore {
   onWriteStart?: (name: string) => void;
   /** Awaited right before the provider decides the request's outcome. */
   interceptFinal?: (name: string) => Promise<void> | void;
+  /** Called right after a request's object was committed (before the client learns the outcome). */
+  afterCommit?: (name: string, object: FakeObject) => void;
+  /** When it returns an error for a name, getMetadata (HEAD) rejects with it. */
+  failHead: (name: string) => Error | null = () => null;
 
   /** Place an object the way an unrelated writer would (no ownership marker). */
   seed(name: string, bytes: Buffer, contentType = "application/octet-stream", metadata: Record<string, string> = {}): FakeObject {
@@ -95,7 +103,8 @@ class FakeFile {
             const bytes = Buffer.concat(chunks);
             const o = { bytes, generation, contentType: opts?.contentType ?? "application/octet-stream", metadata: { ...(opts?.metadata?.metadata ?? {}) } };
             store.objects.set(name, o);
-            self.metadata = { generation: String(generation), size: String(bytes.length), metadata: { ...o.metadata } };
+            self.metadata = mode === "no-generation" ? { size: String(bytes.length), metadata: { ...o.metadata } } : { generation: String(generation), size: String(bytes.length), metadata: { ...o.metadata } };
+            store.afterCommit?.(name, o);
             return o;
           };
           if (mode === "late-commit") {
@@ -128,6 +137,8 @@ class FakeFile {
     this.store.objects.delete(this.name);
   }
   async getMetadata() {
+    const injected = this.store.failHead(this.name);
+    if (injected) throw injected;
     const o = this.store.objects.get(this.name);
     if (!o) throw apiError(404, "Not Found");
     return [{ size: String(o.bytes.length), contentType: o.contentType, generation: String(o.generation), metadata: { ...o.metadata } }];
