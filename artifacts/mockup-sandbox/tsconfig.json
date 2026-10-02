@@ -11,8 +11,20 @@
     "esModuleInterop": true,
     "allowImportingTsExtensions": true,
     "types": ["node", "vite/client"],
+    // B24: one React type identity for this program. Transitive packages whose
+    // peer is only `react` (lucide-react, react-day-picker) bind to the copy of
+    // @types/react hoisted into pnpm's virtual store (the mobile app's 19.1.x pin),
+    // while this package resolves the catalog's 19.2.x — two unrelated `Ref<T>`
+    // types. Mapping the bare specifiers to this package's own @types/react makes
+    // every import resolve to the same declaration. Vite does not read `paths`
+    // (its `@` alias lives in vite.config.ts), so runtime resolution is unchanged.
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "react/jsx-dev-runtime": ["./node_modules/@types/react/jsx-dev-runtime"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/client": ["./node_modules/@types/react-dom/client"]
     }
   }
 }
