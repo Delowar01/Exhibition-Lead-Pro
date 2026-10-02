@@ -9,7 +9,8 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "repair-subscriptions": "tsx ./scripts/repair-subscriptions.ts"
+    "repair-subscriptions": "tsx ./scripts/repair-subscriptions.ts",
+    "migrate-storage": "tsx ./scripts/migrate-storage.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.21.0",
