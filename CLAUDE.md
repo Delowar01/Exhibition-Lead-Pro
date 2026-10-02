@@ -136,8 +136,12 @@ Center / Workflow Intelligence / Executive Intelligence.
   product object storage off Google Cloud (owner decision: *Option B — remove
   Google Cloud completely*; proceeds without the second backup VPS).
   Phase 1 (provider-neutral storage contract, encrypted filesystem driver,
-  object inventory, API-mediated capability URLs, lifecycle/tombstones,
-  migration tooling) is implemented and verified LOCALLY on
+  object inventory, authenticated private byte routes, lifecycle/tombstones,
+  migration tooling) plus **Correction 1** (automatic pre-B25 compatibility
+  while GCS is primary, no credentials in URLs, lease-based race-free
+  uploads, primary+mirror rollback cleanup, persisted-copy rollback to GCS,
+  read-only migration dry-run/verify, duplicate-reference detection) are
+  implemented and verified LOCALLY on
   `claude/b25-object-storage-hostinger` — NOT merged, NOT hosted, NOT
   migrated; the hosted stack still runs Google Cloud Storage unchanged, and
   GCS remains in the code only as the temporary legacy / migration / fallback
@@ -200,9 +204,9 @@ pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-**Authoritative baseline (B25 Phase 1 run, 2026-10-02, filesystem object
-storage driver, no Google Cloud credentials):** API **1368 passed / 0 failed / 1 skipped of 1369 (82 files)**,
-Playwright **152/152**, mobile **114/114**. The formerly
+**Authoritative baseline (B25 Correction 1 run, 2026-10-02, filesystem object
+storage driver, no Google Cloud credentials):** API **1409 passed / 0 failed / 1 skipped of 1410 (88 files)**,
+Playwright **152/152**, mobile **114/114** (B25 Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
 storage-gated set (documents 24, ocr-pipeline reprocess, executive-intelligence
 2) now runs green on the fs driver; every remaining skip is classified in
 `docs/LOCALHOST_DEVELOPMENT.md` §7 (no storage-gated skips remain). Pre-B25

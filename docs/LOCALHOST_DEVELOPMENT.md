@@ -189,7 +189,12 @@ in-process memory driver outside production: uploads work for one process and
 nothing survives a restart (enough for the formerly storage-gated suites, not
 for the B25 suite). Never point a local run at the hosted bucket; the Google
 variables in `.env.example` §1d exist only for the temporary legacy driver.
-Details and the hosted plan: `docs/B25_OBJECT_STORAGE.md`.
+Private file bytes (`/api/files/...`) require the normal session: there is no
+credential in any URL (B25 Correction 1), so a hand-written client must send
+`Authorization: Bearer …` on downloads and additionally the `X-Storage-Capability`
+header (the `uploadToken` from `/documents/upload-url`) on uploads — see
+`test/documents.test.ts` `uploadFile` for the exact flow. Details and the
+hosted plan: `docs/B25_OBJECT_STORAGE.md`.
 
 ## 6. Mobile app (Expo)
 
@@ -234,13 +239,15 @@ pnpm --filter @workspace/web-app run build      # PASS → dist/public (env-free
 maintained** (other documents point here; `docs/reports/` are archived
 point-in-time reports and keep their historical counts).
 
-| Suite | B25 Phase 1 run (2026-10-02, fs object-storage driver, no Google Cloud credentials) | B24 run (2026-10-02, no object storage) | Pre-B24 reference (B23 Correction 1, 2026-09-18) |
+| Suite | B25 Correction 1 run (2026-10-02, fs object-storage driver, no Google Cloud credentials) | B25 Phase 1 run (2026-10-02, fs driver) | B24 run (2026-10-02, no object storage) |
 |---|---|---|---|
-| API (`vitest run`, once, API started with `LOGIN_RATE_MAX=1000`, `JOBS_DRIVER=postgres` and the fs driver) | **1368 passed / 0 failed / 1 skipped of 1369 (82 files)** | 1248 passed / 9 documented storage-gated failures / 28 skipped of 1285 | 1234 passed / 9 failed / 28 skipped of 1271 |
+| API (`vitest run`, once, API started with `LOGIN_RATE_MAX=1000`, `JOBS_DRIVER=postgres` and the fs driver) | **1409 passed / 0 failed / 1 skipped of 1410 (88 files)** | 1368 passed / 0 failed / 1 skipped of 1369 (82 files) | 1248 passed / 9 documented storage-gated failures / 28 skipped of 1285 |
 | Playwright (`playwright test`, chromium) | **152/152** | 152/152 | 152/152 |
 | Mobile (`vitest run`) | **114/114** | 114/114 | 114/114 |
-| Typechecks (libs, api, web, mobile, scripts, pitch-deck, mockup-sandbox; root `pnpm run typecheck`) | **all exit 0** | all exit 0 | root run failed in `mockup-sandbox` (B23 G-10, fixed in B24) |
+| Typechecks (libs, api, web, mobile, scripts, pitch-deck, mockup-sandbox; root `pnpm run typecheck`) | **all exit 0** | all exit 0 | all exit 0 |
 | API / web production builds | **PASS** | PASS | PASS |
+
+Pre-B24 reference (B23 Correction 1, 2026-09-18): API 1234 passed / 9 failed / 28 skipped of 1271, Playwright 152/152, mobile 114/114, root typecheck failed in `mockup-sandbox` (fixed in B24). The 41 tests added by B25 Correction 1 (`b25c1-service` 14, `b25c1-migration` 6, `b25c1-concurrency` 6, `b25c1-scans` 4, `b25c1-files-auth` 6, `unit-files-log-redaction` 4, plus one concurrent-PUT case in `b25-storage`) were red against the Phase 1 head before the fix.
 
 > **No storage-gated subset any more (B25):** the 27 formerly GCS-gated tests
 > (`documents.test.ts` 24, `ocr-pipeline` stored-image reprocess,
