@@ -134,7 +134,10 @@ export class PostgresQueue implements JobQueue {
 
   stats(): QueueStats {
     return {
-      pending: -1, // live counts come from pendingCount() (async); -1 = not tracked synchronously
+      // Waiting work lives in the durable table, not in this process, so the
+      // synchronous view cannot report it: -1 means "not tracked here" and is
+      // never exposed to operators — /metrics reads liveStats() (Batch 24).
+      pending: -1,
       active: this.active.size,
       enqueued: this.counters.enqueued,
       completed: this.counters.completed,
@@ -143,12 +146,26 @@ export class PostgresQueue implements JobQueue {
     };
   }
 
+  // Every row in `pending` state — runnable now, delayed (available_at in the
+  // future) or waiting for a scheduled retry. A plain SELECT outside any
+  // transaction or lease. An unreadable or malformed result throws: callers must
+  // report the outage, never a substitute number.
   async pendingCount(): Promise<number> {
     const [row] = await this.db
       .select({ n: sql<number>`count(*)::int` })
       .from(jobQueueTable)
       .where(eq(jobQueueTable.status, "pending"));
-    return row?.n ?? 0;
+    if (!row || !Number.isInteger(row.n) || row.n < 0) {
+      throw new Error("durable job-queue pending count unavailable");
+    }
+    return row.n;
+  }
+
+  // Live operator snapshot (Batch 24): the process counters plus the durable
+  // pending count. Rejects when the table cannot be read.
+  async liveStats(): Promise<QueueStats> {
+    const pending = await this.pendingCount();
+    return { ...this.stats(), pending };
   }
 
   // Deliberate operator/service-level requeue of a dead-lettered job. Never

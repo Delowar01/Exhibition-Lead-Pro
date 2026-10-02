@@ -553,6 +553,7 @@ export const getGetMetricsUrl = () => {
 }
 
 /**
+ * Request counters of this process plus the LIVE job-queue view. `jobs.pending` is read from the queue's authoritative state (the durable job_queue table under the postgres driver, process memory under in-process) and is never negative; when that state cannot be read the endpoint answers 503 METRICS_UNAVAILABLE instead of a substitute number (Batch 24).
  * @summary Operational metrics snapshot (platform owner only)
  */
 export const getMetrics = async ( options?: RequestInit): Promise<MetricsSnapshot> => {
@@ -577,7 +578,7 @@ export const getGetMetricsQueryKey = () => {
     }
 
 
-export const getGetMetricsQueryOptions = <TData = Awaited<ReturnType<typeof getMetrics>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetMetricsQueryOptions = <TData = Awaited<ReturnType<typeof getMetrics>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -596,14 +597,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetMetricsQueryResult = NonNullable<Awaited<ReturnType<typeof getMetrics>>>
-export type GetMetricsQueryError = ErrorType<unknown>
+export type GetMetricsQueryError = ErrorType<ErrorResponse>
 
 
 /**
  * @summary Operational metrics snapshot (platform owner only)
  */
 
-export function useGetMetrics<TData = Awaited<ReturnType<typeof getMetrics>>, TError = ErrorType<unknown>>(
+export function useGetMetrics<TData = Awaited<ReturnType<typeof getMetrics>>, TError = ErrorType<ErrorResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMetrics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {

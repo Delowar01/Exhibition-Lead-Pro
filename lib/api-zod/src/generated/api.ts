@@ -29,8 +29,13 @@ export const ReadinessCheckResponse = zod.object({
 
 
 /**
+ * Request counters of this process plus the LIVE job-queue view. `jobs.pending` is read from the queue's authoritative state (the durable job_queue table under the postgres driver, process memory under in-process) and is never negative; when that state cannot be read the endpoint answers 503 METRICS_UNAVAILABLE instead of a substitute number (Batch 24).
  * @summary Operational metrics snapshot (platform owner only)
  */
+export const getMetricsResponseJobsPendingMin = 0;
+
+
+
 export const GetMetricsResponse = zod.object({
   "uptimeSeconds": zod.number(),
   "timestamp": zod.coerce.date(),
@@ -48,7 +53,7 @@ export const GetMetricsResponse = zod.object({
 })
 }),
   "jobs": zod.object({
-  "pending": zod.number(),
+  "pending": zod.number().min(getMetricsResponseJobsPendingMin).describe('Jobs waiting to run, including delayed jobs and retries scheduled for a future time — read live from the queue\'s authoritative state (Batch 24).'),
   "active": zod.number(),
   "enqueued": zod.number(),
   "completed": zod.number(),

@@ -35,7 +35,8 @@ export interface Job<T = unknown> {
 export type JobHandler<T = unknown> = (payload: T, job: Job<T>) => Promise<void>;
 
 export interface QueueStats {
-  // Jobs currently waiting (including those scheduled for a future retry).
+  // Jobs currently waiting, including delayed jobs and retries scheduled for a
+  // future time. In a live snapshot (liveStats) this is never negative.
   pending: number;
   // Jobs currently being processed by a worker.
   active: number;
@@ -58,5 +59,13 @@ export interface JobQueue {
   start(): void;
   // Stop accepting/pumping work. Resolves when in-flight handlers settle (best effort).
   stop(): Promise<void>;
+  // Synchronous counters of THIS process. A driver whose waiting work lives
+  // outside process memory cannot answer `pending` here — operators read
+  // liveStats() instead.
   stats(): QueueStats;
+  // Live operator snapshot (Batch 24): stats() with `pending` taken from the
+  // driver's authoritative state — the durable table for postgres, process memory
+  // for in-process. Rejects when that state cannot be read; callers surface the
+  // failure explicitly and never substitute a number.
+  liveStats(): Promise<QueueStats>;
 }

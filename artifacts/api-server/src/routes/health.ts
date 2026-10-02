@@ -3,7 +3,8 @@ import { HealthCheckResponse, ReadinessCheckResponse } from "@workspace/api-zod"
 import { pool } from "@workspace/db";
 import { config } from "../config.js";
 import { objectStorageClient } from "../lib/objectStorage.js";
-import { snapshot } from "../lib/metrics.js";
+import { liveSnapshot, type MetricsSnapshotData } from "../lib/metrics.js";
+import { AppError } from "../middlewares/errorHandler.js";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
 
 const router: IRouter = Router();
@@ -71,10 +72,20 @@ router.get("/readyz", async (req, res) => {
   res.status(ready ? 200 : 503).json(data);
 });
 
-// Operational metrics snapshot (request counts/latency/error rate + job-queue stats).
-// Gated to platform_owner — operational internals, not a public endpoint.
-router.get("/metrics", requireAuth, requireRole("platform_owner"), (_req, res) => {
-  res.json(snapshot());
+// Operational metrics snapshot (request counts/latency/error rate + LIVE job-queue
+// stats). Gated to platform_owner — operational internals, not a public endpoint.
+// Batch 24: `jobs.pending` comes from the queue's authoritative state (the durable
+// job_queue table under the postgres driver); when that read fails the endpoint
+// answers 503 METRICS_UNAVAILABLE — never a negative, zero or stale substitute.
+router.get("/metrics", requireAuth, requireRole("platform_owner"), async (req, res) => {
+  let data: MetricsSnapshotData;
+  try {
+    data = await liveSnapshot();
+  } catch (err) {
+    req.log.error({ err }, "Operational metrics unavailable: job-queue state could not be read");
+    throw new AppError(503, "Operational metrics are temporarily unavailable", { code: "METRICS_UNAVAILABLE" });
+  }
+  res.json(data);
 });
 
 export default router;

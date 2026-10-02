@@ -92,6 +92,11 @@ export class InProcessQueue implements JobQueue {
     };
   }
 
+  // The in-memory counters ARE this driver's live state (Batch 24).
+  async liveStats(): Promise<QueueStats> {
+    return this.stats();
+  }
+
   // Pulls ready jobs onto free worker slots until the concurrency ceiling is reached.
   private pump(): void {
     if (!this.running) return;

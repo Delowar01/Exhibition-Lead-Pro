@@ -99,6 +99,7 @@ paths:
       operationId: getMetrics
       tags: [health]
       summary: Operational metrics snapshot (platform owner only)
+      description: Request counters of this process plus the LIVE job-queue view. `jobs.pending` is read from the queue's authoritative state (the durable job_queue table under the postgres driver, process memory under in-process) and is never negative; when that state cannot be read the endpoint answers 503 METRICS_UNAVAILABLE instead of a substitute number (Batch 24).
       responses:
         "200":
           description: Success
@@ -106,6 +107,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MetricsSnapshot"
+        "503":
+          description: Job-queue state could not be read (code METRICS_UNAVAILABLE); no metrics are returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # AUTH
   /auth/login:
@@ -8326,6 +8333,8 @@ components:
           properties:
             pending:
               type: integer
+              minimum: 0
+              description: Jobs waiting to run, including delayed jobs and retries scheduled for a future time — read live from the queue's authoritative state (Batch 24).
             active:
               type: integer
             enqueued:
@@ -8356,7 +8365,7 @@ components:
           description: Correlates this response with server logs (also returned as the X-Request-Id header).
         code:
           type: string
-          description: Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when the AI provider holds no credential; no provider call is made).
+          description: Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when the AI provider holds no credential; no provider call is made; METRICS_UNAVAILABLE — 503 when GET /metrics cannot read the job-queue state).
         retryAfterSeconds:
           type: integer
           description: Present on rate-limit responses; mirrors the Retry-After header.

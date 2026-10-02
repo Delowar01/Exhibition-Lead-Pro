@@ -7,6 +7,10 @@
  */
 
 export type MetricsSnapshotJobs = {
+  /**
+     * Jobs waiting to run, including delayed jobs and retries scheduled for a future time — read live from the queue's authoritative state (Batch 24).
+     * @minimum 0
+     */
   pending: number;
   active: number;
   enqueued: number;

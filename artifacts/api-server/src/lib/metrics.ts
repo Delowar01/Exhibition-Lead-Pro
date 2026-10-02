@@ -65,7 +65,16 @@ export interface MetricsSnapshotData {
   jobs: ReturnType<ReturnType<typeof getQueue>["stats"]>;
 }
 
-export function snapshot(): MetricsSnapshotData {
+// Batch 24: the operator snapshot carries the LIVE job-queue view. `pending` is
+// read from the queue's authoritative state (the durable job_queue table under
+// the postgres driver, process memory under in-process) and is never negative.
+// If that state cannot be read the promise rejects — the /metrics route answers
+// 503 METRICS_UNAVAILABLE instead of a fabricated or stale number.
+export async function liveSnapshot(): Promise<MetricsSnapshotData> {
+  const jobs = await getQueue().liveStats();
+  if (!Number.isInteger(jobs.pending) || jobs.pending < 0) {
+    throw new Error("job-queue pending count is not a non-negative integer");
+  }
   return {
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
     timestamp: new Date().toISOString(),
@@ -77,6 +86,6 @@ export function snapshot(): MetricsSnapshotData {
       maxLatencyMs: round2(latencyMaxMs),
       byStatusClass: { ...byStatusClass },
     },
-    jobs: getQueue().stats(),
+    jobs,
   };
 }

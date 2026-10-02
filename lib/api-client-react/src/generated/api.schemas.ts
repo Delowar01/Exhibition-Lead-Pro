@@ -36,6 +36,10 @@ export type MetricsSnapshotRequests = {
 };
 
 export type MetricsSnapshotJobs = {
+  /**
+     * Jobs waiting to run, including delayed jobs and retries scheduled for a future time — read live from the queue's authoritative state (Batch 24).
+     * @minimum 0
+     */
   pending: number;
   active: number;
   enqueued: number;
@@ -70,7 +74,7 @@ export interface ErrorResponse {
   error: string;
   /** Correlates this response with server logs (also returned as the X-Request-Id header). */
   requestId?: string;
-  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when the AI provider holds no credential; no provider call is made). */
+  /** Optional machine-readable error code (e.g. AI_RATE_LIMITED, AI_BUDGET_EXCEEDED, AI_DISABLED, AI_FEATURE_DISABLED, AI_NOT_CONFIGURED — 503 when the AI provider holds no credential; no provider call is made; METRICS_UNAVAILABLE — 503 when GET /metrics cannot read the job-queue state). */
   code?: string;
   /** Present on rate-limit responses; mirrors the Retry-After header. */
   retryAfterSeconds?: number;
