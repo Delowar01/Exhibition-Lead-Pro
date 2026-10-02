@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
-import { db, storageObjectsTable } from "@workspace/db";
+import { db, storageObjectsTable, companiesTable, documentsTable, documentVersionsTable } from "@workspace/db";
 import { config } from "../src/config.js";
 import { MemoryStorageDriver } from "../src/storage/memory-driver.js";
 import { __resetStorageRegistryForTests, __setDriversForTests } from "../src/storage/registry.js";
@@ -42,9 +42,11 @@ type MutableStorageConfig = {
 const os = config.objectStorage as unknown as MutableStorageConfig;
 const original = { ...os };
 
-const COMPANY = 9_000_000 + Math.floor(Math.random() * 900_000);
-const OTHER = COMPANY + 1;
-const companies = [COMPANY, OTHER];
+// Two REAL tenants: pre-B25 document handles are served only to the tenant
+// whose feature row carries them (B25 Correction 1).
+let COMPANY = 0;
+let OTHER = 0;
+const companies: number[] = [];
 
 let primary: MemoryStorageDriver;
 let legacy: MemoryStorageDriver;
@@ -57,25 +59,42 @@ function uploadsRef(): { reference: string; legacyKey: string } {
 async function rows(companyId = COMPANY) {
   return db.select().from(storageObjectsTable).where(eq(storageObjectsTable.companyId, companyId));
 }
+/** A document version of `companyId` carrying `reference` as its object path (what makes a legacy handle "owned"). */
+async function seedDocumentVersion(companyId: number, reference: string): Promise<void> {
+  const [doc] = await db.insert(documentsTable).values({ companyId, entityType: "company", entityId: companyId, name: "legacy", category: "Company Profile" }).returning({ id: documentsTable.id });
+  await db.insert(documentVersionsTable).values({ companyId, documentId: doc.id, versionNumber: 1, objectPath: reference, fileName: "legacy.pdf", fileSize: 1, mimeType: "application/pdf" });
+}
+async function clearTenant(companyId: number): Promise<void> {
+  await db.delete(storageObjectsTable).where(eq(storageObjectsTable.companyId, companyId));
+  await db.delete(documentVersionsTable).where(eq(documentVersionsTable.companyId, companyId));
+  await db.delete(documentsTable).where(eq(documentsTable.companyId, companyId));
+}
 
-beforeAll(() => {
+beforeAll(async () => {
   os.driver = "memory";
   os.bucketId = "fake-bucket";
   os.privateObjectDir = "/fake-bucket/.private";
   os.legacyDelete = false;
+  const stamp = Date.now();
+  const [a] = await db.insert(companiesTable).values({ name: `B25 unit tenant A ${stamp}`, plan: "professional", status: "active" } as never).returning({ id: companiesTable.id });
+  const [b] = await db.insert(companiesTable).values({ name: `B25 unit tenant B ${stamp}`, plan: "professional", status: "active" } as never).returning({ id: companiesTable.id });
+  COMPANY = a.id;
+  OTHER = b.id;
+  companies.push(COMPANY, OTHER);
 });
 
 afterAll(async () => {
   Object.assign(os, original);
   __resetStorageRegistryForTests();
-  await db.delete(storageObjectsTable).where(inArray(storageObjectsTable.companyId, companies));
+  for (const c of companies) await clearTenant(c);
+  if (companies.length) await db.delete(companiesTable).where(inArray(companiesTable.id, companies));
 });
 
 beforeEach(async () => {
   __resetStorageRegistryForTests();
   __resetStorageCountersForTests();
   primary = new MemoryStorageDriver();
-  legacy = new MemoryStorageDriver({ looseKeys: true });
+  legacy = new MemoryStorageDriver({ looseKeys: true, kind: "gcs" });
   __setDriversForTests({ primary, legacy });
   os.legacyFallback = false;
   os.mirror = false;
@@ -84,7 +103,7 @@ beforeEach(async () => {
     const actual = await vi.importActual<typeof import("../src/repositories/storage-objects.repository.js")>("../src/repositories/storage-objects.repository.js");
     return actual.transition(...args);
   });
-  await db.delete(storageObjectsTable).where(inArray(storageObjectsTable.companyId, companies));
+  for (const c of companies) await clearTenant(c);
 });
 
 describe("legacy fallback", () => {
@@ -92,6 +111,7 @@ describe("legacy fallback", () => {
     const { reference, legacyKey } = uploadsRef();
     const bytes = Buffer.from("legacy document bytes");
     await legacy.put(legacyKey, bytes, { contentType: "application/pdf", maxBytes: 1 << 20 });
+    await seedDocumentVersion(COMPANY, reference);
 
     expect(await storage.openByReference({ companyId: COMPANY, kind: "document", reference })).toBeNull();
     expect(await rows()).toHaveLength(0);
@@ -106,7 +126,9 @@ describe("legacy fallback", () => {
     expect(row.legacyKey).toBe(legacyKey);
     expect(row.state).toBe("active");
     expect(row.storageKey).toMatch(new RegExp(`^tenants/${COMPANY}/documents/`));
-    expect(storageCounters().legacyFallbackReads).toBe(1);
+    // one registration (fallback read) + one serve from the legacy copy
+    expect(storageCounters().legacyFallbackReads).toBe(2);
+    expect(storageCounters().legacyRegistrations).toBe(1);
 
     await storage.openByReference({ companyId: COMPANY, kind: "document", reference });
     expect(await rows()).toHaveLength(1);
@@ -125,6 +147,7 @@ describe("legacy fallback", () => {
     os.legacyFallback = true;
     const { reference, legacyKey } = uploadsRef();
     await legacy.put(legacyKey, Buffer.from("x"), { contentType: "text/plain", maxBytes: 1 << 20 });
+    await seedDocumentVersion(COMPANY, reference);
     expect(await storage.openByReference({ companyId: COMPANY, kind: "document", reference })).not.toBeNull();
     await storage.deleteByReference({ companyId: COMPANY, kind: "document", reference });
     const [row] = await rows();
@@ -170,11 +193,12 @@ describe("strict mirrored writes", () => {
     const row = (await repo.findById(stored.objectId))!;
     expect(row.state).toBe("active");
     expect(row.mirrorState).toBe("ok");
+    expect(row.mirrorKey).toBe(`gs://fake-bucket/${row.storageKey}`);
     expect(primary.objects.get(row.storageKey)!.bytes.equals(bytes)).toBe(true);
-    expect(legacy.objects.get(row.storageKey)!.bytes.equals(bytes)).toBe(true);
+    expect(legacy.objects.get(row.mirrorKey!)!.bytes.equals(bytes)).toBe(true);
     await storage.deleteByReference({ companyId: COMPANY, kind: "export", reference: stored.reference });
     expect(primary.objects.has(row.storageKey)).toBe(false);
-    expect(legacy.objects.has(row.storageKey)).toBe(false); // the mirror copy is ours, not a legacy object
+    expect(legacy.objects.has(row.mirrorKey!)).toBe(false); // the mirror copy is ours, not a legacy object
   });
 
   it("a mirror failure fails the write and rolls the primary object back (no committed reference)", async () => {
@@ -206,10 +230,11 @@ describe("write-ahead inventory and failure rollback", () => {
     await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toThrow(/database unavailable/);
     expect(primary.objects.size).toBe(0); // never leaves untracked bytes behind
     const [row] = await rows();
-    expect(row.state).toBe("pending");
+    // B25 Correction 1: the rollback helper settles the row itself (failed, sanitized reason)
+    expect(row.state).toBe("failed");
+    expect(row.lastError).toBe("DB_FAILURE");
     os.pendingTtlMs = 0;
-    const summary = await storage.sweepStorage(new Date(Date.now() + 1000));
-    expect(summary.stalePending).toBe(1);
+    await storage.sweepStorage(new Date(Date.now() + 1000));
     expect((await rows())[0].state).toBe("deleted");
   });
 
@@ -266,13 +291,13 @@ describe("deletion, retries and company purge", () => {
     await repo.update(stale.objectId, { state: "staged", entityType: null, entityId: null });
     const orphan = await storage.storeBuffer({ companyId: COMPANY, kind: "document", contentType: "text/plain", buffer: Buffer.from("orphan"), entityType: "document_version", entityId: 2_147_483_000 });
     os.stagedTtlMs = 0;
-    // entity-orphan detection sees the row whose version no longer exists ...
-    expect((await repo.listEntityOrphans(1000)).map((r) => r.id)).toContain(orphan.objectId);
+    os.pendingTtlMs = 0; // no grace window for the orphan pass
+    // entity-orphan detection sees the row no feature row references any more ...
+    expect((await repo.listEntityOrphans(new Date(Date.now() + 1000), 1000)).map((r) => r.id)).toContain(orphan.objectId);
     const summary = await storage.sweepStorage(new Date(Date.now() + 1000));
     expect(summary.staleStaged).toBe(1);
-    // ... and the sweep settles it (the fake tenant does not exist either, so it is
-    // counted under whichever orphan pass reaches it first — both end deleted).
-    expect(summary.companyOrphans + summary.entityOrphans).toBeGreaterThanOrEqual(1);
+    // ... and the sweep settles it
+    expect(summary.entityOrphans).toBeGreaterThanOrEqual(1);
     expect((await repo.findById(stale.objectId))!.state).toBe("deleted");
     expect((await repo.findById(orphan.objectId))!.state).toBe("deleted");
     expect(primary.objects.size).toBe(0);

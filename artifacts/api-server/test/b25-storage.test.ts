@@ -2,15 +2,17 @@
 // running the FILESYSTEM driver (OBJECT_STORAGE_DRIVER=fs). Requires the same
 // OBJECT_STORAGE_FS_ROOT in the test shell as in the API shell so on-disk
 // effects (probe cleanup, tombstone deletes, company purge) can be asserted.
+// B25 Correction 1: every private byte request carries the normal session;
+// uploads also carry the header-bound capability; URLs hold no credential.
 //
-//   • upload targets are API capability URLs bound to the tenant; bytes stream
-//     through PUT /files/uploads/:id (409 on reuse, 403 on a bad/foreign token,
-//     413 before reading an over-limit body)
+//   • upload targets are credential-free API URLs bound to the tenant + user;
+//     bytes stream through PUT /files/uploads/:id (409 on reuse, 403 on a
+//     missing/foreign capability, 413 before reading an over-limit body)
 //   • a storage failure after reservation never produces a committed reference
 //   • a staged handle can only be attached by its own tenant (400 otherwise)
-//   • downloads are short-lived capability URLs served by the API with safe
-//     headers (no cloud URL, no path, no key); HEAD works; tampered, expired,
-//     mismatched and foreign-tenant tokens are refused
+//   • downloads are credential-free URLs served by the API with safe headers
+//     (no cloud URL, no path, no key); HEAD works; unauthenticated, foreign and
+//     platform-operator requests are refused
 //   • scan images, export runs and branding logos go through the same boundary;
 //     replaced images / logos are tombstoned and their files removed
 //   • company deletion tombstones every object and the durable purge removes files
@@ -40,7 +42,6 @@ import {
   storageObjectsTable,
   auditLogsTable,
 } from "@workspace/db";
-import { mintCapability } from "../src/storage/capability.js";
 
 const BASE = "http://localhost:80/api";
 const PLATFORM = { email: "admin@cardscannerpro.com", password: "Admin123!" };
@@ -94,10 +95,13 @@ async function rowsFor(companyId: number) {
 async function reserve(token: string, fileName: string, contentType: string, size: number) {
   const res = await api("POST", "/documents/upload-url", token, { fileName, contentType, size });
   expect(res.status).toBe(200);
-  return (await json(res)) as { uploadURL: string; objectPath: string };
+  return (await json(res)) as { uploadURL: string; objectPath: string; uploadToken: string };
 }
-async function putBytes(uploadURL: string, bytes: Buffer, contentType = "text/plain", extra: Record<string, string> = {}) {
-  return fetch(uploadURL, { method: "PUT", headers: { "Content-Type": contentType, ...extra }, body: new Uint8Array(bytes) });
+async function putBytes(target: { uploadURL: string; uploadToken: string }, token: string, bytes: Buffer, contentType = "text/plain", extra: Record<string, string> = {}) {
+  return fetch(target.uploadURL, { method: "PUT", headers: { "Content-Type": contentType, Authorization: `Bearer ${token}`, "X-Storage-Capability": target.uploadToken, ...extra }, body: new Uint8Array(bytes) });
+}
+async function getBytes(url: string, token: string | null, method = "GET") {
+  return fetch(url, { method, headers: token ? { Authorization: `Bearer ${token}` } : {} });
 }
 async function createDoc(token: string, entityType: string, entityId: number, category: string, file: { objectPath: string; fileName: string; fileSize: number; mimeType: string }) {
   return api("POST", "/documents", token, { entityType, entityId, category, ...file });
@@ -168,10 +172,12 @@ afterAll(async () => {
 });
 
 describe("B25 — upload targets and byte ingestion", () => {
-  it("reserves an API capability upload URL bound to the tenant (no cloud URL, opaque handle)", async () => {
+  it("reserves a credential-free API upload URL bound to the tenant (no cloud URL, opaque handle, header capability)", async () => {
     const r = await reserve(tokenA, "notes.txt", "text/plain", 12);
-    expect(r.uploadURL).toMatch(/^http:\/\/localhost(:80)?\/api\/files\/uploads\/[0-9a-f-]{36}\?t=[A-Za-z0-9_.-]+$/);
+    expect(r.uploadURL).toMatch(/^http:\/\/localhost(:80)?\/api\/files\/uploads\/[0-9a-f-]{36}$/);
+    expect(r.uploadURL).not.toContain("?");
     expect(r.objectPath).toMatch(/^\/objects\/[0-9a-f-]{36}$/);
+    expect(typeof r.uploadToken).toBe("string");
     expectNoInternals(JSON.stringify(r));
     const [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
     expect(row.companyId).toBe(companyA);
@@ -180,35 +186,38 @@ describe("B25 — upload targets and byte ingestion", () => {
     expect(row.storageKey).toMatch(new RegExp(`^tenants/${companyA}/documents/`));
   });
 
-  it("stores the bytes exactly once and verifies them (409 on reuse, 403 on bad / foreign token)", async () => {
+  it("stores the bytes exactly once and verifies them (409 on reuse, 401/403/404 for missing session, missing capability, foreign tenant)", async () => {
     const bytes = Buffer.from(`hello b25 ${SUFFIX}`);
     const r = await reserve(tokenA, "hello.txt", "text/plain", bytes.length);
-    const put = await putBytes(r.uploadURL, bytes);
+    const put = await putBytes(r, tokenA, bytes);
     expect(put.status).toBe(200);
     const receipt = await json(put);
     expect(receipt).toEqual({ sizeBytes: bytes.length, sha256: sha(bytes) });
     expect(put.headers.get("cache-control")).toBe("no-store");
+    expect(put.headers.get("referrer-policy")).toBe("no-referrer");
     const [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
     expect(row.state).toBe("staged");
     expect(row.sizeBytes).toBe(bytes.length);
     expect(row.sha256).toBe(sha(bytes));
+    expect(row.leaseToken).toBeNull();
     expect(existsSync(onDisk(row.storageKey))).toBe(true);
     expect(readdirSync(path.dirname(onDisk(row.storageKey))).some((n) => n.startsWith(".tmp-"))).toBe(false);
 
-    expect((await putBytes(r.uploadURL, bytes)).status).toBe(409);
-    const tampered = r.uploadURL.slice(0, -2) + (r.uploadURL.endsWith("A") ? "BB" : "AA");
-    expect((await putBytes(tampered, bytes)).status).toBe(403);
-    const noToken = r.uploadURL.split("?")[0];
-    expect((await putBytes(noToken, bytes)).status).toBe(403);
-    // a valid token used on a different object id
+    expect((await putBytes(r, tokenA, bytes)).status).toBe(409);
+    expect((await fetch(r.uploadURL, { method: "PUT", headers: { "Content-Type": "text/plain", "X-Storage-Capability": r.uploadToken }, body: new Uint8Array(bytes) })).status).toBe(401);
     const other = await reserve(tokenA, "other.txt", "text/plain", 4);
-    const swapped = other.uploadURL.replace(/uploads\/[0-9a-f-]{36}/, `uploads/${randomUUID()}`);
-    expect((await putBytes(swapped, Buffer.from("abcd"))).status).toBe(403);
+    expect((await fetch(other.uploadURL, { method: "PUT", headers: { "Content-Type": "text/plain", Authorization: `Bearer ${tokenA}` }, body: new Uint8Array(Buffer.from("abcd")) })).status).toBe(403);
+    expect((await putBytes(other, tokenB, Buffer.from("abcd"))).status).toBe(404);
+    // a valid capability used on a different object id
+    const swapped = { uploadURL: other.uploadURL.replace(/uploads\/[0-9a-f-]{36}/, `uploads/${randomUUID()}`), uploadToken: other.uploadToken };
+    expect((await putBytes(swapped, tokenA, Buffer.from("abcd"))).status).toBe(404);
+    const mismatched = { uploadURL: other.uploadURL, uploadToken: r.uploadToken };
+    expect((await putBytes(mismatched, tokenA, Buffer.from("abcd"))).status).toBe(403);
   });
 
   it("refuses an over-limit upload before reading it and the handle can never be attached", async () => {
     const r = await reserve(tokenA, "big.bin", "application/zip", DOC_LIMIT);
-    const res = await putBytes(r.uploadURL, Buffer.alloc(DOC_LIMIT + 1, 1), "application/zip");
+    const res = await putBytes(r, tokenA, Buffer.alloc(DOC_LIMIT + 1, 1), "application/zip");
     expect(res.status).toBe(413);
     expect((await json(res)).code).toBe("STORAGE_TOO_LARGE");
     const [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
@@ -222,7 +231,7 @@ describe("B25 — upload targets and byte ingestion", () => {
   it("a storage failure after reservation leaves no committed reference; the retry completes the upload", async () => {
     const bytes = Buffer.from("retry me");
     const r = await reserve(tokenA, "retry.txt", "text/plain", bytes.length);
-    const failed = await putBytes(r.uploadURL, bytes, "text/plain", { "x-storage-test-fail": "1" });
+    const failed = await putBytes(r, tokenA, bytes, "text/plain", { "x-storage-test-fail": "1" });
     expect(failed.status).toBe(503);
     expect((await json(failed)).code).toBe("STORAGE_UNAVAILABLE");
     let [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
@@ -230,7 +239,7 @@ describe("B25 — upload targets and byte ingestion", () => {
     expect(existsSync(onDisk(row.storageKey))).toBe(false);
     expect((await createDoc(tokenA, "lead", leadA, "Quotation", { objectPath: r.objectPath, fileName: "retry.txt", fileSize: bytes.length, mimeType: "text/plain" })).status).toBe(400);
 
-    expect((await putBytes(r.uploadURL, bytes)).status).toBe(200);
+    expect((await putBytes(r, tokenA, bytes)).status).toBe(200);
     [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
     expect(row.state).toBe("staged");
     const created = await createDoc(tokenA, "lead", leadA, "Quotation", { objectPath: r.objectPath, fileName: "retry.txt", fileSize: bytes.length, mimeType: "text/plain" });
@@ -241,10 +250,26 @@ describe("B25 — upload targets and byte ingestion", () => {
     expect(row.entityId).toBe((await json(created)).currentVersionId);
   });
 
+  it("two concurrent bodies for one upload intent: exactly one succeeds, the other answers 409, the winner's bytes are kept", async () => {
+    const a = randomBytes(3000);
+    const b = randomBytes(3000);
+    const r = await reserve(tokenA, "race.bin", "application/zip", 3000);
+    const [ra, rb] = await Promise.all([putBytes(r, tokenA, a, "application/zip"), putBytes(r, tokenA, b, "application/zip")]);
+    const statuses = [ra.status, rb.status].sort();
+    expect(statuses).toEqual([200, 409]);
+    const winner = ra.status === 200 ? a : b;
+    const [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
+    expect(row.state).toBe("staged");
+    expect(row.sha256).toBe(sha(winner));
+    expect(row.sizeBytes).toBe(3000);
+    expect(existsSync(onDisk(row.storageKey))).toBe(true);
+    expect(readdirSync(path.dirname(onDisk(row.storageKey))).some((n) => n.startsWith(".tmp-"))).toBe(false);
+  });
+
   it("a staged handle belongs to its tenant: another tenant cannot attach it, a mismatched mimeType is refused", async () => {
     const bytes = Buffer.from("tenant bound");
     const r = await reserve(tokenA, "bound.txt", "text/plain", bytes.length);
-    expect((await putBytes(r.uploadURL, bytes)).status).toBe(200);
+    expect((await putBytes(r, tokenA, bytes)).status).toBe(200);
     const stolen = await createDoc(tokenB, "company", companyB, "Company Profile", { objectPath: r.objectPath, fileName: "bound.txt", fileSize: bytes.length, mimeType: "text/plain" });
     expect(stolen.status).toBe(400);
     expect((await json(stolen)).error).toMatch(/Invalid objectPath/);
@@ -260,60 +285,54 @@ describe("B25 — upload targets and byte ingestion", () => {
   });
 });
 
-describe("B25 — downloads are API capability URLs", () => {
+describe("B25 — downloads are authenticated API URLs", () => {
   let docId = 0;
   let objectId = "";
   const content = Buffer.from(`download me ${SUFFIX}\n`.repeat(50));
 
   beforeAll(async () => {
     const r = await reserve(tokenA, "report.txt", "text/plain", content.length);
-    expect((await putBytes(r.uploadURL, content)).status).toBe(200);
+    expect((await putBytes(r, tokenA, content)).status).toBe(200);
     const created = await createDoc(tokenA, "lead", leadA, "Proposal", { objectPath: r.objectPath, fileName: "report.txt", fileSize: content.length, mimeType: "text/plain" });
     expect(created.status).toBe(201);
     docId = (await json(created)).id;
     objectId = r.objectPath.replace("/objects/", "");
   });
 
-  it("mints a short-lived API URL and serves the bytes with safe headers (HEAD supported)", async () => {
+  it("returns a credential-free API URL and serves the bytes with safe headers (HEAD supported)", async () => {
     const res = await api("GET", `/documents/${docId}/download`, tokenA);
     expect(res.status).toBe(200);
     const body = await json(res);
-    expect(body.url).toMatch(new RegExp(`^http://localhost(:80)?/api/files/${objectId}\\?t=`));
+    expect(body.url).toBe(`http://localhost/api/files/${objectId}`);
     expect(body.fileName).toBe("report.txt");
     expectNoInternals(JSON.stringify(body));
 
-    const file = await fetch(body.url);
+    const file = await getBytes(body.url, tokenA);
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toMatch(/^text\/plain/);
     expect(file.headers.get("content-length")).toBe(String(content.length));
     expect(file.headers.get("content-disposition")).toMatch(/^inline; filename="report.txt"/);
     expect(file.headers.get("cache-control")).toBe("private, no-store, no-transform");
     expect(file.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(file.headers.get("referrer-policy")).toBe("no-referrer");
     for (const h of file.headers.entries()) expectNoInternals(h.join(": "));
     expect(Buffer.from(await file.arrayBuffer()).equals(content)).toBe(true);
 
-    const head = await fetch(body.url, { method: "HEAD" });
+    const head = await getBytes(body.url, tokenA, "HEAD");
     expect(head.status).toBe(200);
     expect(head.headers.get("content-length")).toBe(String(content.length));
     expect((await head.arrayBuffer()).byteLength).toBe(0);
   });
 
-  it("refuses tampered, missing, expired, mismatched and foreign-tenant tokens", async () => {
+  it("refuses unauthenticated, foreign-tenant, platform-operator and query-credential requests", async () => {
     const { url } = await json(await api("GET", `/documents/${docId}/download`, tokenA));
-    const base = url.split("?")[0];
-    expect((await fetch(base)).status).toBe(403);
-    expect((await fetch(`${base}?t=garbage`)).status).toBe(403);
-    expect((await fetch(url.slice(0, -2) + (url.endsWith("A") ? "BB" : "AA"))).status).toBe(403);
-    const past = Math.floor(Date.now() / 1000) - 10;
-    const expired = mintCapability({ op: "get", o: objectId, c: companyA, u: null, exp: past });
-    expect((await fetch(`${base}?t=${encodeURIComponent(expired)}`)).status).toBe(403);
-    const future = Math.floor(Date.now() / 1000) + 60;
-    const putToken = mintCapability({ op: "put", o: objectId, c: companyA, u: null, exp: future });
-    expect((await fetch(`${base}?t=${encodeURIComponent(putToken)}`)).status).toBe(403);
-    const otherObject = mintCapability({ op: "get", o: randomUUID(), c: companyA, u: null, exp: future });
-    expect((await fetch(`${base}?t=${encodeURIComponent(otherObject)}`)).status).toBe(403);
-    const foreignTenant = mintCapability({ op: "get", o: objectId, c: companyB, u: null, exp: future });
-    expect((await fetch(`${base}?t=${encodeURIComponent(foreignTenant)}`)).status).toBe(404);
+    expect((await getBytes(url, null)).status).toBe(401);
+    expect((await getBytes(url, tokenB)).status).toBe(404);
+    expect((await getBytes(url, platformToken)).status).toBe(403);
+    const q = await getBytes(`${url}?t=anything`, tokenA);
+    expect(q.status).toBe(403);
+    expect((await json(q)).code).toBe("STORAGE_QUERY_CREDENTIAL_REJECTED");
+    expect((await getBytes(`http://localhost:80/api/files/${randomUUID()}`, tokenA)).status).toBe(404);
     expect((await api("GET", `/documents/${docId}/download`, tokenB)).status).toBe(404);
   });
 
@@ -370,12 +389,12 @@ describe("B25 — scans, exports and logos use the same boundary", () => {
     expect(existsSync(onDisk(fresh.storageKey))).toBe(true);
   });
 
-  it("writes export artifacts through the boundary and hands out capability download URLs", async () => {
+  it("writes export artifacts through the boundary and hands out authenticated download URLs", async () => {
     const res = await api("POST", "/exports", tokenA, { entityType: "contact", format: "csv" });
     expect(res.status).toBe(201);
     const run = await json(res);
     expect(run.status).toBe("completed");
-    expect(run.downloadUrl).toMatch(/^http:\/\/localhost(:80)?\/api\/files\/[0-9a-f-]{36}\?t=/);
+    expect(run.downloadUrl).toMatch(/^http:\/\/localhost(:80)?\/api\/files\/[0-9a-f-]{36}$/);
     expectNoInternals(JSON.stringify(run));
     const [er] = await db.select().from(exportRunsTable).where(eq(exportRunsTable.id, run.id));
     expect(er.objectPath).toMatch(/^\/objects\/[0-9a-f-]{36}$/);
@@ -385,11 +404,14 @@ describe("B25 — scans, exports and logos use the same boundary", () => {
     expect(row.entityType).toBe("export_run");
     expect(row.entityId).toBe(run.id);
     expect(row.sizeBytes).toBe(er.fileSize);
-    const file = await fetch(run.downloadUrl);
+    const file = await getBytes(run.downloadUrl, tokenA);
     expect(file.status).toBe(200);
-    expect(file.headers.get("content-disposition")).toMatch(/^attachment; filename=/);
+    expect(file.headers.get("content-disposition")).toMatch(/^inline; filename=|^attachment; filename=/);
+    expect(file.headers.get("content-disposition")).toContain(er.fileName!);
     expect(file.headers.get("content-length")).toBe(String(er.fileSize));
     expect((await file.arrayBuffer()).byteLength).toBe(er.fileSize);
+    expect((await getBytes(run.downloadUrl, null)).status).toBe(401);
+    expect((await getBytes(run.downloadUrl, tokenB)).status).toBe(404);
     const again = await api("GET", `/exports/runs/${run.id}/download`, tokenA);
     expect(again.status).toBe(200);
     expect((await json(again)).url).toMatch(/\/api\/files\//);
@@ -433,12 +455,12 @@ describe("B25 — lifecycle, readiness and metrics", () => {
   it("company deletion tombstones every object and the durable purge removes the files", async () => {
     const bytes = Buffer.from("company B file");
     const r = await reserve(tokenB, "b.txt", "text/plain", bytes.length);
-    expect((await putBytes(r.uploadURL, bytes)).status).toBe(200);
+    expect((await putBytes(r, tokenB, bytes)).status).toBe(200);
     const created = await createDoc(tokenB, "company", companyB, "Company Profile", { objectPath: r.objectPath, fileName: "b.txt", fileSize: bytes.length, mimeType: "text/plain" });
     expect(created.status).toBe(201);
     const docB = (await json(created)).id;
     const { url } = await json(await api("GET", `/documents/${docB}/download`, tokenB));
-    expect((await fetch(url)).status).toBe(200);
+    expect((await getBytes(url, tokenB)).status).toBe(200);
     expect((await uploadLogo(tokenB, await png(80, 80), "image/png")).status).toBe(200);
     const before = await rowsFor(companyB);
     const live = before.filter((x) => x.state === "active");
@@ -451,8 +473,6 @@ describe("B25 — lifecycle, readiness and metrics", () => {
     const after = await rowsFor(companyB);
     expect(after.length).toBe(before.length);
     for (const row of after) expect(["deleting", "deleted"]).toContain(row.state);
-    // a capability minted before the deletion no longer serves the file
-    expect((await fetch(url)).status).toBe(404);
     await waitFor(async () => {
       const rows = await rowsFor(companyB);
       return rows.every((x) => x.state === "deleted") && live.every((x) => !existsSync(onDisk(x.storageKey)));
@@ -478,12 +498,14 @@ describe("B25 — lifecycle, readiness and metrics", () => {
     expect(m.storage.driver).toBe("fs");
     expect(m.storage.legacyFallback).toBe(false);
     expect(m.storage.mirror).toBe(false);
-    for (const k of ["primaryFailures", "legacyFallbackReads", "mirrorFailures", "migrationVerifyFailures", "deleteFailures"]) {
+    expect(m.storage.legacyReads).toBe("off");
+    for (const k of ["primaryFailures", "legacyFallbackReads", "mirrorFailures", "migrationVerifyFailures", "deleteFailures", "legacyRegistrations"]) {
       expect(Number.isInteger(m.storage[k]) && m.storage[k] >= 0, k).toBe(true);
     }
     expect(m.storage.primaryFailures).toBeGreaterThanOrEqual(2); // the two armed failures above
     expect(Number.isInteger(m.storage.pendingUploads)).toBe(true);
     expect(Number.isInteger(m.storage.pendingDeletes)).toBe(true);
+    expect(Number.isInteger(m.storage.retainedLegacyObjects)).toBe(true);
     expectNoInternals(JSON.stringify(m));
     expect((await api("GET", "/metrics", tokenA)).status).toBe(403);
   });
@@ -492,7 +514,5 @@ describe("B25 — lifecycle, readiness and metrics", () => {
     expect(companyBDeleted).toBe(true);
     const rows = await db.select({ id: companiesTable.id }).from(companiesTable).where(eq(companiesTable.id, companyB));
     expect(rows).toHaveLength(0);
-    const leftovers = randomBytes(1); // keep the import honest for the helper above
-    expect(leftovers.length).toBe(1);
   });
 });

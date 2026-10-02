@@ -9,7 +9,7 @@ import type { InsertStorageObject, StorageObjectRow } from "@workspace/db";
 import { MemoryStorageDriver } from "../src/storage/memory-driver.js";
 import { runMigration, type InventoryAdapter, type MigrationCandidate, type MigrationSummary } from "../src/storage/migration.js";
 import { __resetStorageCountersForTests, storageCounters } from "../src/storage/metrics.js";
-import type { StorageKind } from "../src/storage/keys.js";
+import { tenantKey, type StorageKind } from "../src/storage/keys.js";
 
 const LIMITS: Record<StorageKind, number> = { document: 1 << 20, export: 1 << 20, report: 1 << 20, scan_image: 1 << 20, branding_logo: 1 << 20 };
 
@@ -27,6 +27,9 @@ function makeRow(partial: Partial<StorageObjectRow> & Pick<StorageObjectRow, "id
     sha256: null,
     state: "active",
     mirrorState: null,
+    mirrorKey: null,
+    leaseToken: null,
+    leaseExpiresAt: null,
     lastError: null,
     createdAt: now,
     updatedAt: now,
@@ -39,6 +42,9 @@ function memoryInventory(initial: StorageObjectRow[] = []) {
   const rows = new Map<string, StorageObjectRow>();
   for (const r of initial) rows.set(r.id, r);
   const adapter: InventoryAdapter = {
+    async findByReference(companyId, kind, reference) {
+      return [...rows.values()].find((r) => r.companyId === companyId && r.kind === kind && r.reference === reference) ?? null;
+    },
     async register(c, { id, storageKey }) {
       const existing = [...rows.values()].find((r) => r.companyId === c.companyId && r.kind === c.kind && r.reference === c.reference);
       if (existing) return existing.state === "active" ? existing : null;
@@ -116,23 +122,29 @@ function run(f: Fixture, inventory: InventoryAdapter, mode: "dry-run" | "copy" |
 beforeEach(() => __resetStorageCountersForTests());
 
 describe("migration — dry run", () => {
-  it("registers every referenced object once and reports present / missing without moving bytes", async () => {
+  it("plans every referenced object once and reports present / missing without registering or moving bytes", async () => {
     const f = await fixture(4, { missing: 1 });
     const inv = memoryInventory();
     const s1 = await run(f, inv.adapter, "dry-run");
     expect(s1.discovered).toBe(4);
-    expect(s1.registered).toBe(4);
+    // B25 Correction 1: dry-run is READ-ONLY — registration is planned, never performed
+    expect(s1.registered).toBe(0);
+    expect(s1.registrationsPlanned).toBe(4);
     expect(s1.counts.planned).toBe(3);
     expect(s1.counts.missing_source).toBe(1);
     expect(s1.complete).toBe(false);
     expect(s1.problems).toHaveLength(1);
     expect(s1.problems[0].status).toBe("missing_source");
     expect(f.target.objects.size).toBe(0);
-    // idempotent registration: a second dry run creates no duplicate rows
+    expect(inv.rows.size).toBe(0);
+    // a second dry run reports the same plan and still writes nothing
     const s2 = await run(f, inv.adapter, "dry-run");
+    expect(inv.rows.size).toBe(0);
+    expect(s2.registrationsPlanned).toBe(4);
+    // copy mode is the only mode that registers (once, on the legacy driver)
+    await run(f, inv.adapter, "copy");
     expect(inv.rows.size).toBe(4);
-    expect(s2.registered).toBe(4);
-    expect([...inv.rows.values()].every((r) => r.driver === "gcs")).toBe(true);
+    expect([...inv.rows.values()].filter((r) => r.driver === "gcs")).toHaveLength(1); // the missing one stays on the legacy driver
     // the summary carries ids / kinds / codes only — never keys or bucket names
     const json = JSON.stringify(s1);
     expect(json).not.toContain("gs://");
@@ -185,9 +197,13 @@ describe("migration — copy", () => {
   it("adopts an identical pre-existing target object and refuses to overwrite a conflicting one", async () => {
     const f = await fixture(2);
     const inv = memoryInventory();
-    await run(f, inv.adapter, "dry-run");
+    // a previous copy run registered both rows and crashed before verifying them
+    for (const c of f.candidates) {
+      const id = randomUUID();
+      await inv.adapter.register(c, { id, storageKey: tenantKey(c.kind, c.companyId, id) });
+    }
     const [rowA, rowB] = [...inv.rows.values()];
-    // A: a previous crashed run already wrote the right bytes
+    // A: that crashed run already wrote the right bytes
     await f.target.put(rowA.storageKey, f.objects.get(rowA.reference)!, { contentType: "application/pdf", maxBytes: LIMITS.document });
     // B: something else lives at B's key
     const foreign = Buffer.from("not the migrated object");

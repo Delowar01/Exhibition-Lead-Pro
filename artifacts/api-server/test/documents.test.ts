@@ -72,8 +72,9 @@ async function api(method: string, path: string, token: string, body?: unknown) 
   });
 }
 
-// Presigned PUT upload helper: mirrors the real client flow (request upload URL →
-// PUT bytes directly to object storage → echo back the normalized objectPath).
+// Upload helper: mirrors the real client flow (request an upload target → PUT the
+// bytes to the API with the normal session + the header-bound capability → echo
+// back the normalized objectPath). B25 Correction 1: no credential in the URL.
 async function uploadFile(
   token: string,
   content: string,
@@ -86,9 +87,13 @@ async function uploadFile(
 
   const urlRes = await api("POST", "/documents/upload-url", token, { fileName, contentType: mimeType, size: fileSize });
   if (urlRes.status !== 200) throw new Error(`upload-url failed: ${urlRes.status}`);
-  const { uploadURL, objectPath } = await urlRes.json();
+  const { uploadURL, uploadToken, objectPath } = await urlRes.json();
 
-  const put = await fetch(uploadURL, { method: "PUT", body: bytes });
+  const put = await fetch(uploadURL, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType, Authorization: `Bearer ${token}`, "X-Storage-Capability": uploadToken },
+    body: bytes,
+  });
   if (!put.ok) throw new Error(`PUT to object storage failed: ${put.status}`);
 
   return { objectPath, fileName, fileSize, mimeType };
@@ -248,13 +253,15 @@ describe("Documents — create, download, metadata", () => {
     expect(body.entityName).toBe(`QA Opportunity ${SUFFIX}`);
   });
 
-  it("returns a signed download URL whose content matches the upload", async () => {
+  it("returns an authenticated download URL whose content matches the upload (no credential in the URL)", async () => {
     const res = await api("GET", `/documents/${docId}/download`, orgToken);
     expect(res.status).toBe(200);
     const { url, fileName, mimeType } = await res.json();
     expect(fileName).toBe("quotation-v1.txt");
     expect(mimeType).toBe("text/plain");
-    const fetched = await fetch(url);
+    expect(url).not.toMatch(/[?&](t|token|capability)=/);
+    expect((await fetch(url)).status).toBe(401); // the bytes need the normal session
+    const fetched = await fetch(url, { headers: { Authorization: `Bearer ${orgToken}` } });
     expect(fetched.status).toBe(200);
     expect(await fetched.text()).toBe(originalContent);
   });
@@ -347,13 +354,13 @@ describe("Documents — versioning (never overwrite)", () => {
     const res = await api("GET", `/documents/${docId}/versions/${v1Id}/download`, orgToken);
     expect(res.status).toBe(200);
     const { url } = await res.json();
-    expect(await (await fetch(url)).text()).toBe(v1Content);
+    expect(await (await fetch(url, { headers: { Authorization: `Bearer ${orgToken}` } })).text()).toBe(v1Content);
   });
 
   it("serves the current v2 bytes via the default download", async () => {
     const res = await api("GET", `/documents/${docId}/download`, orgToken);
     const { url } = await res.json();
-    expect(await (await fetch(url)).text()).toBe(v2Content);
+    expect(await (await fetch(url, { headers: { Authorization: `Bearer ${orgToken}` } })).text()).toBe(v2Content);
   });
 
   it("assigns unique monotonic version numbers under concurrent uploads", async () => {
