@@ -168,7 +168,10 @@ async function deliver(type: string, object: Record<string, unknown>, created: n
 }
 
 function fakeQueue(): JobQueue {
-  return { driver: "fake", register: () => undefined, enqueue: async () => undefined, start: () => undefined, stop: async () => undefined, stats: () => ({ pending: 0, active: 0, enqueued: 0, completed: 0, failed: 0, deadLettered: 0 }) };
+  // Inert queue: nothing is ever enqueued, so both views report the same zeros
+  // from one shared function (B24 Correction 1).
+  const stats = () => ({ pending: 0, active: 0, enqueued: 0, completed: 0, failed: 0, deadLettered: 0 });
+  return { driver: "fake", register: () => undefined, enqueue: async () => undefined, start: () => undefined, stop: async () => undefined, stats, liveStats: async () => stats() };
 }
 
 beforeAll(async () => {

@@ -135,13 +135,17 @@ function captureEnqueueFailures(): Seen {
 
 function fakeQueue() {
   const calls: Array<{ name: string; payload: unknown; opts?: JobOptions }> = [];
+  // One stats function backs both views so they can never drift: `enqueued`
+  // reads the live length of `calls` at every call (B24 Correction 1).
+  const stats = () => ({ pending: 0, active: 0, enqueued: calls.length, completed: 0, failed: 0, deadLettered: 0 });
   const q: JobQueue = {
     driver: "fake",
     register: () => undefined,
     enqueue: async (name, payload, opts) => { calls.push({ name, payload, opts }); },
     start: () => undefined,
     stop: async () => undefined,
-    stats: () => ({ pending: 0, active: 0, enqueued: calls.length, completed: 0, failed: 0, deadLettered: 0 }),
+    stats,
+    liveStats: async () => stats(),
   };
   return { q, calls };
 }

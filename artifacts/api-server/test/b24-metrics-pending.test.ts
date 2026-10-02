@@ -7,10 +7,14 @@
 // direct count of the job_queue table. Every row this file creates carries a
 // unique name prefix and is deleted in afterAll.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { and, eq, like, sql } from "drizzle-orm";
-import { db, jobQueueTable, type Db } from "@workspace/db";
+import { and, eq, gt, like, sql } from "drizzle-orm";
+import { db, jobQueueTable } from "@workspace/db";
 import { PostgresQueue } from "../src/lib/jobs/postgres-queue.js";
 import { InProcessQueue } from "../src/lib/jobs/in-process-queue.js";
+
+// The same database handle type the PostgresQueue constructor accepts (it is a
+// local alias in postgres-queue.ts, not an export of @workspace/db).
+type Db = typeof db;
 
 const BASE = "http://localhost:80/api";
 const PLATFORM = { email: "admin@cardscannerpro.com", password: "Admin123!" };
@@ -37,6 +41,22 @@ async function directPendingTotal(): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(jobQueueTable)
     .where(eq(jobQueueTable.status, "pending"));
+  return row!.n;
+}
+
+// Test-owned pending rows whose available_at is still hours away: a worker's claim
+// query (`status = 'pending' AND available_at <= now()`) can never select them.
+async function mineUnclaimablePending(): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(jobQueueTable)
+    .where(
+      and(
+        like(jobQueueTable.name, `${PREFIX}%`),
+        eq(jobQueueTable.status, "pending"),
+        gt(jobQueueTable.availableAt, new Date(Date.now() + FAR_FUTURE_MS / 2)),
+      ),
+    );
   return row!.n;
 }
 
@@ -110,10 +130,7 @@ describe("GET /metrics — authorization is unchanged", () => {
 });
 
 describe("durable driver — pending is read live from job_queue", () => {
-  it("a known pending durable job increases the live count; delayed and retry-scheduled rows are pending", async () => {
-    const before = await durable.liveStats();
-    expect(before.pending).toBeGreaterThanOrEqual(0);
-
+  it("known pending durable jobs are counted live; delayed and retry-scheduled rows are pending and unclaimable", async () => {
     await durable.enqueue(`${PREFIX}delayed-1`, { k: 1 }, { delayMs: FAR_FUTURE_MS });
     await durable.enqueue(`${PREFIX}delayed-2`, { k: 2 }, { delayMs: FAR_FUTURE_MS });
     // A retry waiting for its backoff is persisted exactly like a delayed job:
@@ -123,15 +140,24 @@ describe("durable driver — pending is read live from job_queue", () => {
       .update(jobQueueTable)
       .set({ attempts: 1, lastError: "simulated failure (test)" })
       .where(eq(jobQueueTable.name, `${PREFIX}retry-1`));
+    // Deterministic, test-owned proof: exactly three of OUR rows are pending, none
+    // is running, and every one of them stays unclaimable for the whole test
+    // (available_at is hours away, so no worker's claim query can select them).
     expect(await mine("pending")).toBe(3);
+    expect(await mine("running")).toBe(0);
+    expect(await mineUnclaimablePending()).toBe(3);
 
+    // The live value is compared only with direct counts taken immediately around
+    // the live read (lower/upper bracket) — never with an earlier global snapshot:
+    // the running API worker may complete unrelated pending rows at any moment, so
+    // the global total is not monotonic. Our three unclaimable rows give the floor.
     const lo = await directPendingTotal();
     const live = await durable.liveStats();
     const hi = await directPendingTotal();
+    expect(Number.isInteger(live.pending)).toBe(true);
     expect(live.pending).toBeGreaterThanOrEqual(3);
     expect(live.pending).toBeGreaterThanOrEqual(Math.min(lo, hi));
     expect(live.pending).toBeLessThanOrEqual(Math.max(lo, hi));
-    expect(live.pending).toBeGreaterThanOrEqual(before.pending + 3 - 0); // nothing of ours could have been claimed
   });
 
   it("completed and dead rows are not counted as pending", async () => {
@@ -143,6 +169,7 @@ describe("durable driver — pending is read live from job_queue", () => {
     expect(await mine("completed")).toBe(1);
     expect(await mine("dead")).toBe(1);
     expect(await mine("pending")).toBe(3);
+    expect(await mineUnclaimablePending()).toBe(3);
 
     const lo = await directPendingTotal();
     const live = await durable.liveStats();
