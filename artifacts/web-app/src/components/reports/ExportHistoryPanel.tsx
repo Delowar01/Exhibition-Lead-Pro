@@ -11,8 +11,8 @@ import { FileDown, Lock, History } from "lucide-react";
 import { humanFileSize, triggerDownload } from "./export-shared";
 
 // Export History — a paginated view over GET /exports/runs. Downloads always
-// go through GET /exports/runs/:id/download for a fresh signed URL (the
-// frontend never constructs storage URLs). Failed runs show a generic state:
+// go through GET /exports/runs/:id/download for the authenticated download
+// URL (no credential in the URL; the frontend never constructs storage URLs). Failed runs show a generic state:
 // run.error can contain provider internals, so it is deliberately not shown.
 
 const PAGE_SIZE = 20;
@@ -29,7 +29,7 @@ export function ExportHistoryPanel() {
   const handleDownload = async (runId: number) => {
     try {
       const res = await getExportRunDownloadUrl(runId);
-      if (res.url) triggerDownload(res.url);
+      if (res.url) triggerDownload(res.url, res.fileName ?? "export");
       else toast({ title: "Download unavailable", variant: "destructive" });
     } catch {
       toast({ title: "Could not get a download link", variant: "destructive" });

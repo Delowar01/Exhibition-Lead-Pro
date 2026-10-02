@@ -1,4 +1,5 @@
 import React from "react";
+import { downloadPrivateFile } from "@/lib/private-files";
 import {
   useListEvents,
   useListUsers,
@@ -122,15 +123,13 @@ export function formatStatusLabel(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Navigate to a server-issued signed URL (never constructed client-side). */
-export function triggerDownload(url: string) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.rel = "noopener";
-  a.target = "_blank";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+/**
+ * Download a server-issued private file URL (never constructed client-side).
+ * B25: the URL carries no credential — the bytes are fetched with the normal
+ * session and saved as a blob; navigating the bare URL would answer 401.
+ */
+export function triggerDownload(url: string, fileName = "export") {
+  void downloadPrivateFile(url, fileName);
 }
 
 function FilterSelect({

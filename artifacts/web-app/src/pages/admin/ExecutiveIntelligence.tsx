@@ -1,4 +1,5 @@
 import React from "react";
+import { downloadPrivateFile } from "@/lib/private-files";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ResponsiveContainer,
@@ -95,14 +96,9 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function triggerDownload(url: string) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.rel = "noopener";
-  a.target = "_blank";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+// B25: private download URLs carry no credential — fetch with the session and save as a blob.
+function triggerDownload(url: string, fileName = "executive-report") {
+  void downloadPrivateFile(url, fileName);
 }
 
 function TrendPill({ direction, changePct }: { direction: string; changePct: number | null }) {
@@ -585,7 +581,7 @@ export default function AdminExecutiveIntelligence() {
                   {r.error && <p className="text-xs text-rose-600 mt-0.5">{r.error}</p>}
                 </div>
                 {r.status === "ready" && r.downloadUrl ? (
-                  <Button size="sm" variant="outline" className="gap-1 shrink-0" onClick={() => triggerDownload(r.downloadUrl!)}>
+                  <Button size="sm" variant="outline" className="gap-1 shrink-0" onClick={() => triggerDownload(r.downloadUrl!, `${r.reportType}-${r.periodKey}.${r.format}`)}>
                     <Download className="h-3.5 w-3.5" /> Download
                   </Button>
                 ) : r.status === "failed" ? null : (

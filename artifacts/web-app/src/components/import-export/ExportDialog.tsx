@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { downloadPrivateFile } from "@/lib/private-files";
 import {
   useCreateExport,
   useListExportRuns,
@@ -49,14 +50,9 @@ const FORMAT_OPTIONS: { value: ExportFormat; label: string; hint: string }[] = [
   { value: "json", label: "JSON", hint: "Structured data for developers" },
 ];
 
-function triggerDownload(url: string) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.rel = "noopener";
-  a.target = "_blank";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+// B25: private download URLs carry no credential — fetch with the session and save as a blob.
+function triggerDownload(url: string, fileName = "export") {
+  void downloadPrivateFile(url, fileName);
 }
 
 export interface ExportDialogProps {
@@ -147,7 +143,7 @@ function ExportNowPanel({
             return;
           }
           if (run.downloadUrl) {
-            triggerDownload(run.downloadUrl);
+            triggerDownload(run.downloadUrl, run.fileName ?? "export");
             toast({
               title: `Exported ${run.rowCount ?? 0} ${entityType}${run.rowCount === 1 ? "" : "s"}`,
               description: protect ? "Your download is password-protected." : undefined,
@@ -315,7 +311,7 @@ function SchedulesPanel({
   const handleDownloadRun = async (runId: number) => {
     try {
       const res = await getExportRunDownloadUrl(runId);
-      if (res.url) triggerDownload(res.url);
+      if (res.url) triggerDownload(res.url, res.fileName ?? "export");
     } catch {
       toast({ title: "Could not get download link", variant: "destructive" });
     }

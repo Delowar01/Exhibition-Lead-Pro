@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import { downloadPrivateFile, fetchPrivateBlob, putPrivateUpload } from "@/lib/private-files";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListDocuments,
@@ -158,7 +159,7 @@ function canPreview(mimeType?: string | null): boolean {
   return mime.startsWith("image/") || mime === "application/pdf";
 }
 
-// ── Storage upload (presigned PUT → GCS) ─────────────────────────────────────
+// ── Storage upload (authenticated PUT to the API byte route — B25) ──────────
 export interface UploadedFileMeta {
   objectPath: string;
   fileName: string;
@@ -171,17 +172,12 @@ export function useDocumentUpload() {
   const upload = useCallback(
     async (file: File): Promise<UploadedFileMeta> => {
       const contentType = file.type || "application/octet-stream";
-      const { uploadURL, objectPath } = await requestUrl.mutateAsync({
+      const { uploadURL, objectPath, uploadToken } = await requestUrl.mutateAsync({
         data: { fileName: file.name, contentType, size: file.size },
       });
-      const putRes = await fetch(uploadURL, {
-        method: "PUT",
-        headers: { "Content-Type": contentType },
-        body: file,
-      });
-      if (!putRes.ok) {
-        throw new Error(`Upload failed (${putRes.status})`);
-      }
+      // The byte route requires the normal session plus the header-bound
+      // upload capability; the URL itself carries no credential.
+      await putPrivateUpload(uploadURL, uploadToken, file, contentType);
       return {
         objectPath,
         fileName: file.name,
@@ -205,20 +201,9 @@ async function fetchSignedUrl(
 }
 
 export async function forceDownload(url: string, fileName: string) {
-  try {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const objUrl = URL.createObjectURL(blob);
-    const a = window.document.createElement("a");
-    a.href = objUrl;
-    a.download = fileName;
-    window.document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(objUrl);
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
+  // Private bytes need the session: fetched with auth, then saved as a blob.
+  // Never fall back to navigating the bare URL (it would answer 401).
+  await downloadPrivateFile(url, fileName);
 }
 
 // ── Upload dialog ────────────────────────────────────────────────────────────
@@ -553,15 +538,28 @@ function PreviewDialog({
     mimeType: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
   React.useEffect(() => {
     let active = true;
+    let objUrl: string | null = null;
     if (target) {
       setLoading(true);
       setState(null);
+      setPreviewSrc(null);
       fetchSignedUrl(target.documentId, target.versionId)
-        .then((res) => {
-          if (active) setState(res);
+        .then(async (res) => {
+          if (!active) return;
+          setState(res);
+          // Previews need the session too: load the bytes with auth and
+          // render them from an object URL (an <img>/<iframe> src cannot
+          // send the Authorization header).
+          if (canPreview(res.mimeType)) {
+            const blob = await fetchPrivateBlob(res.url);
+            if (!active) return;
+            objUrl = URL.createObjectURL(blob);
+            setPreviewSrc(objUrl);
+          }
         })
         .catch(() => {
           if (active) {
@@ -575,6 +573,7 @@ function PreviewDialog({
     }
     return () => {
       active = false;
+      if (objUrl) URL.revokeObjectURL(objUrl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);
@@ -591,19 +590,22 @@ function PreviewDialog({
           {loading && (
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           )}
-          {!loading && state && state.mimeType.startsWith("image/") && (
+          {!loading && state && previewSrc && state.mimeType.startsWith("image/") && (
             <img
-              src={state.url}
+              src={previewSrc}
               alt={state.fileName}
               className="max-h-[70vh] max-w-full object-contain"
             />
           )}
-          {!loading && state && state.mimeType === "application/pdf" && (
+          {!loading && state && previewSrc && state.mimeType === "application/pdf" && (
             <iframe
-              src={state.url}
+              src={previewSrc}
               title={state.fileName}
               className="w-full h-[70vh] bg-background"
             />
+          )}
+          {!loading && state && !previewSrc && canPreview(state.mimeType) && (
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           )}
           {!loading &&
             state &&

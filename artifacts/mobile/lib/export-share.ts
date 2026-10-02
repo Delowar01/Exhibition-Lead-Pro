@@ -44,17 +44,20 @@ export async function exportAndShare(
   if (!url) throw new Error("No download link was returned");
   const rowCount = run.rowCount ?? 0;
 
+  // B25: the download URL carries no credential — bytes are fetched with the session.
   if (Platform.OS === "web") {
-    if (typeof window !== "undefined") window.open(url, "_blank");
+    const { openPrivateBlobInBrowser } = await import("./private-files");
+    await openPrivateBlobInBrowser(url);
     return { rowCount, shared: "browser" };
   }
 
   const Sharing = await import("expo-sharing");
   const FileSystem = await import("expo-file-system/legacy");
+  const { downloadPrivateFile } = await import("./private-files");
 
   const fileName = run.fileName || `${entityType}s-export.${EXT[format]}`;
   const localUri = `${FileSystem.cacheDirectory}${Date.now()}_${fileName}`;
-  const result = await FileSystem.downloadAsync(url, localUri);
+  const result = await downloadPrivateFile(url, localUri);
 
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(result.uri, { mimeType: MIME[format] });

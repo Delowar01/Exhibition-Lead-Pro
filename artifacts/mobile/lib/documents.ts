@@ -1,16 +1,18 @@
 /**
  * Document upload / download helpers for the mobile app.
  *
- * Upload flow (contract-first, mirrors the web Document Manager):
- *   1. Request a presigned PUT URL from the API (returns { uploadURL, objectPath }).
- *   2. PUT the raw file bytes DIRECTLY to object storage (never through our API).
+ * Upload flow (contract-first, mirrors the web Document Manager; B25):
+ *   1. Request an upload target from the API ({ uploadURL, objectPath, uploadToken }).
+ *   2. PUT the raw file bytes to the API byte route WITH the session token and
+ *      the header-bound upload capability (the URL carries no credential).
  *   3. Create the document (or a new version) with the returned objectPath +
  *      captured metadata (fileName, fileSize, mimeType).
  *
- * Download / preview flow:
- *   The API mints a short-lived signed GET URL. Preview opens it in the in-app
- *   browser; download streams it to a cache file then hands it to the native
- *   share sheet ("Save to Files" / "Save Image").
+ * Download / preview flow (B25 Correction 1):
+ *   The API returns a credential-free URL that is served only to the current
+ *   authenticated user, so the bytes are always downloaded to the app cache
+ *   WITH the session and then shared / saved / opened locally — a bare private
+ *   URL is never handed to a browser.
  *
  * Files never contain business logic — that stays in the API. This module only
  * bridges native device capabilities (camera / gallery / file picker / storage)
@@ -22,7 +24,6 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
-import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 
 import {
@@ -34,6 +35,8 @@ import {
   type Document,
   type DocumentInputEntityType,
 } from "@workspace/api-client-react";
+
+import { downloadPrivateFile, openPrivateBlobInBrowser, putPrivateUpload } from "./private-files";
 
 // Keep in sync with the API allowlist (lib/documentStorage.ts).
 export const MAX_DOCUMENT_SIZE = 25 * 1024 * 1024; // 25 MB
@@ -172,28 +175,9 @@ export async function pickDocument(source: DocumentSource): Promise<PickedFile |
   };
 }
 
-// PUT the raw bytes to the presigned URL. Uses native binary upload on device
-// (streams from disk, handles large files) and a blob PUT on web.
-async function putToSignedUrl(uploadURL: string, file: PickedFile): Promise<void> {
-  if (Platform.OS === "web") {
-    const resp = await fetch(file.uri);
-    const blob = await resp.blob();
-    const put = await fetch(uploadURL, {
-      method: "PUT",
-      body: blob,
-      headers: { "Content-Type": file.mimeType },
-    });
-    if (!put.ok) throw new Error(`Upload failed (${put.status})`);
-    return;
-  }
-  const res = await FileSystem.uploadAsync(uploadURL, file.uri, {
-    httpMethod: "PUT",
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    headers: { "Content-Type": file.mimeType },
-  });
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`Upload failed (${res.status})`);
-  }
+// PUT the raw bytes to the API byte route with the session + capability header.
+async function putToUploadTarget(uploadURL: string, uploadToken: string, file: PickedFile): Promise<void> {
+  await putPrivateUpload(uploadURL, uploadToken, file.uri, file.mimeType);
 }
 
 export interface CreateDocumentUploadParams {
@@ -208,12 +192,12 @@ export interface CreateDocumentUploadParams {
 export async function uploadNewDocument(params: CreateDocumentUploadParams): Promise<Document> {
   const { entityType, entityId, category, name, file } = params;
   if (file.size > MAX_DOCUMENT_SIZE) throw new Error("size");
-  const { uploadURL, objectPath } = await requestDocumentUploadUrl({
+  const { uploadURL, objectPath, uploadToken } = await requestDocumentUploadUrl({
     fileName: file.name,
     contentType: file.mimeType,
     size: file.size,
   });
-  await putToSignedUrl(uploadURL, file);
+  await putToUploadTarget(uploadURL, uploadToken, file);
   return createDocument({
     entityType,
     entityId,
@@ -233,12 +217,12 @@ export async function uploadDocumentVersion(
   label?: string | null,
 ): Promise<Document> {
   if (file.size > MAX_DOCUMENT_SIZE) throw new Error("size");
-  const { uploadURL, objectPath } = await requestDocumentUploadUrl({
+  const { uploadURL, objectPath, uploadToken } = await requestDocumentUploadUrl({
     fileName: file.name,
     contentType: file.mimeType,
     size: file.size,
   });
-  await putToSignedUrl(uploadURL, file);
+  await putToUploadTarget(uploadURL, uploadToken, file);
   return addDocumentVersion(documentId, {
     objectPath,
     fileName: file.name,
@@ -248,21 +232,30 @@ export async function uploadDocumentVersion(
   });
 }
 
-// Resolve a signed URL for the current version or a specific version.
+// Resolve the credential-free download URL for the current or a specific version.
 async function resolveUrl(documentId: number, versionId?: number) {
   return versionId != null
     ? getDocumentVersionDownloadUrl(documentId, versionId)
     : getDocumentDownloadUrl(documentId);
 }
 
-/** Open a document for preview in the in-app browser (web: new tab). */
+/**
+ * Open a document for preview. The private URL needs the session, so the
+ * bytes are downloaded to the cache with auth and handed to the native viewer
+ * / share sheet (web: an object URL in a new tab) — never the bare URL.
+ */
 export async function previewDocument(documentId: number, versionId?: number): Promise<void> {
-  const { url } = await resolveUrl(documentId, versionId);
+  const { url, fileName, mimeType } = await resolveUrl(documentId, versionId);
   if (Platform.OS === "web") {
-    if (typeof window !== "undefined") window.open(url, "_blank");
+    await openPrivateBlobInBrowser(url);
     return;
   }
-  await WebBrowser.openBrowserAsync(url);
+  const safeName = fileName || `document_${documentId}`;
+  const localUri = `${FileSystem.cacheDirectory}${Date.now()}_${safeName}`;
+  const result = await downloadPrivateFile(url, localUri);
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(result.uri, { mimeType: mimeType || undefined, dialogTitle: safeName });
+  }
 }
 
 /**
@@ -276,13 +269,13 @@ export async function downloadDocument(
 ): Promise<{ saved: "library" | "shared" | "browser" }> {
   const { url, fileName, mimeType } = await resolveUrl(documentId, opts?.versionId);
   if (Platform.OS === "web") {
-    if (typeof window !== "undefined") window.open(url, "_blank");
+    await openPrivateBlobInBrowser(url);
     return { saved: "browser" };
   }
 
   const safeName = fileName || `document_${documentId}`;
   const localUri = `${FileSystem.cacheDirectory}${Date.now()}_${safeName}`;
-  const result = await FileSystem.downloadAsync(url, localUri);
+  const result = await downloadPrivateFile(url, localUri);
 
   if ((mimeType ?? "").startsWith("image/")) {
     const perm = await MediaLibrary.requestPermissionsAsync();

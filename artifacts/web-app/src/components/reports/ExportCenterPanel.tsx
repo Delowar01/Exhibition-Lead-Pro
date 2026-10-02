@@ -31,7 +31,8 @@ import {
 // component state and the single POST body: it is never persisted, never
 // logged, never placed in a URL, and is cleared as soon as the request
 // completes (success or failure). Downloads always use the server-issued
-// signed URL from the response.
+// download URL from the response, fetched with the normal session (B25
+// Correction 1: the URL carries no credential).
 
 export function ExportCenterPanel() {
   const { toast } = useToast();
@@ -223,7 +224,7 @@ export function ExportCenterPanel() {
               </div>
             </div>
             {result.downloadUrl ? (
-              <Button size="sm" onClick={() => triggerDownload(result.downloadUrl!)} data-testid="export-result-download">
+              <Button size="sm" onClick={() => triggerDownload(result.downloadUrl!, result.fileName ?? "export")} data-testid="export-result-download">
                 <FileDown className="mr-2 h-4 w-4" /> Download
               </Button>
             ) : (
