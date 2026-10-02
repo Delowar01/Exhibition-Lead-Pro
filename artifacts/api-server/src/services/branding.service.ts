@@ -10,7 +10,13 @@
 //     branding.logo.remove / branding.reset) with safe metadata only,
 //   • (B25 Correction 4) never lets a raw database / provider / filesystem
 //     error escape: a failing company-row update is logged as its sanitized
-//     shape and answered with a fixed, client-safe 503 (BRANDING_UPDATE_FAILED).
+//     shape and answered with a fixed, client-safe 503 (BRANDING_UPDATE_FAILED),
+//   • (B25 Correction 5) never assumes a rejected company-row update did not
+//     commit: the durable row is re-read and compared field by field with the
+//     requested mutation — committed (resolved as success, normal cleanup and
+//     audit), conclusively not committed (fixed 503, previous state kept, a
+//     fresh unreferenced logo tombstoned) or unknown (fixed refresh-before-retry
+//     503, NOTHING deleted, every object left represented in the inventory).
 // =============================================================================
 import type { Request } from "express";
 import { AppError } from "../middlewares/errorHandler.js";
@@ -46,23 +52,72 @@ export async function getPublicBranding(companyId: number | null | undefined): P
   return company ? publicBranding(company) : null;
 }
 
-/** Fixed client-safe failure for a company-row write that did not happen (no cause, no message from the driver). */
+/** Fixed client-safe failure for a company-row write that conclusively did not happen (no cause, no message from the driver). */
 function updateFailed(): AppError {
   return new AppError(503, "Branding could not be saved right now. Nothing was changed; please try again later.", { code: "BRANDING_UPDATE_FAILED" });
 }
+/** Fixed client-safe failure for a company-row write whose outcome could not be confirmed (it may have committed). */
+function updateUnconfirmed(): AppError {
+  return new AppError(503, "Branding update status could not be confirmed. Refresh the page before retrying.", { code: "BRANDING_UPDATE_UNCONFIRMED" });
+}
+
+type CompanyPatch = Parameters<typeof companiesRepo.update>[1];
+type UpdateOutcome = { kind: "committed"; row: companiesRepo.CompanyRow } | { kind: "not_committed" } | { kind: "unknown" };
+/** Bookkeeping columns that never decide whether the mutation committed. */
+const UNTRACKED_FIELDS: ReadonlySet<string> = new Set(["updatedAt"]);
+const same = (a: unknown, b: unknown): boolean => (a ?? null) === (b ?? null);
 
 /**
- * B25 Correction 4 — the company-row write of a branding mutation. A database
- * error here carries SQL text, parameters and possibly a provider cause; it is
- * reduced to its sanitized shape for the log and replaced by the fixed error
- * towards the route (the global handler prints non-storage errors raw).
+ * B25 Correction 5 — classify the DURABLE outcome of a rejected company-row
+ * update. Committed only when EVERY field of the requested mutation reads back
+ * with its intended value; conclusively not committed only when a change was
+ * requested and every field still reads its previous value; anything else
+ * (re-read failure, company gone, a concurrent change) is unknown.
  */
-async function updateCompanyRow(companyId: number, data: Parameters<typeof companiesRepo.update>[1], action: string): Promise<companiesRepo.CompanyRow | undefined> {
+async function classifyCompanyUpdate(before: companiesRepo.CompanyRow, data: CompanyPatch): Promise<UpdateOutcome> {
+  let after: companiesRepo.CompanyRow | undefined;
+  try {
+    after = await companiesRepo.findById(before.id);
+  } catch (err) {
+    logger.error({ error: sanitizeStorageError(err), companyId: before.id }, "Branding: company row could not be re-read — update outcome unknown");
+    return { kind: "unknown" };
+  }
+  if (!after) return { kind: "unknown" };
+  const row = after as unknown as Record<string, unknown>;
+  const previous = before as unknown as Record<string, unknown>;
+  const intended = data as Record<string, unknown>;
+  const fields = Object.keys(intended).filter((k) => !UNTRACKED_FIELDS.has(k));
+  if (fields.every((k) => same(row[k], intended[k]))) return { kind: "committed", row: after };
+  const changeRequested = fields.some((k) => !same(previous[k], intended[k]));
+  if (changeRequested && fields.every((k) => same(row[k], previous[k]))) return { kind: "not_committed" };
+  return { kind: "unknown" };
+}
+
+/**
+ * B25 Correction 4 / 5 — the company-row write of a branding mutation. A
+ * database error here carries SQL text, parameters and possibly a provider
+ * cause; it is reduced to its sanitized shape for the log and never reaches
+ * the route. A rejected statement may still have committed, so the durable row
+ * decides: committed → returned as the result; not committed → the fixed
+ * "nothing was changed" 503; unknown → the fixed refresh-before-retry 503.
+ */
+async function updateCompanyRow(before: companiesRepo.CompanyRow, data: CompanyPatch, action: string): Promise<companiesRepo.CompanyRow | undefined> {
+  const companyId = before.id;
   try {
     return await companiesRepo.update(companyId, data);
   } catch (err) {
-    logger.error({ error: sanitizeStorageError(err), companyId, action }, "Branding: company row update failed (branding unchanged)");
-    throw updateFailed();
+    logger.error({ error: sanitizeStorageError(err), companyId, action }, "Branding: company row update statement rejected — resolving the durable outcome");
+    const outcome = await classifyCompanyUpdate(before, data);
+    if (outcome.kind === "committed") {
+      logger.warn({ companyId, action }, "Branding: company row update had committed although its response was lost — resolved as committed");
+      return outcome.row;
+    }
+    if (outcome.kind === "not_committed") {
+      logger.warn({ companyId, action }, "Branding: company row update did not commit (branding unchanged)");
+      throw updateFailed();
+    }
+    logger.error({ companyId, action }, "Branding: company row update outcome could not be confirmed — nothing deleted");
+    throw updateUnconfirmed();
   }
 }
 
@@ -73,7 +128,7 @@ function safeColorsMeta(c: companiesRepo.CompanyRow) {
 export async function updateBranding(req: Request, companyId: number, input: unknown): Promise<ResolvedBranding> {
   const patch = validateBrandingInput(input);
   const before = await loadCompany(companyId);
-  const updated = await updateCompanyRow(companyId, { ...patch, updatedAt: new Date() }, "branding.update");
+  const updated = await updateCompanyRow(before, { ...patch, updatedAt: new Date() }, "branding.update");
   if (!updated) throw new AppError(404, "Organization not found");
   await writeAudit(req, {
     action: "branding.update",
@@ -99,10 +154,18 @@ export async function uploadLogo(req: Request, companyId: number, bytes: Buffer 
   const key = await putLogo(companyId, logo.buffer, logo.contentType, logo.extension);
   let updated: companiesRepo.CompanyRow | undefined;
   try {
-    updated = await updateCompanyRow(companyId, { brandLogoKey: key, brandLogoContentType: logo.contentType, updatedAt: new Date() }, "branding.logo.replace");
+    updated = await updateCompanyRow(before, { brandLogoKey: key, brandLogoContentType: logo.contentType, updatedAt: new Date() }, "branding.logo.replace");
   } catch (err) {
-    // The row did not change; do not leave the fresh object behind (tombstone first, bytes by the durable delete path).
-    await deleteLogo(companyId, key).catch((cleanupErr) => logger.warn({ error: sanitizeStorageError(cleanupErr), companyId }, "Branding: new logo object could not be tombstoned after the row update failed"));
+    if (err instanceof AppError && err.code === "BRANDING_UPDATE_FAILED") {
+      // The row conclusively did not change: do not leave the fresh object behind (tombstone first, bytes by the durable delete path).
+      await deleteLogo(companyId, key).catch((cleanupErr) => logger.warn({ error: sanitizeStorageError(cleanupErr), companyId }, "Branding: new logo object could not be tombstoned after the row update failed"));
+    } else {
+      // Outcome unknown (B25 Correction 5): the row may already reference the new
+      // object, so it is NEVER deleted here; it stays represented by its active
+      // inventory row and, if the row never changed, the live-reference orphan
+      // sweep retires it after the grace window.
+      logger.warn({ companyId }, "Branding: logo replacement outcome unconfirmed — new object retained in the inventory");
+    }
     throw err;
   }
   if (!updated) {
@@ -135,7 +198,7 @@ export async function uploadLogo(req: Request, companyId: number, bytes: Buffer 
 export async function removeLogo(req: Request, companyId: number): Promise<ResolvedBranding> {
   const before = await loadCompany(companyId);
   if (!before.brandLogoKey && !before.logoUrl) return resolveBranding(before);
-  const updated = await updateCompanyRow(companyId, { brandLogoKey: null, brandLogoContentType: null, logoUrl: null, updatedAt: new Date() }, "branding.logo.remove");
+  const updated = await updateCompanyRow(before, { brandLogoKey: null, brandLogoContentType: null, logoUrl: null, updatedAt: new Date() }, "branding.logo.remove");
   if (!updated) throw new AppError(404, "Organization not found");
   if (before.brandLogoKey && keyBelongsTo(companyId, before.brandLogoKey)) {
     await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ error: sanitizeStorageError(err), companyId }, "Branding: logo object could not be deleted after removal"));
@@ -154,7 +217,7 @@ export async function removeLogo(req: Request, companyId: number): Promise<Resol
 export async function resetBranding(req: Request, companyId: number): Promise<ResolvedBranding> {
   const before = await loadCompany(companyId);
   const updated = await updateCompanyRow(
-    companyId,
+    before,
     {
       brandPrimaryColor: null,
       brandSidebarColor: null,
