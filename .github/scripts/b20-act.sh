@@ -1901,8 +1901,8 @@ phase_b24_bracket() {
   local token=""; IFS= read -r token || true
   exec </dev/null
   [[ "$token" =~ ^[A-Za-z0-9._-]{20,}$ ]] || fail "no bearer token on stdin"
-  local cfg="$HOME/b20-curl-$ARG1.cfg" out="$HOME/b20-metrics-$ARG1.json"
-  trap 'rm -f "$cfg" "$out"' EXIT
+  B24_CFG="$HOME/b20-curl-$ARG1.cfg"; B24_OUT="$HOME/b20-metrics-$ARG1.json"; local cfg="$B24_CFG" out="$B24_OUT"
+  trap 'rm -f "${B24_CFG:-}" "${B24_OUT:-}"' EXIT
   ( umask 077; printf 'header = "Authorization: Bearer %s"\n' "$token" > "$cfg" )
   token=""
   section "read-only guard"
@@ -1933,7 +1933,7 @@ phase_b24_bracket() {
   echo "top-level and nested keys: $(grep -oE '"[A-Za-z0-9]+":' "$out" | tr -d '":' | sort -u | tr '\n' ' ')"
   local jobs_obj; jobs_obj="$(grep -oE '"jobs":\{[^}]*\}' "$out" | head -1)"
   echo "jobs=$jobs_obj"
-  echo "jobs_key_count=$(printf '%s' "${jobs_obj#"jobs":}" | grep -oE '"[A-Za-z]+":' | sort -u | wc -l) (6 expected)"
+  echo "jobs_key_count=$(printf '%s' "${jobs_obj#\"jobs\":}" | grep -oE '"[A-Za-z]+":' | sort -u | wc -l) (6 expected)"
   echo "leak_scan_matches=$(grep -ciE 'payload|gcm1|postgres|select |insert |job_queue|@|secret|token|password|company|email' "$out" || true) (0 expected)"
   echo "response_bytes=$(wc -c < "$out")"
   rm -f "$out" "$cfg"
