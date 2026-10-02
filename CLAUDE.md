@@ -149,7 +149,12 @@ Center / Workflow Intelligence / Executive Intelligence.
   references, sanitized storage logging) and **Correction 3** (crash-durable
   late-publication cleanup with a hard upload lifetime and reconciled
   tombstones, durable GCS ownership via object-metadata markers and
-  generation-conditioned deletes, complete storage log containment) are
+  generation-conditioned deletes, complete storage log containment) and
+  **Correction 4** (persisted provider uncertainty for GCS writes — marked
+  durably before any GCS request, cleared only by the durable commit, uncertain
+  tombstones never reconciled or purged, only re-checked with marker +
+  generation deletes; startup timing-invariant validation; branding
+  company-row update errors contained) are
   implemented and verified LOCALLY on
   `claude/b25-object-storage-hostinger` — NOT merged, NOT hosted, NOT
   migrated; the hosted stack still runs Google Cloud Storage unchanged, and
@@ -213,9 +218,9 @@ pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-**Authoritative baseline (B25 Correction 3 run, 2026-10-02, filesystem object
-storage driver, no Google Cloud credentials):** API **1466 passed / 0 failed / 1 skipped of 1467 (98 files)**,
-Playwright **152/152**, mobile **114/114** (Correction 2: 1448 / 0 / 1 of 1449, 95 files; Correction 1: 1409 / 0 / 1 of 1410, 88 files; Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
+**Authoritative baseline (B25 Correction 4 run, 2026-10-02, filesystem object
+storage driver, no Google Cloud credentials):** API **1480 passed / 0 failed / 1 skipped of 1481 (100 files)**,
+Playwright **152/152**, mobile **114/114** (Correction 3: 1466 / 0 / 1 of 1467, 98 files; Correction 2: 1448 / 0 / 1 of 1449, 95 files; Correction 1: 1409 / 0 / 1 of 1410, 88 files; Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
 storage-gated set (documents 24, ocr-pipeline reprocess, executive-intelligence
 2) now runs green on the fs driver; every remaining skip is classified in
 `docs/LOCALHOST_DEVELOPMENT.md` §7 (no storage-gated skips remain). Pre-B25

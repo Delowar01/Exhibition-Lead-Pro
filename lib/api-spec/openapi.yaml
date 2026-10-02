@@ -8465,7 +8465,7 @@ components:
         storage:
           type: object
           description: "Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0)."
-          required: [driver, legacyFallback, mirror, legacyReads, primaryFailures, legacyFallbackReads, mirrorFailures, migrationVerifyFailures, deleteFailures, legacyRegistrations, integrityFailures, pendingUploads, pendingDeletes, retainedLegacyObjects, ownershipUnproven, unreconciledTombstones]
+          required: [driver, legacyFallback, mirror, legacyReads, primaryFailures, legacyFallbackReads, mirrorFailures, migrationVerifyFailures, deleteFailures, legacyRegistrations, integrityFailures, pendingUploads, pendingDeletes, retainedLegacyObjects, ownershipUnproven, unreconciledTombstones, publicationUncertain]
           properties:
             driver:
               type: string
@@ -8495,7 +8495,11 @@ components:
             unreconciledTombstones:
               type: ["integer", "null"]
               minimum: 0
-              description: "Deleted tombstones whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read."
+              description: "Deleted tombstones (without provider uncertainty) whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read."
+            publicationUncertain:
+              type: ["integer", "null"]
+              minimum: 0
+              description: "Tombstones that handed a request of unknown outcome to a remote provider (B25 Correction 4): re-checked by bounded sweeps, never reconciled or purged automatically, awaiting operator resolution. Null when the inventory cannot be read."
             retainedLegacyObjects:
               type: ["integer", "null"]
               minimum: 0

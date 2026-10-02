@@ -42,6 +42,8 @@ export const getMetricsResponseStorageOwnershipUnprovenMin = 0;
 
 export const getMetricsResponseStorageUnreconciledTombstonesMin = 0;
 
+export const getMetricsResponseStoragePublicationUncertainMin = 0;
+
 export const getMetricsResponseStorageRetainedLegacyObjectsMin = 0;
 
 export const getMetricsResponseStoragePrimaryFailuresMin = 0;
@@ -92,7 +94,8 @@ export const GetMetricsResponse = zod.object({
   "legacyRegistrations": zod.number().min(getMetricsResponseStorageLegacyRegistrationsMin).describe('Pre-B25 references registered in the inventory on first use since process start.'),
   "integrityFailures": zod.number().min(getMetricsResponseStorageIntegrityFailuresMin).describe('Reads of a GCS legacy \/ mirror \/ native copy whose bytes disagreed with the inventory size or digest since process start (B25 Correction 2; the response is truncated, never completed).'),
   "ownershipUnproven": zod.number().min(getMetricsResponseStorageOwnershipUnprovenMin).nullable().describe('Inventory rows whose bucket object carries no matching ownership marker; never deleted automatically, never purged, awaiting operator review (B25 Correction 3). Null when the inventory cannot be read.'),
-  "unreconciledTombstones": zod.number().min(getMetricsResponseStorageUnreconciledTombstonesMin).nullable().describe('Deleted tombstones whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read.'),
+  "unreconciledTombstones": zod.number().min(getMetricsResponseStorageUnreconciledTombstonesMin).nullable().describe('Deleted tombstones (without provider uncertainty) whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read.'),
+  "publicationUncertain": zod.number().min(getMetricsResponseStoragePublicationUncertainMin).nullable().describe('Tombstones that handed a request of unknown outcome to a remote provider (B25 Correction 4): re-checked by bounded sweeps, never reconciled or purged automatically, awaiting operator resolution. Null when the inventory cannot be read.'),
   "retainedLegacyObjects": zod.number().min(getMetricsResponseStorageRetainedLegacyObjectsMin).nullable().describe('Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.'),
   "primaryFailures": zod.number().min(getMetricsResponseStoragePrimaryFailuresMin),
   "legacyFallbackReads": zod.number().min(getMetricsResponseStorageLegacyFallbackReadsMin),

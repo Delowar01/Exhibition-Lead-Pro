@@ -100,7 +100,11 @@ pre-B25 compatibility while GCS is primary, streaming integrity verification of
 GCS rollback copies, tombstone-first lifecycle, fail-closed company deletion,
 sanitized storage logging (storage errors never carry a raw cause), crash-durable
 late-publication cleanup (hard upload lifetime, reconciled tombstones), durable
-GCS ownership (object-metadata marker + generation-conditioned deletes) and the
+GCS ownership (object-metadata marker + generation-conditioned deletes),
+persisted provider uncertainty for GCS writes (marked before any GCS request,
+cleared only by the durable commit; uncertain tombstones never reconciled or
+purged, only re-checked), startup timing-invariant validation, contained
+branding row-update errors, and the
 resumable migration command whose dry-run / verify never write (not even the
 target root) (`B25_OBJECT_STORAGE.md`). **Not merged, not hosted, not migrated**: the hosted
 stack still runs Google Cloud Storage unchanged and GCS stays in the code only
@@ -119,9 +123,9 @@ source); `main` is unrelated historical history. The lines diverge; their
 reconciliation is a later owner-approved task (see `CLAUDE.md`).
 
 **Latest verified baseline totals** — maintained in one place:
-[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B25 Correction 3 run
+[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B25 Correction 4 run
 (2026-10-02, filesystem object-storage driver, no Google Cloud credentials):
-API **1466 passed / 0 failed / 1 skipped of 1467 (98 files)**, Playwright **152/152**, mobile **114/114**,
+API **1480 passed / 0 failed / 1 skipped of 1481 (100 files)**, Playwright **152/152**, mobile **114/114**,
 workspace typecheck exit 0, API and web production builds PASS. (Pre-B25
 reference, B24 without object storage: 1248 passed / 9 storage-gated / 28
 skipped of 1285.)
@@ -678,7 +682,7 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   tenants); restart/seed before a full run. Detail in
   [LOCAL_AND_STAGING_RUNBOOK.md](LOCAL_AND_STAGING_RUNBOOK.md).
 - **Current totals** — see [LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md)
-  (B25 Correction 3 run with the filesystem driver: API **1466 passed / 0 failed / 1 skipped of 1467 (98 files)**, Playwright
+  (B25 Correction 4 run with the filesystem driver: API **1480 passed / 0 failed / 1 skipped of 1481 (100 files)**, Playwright
   **152/152**, mobile **114/114**, workspace typecheck exit 0; no
   storage-gated failures or skips remain). Start the API with
   `LOGIN_RATE_MAX=1000` in its shell for a full run; `JOBS_DRIVER=postgres` in

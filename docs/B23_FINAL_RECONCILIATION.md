@@ -47,7 +47,10 @@
 > cleanup, live feature-association checks on downloads, streaming integrity
 > verification of rollback copies, fail-closed company deletion, sanitized
 > storage logging; Correction 3: crash-durable late-publication cleanup,
-> durable GCS ownership, complete storage log containment —
+> durable GCS ownership, complete storage log containment; Correction 4:
+> persisted provider uncertainty for GCS writes (never reconciled or purged
+> while uncertain), startup timing-invariant validation, contained branding
+> row-update errors —
 > is implemented and verified **locally only** on
 > `claude/b25-object-storage-hostinger` (`B25_OBJECT_STORAGE.md`): not merged,
 > not hosted, not migrated; the hosted stack still uses Google Cloud Storage,

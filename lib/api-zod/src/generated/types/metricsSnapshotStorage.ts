@@ -36,11 +36,17 @@ export type MetricsSnapshotStorage = {
      */
   ownershipUnproven: number | null;
   /**
-     * Deleted tombstones whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read.
+     * Deleted tombstones (without provider uncertainty) whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read.
      * @minimum 0
      * @nullable
      */
   unreconciledTombstones: number | null;
+  /**
+     * Tombstones that handed a request of unknown outcome to a remote provider (B25 Correction 4): re-checked by bounded sweeps, never reconciled or purged automatically, awaiting operator resolution. Null when the inventory cannot be read.
+     * @minimum 0
+     * @nullable
+     */
+  publicationUncertain: number | null;
   /**
      * Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.
      * @minimum 0
