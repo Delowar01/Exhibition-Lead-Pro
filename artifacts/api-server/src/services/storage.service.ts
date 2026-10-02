@@ -53,6 +53,17 @@
 //     this module only as a StorageError with a sanitized cause summary (or an
 //     AppError) — never a raw error that a generic `{ err }` logger could print
 //
+// B25 Correction 4:
+//   • persisted provider uncertainty: a request to a REMOTE provider (GCS
+//     primary put, strict-mirror put) is preceded by a durable
+//     publication_uncertain_at mark (no mark → no provider call) that only the
+//     durable stage / activation commit of the complete write clears; a
+//     tombstone that still carries it is never reconciled or purged — bounded
+//     sweeps keep re-checking its persisted locations and remove only an object
+//     carrying the row's marker at the observed generation. The hard upload
+//     lifetime and the put time bound remain availability bounds on the writer;
+//     a client-side abort proves nothing about what the provider will commit
+//
 // Nothing here ever returns a filesystem path, storage key, bucket name or host
 // path to a caller; API responses carry opaque handles and credential-free URLs.
 // =============================================================================
@@ -313,6 +324,32 @@ export async function rollbackServerAttempt(attempt: WriteAttempt, reason: strin
 }
 
 /**
+ * B25 Correction 4 — a REMOTE provider (GCS) may commit a request after the
+ * client timed out, lost the connection or died: a client-side abort proves
+ * nothing about the provider. So, before the first byte of any request to such
+ * a provider (primary put on the GCS driver, strict-mirror put), the row is
+ * DURABLY marked publication-uncertain — the mark is committed before the
+ * request starts, and when it cannot be persisted (or the row is no longer a
+ * live write target) the provider is never called. Nothing but the durable
+ * stage / activation commit of the COMPLETE write clears the mark; a failure or
+ * crash at any later point leaves it set, which keeps the row out of the final
+ * reconciliation and the purge until its locations were actually re-checked.
+ * Filesystem / memory writes are performed by this process alone (a write that
+ * did not commit before the process stopped never will), so they carry no mark.
+ */
+async function markUncertainBefore(target: StorageDriver, row: StorageObjectRow, attempt: WriteAttempt): Promise<void> {
+  if (target.kind !== "gcs") return;
+  let marked: boolean;
+  try {
+    marked = await repo.markPublicationUncertain(row.id);
+  } catch (err) {
+    logger.error({ error: safe(err), objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: publication-uncertainty mark could not be persisted — provider request not issued");
+    throw Object.assign(boundaryError(err), { attempt });
+  }
+  if (!marked) throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "object is no longer a live write target", undefined, "ROW_TOMBSTONED"), { attempt });
+}
+
+/**
  * Primary write, then (when strict mirroring is on) the mirror write from the
  * primary copy. Both publications are no-replace (attempt-unique keys; a mirror
  * location becomes authoritative only through the fenced database commit that
@@ -330,6 +367,7 @@ async function writeWithMirror(driver: StorageDriver, row: StorageObjectRow, sou
   const deadline = publishDeadline(row);
   const bound = { owner: row.id, publishDeadline: deadline, timeoutMs: config.objectStorage.putTimeoutMs };
   if (!canStartPut(deadline)) throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "publication deadline passed", undefined, "PUBLISH_DEADLINE"), { attempt });
+  await markUncertainBefore(driver, row, attempt);
   let result;
   try {
     result = await driver.put(row.storageKey, source, { contentType: row.contentType, maxBytes, allowOverwrite: false, ...bound });
@@ -343,6 +381,7 @@ async function writeWithMirror(driver: StorageDriver, row: StorageObjectRow, sou
     const mirrorKey = row.mirrorKey ?? mirrorLocation(row.storageKey);
     if (!mirrorKey) throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "mirror location unavailable", undefined, "MIRROR_UNCONFIGURED"), { attempt });
     if (!canStartPut(deadline)) throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "publication deadline passed", undefined, "PUBLISH_DEADLINE"), { attempt });
+    await markUncertainBefore(mirror, row, attempt);
     try {
       const { stream } = await driver.getStream(row.storageKey, { maxBytes });
       const copied = await mirror.put(mirrorKey, stream, { contentType: row.contentType, maxBytes, allowOverwrite: false, expectedSha256: result.sha256, expectedSize: result.sizeBytes, ...bound });
@@ -521,7 +560,8 @@ async function receiveUploadInner(user: AuthUser, objectId: string, capability: 
 async function finishUpload(rowId: string, leaseToken: string, written: { result: { sizeBytes: number; sha256: string }; attempt: WriteAttempt; mirrorState: string | null }): Promise<boolean> {
   let staged: StorageObjectRow | undefined;
   try {
-    staged = await repo.releaseUpload(rowId, leaseToken, "staged", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, lastError: null });
+    // The same durable CAS that stages the row clears the publication-uncertainty mark (B25 Correction 4): every required put returned successfully.
+    staged = await repo.releaseUpload(rowId, leaseToken, "staged", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, lastError: null, publicationUncertainAt: null });
   } catch (err) {
     logger.error({ error: safe(err), objectId: rowId }, "Object storage: could not stage the upload (database)");
     const own = await repo.ownsLease(rowId, leaseToken).catch(() => false);
@@ -628,7 +668,8 @@ async function storeBufferInner(input: StoreBufferInput): Promise<StoredObject> 
   }
   let active: StorageObjectRow | undefined;
   try {
-    active = await repo.transition(row.id, ["pending"], "active", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState });
+    // Activation is the durable commit of the complete write: it also clears the publication-uncertainty mark (B25 Correction 4).
+    active = await repo.transition(row.id, ["pending"], "active", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, publicationUncertainAt: null });
   } catch (err) {
     // Never leave untracked bytes behind: remove exactly the copies this attempt wrote.
     logger.error({ error: safe(err), objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: could not activate the object (database)");
@@ -1174,8 +1215,10 @@ export interface SweepSummary {
   entityOrphans: number;
   /** `deleted` tombstones whose persisted locations were re-checked after the late-publication horizon (B25 Correction 3). */
   reconciledTombstones: number;
-  /** Late copies (published after tombstoning / lease loss by a writer that then died) removed by a reconciliation. */
+  /** Late copies (published after tombstoning / lease loss by a writer that then died, or committed by the provider after the client gave up) removed by a reconciliation or an uncertainty re-check. */
   lateCopiesReclaimed: number;
+  /** Provider-uncertain `deleted` tombstones whose persisted locations were re-checked in this pass (B25 Correction 4; never reconciled, never purged). */
+  uncertainRechecked: number;
   purgedTombstones: number;
 }
 
@@ -1185,7 +1228,7 @@ const QUIESCENCE_SLACK_MS = 5 * 60 * 1000;
 /** Idempotent, bounded repair pass (runs inside the recurring maintenance sweep). */
 async function sweepStorageInner(now: Date = new Date()): Promise<SweepSummary> {
   const batch = config.objectStorage.sweepBatchSize;
-  const summary: SweepSummary = { stalePending: 0, staleStaged: 0, expiredLeases: 0, retriedDeletes: 0, cleanupRetries: 0, companyOrphans: 0, entityOrphans: 0, reconciledTombstones: 0, lateCopiesReclaimed: 0, purgedTombstones: 0 };
+  const summary: SweepSummary = { stalePending: 0, staleStaged: 0, expiredLeases: 0, retriedDeletes: 0, cleanupRetries: 0, companyOrphans: 0, entityOrphans: 0, reconciledTombstones: 0, lateCopiesReclaimed: 0, uncertainRechecked: 0, purgedTombstones: 0 };
   if (!storageConfigured()) return summary;
 
   const settle = async (row: StorageObjectRow): Promise<boolean> => {
@@ -1234,11 +1277,32 @@ async function sweepStorageInner(now: Date = new Date()): Promise<SweepSummary> 
   for (const row of await repo.listEntityOrphans(new Date(now.getTime() - config.objectStorage.pendingTtlMs), batch)) {
     if (await settle(row)) summary.entityOrphans += 1;
   }
-  // B25 Correction 3 — final reconciliation: once a tombstone is older than the
-  // hard upload lifetime (+ slack) no writer can publish a late copy any more,
-  // so its persisted locations are re-checked exactly once more and the row is
-  // marked reconciled. A late copy found here was published by a writer that
-  // died before it could clean up or flag it.
+  // B25 Correction 4 — provider-uncertain tombstones. A request handed to a
+  // remote provider may be committed after the client's timeout, transport
+  // failure or death, so these rows are NEVER reconciled or purged. Each sweep
+  // re-checks a bounded, rotating batch of their persisted locations and
+  // removes only an object that carries the row's ownership marker, at the
+  // generation it observed; a foreign object is flagged OWNERSHIP_UNPROVEN
+  // (operator review), a removal that failed is retried by the cleanup pass.
+  for (const row of await repo.listPublicationUncertain(batch)) {
+    const outcome = await physicallyDelete(row);
+    summary.uncertainRechecked += 1;
+    if (outcome.removed > 0) {
+      summary.lateCopiesReclaimed += outcome.removed;
+      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copies: outcome.removed }, "Object storage: the provider committed a request the writer gave up on — late copy removed by ownership marker and generation");
+    }
+    if (outcome.unproven) await repo.markOwnershipUnproven(row.id).catch(() => undefined);
+    else if (!outcome.ok) await repo.flagCleanupPending(row.id).catch(() => undefined);
+    else await repo.touchPublicationUncertain(row.id, now).catch(() => undefined);
+  }
+  // B25 Correction 3 — final reconciliation of tombstones WITHOUT provider
+  // uncertainty: their writes were performed by this process alone, so once a
+  // tombstone is older than the hard upload lifetime (+ slack) no copy of it
+  // can appear any more; its persisted locations are re-checked exactly once
+  // more and the row is marked reconciled. A late copy found here was
+  // published by a writer that died before it could clean up or flag it.
+  // (The hard lifetime and the put time bound are availability bounds on the
+  // writer; they prove nothing about a remote provider — see above.)
   const quiescentBefore = new Date(now.getTime() - config.objectStorage.uploadHardLifetimeMs - QUIESCENCE_SLACK_MS);
   for (const row of await repo.listUnreconciledTombstones(quiescentBefore, batch)) {
     const outcome = await physicallyDelete(row);
@@ -1279,8 +1343,10 @@ export interface StorageMetricsSnapshot {
   retainedLegacyObjects: number | null;
   /** Rows whose bucket object carries no matching ownership marker — never deleted automatically, awaiting review (B25 Correction 3). */
   ownershipUnproven: number | null;
-  /** `deleted` tombstones not yet re-checked after the late-publication horizon (B25 Correction 3). */
+  /** `deleted` tombstones (without provider uncertainty) not yet re-checked after the late-publication horizon (B25 Correction 3). */
   unreconciledTombstones: number | null;
+  /** Tombstones that handed a request of unknown outcome to a remote provider — re-checked by bounded sweeps, never purged automatically (B25 Correction 4). */
+  publicationUncertain: number | null;
 }
 
 export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
@@ -1290,6 +1356,7 @@ export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
   let retainedLegacyObjects: number | null = null;
   let ownershipUnproven: number | null = null;
   let unreconciledTombstones: number | null = null;
+  let publicationUncertain: number | null = null;
   try {
     const counts = await repo.countByStates();
     pendingUploads = (counts.pending ?? 0) + (counts.uploading ?? 0) + (counts.staged ?? 0);
@@ -1297,6 +1364,7 @@ export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
     retainedLegacyObjects = await repo.countRetainedLegacyObjects();
     ownershipUnproven = await repo.countOwnershipUnproven();
     unreconciledTombstones = await repo.countUnreconciledTombstones();
+    publicationUncertain = await repo.countPublicationUncertain();
   } catch (err) {
     logger.warn({ error: safe(err) }, "Object storage: inventory counts unavailable for metrics");
   }
@@ -1311,6 +1379,7 @@ export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
     retainedLegacyObjects,
     ownershipUnproven,
     unreconciledTombstones,
+    publicationUncertain,
   };
 }
 
