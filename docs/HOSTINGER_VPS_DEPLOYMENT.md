@@ -290,7 +290,22 @@ rehearsal into a disposable container (`docs/BACKUP_AND_RECOVERY.md` §4.1)
 creates the role first. Both restore proofs to date (F0 and F2 dumps) used
 that disposable-container method.
 
-## 8. GCS development bucket (closes the 27 storage-gated tests)
+## 8. GCS development bucket (hosted driver until the B25 activation)
+
+> **B25 Phase 1 (2026-10-02, local only).** The provider-neutral object-storage
+> boundary and the encrypted filesystem driver are implemented and verified
+> locally (`docs/B25_OBJECT_STORAGE.md`); **nothing on this VPS changed**. The
+> compose files pass every `OBJECT_STORAGE_*` variable through **empty**, so a
+> deploy of the B25 code keeps this Google Cloud configuration as the hosted
+> driver (transition mode 1 — no change to reads or writes). The private volume
+> (`objectdata` / `/data/objects`, app uid, mode 700), the commented host bind
+> mount in `compose.vps.yml`, the env-file placeholders in `.env.vps.example`
+> and the 30 MiB nginx `/api/` body limit are **prepared for review**. Hosted
+> activation (volume, key with an owner-held offline recovery copy, strict
+> mirror, copy + verify, fallback disable, then credential and dependency
+> removal) is a separate, owner-approved task; the CloudPanel edge body-size
+> limit must be checked at that time. Until then the section below stays the
+> operative hosted contract.
 
 The VPS uses **standard Google service-account JSON auth** against a
 **dedicated, private development bucket** (no production bucket, no public
@@ -334,8 +349,9 @@ bucket, no second storage implementation):
 - **Result:** `readyz` reports storage `ok`; the storage-gated subset of the
   API suite turns green and the run reaches the fully green total
   (`docs/LOCALHOST_DEVELOPMENT.md` §7) — storage failures are fixed by
-  configuration, never by skipping tests. B25 (planned) replaces this Google
-  Cloud dependency.
+  configuration, never by skipping tests. Locally the B25 filesystem driver
+  already replaces this bucket for every test; on the VPS the Google Cloud
+  dependency is replaced only by the owner-approved B25 hosted phases.
 
 ## 9. CloudPanel reverse proxy (manual, after approval)
 

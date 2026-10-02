@@ -86,11 +86,18 @@ NFC, business card, email signature, QR, LinkedIn QR, manual entry.**
 **B9–B23 are complete, merged to `develop` and deployed to the hosted dev stack
 (Hostinger VPS, `https://dev.kaptnow.com`).** Batches 1–8 were device-verified
 on an **Honor Magic V5, Android 16** (no device pass has been recorded since).
-**Current batch: B24 — Release-Gate Closure** (live `/metrics` pending count,
-workspace typecheck, audit-retention contract, documentation of record).
-**Planned next: B25 — product object storage off Google Cloud** (owner decision
-*Option B — remove Google Cloud completely*; not started; it does not depend on
-the second backup VPS). Open owner decisions: G-4 (mobile per-entity Workflow /
+**B24 — Release-Gate Closure is complete, merged to `develop`, deployed and
+verified on the hosted dev stack** (activation run 36972460934). **Current
+batch: B25 — product object storage off Google Cloud** (owner decision *Option
+B — remove Google Cloud completely*; it does not depend on the second backup
+VPS). **Phase 1 is implemented and verified locally** on
+`claude/b25-object-storage-hostinger`: a provider-neutral storage contract, an
+encrypted filesystem driver, the `storage_objects` inventory, API-mediated
+capability URLs, tombstone-first lifecycle and the resumable migration command
+(`B25_OBJECT_STORAGE.md`). **Not merged, not hosted, not migrated**: the hosted
+stack still runs Google Cloud Storage unchanged and GCS stays in the code only
+as the temporary legacy / migration / fallback driver until the owner-approved
+hosted phases complete. **B25 is not complete.** Open owner decisions: G-4 (mobile per-entity Workflow /
 Copilot sections), G-7 (`/platform/analytics` placeholder), G-8 (Phase 4/6/7/9
 remainders). Gap register and release gates: `B23_FINAL_RECONCILIATION.md`.
 
@@ -104,10 +111,12 @@ source); `main` is unrelated historical history. The lines diverge; their
 reconciliation is a later owner-approved task (see `CLAUDE.md`).
 
 **Latest verified baseline totals** — maintained in one place:
-[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B24 run (2026-10-02,
-no object-storage credentials): API **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285**, Playwright
-**152/152**, mobile **114/114**, workspace typecheck exit 0, API and
-web production builds PASS.
+[LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md). B25 Phase 1 run
+(2026-10-02, filesystem object-storage driver, no Google Cloud credentials):
+API **1368 passed / 0 failed / 1 skipped of 1369 (82 files)**, Playwright **152/152**, mobile **114/114**,
+workspace typecheck exit 0, API and web production builds PASS. (Pre-B25
+reference, B24 without object storage: 1248 passed / 9 storage-gated / 28
+skipped of 1285.)
 
 **Batch history summary** — the product was built in stages and later hardening
 batches. Stages 1–5 delivered the server foundation, multi-tenant CRM, org
@@ -127,17 +136,24 @@ notifications, reports & exports (scheduled), the full Enterprise AI Layer + all
 surfaces, business-card capture + OCR across all modes, background job queue, and
 the Expo mobile client.
 
-**Current limitations** — object storage requires GCS configuration (uploads fail
-without it, server still boots); email is a logged no-op without SMTP config; AI
-features degrade gracefully without a Gemini credential; `/readyz` performs a
-live, least-privilege storage reachability probe (`ok` / `error` /
-`not_configured`); DB schema is synced via `drizzle-kit push` (no versioned
-SQL migrations). Product object files currently use Google Cloud Storage and have no independently verified project-controlled recovery copy.
+**Current limitations** — object storage is provider-neutral (B25 Phase 1):
+locally and in tests the encrypted filesystem driver (or the in-process memory
+driver outside production) serves every product file; the **hosted stack still
+uses Google Cloud Storage** until the owner-approved activation phases, and the
+files there have no independently verified project-controlled recovery copy.
+Once on the VPS volume, product files have **single-host durability** until the
+deferred off-host design is activated, and the `OBJECT_STORAGE_ENCRYPTION_KEY`
+needs an owner-held offline recovery copy before any cutover. Email is a logged
+no-op without SMTP config; AI features degrade gracefully without a Gemini
+credential; `/readyz` performs a live, bounded probe of the primary storage
+driver (`ok` / `error` / `not_configured`); DB schema is synced via
+`drizzle-kit push` (no versioned SQL migrations).
 
 
-**Next approved work** — B24 (current) as described above; B25 planned and
-awaiting approval. No feature batch is approved; G-4 / G-7 / G-8 are owner
-decisions.
+**Next approved work** — none beyond B25 Phase 1 review. The hosted B25
+phases (activation, migration, fallback disable, Google Cloud removal) each
+need separate approval. No feature batch is approved; G-4 / G-7 / G-8 are
+owner decisions.
 
 **Features that must not be reintroduced** — the six permanent scope removals in
 §A, plus: no second AI/OCR/email/draft system, no direct-to-Gemini calls that
@@ -163,7 +179,7 @@ spec generates the API client, React Query hooks, and shared Zod validators.
 | API codegen | Orval (OpenAPI → React Query hooks + Zod) |
 | Authentication | JWT access + refresh with rotation & family revocation; MFA/TOTP; trusted devices; RBAC + custom roles |
 | Session management | Server-side `sessions` rows (refresh families); fresh-per-request `requireAuth` loads live role/permissions/status |
-| Storage | Google Cloud Storage (Replit sidecar on Replit; standard Google auth + V4 signed URLs elsewhere) |
+| Storage | Provider-neutral object-storage boundary (B25): encrypted filesystem driver (dev / tests / VPS volume) behind `services/storage.service.ts`, API-mediated capability URLs, `storage_objects` inventory; Google Cloud Storage only as the TEMPORARY legacy / migration / fallback driver (still the hosted driver until activation) |
 | Email | SMTP (only built-in transport), queued via the in-process job queue; no-op when unconfigured |
 | AI provider | **Gemini `gemini-2.5-flash` ONLY** via the Enterprise AI Layer; deterministic stub provider for dev/test |
 | OCR | Gemini vision extraction (thinkingBudget 0) through the same AI Layer |
@@ -196,8 +212,9 @@ The backend. Entry point `src/index.ts` builds the app in `src/app.ts`. Key dirs
 - `src/middlewares/` — `requireAuth.ts` (auth + `tenantScope`), `errorHandler.ts`,
   `validate.ts`, `rateLimit.ts`, `microCache.ts`.
 - `src/lib/` — cross-cutting helpers: `tenant.ts` (`refAccessible`/`refInCompany`),
-  `objectStorage.ts` (portable GCS auth), `imageStorage.ts`/`documentStorage.ts`/
-  `exportStorage.ts`, `email/`, `jobs/`, `mfa.ts`, `sessions.ts`, `tokens.ts`,
+  `objectStorage.ts` (legacy GCS client only), `imageStorage.ts`/`documentStorage.ts`/
+  `exportStorage.ts`/`branding/storage.ts` (thin feature adapters over the B25
+  boundary), `email/`, `jobs/`, `mfa.ts`, `sessions.ts`, `tokens.ts`,
   `crypto.ts`, `push.ts`, `logger.ts`, `permission-backfill.ts`.
 - `src/config.ts` — **the single env-access point** (§N).
 - `scripts/verify-ocr-live.ts` — opt-in live-Gemini OCR verification (§K).
@@ -359,11 +376,20 @@ status, latency, prompt version) and the reservation is finalized. See §J.
 e.g. `ai`), honoring `notification_preferences`; delivery + push run off the job
 queue. Web `Notifications` + notification bell; mobile `notifications.tsx` + bell.
 
-**File / image access** — `objectStorage.ts` brokers GCS: on Replit the workspace
-sidecar issues short-lived tokens/signed URLs; elsewhere standard Google auth
-(service account with `signBlob`) produces V4 signed URLs. Card images and documents
-are private objects served via signed URLs; `objectAcl.ts` enforces access. Override
-detection with `OBJECT_STORAGE_AUTH`.
+**File / image access (B25)** — every product file (documents + versions, export
+runs, executive reports, scan images, branding logos) goes through ONE boundary,
+`services/storage.service.ts`, over the provider-neutral `StorageDriver` contract
+(`src/storage/`): write-ahead `storage_objects` row → encrypted bytes → activation
+inside the feature transaction; tombstone-first deletes; only `active` rows are
+served. Clients receive opaque `/objects/<id>` handles and short-lived,
+HMAC-signed capability URLs on the API's own origin (`PUT /files/uploads/:id`,
+`GET /files/:id`); scan images stay behind `GET /scans/:id/image`, logos behind
+the randomized first-party routes. The filesystem driver stores chunked
+AES-256-GCM envelopes under `tenants/<companyId>/<kind>/<id>` in a private root
+outside the repository (`OBJECT_STORAGE_FS_ROOT`, dedicated
+`OBJECT_STORAGE_ENCRYPTION_KEY`). `objectStorage.ts` now only builds the Google
+client for the TEMPORARY legacy driver (fallback reads, mirror, migration);
+`objectAcl.ts` was removed. Detail: [B25_OBJECT_STORAGE.md](B25_OBJECT_STORAGE.md).
 
 **Email delivery** — `lib/email/` builds branded templates and sends over SMTP.
 Delivery is queued (`JOBS_ASYNC_EMAIL=true`) through the job queue; unconfigured SMTP
@@ -605,8 +631,9 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   soft-degrade to best-effort AI phrasing (never a 500), and provenance is honest
   (deterministic rows never masquerade as AI). Full detail:
   [ai-architecture.md](ai-architecture.md).
-- **Image privacy / restrictions** — card images are **private** GCS objects served
-  only via short-lived signed URLs, tenant-scoped. AI calls carry only field values
+- **Image privacy / restrictions** — card images and documents are **private**,
+  encrypted objects served only through authenticated API routes or short-lived
+  API capability URLs, tenant-scoped (B25). AI calls carry only field values
   and safe entity linkage (type + numeric id), never raw content in ledger rows.
 - **Live OCR verification** — `artifacts/api-server/scripts/verify-ocr-live.ts` is an
   **opt-in** script that calls live Gemini against OCR fixtures; normal test runs use
@@ -630,9 +657,9 @@ rate limiting, dedup, provider call via `runner.ts`, and ledger recording.
   tenants); restart/seed before a full run. Detail in
   [LOCAL_AND_STAGING_RUNBOOK.md](LOCAL_AND_STAGING_RUNBOOK.md).
 - **Current totals** — see [LOCALHOST_DEVELOPMENT.md §7](LOCALHOST_DEVELOPMENT.md)
-  (B24 run: API **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285** without object storage — the failures are the
-  documented storage-gated subset — Playwright **152/152**, mobile
-  **114/114**, workspace typecheck exit 0). Start the API with
+  (B25 Phase 1 run with the filesystem driver: API **1368 passed / 0 failed / 1 skipped of 1369 (82 files)**, Playwright
+  **152/152**, mobile **114/114**, workspace typecheck exit 0; no
+  storage-gated failures or skips remain). Start the API with
   `LOGIN_RATE_MAX=1000` in its shell for a full run; `JOBS_DRIVER=postgres` in
   both shells to exercise the durable `/metrics` assertion.
 - **Playwright setup** — `artifacts/web-app/playwright.config.ts` resolves a Nix-store
@@ -721,9 +748,9 @@ everything else degrades gracefully.
 
 Hard rules for anyone extending this project:
 
-- **Work one approved batch at a time.** Do not begin B25 or any new business
-  feature until it is explicitly approved. Do not add unnecessary features or
-  abstractions.
+- **Work one approved batch at a time.** Do not begin B26, the hosted B25
+  phases, or any new business feature until it is explicitly approved. Do not
+  add unnecessary features or abstractions.
 - **`gemini-2.5-flash` only.** No other model, and **no direct Gemini calls** — every
   AI call must go through the Enterprise AI Layer (`src/ai/`). Never bypass metering,
   budget admission, rate limiting, or dedup.

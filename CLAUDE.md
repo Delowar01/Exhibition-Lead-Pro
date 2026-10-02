@@ -41,8 +41,9 @@ field-capture client (EN/AR with RTL, light/dark).
   contract), `docs/LOCALHOST_DEVELOPMENT.md` (local workflow and the **single
   authoritative test baseline**), `docs/HOSTINGER_VPS_DEPLOYMENT.md` (hosted
   dev stack), `docs/BACKUP_AND_RECOVERY.md`, `docs/B23_FINAL_RECONCILIATION.md`
-  (gap register with its B24 status addendum), `replit.md` (operational
-  summary). `docs/LOCAL_AND_STAGING_RUNBOOK.md` and
+  (gap register with its B24 status addendum), `docs/B25_OBJECT_STORAGE.md`
+  (B25 object-storage architecture, inventory, migration and activation plan),
+  `replit.md` (operational summary). `docs/LOCAL_AND_STAGING_RUNBOOK.md` and
   `docs/PORTABLE_ENVIRONMENT_SETUP.md` are the export-era references; files
   under `docs/reports/` are archived point-in-time reports and are not
   rewritten. **When docs and code disagree, the code is authoritative** —
@@ -129,13 +130,22 @@ Center / Workflow Intelligence / Executive Intelligence.
   performed (last device pass: Honor Magic V5, Android 16).
 - Batches 1–8 are complete and device-verified; **B9–B23 are complete,
   merged to `develop` and deployed to the hosted dev stack**
-  (`docs/B23_FINAL_RECONCILIATION.md`). **Current batch: B24 — Release-Gate
-  Closure** (live `/metrics` pending count, workspace typecheck, audit-retention
-  contract, documentation of record). **Planned next: B25 — product object
-  storage off Google Cloud** (owner decision: *Option B — remove Google Cloud
-  completely*; not started; proceeds without the second backup VPS).
-  Feature items G-4 / G-7 / G-8 await owner decisions and are not approved
-  batches. Do not start B25 or any feature batch without approval.
+  (`docs/B23_FINAL_RECONCILIATION.md`). **B24 — Release-Gate Closure is
+  complete, merged to `develop` (`5a072fd…`), deployed and verified on the
+  hosted dev stack** (activation run 36972460934). **Current batch: B25 —
+  product object storage off Google Cloud (owner decision: *Option B — remove
+  Google Cloud completely*; proceeds without the second backup VPS).
+  Phase 1 (provider-neutral storage contract, encrypted filesystem driver,
+  object inventory, API-mediated capability URLs, lifecycle/tombstones,
+  migration tooling) is implemented and verified LOCALLY on
+  `claude/b25-object-storage-hostinger` — NOT merged, NOT hosted, NOT
+  migrated; the hosted stack still runs Google Cloud Storage unchanged, and
+  GCS remains in the code only as the temporary legacy / migration / fallback
+  driver** (`docs/B25_OBJECT_STORAGE.md`). Hosted activation, migration and
+  credential/dependency removal are separate owner-approved phases; **B25 is
+  not complete and must not be reported as complete.** Feature items G-4 /
+  G-7 / G-8 await owner decisions and are not approved batches. Do not start
+  B26, the hosted B25 phases or any feature batch without approval.
 - B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. Frozen on
   `claude/b23-g6d-hostinger-only` at `e82e5cb7767d7ac3ee47c919fcf711a52fe229ab`;
   do not amend, rebase, merge, activate or dispatch it. The off-host deferral is not a blocker for product development, testing, B24, B25, or later feature batches.
@@ -170,8 +180,14 @@ pnpm --filter @workspace/scripts run dev-gateway
 
 Required env: `DATABASE_URL`, `SESSION_SECRET`, `PORT` (no dotenv loader is
 bundled — export in the shell). Leave `TRUST_PROXY` at its default (`1`) behind
-the dev gateway. SMTP/GCS/Gemini unset = graceful degradation (no real email,
-uploads report "not configured", AI uses the stub).
+the dev gateway. SMTP/Gemini unset = graceful degradation (no real email, AI
+uses the stub). **Object storage (B25):** export `OBJECT_STORAGE_DRIVER=fs`,
+`OBJECT_STORAGE_FS_ROOT=<absolute dir OUTSIDE the repo>` and
+`OBJECT_STORAGE_ENCRYPTION_KEY=$(openssl rand -hex 32)` in the API **and**
+test shells for the full baseline (the B25 suite asserts on-disk effects);
+with nothing configured the API falls back to the in-process memory driver
+outside production (uploads work, nothing survives a restart). Never point a
+local run at the hosted bucket.
 
 ## Tests & expected baseline
 
@@ -184,12 +200,14 @@ pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-**Authoritative baseline (B24 run, 2026-10-02, no object-storage
-credentials):** API **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285**, Playwright **152/152**, mobile
-**114/114**. The API failures are exactly the documented storage-gated
-set (documents.test.ts 6 failed + 18 skipped, ocr-pipeline 1,
-executive-intelligence 2); everything else must be green. Pre-B24 reference
-(B23 Correction 1): 1234 passed / 9 / 28 of 1271, 152/152, 114/114. The B20
+**Authoritative baseline (B25 Phase 1 run, 2026-10-02, filesystem object
+storage driver, no Google Cloud credentials):** API **1368 passed / 0 failed / 1 skipped of 1369 (82 files)**,
+Playwright **152/152**, mobile **114/114**. The formerly
+storage-gated set (documents 24, ocr-pipeline reprocess, executive-intelligence
+2) now runs green on the fs driver; every remaining skip is classified in
+`docs/LOCALHOST_DEVELOPMENT.md` §7 (no storage-gated skips remain). Pre-B25
+reference (B24, no object storage): 1248 passed / 9 storage-gated / 28 skipped
+of 1285, 152/152, 114/114. The B20
 billing suites and the Playwright billing spec need `BILLING_PROVIDER=fake` +
 `STRIPE_WEBHOOK_SECRET` (any local value) + `BILLING_SELF_SERVICE_CHECKOUT=true`
 in the API and test shells. `docs/LOCALHOST_DEVELOPMENT.md` §7 is the single

@@ -33,6 +33,19 @@
 > the next planned batch is **B25 — product object storage off Google Cloud**
 > (owner decision Option B), which does not depend on the second backup VPS.
 > Current test totals live in `LOCALHOST_DEVELOPMENT.md` §7.
+>
+> **Status addendum (B25 Phase 1, 2026-10-02).** B24 was accepted, merged to
+> `develop` (`5a072fd…`), deployed and verified on the hosted dev stack
+> (activation run 36972460934). **B25 Phase 1** — provider-neutral object
+> storage contract, encrypted filesystem driver, `storage_objects` inventory,
+> API-mediated capability URLs, tombstone-first lifecycle, migration command —
+> is implemented and verified **locally only** on
+> `claude/b25-object-storage-hostinger` (`B25_OBJECT_STORAGE.md`): not merged,
+> not hosted, not migrated; the hosted stack still uses Google Cloud Storage,
+> which remains in the code only as the temporary legacy / migration driver.
+> The formerly storage-gated set of this audit (`documents` 24, `ocr-pipeline`
+> 1, `executive-intelligence` 2) now runs green locally on the filesystem
+> driver. B25 is **not complete**; G-4, G-7, G-8 remain open owner decisions.
 
 **Scope:** audit only. No product code, schema, contract, generated client, UI, hosted
 configuration, secret, container, queue, GCS object or host service was changed. Every

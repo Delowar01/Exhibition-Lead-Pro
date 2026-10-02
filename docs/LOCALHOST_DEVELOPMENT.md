@@ -164,9 +164,32 @@ Verify:
 
 ```bash
 curl http://localhost:80/api/healthz   # {"status":"ok"}
-curl http://localhost:80/api/readyz    # database "ok"; storage "not_configured" is expected without GCS
+curl http://localhost:80/api/readyz    # database "ok"; storage "ok" with the fs (or memory) driver — see below
 # browser: http://localhost:80 → login page; demo login buttons appear in dev builds
 ```
+
+### Object storage (B25 — filesystem driver, no Google Cloud)
+
+Product files (documents, exports, reports, scan images, logos) are stored
+**encrypted** under a private directory outside the repository. For a full
+test run export the same three values in the **API shell and the test shell**
+(`test/b25-storage.test.ts` asserts on-disk effects):
+
+```bash
+sudo install -d -m 700 -o "$USER" /var/lib/lcp-objects-dev     # any absolute dir OUTSIDE the repo / web roots
+export OBJECT_STORAGE_DRIVER=fs
+export OBJECT_STORAGE_FS_ROOT=/var/lib/lcp-objects-dev
+export OBJECT_STORAGE_ENCRYPTION_KEY=$(openssl rand -hex 32)    # keep it for the life of that directory (never commit it)
+pnpm --filter @workspace/db run push                            # adds storage_objects (verify the dev DB first)
+```
+
+`readyz` then reports `storage: "ok"` (the probe writes/reads/deletes one object
+under `health/`). With **no** `OBJECT_STORAGE_*` and no bucket the API uses the
+in-process memory driver outside production: uploads work for one process and
+nothing survives a restart (enough for the formerly storage-gated suites, not
+for the B25 suite). Never point a local run at the hosted bucket; the Google
+variables in `.env.example` §1d exist only for the temporary legacy driver.
+Details and the hosted plan: `docs/B25_OBJECT_STORAGE.md`.
 
 ## 6. Mobile app (Expo)
 
@@ -200,7 +223,7 @@ PORT=8081 EXPO_PUBLIC_API_URL="http://<YOUR-LAN-IP>:8080" pnpm exec expo start -
 
 ```bash
 pnpm run typecheck                              # whole workspace incl. mockup-sandbox — exit 0 (B24)
-pnpm --filter @workspace/api-server run test    # fully green only with storage configured (see note)
+pnpm --filter @workspace/api-server run test    # fully green with the fs object-storage driver (§5; see note)
 pnpm --filter @workspace/web-app run test:e2e   # needs the Batch 20 billing env, §3
 pnpm --filter @workspace/mobile run test
 pnpm --filter @workspace/api-server run build   # PASS → dist/index.mjs
@@ -211,23 +234,19 @@ pnpm --filter @workspace/web-app run build      # PASS → dist/public (env-free
 maintained** (other documents point here; `docs/reports/` are archived
 point-in-time reports and keep their historical counts).
 
-| Suite | B24 run (2026-10-02, no object-storage credentials) | Pre-B24 reference (B23 Correction 1, 2026-09-18) |
-|---|---|---|
-| API (`vitest run`, once, API started with `LOGIN_RATE_MAX=1000` and `JOBS_DRIVER=postgres`) | **1248 passed / 9 documented storage-gated failures / 28 skipped of 1285** | 1234 passed / 9 failed / 28 skipped of 1271 |
-| Playwright (`playwright test`, chromium) | **152/152** | 152/152 |
-| Mobile (`vitest run`) | **114/114** | 114/114 |
-| Typechecks (libs, api, web, mobile, scripts, pitch-deck, mockup-sandbox; root `pnpm run typecheck`) | **all exit 0** | root run failed in `mockup-sandbox` (B23 G-10, fixed in B24) |
-| API / web production builds | **PASS** | PASS |
+| Suite | B25 Phase 1 run (2026-10-02, fs object-storage driver, no Google Cloud credentials) | B24 run (2026-10-02, no object storage) | Pre-B24 reference (B23 Correction 1, 2026-09-18) |
+|---|---|---|---|
+| API (`vitest run`, once, API started with `LOGIN_RATE_MAX=1000`, `JOBS_DRIVER=postgres` and the fs driver) | **1368 passed / 0 failed / 1 skipped of 1369 (82 files)** | 1248 passed / 9 documented storage-gated failures / 28 skipped of 1285 | 1234 passed / 9 failed / 28 skipped of 1271 |
+| Playwright (`playwright test`, chromium) | **152/152** | 152/152 | 152/152 |
+| Mobile (`vitest run`) | **114/114** | 114/114 | 114/114 |
+| Typechecks (libs, api, web, mobile, scripts, pitch-deck, mockup-sandbox; root `pnpm run typecheck`) | **all exit 0** | all exit 0 | root run failed in `mockup-sandbox` (B23 G-10, fixed in B24) |
+| API / web production builds | **PASS** | PASS | PASS |
 
-> **Object-storage-gated subset:** 27 of the API tests exercise GCS-backed
-> uploads (document upload/download/versioning, the stored-scan-image
-> reprocess, executive report export artifacts). Without object-storage
-> credentials the 9 failures and 18 of the skips are exactly that subset
-> (`documents.test.ts` 6 failed + 18 skipped, `ocr-pipeline` 1,
-> `executive-intelligence` 2); everything else must be green. Configure the
-> GCS vars from `.env.example` §1d (dev bucket + service account, never
-> production) to reach a fully green run — until B25 moves product object
-> storage off Google Cloud.
+> **No storage-gated subset any more (B25):** the 27 formerly GCS-gated tests
+> (`documents.test.ts` 24, `ocr-pipeline` stored-image reprocess,
+> `executive-intelligence` 2 report exports) run green on the filesystem
+> driver; storage failures are fixed by configuration (§5), never by skipping.
+> **Every remaining skip is intentional and classified:** `b9-reports-exports.test.ts` › on-demand exports › "without object storage (degraded, environment-gated) › fails safely: 502 response and a recorded failed run" — the deliberate mirror of the with-storage branches (`describe.runIf(!STORAGE)` vs `describe.runIf(STORAGE)`): exactly one side runs depending on `readyz.checks.storage`, and with storage configured the degraded branch is the one that skips. The only other conditional skips in the suite (`b22c1-ocr-unconfigured.test.ts`, `ctx.skip` when the running API holds a live Gemini credential) do not trigger in the normal stub-provider run; the B24 durable `/metrics` assertion and the former document / report / scan storage skips no longer skip because `JOBS_DRIVER=postgres` and the fs driver are exported in both shells.
 >
 > **Durable `/metrics` assertion (B24):** `test/b24-metrics-pending.test.ts`
 > proves the live pending count against the real `job_queue` table with its own
@@ -287,7 +306,7 @@ NixOS — `PW_CHROMIUM_PATH=/path/to/chrome`. Target override: `E2E_BASE_URL`
 | Tests: `no seeded tenant-A row for <resource>` | TechCorp is not company id 2, or fixture rows missing — §4 |
 | Tests: spurious 429s (`expected 429 to be 200`, suites skipped after "login failed … 429") | API served a previous run, or was started with the default `LOGIN_RATE_MAX=20` — restart it with `LOGIN_RATE_MAX=1000` in the API shell (§3), run once |
 | Playwright: browser launch error | set `PW_CHROMIUM_PATH` to a real Chromium binary |
-| Uploads fail, `readyz` storage `not_configured` | expected without GCS credentials; harmless for dev |
+| Uploads answer 503, `readyz` storage `not_configured` | only with `OBJECT_STORAGE_DRIVER=none` (or production without configuration) — set the fs driver (§5); `storage: "error"` with the fs driver means an unusable root (not absolute, inside the repo, a symlink, wrong owner) or a missing/invalid `OBJECT_STORAGE_ENCRYPTION_KEY` — the API log names the reason without printing paths or keys |
 | Email "skipped (not configured)" | expected without `SMTP_*`; honest no-op |
 | `EADDRINUSE` on :80 | another gateway/process on port 80, or missing privilege to bind 80 |
 | Playwright: every test times out in `page.goto` waiting for `load`, though the page renders | Restricted-network environments only (containers/CI without direct internet): the app's Google-Fonts stylesheets (`index.html`, `src/index.css`) hang, and Chromium on Linux also honors `http_proxy`/`https_proxy` env with nondeterministic timing. Fix: run the suite with proxy env unset (`env -u HTTP_PROXY -u HTTPS_PROXY …`) and, if there is no direct egress, blackhole `fonts.googleapis.com`/`fonts.gstatic.com` to `127.0.0.1` in `/etc/hosts` so they fail instantly. Normal machines with direct internet are unaffected |

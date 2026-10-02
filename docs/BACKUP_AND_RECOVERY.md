@@ -307,18 +307,27 @@ snapshots: Optional owner verification during development; not a substitute for 
 
 **Separate concern — product object storage.** PostgreSQL off-host backup
 (this section) and product object-storage migration are separate concerns.
-The owner chose *Option B — remove Google Cloud completely*. **B25** (planned,
-not started) will migrate product object storage off Google Cloud **without
-depending on the purchase of the second backup VPS**: a provider-neutral
-storage interface; a Hostinger-current-VPS / local encrypted-volume driver
-suitable for development and hosted-dev testing; tenant-prefixed object keys;
-authenticated API-mediated access; object inventory with size and checksum
-verification; lifecycle deletion and orphan handling; resumable
-copy-and-verify migration; dual-read / rollback during migration; removal of
-GCS credentials and dependencies only after verified migration; off-host
-protection of the object store added when the second VPS is purchased. Until
-then the migrated objects carry the same single-host durability risk as the
-database backups, and that risk is documented rather than hidden.
+The owner chose *Option B — remove Google Cloud completely*. **B25 Phase 1
+(2026-10-02) is implemented and verified locally** on
+`claude/b25-object-storage-hostinger` — not merged, not hosted, not migrated
+(`B25_OBJECT_STORAGE.md`): a provider-neutral storage contract; an encrypted
+filesystem driver (chunked AES-256-GCM, dedicated `OBJECT_STORAGE_ENCRYPTION_KEY`)
+for development, tests and the Hostinger application VPS volume; tenant-prefixed
+keys; authenticated API-mediated access; the `storage_objects` inventory with
+size and SHA-256 verification; tombstone-first lifecycle deletion and orphan
+sweeps; a resumable copy-and-verify migration command; fs-first reads with
+legacy fallback and strict mirror switches for the hosted transition. **The
+hosted stack still stores product files in Google Cloud Storage**, which stays
+in the code only as the temporary legacy / migration / fallback driver; the
+credentials and dependency are removed only after the owner-approved, verified
+migration. **Recovery requirements once activated:** the VPS object volume
+must be backed up together with the database (the inventory) **and** the
+encryption key, and the owner must hold an **offline, owner-controlled
+recovery copy of `OBJECT_STORAGE_ENCRYPTION_KEY` before any hosted cutover** —
+a volume backup without the key is unreadable. Off-host protection of the
+object store is added when the second VPS is purchased; until then the objects
+carry the same single-host durability risk as the database backups, documented
+rather than hidden.
 
 The superseded GCP proposal is kept below for the record (it is **not** the
 design that was approved; it was replaced by the Hostinger-only architecture
@@ -351,5 +360,8 @@ in G-6D Correction 1 and must not be configured):
    open; both remain unrehearsed.**
 6. Off-host activation items (1)–(10) of §5 — **deferred by the owner**; they
    are needed for final off-host activation and recovery testing only.
-7. B25 — product object storage off Google Cloud (separate batch; needs
-   approval; does not depend on the second VPS).
+7. B25 — product object storage off Google Cloud: **Phase 1 implemented and
+   verified locally (not hosted)**; the hosted phases (volume + key with an
+   offline recovery copy, strict mirror, copy + verify, fallback disable,
+   Google Cloud removal) each need separate approval; does not depend on the
+   second VPS (`B25_OBJECT_STORAGE.md` §8–§10).
