@@ -175,7 +175,7 @@ describe("12. branding company-row update failures never reach the generic logge
     }
     expectContained(thrown, "uploadLogo");
     expectNoSecret(captured(), "uploadLogo: service logs");
-    expect(captured()).toContain("Branding: company row update failed");
+    expect(captured()).toMatch(/Branding: company row update (statement rejected|did not commit)/);
 
     // the row never changed: previous logo still current, new object tombstoned and physically removed
     expect((await company()).brandLogoKey).toBe(firstKey);
@@ -203,7 +203,7 @@ describe("12. branding company-row update failures never reach the generic logge
     }
     expectContained(thrown, "removeLogo");
     expectNoSecret(captured(), "removeLogo: service logs");
-    expect(captured()).toContain("Branding: company row update failed");
+    expect(captured()).toMatch(/Branding: company row update (statement rejected|did not commit)/);
     expect((await company()).brandLogoKey).toBe(key);
     expect((await logoRows()).map((r) => r.state)).toEqual(["active"]);
     expect(primary.objects.size).toBe(1);
@@ -223,7 +223,7 @@ describe("12. branding company-row update failures never reach the generic logge
     }
     expectContained(thrown, "resetBranding");
     expectNoSecret(captured(), "resetBranding: service logs");
-    expect(captured()).toContain("Branding: company row update failed");
+    expect(captured()).toMatch(/Branding: company row update (statement rejected|did not commit)/);
     const after = await company();
     expect(after.brandLogoKey).toBe(key);
     expect(after.brandPrimaryColor).toBe("#123456");
