@@ -50,6 +50,19 @@ existing_core() {
   q "select 'company1: status='||c.status||' plan='||c.plan||' name_md5='||md5(c.name)||' | sub: status='||s.status||' plan='||s.plan||' source='||s.billing_source||' overrides='||s.limit_overrides::text||' trial_expires='||coalesce(s.trial_expires_at::text,'null')||' status_changed='||s.status_changed_at::text||' stripe='||(s.stripe_customer_id is not null or s.stripe_subscription_id is not null)||' | users='||(select count(*) from users where company_id=1)||' users_active='||(select count(*) from users where company_id=1 and deleted_at is null and is_active)||' roles='||(select count(*) from roles where company_id=1)||' user_roles='||(select count(*) from user_roles ur join users u on u.id=ur.user_id where u.company_id=1)||' perms_md5='||md5(coalesce((select string_agg(u.id||':'||u.role||':'||u.permissions::text, ',' order by u.id) from users u where u.company_id=1),''))||' contacts='||(select count(*) from contacts where company_id=1)||' leads='||(select count(*) from leads where company_id=1)||' events='||(select count(*) from events where company_id=1)||' tasks='||(select count(*) from tasks where company_id=1)||' tags='||(select count(*) from tags where company_id=1)||' lead_tags='||(select count(*) from lead_tags where company_id=1)||' documents='||(select count(*) from documents where company_id=1)||' wf_defs='||(select count(*) from workflow_definitions where company_id=1)||' wf_runs='||(select count(*) from workflow_runs where company_id=1)||' intents='||(select count(*) from billing_checkout_sessions where company_id=1)||' reservations='||(select count(*) from subscription_usage_reservations where company_id=1) from companies c join subscriptions s on s.company_id=c.id where c.id=1"
 }
 
+# Run a small read-only node script INSIDE the api container. The script travels
+# in an environment variable of the exec'd process (never on disk, never via
+# stdin); stderr is reduced to one masked line (no path, url or bucket).
+api_node() {
+  local js="$1" errf="$HOME/.b25-node.err" out
+  if out="$(timeout 120 compose exec -T -e B25_JS="$js" api sh -c 'exec node -e "$B25_JS"' 2>"$errf")"; then
+    printf '%s\n' "$out"
+  else
+    echo "unavailable (reason: $(grep -m1 -E 'Error|error' "$errf" | sed -E 's#gs://[^[:space:]]*#<gs>#g; s#https?://[^[:space:]]*#<url>#g; s#/[^[:space:]]+#<path>#g' | cut -c1-160 || echo unknown))"
+  fi
+  rm -f "$errf"
+}
+
 cd "$APP_DIR/docker"
 PG_CID="$(compose ps -q postgres)"; [ -n "$PG_CID" ] || fail "postgres container not found"
 API_CID="$(compose ps -q api || true)"; [ -n "$API_CID" ] || fail "api container not found"
@@ -143,7 +156,7 @@ phase_inspect() {
   echo "compose credential mount declared: $(grep -c 'gcs-service-account.json' "$APP_DIR/docker/compose.vps.yml") line(s); group_add declared: $(grep -c 'GCS_CREDENTIAL_GID' "$APP_DIR/docker/compose.vps.yml") line(s)"
   echo "readyz storage check: $(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz | grep -oE '"storage":"[a-z_]+"' || echo UNAVAILABLE)"
   echo "bucket object census (read-only LIST through the api container's credential; counts and bytes only; capped at 20000 objects):"
-  timeout 120 compose exec -T api node - <<'JS' 2>/dev/null || echo '{"census":"unavailable"}'
+  CENSUS_JS=$(cat <<'JS'
 const { Storage } = require("@google-cloud/storage");
 (async () => {
   const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
@@ -175,6 +188,8 @@ const { Storage } = require("@google-cloud/storage");
   console.log(JSON.stringify(out));
 })().catch((e) => console.log(JSON.stringify({ census: "error", code: e.code || e.name || "unknown" })));
 JS
+)
+  api_node "$CENSUS_JS"
 
   section "8. Hostinger filesystem readiness (read-only; nothing created)"
   echo "disk (df -h): "; df -h / /opt /var/lib/docker 2>/dev/null | sed 's/^/  /'
@@ -197,9 +212,9 @@ JS
   if [ -r /etc/nginx/nginx.conf ]; then echo "host nginx.conf client_max_body_size: $(grep -h client_max_body_size /etc/nginx/nginx.conf 2>/dev/null | tr -s ' ' | tr '\n' ';' || echo none)"; else echo "host /etc/nginx/nginx.conf: not readable by the deploy user"; fi
   if ls /etc/nginx/sites-enabled/ >/dev/null 2>&1; then echo "host vhosts client_max_body_size (values only): $(grep -hs client_max_body_size /etc/nginx/sites-enabled/* 2>/dev/null | tr -s ' ' | sort | uniq -c | tr '\n' ';' || echo none)"; else echo "host /etc/nginx/sites-enabled: not readable by the deploy user"; fi
   echo "stack-only probe (api container -> web nginx -> api; Expect: 100-continue, no body sent; 100 = headers accepted by nginx, 413 = refused):"
-  timeout 90 compose exec -T -e PROBE_BASE=http://web api node - <<'JS' 2>/dev/null || echo "  probe unavailable"
+  PROBE_JS=$(cat <<'JS'
 const http = require("node:http");
-const base = process.env.PROBE_BASE;
+const base = "http://web";
 const sizes = [[1, 1 << 20], [25, 25 << 20], [30, 30 << 20], [30.0001, (30 << 20) + 1], [31, 31 << 20], [100, 100 << 20], [1024, 1024 << 20]];
 const path = "/api/files/uploads/00000000-0000-4000-8000-000000000000";
 function probe(bytes) {
@@ -213,6 +228,8 @@ function probe(bytes) {
 }
 (async () => { for (const [label, bytes] of sizes) console.log(`  ${label} MiB -> ${await probe(bytes)}`); })();
 JS
+)
+  api_node "$PROBE_JS"
 
   section "11. encryption-key owner gate (presence by variable name only)"
   envkey OBJECT_STORAGE_ENCRYPTION_KEY

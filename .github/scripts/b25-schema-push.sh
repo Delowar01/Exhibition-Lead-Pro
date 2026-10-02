@@ -63,7 +63,7 @@ echo "after push $(counts)"
 section "storage_objects as created on the scratch database"
 sq "select column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,'<none>') from information_schema.columns where table_schema='public' and table_name='storage_objects' order by ordinal_position" | sed 's/^/  column /'
 sq "select indexname||' | '||indexdef from pg_indexes where schemaname='public' and tablename='storage_objects' order by indexname" | sed 's/^/  index /'
-sq "select conname||' | '||contype||' | '||pg_get_constraintdef(oid) from pg_constraint where conrelid='storage_objects'::regclass order by conname" | sed 's/^/  constraint /'
+sq "select conname||' | '||contype::text||' | '||pg_get_constraintdef(oid) from pg_constraint where conrelid='storage_objects'::regclass order by conname" | sed 's/^/  constraint /'
 
 section "second push (must be a no-op)"
 set +e
