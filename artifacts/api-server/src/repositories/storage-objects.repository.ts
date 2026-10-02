@@ -3,6 +3,9 @@
 // B25 Correction 1: upload leases (CAS claim / release), expired-lease and
 // retained-legacy listings, and orphan detection by LIVE FEATURE REFERENCE
 // (an object is an orphan only when NO feature row still references it).
+// B25 Correction 4: persisted provider-publication uncertainty (mark before a
+// remote put, cleared only by the durable commit; uncertain tombstones are
+// never reconciled or purged, only re-checked).
 import {
   db,
   storageObjectsTable,
@@ -117,6 +120,63 @@ export const OWNERSHIP_UNPROVEN = "OWNERSHIP_UNPROVEN";
 export const PURGE_BLOCKING_ERRORS = [LEGACY_RETAINED, CLEANUP_PENDING, OWNERSHIP_UNPROVEN];
 
 /**
+ * B25 Correction 4 — durable publication-uncertainty mark. Succeeds only while
+ * the row is still a live write target (`pending` for a server-side write,
+ * `uploading` for a leased client upload); returns false when the row was
+ * fenced out meanwhile (the caller must then NOT hand the request to the
+ * provider). Committed before the provider request starts; nothing but the
+ * durable stage / activation commit clears it.
+ */
+export async function markPublicationUncertain(id: string, now: Date = new Date()): Promise<boolean> {
+  const rows = await db
+    .update(storageObjectsTable)
+    .set({ publicationUncertainAt: now, updatedAt: now })
+    .where(and(eq(storageObjectsTable.id, id), inArray(storageObjectsTable.state, ["pending", "uploading"])))
+    .returning({ id: storageObjectsTable.id });
+  return rows.length > 0;
+}
+
+/**
+ * Settled (`deleted`) tombstones whose provider outcome is still uncertain and
+ * that automation may re-check: rows awaiting operator review
+ * (OWNERSHIP_UNPROVEN) or a pending cleanup retry (handled by its own pass)
+ * are excluded; `failed` / `deleting` rows reach `deleted` through the regular
+ * passes first. Oldest check first; the caller touches the row after each
+ * check so a bounded batch rotates through the whole set.
+ */
+export async function listPublicationUncertain(limit: number): Promise<StorageObjectRow[]> {
+  return db
+    .select()
+    .from(storageObjectsTable)
+    .where(
+      and(
+        isNotNull(storageObjectsTable.publicationUncertainAt),
+        eq(storageObjectsTable.state, "deleted"),
+        or(isNull(storageObjectsTable.lastError), notInArray(storageObjectsTable.lastError, [OWNERSHIP_UNPROVEN, CLEANUP_PENDING])),
+      ),
+    )
+    .orderBy(storageObjectsTable.updatedAt)
+    .limit(limit);
+}
+
+/** Bookkeeping after an uncertain tombstone's locations were re-checked (rotation only; never a state, mark or error change). */
+export async function touchPublicationUncertain(id: string, now: Date): Promise<void> {
+  await db
+    .update(storageObjectsTable)
+    .set({ updatedAt: now })
+    .where(and(eq(storageObjectsTable.id, id), isNotNull(storageObjectsTable.publicationUncertainAt), inArray(storageObjectsTable.state, TOMBSTONE_STATES)));
+}
+
+/** Tombstones carrying provider uncertainty (awaiting a re-check or operator resolution). */
+export async function countPublicationUncertain(): Promise<number> {
+  const [r] = await db
+    .select({ n: count() })
+    .from(storageObjectsTable)
+    .where(and(isNotNull(storageObjectsTable.publicationUncertainAt), inArray(storageObjectsTable.state, TOMBSTONE_STATES)));
+  return Number(r?.n ?? 0);
+}
+
+/**
  * Record that bytes of a tombstoned / failed row still need removal WITHOUT
  * changing its state (a stale writer may never move a row). Only tombstone
  * states are flagged: a live row's copies are never cleanup candidates.
@@ -144,7 +204,9 @@ export async function listCleanupPending(limit: number): Promise<StorageObjectRo
  * B25 Correction 3 — `deleted` rows whose persisted locations have not been
  * re-checked after the late-publication horizon (reconciled_at IS NULL and the
  * row is older than the hard upload lifetime + slack). Rows flagged
- * CLEANUP_PENDING are retried by the cleanup pass first.
+ * CLEANUP_PENDING are retried by the cleanup pass first. B25 Correction 4: a
+ * row with provider uncertainty is NEVER a reconciliation candidate — the
+ * horizon bounds only writers this process controls, not a remote provider.
  */
 export async function listUnreconciledTombstones(quiescentBefore: Date, limit: number): Promise<StorageObjectRow[]> {
   return db
@@ -154,6 +216,7 @@ export async function listUnreconciledTombstones(quiescentBefore: Date, limit: n
       and(
         eq(storageObjectsTable.state, "deleted"),
         isNull(storageObjectsTable.reconciledAt),
+        isNull(storageObjectsTable.publicationUncertainAt),
         lt(storageObjectsTable.createdAt, quiescentBefore),
         or(isNull(storageObjectsTable.lastError), ne(storageObjectsTable.lastError, CLEANUP_PENDING)),
       ),
@@ -191,7 +254,7 @@ export async function countUnreconciledTombstones(): Promise<number> {
   const [r] = await db
     .select({ n: count() })
     .from(storageObjectsTable)
-    .where(and(eq(storageObjectsTable.state, "deleted"), isNull(storageObjectsTable.reconciledAt)));
+    .where(and(eq(storageObjectsTable.state, "deleted"), isNull(storageObjectsTable.reconciledAt), isNull(storageObjectsTable.publicationUncertainAt)));
   return Number(r?.n ?? 0);
 }
 
@@ -363,8 +426,9 @@ export async function legacyReferenceOwned(companyId: number, kind: string, refe
 /**
  * Tombstones that may be dropped: the company no longer exists, the row is old
  * enough, its persisted locations were RECONCILED after the late-publication
- * horizon (B25 Correction 3 — never "because 24 hours passed"), and nothing is
- * retained, pending or unproven about it.
+ * horizon (B25 Correction 3 — never "because 24 hours passed"), nothing is
+ * retained, pending or unproven about it, and (B25 Correction 4) no provider
+ * request of unknown outcome was ever issued for it.
  */
 export async function listPurgeableTombstones(olderThan: Date, limit: number): Promise<StorageObjectRow[]> {
   const rows = await db
@@ -377,6 +441,7 @@ export async function listPurgeableTombstones(olderThan: Date, limit: number): P
         isNull(companiesTable.id),
         lt(sql`coalesce(${storageObjectsTable.deletedAt}, ${storageObjectsTable.updatedAt})`, olderThan),
         isNotNull(storageObjectsTable.reconciledAt),
+        isNull(storageObjectsTable.publicationUncertainAt),
         or(isNull(storageObjectsTable.lastError), notInArray(storageObjectsTable.lastError, PURGE_BLOCKING_ERRORS)),
       ),
     )

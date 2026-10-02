@@ -29,6 +29,12 @@ import { pgTable, uuid, text, integer, bigint, timestamp, index, uniqueIndex } f
 //             bucket object at the row's key without the row's ownership
 //             marker (never deleted automatically, never purged)
 //   failed    write failed; never readable
+// Provider uncertainty (B25 Correction 4): a tombstone (failed / deleting /
+// deleted) whose publication_uncertain_at is set handed at least one request to
+// a remote provider (GCS) whose outcome the writer never durably observed; it is
+// never reconciled or purged by automation — bounded sweeps keep re-checking
+// its persisted locations and remove only an object carrying the row's own
+// ownership marker, at the observed generation.
 // Only `active` rows are ever served. A tombstoned reference (deleting /
 // deleted / failed) is NEVER served from the legacy driver either, which is
 // what prevents a deleted object from reappearing through the GCS fallback.
@@ -82,6 +88,14 @@ export const storageObjectsTable = pgTable(
     // publish a late copy any more. A tombstone is purged only after this is
     // set; never merely because time passed.
     reconciledAt: timestamp("reconciled_at"),
+    // B25 Correction 4 — set DURABLY (committed) before the first byte of any
+    // request to a remote provider that can commit independently of the
+    // client (GCS primary put, strict-mirror put); cleared ONLY by the durable
+    // commit of the complete write (staged / active, after every required put
+    // returned). A client-side timeout, transport failure or process death
+    // leaves it set: the provider may still publish the object later, so the
+    // row is never reconciled "once and for all" and never purged while set.
+    publicationUncertainAt: timestamp("publication_uncertain_at"),
   },
   (t) => [
     // A reference is unique within a tenant and kind (resolution key).
