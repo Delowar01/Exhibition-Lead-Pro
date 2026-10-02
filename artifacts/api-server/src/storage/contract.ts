@@ -26,9 +26,12 @@ export type StorageErrorCode =
   | "STORAGE_INTEGRITY";
 
 export class StorageError extends Error {
-  constructor(readonly code: StorageErrorCode, message?: string, readonly cause?: unknown) {
+  /** Optional sanitized reason code (e.g. NO_READABLE_COPY) — never a path or key. */
+  reason?: string;
+  constructor(readonly code: StorageErrorCode, message?: string, readonly cause?: unknown, reason?: string) {
     super(message ?? STORAGE_ERROR_MESSAGES[code]);
     this.name = "StorageError";
+    if (reason) this.reason = reason;
   }
 }
 

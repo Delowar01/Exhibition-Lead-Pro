@@ -1,26 +1,39 @@
 // =============================================================================
-// Batch 25 — product-file byte routes.
+// Batch 25 — product-file byte routes (B25 Correction 1: authenticated).
 //
-//   PUT /files/uploads/:id?t=<capability>   client upload to a RESERVED object
-//   GET /files/:id?t=<capability>           bounded streaming download (HEAD ok)
+//   PUT /files/uploads/:id   client upload to a RESERVED object
+//   GET /files/:id           bounded streaming download (HEAD ok)
 //
 // Mounted in app.ts BEFORE the JSON/urlencoded body parsers so an upload body
-// streams straight into the storage boundary and is never buffered. The
-// capability token (minted by the feature route AFTER the normal auth, tenant
-// and permission checks) is the only credential: it is bound to one object id,
-// one tenant and one operation, and it expires. The route re-checks the object
-// against the inventory on every request (tenant match + state), so a token
-// for a deleted object or another tenant's object answers 403/404 — never a
-// file. Nothing here reveals storage keys, filesystem paths, bucket names or
-// hosts; the query string (token) is stripped from request logs by app.ts.
+// streams straight into the storage boundary and is never buffered. Every
+// request goes through the NORMAL application authentication (bearer token +
+// live server-side session) and the platform-owner firewall, then the object
+// manager re-checks, at byte time: the current active user, tenant access to
+// the object's company, the operation, object ownership/state and the feature
+// permission for the object kind. A logged-out or disabled user, a revoked
+// permission or a lost tenant membership is refused on the very next request.
+//
+// Uploads additionally present the header-bound capability minted when the
+// upload was reserved (X-Storage-Capability: bound to user + tenant + object +
+// PUT, short-lived). Credentials NEVER travel in the URL: a legacy `?t=` query
+// credential is rejected outright, the request serializer logs the path only
+// and the header is never logged. Byte responses carry
+// Referrer-Policy: no-referrer, Cache-Control: private, no-store, no-transform
+// and X-Content-Type-Options: nosniff. Nothing here reveals storage keys,
+// filesystem paths, bucket names or hosts.
+//
+// The intentionally PUBLIC routes (managed branding logo by its random id and
+// the published-card logo) live in routes/branding.ts and routes/cards.ts and
+// expose only their constrained projections — never this byte route.
 // =============================================================================
 import { Router, type IRouter, type Request, type Response } from "express";
 import { PassThrough } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { config } from "../config.js";
 import { AppError } from "../middlewares/errorHandler.js";
-import { verifyCapability } from "../storage/capability.js";
+import { requireAuth, requireTenantUser, type AuthRequest } from "../middlewares/requireAuth.js";
 import * as storage from "../services/storage.service.js";
+import type { StorageKind } from "../storage/keys.js";
 
 const router: IRouter = Router();
 
@@ -28,27 +41,32 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CONTENT_TYPE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i;
 const INLINE_SAFE_TYPES = storage.INLINE_SAFE_TYPES;
 
-function tokenOf(req: Request): string | undefined {
-  const t = req.query.t;
-  return typeof t === "string" ? t : undefined;
+/** A credential in the query string is never accepted (it would reach proxy logs, history and referrers). */
+function rejectQueryCredentials(req: Request, res: Response, next: () => void): void {
+  if (req.query.t !== undefined || req.query.token !== undefined || req.query.capability !== undefined) {
+    req.resume();
+    res.status(403).json({ error: "Credentials are not accepted in the URL", code: "STORAGE_QUERY_CREDENTIAL_REJECTED" });
+    return;
+  }
+  next();
 }
 
-function invalidUpload(): AppError {
-  return new AppError(403, "Upload link is invalid or expired", { code: "STORAGE_UPLOAD_INVALID" });
+function noReferrer(res: Response): void {
+  res.setHeader("Referrer-Policy", "no-referrer");
 }
 
-function invalidDownload(): AppError {
-  return new AppError(403, "Download link is invalid or expired", { code: "STORAGE_DOWNLOAD_INVALID" });
-}
+router.use("/files", rejectQueryCredentials, requireAuth, requireTenantUser);
 
 // ── upload ──────────────────────────────────────────────────────────────────
-router.put("/files/uploads/:id", async (req: Request, res: Response) => {
+router.put("/files/uploads/:id", async (req: AuthRequest, res: Response) => {
   const id = String(req.params.id);
-  const payload = verifyCapability(tokenOf(req), "put");
-  if (!payload || !UUID.test(id) || payload.o !== id) {
-    req.resume(); // drain so the 403 can be delivered on a kept-alive socket
-    throw invalidUpload();
+  noReferrer(res);
+  if (!UUID.test(id)) {
+    req.resume();
+    throw new AppError(404, "File not found");
   }
+  const capabilityHeader = req.headers[storage.CAPABILITY_HEADER];
+  const capability = Array.isArray(capabilityHeader) ? capabilityHeader[0] : capabilityHeader;
   const declared = req.headers["content-length"];
   const declaredBytes = declared !== undefined ? Number(declared) : undefined;
   // Non-production hook for the storage-failure rollback tests (same pattern as
@@ -66,7 +84,7 @@ router.put("/files/uploads/:id", async (req: Request, res: Response) => {
   });
 
   try {
-    const result = await storage.receiveUpload(payload, body, declaredBytes);
+    const result = await storage.receiveUpload(req.user!, id, capability, body, declaredBytes);
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ sizeBytes: result.sizeBytes, sha256: result.sha256 });
   } catch (err) {
@@ -77,13 +95,15 @@ router.put("/files/uploads/:id", async (req: Request, res: Response) => {
 });
 
 // ── download ────────────────────────────────────────────────────────────────
-router.get("/files/:id", async (req: Request, res: Response) => {
+router.get("/files/:id", async (req: AuthRequest, res: Response) => {
   const id = String(req.params.id);
-  const payload = verifyCapability(tokenOf(req), "get");
-  if (!payload || !UUID.test(id) || payload.o !== id) throw invalidDownload();
-
-  const row = await storage.loadForDownload(payload);
+  noReferrer(res);
+  const user = req.user!;
+  const row = await storage.authorizeObject(user, id, "get");
   if (!row) throw new AppError(404, "File not found");
+  if (!storage.userHasPermission(user, storage.permissionForKind(row.kind as StorageKind, "get"))) {
+    throw new AppError(403, "Missing permission for this file");
+  }
 
   let opened: storage.OpenedObject;
   try {
@@ -93,11 +113,12 @@ router.get("/files/:id", async (req: Request, res: Response) => {
   }
 
   const contentType = CONTENT_TYPE.test(opened.contentType) ? opened.contentType : "application/octet-stream";
-  const inline = payload.d === "inline" && INLINE_SAFE_TYPES.has(contentType.toLowerCase());
+  const inline = INLINE_SAFE_TYPES.has(contentType.toLowerCase());
+  const fileName = await storage.displayFileName(row);
   res.status(200);
   res.setHeader("Content-Type", contentType);
   if (opened.sizeBytes != null) res.setHeader("Content-Length", String(opened.sizeBytes));
-  res.setHeader("Content-Disposition", storage.contentDisposition(inline ? "inline" : "attachment", payload.fn ?? "download"));
+  res.setHeader("Content-Disposition", storage.contentDisposition(inline ? "inline" : "attachment", fileName));
   // no-transform keeps intermediaries (and the response compressor) from
   // re-encoding the bytes, so Content-Length stays exact for every file type.
   res.setHeader("Cache-Control", "private, no-store, no-transform");

@@ -102,14 +102,15 @@ export function assertValidUpload(mimeType: string, fileSize: number): void {
 }
 
 // Batch 25 — reserve an upload target for the AUTHENTICATED tenant. Returns the
-// short-lived capability URL the client PUTs the bytes to and the opaque
+// credential-free URL the client PUTs the bytes to (with its normal session
+// AND the `uploadToken` in the X-Storage-Capability header), and the opaque
 // `/objects/...` handle it echoes back when creating the document/version. The
 // handle is bound to this tenant in the object inventory before any byte lands;
 // a handle posted by another tenant (or never uploaded) is rejected on create.
 export async function requestUploadURL(
   req: Request,
   input: { companyId: number; userId: number; contentType: string; size: number },
-): Promise<{ uploadURL: string; objectPath: string }> {
+): Promise<{ uploadURL: string; objectPath: string; uploadToken: string }> {
   const reserved = await storage.reserveUpload(req, {
     companyId: input.companyId,
     userId: input.userId,
@@ -117,13 +118,13 @@ export async function requestUploadURL(
     contentType: input.contentType,
     declaredSize: input.size,
   });
-  return { uploadURL: reserved.uploadURL, objectPath: reserved.reference };
+  return { uploadURL: reserved.uploadURL, objectPath: reserved.reference, uploadToken: reserved.uploadToken };
 }
 
-// Mint a short-lived download/preview capability URL for a stored version.
-// Resolves to null when the object no longer exists (callers answer 404).
-// Browser-previewable types (images, PDF, plain text) open inline; everything
-// else is served as an attachment — decided server-side from the stored type.
+// Credential-free download URL of the API byte route for a stored version
+// (the route re-checks the current session, tenant and state on every
+// request). Resolves to null when the object no longer exists (callers answer
+// 404). Inline vs attachment is decided server-side from the stored type.
 export async function getDownloadURL(
   base: string,
   input: { companyId: number; objectPath: string; userId: number | null; fileName: string; mimeType: string },

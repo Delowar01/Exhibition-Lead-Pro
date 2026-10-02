@@ -415,9 +415,14 @@ export const config = {
     bucketId: process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "",
     publicSearchPaths: process.env.PUBLIC_OBJECT_SEARCH_PATHS ?? "",
     privateObjectDir: process.env.PRIVATE_OBJECT_DIR ?? "",
-    // Capability URLs minted after authorization (upload targets / downloads).
+    // Upload capability (header-bound, minted after authorization) lifetime.
+    // B25 Correction 1: downloads carry NO capability — the byte route uses the
+    // normal session — so the former OBJECT_STORAGE_DOWNLOAD_TTL_SEC is retired.
     uploadTtlSec: numEnv("OBJECT_STORAGE_UPLOAD_TTL_SEC", 900, 60),
-    downloadTtlSec: numEnv("OBJECT_STORAGE_DOWNLOAD_TTL_SEC", 300, 30),
+    // B25 Correction 1 — upload publication lease: one writer per upload intent;
+    // an expired lease is reclaimable (crash recovery). Must exceed the longest
+    // acceptable single upload.
+    uploadLeaseMs: numEnv("OBJECT_STORAGE_UPLOAD_LEASE_MS", 15 * 60 * 1000, 10_000),
     // Lifecycle sweeps: reserved-but-never-uploaded and uploaded-but-never-attached
     // objects are removed after these windows; deleting rows are retried.
     pendingTtlMs: numEnv("OBJECT_STORAGE_PENDING_TTL_MS", 60 * 60 * 1000, 60_000),

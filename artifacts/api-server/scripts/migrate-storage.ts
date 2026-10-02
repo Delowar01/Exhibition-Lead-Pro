@@ -6,12 +6,17 @@
 //   pnpm --filter @workspace/api-server run migrate-storage -- --verify
 //   ... [--out <summary.json>]
 //
-// Resumable and idempotent: rerunning finds already-migrated objects and
-// skips them; a conflicting local object is never overwritten; nothing is ever
-// deleted from the bucket. Exit codes: 0 complete, 2 incomplete (missing
-// sources, checksum mismatches, conflicts, failures, unmigrated rows in
-// --verify), 1 usage / configuration error. The JSON summary is sanitized
-// (ids, kinds, counts, error codes — no keys, paths, bucket names or contents).
+// --dry-run and --verify are READ-ONLY (B25 Correction 1): they discover and
+// plan / check but never register an inventory row and never write an object;
+// --copy is the only mutating mode. Resumable and idempotent: rerunning finds
+// already-migrated objects and skips them; a conflicting local object is never
+// overwritten; nothing is ever deleted from the bucket. Several feature rows
+// pointing at ONE legacy object are reported as DUPLICATE_REFERENCE and mark
+// the run incomplete (copy / cutover blocked until resolved). Exit codes: 0
+// complete, 2 incomplete (missing sources, checksum mismatches, conflicts,
+// duplicates, failures, unregistered / unmigrated rows in --verify), 1 usage /
+// configuration error. The JSON summary is sanitized (ids, kinds, counts,
+// error codes, 16-hex key hashes — no keys, paths, bucket names or contents).
 //
 // Required environment: DATABASE_URL, OBJECT_STORAGE_DRIVER=fs,
 // OBJECT_STORAGE_FS_ROOT, OBJECT_STORAGE_ENCRYPTION_KEY (target) and, for
@@ -32,6 +37,9 @@ import { getLegacyDriver, getPrimaryDriver, initStorage } from "../src/storage/r
 function usage(msg?: string): never {
   if (msg) console.error(`error: ${msg}`);
   console.error("usage: migrate-storage --dry-run | --copy | --verify [--concurrency N] [--batch N] [--recheck] [--out file.json]");
+  console.error("  --dry-run  read-only: discover, attribute, group duplicates and plan (no inventory or object writes)");
+  console.error("  --copy     the only mutating mode: register, copy, verify, flip rows to the target driver");
+  console.error("  --verify   read-only: prove migrated objects match the inventory; report unregistered / unmigrated rows");
   process.exit(1);
 }
 

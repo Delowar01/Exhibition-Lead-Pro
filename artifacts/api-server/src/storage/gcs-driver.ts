@@ -67,18 +67,21 @@ export class GcsStorageDriver implements StorageDriver {
 
   async put(key: string, source: Readable | Buffer, opts: PutOptions & { allowOverwrite?: boolean }): Promise<PutResult> {
     const f = this.file(key);
-    if (!opts.allowOverwrite) {
-      try {
-        const [exists] = await f.exists();
-        if (exists) throw new StorageError("STORAGE_CONFLICT");
-      } catch (err) {
-        throw mapGcsError(err);
-      }
-    }
     const limiter = new HashingLimiter(opts.maxBytes);
+    // B25 Correction 1: a no-overwrite write is published with the atomic
+    // generation precondition `ifGenerationMatch: 0` (the object must not exist
+    // at commit time) instead of an exists() check followed by an unconditional
+    // write. A precondition failure (412) means NOTHING of ours was stored, so
+    // the loser never deletes the winner's object.
+    const preconditionOpts = opts.allowOverwrite ? undefined : { ifGenerationMatch: 0 };
     try {
-      await pipeline(toReadable(source), limiter, f.createWriteStream({ contentType: opts.contentType, resumable: false, metadata: { cacheControl: "private, max-age=0" } }));
+      await pipeline(
+        toReadable(source),
+        limiter,
+        f.createWriteStream({ contentType: opts.contentType, resumable: false, metadata: { cacheControl: "private, max-age=0" }, ...(preconditionOpts ? { preconditionOpts } : {}) }),
+      );
     } catch (err) {
+      if (gcsStatus(err) === 412) throw new StorageError("STORAGE_CONFLICT", undefined, err);
       await f.delete({ ignoreNotFound: true }).catch(() => undefined);
       throw mapGcsError(err);
     }

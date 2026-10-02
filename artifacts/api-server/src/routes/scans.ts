@@ -5,7 +5,6 @@ import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermissi
 import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateScanBody, ReprocessScanBody, ReplaceScanImageBody, AnalyzeCaptureBody, StartCaptureBatchBody } from "@workspace/api-zod";
-import { uploadScanImage } from "../lib/imageStorage.js";
 import * as scans from "../services/scans.service.js";
 import { analyzeCapture } from "../services/capture-intelligence.service.js";
 import { startCaptureBatch, getCaptureBatch } from "../services/capture-batch.service.js";
@@ -26,11 +25,11 @@ router.get("/scans", async (req: AuthRequest, res) => {
 router.post("/scans", requirePermission("scans", "create"), validateBody(CreateScanBody), async (req: AuthRequest, res) => {
   const { scanId, companyId, imageData, status, body } = await scans.createScan(req.user!, req.body ?? {});
 
-  // Upload image to object storage after OCR — best-effort, non-blocking
+  // Upload image to object storage after OCR — best-effort, non-blocking.
+  // B25 Correction 1: store + bind as one unit (a failed bind tombstones the object).
   void (async () => {
     try {
-      const objectKey = await uploadScanImage(scanId, companyId, imageData);
-      await scans.setScanImageUrl(scanId, objectKey);
+      await scans.storeAndBindScanImage({ scanId, companyId, imageData, previousReference: null });
     } catch (imgErr) {
       req.log.warn({ err: imgErr }, "scan image upload failed; stored image unavailable");
     }

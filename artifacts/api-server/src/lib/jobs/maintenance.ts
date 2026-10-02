@@ -118,7 +118,7 @@ export async function cleanupQueueJobs(): Promise<number> {
 // objects settled.
 export async function sweepObjectStorage(): Promise<number> {
   const s = await sweepStorage();
-  return s.stalePending + s.staleStaged + s.retriedDeletes + s.companyOrphans + s.entityOrphans + s.purgedTombstones;
+  return s.stalePending + s.staleStaged + s.expiredLeases + s.retriedDeletes + s.companyOrphans + s.entityOrphans + s.purgedTombstones;
 }
 
 // Runs every maintenance task, isolating failures so one bad task never blocks the

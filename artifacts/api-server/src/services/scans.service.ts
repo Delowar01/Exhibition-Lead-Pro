@@ -4,6 +4,7 @@ import { refInCompany } from "../lib/tenant.js";
 import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "../lib/ai.js";
 import { validateScanImage, hasReadableCard } from "../lib/image-validation.js";
 import { streamScanImage, loadScanImageBase64, uploadScanImage, deleteScanImage } from "../lib/imageStorage.js";
+import { logger } from "../lib/logger.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { analyzeCaptureFields } from "../lib/capture-validation.js";
@@ -203,6 +204,38 @@ export async function setScanImageUrl(scanId: number, objectKey: string) {
   await scansRepo.setImageUrl(scanId, objectKey);
 }
 
+/**
+ * B25 Correction 1 — store a scan image and bind it to the scan of THIS
+ * tenant as one unit of work. The object is written first (write-ahead
+ * inventory row → bytes → active); the scan row is then updated with a
+ * compare-and-set on the previous reference. If that update fails or matches
+ * nothing (foreign/deleted scan, concurrent replacement, database failure) the
+ * NEW object is tombstoned immediately and the previous image is left exactly
+ * as it was; the previous image is retired only AFTER the new reference
+ * committed. A crash between the two steps leaves an active object the scan
+ * does not reference, which the storage sweep detects and removes.
+ */
+export async function storeAndBindScanImage(input: { scanId: number; companyId: number; imageData: string; previousReference?: string | null }): Promise<{ reference: string }> {
+  const reference = await uploadScanImage(input.scanId, input.companyId, input.imageData);
+  let bound = false;
+  try {
+    bound = await scansRepo.bindImage(input.scanId, input.companyId, reference, input.previousReference);
+  } catch (err) {
+    await deleteScanImage(input.companyId, reference).catch((cleanupErr) => logger.warn({ err: cleanupErr, scanId: input.scanId, companyId: input.companyId }, "scan image: cleanup after a failed bind will be retried by the sweep"));
+    throw err;
+  }
+  if (!bound) {
+    await deleteScanImage(input.companyId, reference).catch(() => undefined);
+    throw new AppError(409, "The scan image could not be bound (the scan changed or no longer exists)", { code: "SCAN_IMAGE_BIND_FAILED" });
+  }
+  if (input.previousReference && input.previousReference !== reference) {
+    // Tombstone-first: the old reference stops resolving at once; a failed
+    // physical delete is retried by the durable job / storage sweep.
+    await deleteScanImage(input.companyId, input.previousReference).catch(() => undefined);
+  }
+  return { reference };
+}
+
 export async function getScanImageStream(user: AuthUser, id: number) {
   const scan = await scansRepo.findById(user, id);
   if (!scan) throw new AppError(404, "Scan not found");
@@ -286,18 +319,14 @@ export async function replaceScanImage(user: AuthUser, id: number, body: { image
   const image = validateScanImage(body.imageData);
   const lang = body.appLanguage === "ar" ? "ar" : "en";
 
-  let objectKey: string;
   try {
-    objectKey = await uploadScanImage(id, scan.companyId, image.dataUrl);
+    // B25 Correction 1: the new object is stored and bound as one unit; the
+    // previous image stays readable until the new reference has committed.
+    await storeAndBindScanImage({ scanId: id, companyId: scan.companyId, imageData: image.dataUrl, previousReference: scan.imageUrl ?? null });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     logAiError("scan-replace-upload", err);
     throw new AppError(502, "Could not store the replacement image. Please try again.");
-  }
-  await scansRepo.setImageUrl(id, objectKey);
-  // Batch 25: the replaced image is tombstoned (unservable at once) and removed;
-  // a failed physical delete is retried by the durable job / storage sweep.
-  if (scan.imageUrl && scan.imageUrl !== objectKey) {
-    await deleteScanImage(scan.companyId, scan.imageUrl).catch(() => undefined);
   }
 
   let ocr: Awaited<ReturnType<typeof extractCardData>>;

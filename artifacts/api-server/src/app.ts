@@ -20,6 +20,7 @@ import {
 import type { AuthRequest } from "./middlewares/requireAuth.js";
 import { stripeWebhookHandler } from "./routes/billing-webhook.js";
 import filesRouter from "./routes/files.js";
+import { serializeRequestForLog } from "./lib/log-redaction.js";
 
 const app: Express = express();
 
@@ -46,16 +47,11 @@ app.use(
       return user ? { userId: user.id, companyId: user.companyId } : {};
     },
     serializers: {
+      // Path only (no query string, no headers): bearer tokens, cookies, the
+      // X-Storage-Capability upload capability and bearer-style path segments
+      // never persist in request logs (lib/log-redaction.ts, unit-tested).
       req(req) {
-        // Strip the query string AND redact secret path segments (e.g. the raw
-        // invitation token in GET /invitations/token/:token) so bearer-style
-        // secrets never persist in request logs.
-        const path = req.url?.split("?")[0];
-        return {
-          id: req.id,
-          method: req.method,
-          url: path?.replace(/(\/token\/)[^/]+/gi, "$1[REDACTED]"),
-        };
+        return serializeRequestForLog(req);
       },
       res(res) {
         return {
@@ -131,10 +127,10 @@ app.use(
 // sent uncompressed. Additive: changes transport encoding only, never the body.
 app.use(compression());
 app.use(cookieParser());
-// Batch 25 — product-file bytes (capability-URL uploads / downloads) are
-// streamed by routes/files.ts, mounted BEFORE the JSON/urlencoded parsers so no
-// body parser ever buffers an upload. Authorization is the short-lived
-// capability minted by the feature route after the normal auth/tenant checks.
+// Batch 25 — product-file bytes are streamed by routes/files.ts, mounted
+// BEFORE the JSON/urlencoded parsers so no body parser ever buffers an upload.
+// The router applies the normal authentication + platform firewall itself and
+// re-checks tenant, state and feature permission at byte time (Correction 1).
 app.use(["/api/v1", "/api"], filesRouter);
 // Batch 20 — Stripe webhook: a STRICT raw-body parser mounted BEFORE any JSON
 // parser so the signature is verified over the unmodified bytes. Public route

@@ -19,7 +19,7 @@
 // =============================================================================
 import { randomBytes, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough, Writable, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -35,6 +35,8 @@ export interface FsDriverOptions {
   chunkSize?: number;
   /** Probe time budget in ms (readiness). */
   probeTimeoutMs?: number;
+  /** Test barrier awaited right before publication (concurrency tests only). */
+  beforePublish?: (key: string) => Promise<void>;
 }
 
 const PROBE_BYTES = 1024;
@@ -77,6 +79,7 @@ export class FsStorageDriver implements StorageDriver {
   private readonly key: Buffer;
   private readonly chunkSize: number;
   private readonly probeTimeoutMs: number;
+  private readonly beforePublish?: (key: string) => Promise<void>;
   private initialized = false;
 
   constructor(opts: FsDriverOptions) {
@@ -87,6 +90,7 @@ export class FsStorageDriver implements StorageDriver {
     this.key = opts.key;
     this.chunkSize = opts.chunkSize ?? DEFAULT_CHUNK_SIZE;
     this.probeTimeoutMs = opts.probeTimeoutMs ?? 2500;
+    this.beforePublish = opts.beforePublish;
   }
 
   /** Create the root (0700) when missing and refuse a root that is a link or not a directory. */
@@ -175,10 +179,28 @@ export class FsStorageDriver implements StorageDriver {
       if (encrypt.result && (encrypt.result.size !== result.sizeBytes || encrypt.result.sha256 !== result.sha256)) {
         throw new StorageError("STORAGE_INTEGRITY");
       }
-      await rename(tmp, final);
+      if (this.beforePublish) await this.beforePublish(key);
+      // Publication (B25 Correction 1): a no-overwrite write publishes with an
+      // atomic hard LINK, which fails with EEXIST when the final path already
+      // exists — an exists() check followed by rename() would let two writers
+      // race and the later rename silently replace the winner's object. Only
+      // an explicit overwrite uses rename (atomic replace).
+      if (opts.allowOverwrite) {
+        await rename(tmp, final);
+      } else {
+        try {
+          await link(tmp, final);
+        } catch (err) {
+          if (isErrno(err, "EEXIST")) throw new StorageError("STORAGE_CONFLICT");
+          throw err;
+        }
+        await unlink(tmp).catch(() => undefined);
+      }
       await this.syncDir(dir);
       return result;
     } catch (err) {
+      // Only OUR temporary file is ever removed here — never the final object,
+      // which may belong to the writer that won the publication race.
       await fh.close().catch(() => undefined);
       await unlink(tmp).catch(() => undefined);
       input.destroy();

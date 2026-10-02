@@ -7,6 +7,8 @@ export interface StorageCounters {
   mirrorFailures: number;
   migrationVerifyFailures: number;
   deleteFailures: number;
+  /** Pre-B25 references registered in the inventory on first use (any legacy read mode). */
+  legacyRegistrations: number;
 }
 
 const counters: StorageCounters = {
@@ -15,6 +17,7 @@ const counters: StorageCounters = {
   mirrorFailures: 0,
   migrationVerifyFailures: 0,
   deleteFailures: 0,
+  legacyRegistrations: 0,
 };
 
 export function bump(counter: keyof StorageCounters, by = 1): void {

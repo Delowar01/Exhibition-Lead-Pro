@@ -6,22 +6,32 @@
 // needs a bucket. The command in scripts/migrate-storage.ts wires the real
 // drivers and the storage_objects table around it.
 //
-//   dry-run  discover every DB-referenced legacy object, register it in the
-//            inventory (idempotent), and report what exists / is missing /
-//            would be copied — no bytes move.
-//   copy     bounded-concurrency copy of each not-yet-migrated object into the
-//            target, read-back verification (size + SHA-256), inventory update.
+//   dry-run  READ-ONLY: discover every DB-referenced legacy object, compare it
+//            with the existing inventory, and report what would be registered,
+//            copied, is already migrated, is missing at the source or is a
+//            duplicate — zero inserts, updates, deletes or uploads.
+//   copy     the ONLY mutating mode: registers missing references, copies each
+//            not-yet-migrated object into the target with bounded concurrency,
+//            read-back verification (size + SHA-256) and an inventory update.
 //            Resumable: rows already migrated are detected and skipped; a
 //            target object that already exists is compared with the source and
 //            adopted only when it matches — a conflicting local object is
 //            NEVER overwritten (reported instead).
-//   verify   prove every migrated object exists in the target and matches the
-//            inventory digest; rows still on the legacy driver are reported as
-//            not_migrated.
+//   verify   READ-ONLY: prove every migrated object exists in the target and
+//            matches the inventory digest; report references without a row
+//            (unregistered), rows still on the legacy driver (not_migrated),
+//            integrity problems and duplicates — zero writes.
+//
+// Duplicate references (B25 Correction 1): several live feature rows pointing
+// at ONE legacy object (two document versions, or an export run and an
+// executive report sharing an artifact) are grouped by (company, legacy
+// object), reported with a sanitized code and EXCLUDED from registration and
+// copy — they block copy / cutover until resolved (the inventory's uniqueness
+// constraint would otherwise silently collapse them into one association).
 //
 // Nothing here deletes a source object. Tombstoned inventory rows are skipped
-// (never resurrected). The summary carries ids, kinds, counts and error codes
-// only — never keys, paths, bucket names or file contents.
+// (never resurrected). Summaries carry ids, kinds, counts, hashes and error
+// codes only — never keys, paths, bucket names or file contents.
 // =============================================================================
 import { createHash, randomUUID } from "node:crypto";
 import { Writable, type Readable } from "node:stream";
@@ -29,6 +39,7 @@ import { pipeline } from "node:stream/promises";
 import type { InsertStorageObject, StorageObjectRow } from "@workspace/db";
 import { StorageError, type StorageDriver } from "./contract.js";
 import { tenantKey, type StorageKind } from "./keys.js";
+import { legacyKeyHash } from "./legacy.js";
 import { bump } from "./metrics.js";
 
 export type MigrationMode = "dry-run" | "copy" | "verify";
@@ -39,9 +50,11 @@ export type MigrationItemStatus =
   | "already"
   | "verified"
   | "not_migrated"
+  | "unregistered"
   | "missing_source"
   | "checksum_mismatch"
   | "conflict"
+  | "duplicate"
   | "failed"
   | "skipped";
 
@@ -65,13 +78,28 @@ export interface MigrationItem {
   kind: string;
   status: MigrationItemStatus;
   code?: string;
+  entityType?: string;
+  entityId?: number;
+}
+
+export interface DuplicateGroup {
+  code: "DUPLICATE_REFERENCE";
+  companyId: number;
+  /** sha256 prefix of the shared legacy location — never the key itself. */
+  legacyKeyHash: string;
+  kinds: string[];
+  references: number;
+  entities: Array<{ kind: string; entityType: string; entityId: number }>;
 }
 
 export interface InventoryAdapter {
-  /** Register a discovered legacy reference (idempotent). Null when the reference is tombstoned. */
+  /** Read: the inventory row for a (company, kind, reference), or null. */
+  findByReference(companyId: number, kind: StorageKind, reference: string): Promise<StorageObjectRow | null>;
+  /** Mutating (copy mode only): register a discovered legacy reference (idempotent). Null when tombstoned. */
   register(candidate: MigrationCandidate, row: { id: string; storageKey: string }): Promise<StorageObjectRow | null>;
-  /** Active rows with a legacy location, ordered by id, strictly after `afterId`. */
+  /** Read: active rows with a legacy location, ordered by id, strictly after `afterId`. */
   listPending(afterId: string | null, limit: number): Promise<StorageObjectRow[]>;
+  /** Mutating (copy mode only). */
   update(id: string, patch: Partial<InsertStorageObject>): Promise<void>;
 }
 
@@ -97,19 +125,26 @@ export interface MigrationSummary {
   targetDriver: string;
   startedAt: string;
   durationMs: number;
+  /** Feature-row references found (including duplicates). */
+  sourceReferences: number;
+  /** Distinct legacy objects behind those references. */
+  uniqueObjects: number;
+  /** @deprecated alias of sourceReferences (kept for the first B25 report format). */
   discovered: number;
   registered: number;
+  registrationsPlanned: number;
   unattributable: number;
   processed: number;
   counts: Record<MigrationItemStatus, number>;
-  /** True only when nothing is missing, mismatched, conflicting, failed or (verify) unmigrated. */
+  duplicateGroups: DuplicateGroup[];
+  /** True only when nothing is missing, mismatched, conflicting, duplicated, failed or (verify) unregistered / unmigrated. */
   complete: boolean;
   /** Every non-OK item (ids / kinds / codes only). */
   problems: MigrationItem[];
 }
 
 function emptyCounts(): Record<MigrationItemStatus, number> {
-  return { planned: 0, copied: 0, already: 0, verified: 0, not_migrated: 0, missing_source: 0, checksum_mismatch: 0, conflict: 0, failed: 0, skipped: 0 };
+  return { planned: 0, copied: 0, already: 0, verified: 0, not_migrated: 0, unregistered: 0, missing_source: 0, checksum_mismatch: 0, conflict: 0, duplicate: 0, failed: 0, skipped: 0 };
 }
 
 /** Stream → plaintext size + SHA-256 (bounded by the driver's own maxBytes). */
@@ -144,6 +179,40 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
   await Promise.all(workers);
 }
 
+/**
+ * Group discovered references by (company, legacy object). Groups with more
+ * than one feature reference are duplicates: reported and excluded.
+ */
+export function groupDuplicates(candidates: MigrationCandidate[]): { unique: MigrationCandidate[]; duplicates: DuplicateGroup[]; duplicateCandidates: MigrationCandidate[]; uniqueObjects: number } {
+  const byObject = new Map<string, MigrationCandidate[]>();
+  for (const c of candidates) {
+    if (!c.legacyKey) continue;
+    const k = `${c.companyId}|${c.legacyKey}`;
+    const list = byObject.get(k) ?? [];
+    list.push(c);
+    byObject.set(k, list);
+  }
+  const unique: MigrationCandidate[] = [];
+  const duplicates: DuplicateGroup[] = [];
+  const duplicateCandidates: MigrationCandidate[] = [];
+  for (const list of byObject.values()) {
+    if (list.length === 1) {
+      unique.push(list[0]);
+      continue;
+    }
+    duplicateCandidates.push(...list);
+    duplicates.push({
+      code: "DUPLICATE_REFERENCE",
+      companyId: list[0].companyId,
+      legacyKeyHash: legacyKeyHash(list[0].legacyKey!),
+      kinds: [...new Set(list.map((c) => c.kind))],
+      references: list.length,
+      entities: list.map((c) => ({ kind: c.kind, entityType: c.entityType, entityId: c.entityId })),
+    });
+  }
+  return { unique, duplicates, duplicateCandidates, uniqueObjects: byObject.size };
+}
+
 export async function runMigration(opts: MigrationOptions): Promise<MigrationSummary> {
   const startedAt = new Date();
   const counts = emptyCounts();
@@ -152,19 +221,45 @@ export async function runMigration(opts: MigrationOptions): Promise<MigrationSum
   const concurrency = Math.max(1, Math.min(opts.concurrency ?? 4, 16));
   const batchSize = Math.max(1, opts.batchSize ?? 200);
   const newId = opts.newId ?? randomUUID;
+  const { mode } = opts;
 
-  // 1. Discovery + idempotent registration (never resurrects a tombstone).
+  // 1. Discovery (pure) + duplicate grouping.
   const { candidates, unattributable } = await opts.discover();
-  let registered = 0;
-  for (const c of candidates) {
-    if (!c.legacyKey) continue;
-    const id = newId();
-    const row = await opts.inventory.register(c, { id, storageKey: tenantKey(c.kind, c.companyId, id) });
-    if (row) registered += 1;
+  const grouped = groupDuplicates(candidates);
+  for (const c of grouped.duplicateCandidates) {
+    counts.duplicate += 1;
+    problems.push({ objectId: "", companyId: c.companyId, kind: c.kind, status: "duplicate", code: "DUPLICATE_REFERENCE", entityType: c.entityType, entityId: c.entityId });
   }
-  log("migration.discovered", { mode: opts.mode, discovered: candidates.length, registered, unattributable });
 
-  // 2. Process the inventory in id order, batch by batch, with bounded concurrency.
+  // 2. Registration — copy mode mutates; dry-run / verify only read and plan.
+  let registered = 0;
+  let registrationsPlanned = 0;
+  const candidateByRef = new Map<string, MigrationCandidate>();
+  for (const c of grouped.unique) {
+    if (!c.legacyKey) continue;
+    candidateByRef.set(`${c.companyId}|${c.kind}|${c.reference}`, c);
+    const existing = await opts.inventory.findByReference(c.companyId, c.kind, c.reference);
+    if (existing) continue;
+    if (mode === "copy") {
+      const id = newId();
+      const row = await opts.inventory.register(c, { id, storageKey: tenantKey(c.kind, c.companyId, id) });
+      if (row) registered += 1;
+    } else {
+      registrationsPlanned += 1;
+      if (mode === "verify") {
+        counts.unregistered += 1;
+        problems.push({ objectId: "", companyId: c.companyId, kind: c.kind, status: "unregistered", entityType: c.entityType, entityId: c.entityId });
+      } else {
+        // dry-run: plan the registration + the copy from the source's point of view
+        const item = await planUnregistered(opts, c);
+        counts[item.status] += 1;
+        if (!OK_STATUSES.has(item.status)) problems.push(item);
+      }
+    }
+  }
+  log("migration.discovered", { mode, sourceReferences: candidates.length, uniqueObjects: grouped.uniqueObjects, duplicateGroups: grouped.duplicates.length, registered, registrationsPlanned, unattributable });
+
+  // 3. Process inventory rows in id order, batch by batch, with bounded concurrency.
   let after: string | null = null;
   let processed = 0;
   for (;;) {
@@ -180,22 +275,38 @@ export async function runMigration(opts: MigrationOptions): Promise<MigrationSum
     });
   }
 
-  const complete = problems.length === 0 && unattributable === 0;
+  const complete = problems.length === 0 && unattributable === 0 && grouped.duplicates.length === 0;
   const summary: MigrationSummary = {
-    mode: opts.mode,
+    mode,
     targetDriver: opts.target.kind,
     startedAt: startedAt.toISOString(),
     durationMs: Date.now() - startedAt.getTime(),
+    sourceReferences: candidates.length,
+    uniqueObjects: grouped.uniqueObjects,
     discovered: candidates.length,
     registered,
+    registrationsPlanned,
     unattributable,
     processed,
     counts,
+    duplicateGroups: grouped.duplicates,
     complete,
     problems,
   };
-  log("migration.summary", { ...summary, problems: problems.length });
+  log("migration.summary", { ...summary, problems: problems.length, duplicateGroups: grouped.duplicates.length });
   return summary;
+}
+
+/** dry-run: what would happen to a reference that has no inventory row yet (reads only). */
+async function planUnregistered(opts: MigrationOptions, c: MigrationCandidate): Promise<MigrationItem> {
+  const base = { objectId: "", companyId: c.companyId, kind: c.kind, entityType: c.entityType, entityId: c.entityId };
+  if (!opts.source) return { ...base, status: "failed", code: "SOURCE_UNAVAILABLE" };
+  try {
+    const head = await opts.source.head(c.legacyKey!);
+    return head ? { ...base, status: "planned" } : { ...base, status: "missing_source" };
+  } catch (err) {
+    return { ...base, status: "failed", code: err instanceof StorageError ? err.code : "ERROR" };
+  }
 }
 
 async function processRow(opts: MigrationOptions, row: StorageObjectRow): Promise<MigrationItem> {
@@ -237,7 +348,7 @@ async function processRow(opts: MigrationOptions, row: StorageObjectRow): Promis
     if (!head) return { ...base, status: "missing_source" };
     if (mode === "dry-run") return { ...base, status: "planned" };
 
-    // copy mode
+    // copy mode (the only mutating mode)
     const contentType = row.contentType && row.contentType !== "application/octet-stream" ? row.contentType : head.contentType ?? row.contentType;
     if (await target.exists(row.storageKey)) {
       // A previous run copied the bytes but could not update the inventory, or

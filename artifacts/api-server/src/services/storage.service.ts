@@ -1,38 +1,56 @@
 // =============================================================================
 // Batch 25 — object manager: the ONE boundary every product file flow uses.
 //
-//   reserve → write → activate   (write-ahead inventory row, then bytes, then
-//                                  the feature row + activation in ONE transaction)
-//   resolve → open               (only `active` rows are served; tombstoned
-//                                  references are never served from anywhere,
-//                                  so a deleted object cannot reappear through
-//                                  the legacy GCS fallback)
-//   tombstone → delete           (state first, file second; a failed physical
-//                                  delete stays `deleting` and is retried by the
-//                                  durable job / maintenance sweep)
+//   reserve → claim → write → stage/activate   (write-ahead inventory row, then an
+//                                  exclusive upload LEASE, then bytes, then the
+//                                  feature row + activation in ONE transaction)
+//   resolve → locate → open      (only `active` rows are served; every readable
+//                                  COPY of an object is located from the row —
+//                                  primary, strict-mirror or legacy — so a
+//                                  configuration rollback keeps migrated and
+//                                  mirrored objects readable, and a tombstoned
+//                                  reference is never served from anywhere)
+//   tombstone → delete           (state first, bytes second — all copies; a
+//                                  failed physical delete stays `deleting` and is
+//                                  retried by the durable job / maintenance sweep)
 //
-// Nothing here ever returns a filesystem path, storage key, bucket name or
-// host path to a caller; API responses carry opaque handles and short-lived
-// capability URLs only.
+// B25 Correction 1:
+//   • pre-B25 references stay readable while the legacy bucket IS the primary
+//     driver (hosted environment unchanged) — `legacyReadMode()` = primary;
+//     fs/memory primaries read legacy copies only when the fallback is enabled
+//   • one idempotent write-attempt rollback removes BOTH primary and mirror copies
+//   • upload publication is race-free (database lease + atomic no-replace write)
+//   • private bytes are never served on the strength of a URL: callers pass the
+//     authenticated user and the route re-checks tenant, state and permission
+//
+// Nothing here ever returns a filesystem path, storage key, bucket name or host
+// path to a caller; API responses carry opaque handles and credential-free URLs.
 // =============================================================================
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import type { Request } from "express";
-import { db, type StorageObjectRow } from "@workspace/db";
+import { db, documentVersionsTable, executiveReportsTable, exportRunsTable, type StorageObjectRow } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { AppError } from "../middlewares/errorHandler.js";
+import { canAccessCompany, type AuthUser } from "../middlewares/requireAuth.js";
 import type { Executor } from "../repositories/base.js";
 import * as repo from "../repositories/storage-objects.repository.js";
 import { StorageError, readAll, type StorageDriver } from "../storage/contract.js";
-import { mintCapability, type CapabilityPayload } from "../storage/capability.js";
+import { mintCapability, verifyCapability, type CapabilityPayload } from "../storage/capability.js";
 import { tenantKey, type StorageKind } from "../storage/keys.js";
+import { isNativeHandle, legacyLocation, mirrorLocation } from "../storage/legacy.js";
 import { bump, storageCounters } from "../storage/metrics.js";
-import { getLegacyDriver, getMirrorDriver, getPrimaryDriver, legacyFallbackEnabled, storageConfigured, storageMode } from "../storage/registry.js";
+import { getLegacyDriver, getMirrorDriver, getPrimaryDriver, storageConfigured, storageMode } from "../storage/registry.js";
 import { getQueue } from "../lib/jobs/queue.js";
+
+export { isNativeHandle, legacyLocation } from "../storage/legacy.js";
 
 export const STORAGE_DELETE_OBJECT_JOB = "storage.deleteObject";
 export const STORAGE_PURGE_COMPANY_JOB = "storage.purgeCompany";
+/** Dedicated, redacted request header carrying the upload capability (never a query string). */
+export const CAPABILITY_HEADER = "x-storage-capability";
 
 /** Hard PLAINTEXT ceilings per object kind (bytes). */
 export const OBJECT_LIMITS: Record<StorageKind, number> = {
@@ -46,16 +64,11 @@ export const OBJECT_LIMITS: Record<StorageKind, number> = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Types a browser may render inline without a script-execution risk (no HTML/SVG/XML). */
 export const INLINE_SAFE_TYPES: ReadonlySet<string> = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf", "text/plain", "text/csv"]);
-const HANDLE = /^\/objects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 /** Opaque client-visible handle for a native object. */
 export function referenceFor(kind: StorageKind, objectId: string, companyId: number, extension?: string): string {
   if (kind === "branding_logo") return `branding/${companyId}/${objectId.replace(/-/g, "")}.${extension ?? "bin"}`;
   return `/objects/${objectId}`;
-}
-
-export function isNativeHandle(reference: string): boolean {
-  return HANDLE.test(reference);
 }
 
 // ── errors ───────────────────────────────────────────────────────────────────
@@ -80,47 +93,37 @@ export function toAppError(err: unknown): AppError {
   return storageUnavailable();
 }
 
-// ── legacy locations (GCS driver only) ───────────────────────────────────────
+// ── legacy compatibility state ───────────────────────────────────────────────
+export type LegacyReadMode = "primary" | "fallback" | "off";
+
 /**
- * Where a PRE-B25 reference lives in the legacy bucket, or null when the
- * reference is not a legacy shape for this kind / tenant or GCS is unconfigured.
- * The tenant id embedded in scan / branding keys MUST match the caller's tenant.
+ * Whether references WITHOUT an inventory row may be served from the legacy
+ * bucket, and why:
+ *   primary   the bucket IS the configured primary driver (the hosted
+ *             environment unchanged) — pre-B25 objects are read as before and
+ *             registered on first use; no new environment variable needed
+ *   fallback  a non-GCS primary with OBJECT_STORAGE_LEGACY_FALLBACK=true
+ *             (transition window only)
+ *   off       no bucket, or a non-GCS primary without the explicit fallback —
+ *             never a silent broad fallback once the filesystem is primary
  */
-export function legacyLocation(kind: StorageKind, reference: string, companyId: number): string | null {
-  const bucket = config.objectStorage.bucketId;
-  if (!bucket) return null;
-  switch (kind) {
-    case "document":
-    case "export":
-    case "report": {
-      const m = /^\/objects\/(uploads\/[0-9a-f-]{36})$/.exec(reference);
-      if (!m) return null;
-      const dir = config.objectStorage.privateObjectDir.replace(/\/+$/, "");
-      if (!dir) return null;
-      const parts = `${dir}/${m[1]}`.replace(/^\/+/, "").split("/");
-      if (parts.length < 2) return null;
-      return `gs://${parts[0]}/${parts.slice(1).join("/")}`;
-    }
-    case "scan_image": {
-      const m = /^scans\/(\d+)\/(\d+)\.jpg$/.exec(reference);
-      if (!m || Number(m[1]) !== companyId) return null;
-      return `gs://${bucket}/${reference}`;
-    }
-    case "branding_logo": {
-      const m = /^branding\/(\d+)\/[0-9a-f]{32}\.(png|jpg|webp)$/.exec(reference);
-      if (!m || Number(m[1]) !== companyId) return null;
-      return `gs://${bucket}/${reference}`;
-    }
-  }
+export function legacyReadMode(): LegacyReadMode {
+  if (!config.objectStorage.bucketId) return "off";
+  if (storageMode() === "gcs") return "primary";
+  return config.objectStorage.legacyFallback ? "fallback" : "off";
+}
+
+function mirrorConfigured(): boolean {
+  return config.objectStorage.mirror && storageMode() !== "gcs" && storageMode() !== "none" && !!config.objectStorage.bucketId;
 }
 
 function defaultContentType(kind: StorageKind): string {
   return kind === "scan_image" ? "image/jpeg" : "application/octet-stream";
 }
 
-// ── base URL for capability links ────────────────────────────────────────────
+// ── base URL for credential-free file links ──────────────────────────────────
 /**
- * Absolute origin for minted URLs: the request's own origin (honours the
+ * Absolute origin for file URLs: the request's own origin (honours the
  * forwarded protocol/host the trusted proxy supplies), falling back to the
  * configured application URL for system paths without a request.
  */
@@ -132,9 +135,11 @@ export function publicBaseUrl(req?: Request | null): string {
   return config.email.appBaseUrl.replace(/\/+$/, "");
 }
 
-function capabilityUrl(base: string, kind: "put" | "get", objectId: string, token: string): string {
-  const path = kind === "put" ? `/api/files/uploads/${objectId}` : `/api/files/${objectId}`;
-  return `${base.replace(/\/+$/, "")}${path}?t=${encodeURIComponent(token)}`;
+function fileUrl(base: string, objectId: string): string {
+  return `${base.replace(/\/+$/, "")}/api/files/${objectId}`;
+}
+function uploadUrl(base: string, objectId: string): string {
+  return `${base.replace(/\/+$/, "")}/api/files/uploads/${objectId}`;
 }
 
 // ── test hook ────────────────────────────────────────────────────────────────
@@ -155,27 +160,81 @@ async function primary(): Promise<StorageDriver> {
   }
 }
 
-async function putWithMirror(driver: StorageDriver, row: StorageObjectRow, source: Readable | Buffer, maxBytes: number, allowOverwrite: boolean) {
+// ── write attempt + idempotent rollback ──────────────────────────────────────
+interface Copy {
+  driver: StorageDriver;
+  key: string;
+  role: "primary" | "mirror";
+}
+
+/** Everything one write attempt put into a store, so a failed commit can remove exactly those copies. */
+export interface WriteAttempt {
+  rowId: string;
+  copies: Copy[];
+}
+
+/**
+ * Remove every copy written during `attempt` (idempotent: deleting an absent
+ * copy succeeds). A copy whose removal fails is logged with sanitized
+ * identifiers only and left discoverable: the row is marked `failed` with
+ * CLEANUP_PENDING and keeps its mirror location, so the maintenance sweep /
+ * delete job retries from the persisted keys — never from later configuration.
+ */
+export async function rollbackAttempt(attempt: WriteAttempt, reason: string): Promise<boolean> {
+  let clean = true;
+  for (const copy of attempt.copies) {
+    try {
+      await copy.driver.delete(copy.key);
+    } catch (err) {
+      clean = false;
+      bump("deleteFailures");
+      logger.warn({ err, objectId: attempt.rowId, role: copy.role, driver: copy.driver.kind }, "Object storage: rollback could not remove a copy (will retry)");
+    }
+  }
+  await repo
+    .update(attempt.rowId, { state: "failed", lastError: clean ? reason : "CLEANUP_PENDING", leaseToken: null, leaseExpiresAt: null })
+    .catch((err) => logger.error({ err, objectId: attempt.rowId }, "Object storage: rollback could not mark the row (sweep will settle it)"));
+  return clean;
+}
+
+/**
+ * Primary write, then (when strict mirroring is on) the mirror write from the
+ * primary copy. A mirror failure rolls BOTH copies back and fails the write.
+ */
+async function writeWithMirror(driver: StorageDriver, row: StorageObjectRow, source: Readable | Buffer, maxBytes: number, allowOverwrite: boolean): Promise<{ result: { sizeBytes: number; sha256: string }; attempt: WriteAttempt; mirrorState: string | null }> {
+  const attempt: WriteAttempt = { rowId: row.id, copies: [] };
   if (failNextPrimaryPut) {
     failNextPrimaryPut = false;
-    throw new StorageError("STORAGE_UNAVAILABLE", "simulated storage failure");
+    throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "simulated storage failure"), { attempt });
   }
-  const result = await driver.put(row.storageKey, source, { contentType: row.contentType, maxBytes, allowOverwrite });
+  let result;
+  try {
+    result = await driver.put(row.storageKey, source, { contentType: row.contentType, maxBytes, allowOverwrite });
+  } catch (err) {
+    throw Object.assign(err instanceof Error ? err : new StorageError("STORAGE_UNAVAILABLE", undefined, err), { attempt });
+  }
+  attempt.copies.push({ driver, key: row.storageKey, role: "primary" });
   const mirror = await getMirrorDriver();
   let mirrorState: string | null = null;
   if (mirror) {
+    const mirrorKey = row.mirrorKey ?? mirrorLocation(row.storageKey);
+    if (!mirrorKey) {
+      await rollbackAttempt(attempt, "MIRROR_UNCONFIGURED");
+      throw new StorageError("STORAGE_UNAVAILABLE", "mirror location unavailable");
+    }
+    attempt.copies.push({ driver: mirror, key: mirrorKey, role: "mirror" });
     try {
       const { stream } = await driver.getStream(row.storageKey, { maxBytes });
-      await mirror.put(row.storageKey, stream, { contentType: row.contentType, maxBytes, allowOverwrite: true, expectedSha256: result.sha256, expectedSize: result.sizeBytes });
+      await mirror.put(mirrorKey, stream, { contentType: row.contentType, maxBytes, allowOverwrite: true, expectedSha256: result.sha256, expectedSize: result.sizeBytes });
       mirrorState = "ok";
     } catch (err) {
       bump("mirrorFailures");
-      logger.error({ err, objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: strict mirror write failed — primary object rolled back");
-      await driver.delete(row.storageKey).catch(() => undefined);
+      logger.error({ err, objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: strict mirror write failed — primary and mirror copies rolled back");
+      await rollbackAttempt(attempt, "MIRROR_FAILED");
       throw new StorageError("STORAGE_UNAVAILABLE", "mirror write failed", err);
     }
   }
-  return { ...result, mirrorState };
+  return { result, attempt, mirrorState };
 }
 
 // ── reserve / upload / attach (client uploads) ───────────────────────────────
@@ -190,67 +249,154 @@ export interface ReserveUploadInput {
 export interface ReservedUpload {
   objectId: string;
   reference: string;
+  /** Credential-free absolute URL of the byte route. */
   uploadURL: string;
+  /** Capability bound to (user, tenant, object, PUT); sent in the X-Storage-Capability header, never in the URL. */
+  uploadToken: string;
 }
 
-/** Mint an upload target bound to the authenticated tenant. The inventory row is written BEFORE any byte can land. */
-export async function reserveUpload(req: Request, input: ReserveUploadInput): Promise<ReservedUpload> {
+/** Mint an upload target bound to the authenticated tenant + user. The inventory row is written BEFORE any byte can land. */
+export async function reserveUpload(req: Request | null, input: ReserveUploadInput): Promise<ReservedUpload> {
   if (!storageConfigured()) throw storageUnavailable();
   const limit = OBJECT_LIMITS[input.kind];
   if (!Number.isInteger(input.declaredSize) || input.declaredSize <= 0 || input.declaredSize > limit) {
     throw new AppError(413, `File exceeds the ${Math.round(limit / (1024 * 1024))}MB limit`);
   }
   const id = randomUUID();
+  const mode = storageMode();
+  const storageKey = tenantKey(input.kind, input.companyId, id);
   const row = await repo.insert({
     id,
     companyId: input.companyId,
     kind: input.kind,
     reference: referenceFor(input.kind, id, input.companyId),
-    storageKey: tenantKey(input.kind, input.companyId, id),
-    driver: storageMode() === "gcs" ? "gcs" : storageMode(),
-    legacyKey: storageMode() === "gcs" ? `gs://${config.objectStorage.bucketId}/${tenantKey(input.kind, input.companyId, id)}` : null,
+    storageKey,
+    driver: mode === "gcs" ? "gcs" : mode,
+    legacyKey: mode === "gcs" ? mirrorLocation(storageKey) : null,
+    mirrorKey: mirrorConfigured() ? mirrorLocation(storageKey) : null,
     contentType: input.contentType,
     sizeBytes: null,
     sha256: null,
     state: "pending",
   });
   const exp = Math.floor(Date.now() / 1000) + config.objectStorage.uploadTtlSec;
-  const token = mintCapability({ op: "put", o: row.id, c: row.companyId, u: input.userId, exp });
-  return { objectId: row.id, reference: row.reference, uploadURL: capabilityUrl(publicBaseUrl(req), "put", row.id, token) };
+  const uploadToken = mintCapability({ op: "put", o: row.id, c: row.companyId, u: input.userId, exp });
+  return { objectId: row.id, reference: row.reference, uploadURL: uploadUrl(publicBaseUrl(req), row.id), uploadToken };
 }
 
-/** Receive the bytes for a reserved upload (capability already verified by the route). */
-export async function receiveUpload(payload: CapabilityPayload, body: Readable, declaredBytes?: number): Promise<{ sizeBytes: number; sha256: string }> {
-  const row = await repo.findById(payload.o);
-  if (!row || row.companyId !== payload.c) throw new AppError(403, "Upload link is invalid or expired", { code: "STORAGE_UPLOAD_INVALID" });
-  if (row.state === "staged" || row.state === "active") throw new AppError(409, "This upload was already completed", { code: "STORAGE_CONFLICT" });
-  if (row.state !== "pending" && row.state !== "failed") throw new AppError(403, "Upload link is invalid or expired", { code: "STORAGE_UPLOAD_INVALID" });
+// ── authorization helpers (byte routes) ──────────────────────────────────────
+export type ByteOp = "put" | "get";
+
+/** The feature permission a tenant user needs for the bytes of an object kind (null = tenant membership is enough). */
+export function permissionForKind(kind: StorageKind, op: ByteOp): { module: string; actions: string[] } | null {
+  if (op === "put") return kind === "document" ? { module: "documents", actions: ["create", "edit"] } : null;
+  switch (kind) {
+    case "export":
+      return { module: "reports", actions: ["view"] };
+    case "report":
+      return { module: "ai_executive", actions: ["view"] };
+    default:
+      return null; // documents: open tenant-scoped reads; scan images / logos: tenant-only
+  }
+}
+
+export function userHasPermission(user: AuthUser, required: { module: string; actions: string[] } | null): boolean {
+  if (!required) return true;
+  if (user.role === "platform_owner" || user.role === "primary_admin") return true;
+  const granted = user.permissions?.[required.module] ?? [];
+  return required.actions.some((a) => granted.includes(a));
+}
+
+/**
+ * The inventory row a CURRENTLY authenticated tenant user may act on: it must
+ * exist, be owned by a company the user can access and (for reads) be active.
+ * Foreign or unknown objects answer null → 404 (no existence disclosure).
+ */
+export async function authorizeObject(companyIdOrUser: number | AuthUser, objectId: string, op: ByteOp = "get"): Promise<StorageObjectRow | null> {
+  if (!UUID.test(objectId)) return null;
+  const row = await repo.findById(objectId);
+  if (!row) return null;
+  const allowed = typeof companyIdOrUser === "number" ? row.companyId === companyIdOrUser : canAccessCompany(companyIdOrUser, row.companyId);
+  if (!allowed) return null;
+  if (op === "get" && row.state !== "active") return null;
+  return row;
+}
+
+/** Receive the bytes for a reserved upload on behalf of the authenticated user (route-level auth already passed). */
+export async function receiveUpload(user: AuthUser, objectId: string, capability: string | undefined, body: Readable, declaredBytes?: number): Promise<{ sizeBytes: number; sha256: string }> {
+  const invalid = () => new AppError(403, "Upload authorization is invalid or expired", { code: "STORAGE_UPLOAD_INVALID" });
+  // Order: a syntactically valid, unexpired capability is required first; the
+  // object is then resolved under the CURRENT user's tenant scope (unknown or
+  // foreign → 404, no disclosure); only then is the capability's binding to
+  // this object / tenant / user enforced.
+  const payload = verifyCapability(capability, "put");
+  if (!payload) throw invalid();
+  const row = await authorizeObject(user, objectId, "put");
+  if (!row) throw new AppError(404, "File not found");
+  if (payload.o !== objectId || payload.c !== row.companyId || payload.u !== user.id) throw invalid();
   const kind = row.kind as StorageKind;
+  if (!userHasPermission(user, permissionForKind(kind, "put"))) throw new AppError(403, "Missing permission for this upload");
+  if (row.state === "staged" || row.state === "active") throw new AppError(409, "This upload was already completed", { code: "STORAGE_CONFLICT" });
+  if (row.state === "deleting" || row.state === "deleted") throw invalid();
   // A declared Content-Length beyond the ceiling is refused BEFORE any byte is
   // read; chunked / undeclared bodies are capped by the streaming limiter.
   if (declaredBytes !== undefined && Number.isFinite(declaredBytes) && declaredBytes > OBJECT_LIMITS[kind]) {
     throw new AppError(413, "The file exceeds the permitted size", { code: "STORAGE_TOO_LARGE" });
   }
+
+  // Exclusive publication lease (database CAS): exactly one writer per intent.
+  const recovering = row.state === "uploading" || row.state === "failed";
+  const leaseToken = randomBytes(16).toString("hex");
+  const claimed = await repo.claimUpload(row.id, leaseToken, config.objectStorage.uploadLeaseMs);
+  if (!claimed) {
+    const now = await repo.findById(row.id);
+    if (now && (now.state === "staged" || now.state === "active")) throw new AppError(409, "This upload was already completed", { code: "STORAGE_CONFLICT" });
+    if (now && now.state === "uploading") throw new AppError(409, "This upload is already in progress", { code: "STORAGE_UPLOAD_IN_PROGRESS" });
+    throw invalid();
+  }
+
   const driver = await primary();
-  let result;
+  let written;
   try {
-    result = await putWithMirror(driver, row, body, OBJECT_LIMITS[kind], row.state === "failed");
+    // A recovered lease may find an unverified leftover at the final key → replace it.
+    written = await writeWithMirror(driver, claimed, body, OBJECT_LIMITS[kind], recovering);
   } catch (err) {
     const code = err instanceof StorageError ? err.code : "STORAGE_UNAVAILABLE";
     if (code !== "STORAGE_TOO_LARGE") bump("primaryFailures");
     logger.warn({ err, objectId: row.id, kind, companyId: row.companyId, code }, "Object storage: upload write failed");
-    await repo.transition(row.id, ["pending", "failed"], "failed", { lastError: code }).catch(() => undefined);
+    const attempt = (err as { attempt?: WriteAttempt }).attempt;
+    if (attempt && attempt.copies.length) await rollbackAttempt(attempt, code);
+    else await repo.releaseUpload(row.id, leaseToken, "failed", { lastError: code }).catch(() => undefined);
     throw toAppError(err);
   }
-  const staged = await repo.transition(row.id, ["pending", "failed"], "staged", { sizeBytes: result.sizeBytes, sha256: result.sha256, mirrorState: result.mirrorState, lastError: null }).catch(async (err) => {
-    await driver.delete(row.storageKey).catch(() => undefined);
-    throw err;
-  });
-  if (!staged) {
-    await driver.delete(row.storageKey).catch(() => undefined);
-    throw new AppError(409, "This upload was already completed", { code: "STORAGE_CONFLICT" });
+  const finished = await finishUpload(row.id, leaseToken, written);
+  if (!finished) {
+    // The lease was lost (expired and reclaimed) — the object at the key now
+    // belongs to the new owner: never delete it, just refuse.
+    throw new AppError(409, "This upload was superseded by a newer attempt", { code: "STORAGE_UPLOAD_LEASE_LOST" });
   }
-  return { sizeBytes: result.sizeBytes, sha256: result.sha256 };
+  return { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256 };
+}
+
+/** Stage the row ONLY while we still hold the lease; on a database failure remove our copies only if we still own them. */
+async function finishUpload(rowId: string, leaseToken: string, written: { result: { sizeBytes: number; sha256: string }; attempt: WriteAttempt; mirrorState: string | null }): Promise<boolean> {
+  let staged: StorageObjectRow | undefined;
+  try {
+    staged = await repo.releaseUpload(rowId, leaseToken, "staged", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, lastError: null });
+  } catch (err) {
+    logger.error({ err, objectId: rowId }, "Object storage: could not stage the upload (database)");
+    const own = await repo.ownsLease(rowId, leaseToken).catch(() => false);
+    if (own) await rollbackAttempt(written.attempt, "DB_FAILURE");
+    else logger.warn({ objectId: rowId }, "Object storage: lease ownership unknown — copies left for the sweep (CLEANUP_PENDING)");
+    throw err;
+  }
+  return !!staged;
+}
+
+/** Test support: the stage step with a given lease token (stale writers must be refused without touching the object). */
+export async function finishUploadForTests(rowId: string, leaseToken: string, result: { sizeBytes: number; sha256: string }): Promise<boolean> {
+  if (config.isProduction) return false;
+  return finishUpload(rowId, leaseToken, { result, attempt: { rowId, copies: [] }, mirrorState: null });
 }
 
 export interface AttachInput {
@@ -302,7 +448,7 @@ export interface StoredObject {
   sha256: string;
 }
 
-/** Write-ahead row → bytes → activation. A failed write leaves a `failed` tombstone and no committed reference. */
+/** Write-ahead row → bytes (+ mirror) → activation. A failed write or commit leaves a `failed` tombstone, no copies and no committed reference. */
 export async function storeBuffer(input: StoreBufferInput): Promise<StoredObject> {
   if (!storageConfigured()) throw new StorageError("STORAGE_UNAVAILABLE", "object storage is not configured");
   const limit = OBJECT_LIMITS[input.kind];
@@ -319,32 +465,35 @@ export async function storeBuffer(input: StoreBufferInput): Promise<StoredObject
     reference: referenceFor(input.kind, id, input.companyId, input.extension),
     storageKey,
     driver: mode === "gcs" ? "gcs" : mode,
-    legacyKey: mode === "gcs" ? `gs://${config.objectStorage.bucketId}/${storageKey}` : null,
+    legacyKey: mode === "gcs" ? mirrorLocation(storageKey) : null,
+    mirrorKey: mirrorConfigured() ? mirrorLocation(storageKey) : null,
     contentType: input.contentType,
     sizeBytes: null,
     sha256: null,
     state: "pending",
   });
   const driver = await primary();
-  let result;
+  let written;
   try {
-    result = await putWithMirror(driver, row, input.buffer, limit, false);
+    written = await writeWithMirror(driver, row, input.buffer, limit, false);
   } catch (err) {
     const code = err instanceof StorageError ? err.code : "STORAGE_UNAVAILABLE";
     if (code !== "STORAGE_TOO_LARGE") bump("primaryFailures");
     logger.warn({ err, objectId: row.id, kind: row.kind, companyId: row.companyId, code }, "Object storage: write failed");
-    await repo.transition(row.id, ["pending"], "failed", { lastError: code }).catch(() => undefined);
+    const attempt = (err as { attempt?: WriteAttempt }).attempt;
+    if (attempt && attempt.copies.length) await rollbackAttempt(attempt, code);
+    else await repo.transition(row.id, ["pending"], "failed", { lastError: code }).catch(() => undefined);
     throw err instanceof StorageError ? err : new StorageError("STORAGE_UNAVAILABLE", undefined, err);
   }
   try {
-    const active = await repo.transition(row.id, ["pending"], "active", { sizeBytes: result.sizeBytes, sha256: result.sha256, mirrorState: result.mirrorState });
+    const active = await repo.transition(row.id, ["pending"], "active", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState });
     if (!active) throw new Error("storage object left the pending state unexpectedly");
   } catch (err) {
-    // The row stays pending (the sweep removes it); never leave the bytes behind untracked.
-    await driver.delete(row.storageKey).catch(() => undefined);
+    // Never leave untracked bytes behind: remove exactly the copies this attempt wrote.
+    await rollbackAttempt(written.attempt, "DB_FAILURE");
     throw err;
   }
-  return { objectId: row.id, reference: row.reference, sizeBytes: result.sizeBytes, sha256: result.sha256 };
+  return { objectId: row.id, reference: row.reference, sizeBytes: written.result.sizeBytes, sha256: written.result.sha256 };
 }
 
 // ── resolution / reads ───────────────────────────────────────────────────────
@@ -357,16 +506,21 @@ export interface ObjectRef {
 /**
  * The readable inventory row for a reference, or null. A tombstoned or
  * not-yet-active row is null (never served). A reference WITHOUT a row is
- * served from the legacy bucket only while the fallback is enabled, and is
+ * served from the legacy bucket only while `legacyReadMode()` allows it (the
+ * bucket is the primary, or the explicit transition fallback), and is
  * registered in the inventory on first use so later reads, deletes and the
  * migration all see one consistent record.
  */
 export async function resolveReadable(ref: ObjectRef): Promise<StorageObjectRow | null> {
   const row = await repo.findByReference(ref.companyId, ref.kind, ref.reference);
   if (row) return row.state === "active" ? row : null;
-  if (!legacyFallbackEnabled()) return null;
+  const mode = legacyReadMode();
+  if (mode === "off") return null;
   const loc = legacyLocation(ref.kind, ref.reference, ref.companyId);
   if (!loc) return null;
+  // A pre-B25 handle is served only to the tenant whose feature row carries it
+  // (document / export / report handles are not tenant-namespaced in the bucket).
+  if (!(await repo.legacyReferenceOwned(ref.companyId, ref.kind, ref.reference))) return null;
   const legacy = await getLegacyDriver();
   if (!legacy) return null;
   let head;
@@ -393,8 +547,9 @@ export async function resolveReadable(ref: ObjectRef): Promise<StorageObjectRow 
     state: "active",
   });
   if (registered.state !== "active") return null;
-  bump("legacyFallbackReads");
-  logger.info({ objectId: registered.id, kind: ref.kind, companyId: ref.companyId }, "Object storage: legacy fallback read (object registered for migration)");
+  bump("legacyRegistrations");
+  if (mode === "fallback") bump("legacyFallbackReads");
+  logger.info({ objectId: registered.id, kind: ref.kind, companyId: ref.companyId, legacyReads: mode }, "Object storage: pre-B25 reference registered in the inventory");
   return registered;
 }
 
@@ -406,47 +561,58 @@ export interface OpenedObject {
   row: StorageObjectRow;
 }
 
-/** Driver for a row: native rows use the primary driver, legacy rows the GCS driver. */
-async function driverFor(row: StorageObjectRow): Promise<{ driver: StorageDriver; key: string }> {
-  if (row.driver === "gcs") {
-    const legacy = await getLegacyDriver();
-    if (!legacy) throw new StorageError("STORAGE_UNAVAILABLE", "legacy storage is not configured");
-    return { driver: legacy, key: row.legacyKey ?? row.storageKey };
+export interface LocatedCopy {
+  driver: StorageDriver;
+  key: string;
+  role: "primary" | "mirror" | "legacy";
+}
+
+/**
+ * Every copy of a row that is readable under the CURRENT configuration, in
+ * preference order, from persisted locations only (never from a client value):
+ *   • the primary copy when the configured primary driver matches the row
+ *   • under the GCS driver (rollback) or the explicit transition fallback:
+ *     the strict-mirror copy (only when the mirror completed) and the
+ *     legacy / migration-source copy
+ * With a non-GCS primary and the fallback off, only the primary copy is used.
+ */
+export async function locateCopies(row: StorageObjectRow): Promise<LocatedCopy[]> {
+  const copies: LocatedCopy[] = [];
+  const mode = storageMode();
+  const p = storageConfigured() ? await primary().catch(() => null) : null;
+  const legacy = config.objectStorage.bucketId ? await getLegacyDriver().catch(() => null) : null;
+  if (p && p.kind === row.driver) copies.push({ driver: p, key: row.storageKey, role: "primary" });
+  if (row.driver === "gcs" && legacy && (mode === "gcs" || legacyReadMode() !== "off")) {
+    const key = row.legacyKey ?? mirrorLocation(row.storageKey);
+    if (key && !copies.some((c) => c.key === key && c.driver === legacy)) copies.push({ driver: legacy, key, role: mode === "gcs" ? "primary" : "legacy" });
   }
-  const p = await primary();
-  if (p.kind !== row.driver) throw new StorageError("STORAGE_UNAVAILABLE", "object was written by a different driver");
-  return { driver: p, key: row.storageKey };
+  if (row.driver !== "gcs" && legacy && (mode === "gcs" || legacyReadMode() === "fallback")) {
+    if (row.mirrorState === "ok" && row.mirrorKey) copies.push({ driver: legacy, key: row.mirrorKey, role: "mirror" });
+    if (row.legacyKey) copies.push({ driver: legacy, key: row.legacyKey, role: "legacy" });
+  }
+  return copies;
 }
 
 export async function openObject(row: StorageObjectRow, opts: { maxBytes?: number } = {}): Promise<OpenedObject> {
   const maxBytes = opts.maxBytes ?? OBJECT_LIMITS[row.kind as StorageKind];
-  const { driver, key } = await driverFor(row);
-  try {
-    const s = await driver.getStream(key, { maxBytes });
-    return { stream: s.stream, sizeBytes: row.sizeBytes ?? s.sizeBytes, contentType: row.contentType || s.contentType || "application/octet-stream", sha256: row.sha256, row };
-  } catch (err) {
-    const notFound = err instanceof StorageError && err.code === "STORAGE_NOT_FOUND";
-    if (!notFound) bump("primaryFailures");
-    // Transitional mode "fs-first reads with GCS fallback": a migrated object
-    // whose primary copy is missing may still be served from its legacy
-    // location while the fallback is enabled. Only ACTIVE rows reach this
-    // function, so a tombstoned object is never resurrected this way.
-    if (row.driver !== "gcs" && row.legacyKey && legacyFallbackEnabled()) {
-      const legacy = await getLegacyDriver().catch(() => null);
-      if (legacy) {
-        try {
-          const s = await legacy.getStream(row.legacyKey, { maxBytes });
-          bump("legacyFallbackReads");
-          logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, primaryMissing: notFound }, "Object storage: served from the legacy location (primary read failed)");
-          return { stream: s.stream, sizeBytes: row.sizeBytes ?? s.sizeBytes, contentType: row.contentType || s.contentType || "application/octet-stream", sha256: row.sha256, row };
-        } catch (legacyErr) {
-          logger.warn({ err: legacyErr, objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: legacy fallback read failed");
-        }
+  const copies = await locateCopies(row);
+  let lastErr: unknown = null;
+  for (const copy of copies) {
+    try {
+      const s = await copy.driver.getStream(copy.key, { maxBytes });
+      if (copy.role !== "primary") {
+        bump("legacyFallbackReads");
+        logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, role: copy.role, driver: copy.driver.kind }, "Object storage: served from a non-primary copy");
       }
+      return { stream: s.stream, sizeBytes: row.sizeBytes ?? s.sizeBytes, contentType: row.contentType || s.contentType || "application/octet-stream", sha256: row.sha256, row };
+    } catch (err) {
+      lastErr = err;
+      if (!(err instanceof StorageError && err.code === "STORAGE_NOT_FOUND") && copy.role === "primary") bump("primaryFailures");
+      logger.warn({ err, objectId: row.id, kind: row.kind, companyId: row.companyId, role: copy.role, driver: copy.driver.kind }, "Object storage: copy not readable");
     }
-    logger.warn({ err, objectId: row.id, kind: row.kind, companyId: row.companyId, driver: row.driver }, "Object storage: read failed");
-    throw err instanceof StorageError ? err : new StorageError("STORAGE_UNAVAILABLE", undefined, err);
   }
+  if (lastErr instanceof StorageError && lastErr.code === "STORAGE_NOT_FOUND" && copies.length === 1) throw lastErr;
+  throw new StorageError("STORAGE_UNAVAILABLE", "no readable copy of this object under the current configuration", lastErr, "NO_READABLE_COPY");
 }
 
 export async function openByReference(ref: ObjectRef, opts: { maxBytes?: number } = {}): Promise<OpenedObject | null> {
@@ -470,21 +636,43 @@ export interface DownloadLinkInput extends ObjectRef {
   ttlSec?: number;
 }
 
-/** Short-lived download capability for an active object; null when the object does not exist. */
+/**
+ * Credential-free absolute URL of the byte route for an active object (null
+ * when the object does not exist). The route re-checks the CURRENT session,
+ * tenant access, state and feature permission on every request.
+ */
 export async function mintDownloadUrl(base: string, input: DownloadLinkInput): Promise<string | null> {
   const row = await resolveReadable(input);
   if (!row) return null;
-  const exp = Math.floor(Date.now() / 1000) + (input.ttlSec ?? config.objectStorage.downloadTtlSec);
-  const fn = input.fileName ? sanitizeFileName(input.fileName) : undefined;
-  const token = mintCapability({ op: "get", o: row.id, c: row.companyId, u: input.userId, exp, ...(fn ? { fn } : {}), ...(input.disposition ? { d: input.disposition } : {}) });
-  return capabilityUrl(base, "get", row.id, token);
+  return fileUrl(base, row.id);
 }
 
-/** The row a verified `get` capability refers to, or null when it is no longer active / owned by that tenant. */
-export async function loadForDownload(payload: CapabilityPayload): Promise<StorageObjectRow | null> {
-  const row = await repo.findById(payload.o);
-  if (!row || row.companyId !== payload.c || row.state !== "active") return null;
-  return row;
+/** Compatibility for the capability-shaped payload (tests): the row when active and owned by `payload.c`. */
+export async function loadForDownload(payload: Pick<CapabilityPayload, "o" | "c">): Promise<StorageObjectRow | null> {
+  return authorizeObject(payload.c, payload.o, "get");
+}
+
+/** Human file name for a download, from the owning feature row (never from a client value). */
+export async function displayFileName(row: StorageObjectRow): Promise<string> {
+  try {
+    if (row.entityType === "document_version" && row.entityId != null) {
+      const [v] = await db.select({ name: documentVersionsTable.fileName }).from(documentVersionsTable).where(and(eq(documentVersionsTable.id, row.entityId), eq(documentVersionsTable.companyId, row.companyId))).limit(1);
+      if (v?.name) return sanitizeFileName(v.name);
+    } else if (row.entityType === "export_run" && row.entityId != null) {
+      const [r] = await db.select({ name: exportRunsTable.fileName }).from(exportRunsTable).where(and(eq(exportRunsTable.id, row.entityId), eq(exportRunsTable.companyId, row.companyId))).limit(1);
+      if (r?.name) return sanitizeFileName(r.name);
+    } else if (row.entityType === "executive_report" && row.entityId != null) {
+      const [r] = await db.select({ name: executiveReportsTable.fileName }).from(executiveReportsTable).where(and(eq(executiveReportsTable.id, row.entityId), eq(executiveReportsTable.companyId, row.companyId))).limit(1);
+      if (r?.name) return sanitizeFileName(r.name);
+    } else if (row.kind === "document" && !isNativeHandle(row.reference)) {
+      const [v] = await db.select({ name: documentVersionsTable.fileName }).from(documentVersionsTable).where(and(eq(documentVersionsTable.objectPath, row.reference), eq(documentVersionsTable.companyId, row.companyId))).limit(1);
+      if (v?.name) return sanitizeFileName(v.name);
+    }
+  } catch (err) {
+    logger.warn({ err, objectId: row.id }, "Object storage: file name lookup failed");
+  }
+  const ext = row.contentType === "image/jpeg" ? ".jpg" : row.contentType === "image/png" ? ".png" : row.contentType === "application/pdf" ? ".pdf" : row.contentType === "text/csv" ? ".csv" : "";
+  return `${row.kind}-${row.id.slice(0, 8)}${ext}`;
 }
 
 // ── file names / headers ─────────────────────────────────────────────────────
@@ -505,26 +693,51 @@ export function contentDisposition(disposition: "inline" | "attachment", fileNam
 }
 
 // ── deletion / tombstones ────────────────────────────────────────────────────
-/** Remove the bytes of a row from wherever they live. True when nothing remains (or nothing had to be removed). */
-export async function physicallyDelete(row: StorageObjectRow): Promise<boolean> {
-  try {
-    if (row.driver === "gcs") {
-      if (!config.objectStorage.legacyDelete) return true; // legacy objects are never deleted in this phase; the tombstone protects
-      const legacy = await getLegacyDriver();
-      if (!legacy) return true;
-      await legacy.delete(row.legacyKey ?? row.storageKey);
-      return true;
+export interface DeleteOutcome {
+  /** Every copy that had to go is gone (or never existed). */
+  ok: boolean;
+  /** The legacy bucket object was deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off). */
+  retained: boolean;
+}
+
+/**
+ * Remove every copy of a row from wherever it lives — primary (only when the
+ * configured primary driver matches the row), the persisted mirror copy and,
+ * only when legacy deletion is enabled, the legacy bucket object. A copy that
+ * cannot be removed now keeps the row in `deleting` for a later retry.
+ */
+export async function physicallyDelete(row: StorageObjectRow): Promise<DeleteOutcome> {
+  let ok = true;
+  let retained = false;
+  const legacy = config.objectStorage.bucketId ? await getLegacyDriver().catch(() => null) : null;
+  const tryDelete = async (driver: StorageDriver | null, key: string | null, what: string) => {
+    if (!key) return;
+    if (!driver) {
+      ok = false;
+      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what }, "Object storage: copy unreachable under the current configuration (delete will retry)");
+      return;
     }
-    const p = await primary();
-    if (p.kind === row.driver) await p.delete(row.storageKey);
-    const mirror = await getMirrorDriver();
-    if (mirror && row.mirrorState === "ok") await mirror.delete(row.storageKey);
-    return true;
-  } catch (err) {
-    bump("deleteFailures");
-    logger.warn({ err, objectId: row.id, kind: row.kind, companyId: row.companyId, driver: row.driver }, "Object storage: physical delete failed (will retry)");
-    return false;
+    try {
+      await driver.delete(key);
+    } catch (err) {
+      ok = false;
+      bump("deleteFailures");
+      logger.warn({ err, objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what, driver: driver.kind }, "Object storage: physical delete failed (will retry)");
+    }
+  };
+  if (row.driver === "gcs") {
+    if (config.objectStorage.legacyDelete) await tryDelete(legacy, row.legacyKey ?? mirrorLocation(row.storageKey), "legacy");
+    else retained = true; // never deleted in this phase; the tombstone protects and stays discoverable
+  } else {
+    const p = storageConfigured() ? await primary().catch(() => null) : null;
+    await tryDelete(p && p.kind === row.driver ? p : null, row.storageKey, "primary");
+    if (row.mirrorKey) await tryDelete(legacy, row.mirrorKey, "mirror");
+    if (row.legacyKey) {
+      if (config.objectStorage.legacyDelete) await tryDelete(legacy, row.legacyKey, "legacy");
+      else retained = true;
+    }
   }
+  return { ok, retained };
 }
 
 async function enqueueDeleteRetry(objectId: string): Promise<void> {
@@ -535,9 +748,13 @@ async function enqueueDeleteRetry(objectId: string): Promise<void> {
   }
 }
 
+function settledData(outcome: DeleteOutcome) {
+  return { lastError: outcome.retained ? repo.LEGACY_RETAINED : null, mirrorKey: null as string | null };
+}
+
 /**
- * Tombstone first, bytes second. Unknown / legacy references get a `deleted`
- * tombstone row so the legacy fallback can never resurrect them.
+ * Tombstone first, bytes second. Unknown / legacy references get a tombstone
+ * row so the legacy bucket can never resurrect them.
  */
 export async function deleteByReference(ref: ObjectRef, tx?: Executor): Promise<void> {
   const row = await repo.findByReference(ref.companyId, ref.kind, ref.reference, tx);
@@ -555,6 +772,7 @@ export async function deleteByReference(ref: ObjectRef, tx?: Executor): Promise<
         legacyKey: loc,
         contentType: defaultContentType(ref.kind),
         state: "deleted",
+        lastError: loc && !config.objectStorage.legacyDelete ? repo.LEGACY_RETAINED : null,
         deletedAt: new Date(),
       },
       tx,
@@ -562,16 +780,16 @@ export async function deleteByReference(ref: ObjectRef, tx?: Executor): Promise<
     return;
   }
   if (row.state === "deleted") return;
-  const marked = await repo.transition(row.id, ["pending", "staged", "active", "deleting", "failed"], "deleting", { deletedAt: row.deletedAt ?? new Date() }, tx);
+  const marked = await repo.transition(row.id, ["pending", "uploading", "staged", "active", "deleting", "failed"], "deleting", { deletedAt: row.deletedAt ?? new Date(), leaseToken: null, leaseExpiresAt: null }, tx);
   if (!marked) return;
   await finishDelete(marked);
 }
 
 /** Second half of a delete: remove the bytes and settle the row; retried durably on failure. */
 export async function finishDelete(row: StorageObjectRow): Promise<boolean> {
-  const ok = await physicallyDelete(row);
-  if (ok) {
-    await repo.transition(row.id, ["deleting"], "deleted", { lastError: null });
+  const outcome = await physicallyDelete(row);
+  if (outcome.ok) {
+    await repo.transition(row.id, ["deleting"], "deleted", settledData(outcome));
     return true;
   }
   await repo.update(row.id, { lastError: "DELETE_RETRY" }).catch(() => undefined);
@@ -584,14 +802,48 @@ export async function runDeleteObjectJob(payload: { objectId: string }): Promise
   if (!payload || typeof payload.objectId !== "string" || !UUID.test(payload.objectId)) return;
   const row = await repo.findById(payload.objectId);
   if (!row || row.state !== "deleting") return;
-  const ok = await physicallyDelete(row);
-  if (!ok) throw new Error("storage object delete failed (retrying)");
-  await repo.transition(row.id, ["deleting"], "deleted", { lastError: null });
+  const outcome = await physicallyDelete(row);
+  if (!outcome.ok) throw new Error("storage object delete failed (retrying)");
+  await repo.transition(row.id, ["deleting"], "deleted", settledData(outcome));
 }
 
-/** Company deletion: tombstone every object of the tenant inside the deletion transaction. */
+/**
+ * Company deletion: register every supported pre-B25 reference of the tenant
+ * as a tombstone (so the legacy objects stay discoverable for cleanup even
+ * after the feature rows are cascaded away) and tombstone every live object —
+ * all inside the deletion transaction.
+ */
 export async function tombstoneCompany(tx: Executor, companyId: number): Promise<number> {
-  return repo.markCompanyDeleting(companyId, tx);
+  const { discoverLegacyReferences } = await import("../storage/migration-db.js");
+  const { candidates } = await discoverLegacyReferences({ companyId, tx });
+  let registered = 0;
+  const seen = new Set<string>();
+  for (const c of candidates) {
+    const key = `${c.kind}|${c.reference}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const id = randomUUID();
+    const row = await repo.insertIfAbsent(
+      {
+        id,
+        companyId,
+        kind: c.kind,
+        entityType: c.entityType,
+        entityId: c.entityId,
+        reference: c.reference,
+        storageKey: tenantKey(c.kind, companyId, id),
+        driver: "gcs",
+        legacyKey: c.legacyKey,
+        contentType: c.contentType ?? defaultContentType(c.kind),
+        state: "deleting",
+        deletedAt: new Date(),
+      },
+      tx,
+    );
+    if (row.id === id) registered += 1;
+  }
+  const marked = await repo.markCompanyDeleting(companyId, tx);
+  return marked + registered;
 }
 
 export async function enqueueCompanyPurge(companyId: number): Promise<void> {
@@ -606,16 +858,17 @@ export async function enqueueCompanyPurge(companyId: number): Promise<void> {
 export async function runPurgeCompanyJob(payload: { companyId: number }): Promise<void> {
   if (!payload || !Number.isInteger(payload.companyId)) return;
   const batch = config.objectStorage.sweepBatchSize;
-  const rows = await repo.listByCompany(payload.companyId, ["deleting", "pending", "staged", "active"], batch);
+  const states: repo.StorageObjectState[] = ["deleting", "pending", "uploading", "staged", "active"];
+  const rows = await repo.listByCompany(payload.companyId, states, batch);
   let failed = 0;
   for (const row of rows) {
-    const marked = row.state === "deleting" ? row : await repo.transition(row.id, ["pending", "staged", "active"], "deleting", { deletedAt: new Date() });
+    const marked = row.state === "deleting" ? row : await repo.transition(row.id, ["pending", "uploading", "staged", "active"], "deleting", { deletedAt: new Date(), leaseToken: null, leaseExpiresAt: null });
     if (!marked) continue;
-    const ok = await physicallyDelete(marked);
-    if (ok) await repo.transition(marked.id, ["deleting"], "deleted", { lastError: null });
+    const outcome = await physicallyDelete(marked);
+    if (outcome.ok) await repo.transition(marked.id, ["deleting"], "deleted", settledData(outcome));
     else failed += 1;
   }
-  const remaining = await repo.listByCompany(payload.companyId, ["deleting", "pending", "staged", "active"], 1);
+  const remaining = await repo.listByCompany(payload.companyId, states, 1);
   if (failed > 0) throw new Error(`storage purge: ${failed} object(s) could not be removed yet (retrying)`);
   if (remaining.length > 0) await enqueueCompanyPurge(payload.companyId);
 }
@@ -624,6 +877,7 @@ export async function runPurgeCompanyJob(payload: { companyId: number }): Promis
 export interface SweepSummary {
   stalePending: number;
   staleStaged: number;
+  expiredLeases: number;
   retriedDeletes: number;
   companyOrphans: number;
   entityOrphans: number;
@@ -633,17 +887,23 @@ export interface SweepSummary {
 /** Idempotent, bounded repair pass (runs inside the recurring maintenance sweep). */
 export async function sweepStorage(now: Date = new Date()): Promise<SweepSummary> {
   const batch = config.objectStorage.sweepBatchSize;
-  const summary: SweepSummary = { stalePending: 0, staleStaged: 0, retriedDeletes: 0, companyOrphans: 0, entityOrphans: 0, purgedTombstones: 0 };
+  const summary: SweepSummary = { stalePending: 0, staleStaged: 0, expiredLeases: 0, retriedDeletes: 0, companyOrphans: 0, entityOrphans: 0, purgedTombstones: 0 };
   if (!storageConfigured()) return summary;
 
   const settle = async (row: StorageObjectRow): Promise<boolean> => {
-    const marked = row.state === "deleting" ? row : await repo.transition(row.id, ["pending", "staged", "active", "failed"], "deleting", { deletedAt: new Date() });
+    const marked = row.state === "deleting" ? row : await repo.transition(row.id, ["pending", "uploading", "staged", "active", "failed"], "deleting", { deletedAt: new Date(), leaseToken: null, leaseExpiresAt: null });
     if (!marked) return false;
-    const ok = await physicallyDelete(marked);
-    if (ok) await repo.transition(marked.id, ["deleting"], "deleted", { lastError: null });
-    return ok;
+    const outcome = await physicallyDelete(marked);
+    if (outcome.ok) await repo.transition(marked.id, ["deleting"], "deleted", settledData(outcome));
+    return outcome.ok;
   };
 
+  // Crashed / abandoned writers: an expired lease becomes `failed` (its
+  // unverified copies are removed by the failed-row pass below).
+  for (const row of await repo.listExpiredUploading(now, batch)) {
+    const released = await repo.transition(row.id, ["uploading"], "failed", { leaseToken: null, leaseExpiresAt: null, lastError: "LEASE_EXPIRED" });
+    if (released) summary.expiredLeases += 1;
+  }
   for (const row of await repo.listStale("pending", new Date(now.getTime() - config.objectStorage.pendingTtlMs), batch)) {
     if (await settle(row)) summary.stalePending += 1;
   }
@@ -659,7 +919,7 @@ export async function sweepStorage(now: Date = new Date()): Promise<SweepSummary
   for (const row of await repo.listCompanyOrphans(batch)) {
     if (await settle(row)) summary.companyOrphans += 1;
   }
-  for (const row of await repo.listEntityOrphans(batch)) {
+  for (const row of await repo.listEntityOrphans(new Date(now.getTime() - config.objectStorage.pendingTtlMs), batch)) {
     if (await settle(row)) summary.entityOrphans += 1;
   }
   for (const row of await repo.listPurgeableTombstones(new Date(now.getTime() - 24 * 60 * 60 * 1000), batch)) {
@@ -674,34 +934,43 @@ export interface StorageMetricsSnapshot {
   driver: string;
   legacyFallback: boolean;
   mirror: boolean;
+  /** Whether references without an inventory row are served from the legacy bucket, and why. */
+  legacyReads: LegacyReadMode;
   primaryFailures: number;
   legacyFallbackReads: number;
   mirrorFailures: number;
   migrationVerifyFailures: number;
   deleteFailures: number;
+  legacyRegistrations: number;
   /** Inventory backlog; null when the inventory could not be read (never a fabricated 0). */
   pendingUploads: number | null;
   pendingDeletes: number | null;
+  /** Tombstoned legacy bucket objects whose bytes were deliberately kept (await an approved GCS cleanup). */
+  retainedLegacyObjects: number | null;
 }
 
 export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
   const c = storageCounters();
   let pendingUploads: number | null = null;
   let pendingDeletes: number | null = null;
+  let retainedLegacyObjects: number | null = null;
   try {
     const counts = await repo.countByStates();
-    pendingUploads = (counts.pending ?? 0) + (counts.staged ?? 0);
+    pendingUploads = (counts.pending ?? 0) + (counts.uploading ?? 0) + (counts.staged ?? 0);
     pendingDeletes = counts.deleting ?? 0;
+    retainedLegacyObjects = await repo.countRetainedLegacyObjects();
   } catch (err) {
     logger.warn({ err }, "Object storage: inventory counts unavailable for metrics");
   }
   return {
     driver: storageMode(),
-    legacyFallback: legacyFallbackEnabled(),
-    mirror: config.objectStorage.mirror && storageMode() !== "gcs" && storageMode() !== "none" && !!config.objectStorage.bucketId,
+    legacyFallback: config.objectStorage.legacyFallback && !!config.objectStorage.bucketId,
+    mirror: mirrorConfigured(),
+    legacyReads: legacyReadMode(),
     ...c,
     pendingUploads,
     pendingDeletes,
+    retainedLegacyObjects,
   };
 }
 

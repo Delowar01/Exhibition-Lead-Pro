@@ -138,3 +138,16 @@ export async function update(id: number, data: Partial<typeof scansTable.$inferI
 export async function setImageUrl(scanId: number, objectKey: string): Promise<void> {
   await db.update(scansTable).set({ imageUrl: objectKey }).where(eq(scansTable.id, scanId));
 }
+
+/**
+ * B25 Correction 1 — bind a stored image reference to a scan of THIS tenant.
+ * With `expectedPrevious` the update is a compare-and-set on the current
+ * reference (replacement), so a concurrent replacement cannot be overwritten.
+ * Returns false when no row matched (foreign / deleted scan, lost CAS).
+ */
+export async function bindImage(scanId: number, companyId: number, reference: string, expectedPrevious?: string | null): Promise<boolean> {
+  const conds = [eq(scansTable.id, scanId), eq(scansTable.companyId, companyId)];
+  if (expectedPrevious !== undefined) conds.push(expectedPrevious === null ? isNull(scansTable.imageUrl) : eq(scansTable.imageUrl, expectedPrevious));
+  const rows = await db.update(scansTable).set({ imageUrl: reference }).where(and(...conds)).returning({ id: scansTable.id });
+  return rows.length === 1;
+}

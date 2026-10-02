@@ -1,9 +1,13 @@
-// Batch 25 — deterministic in-process driver for unit tests and as the stand-in
-// legacy driver in migration tests. Never used in production (config refuses it).
+// Batch 25 — deterministic in-process driver for unit tests and, with
+// `kind: "gcs"` + `looseKeys`, the FAKE legacy-bucket adapter used by the
+// rollback / migration / concurrency tests. Never used in production (config
+// refuses it). Publication is an atomic check-and-set AFTER the bytes were
+// read (and after the optional test barrier), which models the real drivers'
+// no-replace publication (filesystem hard link / GCS generation precondition).
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { PassThrough } from "node:stream";
-import { StorageError, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
+import { StorageError, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver, type StorageDriverKind } from "./contract.js";
 import { HashingLimiter, toReadable, verifyExpected } from "./hashing.js";
 import { assertValidStorageKey } from "./keys.js";
 
@@ -13,15 +17,26 @@ interface StoredObject {
   sha256: string;
 }
 
+export interface MemoryDriverOptions {
+  /** When true (fake legacy bucket), keys are not validated against the canonical grammar. */
+  looseKeys?: boolean;
+  /** Reported driver kind: "memory" (default) or "gcs" for the fake legacy adapter. */
+  kind?: Extract<StorageDriverKind, "memory" | "gcs">;
+  /** Test barrier awaited right before publication (concurrency tests). */
+  beforePublish?: (key: string) => Promise<void>;
+}
+
 export class MemoryStorageDriver implements StorageDriver {
-  readonly kind = "memory" as const;
+  readonly kind: StorageDriverKind;
   readonly objects = new Map<string, StoredObject>();
   /** Test hooks: the next put / get / delete fails with STORAGE_UNAVAILABLE. */
   failNextPut = false;
   failNextGet = false;
   failNextDelete = false;
-  /** When true (migration tests), keys are not validated against the canonical grammar. */
-  constructor(private readonly opts: { looseKeys?: boolean } = {}) {}
+
+  constructor(private readonly opts: MemoryDriverOptions = {}) {
+    this.kind = opts.kind ?? "memory";
+  }
 
   private check(key: string): void {
     if (!this.opts.looseKeys) assertValidStorageKey(key);
@@ -34,7 +49,6 @@ export class MemoryStorageDriver implements StorageDriver {
       this.failNextPut = false;
       throw new StorageError("STORAGE_UNAVAILABLE", "simulated storage failure");
     }
-    if (!opts.allowOverwrite && this.objects.has(key)) throw new StorageError("STORAGE_CONFLICT");
     const limiter = new HashingLimiter(opts.maxBytes);
     const chunks: Buffer[] = [];
     const sink = new PassThrough();
@@ -42,6 +56,10 @@ export class MemoryStorageDriver implements StorageDriver {
     await pipeline(toReadable(source), limiter, sink);
     const result = { sizeBytes: limiter.size, sha256: limiter.sha256 };
     verifyExpected(result, opts);
+    if (this.opts.beforePublish) await this.opts.beforePublish(key);
+    // Atomic publication: the existence check and the set happen in one
+    // synchronous step (no await in between) — like ifGenerationMatch: 0.
+    if (!opts.allowOverwrite && this.objects.has(key)) throw new StorageError("STORAGE_CONFLICT");
     this.objects.set(key, { bytes: Buffer.concat(chunks), contentType: opts.contentType, sha256: result.sha256 });
     return result;
   }
