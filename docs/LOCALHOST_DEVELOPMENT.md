@@ -239,15 +239,15 @@ pnpm --filter @workspace/web-app run build      # PASS → dist/public (env-free
 maintained** (other documents point here; `docs/reports/` are archived
 point-in-time reports and keep their historical counts).
 
-| Suite | B25 Correction 1 run (2026-10-02, fs object-storage driver, no Google Cloud credentials) | B25 Phase 1 run (2026-10-02, fs driver) | B24 run (2026-10-02, no object storage) |
+| Suite | B25 Correction 2 run (2026-10-02, fs object-storage driver, no Google Cloud credentials) | B25 Correction 1 run (2026-10-02, fs driver) | B25 Phase 1 run (2026-10-02, fs driver) |
 |---|---|---|---|
-| API (`vitest run`, once, API started with `LOGIN_RATE_MAX=1000`, `JOBS_DRIVER=postgres` and the fs driver) | **1409 passed / 0 failed / 1 skipped of 1410 (88 files)** | 1368 passed / 0 failed / 1 skipped of 1369 (82 files) | 1248 passed / 9 documented storage-gated failures / 28 skipped of 1285 |
-| Playwright (`playwright test`, chromium) | **152/152** | 152/152 | 152/152 |
+| API (`vitest run`, once, API started with `LOGIN_RATE_MAX=1000`, `JOBS_DRIVER=postgres` and the fs driver) | **1448 passed / 0 failed / 1 skipped of 1449 (95 files)** | 1409 passed / 0 failed / 1 skipped of 1410 (88 files) | 1368 passed / 0 failed / 1 skipped of 1369 (82 files) |
+| Playwright (`playwright test`, chromium, fresh stack) | **152/152** | 152/152 | 152/152 |
 | Mobile (`vitest run`) | **114/114** | 114/114 | 114/114 |
 | Typechecks (libs, api, web, mobile, scripts, pitch-deck, mockup-sandbox; root `pnpm run typecheck`) | **all exit 0** | all exit 0 | all exit 0 |
 | API / web production builds | **PASS** | PASS | PASS |
 
-Pre-B24 reference (B23 Correction 1, 2026-09-18): API 1234 passed / 9 failed / 28 skipped of 1271, Playwright 152/152, mobile 114/114, root typecheck failed in `mockup-sandbox` (fixed in B24). The 41 tests added by B25 Correction 1 (`b25c1-service` 14, `b25c1-migration` 6, `b25c1-concurrency` 6, `b25c1-scans` 4, `b25c1-files-auth` 6, `unit-files-log-redaction` 4, plus one concurrent-PUT case in `b25-storage`) were red against the Phase 1 head before the fix.
+Earlier references: B24 run (2026-10-02, no object storage) API 1248 passed / 9 documented storage-gated failures / 28 skipped of 1285, Playwright 152/152, mobile 114/114; B23 Correction 1 (2026-09-18) API 1234 passed / 9 failed / 28 skipped of 1271, root typecheck failed in `mockup-sandbox` (fixed in B24). The 41 tests added by B25 Correction 1 (`b25c1-service` 14, `b25c1-migration` 6, `b25c1-concurrency` 6, `b25c1-scans` 4, `b25c1-files-auth` 6, `unit-files-log-redaction` 4, plus one concurrent-PUT case in `b25-storage`) and the 39 added by Correction 2 (`b25c2-lease-fencing` 8, `b25c2-gcs-generations` 7, `b25c2-files-lifecycle` 6, `b25c2-integrity` 5, `b25c2-migration-readonly` 3, `b25c2-company-deletion` 3, `b25c2-log-sanitization` 7) were red against the respective previous head before the fix.
 
 > **No storage-gated subset any more (B25):** the 27 formerly GCS-gated tests
 > (`documents.test.ts` 24, `ocr-pipeline` stored-image reprocess,

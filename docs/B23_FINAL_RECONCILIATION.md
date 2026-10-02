@@ -36,13 +36,17 @@
 >
 > **Status addendum (B25 Phase 1, 2026-10-02).** B24 was accepted, merged to
 > `develop` (`5a072fd…`), deployed and verified on the hosted dev stack
-> (activation run 36972460934). **B25 Phase 1 + Correction 1** — provider-neutral
+> (activation run 36972460934). **B25 Phase 1 + Corrections 1 and 2** — provider-neutral
 > object storage contract, encrypted filesystem driver, `storage_objects`
 > inventory, authenticated private byte routes (no credential in any URL),
 > lease-based race-free uploads, automatic pre-B25 compatibility while GCS is
 > primary, primary+mirror rollback cleanup, persisted-copy rollback to GCS,
 > tombstone-first lifecycle, read-only migration dry-run / verify with
-> duplicate-reference detection —
+> duplicate-reference detection; Correction 2: one CAS-fenced publication
+> attempt per upload intent with ownership-proven cleanup, generation-safe GCS
+> cleanup, live feature-association checks on downloads, streaming integrity
+> verification of rollback copies, fail-closed company deletion, sanitized
+> storage logging —
 > is implemented and verified **locally only** on
 > `claude/b25-object-storage-hostinger` (`B25_OBJECT_STORAGE.md`): not merged,
 > not hosted, not migrated; the hosted stack still uses Google Cloud Storage,

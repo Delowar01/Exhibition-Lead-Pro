@@ -140,8 +140,14 @@ Center / Workflow Intelligence / Executive Intelligence.
   migration tooling) plus **Correction 1** (automatic pre-B25 compatibility
   while GCS is primary, no credentials in URLs, lease-based race-free
   uploads, primary+mirror rollback cleanup, persisted-copy rollback to GCS,
-  read-only migration dry-run/verify, duplicate-reference detection) are
-  implemented and verified LOCALLY on
+  read-only migration dry-run/verify, duplicate-reference detection) and
+  **Correction 2** (one publication attempt per upload intent with CAS-fenced
+  lease transitions and ownership-proven cleanup, generation-safe GCS
+  cleanup, live feature-association checks on private downloads, streaming
+  integrity verification of GCS rollback copies, dry-run/verify that never
+  create the target root, fail-closed company deletion on un-inventoriable
+  references, sanitized storage logging) are implemented and verified
+  LOCALLY on
   `claude/b25-object-storage-hostinger` — NOT merged, NOT hosted, NOT
   migrated; the hosted stack still runs Google Cloud Storage unchanged, and
   GCS remains in the code only as the temporary legacy / migration / fallback
@@ -204,9 +210,9 @@ pnpm --filter @workspace/api-server run build       # PASS
 pnpm --filter @workspace/web-app run build          # PASS
 ```
 
-**Authoritative baseline (B25 Correction 1 run, 2026-10-02, filesystem object
-storage driver, no Google Cloud credentials):** API **1409 passed / 0 failed / 1 skipped of 1410 (88 files)**,
-Playwright **152/152**, mobile **114/114** (B25 Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
+**Authoritative baseline (B25 Correction 2 run, 2026-10-02, filesystem object
+storage driver, no Google Cloud credentials):** API **1448 passed / 0 failed / 1 skipped of 1449 (95 files)**,
+Playwright **152/152**, mobile **114/114** (Correction 1: 1409 / 0 / 1 of 1410, 88 files; Phase 1: 1368 / 0 / 1 of 1369, 82 files). The formerly
 storage-gated set (documents 24, ocr-pipeline reprocess, executive-intelligence
 2) now runs green on the fs driver; every remaining skip is classified in
 `docs/LOCALHOST_DEVELOPMENT.md` §7 (no storage-gated skips remain). Pre-B25
