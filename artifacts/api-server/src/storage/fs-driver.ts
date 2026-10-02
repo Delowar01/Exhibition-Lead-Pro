@@ -24,7 +24,7 @@ import path from "node:path";
 import { PassThrough, Writable, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
-import { StorageError, readAll, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
+import { StorageError, readAll, type DeleteOptions, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
 import { DecryptStream, EncryptStream, EnvelopeError, DEFAULT_CHUNK_SIZE } from "./envelope.js";
 import { HashingLimiter, toReadable, verifyExpected } from "./hashing.js";
 import { assertValidStorageKey, healthKey } from "./keys.js";
@@ -37,6 +37,12 @@ export interface FsDriverOptions {
   probeTimeoutMs?: number;
   /** Test barrier awaited right before publication (concurrency tests only). */
   beforePublish?: (key: string) => Promise<void>;
+  /**
+   * B25 Correction 2 — read-only mode (migration --dry-run / --verify): never
+   * creates the root or any directory, temp file, probe or object; a missing
+   * root is reported as absent (`rootState()`), every write is refused.
+   */
+  readOnly?: boolean;
 }
 
 const PROBE_BYTES = 1024;
@@ -80,6 +86,8 @@ export class FsStorageDriver implements StorageDriver {
   private readonly chunkSize: number;
   private readonly probeTimeoutMs: number;
   private readonly beforePublish?: (key: string) => Promise<void>;
+  private readonly readOnly: boolean;
+  private rootAbsent = false;
   private initialized = false;
 
   constructor(opts: FsDriverOptions) {
@@ -91,9 +99,14 @@ export class FsStorageDriver implements StorageDriver {
     this.chunkSize = opts.chunkSize ?? DEFAULT_CHUNK_SIZE;
     this.probeTimeoutMs = opts.probeTimeoutMs ?? 2500;
     this.beforePublish = opts.beforePublish;
+    this.readOnly = opts.readOnly ?? false;
   }
 
-  /** Create the root (0700) when missing and refuse a root that is a link or not a directory. */
+  /**
+   * Create the root (0700) when missing and refuse a root that is a link or
+   * not a directory. In read-only mode a missing root is only RECORDED as
+   * absent — nothing is created.
+   */
   async init(): Promise<void> {
     if (this.initialized) return;
     try {
@@ -102,9 +115,23 @@ export class FsStorageDriver implements StorageDriver {
       if (!st.isDirectory()) throw new Error("OBJECT_STORAGE_FS_ROOT must be a directory");
     } catch (err) {
       if (!isErrno(err, "ENOENT")) throw err;
+      if (this.readOnly) {
+        this.rootAbsent = true;
+        this.initialized = true;
+        return;
+      }
       await mkdir(this.root, { recursive: true, mode: 0o700 });
     }
     this.initialized = true;
+  }
+
+  /** Whether the root directory exists (read-only mode reports instead of creating). */
+  rootState(): "present" | "absent" {
+    return this.rootAbsent ? "absent" : "present";
+  }
+
+  private refuseWrite(): never {
+    throw new StorageError("STORAGE_UNAVAILABLE", "object store opened read-only", undefined, "READ_ONLY");
   }
 
   private pathFor(key: string): string {
@@ -148,6 +175,7 @@ export class FsStorageDriver implements StorageDriver {
 
   async put(key: string, source: Readable | Buffer, opts: PutOptions & { allowOverwrite?: boolean }): Promise<PutResult> {
     await this.init();
+    if (this.readOnly) this.refuseWrite();
     const final = this.pathFor(key);
     const dir = path.dirname(final);
     await this.assertSafeTree(key, { allowMissing: true });
@@ -224,6 +252,7 @@ export class FsStorageDriver implements StorageDriver {
   async getStream(key: string, opts: GetOptions = {}): Promise<ObjectStream> {
     await this.init();
     const final = this.pathFor(key);
+    if (this.rootAbsent) throw new StorageError("STORAGE_NOT_FOUND");
     await this.assertSafeTree(key, { allowMissing: false });
     let fh;
     try {
@@ -251,6 +280,7 @@ export class FsStorageDriver implements StorageDriver {
   async head(key: string): Promise<ObjectHead | null> {
     await this.init();
     const final = this.pathFor(key);
+    if (this.rootAbsent) return null;
     try {
       await this.assertSafeTree(key, { allowMissing: false });
     } catch (err) {
@@ -265,8 +295,10 @@ export class FsStorageDriver implements StorageDriver {
     return (await this.head(key)) !== null;
   }
 
-  async delete(key: string): Promise<void> {
+  /** Filesystem keys are attempt-unique, so `ifGeneration` has nothing to compare against and is ignored. */
+  async delete(key: string, _opts: DeleteOptions = {}): Promise<void> {
     await this.init();
+    if (this.readOnly) this.refuseWrite();
     const final = this.pathFor(key);
     let st;
     try {
@@ -291,6 +323,7 @@ export class FsStorageDriver implements StorageDriver {
    */
   async probe(): Promise<void> {
     await this.init();
+    if (this.readOnly) this.refuseWrite();
     const key = healthKey(`probe-${randomUUID()}`);
     const payload = randomBytes(PROBE_BYTES);
     const expected = createHash("sha256").update(payload).digest("hex");

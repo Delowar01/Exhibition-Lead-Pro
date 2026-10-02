@@ -21,6 +21,11 @@ let legacy: StorageDriver | null | undefined;
 let encryptionKey: Buffer | null = null;
 let ephemeralKeyWarned = false;
 
+/** The configured at-rest key (or the explicit test-only ephemeral key). Never logged. */
+export function loadEncryptionKey(): Buffer {
+  return loadKey();
+}
+
 function loadKey(): Buffer {
   if (encryptionKey) return encryptionKey;
   const raw = config.objectStorage.encryptionKey;

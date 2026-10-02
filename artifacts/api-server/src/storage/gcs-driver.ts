@@ -18,7 +18,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { PassThrough, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Storage, File } from "@google-cloud/storage";
-import { StorageError, readAll, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
+import { StorageError, readAll, type DeleteOptions, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
 import { HashingLimiter, toReadable, verifyExpected } from "./hashing.js";
 import { assertValidStorageKey, healthKey } from "./keys.js";
 
@@ -38,6 +38,14 @@ function gcsStatus(err: unknown): number | null {
   if (typeof err !== "object" || err === null) return null;
   const code = (err as { code?: unknown }).code;
   return typeof code === "number" ? code : null;
+}
+
+function generationOf(metadata: unknown): string | null {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const g = (metadata as { generation?: unknown }).generation;
+  if (typeof g === "number" && Number.isFinite(g)) return String(g);
+  if (typeof g === "string" && /^\d+$/.test(g)) return g;
+  return null;
 }
 
 export function mapGcsError(err: unknown): StorageError {
@@ -71,8 +79,16 @@ export class GcsStorageDriver implements StorageDriver {
     // B25 Correction 1: a no-overwrite write is published with the atomic
     // generation precondition `ifGenerationMatch: 0` (the object must not exist
     // at commit time) instead of an exists() check followed by an unconditional
-    // write. A precondition failure (412) means NOTHING of ours was stored, so
-    // the loser never deletes the winner's object.
+    // write. A precondition failure (412) means NOTHING of ours was stored.
+    //
+    // B25 Correction 2 — generation-safe cleanup: a failed write NEVER deletes
+    // by key. We cannot prove which generation (if any) a failed stream left
+    // behind — a 412, a transport error, a source-stream abort or a response
+    // lost after the server committed all look alike from here — and the key
+    // may hold a pre-existing or concurrently committed object. The inventory
+    // row that owns the key settles it (its key is attempt-unique), never the
+    // driver. Only a write we KNOW succeeded (generation in hand) may remove
+    // its own generation again (integrity failure below).
     const preconditionOpts = opts.allowOverwrite ? undefined : { ifGenerationMatch: 0 };
     try {
       await pipeline(
@@ -82,14 +98,16 @@ export class GcsStorageDriver implements StorageDriver {
       );
     } catch (err) {
       if (gcsStatus(err) === 412) throw new StorageError("STORAGE_CONFLICT", undefined, err);
-      await f.delete({ ignoreNotFound: true }).catch(() => undefined);
       throw mapGcsError(err);
     }
-    const result = { sizeBytes: limiter.size, sha256: limiter.sha256 };
+    const generation = generationOf(f.metadata);
+    const result: PutResult = { sizeBytes: limiter.size, sha256: limiter.sha256, ...(generation ? { generation } : {}) };
     try {
       verifyExpected(result, opts);
     } catch (err) {
-      await f.delete({ ignoreNotFound: true }).catch(() => undefined);
+      // Our own generation only; with no generation reported the object is left
+      // for the owning inventory row's cleanup (discoverable, never a blind delete).
+      if (generation) await this.delete(key, { ifGeneration: generation }).catch(() => undefined);
       throw err;
     }
     return result;
@@ -139,10 +157,14 @@ export class GcsStorageDriver implements StorageDriver {
     }
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(key: string, opts: DeleteOptions = {}): Promise<void> {
     try {
-      await this.file(key).delete({ ignoreNotFound: true });
+      await this.file(key).delete({ ignoreNotFound: true, ...(opts.ifGeneration !== undefined ? { ifGenerationMatch: Number(opts.ifGeneration) } : {}) });
     } catch (err) {
+      // Precondition failed: the object at this key is a DIFFERENT generation —
+      // not ours to remove. Report it; never fall back to an unconditional delete.
+      if (opts.ifGeneration !== undefined && gcsStatus(err) === 412) throw new StorageError("STORAGE_CONFLICT", "object generation changed", err, "GENERATION_MISMATCH");
+      if (gcsStatus(err) === 404) return;
       throw mapGcsError(err);
     }
   }

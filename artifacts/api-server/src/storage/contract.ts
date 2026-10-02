@@ -64,6 +64,22 @@ export interface PutResult {
   sizeBytes: number;
   /** PLAINTEXT SHA-256, lowercase hex. */
   sha256: string;
+  /**
+   * Provider object generation / version created by THIS write when the
+   * provider reports one (GCS, the fake adapter). Cleanup of a failed attempt
+   * targets exactly this generation — never a bare key (B25 Correction 2).
+   */
+  generation?: string;
+}
+
+export interface DeleteOptions {
+  /**
+   * Delete only when the object's current generation equals this value
+   * (ownership-proven cleanup). A mismatch rejects with STORAGE_CONFLICT /
+   * reason GENERATION_MISMATCH and leaves the object untouched; drivers
+   * without generations (fs) ignore it because their keys are attempt-unique.
+   */
+  ifGeneration?: string;
 }
 
 export interface ObjectHead {
@@ -93,8 +109,8 @@ export interface StorageDriver {
   /** Metadata lookup; null when absent. */
   head(key: string): Promise<ObjectHead | null>;
   exists(key: string): Promise<boolean>;
-  /** Idempotent: deleting an absent object succeeds. */
-  delete(key: string): Promise<void>;
+  /** Idempotent: deleting an absent object succeeds. With `ifGeneration`, only that generation is removed. */
+  delete(key: string, opts?: DeleteOptions): Promise<void>;
   /** Bounded reachability probe (write/read/verify/delete under the health namespace for fs). Rejects when unhealthy. */
   probe(): Promise<void>;
 }

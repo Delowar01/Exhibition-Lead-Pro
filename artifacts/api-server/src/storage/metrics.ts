@@ -9,6 +9,8 @@ export interface StorageCounters {
   deleteFailures: number;
   /** Pre-B25 references registered in the inventory on first use (any legacy read mode). */
   legacyRegistrations: number;
+  /** Reads of a GCS legacy / mirror / native copy whose bytes disagreed with the inventory size or digest (B25 Correction 2). */
+  integrityFailures: number;
 }
 
 const counters: StorageCounters = {
@@ -18,6 +20,7 @@ const counters: StorageCounters = {
   migrationVerifyFailures: 0,
   deleteFailures: 0,
   legacyRegistrations: 0,
+  integrityFailures: 0,
 };
 
 export function bump(counter: keyof StorageCounters, by = 1): void {
