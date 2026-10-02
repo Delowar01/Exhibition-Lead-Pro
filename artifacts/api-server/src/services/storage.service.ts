@@ -64,6 +64,17 @@
 //     lifetime and the put time bound remain availability bounds on the writer;
 //     a client-side abort proves nothing about what the provider will commit
 //
+// B25 Correction 5:
+//   • ambiguous DATABASE commit outcomes: a commit statement (activation of a
+//     server-side write, staging of a client upload, the fence of a rollback)
+//     can commit and still reject in the client. The durable row decides:
+//     committed-and-matching → success (nothing deleted), conclusively not
+//     committed → fenced with a CAS FIRST and only then cleaned, already a
+//     tombstone → this attempt's copies are garbage, unknown → nothing is
+//     deleted and a fixed error is answered. No copy of a staged / active row
+//     is ever deleted by a rollback; every inventory bookkeeping failure is
+//     logged sanitized instead of swallowed
+//
 // Nothing here ever returns a filesystem path, storage key, bucket name or host
 // path to a caller; API responses carry opaque handles and credential-free URLs.
 // =============================================================================
@@ -291,15 +302,16 @@ export async function rollbackLeasedAttempt(attempt: WriteAttempt, leaseToken: s
     return undefined;
   });
   if (released) {
-    const clean = await discardCopies(attempt);
-    if (!clean) await repo.flagCleanupPending(attempt.rowId).catch(() => undefined);
+    await cleanupFencedAttempt(attempt);
     return "released";
   }
-  const row = await repo.findById(attempt.rowId).catch(() => undefined);
+  const row = await repo.findById(attempt.rowId).catch((err) => {
+    logger.error({ error: safe(err), objectId: attempt.rowId }, "Object storage: rollback could not re-read the row — copies retained for the sweep");
+    return undefined;
+  });
   if (row && (row.state === "failed" || row.state === "deleting" || row.state === "deleted")) {
     // Fenced out by the sweep or company deletion: our late copies are garbage.
-    const clean = await discardCopies(attempt);
-    if (!clean) await repo.flagCleanupPending(attempt.rowId).catch(() => undefined);
+    await cleanupFencedAttempt(attempt);
     logger.warn({ objectId: attempt.rowId, state: row.state, reason }, "Object storage: upload lease lost — late copies of the stale attempt removed");
   } else {
     logger.warn({ objectId: attempt.rowId, state: row?.state ?? "unknown", reason }, "Object storage: upload lease lost — row left untouched");
@@ -307,20 +319,150 @@ export async function rollbackLeasedAttempt(attempt: WriteAttempt, leaseToken: s
   return "lease_lost";
 }
 
-/**
- * Rollback of an UNLEASED server-side write (storeBuffer): the row is private
- * to this call and its key random, so the copies are discarded and the row
- * moved pending → failed with a fenced CAS. If the row was tombstoned in the
- * meantime (company deletion), the state is never regressed; a copy that could
- * not be removed is flagged CLEANUP_PENDING for the sweep.
- */
-export async function rollbackServerAttempt(attempt: WriteAttempt, reason: string): Promise<void> {
+/** Sanitized, non-fatal inventory bookkeeping: a database failure here stays visible (rotation / cleanup starvation), never silent. */
+async function bookkeeping(action: string, objectId: string, op: () => Promise<unknown>): Promise<void> {
+  try {
+    await op();
+  } catch (err) {
+    logger.warn({ error: safe(err), objectId, action }, "Object storage: inventory bookkeeping failed (database) — retried by a later pass");
+  }
+}
+
+/** Remove the copies of an attempt whose row is DURABLY non-readable (fenced or tombstoned); a leftover is flagged for the sweep. */
+async function cleanupFencedAttempt(attempt: WriteAttempt): Promise<boolean> {
   const clean = await discardCopies(attempt);
-  const failed = await repo.transition(attempt.rowId, ["pending"], "failed", { lastError: clean ? reason : repo.CLEANUP_PENDING }).catch((err) => {
-    logger.error({ error: safe(err), objectId: attempt.rowId }, "Object storage: rollback could not mark the row (sweep will settle it)");
-    return undefined;
-  });
-  if (!failed && !clean) await repo.flagCleanupPending(attempt.rowId).catch(() => undefined);
+  if (!clean) await bookkeeping("flagCleanupPending", attempt.rowId, () => repo.flagCleanupPending(attempt.rowId));
+  return clean;
+}
+
+export type ServerRollbackOutcome = "fenced" | "tombstoned" | "live" | "unknown";
+
+/**
+ * Rollback of an UNLEASED server-side write (storeBuffer). B25 Correction 5 —
+ * ORDER: the row is fenced FIRST with a CAS (pending → failed); the attempt's
+ * copies are discarded only after that CAS succeeded, or after a re-read proved
+ * the row is already a tombstone (its copies are garbage of this attempt). A
+ * row that turns out to be staged / active keeps its copies — they ARE the
+ * object now — and a row whose state cannot be read keeps them as well (the
+ * sweep settles a stale pending / failed row from its persisted locations with
+ * the same ownership proof). A copy that could not be removed is flagged
+ * CLEANUP_PENDING for the sweep.
+ */
+export async function rollbackServerAttempt(attempt: WriteAttempt, reason: string): Promise<ServerRollbackOutcome> {
+  let fenced: StorageObjectRow | undefined;
+  try {
+    fenced = await repo.transition(attempt.rowId, ["pending"], "failed", { lastError: reason });
+  } catch (err) {
+    logger.error({ error: safe(err), objectId: attempt.rowId }, "Object storage: rollback could not fence the row — copies retained for the sweep");
+    return "unknown";
+  }
+  if (fenced) {
+    await cleanupFencedAttempt(attempt);
+    return "fenced";
+  }
+  let row: StorageObjectRow | undefined;
+  try {
+    row = await repo.findById(attempt.rowId);
+  } catch (err) {
+    logger.error({ error: safe(err), objectId: attempt.rowId }, "Object storage: rollback could not re-read the row — copies retained for the sweep");
+    return "unknown";
+  }
+  if (row && (row.state === "failed" || row.state === "deleting" || row.state === "deleted")) {
+    await cleanupFencedAttempt(attempt);
+    logger.warn({ objectId: attempt.rowId, state: row.state, reason }, "Object storage: row was tombstoned meanwhile — this attempt's copies removed as garbage");
+    return "tombstoned";
+  }
+  logger.warn({ objectId: attempt.rowId, state: row?.state ?? "unknown", reason }, "Object storage: rollback refused — row is live or unknown, copies retained");
+  return row ? "live" : "unknown";
+}
+
+/** Everything writeWithMirror reports about a completed write (what a commit must record to count as committed). */
+type WrittenAttempt = { result: { sizeBytes: number; sha256: string }; attempt: WriteAttempt; mirrorState: string | null };
+
+interface DurableWriteExpectation {
+  states: repo.StorageObjectState[];
+  sizeBytes: number;
+  sha256: string;
+  mirrorState: string | null;
+  storageKey: string;
+  companyId: number;
+  kind: string;
+  reference: string;
+}
+type DurableOutcome = { kind: "committed"; row: StorageObjectRow } | { kind: "not_committed"; row: StorageObjectRow } | { kind: "tombstoned"; row: StorageObjectRow } | { kind: "unknown" };
+
+/**
+ * B25 Correction 5 — classify the DURABLE state of a write whose commit
+ * statement rejected in the client (the statement may have committed before the
+ * connection failed). Committed = the row is in one of the completed states and
+ * records exactly this attempt (size, digest, mirror state, key, tenant, kind,
+ * reference), with no lease and no publication uncertainty left — i.e. the
+ * committed statement itself cleared them. Anything that cannot be proven is
+ * `unknown`: never a reason to delete.
+ */
+async function classifyDurableWrite(rowId: string, expected: DurableWriteExpectation, leaseToken?: string): Promise<DurableOutcome> {
+  let row: StorageObjectRow | undefined;
+  try {
+    row = await repo.findById(rowId);
+  } catch (err) {
+    logger.error({ error: safe(err), objectId: rowId }, "Object storage: commit outcome could not be read — nothing is deleted");
+    return { kind: "unknown" };
+  }
+  if (!row) {
+    logger.error({ objectId: rowId }, "Object storage: commit outcome could not be read (row missing) — nothing is deleted");
+    return { kind: "unknown" };
+  }
+  const committed =
+    expected.states.includes(row.state as repo.StorageObjectState) &&
+    row.sizeBytes === expected.sizeBytes &&
+    row.sha256 === expected.sha256 &&
+    (row.mirrorState ?? null) === (expected.mirrorState ?? null) &&
+    row.storageKey === expected.storageKey &&
+    row.companyId === expected.companyId &&
+    row.kind === expected.kind &&
+    row.reference === expected.reference &&
+    row.publicationUncertainAt === null &&
+    row.leaseToken === null;
+  if (committed) return { kind: "committed", row };
+  if (row.state === "pending" && !leaseToken) return { kind: "not_committed", row };
+  if (row.state === "uploading" && leaseToken && row.leaseToken === leaseToken) return { kind: "not_committed", row };
+  if (row.state === "failed" || row.state === "deleting" || row.state === "deleted") return { kind: "tombstoned", row };
+  logger.warn({ objectId: rowId, state: row.state }, "Object storage: commit outcome ambiguous (row does not match this attempt) — nothing is deleted");
+  return { kind: "unknown" };
+}
+
+function expectationOf(row: StorageObjectRow, written: WrittenAttempt, states: repo.StorageObjectState[]): DurableWriteExpectation {
+  return { states, sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, storageKey: row.storageKey, companyId: row.companyId, kind: row.kind, reference: row.reference };
+}
+
+/**
+ * B25 Correction 5 — resolve a server-side activation whose statement rejected
+ * in the client: committed → success (nothing deleted); conclusively pending →
+ * fence first, clean second (rollbackServerAttempt); tombstoned → this
+ * attempt's copies are garbage; unknown → nothing deleted. A fence that loses
+ * to a state change (the rejected statement's effect landing late, a company
+ * deletion) is re-classified instead of guessed.
+ */
+async function resolveServerActivation(row: StorageObjectRow, written: WrittenAttempt, reason: string): Promise<DurableOutcome> {
+  const expected = expectationOf(row, written, ["active"]);
+  for (let pass = 0; pass < 3; pass++) {
+    const outcome = await classifyDurableWrite(row.id, expected);
+    if (outcome.kind === "committed") {
+      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: activation had committed although its response was lost — resolved as success, nothing deleted");
+      return outcome;
+    }
+    if (outcome.kind === "unknown") return outcome;
+    if (outcome.kind === "tombstoned") {
+      await cleanupFencedAttempt(written.attempt);
+      return outcome;
+    }
+    const rolled = await rollbackServerAttempt(written.attempt, reason);
+    if (rolled === "fenced") return outcome;
+    if (rolled === "tombstoned") return { kind: "tombstoned", row: outcome.row };
+    if (rolled === "unknown") return { kind: "unknown" };
+    // "live": the fence lost to a state change — classify the new durable state
+  }
+  return { kind: "unknown" };
 }
 
 /**
@@ -536,7 +678,7 @@ async function receiveUploadInner(user: AuthUser, objectId: string, capability: 
   }
   let finished: boolean;
   try {
-    finished = await finishUpload(row.id, leaseToken, written);
+    finished = await finishUpload(claimed, leaseToken, written);
   } catch (err) {
     throw toAppError(boundaryError(err)); // never a raw database error towards the route
   }
@@ -551,23 +693,32 @@ async function receiveUploadInner(user: AuthUser, objectId: string, capability: 
 /**
  * Stage the row ONLY while this writer still holds an UNEXPIRED lease (CAS on
  * state + token + expiry). A lost lease rolls the attempt back through the
- * fenced helper (own copies only). A database failure during the release is
- * resolved by re-reading ownership: when still owned, the attempt is rolled
- * back; when ownership cannot be proven, the copies are left for the lease
- * expiry sweep (the row's keys are attempt-unique, so the sweep's removal is
- * ownership-proven too).
+ * fenced helper (own copies only). A rejected staging statement (B25
+ * Correction 5) is resolved from the durable row: staged / active and matching
+ * this attempt → the CAS had committed, the upload succeeded (nothing deleted);
+ * still uploading under this lease → not committed, fenced rollback; tombstoned
+ * → the lease was lost, the attempt's copies are garbage; unknown → nothing is
+ * deleted, the copies stay for the lease-expiry sweep (the row's keys are
+ * attempt-unique, so the sweep's removal is ownership-proven too).
  */
-async function finishUpload(rowId: string, leaseToken: string, written: { result: { sizeBytes: number; sha256: string }; attempt: WriteAttempt; mirrorState: string | null }): Promise<boolean> {
+async function finishUpload(row: StorageObjectRow, leaseToken: string, written: WrittenAttempt): Promise<boolean> {
   let staged: StorageObjectRow | undefined;
   try {
     // The same durable CAS that stages the row clears the publication-uncertainty mark (B25 Correction 4): every required put returned successfully.
-    staged = await repo.releaseUpload(rowId, leaseToken, "staged", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, lastError: null, publicationUncertainAt: null });
+    staged = await repo.releaseUpload(row.id, leaseToken, "staged", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, lastError: null, publicationUncertainAt: null });
   } catch (err) {
-    logger.error({ error: safe(err), objectId: rowId }, "Object storage: could not stage the upload (database)");
-    const own = await repo.ownsLease(rowId, leaseToken).catch(() => false);
-    if (own) await rollbackLeasedAttempt(written.attempt, leaseToken, "DB_FAILURE");
-    else logger.warn({ objectId: rowId }, "Object storage: lease ownership unknown — copies left for the lease-expiry sweep");
-    throw boundaryError(err);
+    logger.error({ error: safe(err), objectId: row.id }, "Object storage: staging statement rejected — resolving the durable outcome before any cleanup");
+    const outcome = await classifyDurableWrite(row.id, expectationOf(row, written, ["staged", "active"]), leaseToken);
+    if (outcome.kind === "committed") {
+      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: staging had committed although its response was lost — resolved as success, nothing deleted");
+      return true;
+    }
+    if (outcome.kind === "not_committed" || outcome.kind === "tombstoned") {
+      await rollbackLeasedAttempt(written.attempt, leaseToken, "DB_FAILURE");
+      throw boundaryError(err);
+    }
+    logger.warn({ objectId: row.id }, "Object storage: staging outcome could not be confirmed — copies left for the lease-expiry sweep");
+    throw new StorageError("STORAGE_UNAVAILABLE", "upload outcome could not be confirmed", undefined, "OUTCOME_UNKNOWN");
   }
   if (!staged) {
     await rollbackLeasedAttempt(written.attempt, leaseToken, "LEASE_EXPIRED");
@@ -579,7 +730,9 @@ async function finishUpload(rowId: string, leaseToken: string, written: { result
 /** Test support: the stage step with a given lease token (stale writers must be refused without touching the object). */
 export async function finishUploadForTests(rowId: string, leaseToken: string, result: { sizeBytes: number; sha256: string }): Promise<boolean> {
   if (config.isProduction) return false;
-  return finishUpload(rowId, leaseToken, { result, attempt: { rowId, copies: [] }, mirrorState: null });
+  const row = await repo.findById(rowId);
+  if (!row) return false;
+  return finishUpload(row, leaseToken, { result, attempt: { rowId, copies: [] }, mirrorState: null });
 }
 
 export interface AttachInput {
@@ -671,10 +824,14 @@ async function storeBufferInner(input: StoreBufferInput): Promise<StoredObject> 
     // Activation is the durable commit of the complete write: it also clears the publication-uncertainty mark (B25 Correction 4).
     active = await repo.transition(row.id, ["pending"], "active", { sizeBytes: written.result.sizeBytes, sha256: written.result.sha256, mirrorState: written.mirrorState, publicationUncertainAt: null });
   } catch (err) {
-    // Never leave untracked bytes behind: remove exactly the copies this attempt wrote.
-    logger.error({ error: safe(err), objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: could not activate the object (database)");
-    await rollbackServerAttempt(written.attempt, "DB_FAILURE");
-    throw boundaryError(err);
+    // B25 Correction 5 — the statement may have committed: the durable row
+    // decides, and nothing is deleted before the row is proven non-readable.
+    logger.error({ error: safe(err), objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: activation statement rejected — resolving the durable outcome before any cleanup");
+    const outcome = await resolveServerActivation(row, written, "DB_FAILURE");
+    if (outcome.kind === "committed") active = outcome.row;
+    else if (outcome.kind === "unknown") throw new StorageError("STORAGE_UNAVAILABLE", "activation outcome could not be confirmed", undefined, "OUTCOME_UNKNOWN");
+    else if (outcome.kind === "tombstoned") throw new StorageError("STORAGE_UNAVAILABLE", "object was tombstoned before activation", undefined, "ROW_TOMBSTONED");
+    else throw boundaryError(err);
   }
   if (!active) {
     // Fenced out (the row was tombstoned by company deletion meanwhile): the state is never regressed, the copies go.
@@ -1107,10 +1264,10 @@ async function finishDeleteInner(row: StorageObjectRow): Promise<boolean> {
   }
   if (outcome.unproven) {
     // Not ours to delete: stays `deleting` + OWNERSHIP_UNPROVEN (discoverable, never purged); no retry storm.
-    await repo.markOwnershipUnproven(row.id).catch(() => undefined);
+    await bookkeeping("markOwnershipUnproven", row.id, () => repo.markOwnershipUnproven(row.id));
     return false;
   }
-  await repo.transition(row.id, ["deleting"], "deleting", { lastError: "DELETE_RETRY" }).catch(() => undefined);
+  await bookkeeping("markDeleteRetry", row.id, () => repo.transition(row.id, ["deleting"], "deleting", { lastError: "DELETE_RETRY" }));
   await enqueueDeleteRetry(row.id);
   return false;
 }
@@ -1122,7 +1279,7 @@ async function runDeleteObjectJobInner(payload: { objectId: string }): Promise<v
   if (!row || row.state !== "deleting") return;
   const outcome = await physicallyDelete(row);
   if (outcome.unproven) {
-    await repo.markOwnershipUnproven(row.id).catch(() => undefined);
+    await bookkeeping("markOwnershipUnproven", row.id, () => repo.markOwnershipUnproven(row.id));
     return; // settled as far as automation may go; surfaced for review
   }
   if (!outcome.ok) throw new StorageError("STORAGE_UNAVAILABLE", "storage object delete failed (retrying)", undefined, "DELETE_RETRY");
@@ -1195,7 +1352,7 @@ async function runPurgeCompanyJobInner(payload: { companyId: number }): Promise<
     if (!marked) continue;
     const outcome = await physicallyDelete(marked);
     if (outcome.ok) await repo.transition(marked.id, ["deleting"], "deleted", settledData(outcome));
-    else if (outcome.unproven) await repo.markOwnershipUnproven(marked.id).catch(() => undefined);
+    else if (outcome.unproven) await bookkeeping("markOwnershipUnproven", marked.id, () => repo.markOwnershipUnproven(marked.id));
     else failed += 1;
   }
   const remaining = (await repo.listByCompany(payload.companyId, states, batch)).filter((r) => r.lastError !== repo.OWNERSHIP_UNPROVEN);
@@ -1236,7 +1393,7 @@ async function sweepStorageInner(now: Date = new Date()): Promise<SweepSummary> 
     if (!marked) return false;
     const outcome = await physicallyDelete(marked);
     if (outcome.ok) await repo.transition(marked.id, ["deleting"], "deleted", settledData(outcome));
-    else if (outcome.unproven) await repo.markOwnershipUnproven(marked.id).catch(() => undefined);
+    else if (outcome.unproven) await bookkeeping("markOwnershipUnproven", marked.id, () => repo.markOwnershipUnproven(marked.id));
     return outcome.ok;
   };
 
@@ -1256,7 +1413,7 @@ async function sweepStorageInner(now: Date = new Date()): Promise<SweepSummary> 
     if (row.state === "deleted") {
       const outcome = await physicallyDelete(row);
       if (outcome.ok && (await repo.clearCleanupPending(row.id, outcome.retained ? repo.LEGACY_RETAINED : null))) summary.cleanupRetries += 1;
-      else if (outcome.unproven) await repo.markOwnershipUnproven(row.id).catch(() => undefined);
+      else if (outcome.unproven) await bookkeeping("markOwnershipUnproven", row.id, () => repo.markOwnershipUnproven(row.id));
     } else if (await settle(row)) summary.cleanupRetries += 1;
   }
   for (const row of await repo.listStale("pending", new Date(now.getTime() - config.objectStorage.pendingTtlMs), batch)) {
@@ -1291,9 +1448,9 @@ async function sweepStorageInner(now: Date = new Date()): Promise<SweepSummary> 
       summary.lateCopiesReclaimed += outcome.removed;
       logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copies: outcome.removed }, "Object storage: the provider committed a request the writer gave up on — late copy removed by ownership marker and generation");
     }
-    if (outcome.unproven) await repo.markOwnershipUnproven(row.id).catch(() => undefined);
-    else if (!outcome.ok) await repo.flagCleanupPending(row.id).catch(() => undefined);
-    else await repo.touchPublicationUncertain(row.id, now).catch(() => undefined);
+    if (outcome.unproven) await bookkeeping("markOwnershipUnproven", row.id, () => repo.markOwnershipUnproven(row.id));
+    else if (!outcome.ok) await bookkeeping("flagCleanupPending", row.id, () => repo.flagCleanupPending(row.id));
+    else await bookkeeping("touchPublicationUncertain", row.id, () => repo.touchPublicationUncertain(row.id, now));
   }
   // B25 Correction 3 — final reconciliation of tombstones WITHOUT provider
   // uncertainty: their writes were performed by this process alone, so once a
@@ -1312,8 +1469,8 @@ async function sweepStorageInner(now: Date = new Date()): Promise<SweepSummary> 
         summary.lateCopiesReclaimed += outcome.removed;
         logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copies: outcome.removed }, "Object storage: late copy of a tombstoned object reclaimed by the final reconciliation");
       }
-    } else if (outcome.unproven) await repo.markOwnershipUnproven(row.id).catch(() => undefined);
-    else await repo.flagCleanupPending(row.id).catch(() => undefined);
+    } else if (outcome.unproven) await bookkeeping("markOwnershipUnproven", row.id, () => repo.markOwnershipUnproven(row.id));
+    else await bookkeeping("flagCleanupPending", row.id, () => repo.flagCleanupPending(row.id));
   }
   // Only a RECONCILED tombstone of a deleted company may be dropped — never merely because time passed.
   for (const row of await repo.listPurgeableTombstones(new Date(now.getTime() - 24 * 60 * 60 * 1000), batch)) {
