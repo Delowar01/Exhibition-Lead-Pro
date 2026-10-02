@@ -24,7 +24,10 @@ import { pgTable, uuid, text, integer, bigint, timestamp, index, uniqueIndex } f
 //   deleting  tombstoned; the file removal is still pending/retrying
 //   deleted   tombstoned; file removed (or retained in the legacy bucket when
 //             OBJECT_STORAGE_LEGACY_DELETE is off — last_error = LEGACY_RETAINED
-//             keeps it discoverable)
+//             keeps it discoverable). Kept until reconciled_at is set after the
+//             late-publication horizon; last_error = OWNERSHIP_UNPROVEN marks a
+//             bucket object at the row's key without the row's ownership
+//             marker (never deleted automatically, never purged)
 //   failed    write failed; never readable
 // Only `active` rows are ever served. A tombstoned reference (deleting /
 // deleted / failed) is NEVER served from the legacy driver either, which is
@@ -73,6 +76,12 @@ export const storageObjectsTable = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     deletedAt: timestamp("deleted_at"),
+    // B25 Correction 3 — when a `deleted` tombstone's persisted locations were
+    // physically re-checked AFTER the late-publication horizon (created_at +
+    // OBJECT_STORAGE_UPLOAD_HARD_LIFETIME_MS + slack), i.e. once no writer can
+    // publish a late copy any more. A tombstone is purged only after this is
+    // set; never merely because time passed.
+    reconciledAt: timestamp("reconciled_at"),
   },
   (t) => [
     // A reference is unique within a tenant and kind (resolution key).
