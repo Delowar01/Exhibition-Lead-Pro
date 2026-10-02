@@ -59,7 +59,7 @@ jobs:
       - name: Mobile typecheck
         run: pnpm --filter @workspace/mobile run typecheck
 
-      - name: Mobile unit tests (114 expected)
+      - name: Mobile unit tests
         run: pnpm --filter @workspace/mobile run test
 
       - name: API production build
