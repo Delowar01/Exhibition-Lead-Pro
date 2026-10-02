@@ -6,8 +6,9 @@
 //     adapter (generation precondition)
 //   • service level: one upload intent, two concurrent PUT bodies → the database
 //     lease (CAS) admits exactly one; one staged row, bytes/digest of the winner
-//   • crash recovery: an expired `uploading` lease is reclaimable, its leftover
-//     unverified file is replaced, and the sweep settles expired leases
+//   • crash recovery (B25 Correction 2 model): an expired `uploading` lease is
+//     NEVER reclaimed — a PUT on it is refused, the sweep fails the row and
+//     removes its leftover copy, and the client reserves a fresh object
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
@@ -151,19 +152,25 @@ describe("4b. upload lease (database CAS) and crash recovery", () => {
     await expect(storage.receiveUpload(user, reserved.objectId, reserved.uploadToken, Readable.from([a]))).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it("an expired lease is reclaimable: the leftover unverified file is replaced and the row is staged", async () => {
+  it("an expired lease is never reclaimed: the PUT is refused, the sweep removes the leftover unverified file, a fresh reservation succeeds", async () => {
     const reserved = await storage.reserveUpload(null, { companyId: COMPANY, userId: user.id, kind: "document", contentType: "text/plain", declaredSize: 100 });
     const row = (await repo.findById(reserved.objectId))!;
     // simulate a crashed writer: lease expired, bytes published but never staged
     await primary.put(row.storageKey, Buffer.from("stale unverified bytes"), { contentType: "text/plain", maxBytes: 100 });
     await repo.update(row.id, { state: "uploading", leaseToken: "stale-token", leaseExpiresAt: new Date(Date.now() - 60_000) });
     const fresh = Buffer.from("fresh bytes");
-    const result = await storage.receiveUpload(user, reserved.objectId, reserved.uploadToken, Readable.from([fresh]));
-    expect(result.sha256).toBe(sha(fresh));
+    await expect(storage.receiveUpload(user, reserved.objectId, reserved.uploadToken, Readable.from([fresh]))).rejects.toMatchObject({ statusCode: 409, code: "STORAGE_UPLOAD_EXPIRED" });
+    expect(primary.objects.get(row.storageKey)!.bytes.toString()).toBe("stale unverified bytes"); // untouched by the refused PUT
+    const summary = await storage.sweepStorage(new Date());
+    expect(summary.expiredLeases).toBe(1);
     const after = (await repo.findById(reserved.objectId))!;
-    expect(after.state).toBe("staged");
+    expect(["failed", "deleted"]).toContain(after.state);
     expect(after.leaseToken).toBeNull();
-    expect(primary.objects.get(row.storageKey)!.bytes.equals(fresh)).toBe(true);
+    expect(primary.objects.has(row.storageKey)).toBe(false); // leftover removed by the sweep
+    const again = await storage.reserveUpload(null, { companyId: COMPANY, userId: user.id, kind: "document", contentType: "text/plain", declaredSize: 100 });
+    const result = await storage.receiveUpload(user, again.objectId, again.uploadToken, Readable.from([fresh]));
+    expect(result.sha256).toBe(sha(fresh));
+    expect((await repo.findById(again.objectId))!.state).toBe("staged");
   });
 
   it("a live lease blocks other writers (409) and the sweep settles expired leases to failed", async () => {
@@ -177,7 +184,7 @@ describe("4b. upload lease (database CAS) and crash recovery", () => {
     const summary = await storage.sweepStorage(new Date());
     expect(summary.expiredLeases).toBe(1);
     const settled = (await repo.findById(expired.objectId))!;
-    expect(settled.state).toBe("failed");
+    expect(["failed", "deleted"]).toContain(settled.state); // fenced out and cleaned in the same pass
     expect(settled.leaseToken).toBeNull();
     expect((await repo.findById(reserved.objectId))!.state).toBe("uploading");
   });

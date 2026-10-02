@@ -228,7 +228,7 @@ describe("B25 — upload targets and byte ingestion", () => {
     expect((await api("POST", "/documents/upload-url", tokenA, { fileName: "x.bin", contentType: "application/zip", size: DOC_LIMIT + 1 })).status).toBe(413);
   });
 
-  it("a storage failure after reservation leaves no committed reference; the retry completes the upload", async () => {
+  it("a storage failure after reservation leaves no committed reference; the failed intent is never reused — a fresh reservation completes the upload", async () => {
     const bytes = Buffer.from("retry me");
     const r = await reserve(tokenA, "retry.txt", "text/plain", bytes.length);
     const failed = await putBytes(r, tokenA, bytes, "text/plain", { "x-storage-test-fail": "1" });
@@ -239,12 +239,22 @@ describe("B25 — upload targets and byte ingestion", () => {
     expect(existsSync(onDisk(row.storageKey))).toBe(false);
     expect((await createDoc(tokenA, "lead", leadA, "Quotation", { objectPath: r.objectPath, fileName: "retry.txt", fileSize: bytes.length, mimeType: "text/plain" })).status).toBe(400);
 
-    expect((await putBytes(r, tokenA, bytes)).status).toBe(200);
+    // B25 Correction 2: one publication attempt per intent — the failed target answers 409 and the client reserves a new one
+    const retry = await putBytes(r, tokenA, bytes);
+    expect(retry.status).toBe(409);
+    expect((await json(retry)).code).toBe("STORAGE_UPLOAD_EXPIRED");
     [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
+    expect(row.state).toBe("failed");
+    expect(existsSync(onDisk(row.storageKey))).toBe(false);
+
+    const fresh = await reserve(tokenA, "retry.txt", "text/plain", bytes.length);
+    expect(fresh.objectPath).not.toBe(r.objectPath);
+    expect((await putBytes(fresh, tokenA, bytes)).status).toBe(200);
+    [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, fresh.objectPath));
     expect(row.state).toBe("staged");
-    const created = await createDoc(tokenA, "lead", leadA, "Quotation", { objectPath: r.objectPath, fileName: "retry.txt", fileSize: bytes.length, mimeType: "text/plain" });
+    const created = await createDoc(tokenA, "lead", leadA, "Quotation", { objectPath: fresh.objectPath, fileName: "retry.txt", fileSize: bytes.length, mimeType: "text/plain" });
     expect(created.status).toBe(201);
-    [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, r.objectPath));
+    [row] = await db.select().from(storageObjectsTable).where(eq(storageObjectsTable.reference, fresh.objectPath));
     expect(row.state).toBe("active");
     expect(row.entityType).toBe("document_version");
     expect(row.entityId).toBe((await json(created)).currentVersionId);
