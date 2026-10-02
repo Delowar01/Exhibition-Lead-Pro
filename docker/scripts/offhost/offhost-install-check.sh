@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Lead Capture Pro — backup VPS installation-integrity check (B23 G-6D C2–C5)
+# Lead Capture Pro — backup VPS installation-integrity check (B23 G-6D C2–C6)
 # =============================================================================
 # Runs as root ON THE BACKUP VPS before activation and at any later review.
 # STRICTLY READ-ONLY: it inspects ownership, modes, sudoers and the EFFECTIVE
@@ -41,16 +41,23 @@
 #   accounts-locked receive, audit and vault have no usable password
 #   groups         receive and audit are not members of the vault group;
 #                  receive and vault are not members of the audit group
-#   sshd-config    every `Match` block in sshd_config (+ sshd_config.d) matches on
-#                  User (or All) only, and every Include stays inside sshd_config.d,
-#                  so the per-user evaluation below is authoritative
+#   sshd-config    every `Match` line in sshd_config (+ sshd_config.d) is exactly
+#                  `Match All`, `Match User <receive>`, `Match User <audit>` or
+#                  `Match User <receive>,<audit>` (either order): no other account,
+#                  operator, vault, pattern, negation, user@host, duplicate,
+#                  keyword=value form or criterion, and every Include stays inside
+#                  sshd_config.d, so the views evaluated below are the only
+#                  accounts a Match block can ever address
 #   sshd           `sshd -T -f <inspected file>` (global): permitrootlogin no,
 #                  passwordauthentication no, pubkeyauthentication yes, interactive
-#                  auth off, forcecommand none, permituserenvironment no;
-#                  AllowUsers literal user names only (no wildcard, negation,
-#                  pattern, bracket, backslash or user@host), the receive and
-#                  audit accounts exactly once, never the vault, other names only
-#                  from OFFHOST_SSHD_OPERATOR_USERS;
+#                  auth off, forcecommand none, permituserenvironment no, and the
+#                  AllowUsers profile: literal user names only (no wildcard,
+#                  negation, pattern, bracket, backslash or user@host), no
+#                  duplicate token, the receive and audit accounts present, never
+#                  the vault, other names only from OFFHOST_SSHD_OPERATOR_USERS.
+#                  The same AllowUsers profile is re-checked on the receive, audit
+#                  AND vault views (`-C user=<vault>,…`), so a Match-scoped list can
+#                  never replace the approved allow-list unseen;
 #                  per account `sshd -T -f <inspected file> -C user=<account>,…`:
 #                  passwordauthentication no, interactive auth off,
 #                  pubkeyauthentication yes, authenticationmethods publickey,
@@ -366,18 +373,32 @@ sshd_file_ok() {   # FILE → ok | not-regular | symlink | owner | writable | un
   cat -- "$1" >/dev/null 2>&1 || { echo unreadable; return; }
   echo ok
 }
-# match_criteria_ok "<criteria tokens>" → 0 iff only "User <value>" pairs and/or "All"
-match_criteria_ok() {
+# match_criteria_check "<criteria text>" → ok | criteria | unapproved
+# Strict grammar (B23 G-6D C6): exactly `All`, or `User <operand>` where the operand
+# is one or two comma-separated literal user names drawn from {receive, audit},
+# each at most once. Anything else — another account (vault, operator, unrelated
+# → unapproved), a wildcard, negation, user@host, bracket, backslash, quote or
+# keyword=value form, an empty comma component, a duplicate, a repeated User
+# criterion or any other criterion (→ criteria) — fails closed, so a Match block
+# can only ever address the accounts whose views are evaluated below.
+match_criteria_check() {
+  local operand comp n=0 seen_r=0 seen_a=0
+  case "$1" in *=*|*'"'*|*"'"*|*'\'*) echo criteria; return ;; esac
   set -f; set -- $1; set +f          # word-split only; never glob-expand configuration text
-  [ "$#" -ge 1 ] || return 1
-  while [ "$#" -ge 1 ]; do
-    case "${1,,}" in
-      all) shift ;;
-      user) [ "$#" -ge 2 ] || return 1; shift 2 ;;
-      *) return 1 ;;
+  if [ "$#" = 1 ] && [ "${1,,}" = all ]; then echo ok; return; fi
+  { [ "$#" = 2 ] && [ "${1,,}" = user ]; } || { echo criteria; return; }
+  operand="$2"
+  case "$operand" in ,*|*,|*,,*) echo criteria; return ;; esac
+  while IFS= read -r comp; do
+    [[ "$comp" =~ $USERNAME_RE ]] || { echo criteria; return; }
+    case "$comp" in
+      "$RECEIVE_USER") [ "$seen_r" = 0 ] || { echo criteria; return; }; seen_r=1 ;;
+      "$AUDIT_USER")   [ "$seen_a" = 0 ] || { echo criteria; return; }; seen_a=1 ;;
+      *) echo unapproved; return ;;
     esac
-  done
-  return 0
+    n=$((n + 1)); [ "$n" -le 2 ] || { echo criteria; return; }
+  done < <(printf '%s\n' "$operand" | tr ',' '\n')
+  echo ok
 }
 cfg_dir="$(dirname "$SSHD_CONFIG")"
 SSHD_PATH_OK=1
@@ -395,12 +416,14 @@ else
   while IFS= read -r line; do
     line="${line#"${line%%[![:space:]]*}"}"
     case "$line" in
+      [Ii][Nn][Cc][Ll][Uu][Dd][Ee]=*) r=include-unsupported; break ;;   # keyword=value form: never the documented layout
       [Ii][Nn][Cc][Ll][Uu][Dd][Ee]\ *|[Ii][Nn][Cc][Ll][Uu][Dd][Ee]$'\t'*)
         set -f; set -- $line; set +f; shift   # word-split only; the pattern must stay literal
         includes=$((includes + 1))
         { [ "$#" = 1 ] && [ "$1" = "$cfg_dir/sshd_config.d/*.conf" ] && [ "$includes" = 1 ]; } || { r=include-unsupported; break; } ;;
+      [Mm][Aa][Tt][Cc][Hh]=*) r=match-criteria; break ;;                # keyword=value form: outside the strict grammar
       [Mm][Aa][Tt][Cc][Hh]\ *|[Mm][Aa][Tt][Cc][Hh]$'\t'*|[Mm][Aa][Tt][Cc][Hh])
-        match_criteria_ok "${line#*[Mm][Aa][Tt][Cc][Hh]}" || { r=match-criteria; break; } ;;
+        mr="$(match_criteria_check "${line#*[Mm][Aa][Tt][Cc][Hh]}")"; [ "$mr" = ok ] || { r="match-$mr"; break; } ;;
     esac
   done < <(grep -viE '^[[:space:]]*#' "$SSHD_CONFIG" 2>/dev/null)
   if [ "$r" = ok ] && [ "$includes" = 1 ]; then
@@ -420,9 +443,10 @@ else
         while IFS= read -r line; do
           line="${line#"${line%%[![:space:]]*}"}"
           case "$line" in
-            [Ii][Nn][Cc][Ll][Uu][Dd][Ee]\ *|[Ii][Nn][Cc][Ll][Uu][Dd][Ee]$'\t'*|[Ii][Nn][Cc][Ll][Uu][Dd][Ee]) r=include-nested; break 2 ;;
+            [Ii][Nn][Cc][Ll][Uu][Dd][Ee]\ *|[Ii][Nn][Cc][Ll][Uu][Dd][Ee]$'\t'*|[Ii][Nn][Cc][Ll][Uu][Dd][Ee]=*|[Ii][Nn][Cc][Ll][Uu][Dd][Ee]) r=include-nested; break 2 ;;
+            [Mm][Aa][Tt][Cc][Hh]=*) r=match-criteria; break 2 ;;
             [Mm][Aa][Tt][Cc][Hh]\ *|[Mm][Aa][Tt][Cc][Hh]$'\t'*|[Mm][Aa][Tt][Cc][Hh])
-              match_criteria_ok "${line#*[Mm][Aa][Tt][Cc][Hh]}" || { r=match-criteria; break 2; } ;;
+              mr="$(match_criteria_check "${line#*[Mm][Aa][Tt][Cc][Hh]}")"; [ "$mr" = ok ] || { r="match-$mr"; break 2; } ;;
           esac
         done < <(grep -viE '^[[:space:]]*#' "$f" 2>/dev/null)
       done
@@ -431,6 +455,7 @@ else
   case "$r" in
     ok) ok sshd-config ;;
     match-criteria) bad sshd-match-criteria ;;
+    match-unapproved) bad sshd-match-user-unapproved ;;
     include-unsupported) bad sshd-include-unsupported ;;
     include-nested) bad sshd-include-nested ;;
     include-*) bad "sshd-$r" ;;
@@ -454,6 +479,25 @@ accept_env_token_ok() {
     LC_*) [[ "$1" =~ ^LC_[A-Z_]+$ ]] && return 0 ;;
   esac
   return 1
+}
+# allowusers_ok EFF PREFIX → the literal-user AllowUsers profile of one effective view;
+# every finding is reported as PREFIX-<kind> (missing, pattern, duplicate, receive,
+# audit, vault, unexpected). Applied to the global view and to every evaluated account.
+allowusers_ok() {
+  local e="$1" p="$2" allow r=ok tok
+  allow="$(vall "$e" allowusers)"
+  [ -n "$allow" ] || { bad "$p-missing"; return 1; }
+  while IFS= read -r tok; do [[ "$tok" =~ $USERNAME_RE ]] || { bad "$p-pattern"; r=bad; break; }; done <<<"$allow"
+  [ "$(printf '%s\n' "$allow" | sort | uniq -d | wc -l)" = 0 ] || { bad "$p-duplicate"; r=bad; }
+  printf '%s\n' "$allow" | grep -qx -- "$RECEIVE_USER" || { bad "$p-receive"; r=bad; }
+  printf '%s\n' "$allow" | grep -qx -- "$AUDIT_USER" || { bad "$p-audit"; r=bad; }
+  ! printf '%s\n' "$allow" | grep -qx -- "$VAULT_USER" || { bad "$p-vault"; r=bad; }
+  while IFS= read -r tok; do
+    [[ "$tok" =~ $USERNAME_RE ]] || continue
+    case "$tok" in "$RECEIVE_USER"|"$AUDIT_USER"|"$VAULT_USER") continue ;; esac
+    printf '%s\n' "$OPERATOR_USERS" | tr ',' '\n' | grep -qx -- "$tok" || { bad "$p-unexpected"; r=bad; break; }
+  done <<<"$allow"
+  [ "$r" = ok ]
 }
 # account_boundary EFF LABEL → the authorization and environment boundary of one restricted account
 account_boundary() {
@@ -491,30 +535,18 @@ else
   [ "$(v "$eff" kbdinteractiveauthentication)" = no ] || [ "$(v "$eff" challengeresponseauthentication)" = no ] || { bad sshd-interactive-auth; r=bad; }
   [ "$(v "$eff" forcecommand)" = none ] || { bad sshd-force-command; r=bad; }
   [ "$(v "$eff" permituserenvironment)" = no ] || { bad sshd-user-environment; r=bad; }
-  # AllowUsers: literal user names only — no wildcard, negation, pattern list,
-  # bracket, backslash or user@host form; the two service accounts exactly once,
-  # never the vault, and no account outside the approved operator list
-  allow="$(vall "$eff" allowusers)"
-  if [ -z "$allow" ]; then bad sshd-allowusers-missing; r=bad
-  else
-    pat=0; while IFS= read -r tok; do [[ "$tok" =~ $USERNAME_RE ]] || pat=1; done <<<"$allow"
-    [ "$pat" = 0 ] || { bad sshd-allowusers-pattern; r=bad; }
-    n="$(printf '%s\n' "$allow" | grep -cx -- "$RECEIVE_USER")"
-    if [ "$n" = 0 ]; then bad sshd-allowusers-receive; r=bad; elif [ "$n" != 1 ]; then bad sshd-allowusers-duplicate; r=bad; fi
-    n="$(printf '%s\n' "$allow" | grep -cx -- "$AUDIT_USER")"
-    if [ "$n" = 0 ]; then bad sshd-allowusers-audit; r=bad; elif [ "$n" != 1 ]; then bad sshd-allowusers-duplicate; r=bad; fi
-    ! printf '%s\n' "$allow" | grep -qx -- "$VAULT_USER" || { bad sshd-allowusers-vault; r=bad; }
-    while IFS= read -r tok; do
-      [[ "$tok" =~ $USERNAME_RE ]] || continue
-      case "$tok" in "$RECEIVE_USER"|"$AUDIT_USER"|"$VAULT_USER") continue ;; esac
-      printf '%s\n' "$OPERATOR_USERS" | tr ',' '\n' | grep -qx -- "$tok" || { bad sshd-allowusers-unexpected; r=bad; break; }
-    done <<<"$allow"
-  fi
+  allowusers_ok "$eff" sshd-allowusers || r=bad
   [ "$r" = ok ] && ok sshd-global
-  for pair in "$RECEIVE_USER:receive" "$AUDIT_USER:audit"; do
-    u="${pair%%:*}"; label="${pair##*:}"
+  # receive and audit: the complete authorization boundary; vault: no login, but its
+  # own view must still show the approved allow-list (a Match-scoped AllowUsers that
+  # admits or re-lists accounts would surface here and nowhere else)
+  for view in "receive:$RECEIVE_USER" "audit:$AUDIT_USER" "vault:$VAULT_USER"; do
+    label="${view%%:*}"; u="${view#*:}"
     if ! ueff="$("$SSHD_BIN" -T -f "$SSHD_CONFIG" -C "user=$u,host=$PROBE_HOST,addr=$PROBE_ADDR" 2>/dev/null)" || [ -z "$ueff" ]; then bad "sshd-$label-unavailable"; continue; fi
-    account_boundary "$ueff" "$label" && ok "sshd-$label"
+    r=ok
+    [ "$label" = vault ] || account_boundary "$ueff" "$label" || r=bad
+    allowusers_ok "$ueff" "sshd-$label-allowusers" || r=bad
+    [ "$r" = ok ] && ok "sshd-$label"
   done
 fi
 

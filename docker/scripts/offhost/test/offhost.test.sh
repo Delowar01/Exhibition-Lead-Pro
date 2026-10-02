@@ -848,9 +848,10 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@
   # sshd fixtures: normalized `sshd -T` shape (lowercase keyword, value; AllowUsers/AcceptEnv one token per line,
   # AuthorizedKeysFile and AuthenticationMethods on one line) for a safe restricted account and the global policy
   mkdir -p "$T/sshd/sshd_config.d"
-  sshd_user_ok() { printf 'passwordauthentication no\npubkeyauthentication yes\nkbdinteractiveauthentication no\nhostbasedauthentication no\ngssapiauthentication no\nkerberosauthentication no\npermitemptypasswords no\nauthenticationmethods publickey\nauthorizedkeysfile .ssh/authorized_keys\nauthorizedkeyscommand none\nauthorizedkeyscommanduser none\ntrustedusercakeys none\nauthorizedprincipalsfile none\nauthorizedprincipalscommand none\nauthorizedprincipalscommanduser none\nforcecommand none\nstrictmodes yes\npermituserenvironment no\nacceptenv LANG\nacceptenv LC_*\n'; }
-  sshd_global() { sshd_user_ok; printf 'permitrootlogin no\nallowusers lcpt-receive\nallowusers lcpt-audit\nallowusers operator\n'; }
-  sshd_reset() { sshd_global >"$T/sshd/global.txt"; sshd_user_ok >"$T/sshd/user-lcpt-receive.txt"; sshd_user_ok >"$T/sshd/user-lcpt-audit.txt"; }
+  sshd_user_ok() { printf 'passwordauthentication no\npubkeyauthentication yes\nkbdinteractiveauthentication no\nhostbasedauthentication no\ngssapiauthentication no\nkerberosauthentication no\npermitemptypasswords no\nauthenticationmethods publickey\nauthorizedkeysfile .ssh/authorized_keys\nauthorizedkeyscommand none\nauthorizedkeyscommanduser none\ntrustedusercakeys none\nauthorizedprincipalsfile none\nauthorizedprincipalscommand none\nauthorizedprincipalscommanduser none\nforcecommand none\nstrictmodes yes\npermituserenvironment no\nacceptenv LANG\nacceptenv LC_*\nallowusers lcpt-receive\nallowusers lcpt-audit\nallowusers operator\n'; }
+  sshd_global() { sshd_user_ok; printf 'permitrootlogin no\n'; }
+  # the vault view carries the global values: no approved Match block may address it
+  sshd_reset() { sshd_global >"$T/sshd/global.txt"; sshd_user_ok >"$T/sshd/user-lcpt-receive.txt"; sshd_user_ok >"$T/sshd/user-lcpt-audit.txt"; sshd_global >"$T/sshd/user-lcpt-vault.txt"; }
   sshd_reset
   # fake sshd: requires "-T -f <file>" (plus "-C user=U,host=H,addr=A" for one account), records every
   # invocation, answers ONLY for the inspected fixture file (global or per-account fixture), never one static result
@@ -893,7 +894,7 @@ EOF
   reasons() { grep -m1 -oE '^OFFHOST_INSTALL=FAIL reasons=.*' "$T/out/$1.log" | sed 's/^OFFHOST_INSTALL=FAIL reasons=//'; }
   tree_hash() { find "$INST" "$SUDOERS_FILE" "$T/sshd" "$T/shadow.txt" -exec stat -c '%n %a %U %G %s %Y' {} + 2>/dev/null | sort | sha256sum | cut -c1-16; }
   expect_eq "correct installation → PASS" "$(icheck inst-ok)" 0
-  has "$T/out/inst-ok.log" "^OFFHOST_INSTALL=PASS checks=15$" "…fifteen checks (incl. effective sudo, exact keys, locks, per-account sshd)"
+  has "$T/out/inst-ok.log" "^OFFHOST_INSTALL=PASS checks=16$" "…sixteen checks (incl. effective sudo, exact keys, locks, per-account sshd, vault admission)"
   has "$T/out/inst-ok.log" "^install: sudo-effective=ok$" "…effective sudo authority verified from the real listing"
   has "$T/out/inst-ok.log" "^install: authorized-keys-distinct=ok$" "…three distinct key fingerprints"
   has "$T/out/inst-ok.log" "^install: accounts-locked=ok$" "…service-account passwords locked"
@@ -1076,7 +1077,8 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@
   # ── C5: the inspected file is what sshd evaluates (-f), recorded by the fake ──
   : >"$T/sshd-invocations.log"
   expect_eq "baseline passes with the full normalized fixture" "$(icheck inst-f0)" 0
-  expect_eq "checker evaluated the inspected file globally and per account (-f recorded)" "$(grep -c "^f=$T/sshd/sshd_config user=$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-receive$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-audit$" "$T/sshd-invocations.log")" "1/1/1"
+  expect_eq "checker evaluated the inspected file globally and per account — receive, audit, vault (-f recorded)" "$(grep -c "^f=$T/sshd/sshd_config user=$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-receive$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-audit$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-vault$" "$T/sshd-invocations.log")" "1/1/1/1"
+  expect_eq "exactly four evaluations and no other" "$(wc -l <"$T/sshd-invocations.log")" 4
   expect_eq "no evaluation of any other file" "$(grep -vc "^f=$T/sshd/sshd_config " "$T/sshd-invocations.log")" 0
   cp "$T/sshd/sshd_config" "$T/sshd/other_config"; : >"$T/sshd-invocations.log"
   expect_eq "checker told to inspect another file asks sshd for exactly that file (fake refuses → FAIL closed)" "$(icheck inst-f1 OFFHOST_SSHD_CONFIG="$T/sshd/other_config" >/dev/null; reasons inst-f1)/$(grep -c "^f=$T/sshd/other_config user=$" "$T/sshd-invocations.log")" "sshd-unavailable/1"
@@ -1146,7 +1148,7 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@
   gadd inst-u9 'allowusers lcpt-receive' sshd-allowusers-duplicate "duplicate service-user entry → FAIL"
   gadd inst-u10 'allowusers someone' sshd-allowusers-unexpected "literal account outside the approved operator list → FAIL"
   sshd_reset
-  expect_eq "operator account not approved explicitly → FAIL" "$(icheck inst-u11 OFFHOST_SSHD_OPERATOR_USERS= >/dev/null; reasons inst-u11)" "sshd-allowusers-unexpected"
+  expect_eq "operator account not approved explicitly → FAIL on every view" "$(icheck inst-u11 OFFHOST_SSHD_OPERATOR_USERS= >/dev/null; reasons inst-u11)" "sshd-allowusers-unexpected,sshd-receive-allowusers-unexpected,sshd-audit-allowusers-unexpected,sshd-vault-allowusers-unexpected"
   expect_eq "malformed operator list refused" "$(icheck inst-u12 OFFHOST_SSHD_OPERATOR_USERS='op;x' >/dev/null; reasons inst-u12)" "invalid-operator-users"
   expect_eq "literal AllowUsers entries only, operator approved → PASS" "$(icheck inst-u0)" 0
   # ── C5: forced scripts are immune to a caller-influenced PATH and locale ──
@@ -1160,6 +1162,108 @@ restrict,command=\"$IBIN/offhost-audit.sh\" ssh-ed25519 $K_A2 lcp-offhost-audit@
   hostile_audit="$(as_audit env PATH=/nonexistent LANG=C.UTF-8 LC_ALL=de_DE.UTF-8 LC_NUMERIC=de_DE.UTF-8 BASH_ENV="$T/hostile.env" SSH_ORIGINAL_COMMAND=AUDIT OFFHOST_CONFIG="$T/offhost.env" OFFHOST_NOW="$NOW" LCP_MACHINE_ID_FILE="$T/vault.mid" LCP_HOSTKEY_DIR="$T/vk" /bin/bash "$OH/offhost-audit.sh" 2>/dev/null)"
   expect_eq "auditor AUDIT identical under a hostile PATH, BASH_ENV and locale" "$hostile_audit" "$clean_audit"
   expect_eq "…and it carries the AUDIT_END footer" "$(printf '%s\n' "$hostile_audit" | grep -c '^LCP-OFFHOST/1 AUDIT_END ')" 1
+
+  # ── C6: Match-scoped account admission — strict Match grammar + AllowUsers on every view ──
+  SD="$T/sshd/sshd_config.d"
+  mcfg() {   # MATCH-LINE [BLOCK-LINES] → main config: documented header + this Match block (audit fragment untouched)
+    printf 'Include %s/sshd_config.d/*.conf\nPasswordAuthentication no\nPermitRootLogin no\nAllowUsers lcpt-receive lcpt-audit operator\n%s\n%b' "$T/sshd" "$1" "${2:-    PubkeyAuthentication yes\n}" >"$T/sshd/sshd_config"
+    printf 'Match User lcpt-audit\n    PubkeyAuthentication yes\n' >"$SD/10-audit.conf"
+  }
+  mcase() {  # CASE MATCH-LINE EXPECTED DESCRIPTION — the fixture dumps stay safe: the scan alone must catch it
+    sshd_reset; mcfg "$2"
+    expect_eq "$4" "$(icheck "$1" >/dev/null; reasons "$1")" "$3"
+  }
+  mpass() {  # CASE MATCH-LINE DESCRIPTION
+    sshd_reset; mcfg "$2"
+    expect_eq "$3" "$(icheck "$1")" 0
+  }
+  # red → green: safe global/receive/audit views plus a Match-scoped backdoor account
+  # (OpenSSH accepts it; the C5 checker reported every sshd check ok)
+  sshd_reset; { sshd_user_ok | grep -vE '^(allowusers|authorizedkeysfile|forcecommand) '; printf 'allowusers backdoor\nauthorizedkeysfile /tmp/backdoor_authorized_keys\nforcecommand internal-sftp\n'; } >"$T/sshd/user-backdoor.txt"
+  mcfg 'Match User backdoor' '    AllowUsers backdoor\n    AuthorizedKeysFile /tmp/backdoor_authorized_keys\n    ForceCommand internal-sftp\n'
+  : >"$T/sshd-invocations.log"
+  expect_eq "Match-scoped backdoor (AllowUsers, key file, ForceCommand inside the block) → FAIL" "$(icheck inst-b1 >/dev/null; reasons inst-b1)" "sshd-match-user-unapproved"
+  expect_eq "…global, receive, audit and vault views evaluated with -f, exactly once each, nothing else" "$(grep -c "^f=$T/sshd/sshd_config user=$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-receive$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-audit$" "$T/sshd-invocations.log")/$(grep -c "^f=$T/sshd/sshd_config user=lcpt-vault$" "$T/sshd-invocations.log")/$(wc -l <"$T/sshd-invocations.log")" "1/1/1/1/4"
+  expect_eq "…no account name from the configuration is printed" "$(grep -c backdoor "$T/out/inst-b1.log")" 0
+  rm -f "$T/sshd/user-backdoor.txt"
+  sshd_reset; sshd_cfg_reset; printf 'Match User backdoor\n    AllowUsers backdoor\n' >"$SD/50-backdoor.conf"
+  expect_eq "the same block inside an included fragment → FAIL" "$(icheck inst-b2 >/dev/null; reasons inst-b2)" "sshd-match-user-unapproved"
+  rm -f "$SD/50-backdoor.conf"
+  # Match targets that must fail
+  mcase inst-mt1  'Match User lcpt-vault' sshd-match-user-unapproved "Match User on the vault account → FAIL"
+  mcase inst-mt2  'Match User operator' sshd-match-user-unapproved "Match User on the configured operator account → FAIL"
+  mcase inst-mt3  'Match User nobody' sshd-match-user-unapproved "Match User on an unrelated literal account → FAIL"
+  mcase inst-mt4  'Match User *' sshd-match-criteria "Match User wildcard → FAIL"
+  mcase inst-mt5  'Match User lcpt-*' sshd-match-criteria "Match User glob pattern → FAIL"
+  mcase inst-mt6  'Match User !lcpt-vault' sshd-match-criteria "Match User negation → FAIL"
+  mcase inst-mt7  'Match User lcpt-receive@10.0.0.1' sshd-match-criteria "Match User user@host → FAIL"
+  mcase inst-mt8  'Match User [l]cpt-receive' sshd-match-criteria "Match User bracket pattern → FAIL"
+  mcase inst-mt9  'Match User lcpt\-receive' sshd-match-criteria "Match User backslash pattern → FAIL"
+  mcase inst-mt10 'Match User lcpt-receive,backdoor' sshd-match-user-unapproved "receive plus an unrelated user → FAIL"
+  mcase inst-mt11 'Match User lcpt-receive,lcpt-vault' sshd-match-user-unapproved "receive plus the vault → FAIL"
+  mcase inst-mt12 'Match User lcpt-receive,lcpt-receive' sshd-match-criteria "duplicate receive in one operand → FAIL"
+  mcase inst-mt13 'Match User lcpt-receive,' sshd-match-criteria "trailing empty comma component → FAIL"
+  mcase inst-mt14 'Match User ,lcpt-audit' sshd-match-criteria "leading empty comma component → FAIL"
+  mcase inst-mt15 'Match User lcpt-receive,,lcpt-audit' sshd-match-criteria "inner empty comma component → FAIL"
+  mcase inst-mt16 'Match User lcpt-receive User lcpt-audit' sshd-match-criteria "repeated User criteria → FAIL"
+  mcase inst-mt17 'Match Address 10.0.0.0/8' sshd-match-criteria "Match Address → FAIL"
+  mcase inst-mt18 'Match Group lcpt-audit' sshd-match-criteria "Match Group → FAIL"
+  mcase inst-mt19 'Match Host backup' sshd-match-criteria "Match Host → FAIL"
+  mcase inst-mt20 'Match LocalAddress 127.0.0.1' sshd-match-criteria "Match LocalAddress → FAIL"
+  mcase inst-mt21 'Match User lcpt-receive Address 10.0.0.1' sshd-match-criteria "mixed User + Address criteria → FAIL"
+  mcase inst-mt22 'Match All User lcpt-receive' sshd-match-criteria "All combined with another criterion → FAIL"
+  mcase inst-mt23 'Match User' sshd-match-criteria "User without an operand → FAIL"
+  mcase inst-mt24 'Match' sshd-match-criteria "Match without criteria → FAIL"
+  mcase inst-mt25 'Match=User lcpt-receive' sshd-match-criteria "keyword=value Match form → FAIL"
+  mcase inst-mt26 'Match User=lcpt-receive' sshd-match-criteria "User=value operand form → FAIL"
+  mcase inst-mt27 'Match User "lcpt-receive"' sshd-match-criteria "quoted operand → FAIL"
+  mcase inst-mt28 'Match User lcpt-receive,lcpt-audit,operator' sshd-match-user-unapproved "both service accounts plus the operator → FAIL"
+  sshd_reset; sshd_cfg_reset; printf 'Match User lcpt-vault\n    PubkeyAuthentication yes\n' >"$SD/10-audit.conf"
+  expect_eq "Match User on the vault inside a fragment → FAIL" "$(icheck inst-mt29 >/dev/null; reasons inst-mt29)" "sshd-match-user-unapproved"
+  sshd_reset; sshd_cfg_reset; printf 'Include=%s/sshd_config.d/*.conf\nPasswordAuthentication no\n' "$T/sshd" >"$T/sshd/sshd_config"
+  expect_eq "keyword=value Include form → FAIL" "$(icheck inst-mt30 >/dev/null; reasons inst-mt30)" "sshd-include-unsupported"
+  # Match targets that must pass
+  sshd_reset; printf 'Include %s/sshd_config.d/*.conf\nPasswordAuthentication no\nPermitRootLogin no\n' "$T/sshd" >"$T/sshd/sshd_config"; printf 'PubkeyAuthentication yes\n' >"$SD/10-audit.conf"
+  expect_eq "no Match block anywhere → PASS" "$(icheck inst-mp1)" 0
+  mpass inst-mp2 'Match All' "Match All → PASS"
+  mpass inst-mp3 'Match User lcpt-receive' "Match User receive only → PASS"
+  mpass inst-mp4 'Match User lcpt-audit' "Match User audit only → PASS"
+  mpass inst-mp5 'Match User lcpt-receive,lcpt-audit' "exact receive,audit list → PASS"
+  mpass inst-mp6 'Match User lcpt-audit,lcpt-receive' "exact audit,receive list → PASS"
+  mpass inst-mp7 $'match\tuser  lcpt-receive  ' "keyword casing and surrounding whitespace accepted → PASS"
+  sshd_cfg_reset
+  # effective AllowUsers on every evaluated view: global, receive, audit, vault
+  vfile() { case "$1" in global) echo "$T/sshd/global.txt" ;; *) echo "$T/sshd/user-lcpt-$1.txt" ;; esac; }
+  vdump() { case "$1" in receive|audit) sshd_user_ok ;; *) sshd_global ;; esac; }
+  vprefix() { case "$1" in global) echo sshd-allowusers ;; *) echo "sshd-$1-allowusers" ;; esac; }
+  amut() {   # VIEW CASE SED-EXPR EXPECTED-KIND DESCRIPTION
+    sshd_reset; vdump "$1" | sed -E "$3" >"$(vfile "$1")"
+    expect_eq "$5 [$1 view]" "$(icheck "$2" >/dev/null; reasons "$2")" "$(vprefix "$1")-$4"
+  }
+  for view in global receive audit vault; do
+    amut "$view" "inst-av1-$view" '/^allowusers lcpt-receive$/d' receive "AllowUsers missing the receive account → FAIL"
+    amut "$view" "inst-av2-$view" '/^allowusers lcpt-audit$/d' audit "AllowUsers missing the audit account → FAIL"
+    amut "$view" "inst-av3-$view" '$ s/$/\nallowusers lcpt-vault/' vault "AllowUsers admitting the vault → FAIL"
+    amut "$view" "inst-av4-$view" '$ s/$/\nallowusers lcpt-*/' pattern "AllowUsers wildcard pattern → FAIL"
+    amut "$view" "inst-av5-$view" '$ s/$/\nallowusers someone/' unexpected "AllowUsers unexpected literal user → FAIL"
+    amut "$view" "inst-av6-$view" '$ s/$/\nallowusers lcpt-audit/' duplicate "AllowUsers duplicate service account → FAIL"
+    amut "$view" "inst-av7-$view" '$ s/$/\nallowusers operator/' duplicate "AllowUsers duplicate operator → FAIL"
+    amut "$view" "inst-av8-$view" '/^allowusers /d' missing "AllowUsers absent → FAIL"
+  done
+  sshd_reset; sshd_user_ok | sed -E '/^allowusers (lcpt-audit|operator)$/d' >"$T/sshd/user-lcpt-receive.txt"
+  expect_eq "Match-scoped AllowUsers replacing the list on the receive view (receive only) → FAIL" "$(icheck inst-av9 >/dev/null; reasons inst-av9)" "sshd-receive-allowusers-audit"
+  sshd_reset; { sshd_user_ok | grep -v '^allowusers '; printf 'allowusers lcpt-audit\nallowusers backdoor\n'; } >"$T/sshd/user-lcpt-audit.txt"
+  expect_eq "Match-scoped AllowUsers replacing the list on the audit view (audit + unrelated) → FAIL" "$(icheck inst-av10 >/dev/null; reasons inst-av10)" "sshd-audit-allowusers-receive,sshd-audit-allowusers-unexpected"
+  sshd_reset; sshd_cfg_reset; printf 'Match User lcpt-vault\n    AllowUsers lcpt-vault\n' >"$SD/10-audit.conf"; { sshd_global; echo 'allowusers lcpt-vault'; } >"$T/sshd/user-lcpt-vault.txt"
+  expect_eq "Match-scoped vault admission → FAIL at both layers (Match target and vault view)" "$(icheck inst-av11 >/dev/null; reasons inst-av11)" "sshd-match-user-unapproved,sshd-vault-allowusers-vault"
+  sshd_cfg_reset
+  sshd_reset; for v in global receive audit vault; do echo 'allowusers ops2' >>"$(vfile "$v")"; done
+  expect_eq "second literal operator present on every view but not approved → FAIL on every view" "$(icheck inst-av12 >/dev/null; reasons inst-av12)" "sshd-allowusers-unexpected,sshd-receive-allowusers-unexpected,sshd-audit-allowusers-unexpected,sshd-vault-allowusers-unexpected"
+  expect_eq "…the same list with the operator explicitly approved → PASS" "$(icheck inst-av13 OFFHOST_SSHD_OPERATOR_USERS=operator,ops2)" 0
+  sshd_reset; : >"$T/sshd/user-lcpt-vault.txt"
+  expect_eq "vault view not evaluable → FAIL closed" "$(icheck inst-av14 >/dev/null; reasons inst-av14)" "sshd-vault-unavailable"
+  sshd_reset
+  expect_eq "documented AllowUsers list on every view → PASS" "$(icheck inst-av0)" 0
   sshd_reset; sshd_cfg_reset
   expect_eq "sshd unavailable → FAIL" "$(icheck inst-nos OFFHOST_SSHD_BIN="$T/bin/no-such-sshd" >/dev/null; reasons inst-nos)" "sshd-unavailable"
   expect_eq "non-root invocation refused" "$(runuser -u lcpt-audit -- bash "$OH/offhost-install-check.sh" 2>/dev/null | tail -n 1)" "OFFHOST_INSTALL=FAIL reasons=install-check-not-root"
@@ -1216,6 +1320,9 @@ expect_eq "checker requires none for key command, CA, principals and ForceComman
 expect_eq "checker requires publickey-only authentication, StrictModes and no user environment" "$(code "$IC" | grep -cE 'authenticationmethods\)" = publickey|strictmodes\)" = yes|permituserenvironment\)" = no')" 4
 expect_eq "checker applies the literal-user AllowUsers grammar" "$(code "$IC" | grep -c "USERNAME_RE='\^\[a-z_\]\[a-z0-9_-\]{0,31}\$'")" 1
 expect_eq "checker rejects dangerous AcceptEnv tokens and any SetEnv" "$(code "$IC" | grep -cE 'accept_env_token_ok "\$tok"|== "setenv"')" 2
+expect_eq "checker restricts Match User to the receive/audit accounts (main file and fragments)" "$(code "$IC" | grep -c 'match_criteria_check "')/$(code "$IC" | grep -c 'bad sshd-match-user-unapproved')" "2/1"
+expect_eq "checker evaluates the vault view and re-checks AllowUsers on the global and every account view" "$(code "$IC" | grep -c '"vault:$VAULT_USER"')/$(code "$IC" | grep -c 'allowusers_ok "')" "1/2"
+expect_eq "checker refuses keyword=value Match and Include forms" "$(code "$IC" | grep -cE '\[Mm\]\[Aa\]\[Tt\]\[Cc\]\[Hh\]=\*\)|\[Ii\]\[Nn\]\[Cc\]\[Ll\]\[Uu\]\[Dd\]\[Ee\]=\*')" 4
 expect_eq "library pins PATH and the locale for every backup-side script" "$(code "$OH/offhost-lib.sh" | grep -cE '^export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin$|^export LC_ALL=C LANG=C LANGUAGE=C$')" 2
 expect_eq "checker requires exactly one receive key and two audit keys" "$(code "$IC" | grep -cE 'check_keys "\$RECEIVE_USER" "\$BIN_DIR/offhost-receive.sh" receive 1|check_keys "\$AUDIT_USER" "\$BIN_DIR/offhost-audit.sh" audit 2')" 2
 expect_eq "checker requires distinct key fingerprints" "$(code "$IC" | grep -c 'authorized-keys-duplicate')" 1

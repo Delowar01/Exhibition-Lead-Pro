@@ -1,5 +1,5 @@
 # =============================================================================
-# Lead Capture Pro — backup VPS authorized_keys (EXAMPLE, B23 G-6D C1/C2/C5)
+# Lead Capture Pro — backup VPS authorized_keys (EXAMPLE, B23 G-6D C1/C2/C5/C6)
 # =============================================================================
 # Two local accounts on the BACKUP VPS, THREE key pairs, each with exactly ONE
 # forced command. `restrict` disables PTY allocation, agent, X11 and TCP
@@ -43,10 +43,17 @@ restrict,command="/opt/lcp-offhost/bin/offhost-audit.sh" ssh-ed25519 <GITHUB-AUD
 # account — so a `Match User` block that widens one account is caught and the
 # daemon's compiled-in default can never stand in for the installed file. The
 # inspected path must be canonical (no symlinked component) inside a real
-# root-owned, non-writable directory; every Match block may use the User
-# criterion only; Includes must stay inside sshd_config.d; the three service
-# accounts must have locked passwords. Required effective values (a directive
-# that is ABSENT from the dump fails — absence is never read as "none"):
+# root-owned, non-writable directory; every `Match` line must be exactly
+# `Match All`, `Match User lcp-receive`, `Match User lcp-audit` or
+# `Match User lcp-receive,lcp-audit` (either order) — never the operator, the
+# vault, any other account, a pattern, a negation or another criterion (a
+# `Match User <other>` block could otherwise carry its own AllowUsers,
+# AuthorizedKeysFile and ForceCommand unseen); Includes must stay inside
+# sshd_config.d; the three service accounts must have locked passwords. The
+# AllowUsers list below is verified on the global view AND on the receive,
+# audit and vault views (`-C user=lcp-vault,…`), so a Match-scoped list can
+# never replace it. Required effective values (a directive that is ABSENT
+# from the dump fails — absence is never read as "none"):
 #
 #   PermitRootLogin no
 #   PasswordAuthentication no
@@ -77,10 +84,14 @@ restrict,command="/opt/lcp-offhost/bin/offhost-audit.sh" ssh-ed25519 <GITHUB-AUD
 #     lcp-vault; every other name must be listed in OFFHOST_SSHD_OPERATOR_USERS
 #     (comma-separated) when the checker runs, e.g.
 #     OFFHOST_SSHD_OPERATOR_USERS=<operator-account>
+#   # Match blocks (optional): only `Match All`, `Match User lcp-receive`,
+#   # `Match User lcp-audit` or `Match User lcp-receive,lcp-audit`
 #
 # Evidence to record in the activation record (output of the real daemon on
 # the backup VPS, names and values only — never the file itself):
 #   sshd -T -f /etc/ssh/sshd_config | grep -Ei '^(permitrootlogin|passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication|forcecommand|permituserenvironment|allowusers) '
 #   sshd -T -f /etc/ssh/sshd_config -C user=lcp-receive,host=$(hostname),addr=127.0.0.1 | grep -Ei '^(authenticationmethods|authorizedkeysfile|authorizedkeyscommand|authorizedkeyscommanduser|trustedusercakeys|authorizedprincipalsfile|authorizedprincipalscommand|authorizedprincipalscommanduser|forcecommand|strictmodes|permituserenvironment|acceptenv|setenv|hostbasedauthentication|gssapiauthentication|kerberosauthentication|permitemptypasswords) '
-#   (and the same `-C user=lcp-audit,…` line), followed by
+#   (and the same `-C user=lcp-audit,…` line), then the vault view
+#   sshd -T -f /etc/ssh/sshd_config -C user=lcp-vault,host=$(hostname),addr=127.0.0.1 | grep -Ei '^allowusers '
+#   followed by
 #   OFFHOST_SSHD_OPERATOR_USERS=<operator-account> offhost-install-check.sh → OFFHOST_INSTALL=PASS

@@ -1,4 +1,4 @@
-# Off-Host Backup — Hostinger-Only Architecture (B23 G-6D Corrections 1–5)
+# Off-Host Backup — Hostinger-Only Architecture (B23 G-6D Corrections 1–6)
 
 **Status: design and code under review. Nothing in this document is activated,
 deployed, or verified against a real backup VPS.** The deterministic harnesses
@@ -107,6 +107,7 @@ Three independent layers plus monitoring:
 | One leaked audit key disables both the primary's and GitHub's audits | Three separate key pairs; the two audit keys are bound to the same forced command but are separately revocable and attributable (§4). |
 | Tampered installation on the backup VPS | `offhost-install-check.sh` verifies ownership, modes, the sudoers drop-in **and** the effective sudo authority of the receive account, the exact three-key forced-command inventory with distinct fingerprints, locked service-account passwords, group separation and the effective sshd configuration **of the inspected file, per restricted account** (`sshd -T -f /etc/ssh/sshd_config -C user=…`), and records script hashes before activation (§13). |
 | A `Match User` block or a second sudoers file silently widens one account | Per-account `sshd -T -f … -C` evaluation plus a Match-criteria/Include scan; `sudo -n -l -U lcp-receive` effective listing must show exactly the publisher (§13). |
+| A `Match User <other>` block admits an account that the global, receive and audit views never show — `AllowUsers`, `AuthorizedKeysFile` and `ForceCommand` inside the block (valid for OpenSSH 9.6; invisible to Correction 5) | `Match` lines are limited to `All`, `User lcp-receive`, `User lcp-audit` or the exact receive/audit pair (`sshd-match-user-unapproved`, `sshd-match-criteria`), and the effective `AllowUsers` profile is re-checked on the global, receive, audit **and vault** views, so a Match-scoped list can never replace the approved allow-list unseen (§13). |
 | A second authorized-key source bypasses the audited key inventory (`authorized_keys2`, an absolute or tokenized `AuthorizedKeysFile`, `AuthorizedKeysCommand`, `TrustedUserCAKeys` certificates, principals files/commands) or a `ForceCommand` replaces the key-line command | Per account, the effective `AuthorizedKeysFile` must be exactly `.ssh/authorized_keys` — the one file the inventory check reads — and every other key source and `ForceCommand` must be effectively `none`; `AuthenticationMethods` must be exactly `publickey` with host-based, GSSAPI, Kerberos and empty-password authentication off (§13). |
 | `AllowUsers` pattern admits an unlisted account (`*`, `?`, `!negation`, `user@host`, glob/comma/bracket lists) | Literal-user profile: every effective `AllowUsers` token must be a plain user name, each service account exactly once, never the vault, every other name explicitly approved through `OFFHOST_SSHD_OPERATOR_USERS` (§13). |
 | The client or a server-side `SetEnv` injects `OFFHOST_*`, `LCP_*`, `PATH`, `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS` or `LD_*` into the forced scripts | `PermitUserEnvironment no`, no effective `SetEnv`, `AcceptEnv` restricted to locale names (`LANG`, `LANGUAGE`, `LC_*`); every script fixes `PATH` as its first statement and the shared library forces `LC_ALL=C` and unsets `BASH_ENV`/`ENV`/`CDPATH`/`GLOBIGNORE`/`IFS` before any parsing (§13). |
@@ -439,11 +440,23 @@ activation record:
   root-owned, non-group/world-writable, readable file
   (`sshd-include-symlink|not-regular|owner|writable|unreadable`); a fragment
   may not `Include` anything (`sshd-include-nested`, so nested or secondary
-  includes are refused rather than trusted); every `Match` block, in the
-  main file or a fragment, may use only `User …` pairs and/or `All`
-  (`sshd-match-criteria` for Address, Group, LocalAddress, LocalPort,
-  RDomain, LocalNetwork, Exec, combined or unknown criteria). Only then is
-  the per-account evaluation below authoritative.
+  includes are refused rather than trusted); a `keyword=value` spelling of
+  `Include` or `Match` is refused (`sshd-include-unsupported`,
+  `sshd-match-criteria`). **Strict `Match` grammar** (Correction 6): every
+  `Match` line, in the main file or a fragment, must be exactly one of
+  `Match All`, `Match User lcp-receive`, `Match User lcp-audit`,
+  `Match User lcp-receive,lcp-audit` or `Match User lcp-audit,lcp-receive`
+  (keyword casing and ordinary surrounding whitespace may vary). A
+  syntactically valid literal user outside the receive/audit set — the vault,
+  the operator, any unrelated account, alone or alongside a service account —
+  fails with `sshd-match-user-unapproved`; a wildcard, negation, `user@host`,
+  bracket, backslash or quoted form, an empty comma component, a duplicate
+  user, a repeated `User` criterion, `All` combined with anything, a missing
+  operand, or any other criterion (Address, Group, Host, LocalAddress,
+  LocalPort, RDomain, LocalNetwork, Exec, mixed) fails with
+  `sshd-match-criteria`. The only accounts a `Match` block can address are
+  therefore the two whose views are fully evaluated below; the boundary is
+  established without enumerating local system accounts.
 - Effective sshd configuration **of the inspected file**: both evaluations
   name the file explicitly — `sshd -T -f /etc/ssh/sshd_config` globally and
   `sshd -T -f /etc/ssh/sshd_config -C user=lcp-receive,host=…,addr=…` (and
@@ -459,17 +472,22 @@ activation record:
   authentication off, `forcecommand none`, `permituserenvironment no`
   (`sshd-root-login`, `sshd-password-auth`, `sshd-pubkey-auth`,
   `sshd-interactive-auth`, `sshd-force-command`, `sshd-user-environment`).
-- `AllowUsers` **literal-user profile** (global dump): every token must match
-  `^[a-z_][a-z0-9_-]{0,31}$` — no `*`, `?`, `!negation`, `user@host`, comma,
-  bracket or backslash pattern (`sshd-allowusers-pattern`); `lcp-receive` and
-  `lcp-audit` each exactly once (`sshd-allowusers-receive`,
-  `sshd-allowusers-audit`, `sshd-allowusers-duplicate`); never `lcp-vault`
-  (`sshd-allowusers-vault`); the directive must be present
-  (`sshd-allowusers-missing`); every other name must be listed in
-  `OFFHOST_SSHD_OPERATOR_USERS` — a comma-separated list of literal operator
-  accounts validated with the same grammar (`invalid-operator-users`) —
-  otherwise `sshd-allowusers-unexpected`. The operator account is therefore
-  an explicit input of the check, never inferred from the host.
+- `AllowUsers` **literal-user profile**, applied to the global dump **and
+  re-checked on every evaluated view** (receive, audit and vault): every
+  token must match `^[a-z_][a-z0-9_-]{0,31}$` — no `*`, `?`, `!negation`,
+  `user@host`, comma, bracket or backslash pattern (`…-pattern`); no token
+  may appear twice (`…-duplicate`); `lcp-receive` and `lcp-audit` must each
+  be present (`…-receive`, `…-audit`); never `lcp-vault` (`…-vault`); the
+  directive must be present (`…-missing`); every other name must be listed
+  in `OFFHOST_SSHD_OPERATOR_USERS` — a comma-separated list of literal
+  operator accounts validated with the same grammar
+  (`invalid-operator-users`) — otherwise `…-unexpected`. Codes are
+  `sshd-allowusers-<kind>` for the global view and
+  `sshd-<receive|audit|vault>-allowusers-<kind>` per account view, so a
+  Match-scoped `AllowUsers` that replaces or extends the list for one
+  account is reported on exactly the view where sshd would apply it. The
+  operator account is therefore an explicit input of the check, never
+  inferred from the host.
 - **Per restricted account** (`-C user=lcp-receive,…` / `user=lcp-audit,…`),
   the authorization boundary: `passwordauthentication no`,
   `kbdinteractiveauthentication no` (or `challengeresponseauthentication
@@ -498,6 +516,17 @@ activation record:
   produced. A safe global policy with a `Match User` block re-enabling
   passwords, adding a key command or overriding the forced command for one
   account therefore fails.
+- **Vault view** (`-C user=lcp-vault,…`): the vault has no SSH login, so its
+  view is not held to the account boundary above, but its effective
+  `AllowUsers` must still be exactly the approved list
+  (`sshd-vault-allowusers-<kind>`, `sshd-vault-unavailable` when the view
+  cannot be produced). The checker thus performs exactly four evaluations of
+  the inspected file — global, receive, audit, vault — every one with `-f`;
+  together with the strict `Match` grammar this closes the Correction 5
+  gap, in which a `Match User backdoor` block carrying `AllowUsers backdoor`,
+  an alternate `AuthorizedKeysFile` and `ForceCommand internal-sftp` was
+  accepted by OpenSSH 9.6 and invisible to the global, receive and audit
+  evaluations.
 - **Environment-injection policy** on the script side (defence in depth,
   independent of sshd): every off-host script sets
   `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` as its
@@ -589,8 +618,10 @@ Cloud dependency (§1.1).
    file/command, no `ForceCommand` override, `AuthenticationMethods
    publickey` with host-based/GSSAPI/Kerberos/empty-password authentication
    off, `StrictModes yes`, `PermitUserEnvironment no`, no `SetEnv`,
-   `AcceptEnv LANG LC_*` at most, and a literal `AllowUsers lcp-receive
-   lcp-audit <operator-account>`; firewall
+   `AcceptEnv LANG LC_*` at most, a literal `AllowUsers lcp-receive
+   lcp-audit <operator-account>`, and `Match` blocks only as `Match All`,
+   `Match User lcp-receive`, `Match User lcp-audit` or the exact pair (never
+   the operator, the vault or any other account); firewall
    allowing SSH from the primary VPS and GitHub only where possible, with a
    **dedicated backup file system or quota** for `/srv/lcp-offhost` (§10).
 2. Create accounts `lcp-receive`, `lcp-audit`, `lcp-vault` (each with its own
@@ -627,9 +658,11 @@ Cloud dependency (§1.1).
    `authorizedprincipalsfile`, `authorizedprincipalscommand`,
    `authorizedprincipalscommanduser`, `forcecommand`, `strictmodes`,
    `permituserenvironment`, `acceptenv`, `setenv`, `hostbasedauthentication`,
-   `gssapiauthentication`, `kerberosauthentication` and
-   `permitemptypasswords` (names and values only, never the file); test the
-   real forced-command semantics (§13); record the script hashes.
+   `gssapiauthentication`, `kerberosauthentication`, `permitemptypasswords`
+   and `allowusers`, plus the `allowusers` lines of `sshd -T -f
+   /etc/ssh/sshd_config -C user=lcp-vault,…` (names and values only, never
+   the file); test the real forced-command semantics (§13); record the
+   script hashes.
 7. Dry runs: `offhost-send.sh plan`, then one supervised `offhost-send.sh`
    run, then `offhost-retain.sh` (dry-run) on the backup VPS.
 8. A **recovery drill** (§16) with the offline age identity before the cron
@@ -725,7 +758,24 @@ limitation but is explicitly out of scope by the owner's decision.
   `PATH`, `BASH_ENV` and locale in the forced command's environment leave
   `HELLO` and `AUDIT` output byte-identical), **config-path** cases (a
   symlinked parent directory, a writable or non-root parent and another
-  canonical file all fail with their own reason), a shadow-format fixture
+  canonical file all fail with their own reason), **Match-scoped admission**
+  cases (Correction 6: the `Match User backdoor` block with `AllowUsers`,
+  `AuthorizedKeysFile` and `ForceCommand` inside it fails in the main file
+  and in a fragment while the global, receive, audit and vault views are
+  each evaluated exactly once with `-f`; `Match User` on the vault, the
+  operator, an unrelated account, a wildcard, glob, negation, `user@host`,
+  bracket, backslash or quoted form, receive plus an unrelated user or the
+  vault, a duplicate, empty comma components, repeated `User`, `Address`,
+  `Group`, `Host`, `LocalAddress`, mixed criteria, `All` with a criterion,
+  missing operands and `keyword=value` forms all fail; no Match block,
+  `Match All`, receive only, audit only and the exact pair in either order
+  pass; on each of the four views a missing receive or audit account, the
+  vault, a wildcard, an unexpected literal, a duplicate service account or
+  operator and an absent directive fail; a Match-scoped list replacing the
+  receive or audit view's allow-list fails on that view; a Match-scoped
+  vault admission fails at both layers; an unapproved second operator fails
+  on every view and passes once approved; an unproducible vault view fails
+  closed), a shadow-format fixture
   (unlocked receive, audit or vault password fails), the exact three-key
   inventory (one audit key, duplicated audit keys, the upload key reused as
   an audit key, a malformed blob, an extra key, a wrong forced command, a
@@ -758,9 +808,12 @@ limitation but is explicitly out of scope by the owner's decision.
 
 Not proven here: real OpenSSH forced-command behaviour end to end, PTY
 rejection and password-login rejection (the sandbox has no OpenSSH client,
-server or `ssh-keygen`; the `sshd -T` directive spellings are implemented
-from the OpenSSH 9.6 dump format and have not been run against a real
-daemon), real Hostinger hosts, a real dedicated file system or quota
+server or `ssh-keygen`; the `sshd -T` directive spellings and the `Match`
+line forms OpenSSH accepts — `keyword=value`, quoting, pattern lists — are
+modelled from the OpenSSH 9.6 sources and have not been run against a real
+daemon here; the Correction 6 defect itself was reproduced independently on
+OpenSSH 9.6p1, and the installation policy is deliberately stricter than
+what OpenSSH accepts), real Hostinger hosts, a real dedicated file system or quota
 (storage boundary), the Hostinger-managed backup setting, cron activation,
 GitHub secrets, a real encrypted upload, retention on a real vault, and a
 recovery from a real backup VPS.
@@ -775,7 +828,7 @@ recovery from a real backup VPS.
 | `docker/scripts/offhost/offhost-publish.sh` | backup (root via sudo) | read-only preflight, exclusive publisher and receipts |
 | `docker/scripts/offhost/offhost-audit.sh` | backup (forced, `lcp-audit`) | list-only auditor incl. the `CAPACITY` line |
 | `docker/scripts/offhost/offhost-retain.sh` | backup (`lcp-vault`) | retention, dry-run by default |
-| `docker/scripts/offhost/offhost-install-check.sh` | backup (root) | installation-integrity check: ownership/modes, drop-in + effective sudo (inverse Defaults rejected), exact three-key inventory with complete OpenSSH-valid keys, account locks, groups, canonical config path, strict sshd Include profile, effective authorization boundary of the inspected file per account (`sshd -T -f … -C`), literal `AllowUsers`, environment policy (§13) |
+| `docker/scripts/offhost/offhost-install-check.sh` | backup (root) | installation-integrity check: ownership/modes, drop-in + effective sudo (inverse Defaults rejected), exact three-key inventory with complete OpenSSH-valid keys, account locks, groups, canonical config path, strict sshd Include profile and strict `Match` grammar (receive/audit only), effective authorization boundary of the inspected file per account (`sshd -T -f … -C`), literal `AllowUsers` on the global, receive, audit and vault views, environment policy (§13) |
 | `docker/scripts/offhost/*.example` | — | authorized_keys (three keys), sudoers, shared settings with limits, sender settings, pinned ssh_config |
 | `docker/scripts/offhost/test/offhost.test.sh` | sandbox | deterministic ops harness |
 | `.github/workflows/backup-offhost-hostinger.yml` | GitHub | daily read-only audit + alert, SHA-pinned actions |
