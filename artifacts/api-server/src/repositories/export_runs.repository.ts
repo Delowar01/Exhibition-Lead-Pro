@@ -1,7 +1,7 @@
 import { db, exportRunsTable } from "@workspace/db";
 import { eq, count, desc, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../middlewares/requireAuth.js";
-import { tenantOnly } from "./base.js";
+import { tenantOnly, exec, type Executor } from "./base.js";
 
 export type ExportRunRow = typeof exportRunsTable.$inferSelect;
 
@@ -33,7 +33,7 @@ export async function findById(user: AuthUser, id: number): Promise<ExportRunRow
   return row;
 }
 
-export async function insert(values: typeof exportRunsTable.$inferInsert): Promise<ExportRunRow> {
-  const [row] = await db.insert(exportRunsTable).values(values).returning();
+export async function insert(values: typeof exportRunsTable.$inferInsert, tx?: Executor): Promise<ExportRunRow> {
+  const [row] = await exec(tx).insert(exportRunsTable).values(values).returning();
   return row;
 }

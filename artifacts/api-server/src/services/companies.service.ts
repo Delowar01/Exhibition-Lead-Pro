@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as companiesRepo from "../repositories/companies.repository.js";
+import * as storage from "./storage.service.js";
 import * as auditRepo from "../repositories/audit.repository.js";
 import * as subsRepo from "../repositories/subscriptions.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
@@ -147,7 +148,16 @@ export async function updateCompany(id: number, input: CompanyInput) {
 
 export async function deleteCompany(user: AuthUser, id: number) {
   if (user.role !== "platform_owner") throw new AppError(403, "Forbidden");
-  await companiesRepo.remove(id);
+  // Batch 25: every stored object of the tenant is tombstoned in the SAME
+  // transaction that removes the company (the inventory has no FK, so the
+  // tombstones outlive the cascade); the bytes are purged by a durable job in
+  // bounded batches, and the maintenance sweep finishes anything left behind.
+  const tombstoned = await db.transaction(async (tx) => {
+    const n = await storage.tombstoneCompany(tx, id);
+    await companiesRepo.remove(id, tx);
+    return n;
+  });
+  if (tombstoned > 0) await storage.enqueueCompanyPurge(id);
   return { success: true, message: "Company deleted" };
 }
 

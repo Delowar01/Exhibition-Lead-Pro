@@ -10,6 +10,7 @@ import { CAPTURE_ANALYZE_JOB, runCaptureAnalyzeJob, type CaptureAnalyzeJobPayloa
 import { AI_WORKFLOW_ANALYZE_JOB, runAiWorkflowAnalyzeJob, type AiWorkflowJobPayload } from "../../services/ai-workflow-batch.service.js";
 import { EXECUTIVE_REPORT_JOB, runExecutiveReportJob, type ExecutiveReportJobPayload } from "../../services/executive-intelligence.service.js";
 import { registerWorkflowRunHandler } from "../workflows/engine.js";
+import { STORAGE_DELETE_OBJECT_JOB, STORAGE_PURGE_COMPANY_JOB, runDeleteObjectJob, runPurgeCompanyJob } from "../../services/storage.service.js";
 import { registerRecurringHandler } from "./scheduler.js";
 
 // Registers the email delivery handler on a queue. Split out from startWorkers so
@@ -112,6 +113,19 @@ export function startWorkers(): void {
   // the insert is idempotent by requestId, so a retry can never duplicate a row.
   queue.register<Record<string, unknown>>(AI_LEDGER_RETRY_JOB, async (payload) => {
     await runLedgerRetryJob(payload);
+  });
+
+  // Batch 25 object storage: durable, idempotent physical-delete retries
+  // (`storage.deleteObject`, deduped per object) and company purges
+  // (`storage.purgeCompany`, bounded batches that re-enqueue themselves while
+  // rows remain). Payloads carry ids only — never file contents, storage keys
+  // or credentials. Both THROW on a transient failure so backoff applies; a
+  // settled row makes a retry a no-op.
+  queue.register<{ objectId: string }>(STORAGE_DELETE_OBJECT_JOB, async (payload) => {
+    await runDeleteObjectJob(payload);
+  });
+  queue.register<{ companyId: number }>(STORAGE_PURGE_COMPANY_JOB, async (payload) => {
+    await runPurgeCompanyJob(payload);
   });
 
   // Batch 14: recurring sweeps dispatched by the scheduler run as durable jobs

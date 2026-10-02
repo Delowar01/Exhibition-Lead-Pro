@@ -103,6 +103,32 @@ export function validateBillingReturnUrl(env: string, raw: string | undefined): 
   return { url: normalized, reason: null };
 }
 
+export type ObjectStorageDriverKind = "fs" | "gcs" | "memory" | "none";
+export type ObjectStorageSelection = { driver: ObjectStorageDriverKind; driverReason: string | null };
+
+// Batch 25 — object-storage driver truth table (pure, unit-tested):
+//   OBJECT_STORAGE_DRIVER=fs      → fs (requires OBJECT_STORAGE_FS_ROOT)
+//   OBJECT_STORAGE_DRIVER=gcs     → gcs (requires DEFAULT_OBJECT_STORAGE_BUCKET_ID)
+//   OBJECT_STORAGE_DRIVER=memory  → memory outside production; none in production
+//   OBJECT_STORAGE_DRIVER=none    → none
+//   unset                         → fs when a root is set, else gcs when a bucket
+//                                   is set, else memory outside production, else none
+//   anything else                 → none (UNKNOWN_DRIVER)
+export function resolveObjectStorageDriver(env: string, explicit: string | undefined, inputs: { fsRoot?: string; bucketId?: string }): ObjectStorageSelection {
+  const d = (explicit ?? "").trim().toLowerCase();
+  const hasRoot = !!(inputs.fsRoot ?? "").trim();
+  const hasBucket = !!(inputs.bucketId ?? "").trim();
+  if (d === "fs") return hasRoot ? { driver: "fs", driverReason: null } : { driver: "none", driverReason: "FS_ROOT_MISSING" };
+  if (d === "gcs") return hasBucket ? { driver: "gcs", driverReason: null } : { driver: "none", driverReason: "BUCKET_MISSING" };
+  if (d === "memory") return env === "production" ? { driver: "none", driverReason: "MEMORY_FORBIDDEN_IN_PRODUCTION" } : { driver: "memory", driverReason: null };
+  if (d === "none") return { driver: "none", driverReason: "DISABLED" };
+  if (d !== "") return { driver: "none", driverReason: "UNKNOWN_DRIVER" };
+  if (hasRoot) return { driver: "fs", driverReason: null };
+  if (hasBucket) return { driver: "gcs", driverReason: null };
+  if (env !== "production") return { driver: "memory", driverReason: null };
+  return { driver: "none", driverReason: "NOT_CONFIGURED" };
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -353,19 +379,56 @@ export const config = {
     },
   },
 
+  // Batch 25 — provider-neutral object storage. ONE driver serves every product
+  // object flow (documents, exports, executive reports, scan images, branding
+  // logos) through src/storage/*; features never touch a provider SDK.
+  //   driver   fs (encrypted files on a private volume — local dev, tests, the
+  //            Hostinger VPS) | gcs (TEMPORARY legacy/migration driver over the
+  //            existing bucket) | memory (deterministic; never in production) |
+  //            none (storage not configured: uploads answer 503, readiness
+  //            reports not_configured)
+  // Selection truth table: resolveObjectStorageDriver (pure, unit-tested).
   objectStorage: {
+    ...resolveObjectStorageDriver(nodeEnv, process.env.OBJECT_STORAGE_DRIVER, {
+      fsRoot: process.env.OBJECT_STORAGE_FS_ROOT,
+      bucketId: process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID,
+    }),
+    fsRoot: process.env.OBJECT_STORAGE_FS_ROOT ?? "",
+    // Dedicated encryption secret for objects at rest (fs driver). Read lazily by
+    // the driver factory only; never logged, audited, returned or reused for
+    // anything else (NOT the jobs key, NOT the session secret).
+    encryptionKey: process.env.OBJECT_STORAGE_ENCRYPTION_KEY,
+    // EXPLICIT test-only escape hatch: outside production, a missing key may be
+    // replaced by a random per-process key (objects do not survive a restart).
+    testEphemeralKey: nodeEnv !== "production" && process.env.OBJECT_STORAGE_TEST_EPHEMERAL_KEY === "true",
+    // Hosted transition switches (docs/B25_OBJECT_STORAGE.md):
+    //   legacyFallback — a reference WITHOUT an inventory row (never a
+    //                    tombstoned one) may be served from the legacy bucket
+    //   mirror         — strict mirrored writes: fs primary + GCS copy; a
+    //                    mirror failure fails the write
+    //   legacyDelete   — physically delete legacy GCS objects on tombstone
+    //                    (OFF until the owner approves GCS cleanup)
+    legacyFallback: process.env.OBJECT_STORAGE_LEGACY_FALLBACK === "true",
+    mirror: process.env.OBJECT_STORAGE_MIRROR === "gcs",
+    legacyDelete: process.env.OBJECT_STORAGE_LEGACY_DELETE === "true",
+    // Legacy bucket layout (GCS driver / migration source only).
     bucketId: process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "",
     publicSearchPaths: process.env.PUBLIC_OBJECT_SEARCH_PATHS ?? "",
     privateObjectDir: process.env.PRIVATE_OBJECT_DIR ?? "",
+    // Capability URLs minted after authorization (upload targets / downloads).
+    uploadTtlSec: numEnv("OBJECT_STORAGE_UPLOAD_TTL_SEC", 900, 60),
+    downloadTtlSec: numEnv("OBJECT_STORAGE_DOWNLOAD_TTL_SEC", 300, 30),
+    // Lifecycle sweeps: reserved-but-never-uploaded and uploaded-but-never-attached
+    // objects are removed after these windows; deleting rows are retried.
+    pendingTtlMs: numEnv("OBJECT_STORAGE_PENDING_TTL_MS", 60 * 60 * 1000, 60_000),
+    stagedTtlMs: numEnv("OBJECT_STORAGE_STAGED_TTL_MS", 24 * 60 * 60 * 1000, 60_000),
+    sweepBatchSize: numEnv("OBJECT_STORAGE_SWEEP_BATCH", 200, 1),
   },
 
-  // Tenant branding (Batch 18). Managed logos live in the object-storage bucket
-  // above. OUTSIDE production, when no bucket is configured, an in-process memory
-  // store stands in so local development and the integration suites never touch
-  // live GCS (set BRANDING_STORAGE_STUB=false to disable). In production a missing
-  // bucket makes logo upload/remove answer 503 (colors/theme still work).
+  // Tenant branding (Batch 18). Managed logos go through the object-storage
+  // boundary above (Batch 25); the former BRANDING_STORAGE_STUB memory stand-in
+  // is replaced by the memory / fs drivers.
   branding: {
-    storageStub: nodeEnv !== "production" && process.env.BRANDING_STORAGE_STUB !== "false",
     maxLogoBytes: 2 * 1024 * 1024,
   },
 

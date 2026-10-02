@@ -10,6 +10,7 @@ import {
 import { config } from "../../config.js";
 import { logger } from "../logger.js";
 import * as tokensRepo from "../../repositories/verification_tokens.repository.js";
+import { sweepStorage } from "../../services/storage.service.js";
 
 // Recurring maintenance tasks (Phase 2.6). Each task is idempotent and safe to run
 // repeatedly and concurrently across instances: they operate on time-windowed rows
@@ -110,6 +111,16 @@ export async function cleanupQueueJobs(): Promise<number> {
   return removed;
 }
 
+// Batch 25: object-storage repair sweep — reserved-but-never-uploaded and
+// uploaded-but-never-attached objects past their windows, delete retries,
+// objects orphaned by hard-deleted rows / companies, and old tombstone rows of
+// deleted companies. Bounded per run and idempotent; returns the number of
+// objects settled.
+export async function sweepObjectStorage(): Promise<number> {
+  const s = await sweepStorage();
+  return s.stalePending + s.staleStaged + s.retriedDeletes + s.companyOrphans + s.entityOrphans + s.purgedTombstones;
+}
+
 // Runs every maintenance task, isolating failures so one bad task never blocks the
 // others. Returns a per-task summary for logging.
 export async function runMaintenance(): Promise<Record<string, number | "error">> {
@@ -120,6 +131,7 @@ export async function runMaintenance(): Promise<Record<string, number | "error">
     ["oldNotifications", cleanupOldNotifications],
     ["oldAuditLogs", cleanupOldAuditLogs],
     ["queueJobs", cleanupQueueJobs],
+    ["storageSweep", sweepObjectStorage],
   ];
   const summary: Record<string, number | "error"> = {};
   for (const [name, fn] of tasks) {

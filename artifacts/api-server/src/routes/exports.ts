@@ -4,6 +4,7 @@ import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateExportBody, CreateExportScheduleBody, UpdateExportScheduleBody } from "@workspace/api-zod";
 import * as exports from "../services/export.service.js";
+import { publicBaseUrl } from "../services/storage.service.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -26,7 +27,7 @@ router.get("/exports/runs", requirePermission("reports", "view"), async (req: Au
 
 // GET /exports/runs/:id/download
 router.get("/exports/runs/:id/download", requirePermission("reports", "view"), async (req: AuthRequest, res) => {
-  res.json(await exports.getRunDownloadUrl(req.user!, parseInt(String(req.params.id))));
+  res.json(await exports.getRunDownloadUrl(req.user!, parseInt(String(req.params.id)), publicBaseUrl(req)));
 });
 
 // ── Schedules (static sub-paths BEFORE /exports/schedules/:id) ────────────────
@@ -43,7 +44,7 @@ router.post("/exports/schedules", requirePermission("reports", "view"), validate
 
 // POST /exports/schedules/:id/run
 router.post("/exports/schedules/:id/run", requirePermission("reports", "view"), async (req: AuthRequest, res) => {
-  res.status(201).json(await exports.runScheduleNow(req.user!, parseInt(String(req.params.id))));
+  res.status(201).json(await exports.runScheduleNow(req.user!, parseInt(String(req.params.id)), publicBaseUrl(req)));
 });
 
 // PATCH /exports/schedules/:id
@@ -60,7 +61,7 @@ router.delete("/exports/schedules/:id", requirePermission("reports", "view"), as
 
 // POST /exports
 router.post("/exports", requirePermission("reports", "view"), validateBody(CreateExportBody), async (req: AuthRequest, res) => {
-  res.status(201).json(await exports.createExport(req.user!, req.body ?? {}));
+  res.status(201).json(await exports.createExport(req.user!, req.body ?? {}, publicBaseUrl(req)));
 });
 
 export default router;

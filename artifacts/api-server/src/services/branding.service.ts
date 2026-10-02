@@ -17,7 +17,7 @@ import { writeAudit } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 import { resolveBranding, publicBranding, validateBrandingInput, type ResolvedBranding, type PublicBranding } from "../lib/branding/model.js";
 import { validateLogoUpload } from "../lib/branding/logo.js";
-import { keyBelongsTo, logoStore, newLogoKey, storageUnavailable } from "../lib/branding/storage.js";
+import { deleteLogo, getLogo, keyBelongsTo, logoStorageAvailable, putLogo, storageUnavailable } from "../lib/branding/storage.js";
 
 /** The company a tenant user may manage: always their own (never a body/query value). */
 export function tenantCompanyId(user: AuthUser): number {
@@ -69,29 +69,26 @@ export async function updateBranding(req: Request, companyId: number, input: unk
 export async function uploadLogo(req: Request, companyId: number, bytes: Buffer | undefined, declaredType: string | undefined): Promise<ResolvedBranding> {
   const before = await loadCompany(companyId);
   const logo = await validateLogoUpload(bytes, declaredType);
-  const store = logoStore();
-  if (store.kind === "none") throw storageUnavailable();
-  const key = newLogoKey(companyId, logo.extension);
-  try {
-    await store.put(key, logo.buffer, logo.contentType);
-  } catch (err) {
-    logger.error({ err, companyId }, "Branding logo upload: storage write failed (branding unchanged)");
-    throw storageUnavailable();
-  }
+  if (!logoStorageAvailable()) throw storageUnavailable();
+  // Batch 25: the bytes go through the object-storage boundary; the returned
+  // key is the tenant-scoped reference (and the public route's random id).
+  const key = await putLogo(companyId, logo.buffer, logo.contentType, logo.extension);
   let updated: companiesRepo.CompanyRow | undefined;
   try {
     updated = await companiesRepo.update(companyId, { brandLogoKey: key, brandLogoContentType: logo.contentType, updatedAt: new Date() });
   } catch (err) {
     // The row did not change; do not leave the fresh object behind.
-    await store.delete(key).catch(() => undefined);
+    await deleteLogo(companyId, key).catch(() => undefined);
     throw err;
   }
   if (!updated) {
-    await store.delete(key).catch(() => undefined);
+    await deleteLogo(companyId, key).catch(() => undefined);
     throw new AppError(404, "Organization not found");
   }
   if (before.brandLogoKey && before.brandLogoKey !== key && keyBelongsTo(companyId, before.brandLogoKey)) {
-    await store.delete(before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: previous logo object could not be deleted"));
+    // Tombstone-first: the previous id stops resolving immediately even if the
+    // physical delete has to be retried later.
+    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: previous logo object could not be deleted"));
   }
   await writeAudit(req, {
     action: "branding.logo.replace",
@@ -117,7 +114,7 @@ export async function removeLogo(req: Request, companyId: number): Promise<Resol
   const updated = await companiesRepo.update(companyId, { brandLogoKey: null, brandLogoContentType: null, logoUrl: null, updatedAt: new Date() });
   if (!updated) throw new AppError(404, "Organization not found");
   if (before.brandLogoKey && keyBelongsTo(companyId, before.brandLogoKey)) {
-    await logoStore().delete(before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: logo object could not be deleted after removal"));
+    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: logo object could not be deleted after removal"));
   }
   await writeAudit(req, {
     action: "branding.logo.remove",
@@ -143,7 +140,7 @@ export async function resetBranding(req: Request, companyId: number): Promise<Re
   });
   if (!updated) throw new AppError(404, "Organization not found");
   if (before.brandLogoKey && keyBelongsTo(companyId, before.brandLogoKey)) {
-    await logoStore().delete(before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: logo object could not be deleted after reset"));
+    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: logo object could not be deleted after reset"));
   }
   await writeAudit(req, {
     action: "branding.reset",
@@ -165,7 +162,7 @@ export interface LogoBytes {
 export async function readLogo(companyId: number): Promise<LogoBytes | null> {
   const company = await companiesRepo.findById(companyId);
   if (!company?.brandLogoKey || !keyBelongsTo(companyId, company.brandLogoKey)) return null;
-  const stored = await logoStore().get(company.brandLogoKey);
+  const stored = await getLogo(companyId, company.brandLogoKey);
   if (!stored) return null;
   return { buffer: stored.buffer, contentType: company.brandLogoContentType ?? stored.contentType, etag: `"${company.brandLogoKey.split("/").pop()}"` };
 }

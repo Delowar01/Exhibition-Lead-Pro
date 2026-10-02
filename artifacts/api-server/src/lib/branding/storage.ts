@@ -1,121 +1,68 @@
 // =============================================================================
-// Batch 18 — managed logo object store. Objects are tenant-scoped by key prefix
-// (`branding/<companyId>/<random>.<ext>`); the database keeps ONLY that key.
-// Drivers:
-//   gcs     the configured bucket (DEFAULT_OBJECT_STORAGE_BUCKET_ID) — production
-//   memory  in-process map, non-production only when no bucket is configured, so
-//           local development and the integration suites never touch live GCS
-//   none    production without a bucket: every operation answers 503
-// Nothing here ever returns a bucket path, a signed URL or credentials.
+// Batch 18 / Batch 25 — managed logo storage. Logo VALIDATION (lib/branding/
+// logo.ts) is unchanged; the BYTES now pass through the provider-neutral
+// object-storage boundary (services/storage.service.ts) like every other
+// product file. The database keeps ONLY the tenant-scoped reference
+// (`branding/<companyId>/<32 hex>.<ext>`), which is also the id used by the
+// public randomized logo route. Nothing here ever returns a bucket path, a
+// filesystem path, a signed URL or credentials.
 // =============================================================================
-import { randomBytes } from "node:crypto";
-import { objectStorageClient } from "../objectStorage.js";
-import { config } from "../../config.js";
 import { logger } from "../logger.js";
 import { AppError } from "../../middlewares/errorHandler.js";
+import { StorageError } from "../../storage/contract.js";
+import { storageConfigured } from "../../storage/registry.js";
+import * as storage from "../../services/storage.service.js";
 
 export interface StoredLogo {
   buffer: Buffer;
   contentType: string;
 }
 
-export interface LogoObjectStore {
-  readonly kind: "gcs" | "memory" | "none";
-  put(key: string, buffer: Buffer, contentType: string): Promise<void>;
-  get(key: string): Promise<StoredLogo | null>;
-  delete(key: string): Promise<void>;
-}
-
 export function storageUnavailable(): AppError {
   return new AppError(503, "Logo storage is not available right now. Colors and theme were not changed.", { code: "BRANDING_STORAGE_UNAVAILABLE" });
 }
 
-export function newLogoKey(companyId: number, extension: "png" | "jpg" | "webp"): string {
-  return `branding/${companyId}/${randomBytes(16).toString("hex")}.${extension}`;
-}
-
 /** A key belongs to exactly one tenant; refuse anything that does not carry its prefix. */
 export function keyBelongsTo(companyId: number, key: string | null | undefined): boolean {
-  return typeof key === "string" && key.startsWith(`branding/${companyId}/`);
+  return typeof key === "string" && /^branding\/\d+\/[0-9a-f]{32}\.(png|jpg|webp)$/.test(key) && key.startsWith(`branding/${companyId}/`);
 }
 
-class GcsLogoStore implements LogoObjectStore {
-  readonly kind = "gcs" as const;
-  constructor(private readonly bucketId: string) {}
-  private file(key: string) {
-    return objectStorageClient.bucket(this.bucketId).file(key);
-  }
-  async put(key: string, buffer: Buffer, contentType: string) {
-    await this.file(key).save(buffer, { contentType, resumable: false, metadata: { cacheControl: "private, max-age=0" } });
-  }
-  async get(key: string) {
-    const f = this.file(key);
-    const [exists] = await f.exists();
-    if (!exists) return null;
-    const [buffer] = await f.download();
-    const [meta] = await f.getMetadata();
-    return { buffer, contentType: (meta.contentType as string) || "application/octet-stream" };
-  }
-  async delete(key: string) {
-    await this.file(key).delete({ ignoreNotFound: true });
-  }
+export function logoStorageAvailable(): boolean {
+  return storageConfigured();
 }
 
-class MemoryLogoStore implements LogoObjectStore {
-  readonly kind = "memory" as const;
-  private readonly objects = new Map<string, StoredLogo>();
-  /** Non-production test hook: the next `put` fails when set (see routes/branding.ts). */
-  failNextPut = false;
-  async put(key: string, buffer: Buffer, contentType: string) {
-    if (this.failNextPut) {
-      this.failNextPut = false;
-      throw new Error("simulated storage failure");
-    }
-    this.objects.set(key, { buffer: Buffer.from(buffer), contentType });
-  }
-  async get(key: string) {
-    const o = this.objects.get(key);
-    return o ? { buffer: o.buffer, contentType: o.contentType } : null;
-  }
-  async delete(key: string) {
-    this.objects.delete(key);
-  }
-}
-
-class UnavailableLogoStore implements LogoObjectStore {
-  readonly kind = "none" as const;
-  async put(): Promise<void> {
-    throw storageUnavailable();
-  }
-  async get(): Promise<StoredLogo | null> {
-    return null;
-  }
-  async delete(): Promise<void> {
+/** Store a validated logo for the tenant; returns the new reference key. Any storage failure answers 503. */
+export async function putLogo(companyId: number, buffer: Buffer, contentType: string, extension: "png" | "jpg" | "webp"): Promise<string> {
+  if (!storageConfigured()) throw storageUnavailable();
+  try {
+    const stored = await storage.storeBuffer({ companyId, kind: "branding_logo", contentType, buffer, entityType: "company", entityId: companyId, extension });
+    return stored.reference;
+  } catch (err) {
+    logger.error({ err, companyId }, "Branding logo upload: storage write failed (branding unchanged)");
     throw storageUnavailable();
   }
 }
 
-let store: LogoObjectStore | null = null;
-
-export function logoStore(): LogoObjectStore {
-  if (store) return store;
-  const bucketId = config.objectStorage.bucketId;
-  if (bucketId) {
-    store = new GcsLogoStore(bucketId);
-  } else if (config.branding.storageStub) {
-    store = new MemoryLogoStore();
-    logger.warn("Branding logo storage: in-process memory stub (no object-storage bucket configured; non-production only)");
-  } else {
-    store = new UnavailableLogoStore();
-    logger.warn("Branding logo storage: NOT configured — logo upload/remove will answer 503");
+/** Read a tenant's logo bytes; null when the key is not the tenant's or the object is gone. */
+export async function getLogo(companyId: number, key: string): Promise<StoredLogo | null> {
+  if (!keyBelongsTo(companyId, key)) return null;
+  try {
+    const read = await storage.readObjectBuffer({ companyId, kind: "branding_logo", reference: key }, storage.OBJECT_LIMITS.branding_logo);
+    return read ? { buffer: read.buffer, contentType: read.contentType } : null;
+  } catch (err) {
+    if (err instanceof StorageError && err.code === "STORAGE_NOT_FOUND") return null;
+    logger.warn({ err, companyId }, "Branding logo read failed");
+    throw storageUnavailable();
   }
-  return store;
 }
 
-/** Non-production only: make the memory store fail its next write (storage-failure rollback tests). */
+/** Tombstone + delete a tenant's logo object (idempotent; the tombstone makes the old id unservable immediately). */
+export async function deleteLogo(companyId: number, key: string): Promise<void> {
+  if (!keyBelongsTo(companyId, key)) return;
+  await storage.deleteByReference({ companyId, kind: "branding_logo", reference: key });
+}
+
+/** Non-production only: make the next storage write fail (storage-failure rollback tests). */
 export function armStorageFailureForTests(): boolean {
-  const s = logoStore();
-  if (config.isProduction || s.kind !== "memory") return false;
-  (s as MemoryLogoStore).failNextPut = true;
-  return true;
+  return storage.armPrimaryFailureForTests();
 }

@@ -58,3 +58,4 @@ export * from "./plan_prices";
 export * from "./billing_provider_events";
 export * from "./billing_checkout_sessions";
 export * from "./subscription_usage_reservations";
+export * from "./storage_objects";

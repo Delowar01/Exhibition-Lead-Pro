@@ -1,11 +1,10 @@
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse, ReadinessCheckResponse } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
-import { config } from "../config.js";
-import { objectStorageClient } from "../lib/objectStorage.js";
 import { liveSnapshot, type MetricsSnapshotData } from "../lib/metrics.js";
 import { AppError } from "../middlewares/errorHandler.js";
 import { requireAuth, requireRole } from "../middlewares/requireAuth.js";
+import { getPrimaryDriver, storageConfigured } from "../storage/registry.js";
 
 const router: IRouter = Router();
 
@@ -16,34 +15,27 @@ router.get("/healthz", (_req, res) => {
   res.json(data);
 });
 
-// Real object-storage reachability probe (closes tech-debt M2). Bounded so a slow or
-// unreachable bucket can't hang readiness: a ~2s race returns "error" instead of blocking.
-// Returns "not_configured" when no bucket is set (storage is optional in some envs).
+// Real object-storage reachability probe (closes tech-debt M2; Batch 25 drives
+// it through the PRIMARY storage driver). Bounded so a slow or unreachable
+// store can't hang readiness: every driver's probe() carries its own timeout
+// and a failure returns "error" instead of blocking. "not_configured" when no
+// driver is configured (storage is optional in some envs).
 //
-// Least privilege: the probe is a single-object LIST (storage.objects.list), which the
-// deployment's bucket-scoped Storage Object Admin grant permits. bucket().exists() is
-// deliberately NOT used — it needs bucket-level storage.buckets.get, which the service
-// account intentionally lacks. The probe never creates, reads, or deletes objects; an
-// empty result still proves reachability (only a rejected call is an error).
+//   fs      write → read → verify → delete of ONE small object under the
+//           dedicated `health/` namespace (never a tenant prefix); the probe
+//           cleans up after itself and reports no path or key.
+//   gcs     the legacy least-privilege single-object LIST (Storage Object
+//           Admin scope only; never a bucket-metadata call).
+//   memory  trivial round trip.
 // Exported for the focused unit tests in test/unit-health-storage.test.ts.
 export async function checkStorageReachable(): Promise<"ok" | "error" | "not_configured"> {
-  const bucketId = config.objectStorage.bucketId;
-  if (!bucketId) return "not_configured";
-  let timer: NodeJS.Timeout | undefined;
+  if (!storageConfigured()) return "not_configured";
   try {
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("storage probe timed out")), 2000);
-    });
-    const probe = objectStorageClient
-      .bucket(bucketId)
-      // autoPaginate:false caps the probe at exactly one API request.
-      .getFiles({ maxResults: 1, prefix: ".private/", autoPaginate: false });
-    await Promise.race([probe, timeout]);
+    const driver = await getPrimaryDriver();
+    await driver.probe();
     return "ok";
   } catch {
     return "error";
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
@@ -73,7 +65,8 @@ router.get("/readyz", async (req, res) => {
 });
 
 // Operational metrics snapshot (request counts/latency/error rate + LIVE job-queue
-// stats). Gated to platform_owner — operational internals, not a public endpoint.
+// stats + Batch 25 object-storage counters). Gated to platform_owner — operational
+// internals, not a public endpoint.
 // Batch 24: `jobs.pending` comes from the queue's authoritative state (the durable
 // job_queue table under the postgres driver); when that read fails the endpoint
 // answers 503 METRICS_UNAVAILABLE — never a negative, zero or stale substitute.

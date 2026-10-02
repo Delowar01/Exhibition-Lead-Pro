@@ -53,8 +53,8 @@ export async function update(id: number, data: Partial<typeof companiesTable.$in
 // Companies are the tenant boundary itself; deleting one is a platform-level
 // lifecycle action whose ON DELETE CASCADE wipes the whole tenant. Soft-delete is
 // deliberately NOT applied here (see Phase 2.3 notes) — this stays a hard delete.
-export async function remove(id: number): Promise<void> {
-  await db.delete(companiesTable).where(eq(companiesTable.id, id));
+export async function remove(id: number, tx?: Executor): Promise<void> {
+  await exec(tx).delete(companiesTable).where(eq(companiesTable.id, id));
 }
 
 export async function insertActivityLog(values: typeof activityLogsTable.$inferInsert, tx?: Executor): Promise<void> {

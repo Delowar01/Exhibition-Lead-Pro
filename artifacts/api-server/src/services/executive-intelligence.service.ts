@@ -11,7 +11,8 @@ import { PROMPTS } from "../ai/prompts.js";
 import type { AppLanguage } from "../lib/ai.js";
 import { getQueue } from "../lib/jobs/queue.js";
 import { generateFile, type ExportFormat } from "../lib/export-generate.js";
-import { uploadExportBuffer, exportDownloadURL } from "../lib/exportStorage.js";
+import { uploadExportBuffer, exportDownloadURL, discardExportObject } from "../lib/exportStorage.js";
+import { publicBaseUrl } from "./storage.service.js";
 import { assertTenantWritable } from "../lib/company-access.js";
 
 // Stage 5C — Enterprise AI Executive Intelligence orchestration.
@@ -695,12 +696,12 @@ const REPORT_TYPES = new Set(["executive_summary", "performance", "forecast", "f
 const REPORT_FORMATS = new Set(["pdf", "xlsx"]);
 
 // Map the persisted row to the API response shape. `downloadUrl` is minted fresh
-// (short-lived signed URL) only when the file is ready — it is never persisted.
-async function toReportResponse(row: import("@workspace/db").ExecutiveReport) {
+// (short-lived capability URL) only when the file is ready — it is never persisted.
+async function toReportResponse(row: import("@workspace/db").ExecutiveReport, base: string) {
   let downloadUrl: string | null = null;
   if (row.status === "ready" && row.objectPath) {
     try {
-      downloadUrl = await exportDownloadURL(row.objectPath, 300);
+      downloadUrl = await exportDownloadURL(base, { companyId: row.companyId, kind: "report", objectPath: row.objectPath, userId: null, fileName: row.fileName }, 300);
     } catch {
       downloadUrl = null; // storage hiccup — surface the row without a URL rather than 500
     }
@@ -739,7 +740,7 @@ export interface GenerateReportOpts {
   language?: AppLanguage;
 }
 
-export async function generateReport(user: AuthUser, opts: GenerateReportOpts) {
+export async function generateReport(user: AuthUser, opts: GenerateReportOpts, base: string = publicBaseUrl()) {
   const reportType = String(opts.reportType ?? "");
   const format = String(opts.format ?? "");
   const periodType = opts.periodType ?? "monthly";
@@ -765,20 +766,20 @@ export async function generateReport(user: AuthUser, opts: GenerateReportOpts) {
     { companyId: user.companyId!, reportId: row.id, scopeType: resolved.scope.type, scopeId, reportType, periodType, format, userId: user.id },
     { maxAttempts: 1, dedupeKey: `exec-report:${row.id}` },
   );
-  return toReportResponse(row);
+  return toReportResponse(row, base);
 }
 
-export async function listReports(user: AuthUser, limit = 20) {
+export async function listReports(user: AuthUser, limit = 20, base: string = publicBaseUrl()) {
   const scope = await computeReadScope(user);
   const rows = await execRepo.listReports(user, scope, limit);
-  return Promise.all(rows.map(toReportResponse));
+  return Promise.all(rows.map((row) => toReportResponse(row, base)));
 }
 
-export async function getReport(user: AuthUser, id: number) {
+export async function getReport(user: AuthUser, id: number, base: string = publicBaseUrl()) {
   const scope = await computeReadScope(user);
   const row = await execRepo.getReportById(user, scope, id);
   if (!row) throw new AppError(404, "Report not found");
-  return toReportResponse(row);
+  return toReportResponse(row, base);
 }
 
 // Compose a title + column/row matrix for a report type from the real dashboard.
@@ -858,6 +859,7 @@ function composeReportTable(reportType: string, periodType: string, dash: Awaite
 // Any failure marks the row failed (never crashes the process); maxAttempts is 1.
 export async function runExecutiveReportJob(payload: ExecutiveReportJobPayload): Promise<void> {
   const { companyId, reportId } = payload;
+  let storedPath: string | null = null;
   try {
     await execRepo.updateReportResult(companyId, reportId, { status: "generating" });
     // Rebuild the requester's full AuthUser so the tenant-scoped dashboard read is
@@ -876,7 +878,10 @@ export async function runExecutiveReportJob(payload: ExecutiveReportJobPayload):
     const exportFormat: ExportFormat = payload.format === "xlsx" ? "excel" : "pdf";
     const buffer = await generateFile({ format: exportFormat, title, columns, rows });
     const contentType = payload.format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf";
-    const { objectPath } = await uploadExportBuffer(buffer, contentType);
+    // Batch 25: stored through the object-storage boundary, bound to this report row
+    // up front; a later failure tombstones the object so nothing is left untracked.
+    const { objectPath } = await uploadExportBuffer(buffer, contentType, { companyId, kind: "report", entityType: "executive_report", entityId: reportId });
+    storedPath = objectPath;
     const fileName = `${payload.reportType}-${periodType}-${dash.scope.type}-${todayStr()}.${payload.format}`;
     await execRepo.updateReportResult(companyId, reportId, {
       status: "ready",
@@ -893,6 +898,7 @@ export async function runExecutiveReportJob(payload: ExecutiveReportJobPayload):
       data: { title, generatedAt: dash.generatedAt, sections },
     });
   } catch (err) {
+    if (storedPath) await discardExportObject({ companyId, kind: "report", objectPath: storedPath }).catch(() => undefined);
     await execRepo.updateReportResult(companyId, reportId, {
       status: "failed",
       error: err instanceof Error ? err.message : String(err),

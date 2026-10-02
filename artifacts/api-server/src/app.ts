@@ -19,6 +19,7 @@ import {
 } from "./lib/httpPolicy.js";
 import type { AuthRequest } from "./middlewares/requireAuth.js";
 import { stripeWebhookHandler } from "./routes/billing-webhook.js";
+import filesRouter from "./routes/files.js";
 
 const app: Express = express();
 
@@ -130,6 +131,11 @@ app.use(
 // sent uncompressed. Additive: changes transport encoding only, never the body.
 app.use(compression());
 app.use(cookieParser());
+// Batch 25 — product-file bytes (capability-URL uploads / downloads) are
+// streamed by routes/files.ts, mounted BEFORE the JSON/urlencoded parsers so no
+// body parser ever buffers an upload. Authorization is the short-lived
+// capability minted by the feature route after the normal auth/tenant checks.
+app.use(["/api/v1", "/api"], filesRouter);
 // Batch 20 — Stripe webhook: a STRICT raw-body parser mounted BEFORE any JSON
 // parser so the signature is verified over the unmodified bytes. Public route
 // (no session); authenticity is the provider signature. Oversized bodies → 413.

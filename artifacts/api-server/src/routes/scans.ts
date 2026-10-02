@@ -1,3 +1,5 @@
+import { AppError } from "../middlewares/errorHandler.js";
+import { pipeline } from "node:stream/promises";
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
 import { auditMutations } from "../lib/audit.js";
@@ -63,10 +65,19 @@ router.get("/scans/batch/:jobId", requirePermission("scans", "view"), async (req
 // MUST be declared before GET /scans/:id to avoid param-swallowing
 router.get("/scans/:id/image", async (req: AuthRequest, res) => {
   const id = parseInt(String(req.params.id));
-  const { stream, contentType } = await scans.getScanImageStream(req.user!, id);
+  const { stream, contentType, sizeBytes } = await scans.getScanImageStream(req.user!, id);
   res.setHeader("Content-Type", contentType);
+  if (sizeBytes != null) res.setHeader("Content-Length", String(sizeBytes));
   res.setHeader("Cache-Control", "private, max-age=86400");
-  stream.pipe(res);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  try {
+    await pipeline(stream, res);
+  } catch {
+    // Headers already sent: a mid-stream integrity failure ends as a truncated
+    // transfer (never a silently short image).
+    if (!res.headersSent) throw new AppError(404, "Image not found in storage");
+    res.destroy();
+  }
 });
 
 // GET /scans/:id

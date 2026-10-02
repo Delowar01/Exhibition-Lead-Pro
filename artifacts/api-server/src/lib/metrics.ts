@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { getQueue } from "./jobs/queue.js";
+import { storageMetrics, type StorageMetricsSnapshot } from "../services/storage.service.js";
 
 // Phase 2.10 — in-process request/job metrics. A tiny, dependency-free registry that
 // accumulates request counts (by status class), latency (sum/max for avg + worst case),
@@ -63,6 +64,10 @@ export interface MetricsSnapshotData {
     byStatusClass: Record<StatusClass, number>;
   };
   jobs: ReturnType<ReturnType<typeof getQueue>["stats"]>;
+  // Batch 25: object-storage driver + counters (primary failures, legacy
+  // fallback reads, mirror failures, migration verification failures, delete
+  // failures) and the inventory's pending upload / pending delete backlog.
+  storage: StorageMetricsSnapshot;
 }
 
 // Batch 24: the operator snapshot carries the LIVE job-queue view. `pending` is
@@ -71,7 +76,7 @@ export interface MetricsSnapshotData {
 // If that state cannot be read the promise rejects — the /metrics route answers
 // 503 METRICS_UNAVAILABLE instead of a fabricated or stale number.
 export async function liveSnapshot(): Promise<MetricsSnapshotData> {
-  const jobs = await getQueue().liveStats();
+  const [jobs, storage] = await Promise.all([getQueue().liveStats(), storageMetrics()]);
   if (!Number.isInteger(jobs.pending) || jobs.pending < 0) {
     throw new Error("job-queue pending count is not a non-negative integer");
   }
@@ -87,5 +92,6 @@ export async function liveSnapshot(): Promise<MetricsSnapshotData> {
       byStatusClass: { ...byStatusClass },
     },
     jobs,
+    storage,
   };
 }

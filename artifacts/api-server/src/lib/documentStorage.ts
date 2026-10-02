@@ -1,10 +1,11 @@
-import { ObjectStorageService } from "./objectStorage.js";
+import type { Request } from "express";
 import { AppError } from "../middlewares/errorHandler.js";
+import * as storage from "../services/storage.service.js";
 
-const objectStorage = new ObjectStorageService();
+const INLINE_SAFE_TYPES = storage.INLINE_SAFE_TYPES;
 
 // ── Upload constraints (enforced at both upload-URL request and create/version).
-export const MAX_DOCUMENT_SIZE = 25 * 1024 * 1024; // 25 MB
+export const MAX_DOCUMENT_SIZE = storage.OBJECT_LIMITS.document; // 25 MB
 
 // Allowlist of accepted document MIME types (images, PDFs, Office docs, plain
 // text/CSV, and common archives). Anything else is rejected with a 400.
@@ -100,17 +101,41 @@ export function assertValidUpload(mimeType: string, fileSize: number): void {
   }
 }
 
-// Request a presigned PUT URL for a direct-to-storage upload. Returns both the
-// signed URL (client PUTs the file here) and the normalized `/objects/...` path
-// the client echoes back when creating the document/version.
-export async function requestUploadURL(): Promise<{ uploadURL: string; objectPath: string }> {
-  const uploadURL = await objectStorage.getObjectEntityUploadURL();
-  const objectPath = objectStorage.normalizeObjectEntityPath(uploadURL);
-  return { uploadURL, objectPath };
+// Batch 25 — reserve an upload target for the AUTHENTICATED tenant. Returns the
+// short-lived capability URL the client PUTs the bytes to and the opaque
+// `/objects/...` handle it echoes back when creating the document/version. The
+// handle is bound to this tenant in the object inventory before any byte lands;
+// a handle posted by another tenant (or never uploaded) is rejected on create.
+export async function requestUploadURL(
+  req: Request,
+  input: { companyId: number; userId: number; contentType: string; size: number },
+): Promise<{ uploadURL: string; objectPath: string }> {
+  const reserved = await storage.reserveUpload(req, {
+    companyId: input.companyId,
+    userId: input.userId,
+    kind: "document",
+    contentType: input.contentType,
+    declaredSize: input.size,
+  });
+  return { uploadURL: reserved.uploadURL, objectPath: reserved.reference };
 }
 
-// Mint a short-lived signed GET URL for download/preview. Throws
-// ObjectNotFoundError (mapped to 404 by callers) if the object is missing.
-export async function getDownloadURL(objectPath: string, ttlSec = 300): Promise<string> {
-  return objectStorage.getObjectEntityDownloadURL(objectPath, ttlSec);
+// Mint a short-lived download/preview capability URL for a stored version.
+// Resolves to null when the object no longer exists (callers answer 404).
+// Browser-previewable types (images, PDF, plain text) open inline; everything
+// else is served as an attachment — decided server-side from the stored type.
+export async function getDownloadURL(
+  base: string,
+  input: { companyId: number; objectPath: string; userId: number | null; fileName: string; mimeType: string },
+  ttlSec?: number,
+): Promise<string | null> {
+  return storage.mintDownloadUrl(base, {
+    companyId: input.companyId,
+    kind: "document",
+    reference: input.objectPath,
+    userId: input.userId,
+    fileName: input.fileName,
+    disposition: INLINE_SAFE_TYPES.has(input.mimeType.toLowerCase()) ? "inline" : "attachment",
+    ttlSec,
+  });
 }

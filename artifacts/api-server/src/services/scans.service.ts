@@ -3,7 +3,7 @@ import { type AuthUser } from "../middlewares/requireAuth.js";
 import { refInCompany } from "../lib/tenant.js";
 import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "../lib/ai.js";
 import { validateScanImage, hasReadableCard } from "../lib/image-validation.js";
-import { streamScanImage, loadScanImageBase64, uploadScanImage } from "../lib/imageStorage.js";
+import { streamScanImage, loadScanImageBase64, uploadScanImage, deleteScanImage } from "../lib/imageStorage.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { analyzeCaptureFields } from "../lib/capture-validation.js";
@@ -208,7 +208,7 @@ export async function getScanImageStream(user: AuthUser, id: number) {
   if (!scan) throw new AppError(404, "Scan not found");
   if (!scan.imageUrl) throw new AppError(404, "No image stored for this scan");
   try {
-    return await streamScanImage(scan.imageUrl);
+    return await streamScanImage(scan.companyId, scan.imageUrl);
   } catch {
     throw new AppError(404, "Image not found in storage");
   }
@@ -238,7 +238,7 @@ export async function reprocessScan(user: AuthUser, id: number, body: { appLangu
 
   let base64: string;
   try {
-    base64 = await loadScanImageBase64(scan.imageUrl);
+    base64 = await loadScanImageBase64(scan.companyId, scan.imageUrl);
   } catch {
     throw new AppError(404, "Stored image is unavailable. Replace the image and try again.");
   }
@@ -294,6 +294,11 @@ export async function replaceScanImage(user: AuthUser, id: number, body: { image
     throw new AppError(502, "Could not store the replacement image. Please try again.");
   }
   await scansRepo.setImageUrl(id, objectKey);
+  // Batch 25: the replaced image is tombstoned (unservable at once) and removed;
+  // a failed physical delete is retried by the durable job / storage sweep.
+  if (scan.imageUrl && scan.imageUrl !== objectKey) {
+    await deleteScanImage(scan.companyId, scan.imageUrl).catch(() => undefined);
+  }
 
   let ocr: Awaited<ReturnType<typeof extractCardData>>;
   try {

@@ -7,6 +7,7 @@ import { backfillAiCopilotPermissions, backfillAiWorkflowPermissions, backfillAi
 import { config } from "./config.js";
 import { recoverOrphanedWorkflowRuns } from "./lib/workflows/recovery";
 import { ensurePlanCatalog } from "./lib/billing/plan-catalog";
+import { initStorage } from "./storage/registry.js";
 
 const port = config.port;
 
@@ -29,54 +30,67 @@ function shutdown(signal: string): void {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
+function listen(): void {
+  app.listen(port, (err) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
 
-  logger.info({ port }, "Server listening");
-  // One-time idempotent RBAC backfill: ensure pre-existing admin/employee rows carry the
-  // Stage 5B `ai_copilot` permission so shipping the gated copilot routes doesn't lock
-  // them out. Never blocks startup — logs and continues on failure.
-  backfillAiCopilotPermissions().catch((err) => {
-    logger.error({ err }, "ai_copilot permission backfill failed");
-  });
-  // Stage 5F `ai_workflow` permission backfill — same no-lockout guarantee.
-  backfillAiWorkflowPermissions().catch((err) => {
-    logger.error({ err }, "ai_workflow permission backfill failed");
-  });
-  // Stage 5C `ai_executive` permission backfill — same no-lockout guarantee.
-  backfillAiExecutivePermissions().catch((err) => {
-    logger.error({ err }, "ai_executive permission backfill failed");
-  });
-  // Stage 5D `ai_assistant` permission backfill — same no-lockout guarantee.
-  backfillAiAssistantPermissions().catch((err) => {
-    logger.error({ err }, "ai_assistant permission backfill failed");
-  });
-  // Batch 15 `workflows` permission backfill (admins only) — same no-lockout guarantee.
-  backfillWorkflowsPermissions().catch((err) => {
-    logger.error({ err }, "workflows permission backfill failed");
-  });
-  // Batch 20: idempotent plan catalog seed (insert-if-missing; never overwrites an
-  // operator's edits, never invents prices). The subscription REPAIR is a separate
-  // explicit command (scripts/repair-subscriptions.ts) and is never run at startup.
-  ensurePlanCatalog()
-    .then((r) => {
-      if (r.inserted.length) logger.info({ inserted: r.inserted }, "Plan catalog seeded");
-    })
-    .catch((err) => {
-      logger.error({ err }, "plan catalog seed failed");
+    logger.info({ port }, "Server listening");
+    // One-time idempotent RBAC backfill: ensure pre-existing admin/employee rows carry the
+    // Stage 5B `ai_copilot` permission so shipping the gated copilot routes doesn't lock
+    // them out. Never blocks startup — logs and continues on failure.
+    backfillAiCopilotPermissions().catch((err) => {
+      logger.error({ err }, "ai_copilot permission backfill failed");
     });
-  // Background job queue (async email/notification delivery) + recurring maintenance
-  // scheduler (token/session cleanup, invitation expiry, retention, follow-ups).
-  startWorkers();
-  startScheduler();
-  // Batch 16: after a restart, re-enqueue workflow runs the previous process left
-  // behind (persisted but never enqueued / abandoned mid-run). The recurring
-  // scheduler repeats this sweep; both are idempotent (unique run rows, dedupe keys,
-  // execution lease). Never blocks startup.
-  recoverOrphanedWorkflowRuns().catch((err) => {
-    logger.error({ err }, "workflow run recovery at startup failed");
+    // Stage 5F `ai_workflow` permission backfill — same no-lockout guarantee.
+    backfillAiWorkflowPermissions().catch((err) => {
+      logger.error({ err }, "ai_workflow permission backfill failed");
+    });
+    // Stage 5C `ai_executive` permission backfill — same no-lockout guarantee.
+    backfillAiExecutivePermissions().catch((err) => {
+      logger.error({ err }, "ai_executive permission backfill failed");
+    });
+    // Stage 5D `ai_assistant` permission backfill — same no-lockout guarantee.
+    backfillAiAssistantPermissions().catch((err) => {
+      logger.error({ err }, "ai_assistant permission backfill failed");
+    });
+    // Batch 15 `workflows` permission backfill (admins only) — same no-lockout guarantee.
+    backfillWorkflowsPermissions().catch((err) => {
+      logger.error({ err }, "workflows permission backfill failed");
+    });
+    // Batch 20: idempotent plan catalog seed (insert-if-missing; never overwrites an
+    // operator's edits, never invents prices). The subscription REPAIR is a separate
+    // explicit command (scripts/repair-subscriptions.ts) and is never run at startup.
+    ensurePlanCatalog()
+      .then((r) => {
+        if (r.inserted.length) logger.info({ inserted: r.inserted }, "Plan catalog seeded");
+      })
+      .catch((err) => {
+        logger.error({ err }, "plan catalog seed failed");
+      });
+    // Background job queue (async email/notification delivery) + recurring maintenance
+    // scheduler (token/session cleanup, invitation expiry, retention, follow-ups).
+    startWorkers();
+    startScheduler();
+    // Batch 16: after a restart, re-enqueue workflow runs the previous process left
+    // behind (persisted but never enqueued / abandoned mid-run). The recurring
+    // scheduler repeats this sweep; both are idempotent (unique run rows, dedupe keys,
+    // execution lease). Never blocks startup.
+    recoverOrphanedWorkflowRuns().catch((err) => {
+      logger.error({ err }, "workflow run recovery at startup failed");
+    });
   });
-});
+}
+
+// Batch 25: validate the object-storage configuration BEFORE accepting traffic.
+// A misconfigured filesystem driver (unusable root, missing encryption key in
+// production) is a startup failure, never a node that silently answers 503 on
+// every upload or writes plaintext. An unconfigured store is allowed (logged).
+initStorage()
+  .then(listen)
+  .catch((err) => {
+    logger.error({ err }, "Object storage initialization failed — refusing to start");
+    process.exit(1);
+  });

@@ -1,3 +1,5 @@
+import type { Request } from "express";
+import { db } from "@workspace/db";
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { canAccessCompany } from "../middlewares/requireAuth.js";
@@ -13,7 +15,7 @@ import {
   getDownloadURL,
   type DocumentEntityType,
 } from "../lib/documentStorage.js";
-import { ObjectNotFoundError } from "../lib/objectStorage.js";
+import * as storage from "./storage.service.js";
 
 // ── Response formatting ──────────────────────────────────────────────────────
 
@@ -108,11 +110,13 @@ async function assertEntityInTenant(user: AuthUser, companyId: number, entityTyp
   }
 }
 
-// Fail fast on a malformed objectPath before persisting a version row. The
-// normalized path from requestUploadURL is always `/objects/...`; a client that
-// posts anything else never uploaded through our presign flow.
+// Fail fast on a malformed objectPath before touching the database. The handle
+// returned by requestUploadURL is always `/objects/<id>`; a client that posts
+// anything else never uploaded through our reserve flow. The binding itself
+// (tenant + staged state) is enforced by storage.attachStaged inside the
+// create/version transaction.
 function assertValidObjectPath(objectPath: string): void {
-  if (!objectPath.startsWith("/objects/")) throw new AppError(400, "Invalid objectPath");
+  if (!storage.isNativeHandle(objectPath)) throw new AppError(400, "Invalid objectPath");
 }
 
 function requireCompany(user: AuthUser): number {
@@ -127,19 +131,20 @@ export function getCategoryCatalog() {
   return DOCUMENT_CATEGORY_CATALOG;
 }
 
-// ── Presigned upload URL ─────────────────────────────────────────────────────
+// ── Upload target (capability URL bound to the caller's tenant) ──────────────
 export interface UploadUrlInput {
   fileName?: string;
   contentType?: string;
   size?: number;
 }
 
-export async function createUploadUrl(_user: AuthUser, input: UploadUrlInput) {
+export async function createUploadUrl(req: Request, user: AuthUser, input: UploadUrlInput) {
+  const companyId = requireCompany(user);
   const { contentType, size } = input;
   if (!contentType) throw new AppError(400, "contentType required");
   if (size == null) throw new AppError(400, "size required");
   assertValidUpload(contentType, size);
-  return requestUploadURL();
+  return requestUploadURL(req, { companyId, userId: user.id, contentType, size });
 }
 
 // ── List ─────────────────────────────────────────────────────────────────────
@@ -265,6 +270,12 @@ export interface CreateDocumentInput {
   label?: string | null;
 }
 
+// Batch 25: the uploaded object is attached to the new version INSIDE one
+// transaction — the handle must be a STAGED object of THIS tenant whose
+// reserved content type matches the declared mimeType; the stored size (not the
+// client's claim) is what the version row records. A failure anywhere rolls
+// back both the rows and the activation, so no committed reference can point
+// at an object that was never written and no written object is left untracked.
 export async function createDocument(user: AuthUser, input: CreateDocumentInput) {
   const companyId = requireCompany(user);
   const { entityType, entityId, category, name, description, objectPath, fileName, fileSize, mimeType, label } = input;
@@ -279,26 +290,39 @@ export async function createDocument(user: AuthUser, input: CreateDocumentInput)
   assertValidObjectPath(objectPath);
   await assertEntityInTenant(user, companyId, entityType, entityId);
 
-  const doc = await docsRepo.insertWithFirstVersion(
-    {
+  const doc = await db.transaction(async (tx) => {
+    const object = await storage.attachStaged(tx, {
       companyId,
-      entityType,
-      entityId,
-      name: name?.trim() || fileName,
-      category,
-      description: description ?? null,
-      createdById: user.id,
-    },
-    {
-      companyId,
-      objectPath,
-      fileName,
-      fileSize,
-      mimeType,
-      label: label ?? null,
-      uploadedById: user.id,
-    },
-  );
+      kind: "document",
+      reference: objectPath,
+      entityType: "document_version",
+      entityId: null,
+      contentType: mimeType,
+    });
+    const created = await docsRepo.insertWithFirstVersion(
+      {
+        companyId,
+        entityType,
+        entityId,
+        name: name?.trim() || fileName,
+        category,
+        description: description ?? null,
+        createdById: user.id,
+      },
+      {
+        companyId,
+        objectPath,
+        fileName,
+        fileSize: object.sizeBytes ?? fileSize,
+        mimeType,
+        label: label ?? null,
+        uploadedById: user.id,
+      },
+      tx,
+    );
+    if (created.currentVersionId != null) await storage.bindEntity(tx, object.id, "document_version", created.currentVersionId);
+    return created;
+  });
   return loadDocumentDetail(user, doc.id);
 }
 
@@ -319,14 +343,29 @@ export async function addVersion(user: AuthUser, id: number, input: AddVersionIn
   assertValidUpload(mimeType, fileSize);
   assertValidObjectPath(objectPath);
 
-  await docsRepo.addVersion(id, {
-    companyId: found.doc.companyId,
-    objectPath,
-    fileName,
-    fileSize,
-    mimeType,
-    label: label ?? null,
-    uploadedById: user.id,
+  await db.transaction(async (tx) => {
+    const object = await storage.attachStaged(tx, {
+      companyId: found.doc.companyId,
+      kind: "document",
+      reference: objectPath,
+      entityType: "document_version",
+      entityId: null,
+      contentType: mimeType,
+    });
+    const version = await docsRepo.addVersion(
+      id,
+      {
+        companyId: found.doc.companyId,
+        objectPath,
+        fileName,
+        fileSize: object.sizeBytes ?? fileSize,
+        mimeType,
+        label: label ?? null,
+        uploadedById: user.id,
+      },
+      tx,
+    );
+    await storage.bindEntity(tx, object.id, "document_version", version.id);
   });
   return loadDocumentDetail(user, id);
 }
@@ -379,6 +418,9 @@ export async function updateDocument(user: AuthUser, id: number, input: UpdateDo
 }
 
 // ── Delete / restore ─────────────────────────────────────────────────────────
+// Soft delete keeps every version's object (restore must bring the file back);
+// the bytes go only when the version rows are hard-deleted (company deletion,
+// retention) — the storage sweep removes objects whose version row is gone.
 export async function deleteDocument(user: AuthUser, id: number) {
   const found = await docsRepo.findById(user, id);
   if (!found) throw new AppError(404, "Document not found");
@@ -394,28 +436,30 @@ export async function restoreDocument(user: AuthUser, id: number) {
   return loadDocumentDetail(user, id);
 }
 
-// ── Download / preview (signed URL) ──────────────────────────────────────────
-export async function getDownloadUrlForCurrent(user: AuthUser, id: number) {
+// ── Download / preview (short-lived capability URL) ──────────────────────────
+export async function getDownloadUrlForCurrent(req: Request, user: AuthUser, id: number) {
   const found = await docsRepo.findById(user, id);
   if (!found) throw new AppError(404, "Document not found");
   if (!found.currentVersion) throw new AppError(404, "Document has no file");
-  return signVersion(found.currentVersion);
+  return signVersion(req, user, found.currentVersion);
 }
 
-export async function getDownloadUrlForVersion(user: AuthUser, id: number, versionId: number) {
+export async function getDownloadUrlForVersion(req: Request, user: AuthUser, id: number, versionId: number) {
   const found = await docsRepo.findById(user, id);
   if (!found) throw new AppError(404, "Document not found");
   const version = await docsRepo.versionById(user, id, versionId);
   if (!version) throw new AppError(404, "Version not found");
-  return signVersion(version);
+  return signVersion(req, user, version);
 }
 
-async function signVersion(version: docsRepo.DocumentVersionRow) {
-  try {
-    const url = await getDownloadURL(version.objectPath);
-    return { url, fileName: version.fileName, mimeType: version.mimeType };
-  } catch (err) {
-    if (err instanceof ObjectNotFoundError) throw new AppError(404, "File not found in storage");
-    throw err;
-  }
+async function signVersion(req: Request, user: AuthUser, version: docsRepo.DocumentVersionRow) {
+  const url = await getDownloadURL(storage.publicBaseUrl(req), {
+    companyId: version.companyId,
+    objectPath: version.objectPath,
+    userId: user.id,
+    fileName: version.fileName,
+    mimeType: version.mimeType,
+  });
+  if (!url) throw new AppError(404, "File not found in storage");
+  return { url, fileName: version.fileName, mimeType: version.mimeType };
 }

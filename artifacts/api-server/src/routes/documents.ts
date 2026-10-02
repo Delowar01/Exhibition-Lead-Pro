@@ -28,7 +28,7 @@ router.get("/documents/categories", async (_req: AuthRequest, res) => {
 
 // POST /documents/upload-url
 router.post("/documents/upload-url", requirePermission("documents", "create"), validateBody(RequestDocumentUploadUrlBody), async (req: AuthRequest, res) => {
-  res.json(await documents.createUploadUrl(req.user!, req.body ?? {}));
+  res.json(await documents.createUploadUrl(req, req.user!, req.body ?? {}));
 });
 
 // GET /documents
@@ -55,12 +55,12 @@ router.post("/documents/:id/versions", requirePermission("documents", "edit"), v
 
 // GET /documents/:id/versions/:versionId/download
 router.get("/documents/:id/versions/:versionId/download", async (req: AuthRequest, res) => {
-  res.json(await documents.getDownloadUrlForVersion(req.user!, parseInt(String(req.params.id)), parseInt(String(req.params.versionId))));
+  res.json(await documents.getDownloadUrlForVersion(req, req.user!, parseInt(String(req.params.id)), parseInt(String(req.params.versionId))));
 });
 
 // GET /documents/:id/download
 router.get("/documents/:id/download", async (req: AuthRequest, res) => {
-  res.json(await documents.getDownloadUrlForCurrent(req.user!, parseInt(String(req.params.id))));
+  res.json(await documents.getDownloadUrlForCurrent(req, req.user!, parseInt(String(req.params.id))));
 });
 
 // POST /documents/:id/restore

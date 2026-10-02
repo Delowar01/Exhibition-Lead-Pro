@@ -1,13 +1,14 @@
-import type { Readable } from "stream";
+import type { Readable } from "node:stream";
 import sharp from "sharp";
-import { objectStorageClient } from "./objectStorage.js";
-import { config } from "../config.js";
+import * as storage from "../services/storage.service.js";
+import { StorageError } from "../storage/contract.js";
 
-function getBucketId(): string {
-  const id = config.objectStorage.bucketId;
-  if (!id) throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID not set");
-  return id;
-}
+// Batch 25 — scan images go through the object-storage boundary like every
+// other product file: the stored value on scans.image_url is the opaque
+// `/objects/<id>` handle of an inventory row bound to (tenant, scan). Legacy
+// rows still carry the pre-B25 `scans/<companyId>/<scanId>.jpg` bucket key;
+// those are served through the legacy fallback only while it is enabled, and
+// only when the embedded tenant id matches the caller's tenant.
 
 /**
  * Decode a data-URL or raw base64 string and compress to JPEG ~80 quality.
@@ -24,45 +25,36 @@ async function decodeAndCompress(imageData: string): Promise<{ buffer: Buffer; c
 }
 
 /**
- * Upload a base64-encoded scan image to GCS after compressing to JPEG.
- * Returns the GCS object name (internal storage key).
+ * Store a base64-encoded scan image (compressed to JPEG) for a scan of the
+ * given tenant. Returns the opaque storage handle to persist on the scan row.
  */
-export async function uploadScanImage(
-  scanId: number,
-  companyId: number,
-  imageData: string,
-): Promise<string> {
+export async function uploadScanImage(scanId: number, companyId: number, imageData: string): Promise<string> {
   const { buffer, contentType } = await decodeAndCompress(imageData);
-  const objectName = `scans/${companyId}/${scanId}.jpg`;
-  const bucket = objectStorageClient.bucket(getBucketId());
-  await bucket.file(objectName).save(buffer, { contentType });
-  return objectName;
+  const stored = await storage.storeBuffer({ companyId, kind: "scan_image", contentType, buffer, entityType: "scan", entityId: scanId });
+  return stored.reference;
 }
 
 /**
- * Stream a previously uploaded scan image from GCS.
- * Throws if the object does not exist.
+ * Stream a previously stored scan image of the tenant. Rejects with
+ * STORAGE_NOT_FOUND when the object is absent (callers map it to 404).
  */
-export async function streamScanImage(
-  objectName: string,
-): Promise<{ stream: Readable; contentType: string }> {
-  const bucket = objectStorageClient.bucket(getBucketId());
-  const file = bucket.file(objectName);
-  const [exists] = await file.exists();
-  if (!exists) throw new Error("Image not found");
-  return { stream: file.createReadStream(), contentType: "image/jpeg" };
+export async function streamScanImage(companyId: number, reference: string): Promise<{ stream: Readable; contentType: string; sizeBytes: number | null }> {
+  const opened = await storage.openByReference({ companyId, kind: "scan_image", reference });
+  if (!opened) throw new StorageError("STORAGE_NOT_FOUND");
+  return { stream: opened.stream, contentType: opened.contentType || "image/jpeg", sizeBytes: opened.sizeBytes };
 }
 
 /**
- * Download a previously uploaded scan image from GCS and return it as a base64
- * string (used to re-run OCR on the stored image). Throws if the object does
- * not exist.
+ * Load a stored scan image as base64 (used to re-run OCR on the stored image).
+ * Rejects with STORAGE_NOT_FOUND when the object is absent.
  */
-export async function loadScanImageBase64(objectName: string): Promise<string> {
-  const bucket = objectStorageClient.bucket(getBucketId());
-  const file = bucket.file(objectName);
-  const [exists] = await file.exists();
-  if (!exists) throw new Error("Image not found");
-  const [buffer] = await file.download();
-  return buffer.toString("base64");
+export async function loadScanImageBase64(companyId: number, reference: string): Promise<string> {
+  const read = await storage.readObjectBuffer({ companyId, kind: "scan_image", reference }, storage.OBJECT_LIMITS.scan_image);
+  if (!read) throw new StorageError("STORAGE_NOT_FOUND");
+  return read.buffer.toString("base64");
+}
+
+/** Tombstone + remove a stored scan image (idempotent; safe for legacy references). */
+export async function deleteScanImage(companyId: number, reference: string): Promise<void> {
+  await storage.deleteByReference({ companyId, kind: "scan_image", reference });
 }

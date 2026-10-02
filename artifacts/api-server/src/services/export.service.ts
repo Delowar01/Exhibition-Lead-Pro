@@ -1,3 +1,4 @@
+import { db } from "@workspace/db";
 import { AppError } from "../middlewares/errorHandler.js";
 import type { AuthUser } from "../middlewares/requireAuth.js";
 import { logger } from "../lib/logger.js";
@@ -24,7 +25,8 @@ import {
   type ExportFormat,
   type EncryptionMethod,
 } from "../lib/export-generate.js";
-import { uploadExportBuffer, exportDownloadURL } from "../lib/exportStorage.js";
+import { uploadExportBuffer, exportDownloadURL, discardExportObject } from "../lib/exportStorage.js";
+import { bindEntity, publicBaseUrl } from "./storage.service.js";
 import { tenantWritable } from "../lib/company-access.js";
 
 // Stage 4B — Export Center (export side). Produces a filtered CSV/Excel/PDF/JSON
@@ -187,22 +189,14 @@ async function produceAndStore(user: AuthUser, companyId: number, input: Produce
   }
   const ct = contentType(format, encrypted);
 
+  // Batch 25: the artifact is written through the object-storage boundary
+  // (inventory row → encrypted bytes → activation). A storage failure records a
+  // failed run with no reference (never a dangling objectPath); a database
+  // failure AFTER the write tombstones the stored object so nothing is left
+  // untracked. The run row and the object↔run binding commit together.
+  let stored: Awaited<ReturnType<typeof uploadExportBuffer>>;
   try {
-    const { objectPath } = await uploadExportBuffer(buffer, ct);
-    return runsRepo.insert({
-      companyId,
-      scheduleId: input.scheduleId,
-      createdById: input.createdById,
-      entityType,
-      format,
-      status: "completed",
-      objectPath,
-      fileName,
-      fileSize: buffer.length,
-      rowCount,
-      passwordProtected: String(encrypted),
-      error: null,
-    });
+    stored = await uploadExportBuffer(buffer, ct, { companyId, kind: "export" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await runsRepo.insert({
@@ -221,6 +215,37 @@ async function produceAndStore(user: AuthUser, companyId: number, input: Produce
     });
     throw new AppError(502, "Export storage upload failed");
   }
+  try {
+    return await db.transaction(async (tx) => {
+      const run = await runsRepo.insert(
+        {
+          companyId,
+          scheduleId: input.scheduleId,
+          createdById: input.createdById,
+          entityType,
+          format,
+          status: "completed",
+          objectPath: stored.objectPath,
+          fileName,
+          fileSize: stored.sizeBytes,
+          rowCount,
+          passwordProtected: String(encrypted),
+          error: null,
+        },
+        tx,
+      );
+      await bindEntity(tx, stored.objectId, "export_run", run.id);
+      return run;
+    });
+  } catch (err) {
+    await discardExportObject({ companyId, kind: "export", objectPath: stored.objectPath }).catch(() => undefined);
+    throw err;
+  }
+}
+
+async function runDownloadUrl(base: string, run: runsRepo.ExportRunRow, userId: number | null): Promise<string | null> {
+  if (run.status !== "completed" || !run.objectPath) return null;
+  return exportDownloadURL(base, { companyId: run.companyId, kind: "export", objectPath: run.objectPath, userId, fileName: run.fileName });
 }
 
 // ── Response formatting ──────────────────────────────────────────────────────
@@ -272,6 +297,7 @@ function safeParseFilters(json: string): Filters {
 export async function createExport(
   user: AuthUser,
   body: { entityType?: unknown; format?: unknown; filters?: unknown; passwordProtected?: unknown; password?: unknown; encryptionMethod?: unknown },
+  base: string = publicBaseUrl(),
 ) {
   const companyId = requireCompany(user);
   const entityType = assertEntityType(body.entityType);
@@ -293,7 +319,7 @@ export async function createExport(
     scheduleId: null,
     createdById: user.id,
   });
-  const downloadUrl = run.objectPath ? await exportDownloadURL(run.objectPath) : null;
+  const downloadUrl = await runDownloadUrl(base, run, user.id);
   return { ...fmtRun(run), downloadUrl };
 }
 
@@ -306,11 +332,12 @@ export async function listRuns(user: AuthUser, params: { entityType?: string; sc
   return { runs: rows.map(fmtRun), total };
 }
 
-export async function getRunDownloadUrl(user: AuthUser, id: number) {
+export async function getRunDownloadUrl(user: AuthUser, id: number, base: string = publicBaseUrl()) {
   const run = await runsRepo.findById(user, id);
   if (!run) throw new AppError(404, "Export not found");
   if (run.status !== "completed" || !run.objectPath) throw new AppError(404, "Export file not available");
-  const url = await exportDownloadURL(run.objectPath);
+  const url = await runDownloadUrl(base, run, user.id);
+  if (!url) throw new AppError(404, "Export file not available");
   return { url, fileName: run.fileName };
 }
 
@@ -405,7 +432,7 @@ export async function deleteSchedule(user: AuthUser, id: number) {
   return { success: true, message: "Schedule deleted" };
 }
 
-export async function runScheduleNow(user: AuthUser, id: number) {
+export async function runScheduleNow(user: AuthUser, id: number, base: string = publicBaseUrl()) {
   const s = await schedulesRepo.findById(user, id);
   if (!s) throw new AppError(404, "Schedule not found");
   const run = await produceAndStore(user, s.companyId, {
@@ -419,7 +446,7 @@ export async function runScheduleNow(user: AuthUser, id: number) {
     createdById: user.id,
   });
   await schedulesRepo.markRun(s.id, new Date(), computeNextRun(s.frequency, new Date()));
-  const downloadUrl = run.objectPath ? await exportDownloadURL(run.objectPath) : null;
+  const downloadUrl = await runDownloadUrl(base, run, user.id);
   return { ...fmtRun(run), downloadUrl };
 }
 

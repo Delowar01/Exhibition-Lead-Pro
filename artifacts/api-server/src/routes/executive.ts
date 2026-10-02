@@ -3,6 +3,7 @@ import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermissi
 import { auditMutations } from "../lib/audit.js";
 import { microCache } from "../middlewares/microCache.js";
 import * as exec from "../services/executive-intelligence.service.js";
+import { publicBaseUrl } from "../services/storage.service.js";
 
 // Stage 5C — Enterprise AI Executive Intelligence Center.
 //
@@ -116,7 +117,7 @@ router.post("/ai/executive/forecasts", requirePermission("ai_executive", "genera
 
 // ── Reports (async export job) ────────────────────────────────────────────────
 router.get("/ai/executive/reports", requirePermission("ai_executive", "view"), execCache, async (req: AuthRequest, res) => {
-  res.json({ reports: await exec.listReports(req.user!, parseId(req.query.limit) ?? 20) });
+  res.json({ reports: await exec.listReports(req.user!, parseId(req.query.limit) ?? 20, publicBaseUrl(req)) });
 });
 
 router.post("/ai/executive/reports", requirePermission("ai_executive", "generate"), async (req: AuthRequest, res) => {
@@ -128,12 +129,12 @@ router.post("/ai/executive/reports", requirePermission("ai_executive", "generate
     scopeType: body.scopeType ? String(body.scopeType) : undefined,
     id: parseId(body.id),
     language: body.language === "ar" ? "ar" : "en",
-  });
+  }, publicBaseUrl(req));
   res.status(202).json(report);
 });
 
 router.get("/ai/executive/reports/:id", requirePermission("ai_executive", "view"), async (req: AuthRequest, res) => {
-  res.json(await exec.getReport(req.user!, parseInt(String(req.params.id))));
+  res.json(await exec.getReport(req.user!, parseInt(String(req.params.id)), publicBaseUrl(req)));
 });
 
 export default router;

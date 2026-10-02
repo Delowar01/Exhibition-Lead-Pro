@@ -176,23 +176,28 @@ export async function entityNames(entityType: string, ids: number[]): Promise<Ma
 
 // Create a document and its first version atomically, then point the document at
 // that version. Returns the created document row.
+// Optional `tx` (Batch 25): the documents service composes the object-storage
+// attachment and these rows in ONE transaction; without it the write opens its own.
 export async function insertWithFirstVersion(
   docValues: Omit<typeof documentsTable.$inferInsert, "currentVersionId">,
   versionValues: Omit<typeof documentVersionsTable.$inferInsert, "documentId" | "versionNumber">,
+  tx?: Executor,
 ): Promise<DocumentRow> {
-  return db.transaction(async (tx) => {
-    const [doc] = await tx.insert(documentsTable).values(docValues).returning();
-    const [version] = await tx
+  const run = async (t: Executor) => {
+    const [doc] = await t.insert(documentsTable).values(docValues).returning();
+    const [version] = await t
       .insert(documentVersionsTable)
       .values({ ...versionValues, documentId: doc.id, versionNumber: 1 })
       .returning();
-    const [updated] = await tx
+    const [updated] = await t
       .update(documentsTable)
       .set({ currentVersionId: version.id, updatedAt: new Date() })
       .where(eq(documentsTable.id, doc.id))
       .returning();
     return updated;
-  });
+  };
+  if (tx) return run(tx);
+  return db.transaction(run);
 }
 
 // Append a new immutable version (never overwrites) and repoint the document's
@@ -204,28 +209,31 @@ const DOC_VERSION_LOCK_NS = 74013;
 export async function addVersion(
   documentId: number,
   versionValues: Omit<typeof documentVersionsTable.$inferInsert, "documentId" | "versionNumber">,
+  tx?: Executor,
 ): Promise<DocumentVersionRow> {
-  return db.transaction(async (tx) => {
+  const run = async (t: Executor) => {
     // Serialize concurrent version inserts for THIS document via a transaction-
     // scoped advisory lock (released at commit). This makes the max+1 read/insert
     // deterministic so parallel uploads get distinct monotonic numbers; the unique
     // (document_id, version_number) index remains as a hard backstop.
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${DOC_VERSION_LOCK_NS}, ${documentId})`);
-    const [{ maxNum }] = await tx
+    await t.execute(sql`SELECT pg_advisory_xact_lock(${DOC_VERSION_LOCK_NS}, ${documentId})`);
+    const [{ maxNum }] = await t
       .select({ maxNum: max(documentVersionsTable.versionNumber) })
       .from(documentVersionsTable)
       .where(eq(documentVersionsTable.documentId, documentId));
     const nextNumber = (maxNum ?? 0) + 1;
-    const [version] = await tx
+    const [version] = await t
       .insert(documentVersionsTable)
       .values({ ...versionValues, documentId, versionNumber: nextNumber })
       .returning();
-    await tx
+    await t
       .update(documentsTable)
       .set({ currentVersionId: version.id, updatedAt: new Date() })
       .where(eq(documentsTable.id, documentId));
     return version;
-  });
+  };
+  if (tx) return run(tx);
+  return db.transaction(run);
 }
 
 export async function update(id: number, updateData: Partial<typeof documentsTable.$inferInsert>): Promise<DocumentRow | undefined> {
