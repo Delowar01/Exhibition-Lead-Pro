@@ -7,7 +7,7 @@ import { backfillAiCopilotPermissions, backfillAiWorkflowPermissions, backfillAi
 import { config } from "./config.js";
 import { recoverOrphanedWorkflowRuns } from "./lib/workflows/recovery";
 import { ensurePlanCatalog } from "./lib/billing/plan-catalog";
-import { initStorage } from "./storage/registry.js";
+import { initStorage, reportStorageInitFailure } from "./storage/registry.js";
 
 const port = config.port;
 
@@ -91,6 +91,6 @@ function listen(): void {
 initStorage()
   .then(listen)
   .catch((err) => {
-    logger.error({ err }, "Object storage initialization failed — refusing to start");
+    reportStorageInitFailure(err); // sanitized: never a path, key or provider detail
     process.exit(1);
   });

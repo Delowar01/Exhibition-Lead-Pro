@@ -38,6 +38,10 @@ export const getMetricsResponseStorageLegacyRegistrationsMin = 0;
 
 export const getMetricsResponseStorageIntegrityFailuresMin = 0;
 
+export const getMetricsResponseStorageOwnershipUnprovenMin = 0;
+
+export const getMetricsResponseStorageUnreconciledTombstonesMin = 0;
+
 export const getMetricsResponseStorageRetainedLegacyObjectsMin = 0;
 
 export const getMetricsResponseStoragePrimaryFailuresMin = 0;
@@ -87,6 +91,8 @@ export const GetMetricsResponse = zod.object({
   "legacyReads": zod.enum(['primary', 'fallback', 'off']).describe('Compatibility state for pre-B25 references without an inventory row: `primary` = the legacy bucket is the configured primary driver (hosted environment unchanged; served and registered on first use), `fallback` = explicit transition fallback on a non-GCS primary, `off` = never served.'),
   "legacyRegistrations": zod.number().min(getMetricsResponseStorageLegacyRegistrationsMin).describe('Pre-B25 references registered in the inventory on first use since process start.'),
   "integrityFailures": zod.number().min(getMetricsResponseStorageIntegrityFailuresMin).describe('Reads of a GCS legacy \/ mirror \/ native copy whose bytes disagreed with the inventory size or digest since process start (B25 Correction 2; the response is truncated, never completed).'),
+  "ownershipUnproven": zod.number().min(getMetricsResponseStorageOwnershipUnprovenMin).nullable().describe('Inventory rows whose bucket object carries no matching ownership marker; never deleted automatically, never purged, awaiting operator review (B25 Correction 3). Null when the inventory cannot be read.'),
+  "unreconciledTombstones": zod.number().min(getMetricsResponseStorageUnreconciledTombstonesMin).nullable().describe('Deleted tombstones whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read.'),
   "retainedLegacyObjects": zod.number().min(getMetricsResponseStorageRetainedLegacyObjectsMin).nullable().describe('Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.'),
   "primaryFailures": zod.number().min(getMetricsResponseStoragePrimaryFailuresMin),
   "legacyFallbackReads": zod.number().min(getMetricsResponseStorageLegacyFallbackReadsMin),

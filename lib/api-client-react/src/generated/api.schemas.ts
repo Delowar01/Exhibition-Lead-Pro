@@ -92,6 +92,18 @@ export type MetricsSnapshotStorage = {
      */
   integrityFailures: number;
   /**
+     * Inventory rows whose bucket object carries no matching ownership marker; never deleted automatically, never purged, awaiting operator review (B25 Correction 3). Null when the inventory cannot be read.
+     * @minimum 0
+     * @nullable
+     */
+  ownershipUnproven: number | null;
+  /**
+     * Deleted tombstones whose persisted locations have not yet been re-checked after the late-publication horizon (B25 Correction 3). Null when the inventory cannot be read.
+     * @minimum 0
+     * @nullable
+     */
+  unreconciledTombstones: number | null;
+  /**
      * Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.
      * @minimum 0
      * @nullable

@@ -14,7 +14,7 @@ import {
   type StorageObjectRow,
   type InsertStorageObject,
 } from "@workspace/db";
-import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql, count, notExists } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, count, notExists } from "drizzle-orm";
 import { exec, type Executor } from "./base.js";
 
 export type StorageObjectState = "pending" | "uploading" | "staged" | "active" | "deleting" | "deleted" | "failed";
@@ -111,6 +111,10 @@ export async function releaseUpload(id: string, leaseToken: string, to: "staged"
 
 /** Sentinel: a copy of this row could not be removed yet; the sweep retries from the persisted locations. */
 export const CLEANUP_PENDING = "CLEANUP_PENDING";
+/** Sentinel (B25 Correction 3): a bucket object sits at this row's key without the row's ownership marker — never deleted automatically, never purged, surfaced for review. */
+export const OWNERSHIP_UNPROVEN = "OWNERSHIP_UNPROVEN";
+/** Tombstone bookkeeping values that keep a row out of the purge. */
+export const PURGE_BLOCKING_ERRORS = [LEGACY_RETAINED, CLEANUP_PENDING, OWNERSHIP_UNPROVEN];
 
 /**
  * Record that bytes of a tombstoned / failed row still need removal WITHOUT
@@ -134,6 +138,61 @@ export async function listCleanupPending(limit: number): Promise<StorageObjectRo
     .where(and(eq(storageObjectsTable.lastError, CLEANUP_PENDING), inArray(storageObjectsTable.state, ["failed", "deleting", "deleted"])))
     .orderBy(storageObjectsTable.updatedAt)
     .limit(limit);
+}
+
+/**
+ * B25 Correction 3 — `deleted` rows whose persisted locations have not been
+ * re-checked after the late-publication horizon (reconciled_at IS NULL and the
+ * row is older than the hard upload lifetime + slack). Rows flagged
+ * CLEANUP_PENDING are retried by the cleanup pass first.
+ */
+export async function listUnreconciledTombstones(quiescentBefore: Date, limit: number): Promise<StorageObjectRow[]> {
+  return db
+    .select()
+    .from(storageObjectsTable)
+    .where(
+      and(
+        eq(storageObjectsTable.state, "deleted"),
+        isNull(storageObjectsTable.reconciledAt),
+        lt(storageObjectsTable.createdAt, quiescentBefore),
+        or(isNull(storageObjectsTable.lastError), ne(storageObjectsTable.lastError, CLEANUP_PENDING)),
+      ),
+    )
+    .orderBy(storageObjectsTable.createdAt)
+    .limit(limit);
+}
+
+/** Record the final physical reconciliation of a tombstone (CAS: still deleted, not yet reconciled). */
+export async function markReconciled(id: string, now: Date, lastError: string | null): Promise<boolean> {
+  const rows = await db
+    .update(storageObjectsTable)
+    .set({ reconciledAt: now, lastError, updatedAt: now })
+    .where(and(eq(storageObjectsTable.id, id), eq(storageObjectsTable.state, "deleted"), isNull(storageObjectsTable.reconciledAt)))
+    .returning({ id: storageObjectsTable.id });
+  return rows.length > 0;
+}
+
+/** Record that a tombstone's object exists without ownership proof (CAS on the tombstone state; never a state change). */
+export async function markOwnershipUnproven(id: string): Promise<boolean> {
+  const rows = await db
+    .update(storageObjectsTable)
+    .set({ lastError: OWNERSHIP_UNPROVEN, updatedAt: new Date() })
+    .where(and(eq(storageObjectsTable.id, id), inArray(storageObjectsTable.state, ["deleting", "deleted", "failed"])))
+    .returning({ id: storageObjectsTable.id });
+  return rows.length > 0;
+}
+
+export async function countOwnershipUnproven(): Promise<number> {
+  const [r] = await db.select({ n: count() }).from(storageObjectsTable).where(eq(storageObjectsTable.lastError, OWNERSHIP_UNPROVEN));
+  return Number(r?.n ?? 0);
+}
+
+export async function countUnreconciledTombstones(): Promise<number> {
+  const [r] = await db
+    .select({ n: count() })
+    .from(storageObjectsTable)
+    .where(and(eq(storageObjectsTable.state, "deleted"), isNull(storageObjectsTable.reconciledAt)));
+  return Number(r?.n ?? 0);
 }
 
 /** Clear the cleanup flag of a settled `deleted` row (CAS on state + flag). */
@@ -301,7 +360,12 @@ export async function legacyReferenceOwned(companyId: number, kind: string, refe
   }
 }
 
-/** Tombstones of companies that no longer exist, deleted long enough ago to drop the row — never a retained legacy record. */
+/**
+ * Tombstones that may be dropped: the company no longer exists, the row is old
+ * enough, its persisted locations were RECONCILED after the late-publication
+ * horizon (B25 Correction 3 — never "because 24 hours passed"), and nothing is
+ * retained, pending or unproven about it.
+ */
 export async function listPurgeableTombstones(olderThan: Date, limit: number): Promise<StorageObjectRow[]> {
   const rows = await db
     .select({ obj: storageObjectsTable })
@@ -311,8 +375,9 @@ export async function listPurgeableTombstones(olderThan: Date, limit: number): P
       and(
         eq(storageObjectsTable.state, "deleted"),
         isNull(companiesTable.id),
-        lt(storageObjectsTable.updatedAt, olderThan),
-        or(isNull(storageObjectsTable.lastError), ne(storageObjectsTable.lastError, LEGACY_RETAINED)),
+        lt(sql`coalesce(${storageObjectsTable.deletedAt}, ${storageObjectsTable.updatedAt})`, olderThan),
+        isNotNull(storageObjectsTable.reconciledAt),
+        or(isNull(storageObjectsTable.lastError), notInArray(storageObjectsTable.lastError, PURGE_BLOCKING_ERRORS)),
       ),
     )
     .limit(limit);

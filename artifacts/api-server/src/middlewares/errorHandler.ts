@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { StorageError, describeError } from "../storage/contract.js";
 
 /**
  * Typed application error. Throw it (or pass it to `next`) to produce a JSON
@@ -41,8 +42,11 @@ export function notFoundHandler(req: Request, res: Response): void {
 // Resolve the HTTP status carried by an error. AppError wins; otherwise honor the
 // `statusCode`/`status` that framework errors set (e.g. body-parser's 413 for an
 // oversized body, 400 for malformed JSON). Falls back to 500 for true unknowns.
+const STORAGE_STATUS: Record<string, number> = { STORAGE_NOT_FOUND: 404, STORAGE_TOO_LARGE: 413, STORAGE_CONFLICT: 409 };
+
 function statusOf(err: unknown): number {
   if (err instanceof AppError) return err.statusCode;
+  if (err instanceof StorageError) return STORAGE_STATUS[err.code] ?? 503;
   if (typeof err === "object" && err !== null) {
     const e = err as { statusCode?: unknown; status?: unknown };
     if (typeof e.statusCode === "number" && e.statusCode >= 400 && e.statusCode <= 599) {
@@ -68,7 +72,11 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ): void {
-  req.log?.error({ err }, "Unhandled request error");
+  // B25 Correction 3: a storage-origin error is logged as its sanitized shape
+  // only (it carries no raw cause, but it is never handed to the generic
+  // serializer either); everything else keeps the full error for diagnostics.
+  if (err instanceof StorageError) req.log?.error({ error: describeError(err), causeInfo: err.causeInfo }, "Unhandled storage error");
+  else req.log?.error({ err }, "Unhandled request error");
 
   if (res.headersSent) {
     return;
@@ -82,6 +90,8 @@ export function errorHandler(
   let message = "Internal server error";
   if (err instanceof AppError) {
     message = err.message;
+  } else if (err instanceof StorageError) {
+    message = statusCode === 503 ? "File storage is temporarily unavailable. Please try again later." : err.message;
   } else if (statusCode < 500 && err instanceof Error && err.message) {
     message = err.message;
   }
@@ -91,6 +101,7 @@ export function errorHandler(
   // read `error` are unaffected. NOTE: emitted as `context`, not `details` — `details`
   // is the established array-of-field-issues contract for 400 validation errors.
   const extra: Record<string, unknown> = {};
+  if (err instanceof StorageError) extra.code = statusCode === 503 ? "STORAGE_UNAVAILABLE" : err.code;
   if (err instanceof AppError) {
     if (err.code) extra.code = err.code;
     if (err.details) extra.context = err.details;

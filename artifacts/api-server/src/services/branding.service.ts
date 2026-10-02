@@ -15,6 +15,7 @@ import type { AuthUser } from "../middlewares/requireAuth.js";
 import * as companiesRepo from "../repositories/companies.repository.js";
 import { writeAudit } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
+import { sanitizeStorageError } from "../storage/log-safety.js";
 import { resolveBranding, publicBranding, validateBrandingInput, type ResolvedBranding, type PublicBranding } from "../lib/branding/model.js";
 import { validateLogoUpload } from "../lib/branding/logo.js";
 import { deleteLogo, getLogo, keyBelongsTo, logoStorageAvailable, putLogo, storageUnavailable } from "../lib/branding/storage.js";
@@ -88,7 +89,7 @@ export async function uploadLogo(req: Request, companyId: number, bytes: Buffer 
   if (before.brandLogoKey && before.brandLogoKey !== key && keyBelongsTo(companyId, before.brandLogoKey)) {
     // Tombstone-first: the previous id stops resolving immediately even if the
     // physical delete has to be retried later.
-    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: previous logo object could not be deleted"));
+    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ error: sanitizeStorageError(err), companyId }, "Branding: previous logo object could not be deleted"));
   }
   await writeAudit(req, {
     action: "branding.logo.replace",
@@ -114,7 +115,7 @@ export async function removeLogo(req: Request, companyId: number): Promise<Resol
   const updated = await companiesRepo.update(companyId, { brandLogoKey: null, brandLogoContentType: null, logoUrl: null, updatedAt: new Date() });
   if (!updated) throw new AppError(404, "Organization not found");
   if (before.brandLogoKey && keyBelongsTo(companyId, before.brandLogoKey)) {
-    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: logo object could not be deleted after removal"));
+    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ error: sanitizeStorageError(err), companyId }, "Branding: logo object could not be deleted after removal"));
   }
   await writeAudit(req, {
     action: "branding.logo.remove",
@@ -140,7 +141,7 @@ export async function resetBranding(req: Request, companyId: number): Promise<Re
   });
   if (!updated) throw new AppError(404, "Organization not found");
   if (before.brandLogoKey && keyBelongsTo(companyId, before.brandLogoKey)) {
-    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ err, companyId }, "Branding: logo object could not be deleted after reset"));
+    await deleteLogo(companyId, before.brandLogoKey).catch((err) => logger.warn({ error: sanitizeStorageError(err), companyId }, "Branding: logo object could not be deleted after reset"));
   }
   await writeAudit(req, {
     action: "branding.reset",

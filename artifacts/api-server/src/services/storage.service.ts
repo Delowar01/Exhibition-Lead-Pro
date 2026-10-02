@@ -39,6 +39,20 @@
 //   • company deletion fails closed on references that cannot be inventoried
 //   • every logged / persisted storage error is sanitized (storage/log-safety.ts)
 //
+// B25 Correction 3:
+//   • crash-durable late-publication cleanup: no publication may happen after
+//     the row's HARD upload lifetime (writer-side checks + driver deadline + put
+//     time bound), `deleted` tombstones are re-reconciled from their persisted
+//     locations once that horizon has passed (reconciled_at), and only a
+//     reconciled tombstone can ever be purged
+//   • durable GCS ownership: a bucket object is deleted by automation only when
+//     it carries the row id as object metadata (written with the object) and
+//     only at the generation the proving HEAD observed; anything else stays
+//     (OWNERSHIP_UNPROVEN, discoverable, never purged)
+//   • storage-origin boundary: a database / provider / filesystem failure leaves
+//     this module only as a StorageError with a sanitized cause summary (or an
+//     AppError) — never a raw error that a generic `{ err }` logger could print
+//
 // Nothing here ever returns a filesystem path, storage key, bucket name or host
 // path to a caller; API responses carry opaque handles and credential-free URLs.
 // =============================================================================
@@ -199,6 +213,32 @@ function safe(err: unknown) {
 }
 
 /**
+ * B25 Correction 3 — storage-origin boundary. A database / provider /
+ * filesystem error may leave this module only as a StorageError (fixed
+ * message, sanitized cause summary, no raw cause) or an AppError.
+ */
+function boundaryError(err: unknown, reason = "DB_FAILURE"): StorageError | AppError {
+  if (err instanceof StorageError || err instanceof AppError) return err;
+  return new StorageError("STORAGE_UNAVAILABLE", "storage inventory unavailable", err, reason);
+}
+async function guarded<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    throw boundaryError(err);
+  }
+}
+
+/** The instant after which NO publication (primary or mirror) of this row may happen. */
+function publishDeadline(row: StorageObjectRow): Date {
+  return new Date(row.createdAt.getTime() + config.objectStorage.uploadHardLifetimeMs);
+}
+/** A put may start only when it can finish within its time bound before the deadline. */
+function canStartPut(deadline: Date, now = Date.now()): boolean {
+  return now + config.objectStorage.putTimeoutMs <= deadline.getTime();
+}
+
+/**
  * Remove exactly the copies `attempt` wrote — by generation where the provider
  * reports one, otherwise by the attempt-unique key. Idempotent: an absent copy
  * is fine; a copy whose generation changed is NOT ours and is left untouched.
@@ -286,9 +326,13 @@ async function writeWithMirror(driver: StorageDriver, row: StorageObjectRow, sou
     failNextPrimaryPut = false;
     throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "simulated storage failure"), { attempt });
   }
+  // B25 Correction 3 — bounded publication with the durable ownership marker.
+  const deadline = publishDeadline(row);
+  const bound = { owner: row.id, publishDeadline: deadline, timeoutMs: config.objectStorage.putTimeoutMs };
+  if (!canStartPut(deadline)) throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "publication deadline passed", undefined, "PUBLISH_DEADLINE"), { attempt });
   let result;
   try {
-    result = await driver.put(row.storageKey, source, { contentType: row.contentType, maxBytes, allowOverwrite: false });
+    result = await driver.put(row.storageKey, source, { contentType: row.contentType, maxBytes, allowOverwrite: false, ...bound });
   } catch (err) {
     throw Object.assign(err instanceof Error ? err : new StorageError("STORAGE_UNAVAILABLE", undefined, err), { attempt });
   }
@@ -298,9 +342,10 @@ async function writeWithMirror(driver: StorageDriver, row: StorageObjectRow, sou
   if (mirror) {
     const mirrorKey = row.mirrorKey ?? mirrorLocation(row.storageKey);
     if (!mirrorKey) throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "mirror location unavailable", undefined, "MIRROR_UNCONFIGURED"), { attempt });
+    if (!canStartPut(deadline)) throw Object.assign(new StorageError("STORAGE_UNAVAILABLE", "publication deadline passed", undefined, "PUBLISH_DEADLINE"), { attempt });
     try {
       const { stream } = await driver.getStream(row.storageKey, { maxBytes });
-      const copied = await mirror.put(mirrorKey, stream, { contentType: row.contentType, maxBytes, allowOverwrite: false, expectedSha256: result.sha256, expectedSize: result.sizeBytes });
+      const copied = await mirror.put(mirrorKey, stream, { contentType: row.contentType, maxBytes, allowOverwrite: false, expectedSha256: result.sha256, expectedSize: result.sizeBytes, ...bound });
       attempt.copies.push({ driver: mirror, key: mirrorKey, role: "mirror", generation: copied.generation });
       mirrorState = "ok";
     } catch (err) {
@@ -331,7 +376,7 @@ export interface ReservedUpload {
 }
 
 /** Mint an upload target bound to the authenticated tenant + user. The inventory row is written BEFORE any byte can land. */
-export async function reserveUpload(req: Request | null, input: ReserveUploadInput): Promise<ReservedUpload> {
+async function reserveUploadInner(req: Request | null, input: ReserveUploadInput): Promise<ReservedUpload> {
   if (!storageConfigured()) throw storageUnavailable();
   const limit = OBJECT_LIMITS[input.kind];
   if (!Number.isInteger(input.declaredSize) || input.declaredSize <= 0 || input.declaredSize > limit) {
@@ -387,7 +432,7 @@ export function userHasPermission(user: AuthUser, required: { module: string; ac
  * exist, be owned by a company the user can access and (for reads) be active.
  * Foreign or unknown objects answer null → 404 (no existence disclosure).
  */
-export async function authorizeObject(companyIdOrUser: number | AuthUser, objectId: string, op: ByteOp = "get"): Promise<StorageObjectRow | null> {
+async function authorizeObjectInner(companyIdOrUser: number | AuthUser, objectId: string, op: ByteOp = "get"): Promise<StorageObjectRow | null> {
   if (!UUID.test(objectId)) return null;
   const row = await repo.findById(objectId);
   if (!row) return null;
@@ -398,7 +443,7 @@ export async function authorizeObject(companyIdOrUser: number | AuthUser, object
 }
 
 /** Receive the bytes for a reserved upload on behalf of the authenticated user (route-level auth already passed). */
-export async function receiveUpload(user: AuthUser, objectId: string, capability: string | undefined, body: Readable, declaredBytes?: number): Promise<{ sizeBytes: number; sha256: string }> {
+async function receiveUploadInner(user: AuthUser, objectId: string, capability: string | undefined, body: Readable, declaredBytes?: number): Promise<{ sizeBytes: number; sha256: string }> {
   const invalid = () => new AppError(403, "Upload authorization is invalid or expired", { code: "STORAGE_UPLOAD_INVALID" });
   const expired = () => new AppError(409, "This upload target expired or failed; request a new upload target", { code: "STORAGE_UPLOAD_EXPIRED" });
   const completed = () => new AppError(409, "This upload was already completed", { code: "STORAGE_CONFLICT" });
@@ -423,6 +468,9 @@ export async function receiveUpload(user: AuthUser, objectId: string, capability
   if (!userHasPermission(user, permissionForKind(kind, "put"))) throw new AppError(403, "Missing permission for this upload");
   const now = new Date();
   if (row.state !== "pending") throw refuse(row, now);
+  // B25 Correction 3 — the hard upload lifetime: an intent too old to finish
+  // a bounded put before its deadline is refused before the first byte.
+  if (!canStartPut(publishDeadline(row), now.getTime())) throw expired();
   // A declared Content-Length beyond the ceiling is refused BEFORE any byte is
   // read; chunked / undeclared bodies are capped by the streaming limiter.
   if (declaredBytes !== undefined && Number.isFinite(declaredBytes) && declaredBytes > OBJECT_LIMITS[kind]) {
@@ -447,7 +495,12 @@ export async function receiveUpload(user: AuthUser, objectId: string, capability
     await rollbackLeasedAttempt(attempt, leaseToken, code);
     throw toAppError(err);
   }
-  const finished = await finishUpload(row.id, leaseToken, written);
+  let finished: boolean;
+  try {
+    finished = await finishUpload(row.id, leaseToken, written);
+  } catch (err) {
+    throw toAppError(boundaryError(err)); // never a raw database error towards the route
+  }
   if (!finished) {
     // The lease was lost (expired, swept or tombstoned): the attempt's own
     // copies were removed by the fenced rollback; nothing else was touched.
@@ -474,7 +527,7 @@ async function finishUpload(rowId: string, leaseToken: string, written: { result
     const own = await repo.ownsLease(rowId, leaseToken).catch(() => false);
     if (own) await rollbackLeasedAttempt(written.attempt, leaseToken, "DB_FAILURE");
     else logger.warn({ objectId: rowId }, "Object storage: lease ownership unknown — copies left for the lease-expiry sweep");
-    throw err;
+    throw boundaryError(err);
   }
   if (!staged) {
     await rollbackLeasedAttempt(written.attempt, leaseToken, "LEASE_EXPIRED");
@@ -505,7 +558,7 @@ export interface AttachInput {
  * handle belonging to another tenant, an unknown handle, an already attached
  * object or a tombstone all answer 400 (never 404, so the probe reveals nothing).
  */
-export async function attachStaged(tx: Executor, input: AttachInput): Promise<StorageObjectRow> {
+async function attachStagedInner(tx: Executor, input: AttachInput): Promise<StorageObjectRow> {
   if (!isNativeHandle(input.reference)) throw new AppError(400, "Invalid objectPath");
   const row = await repo.findByReference(input.companyId, input.kind, input.reference, tx);
   if (!row || row.state !== "staged") throw new AppError(400, "Invalid objectPath");
@@ -515,7 +568,7 @@ export async function attachStaged(tx: Executor, input: AttachInput): Promise<St
   return active;
 }
 
-export async function bindEntity(tx: Executor | undefined, objectId: string, entityType: string, entityId: number): Promise<void> {
+async function bindEntityInner(tx: Executor | undefined, objectId: string, entityType: string, entityId: number): Promise<void> {
   await repo.setEntity(objectId, entityType, entityId, tx);
 }
 
@@ -539,7 +592,7 @@ export interface StoredObject {
 }
 
 /** Write-ahead row → bytes (+ mirror) → activation. A failed write or commit leaves a `failed` tombstone, no copies and no committed reference. */
-export async function storeBuffer(input: StoreBufferInput): Promise<StoredObject> {
+async function storeBufferInner(input: StoreBufferInput): Promise<StoredObject> {
   if (!storageConfigured()) throw new StorageError("STORAGE_UNAVAILABLE", "object storage is not configured");
   const limit = OBJECT_LIMITS[input.kind];
   if (input.buffer.length > limit) throw new StorageError("STORAGE_TOO_LARGE");
@@ -580,7 +633,7 @@ export async function storeBuffer(input: StoreBufferInput): Promise<StoredObject
     // Never leave untracked bytes behind: remove exactly the copies this attempt wrote.
     logger.error({ error: safe(err), objectId: row.id, kind: row.kind, companyId: row.companyId }, "Object storage: could not activate the object (database)");
     await rollbackServerAttempt(written.attempt, "DB_FAILURE");
-    throw err;
+    throw boundaryError(err);
   }
   if (!active) {
     // Fenced out (the row was tombstoned by company deletion meanwhile): the state is never regressed, the copies go.
@@ -605,7 +658,7 @@ export interface ObjectRef {
  * registered in the inventory on first use so later reads, deletes and the
  * migration all see one consistent record.
  */
-export async function resolveReadable(ref: ObjectRef): Promise<StorageObjectRow | null> {
+async function resolveReadableInner(ref: ObjectRef): Promise<StorageObjectRow | null> {
   const row = await repo.findByReference(ref.companyId, ref.kind, ref.reference);
   if (row) return row.state === "active" ? row : null;
   const mode = legacyReadMode();
@@ -712,7 +765,7 @@ function verifiedStream(row: StorageObjectRow, copy: LocatedCopy, source: Readab
   return verifier;
 }
 
-export async function openObject(row: StorageObjectRow, opts: { maxBytes?: number } = {}): Promise<OpenedObject> {
+async function openObjectInner(row: StorageObjectRow, opts: { maxBytes?: number } = {}): Promise<OpenedObject> {
   const maxBytes = opts.maxBytes ?? OBJECT_LIMITS[row.kind as StorageKind];
   const copies = await locateCopies(row);
   let lastErr: unknown = null;
@@ -734,14 +787,14 @@ export async function openObject(row: StorageObjectRow, opts: { maxBytes?: numbe
   throw new StorageError("STORAGE_UNAVAILABLE", "no readable copy of this object under the current configuration", lastErr, "NO_READABLE_COPY");
 }
 
-export async function openByReference(ref: ObjectRef, opts: { maxBytes?: number } = {}): Promise<OpenedObject | null> {
+async function openByReferenceInner(ref: ObjectRef, opts: { maxBytes?: number } = {}): Promise<OpenedObject | null> {
   const row = await resolveReadable(ref);
   if (!row) return null;
   return openObject(row, opts);
 }
 
 /** Small objects only (logos, scan images): bounded full read. Null when the object is absent. */
-export async function readObjectBuffer(ref: ObjectRef, maxBytes: number): Promise<{ buffer: Buffer; contentType: string; row: StorageObjectRow } | null> {
+async function readObjectBufferInner(ref: ObjectRef, maxBytes: number): Promise<{ buffer: Buffer; contentType: string; row: StorageObjectRow } | null> {
   const opened = await openByReference(ref, { maxBytes });
   if (!opened) return null;
   const buffer = await readAll(opened.stream, maxBytes);
@@ -760,7 +813,7 @@ export interface DownloadLinkInput extends ObjectRef {
  * when the object does not exist). The route re-checks the CURRENT session,
  * tenant access, state and feature permission on every request.
  */
-export async function mintDownloadUrl(base: string, input: DownloadLinkInput): Promise<string | null> {
+async function mintDownloadUrlInner(base: string, input: DownloadLinkInput): Promise<string | null> {
   const row = await resolveReadable(input);
   if (!row) return null;
   return fileUrl(base, row.id);
@@ -808,7 +861,7 @@ export async function displayFileName(row: StorageObjectRow): Promise<string> {
  *   scan_image     a live (not deleted) scan of the tenant with this image_url
  *   branding_logo  the company's current brand_logo_key
  */
-export async function liveAssociation(row: StorageObjectRow): Promise<boolean> {
+async function liveAssociationInner(row: StorageObjectRow): Promise<boolean> {
   const one = { one: documentVersionsTable.id };
   switch (row.kind) {
     case "document": {
@@ -865,46 +918,97 @@ export interface DeleteOutcome {
   ok: boolean;
   /** The legacy bucket object was deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off). */
   retained: boolean;
+  /** A bucket object sits at a key of this row WITHOUT the row's ownership marker (or generation) — never deleted automatically. */
+  unproven: boolean;
+  /** Copies actually removed by this call (late copies reclaimed by a reconciliation). */
+  removed: number;
+}
+
+type CopyRemoval = "removed" | "absent" | "unproven" | "failed" | "unreachable";
+
+/**
+ * Remove ONE copy with durable ownership proof (B25 Correction 3):
+ *   • fs / memory (private, attempt-unique keys): by key
+ *   • gcs native copies (primary on the GCS driver, mirror): the object must
+ *     carry this row's id as its ownership marker, and the delete is
+ *     conditioned on the generation the proving HEAD observed — an object
+ *     without the marker is NOT ours (pre-existing, foreign, newer generation)
+ *     and is reported `unproven`, never deleted
+ *   • gcs legacy copies (pre-B25 objects, only when legacy deletion is on):
+ *     no marker exists by definition; the delete is conditioned on the
+ *     observed generation (ownership = the registered legacy reference)
+ * A precondition failure (the generation changed between HEAD and DELETE) is
+ * reported `failed` and re-examined on the next pass — never a bare-key delete.
+ */
+async function removeCopy(driver: StorageDriver | null, key: string, row: StorageObjectRow, what: "primary" | "mirror" | "legacy"): Promise<CopyRemoval> {
+  if (!driver) {
+    logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what }, "Object storage: copy unreachable under the current configuration (delete will retry)");
+    return "unreachable";
+  }
+  try {
+    if (driver.kind !== "gcs") {
+      const present = await driver.head(key);
+      if (!present) return "absent";
+      await driver.delete(key);
+      return "removed";
+    }
+    const head = await driver.head(key);
+    if (!head) return "absent";
+    if (what !== "legacy" && head.owner !== row.id) {
+      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what, driver: driver.kind }, "Object storage: bucket object at this row's key carries no matching ownership marker — left in place (OWNERSHIP_UNPROVEN)");
+      return "unproven";
+    }
+    if (!head.generation) {
+      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what, driver: driver.kind }, "Object storage: provider reported no generation — left in place (OWNERSHIP_UNPROVEN)");
+      return "unproven";
+    }
+    await driver.delete(key, { ifGeneration: head.generation });
+    return "removed";
+  } catch (err) {
+    if (err instanceof StorageError && err.code === "STORAGE_CONFLICT" && err.reason === "GENERATION_MISMATCH") {
+      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what, driver: driver.kind }, "Object storage: object generation changed between HEAD and DELETE — re-examined on the next pass");
+      return "failed";
+    }
+    bump("deleteFailures");
+    logger.warn({ error: safe(err), objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what, driver: driver.kind }, "Object storage: physical delete failed (will retry)");
+    return "failed";
+  }
 }
 
 /**
  * Remove every copy of a row from wherever it lives — primary (only when the
  * configured primary driver matches the row), the persisted mirror copy and,
- * only when legacy deletion is enabled, the legacy bucket object. A copy that
- * cannot be removed now keeps the row in `deleting` for a later retry.
+ * only when legacy deletion is enabled, the legacy bucket object — each with
+ * durable ownership proof (removeCopy). A copy that cannot be removed now
+ * keeps the row in `deleting` for a later retry; an unproven object keeps the
+ * row discoverable forever.
  */
-export async function physicallyDelete(row: StorageObjectRow): Promise<DeleteOutcome> {
-  let ok = true;
-  let retained = false;
+async function physicallyDeleteInner(row: StorageObjectRow): Promise<DeleteOutcome> {
+  const outcome: DeleteOutcome = { ok: true, retained: false, unproven: false, removed: 0 };
   const legacy = config.objectStorage.bucketId ? await getLegacyDriver().catch(() => null) : null;
-  const tryDelete = async (driver: StorageDriver | null, key: string | null, what: string) => {
-    if (!key) return;
-    if (!driver) {
-      ok = false;
-      logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what }, "Object storage: copy unreachable under the current configuration (delete will retry)");
-      return;
-    }
-    try {
-      await driver.delete(key);
-    } catch (err) {
-      ok = false;
-      bump("deleteFailures");
-      logger.warn({ error: safe(err), objectId: row.id, kind: row.kind, companyId: row.companyId, copy: what, driver: driver.kind }, "Object storage: physical delete failed (will retry)");
-    }
+  const note = (r: CopyRemoval) => {
+    if (r === "removed") outcome.removed += 1;
+    else if (r === "unproven") {
+      outcome.unproven = true;
+      outcome.ok = false;
+    } else if (r === "failed" || r === "unreachable") outcome.ok = false;
   };
   if (row.driver === "gcs") {
-    if (config.objectStorage.legacyDelete) await tryDelete(legacy, row.legacyKey ?? mirrorLocation(row.storageKey), "legacy");
-    else retained = true; // never deleted in this phase; the tombstone protects and stays discoverable
+    const canonical = mirrorLocation(row.storageKey);
+    const key = row.legacyKey ?? canonical;
+    const native = !row.legacyKey || row.legacyKey === canonical;
+    if (!config.objectStorage.legacyDelete) outcome.retained = true; // bucket objects are never deleted in this phase
+    else if (key) note(await removeCopy(legacy, key, row, native ? "primary" : "legacy"));
   } else {
     const p = storageConfigured() ? await primary().catch(() => null) : null;
-    await tryDelete(p && p.kind === row.driver ? p : null, row.storageKey, "primary");
-    if (row.mirrorKey) await tryDelete(legacy, row.mirrorKey, "mirror");
+    note(await removeCopy(p && p.kind === row.driver ? p : null, row.storageKey, row, "primary"));
+    if (row.mirrorKey) note(await removeCopy(legacy, row.mirrorKey, row, "mirror"));
     if (row.legacyKey) {
-      if (config.objectStorage.legacyDelete) await tryDelete(legacy, row.legacyKey, "legacy");
-      else retained = true;
+      if (config.objectStorage.legacyDelete) note(await removeCopy(legacy, row.legacyKey, row, "legacy"));
+      else outcome.retained = true;
     }
   }
-  return { ok, retained };
+  return outcome;
 }
 
 async function enqueueDeleteRetry(objectId: string): Promise<void> {
@@ -924,7 +1028,7 @@ function settledData(outcome: DeleteOutcome) {
  * Tombstone first, bytes second. Unknown / legacy references get a tombstone
  * row so the legacy bucket can never resurrect them.
  */
-export async function deleteByReference(ref: ObjectRef, tx?: Executor): Promise<void> {
+async function deleteByReferenceInner(ref: ObjectRef, tx?: Executor): Promise<void> {
   const row = await repo.findByReference(ref.companyId, ref.kind, ref.reference, tx);
   if (!row) {
     const loc = legacyLocation(ref.kind, ref.reference, ref.companyId);
@@ -954,24 +1058,33 @@ export async function deleteByReference(ref: ObjectRef, tx?: Executor): Promise<
 }
 
 /** Second half of a delete: remove the bytes and settle the row; retried durably on failure. */
-export async function finishDelete(row: StorageObjectRow): Promise<boolean> {
+async function finishDeleteInner(row: StorageObjectRow): Promise<boolean> {
   const outcome = await physicallyDelete(row);
   if (outcome.ok) {
     await repo.transition(row.id, ["deleting"], "deleted", settledData(outcome));
     return true;
   }
-  await repo.update(row.id, { lastError: "DELETE_RETRY" }).catch(() => undefined);
+  if (outcome.unproven) {
+    // Not ours to delete: stays `deleting` + OWNERSHIP_UNPROVEN (discoverable, never purged); no retry storm.
+    await repo.markOwnershipUnproven(row.id).catch(() => undefined);
+    return false;
+  }
+  await repo.transition(row.id, ["deleting"], "deleting", { lastError: "DELETE_RETRY" }).catch(() => undefined);
   await enqueueDeleteRetry(row.id);
   return false;
 }
 
 /** Durable retry handler (idempotent: a settled row is a no-op). */
-export async function runDeleteObjectJob(payload: { objectId: string }): Promise<void> {
+async function runDeleteObjectJobInner(payload: { objectId: string }): Promise<void> {
   if (!payload || typeof payload.objectId !== "string" || !UUID.test(payload.objectId)) return;
   const row = await repo.findById(payload.objectId);
   if (!row || row.state !== "deleting") return;
   const outcome = await physicallyDelete(row);
-  if (!outcome.ok) throw new Error("storage object delete failed (retrying)");
+  if (outcome.unproven) {
+    await repo.markOwnershipUnproven(row.id).catch(() => undefined);
+    return; // settled as far as automation may go; surfaced for review
+  }
+  if (!outcome.ok) throw new StorageError("STORAGE_UNAVAILABLE", "storage object delete failed (retrying)", undefined, "DELETE_RETRY");
   await repo.transition(row.id, ["deleting"], "deleted", settledData(outcome));
 }
 
@@ -981,7 +1094,7 @@ export async function runDeleteObjectJob(payload: { objectId: string }): Promise
  * after the feature rows are cascaded away) and tombstone every live object —
  * all inside the deletion transaction.
  */
-export async function tombstoneCompany(tx: Executor, companyId: number): Promise<number> {
+async function tombstoneCompanyInner(tx: Executor, companyId: number): Promise<number> {
   const { discoverLegacyReferences } = await import("../storage/migration-db.js");
   const { candidates, unattributable, unattributableKinds } = await discoverLegacyReferences({ companyId, tx, requireInventory: true });
   if (unattributable > 0) {
@@ -1030,7 +1143,7 @@ export async function enqueueCompanyPurge(companyId: number): Promise<void> {
 }
 
 /** Durable purge handler: removes the files of a tombstoned company in bounded batches (re-enqueues itself while rows remain). */
-export async function runPurgeCompanyJob(payload: { companyId: number }): Promise<void> {
+async function runPurgeCompanyJobInner(payload: { companyId: number }): Promise<void> {
   if (!payload || !Number.isInteger(payload.companyId)) return;
   const batch = config.objectStorage.sweepBatchSize;
   const states: repo.StorageObjectState[] = ["deleting", "pending", "uploading", "staged", "active"];
@@ -1041,10 +1154,11 @@ export async function runPurgeCompanyJob(payload: { companyId: number }): Promis
     if (!marked) continue;
     const outcome = await physicallyDelete(marked);
     if (outcome.ok) await repo.transition(marked.id, ["deleting"], "deleted", settledData(outcome));
+    else if (outcome.unproven) await repo.markOwnershipUnproven(marked.id).catch(() => undefined);
     else failed += 1;
   }
-  const remaining = await repo.listByCompany(payload.companyId, states, 1);
-  if (failed > 0) throw new Error(`storage purge: ${failed} object(s) could not be removed yet (retrying)`);
+  const remaining = (await repo.listByCompany(payload.companyId, states, batch)).filter((r) => r.lastError !== repo.OWNERSHIP_UNPROVEN);
+  if (failed > 0) throw new StorageError("STORAGE_UNAVAILABLE", `storage purge: ${failed} object(s) could not be removed yet (retrying)`, undefined, "DELETE_RETRY");
   if (remaining.length > 0) await enqueueCompanyPurge(payload.companyId);
 }
 
@@ -1058,13 +1172,20 @@ export interface SweepSummary {
   cleanupRetries: number;
   companyOrphans: number;
   entityOrphans: number;
+  /** `deleted` tombstones whose persisted locations were re-checked after the late-publication horizon (B25 Correction 3). */
+  reconciledTombstones: number;
+  /** Late copies (published after tombstoning / lease loss by a writer that then died) removed by a reconciliation. */
+  lateCopiesReclaimed: number;
   purgedTombstones: number;
 }
 
+/** Slack added to the hard upload lifetime before a tombstone is considered quiescent (clock skew, in-flight bounded puts). */
+const QUIESCENCE_SLACK_MS = 5 * 60 * 1000;
+
 /** Idempotent, bounded repair pass (runs inside the recurring maintenance sweep). */
-export async function sweepStorage(now: Date = new Date()): Promise<SweepSummary> {
+async function sweepStorageInner(now: Date = new Date()): Promise<SweepSummary> {
   const batch = config.objectStorage.sweepBatchSize;
-  const summary: SweepSummary = { stalePending: 0, staleStaged: 0, expiredLeases: 0, retriedDeletes: 0, cleanupRetries: 0, companyOrphans: 0, entityOrphans: 0, purgedTombstones: 0 };
+  const summary: SweepSummary = { stalePending: 0, staleStaged: 0, expiredLeases: 0, retriedDeletes: 0, cleanupRetries: 0, companyOrphans: 0, entityOrphans: 0, reconciledTombstones: 0, lateCopiesReclaimed: 0, purgedTombstones: 0 };
   if (!storageConfigured()) return summary;
 
   const settle = async (row: StorageObjectRow): Promise<boolean> => {
@@ -1072,6 +1193,7 @@ export async function sweepStorage(now: Date = new Date()): Promise<SweepSummary
     if (!marked) return false;
     const outcome = await physicallyDelete(marked);
     if (outcome.ok) await repo.transition(marked.id, ["deleting"], "deleted", settledData(outcome));
+    else if (outcome.unproven) await repo.markOwnershipUnproven(marked.id).catch(() => undefined);
     return outcome.ok;
   };
 
@@ -1091,6 +1213,7 @@ export async function sweepStorage(now: Date = new Date()): Promise<SweepSummary
     if (row.state === "deleted") {
       const outcome = await physicallyDelete(row);
       if (outcome.ok && (await repo.clearCleanupPending(row.id, outcome.retained ? repo.LEGACY_RETAINED : null))) summary.cleanupRetries += 1;
+      else if (outcome.unproven) await repo.markOwnershipUnproven(row.id).catch(() => undefined);
     } else if (await settle(row)) summary.cleanupRetries += 1;
   }
   for (const row of await repo.listStale("pending", new Date(now.getTime() - config.objectStorage.pendingTtlMs), batch)) {
@@ -1111,6 +1234,24 @@ export async function sweepStorage(now: Date = new Date()): Promise<SweepSummary
   for (const row of await repo.listEntityOrphans(new Date(now.getTime() - config.objectStorage.pendingTtlMs), batch)) {
     if (await settle(row)) summary.entityOrphans += 1;
   }
+  // B25 Correction 3 — final reconciliation: once a tombstone is older than the
+  // hard upload lifetime (+ slack) no writer can publish a late copy any more,
+  // so its persisted locations are re-checked exactly once more and the row is
+  // marked reconciled. A late copy found here was published by a writer that
+  // died before it could clean up or flag it.
+  const quiescentBefore = new Date(now.getTime() - config.objectStorage.uploadHardLifetimeMs - QUIESCENCE_SLACK_MS);
+  for (const row of await repo.listUnreconciledTombstones(quiescentBefore, batch)) {
+    const outcome = await physicallyDelete(row);
+    if (outcome.ok) {
+      if (await repo.markReconciled(row.id, now, outcome.retained ? repo.LEGACY_RETAINED : null)) summary.reconciledTombstones += 1;
+      if (outcome.removed > 0) {
+        summary.lateCopiesReclaimed += outcome.removed;
+        logger.warn({ objectId: row.id, kind: row.kind, companyId: row.companyId, copies: outcome.removed }, "Object storage: late copy of a tombstoned object reclaimed by the final reconciliation");
+      }
+    } else if (outcome.unproven) await repo.markOwnershipUnproven(row.id).catch(() => undefined);
+    else await repo.flagCleanupPending(row.id).catch(() => undefined);
+  }
+  // Only a RECONCILED tombstone of a deleted company may be dropped — never merely because time passed.
   for (const row of await repo.listPurgeableTombstones(new Date(now.getTime() - 24 * 60 * 60 * 1000), batch)) {
     await repo.remove(row.id);
     summary.purgedTombstones += 1;
@@ -1136,6 +1277,10 @@ export interface StorageMetricsSnapshot {
   pendingDeletes: number | null;
   /** Tombstoned legacy bucket objects whose bytes were deliberately kept (await an approved GCS cleanup). */
   retainedLegacyObjects: number | null;
+  /** Rows whose bucket object carries no matching ownership marker — never deleted automatically, awaiting review (B25 Correction 3). */
+  ownershipUnproven: number | null;
+  /** `deleted` tombstones not yet re-checked after the late-publication horizon (B25 Correction 3). */
+  unreconciledTombstones: number | null;
 }
 
 export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
@@ -1143,11 +1288,15 @@ export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
   let pendingUploads: number | null = null;
   let pendingDeletes: number | null = null;
   let retainedLegacyObjects: number | null = null;
+  let ownershipUnproven: number | null = null;
+  let unreconciledTombstones: number | null = null;
   try {
     const counts = await repo.countByStates();
     pendingUploads = (counts.pending ?? 0) + (counts.uploading ?? 0) + (counts.staged ?? 0);
     pendingDeletes = counts.deleting ?? 0;
     retainedLegacyObjects = await repo.countRetainedLegacyObjects();
+    ownershipUnproven = await repo.countOwnershipUnproven();
+    unreconciledTombstones = await repo.countUnreconciledTombstones();
   } catch (err) {
     logger.warn({ error: safe(err) }, "Object storage: inventory counts unavailable for metrics");
   }
@@ -1160,7 +1309,75 @@ export async function storageMetrics(): Promise<StorageMetricsSnapshot> {
     pendingUploads,
     pendingDeletes,
     retainedLegacyObjects,
+    ownershipUnproven,
+    unreconciledTombstones,
   };
+}
+
+
+// ── storage-origin boundary (B25 Correction 3) ───────────────────────────────
+// Every entry point a route, worker, feature service or test calls leaves this
+// module only with a StorageError (sanitized cause summary) or an AppError.
+export function reserveUpload(...args: Parameters<typeof reserveUploadInner>): ReturnType<typeof reserveUploadInner> {
+  return guarded(() => reserveUploadInner(...args));
+}
+export function attachStaged(...args: Parameters<typeof attachStagedInner>): ReturnType<typeof attachStagedInner> {
+  return guarded(() => attachStagedInner(...args));
+}
+export function bindEntity(...args: Parameters<typeof bindEntityInner>): ReturnType<typeof bindEntityInner> {
+  return guarded(() => bindEntityInner(...args));
+}
+export function storeBuffer(...args: Parameters<typeof storeBufferInner>): ReturnType<typeof storeBufferInner> {
+  return guarded(() => storeBufferInner(...args));
+}
+export function resolveReadable(...args: Parameters<typeof resolveReadableInner>): ReturnType<typeof resolveReadableInner> {
+  return guarded(() => resolveReadableInner(...args));
+}
+export function openObject(...args: Parameters<typeof openObjectInner>): ReturnType<typeof openObjectInner> {
+  return guarded(() => openObjectInner(...args));
+}
+export function openByReference(...args: Parameters<typeof openByReferenceInner>): ReturnType<typeof openByReferenceInner> {
+  return guarded(() => openByReferenceInner(...args));
+}
+export function readObjectBuffer(...args: Parameters<typeof readObjectBufferInner>): ReturnType<typeof readObjectBufferInner> {
+  return guarded(() => readObjectBufferInner(...args));
+}
+export function mintDownloadUrl(...args: Parameters<typeof mintDownloadUrlInner>): ReturnType<typeof mintDownloadUrlInner> {
+  return guarded(() => mintDownloadUrlInner(...args));
+}
+export function authorizeObject(...args: Parameters<typeof authorizeObjectInner>): ReturnType<typeof authorizeObjectInner> {
+  return guarded(() => authorizeObjectInner(...args));
+}
+export function liveAssociation(...args: Parameters<typeof liveAssociationInner>): ReturnType<typeof liveAssociationInner> {
+  return guarded(() => liveAssociationInner(...args));
+}
+export function deleteByReference(...args: Parameters<typeof deleteByReferenceInner>): ReturnType<typeof deleteByReferenceInner> {
+  return guarded(() => deleteByReferenceInner(...args));
+}
+export function finishDelete(...args: Parameters<typeof finishDeleteInner>): ReturnType<typeof finishDeleteInner> {
+  return guarded(() => finishDeleteInner(...args));
+}
+export function runDeleteObjectJob(...args: Parameters<typeof runDeleteObjectJobInner>): ReturnType<typeof runDeleteObjectJobInner> {
+  return guarded(() => runDeleteObjectJobInner(...args));
+}
+export function tombstoneCompany(...args: Parameters<typeof tombstoneCompanyInner>): ReturnType<typeof tombstoneCompanyInner> {
+  return guarded(() => tombstoneCompanyInner(...args));
+}
+export function runPurgeCompanyJob(...args: Parameters<typeof runPurgeCompanyJobInner>): ReturnType<typeof runPurgeCompanyJobInner> {
+  return guarded(() => runPurgeCompanyJobInner(...args));
+}
+export function physicallyDelete(...args: Parameters<typeof physicallyDeleteInner>): ReturnType<typeof physicallyDeleteInner> {
+  return guarded(() => physicallyDeleteInner(...args));
+}
+export function sweepStorage(...args: Parameters<typeof sweepStorageInner>): ReturnType<typeof sweepStorageInner> {
+  return guarded(() => sweepStorageInner(...args));
+}
+export async function receiveUpload(...args: Parameters<typeof receiveUploadInner>): ReturnType<typeof receiveUploadInner> {
+  try {
+    return await receiveUploadInner(...args);
+  } catch (err) {
+    throw toAppError(boundaryError(err));
+  }
 }
 
 export { db as storageDb };
