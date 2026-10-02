@@ -23088,7 +23088,7 @@ export const getUploadTenantLogoUrl = () => {
 }
 
 /**
- * Raw image body (PNG, JPEG or WebP; 2 MB max; 32–4096 px per side; validated from the actual bytes and normalized before storage). Requires organization:edit. A failed storage write leaves the previous branding unchanged (503 BRANDING_STORAGE_UNAVAILABLE). Audited as branding.logo.replace.
+ * Raw image body (PNG, JPEG or WebP; 2 MB max; 32–4096 px per side; validated from the actual bytes and normalized before storage). Requires organization:edit. A failed storage write leaves the previous branding unchanged (503 BRANDING_STORAGE_UNAVAILABLE); a company-row update that conclusively did not commit answers 503 BRANDING_UPDATE_FAILED with the previous branding unchanged, and one whose outcome could not be confirmed answers 503 BRANDING_UPDATE_UNCONFIRMED (refresh before retrying; nothing is deleted). Audited as branding.logo.replace.
  * @summary Upload / replace the tenant logo
  */
 export const uploadTenantLogo = async (uploadTenantLogoBody: Blob, options?: RequestInit): Promise<TenantBranding> => {

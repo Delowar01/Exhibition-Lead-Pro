@@ -50,7 +50,9 @@
 > durable GCS ownership, complete storage log containment; Correction 4:
 > persisted provider uncertainty for GCS writes (never reconciled or purged
 > while uncertain), startup timing-invariant validation, contained branding
-> row-update errors —
+> row-update errors; Correction 5: ambiguous database commit outcomes resolved
+> from the durable row (committed writes never deleted, fence-before-delete
+> rollbacks, branding commit-outcome model) —
 > is implemented and verified **locally only** on
 > `claude/b25-object-storage-hostinger` (`B25_OBJECT_STORAGE.md`): not merged,
 > not hosted, not migrated; the hosted stack still uses Google Cloud Storage,
