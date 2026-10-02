@@ -371,7 +371,7 @@ describe("5. primary + mirror cleanup on failed commits", () => {
   it("primary ok, mirror ok, DB transition fails → neither copy remains", async () => {
     useFsPrimary({ mirror: true });
     vi.mocked(repo.transition).mockRejectedValueOnce(new Error("database unavailable"));
-    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toThrow(/database unavailable/);
+    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toMatchObject({ code: "STORAGE_UNAVAILABLE", reason: "DB_FAILURE" });
     expect(primary.objects.size).toBe(0);
     expect(gcs.objects.size).toBe(0);
   });
@@ -393,7 +393,7 @@ describe("5. primary + mirror cleanup on failed commits", () => {
     await seedExecutiveReport(COMPANY, committed.reference); // a live feature row references the committed object
     vi.mocked(repo.transition).mockRejectedValueOnce(new Error("database unavailable"));
     gcs.failNextDelete = true; // the mirror copy cannot be removed during rollback
-    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toThrow(/database unavailable/);
+    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toMatchObject({ code: "STORAGE_UNAVAILABLE", reason: "DB_FAILURE" });
     expect(primary.objects.size).toBe(1); // only the committed object
     expect(gcs.objects.size).toBe(2); // committed mirror + the stuck mirror copy
     const stuck = (await rows()).find((r) => r.id !== committed.objectId)!;

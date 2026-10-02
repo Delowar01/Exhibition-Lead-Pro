@@ -237,7 +237,7 @@ describe("5b. service-level cleanup is generation-safe (fake adapter)", () => {
 
   it("successful primary + mirror, then a database failure → exactly the written generations are removed", async () => {
     vi.mocked(repo.transition).mockRejectedValueOnce(new Error("database unavailable"));
-    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toThrow(/database unavailable/);
+    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toMatchObject({ code: "STORAGE_UNAVAILABLE", reason: "DB_FAILURE" });
     expect(primary.objects.size).toBe(0);
     expect(gcs.objects.size).toBe(0);
     const mirrorDeletes = gcs.deleteCalls;

@@ -227,7 +227,7 @@ describe("write-ahead inventory and failure rollback", () => {
 
   it("a database failure AFTER the bytes were written removes the bytes and leaves the row for the sweep", async () => {
     vi.mocked(repo.transition).mockRejectedValueOnce(new Error("database unavailable"));
-    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toThrow(/database unavailable/);
+    await expect(storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("pdf") })).rejects.toMatchObject({ code: "STORAGE_UNAVAILABLE", reason: "DB_FAILURE" });
     expect(primary.objects.size).toBe(0); // never leaves untracked bytes behind
     const [row] = await rows();
     // B25 Correction 1: the rollback helper settles the row itself (failed, sanitized reason)
