@@ -156,7 +156,8 @@ export interface PutResult {
 export interface DeleteOptions {
   /**
    * Delete only when the object's current generation equals this value
-   * (ownership-proven cleanup). A mismatch rejects with STORAGE_CONFLICT /
+   * (ownership-proven cleanup). REQUIRED by the GCS driver (B25 Correction 6:
+   * a provider delete without it is refused before the SDK is called). A mismatch rejects with STORAGE_CONFLICT /
    * reason GENERATION_MISMATCH and leaves the object untouched; drivers
    * without generations (fs) ignore it because their keys are attempt-unique.
    */

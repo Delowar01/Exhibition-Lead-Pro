@@ -374,7 +374,8 @@ async function processRow(opts: MigrationOptions, row: StorageObjectRow): Promis
       (row.sizeBytes != null && row.sizeBytes !== put.sizeBytes);
     if (mismatch) {
       bump("migrationVerifyFailures");
-      await target.delete(row.storageKey).catch(() => undefined);
+      // Remove exactly what this copy wrote (fs: attempt-unique key; a provider target: its generation — never bare).
+      await target.delete(row.storageKey, put.generation ? { ifGeneration: put.generation } : undefined).catch(() => undefined);
       return { ...base, status: "checksum_mismatch" };
     }
     await inventory.update(row.id, { driver: target.kind, sha256: put.sha256, sizeBytes: put.sizeBytes, contentType });

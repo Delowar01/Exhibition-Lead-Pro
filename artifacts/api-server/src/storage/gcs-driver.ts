@@ -13,6 +13,12 @@
 //   tenants/… / health/…     a canonical key inside the configured bucket
 // Nothing here mints signed URLs any more: every read is streamed through the
 // API after the normal authorization checks.
+//
+// B25 Correction 6 — generation invariant: a successful put ALWAYS returns the
+// generation it created (recovered through a HEAD that also proves the
+// ownership marker when the write stream does not expose it), and the public
+// delete REFUSES to run without an exact generation precondition. No code path
+// can issue a bare provider delete.
 // =============================================================================
 import { randomBytes, randomUUID } from "node:crypto";
 import { PassThrough, type Readable } from "node:stream";
@@ -111,17 +117,43 @@ export class GcsStorageDriver implements StorageDriver {
       if (gcsStatus(err) === 412) throw new StorageError("STORAGE_CONFLICT", undefined, err);
       throw mapAbort(err) ?? mapGcsError(err);
     }
-    const generation = generationOf(f.metadata);
-    const result: PutResult = { sizeBytes: limiter.size, sha256: limiter.sha256, ...(generation ? { generation } : {}) };
+    // B25 Correction 6 — the generation is mandatory. The write stream normally
+    // exposes it; when it does not (the SDK contract makes it optional) it is
+    // recovered through a bounded HEAD that must also show this write's
+    // ownership marker. Nothing provable → fail closed: the put is NOT reported
+    // as a completed copy, nothing is deleted, and the owning inventory row
+    // (publication-uncertain since before the request) keeps the location
+    // discoverable for the sweep's marker + generation cleanup.
+    const generation = generationOf(f.metadata) ?? (await this.proveWrittenGeneration(key, opts.owner));
+    const result: PutResult = { sizeBytes: limiter.size, sha256: limiter.sha256, generation };
     try {
       verifyExpected(result, opts);
     } catch (err) {
-      // Our own generation only; with no generation reported the object is left
-      // for the owning inventory row's cleanup (discoverable, never a blind delete).
-      if (generation) await this.delete(key, { ifGeneration: generation }).catch(() => undefined);
+      // Our own generation only — never a bare delete.
+      await this.delete(key, { ifGeneration: generation }).catch(() => undefined);
       throw err;
     }
     return result;
+  }
+
+  /** HEAD after a write whose stream reported no generation: the object must exist, carry the expected marker and report a generation. */
+  private async proveWrittenGeneration(key: string, expectedOwner: string | undefined): Promise<string> {
+    let timer: NodeJS.Timeout | undefined;
+    let head: ObjectHead | null;
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new StorageError("STORAGE_UNAVAILABLE", "written object could not be observed in time", undefined, "GENERATION_UNPROVEN")), Math.max(this.probeTimeoutMs, 5000));
+      });
+      head = await Promise.race([this.head(key), timeout]);
+    } catch (err) {
+      throw err instanceof StorageError && err.reason ? err : new StorageError("STORAGE_UNAVAILABLE", "written object could not be observed", err, "GENERATION_UNPROVEN");
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (!head) throw new StorageError("STORAGE_UNAVAILABLE", "written object is not observable", undefined, "GENERATION_UNPROVEN");
+    if (expectedOwner !== undefined && head.owner !== expectedOwner) throw new StorageError("STORAGE_UNAVAILABLE", "written object does not carry this write's ownership marker", undefined, "OWNERSHIP_UNPROVEN");
+    if (!head.generation) throw new StorageError("STORAGE_UNAVAILABLE", "provider reported no generation for the written object", undefined, "GENERATION_UNPROVEN");
+    return head.generation;
   }
 
   async getStream(key: string, opts: GetOptions = {}): Promise<ObjectStream> {
@@ -170,9 +202,16 @@ export class GcsStorageDriver implements StorageDriver {
     }
   }
 
+  /**
+   * Delete ONLY the exact generation named by the caller (B25 Correction 6):
+   * without one the provider is never contacted. Every caller proves the
+   * generation first (its own put result, or a HEAD that showed the ownership
+   * marker); there is no bare-key delete anywhere.
+   */
   async delete(key: string, opts: DeleteOptions = {}): Promise<void> {
+    if (opts.ifGeneration === undefined) throw new StorageError("STORAGE_UNAVAILABLE", "a GCS delete requires the exact generation to remove", undefined, "GENERATION_REQUIRED");
     try {
-      await this.file(key).delete({ ignoreNotFound: true, ...(opts.ifGeneration !== undefined ? { ifGenerationMatch: Number(opts.ifGeneration) } : {}) });
+      await this.file(key).delete({ ignoreNotFound: true, ifGenerationMatch: Number(opts.ifGeneration) });
     } catch (err) {
       // Precondition failed: the object at this key is a DIFFERENT generation —
       // not ours to remove. Report it; never fall back to an unconditional delete.
@@ -202,17 +241,23 @@ export class GcsStorageDriver implements StorageDriver {
     }
   }
 
-  /** Write/read/delete probe under the health namespace (used only by explicit verification tooling, never by readiness). */
+  /**
+   * Write/read/delete probe under the health namespace (used only by explicit
+   * verification tooling, never by readiness). B25 Correction 6: the health
+   * object is removed only at the generation its own put returned; a put that
+   * cannot prove its generation fails before the read and leaves the object
+   * for explicit health-namespace cleanup — never a bare delete.
+   */
   async roundTripProbe(): Promise<void> {
     const key = healthKey(`probe-${randomUUID()}`);
     const payload = randomBytes(512);
+    const written = await this.put(key, payload, { contentType: "application/octet-stream", maxBytes: 512 });
     try {
-      await this.put(key, payload, { contentType: "application/octet-stream", maxBytes: 512 });
       const { stream } = await this.getStream(key, { maxBytes: 512 });
       const back = await readAll(stream, 512);
       if (!back.equals(payload)) throw new StorageError("STORAGE_INTEGRITY");
     } finally {
-      await this.delete(key).catch(() => undefined);
+      if (written.generation) await this.delete(key, { ifGeneration: written.generation }).catch(() => undefined);
     }
   }
 }

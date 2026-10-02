@@ -75,6 +75,13 @@
 //     is ever deleted by a rollback; every inventory bookkeeping failure is
 //     logged sanitized instead of swallowed
 //
+// B25 Correction 6:
+//   • no generationless GCS delete anywhere: the GCS driver refuses a delete
+//     without an exact generation, every successful GCS put returns one
+//     (recovered through a marker-proving HEAD when the stream has none, or the
+//     put fails closed), and a rollback of a copy without a recorded generation
+//     proves ownership + generation by HEAD or leaves the object in place
+//
 // Nothing here ever returns a filesystem path, storage key, bucket name or host
 // path to a caller; API responses carry opaque handles and credential-free URLs.
 // =============================================================================
@@ -270,6 +277,21 @@ export async function discardCopies(attempt: WriteAttempt): Promise<boolean> {
   let clean = true;
   for (const copy of attempt.copies) {
     try {
+      if (copy.driver.kind === "gcs" && !copy.generation) {
+        // B25 Correction 6 — never a bare provider delete. A GCS put always
+        // reports its generation now; should a copy ever lack one, ownership and
+        // generation are proven by HEAD first, otherwise the object stays in place
+        // (cleanup-incomplete → CLEANUP_PENDING → the sweep's marker-fenced pass).
+        const head = await copy.driver.head(copy.key);
+        if (!head) continue;
+        if (head.owner !== attempt.rowId || !head.generation) {
+          clean = false;
+          logger.warn({ objectId: attempt.rowId, role: copy.role, driver: copy.driver.kind }, "Object storage: copy without a recorded generation is not provably this attempt's — left in place");
+          continue;
+        }
+        await copy.driver.delete(copy.key, { ifGeneration: head.generation });
+        continue;
+      }
       await copy.driver.delete(copy.key, copy.generation ? { ifGeneration: copy.generation } : undefined);
     } catch (err) {
       if (err instanceof StorageError && err.code === "STORAGE_CONFLICT" && err.reason === "GENERATION_MISMATCH") {

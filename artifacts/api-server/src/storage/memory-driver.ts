@@ -136,6 +136,8 @@ export class MemoryStorageDriver implements StorageDriver {
 
   async delete(key: string, opts: DeleteOptions = {}): Promise<void> {
     this.check(key);
+    // B25 Correction 6 — the fake legacy adapter enforces the real driver's invariant: no generationless delete.
+    if (this.kind === "gcs" && opts.ifGeneration === undefined) throw new StorageError("STORAGE_UNAVAILABLE", "a GCS delete requires the exact generation to remove", undefined, "GENERATION_REQUIRED");
     this.deleteCalls.push({ key, ...(opts.ifGeneration !== undefined ? { ifGeneration: opts.ifGeneration } : {}) });
     this.takeInjected("failNextDelete", "failNextDeleteWith");
     const o = this.objects.get(key);
