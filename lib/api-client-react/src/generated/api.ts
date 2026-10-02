@@ -632,8 +632,8 @@ export const getUploadFileBytesUrl = (id: string,) => {
 }
 
 /**
- * The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the PUT operation and expires; the object must still be awaiting its upload. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Clients do not call this route by hand — they PUT to the opaque `uploadURL` exactly as returned.
- * @summary Upload the bytes of a reserved object (capability URL)
+ * The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). Requires the normal bearer authentication of the user who reserved the upload AND the `X-Storage-Capability` header carrying the `uploadToken` returned with the target (bound to that user, tenant, object and the PUT operation; short-lived). At byte time the API re-checks the live session, tenant access, the feature permission (documents create/edit), the object state and takes an exclusive upload lease — a second concurrent body for the same intent answers 409. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Credentials in the query string are rejected (403).
+ * @summary Upload the bytes of a reserved object (authenticated)
  */
 export const uploadFileBytes = async (id: string,
     uploadFileBytesBody: Blob, options?: RequestInit): Promise<FileUploadReceipt> => {
@@ -683,7 +683,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UploadFileBytesMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Upload the bytes of a reserved object (capability URL)
+ * @summary Upload the bytes of a reserved object (authenticated)
  */
 export const useUploadFileBytes = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadFileBytes>>, TError,{id: string;data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -705,8 +705,8 @@ export const getDownloadFileBytesUrl = (id: string,) => {
 }
 
 /**
- * The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the GET operation and expires; the object must still be active (a deleted object answers 404 even with a valid token). The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. `HEAD` is supported.
- * @summary Download the bytes of a stored object (capability URL)
+ * The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The URL carries no credential: the request must present the normal bearer authentication, and the API re-checks on every call that the session is live, that the user may access the object's tenant, that the object is still active (a deleted object answers 404) and that the user holds the feature permission for the object kind (exports: reports.view; executive reports: ai_executive.view; documents: tenant membership). A logged-out or disabled user, a revoked permission or a lost tenant membership is refused immediately. The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store, no-transform`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. `HEAD` is supported. Credentials in the query string are rejected (403).
+ * @summary Download the bytes of a stored object (authenticated)
  */
 export const downloadFileBytes = async (id: string, options?: RequestInit): Promise<Blob> => {
 
@@ -753,7 +753,7 @@ export type DownloadFileBytesQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary Download the bytes of a stored object (capability URL)
+ * @summary Download the bytes of a stored object (authenticated)
  */
 
 export function useDownloadFileBytes<TData = Awaited<ReturnType<typeof downloadFileBytes>>, TError = ErrorType<ErrorResponse>>(

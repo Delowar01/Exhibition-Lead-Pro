@@ -6,16 +6,30 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { MetricsSnapshotStorageDriver } from './metricsSnapshotStorageDriver';
+import type { MetricsSnapshotStorageLegacyReads } from './metricsSnapshotStorageLegacyReads';
 
 /**
  * Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0).
  */
 export type MetricsSnapshotStorage = {
   driver: MetricsSnapshotStorageDriver;
-  /** Whether references without an inventory row may still be served from the legacy bucket. */
+  /** Whether the explicit transition fallback (OBJECT_STORAGE_LEGACY_FALLBACK) is on. */
   legacyFallback: boolean;
   /** Whether strict mirrored writes (filesystem + legacy bucket) are active. */
   mirror: boolean;
+  /** Compatibility state for pre-B25 references without an inventory row: `primary` = the legacy bucket is the configured primary driver (hosted environment unchanged; served and registered on first use), `fallback` = explicit transition fallback on a non-GCS primary, `off` = never served. */
+  legacyReads: MetricsSnapshotStorageLegacyReads;
+  /**
+     * Pre-B25 references registered in the inventory on first use since process start.
+     * @minimum 0
+     */
+  legacyRegistrations: number;
+  /**
+     * Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.
+     * @minimum 0
+     * @nullable
+     */
+  retainedLegacyObjects: number | null;
   /** @minimum 0 */
   primaryFailures: number;
   /** @minimum 0 */

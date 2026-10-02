@@ -59,7 +59,7 @@ tags:
   - name: ai
     description: AI platform settings, usage & cost visibility, and provider health
   - name: files
-    description: "Batch 25 — product-file byte routes. Upload targets and download links are short-lived capability URLs minted by the feature endpoints (documents, exports, executive reports) AFTER the normal authentication, tenant and permission checks; clients treat them as opaque strings and never construct, persist or share them. The API itself serves the bytes — no cloud-provider URL is ever exposed."
+    description: "Batch 25 — product-file byte routes. Upload targets and download links are credential-free URLs on the API's own origin returned by the feature endpoints (documents, exports, executive reports); clients treat them as opaque strings and always call them with their NORMAL authentication (bearer token). The API re-checks the current session, tenant access, object state and feature permission on every byte request (B25 Correction 1); uploads additionally present the header-bound `X-Storage-Capability` returned with the upload target. Credentials never travel in the URL — a `?t=` query credential is rejected. No cloud-provider URL is ever exposed."
   - name: workflows
     description: Deterministic CRM automation — workflow definitions (trigger → conditions → ordered actions) and their execution history. A published definition is active and executes on future matching CRM events; drafts are inactive and editable; archived definitions are inactive terminal history.
 
@@ -121,9 +121,8 @@ paths:
     put:
       operationId: uploadFileBytes
       tags: [files]
-      summary: Upload the bytes of a reserved object (capability URL)
-      description: "The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the PUT operation and expires; the object must still be awaiting its upload. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Clients do not call this route by hand — they PUT to the opaque `uploadURL` exactly as returned."
-      security: []
+      summary: Upload the bytes of a reserved object (authenticated)
+      description: "The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). Requires the normal bearer authentication of the user who reserved the upload AND the `X-Storage-Capability` header carrying the `uploadToken` returned with the target (bound to that user, tenant, object and the PUT operation; short-lived). At byte time the API re-checks the live session, tenant access, the feature permission (documents create/edit), the object state and takes an exclusive upload lease — a second concurrent body for the same intent answers 409. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Credentials in the query string are rejected (403)."
       parameters:
         - name: id
           in: path
@@ -131,6 +130,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: X-Storage-Capability
+          in: header
+          required: true
+          description: "The `uploadToken` returned with the upload target (opaque, short-lived, bound to the reserving user)."
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -145,14 +150,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileUploadReceipt"
+        "401":
+          description: No valid session (unauthenticated, logged out, disabled account)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Capability invalid, expired, for another object/tenant, or the object is no longer awaiting its upload (code STORAGE_UPLOAD_INVALID)
+          description: Missing or mismatched upload capability (STORAGE_UPLOAD_INVALID), missing feature permission, platform-operator firewall, or a credential in the query string (STORAGE_QUERY_CREDENTIAL_REJECTED)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The object does not exist or belongs to another tenant (no existence disclosure)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: The upload was already completed (code STORAGE_CONFLICT)
+          description: The upload was already completed (STORAGE_CONFLICT), is in progress by another writer (STORAGE_UPLOAD_IN_PROGRESS), or was superseded (STORAGE_UPLOAD_LEASE_LOST)
           content:
             application/json:
               schema:
@@ -174,9 +191,8 @@ paths:
     get:
       operationId: downloadFileBytes
       tags: [files]
-      summary: Download the bytes of a stored object (capability URL)
-      description: "The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the GET operation and expires; the object must still be active (a deleted object answers 404 even with a valid token). The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. `HEAD` is supported."
-      security: []
+      summary: Download the bytes of a stored object (authenticated)
+      description: "The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The URL carries no credential: the request must present the normal bearer authentication, and the API re-checks on every call that the session is live, that the user may access the object's tenant, that the object is still active (a deleted object answers 404) and that the user holds the feature permission for the object kind (exports: reports.view; executive reports: ai_executive.view; documents: tenant membership). A logged-out or disabled user, a revoked permission or a lost tenant membership is refused immediately. The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store, no-transform`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. `HEAD` is supported. Credentials in the query string are rejected (403)."
       parameters:
         - name: id
           in: path
@@ -192,8 +208,14 @@ paths:
               schema:
                 type: string
                 format: binary
+        "401":
+          description: No valid session (unauthenticated, logged out, disabled account)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Capability invalid or expired (code STORAGE_DOWNLOAD_INVALID)
+          description: Missing feature permission for this object kind, platform-operator firewall, or a credential in the query string (STORAGE_QUERY_CREDENTIAL_REJECTED)
           content:
             application/json:
               schema:
@@ -8443,17 +8465,29 @@ components:
         storage:
           type: object
           description: "Batch 25 object-storage view — the configured primary driver, the transition switches and process counters (never object contents, keys, paths or checksums). The inventory backlog counts are null when the inventory could not be read (never a fabricated 0)."
-          required: [driver, legacyFallback, mirror, primaryFailures, legacyFallbackReads, mirrorFailures, migrationVerifyFailures, deleteFailures, pendingUploads, pendingDeletes]
+          required: [driver, legacyFallback, mirror, legacyReads, primaryFailures, legacyFallbackReads, mirrorFailures, migrationVerifyFailures, deleteFailures, legacyRegistrations, pendingUploads, pendingDeletes, retainedLegacyObjects]
           properties:
             driver:
               type: string
               enum: [fs, gcs, memory, none]
             legacyFallback:
               type: boolean
-              description: Whether references without an inventory row may still be served from the legacy bucket.
+              description: Whether the explicit transition fallback (OBJECT_STORAGE_LEGACY_FALLBACK) is on.
             mirror:
               type: boolean
               description: Whether strict mirrored writes (filesystem + legacy bucket) are active.
+            legacyReads:
+              type: string
+              enum: [primary, fallback, "off"]
+              description: "Compatibility state for pre-B25 references without an inventory row: `primary` = the legacy bucket is the configured primary driver (hosted environment unchanged; served and registered on first use), `fallback` = explicit transition fallback on a non-GCS primary, `off` = never served."
+            legacyRegistrations:
+              type: integer
+              minimum: 0
+              description: Pre-B25 references registered in the inventory on first use since process start.
+            retainedLegacyObjects:
+              type: ["integer", "null"]
+              minimum: 0
+              description: Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.
             primaryFailures:
               type: integer
               minimum: 0
@@ -16186,14 +16220,17 @@ components:
 
     DocumentUploadUrlResponse:
       type: object
-      required: [uploadURL, objectPath]
+      required: [uploadURL, objectPath, uploadToken]
       properties:
         uploadURL:
           type: string
-          description: "Opaque, short-lived capability URL — PUT the raw file bytes here with the file's Content-Type."
+          description: "Credential-free absolute URL of the API byte route — PUT the raw file bytes here with the file's Content-Type, your normal bearer authentication and the `X-Storage-Capability: {uploadToken}` header."
         objectPath:
           type: string
           description: "Opaque object handle (`/objects/{id}`) bound to the caller's tenant; echo it back unchanged when creating the document or version."
+        uploadToken:
+          type: string
+          description: "Opaque, short-lived upload capability bound to the reserving user, tenant, object and the PUT operation. Send it ONLY in the `X-Storage-Capability` request header of the PUT — never in a URL."
 
     FileUploadReceipt:
       type: object

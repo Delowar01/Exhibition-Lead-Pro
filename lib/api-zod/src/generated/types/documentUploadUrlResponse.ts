@@ -7,8 +7,10 @@
  */
 
 export interface DocumentUploadUrlResponse {
-  /** Opaque, short-lived capability URL — PUT the raw file bytes here with the file's Content-Type. */
+  /** Credential-free absolute URL of the API byte route — PUT the raw file bytes here with the file's Content-Type, your normal bearer authentication and the `X-Storage-Capability: {uploadToken}` header. */
   uploadURL: string;
   /** Opaque object handle (`/objects/{id}`) bound to the caller's tenant; echo it back unchanged when creating the document or version. */
   objectPath: string;
+  /** Opaque, short-lived upload capability bound to the reserving user, tenant, object and the PUT operation. Send it ONLY in the `X-Storage-Capability` request header of the PUT — never in a URL. */
+  uploadToken: string;
 }

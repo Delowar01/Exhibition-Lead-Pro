@@ -34,6 +34,10 @@ export const ReadinessCheckResponse = zod.object({
  */
 export const getMetricsResponseJobsPendingMin = 0;
 
+export const getMetricsResponseStorageLegacyRegistrationsMin = 0;
+
+export const getMetricsResponseStorageRetainedLegacyObjectsMin = 0;
+
 export const getMetricsResponseStoragePrimaryFailuresMin = 0;
 
 export const getMetricsResponseStorageLegacyFallbackReadsMin = 0;
@@ -76,8 +80,11 @@ export const GetMetricsResponse = zod.object({
 }),
   "storage": zod.object({
   "driver": zod.enum(['fs', 'gcs', 'memory', 'none']),
-  "legacyFallback": zod.boolean().describe('Whether references without an inventory row may still be served from the legacy bucket.'),
+  "legacyFallback": zod.boolean().describe('Whether the explicit transition fallback (OBJECT_STORAGE_LEGACY_FALLBACK) is on.'),
   "mirror": zod.boolean().describe('Whether strict mirrored writes (filesystem + legacy bucket) are active.'),
+  "legacyReads": zod.enum(['primary', 'fallback', 'off']).describe('Compatibility state for pre-B25 references without an inventory row: `primary` = the legacy bucket is the configured primary driver (hosted environment unchanged; served and registered on first use), `fallback` = explicit transition fallback on a non-GCS primary, `off` = never served.'),
+  "legacyRegistrations": zod.number().min(getMetricsResponseStorageLegacyRegistrationsMin).describe('Pre-B25 references registered in the inventory on first use since process start.'),
+  "retainedLegacyObjects": zod.number().min(getMetricsResponseStorageRetainedLegacyObjectsMin).nullable().describe('Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.'),
   "primaryFailures": zod.number().min(getMetricsResponseStoragePrimaryFailuresMin),
   "legacyFallbackReads": zod.number().min(getMetricsResponseStorageLegacyFallbackReadsMin),
   "mirrorFailures": zod.number().min(getMetricsResponseStorageMirrorFailuresMin),
@@ -90,11 +97,15 @@ export const GetMetricsResponse = zod.object({
 
 
 /**
- * The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the PUT operation and expires; the object must still be awaiting its upload. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Clients do not call this route by hand — they PUT to the opaque `uploadURL` exactly as returned.
- * @summary Upload the bytes of a reserved object (capability URL)
+ * The target of the `uploadURL` returned by `POST /documents/upload-url`. The raw file bytes are the request body (send the file's own `Content-Type`). Requires the normal bearer authentication of the user who reserved the upload AND the `X-Storage-Capability` header carrying the `uploadToken` returned with the target (bound to that user, tenant, object and the PUT operation; short-lived). At byte time the API re-checks the live session, tenant access, the feature permission (documents create/edit), the object state and takes an exclusive upload lease — a second concurrent body for the same intent answers 409. The body is streamed through the storage boundary with a hard size ceiling and is never buffered by a JSON parser. Credentials in the query string are rejected (403).
+ * @summary Upload the bytes of a reserved object (authenticated)
  */
 export const UploadFileBytesParams = zod.object({
   "id": zod.coerce.string().uuid()
+})
+
+export const UploadFileBytesHeader = zod.object({
+  "X-Storage-Capability": zod.string().describe('The `uploadToken` returned with the upload target (opaque, short-lived, bound to the reserving user).')
 })
 
 export const uploadFileBytesResponseSizeBytesMin = 0;
@@ -108,8 +119,8 @@ export const UploadFileBytesResponse = zod.object({
 
 
 /**
- * The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The signed capability travels in the query string of the opaque URL (`?t=…`); it is bound to one object id, one tenant and the GET operation and expires; the object must still be active (a deleted object answers 404 even with a valid token). The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. `HEAD` is supported.
- * @summary Download the bytes of a stored object (capability URL)
+ * The target of every `url` / `downloadUrl` returned by the document, export-run and executive-report endpoints. The URL carries no credential: the request must present the normal bearer authentication, and the API re-checks on every call that the session is live, that the user may access the object's tenant, that the object is still active (a deleted object answers 404) and that the user holds the feature permission for the object kind (exports: reports.view; executive reports: ai_executive.view; documents: tenant membership). A logged-out or disabled user, a revoked permission or a lost tenant membership is refused immediately. The response carries the stored `Content-Type`, `Content-Length`, a `Content-Disposition` (inline only for browser-safe image/PDF/text types, attachment otherwise), `Cache-Control: private, no-store, no-transform`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. `HEAD` is supported. Credentials in the query string are rejected (403).
+ * @summary Download the bytes of a stored object (authenticated)
  */
 export const DownloadFileBytesParams = zod.object({
   "id": zod.coerce.string().uuid()
@@ -10266,8 +10277,9 @@ export const RequestDocumentUploadUrlBody = zod.object({
 })
 
 export const RequestDocumentUploadUrlResponse = zod.object({
-  "uploadURL": zod.string().describe('Opaque, short-lived capability URL — PUT the raw file bytes here with the file\'s Content-Type.'),
-  "objectPath": zod.string().describe('Opaque object handle (`\/objects\/{id}`) bound to the caller\'s tenant; echo it back unchanged when creating the document or version.')
+  "uploadURL": zod.string().describe('Credential-free absolute URL of the API byte route — PUT the raw file bytes here with the file\'s Content-Type, your normal bearer authentication and the `X-Storage-Capability: {uploadToken}` header.'),
+  "objectPath": zod.string().describe('Opaque object handle (`\/objects\/{id}`) bound to the caller\'s tenant; echo it back unchanged when creating the document or version.'),
+  "uploadToken": zod.string().describe('Opaque, short-lived upload capability bound to the reserving user, tenant, object and the PUT operation. Send it ONLY in the `X-Storage-Capability` request header of the PUT — never in a URL.')
 })
 
 

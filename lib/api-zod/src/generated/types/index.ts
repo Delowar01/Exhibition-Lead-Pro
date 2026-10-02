@@ -449,6 +449,7 @@ export * from './metricsSnapshotRequests';
 export * from './metricsSnapshotRequestsByStatusClass';
 export * from './metricsSnapshotStorage';
 export * from './metricsSnapshotStorageDriver';
+export * from './metricsSnapshotStorageLegacyReads';
 export * from './mfaBackupCodesResponse';
 export * from './mfaEnableInput';
 export * from './mfaPasswordInput';
