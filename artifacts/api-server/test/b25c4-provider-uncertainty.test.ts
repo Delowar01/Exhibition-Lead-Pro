@@ -180,7 +180,7 @@ describe("A. a delayed provider commit after the client gave up can never become
     expect(store.objects.has(name)).toBe(false); // the delayed owned object was found and removed …
     const dels = store.deleteCalls.filter((c) => c.name === name);
     expect(dels.length).toBeGreaterThanOrEqual(1);
-    expect(dels.every((c) => Number(c.opts?.ifGenerationMatch) === committed.generation)).toBe(true); // … only at the observed generation
+    expect(dels.every((c) => c.opts?.ifGenerationMatch === committed.generation)).toBe(true); // … only at the observed generation
     expect(unconditionalDeletes(name)).toEqual([]);
 
     for (const dt of [26 * H, 48 * H, 10 * 24 * H]) await storage.sweepStorage(new Date(t0.getTime() + dt));
@@ -213,7 +213,7 @@ describe("A. a delayed provider commit after the client gave up can never become
     await storage.sweepStorage(new Date(t0.getTime() + 25 * H));
     expect(await repo.findById(failed.id)).toBeDefined();
     expect(store.objects.has(name)).toBe(false);
-    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => Number(c.opts?.ifGenerationMatch) === committed.generation)).toBe(true);
+    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => c.opts?.ifGenerationMatch === committed.generation)).toBe(true);
   });
 
   it("10. a FOREIGN object appearing at an uncertain row's key becomes OWNERSHIP_UNPROVEN and is never deleted", async () => {
@@ -307,7 +307,7 @@ describe("B. the uncertainty mark brackets every GCS request", () => {
     const committed = store.commitPending(name);
     await storage.sweepStorage(new Date(t0.getTime() + 26 * H));
     expect(store.objects.has(name)).toBe(false);
-    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => Number(c.opts?.ifGenerationMatch) === committed.generation)).toBe(true);
+    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => c.opts?.ifGenerationMatch === committed.generation)).toBe(true);
     expect(await repo.findById(r.objectId)).toBeDefined();
   });
 
@@ -332,7 +332,7 @@ describe("B. the uncertainty mark brackets every GCS request", () => {
     const committed = store.commitPending(name);
     await storage.sweepStorage(new Date(t0.getTime() + 2 * H));
     expect(store.objects.has(name)).toBe(false);
-    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => Number(c.opts?.ifGenerationMatch) === committed.generation)).toBe(true);
+    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => c.opts?.ifGenerationMatch === committed.generation)).toBe(true);
   });
 
   it("11. filesystem-only rows carry no provider uncertainty and still reconcile and purge normally", async () => {

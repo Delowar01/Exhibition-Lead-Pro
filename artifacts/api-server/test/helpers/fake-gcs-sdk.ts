@@ -15,6 +15,12 @@
 //     write stream's file metadata exposes NO generation (the SDK contract makes
 //     it optional); afterCommit observes the commit; failHead makes getMetadata
 //     fail for a name (generation recovery cannot complete)
+//   • (Correction 7) generations are EXACT decimal STRINGS, exactly as the real
+//     provider reports them; the counter is a bigint so values beyond
+//     Number.MAX_SAFE_INTEGER are represented without any rounding, seed() may
+//     place an object at an explicit generation, and delete compares the value
+//     the SDK received (recorded verbatim) against the stored string — a
+//     rounded/coerced generation is therefore a 412, never a silent match.
 // Never used in production.
 import { Readable, Writable } from "node:stream";
 import type { Storage } from "@google-cloud/storage";
@@ -23,14 +29,16 @@ export type FailMode = "transport" | "after-commit" | "late-commit" | "hold" | "
 
 export interface FakeObject {
   bytes: Buffer;
-  generation: number;
+  /** Exact decimal generation string (never a number). */
+  generation: string;
   contentType: string;
   metadata: Record<string, string>;
 }
 
 export class FakeBucketStore {
   objects = new Map<string, FakeObject>();
-  gen = 0;
+  /** Generation counter (bigint: exact beyond Number.MAX_SAFE_INTEGER); tests may set it, e.g. `store.gen = 9007199254740990n`. */
+  gen = 0n;
   deleteCalls: Array<{ name: string; opts: Record<string, unknown> | undefined }> = [];
   /** Object names whose provider request started (first chunk written), in order. */
   writeStarts: string[] = [];
@@ -45,9 +53,18 @@ export class FakeBucketStore {
   /** When it returns an error for a name, getMetadata (HEAD) rejects with it. */
   failHead: (name: string) => Error | null = () => null;
 
-  /** Place an object the way an unrelated writer would (no ownership marker). */
-  seed(name: string, bytes: Buffer, contentType = "application/octet-stream", metadata: Record<string, string> = {}): FakeObject {
-    const o = { bytes, generation: ++this.gen, contentType, metadata };
+  /** Next generation as the exact decimal string the provider would report. */
+  nextGeneration(): string {
+    return String(++this.gen);
+  }
+
+  /** Place an object the way an unrelated writer would (no ownership marker), optionally at an explicit exact generation. */
+  seed(name: string, bytes: Buffer, contentType = "application/octet-stream", metadata: Record<string, string> = {}, generation?: string): FakeObject {
+    if (generation !== undefined) {
+      if (!/^[1-9]\d*$/.test(generation)) throw new Error("fake generation must be a canonical decimal string");
+      if (BigInt(generation) > this.gen) this.gen = BigInt(generation);
+    }
+    const o = { bytes, generation: generation ?? this.nextGeneration(), contentType, metadata };
     this.objects.set(name, o);
     return o;
   }
@@ -99,11 +116,12 @@ class FakeFile {
           const commit = (): FakeObject => {
             const existing = store.objects.get(name);
             if (opts?.preconditionOpts?.ifGenerationMatch === 0 && existing) throw apiError(412, "Precondition Failed");
-            const generation = ++store.gen;
+            const generation = store.nextGeneration();
             const bytes = Buffer.concat(chunks);
             const o = { bytes, generation, contentType: opts?.contentType ?? "application/octet-stream", metadata: { ...(opts?.metadata?.metadata ?? {}) } };
             store.objects.set(name, o);
-            self.metadata = mode === "no-generation" ? { size: String(bytes.length), metadata: { ...o.metadata } } : { generation: String(generation), size: String(bytes.length), metadata: { ...o.metadata } };
+            // the real SDK reports the generation as a decimal string
+            self.metadata = mode === "no-generation" ? { size: String(bytes.length), metadata: { ...o.metadata } } : { generation, size: String(bytes.length), metadata: { ...o.metadata } };
             store.afterCommit?.(name, o);
             return o;
           };
@@ -127,13 +145,17 @@ class FakeFile {
     });
   }
   async delete(opts?: { ignoreNotFound?: boolean; ifGenerationMatch?: number | string }) {
+    // recorded VERBATIM: tests assert on the exact value (and type) the SDK received
     this.store.deleteCalls.push({ name: this.name, opts });
     const o = this.store.objects.get(this.name);
     if (!o) {
       if (opts?.ignoreNotFound) return;
       throw apiError(404, "Not Found");
     }
-    if (opts?.ifGenerationMatch !== undefined && Number(opts.ifGenerationMatch) !== o.generation) throw apiError(412, "Precondition Failed");
+    // the provider compares the precondition's decimal representation with the
+    // stored generation exactly; a number that was rounded on the way here no
+    // longer equals the stored string and is a precondition failure
+    if (opts?.ifGenerationMatch !== undefined && String(opts.ifGenerationMatch) !== o.generation) throw apiError(412, "Precondition Failed");
     this.store.objects.delete(this.name);
   }
   async getMetadata() {
@@ -141,7 +163,7 @@ class FakeFile {
     if (injected) throw injected;
     const o = this.store.objects.get(this.name);
     if (!o) throw apiError(404, "Not Found");
-    return [{ size: String(o.bytes.length), contentType: o.contentType, generation: String(o.generation), metadata: { ...o.metadata } }];
+    return [{ size: String(o.bytes.length), contentType: o.contentType, generation: o.generation, metadata: { ...o.metadata } }];
   }
   async exists() {
     return [this.store.objects.has(this.name)];

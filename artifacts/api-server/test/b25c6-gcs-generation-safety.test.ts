@@ -147,14 +147,14 @@ describe("B. a put whose stream reports no generation", () => {
     const name = objectName(row.storageKey);
     const dels = store.deleteCalls.filter((c) => c.name === name);
     expect(dels).toHaveLength(1);
-    expect(dels[0].opts?.ifGenerationMatch, "rollback deleted without the observed generation").toBe(1);
+    expect(dels[0].opts?.ifGenerationMatch, "rollback deleted without the observed generation").toBe("1");
     expect(store.objects.has(name)).toBe(false);
   });
 
   it("4. a newer foreign generation at the key survives the rollback of a generationless put", async () => {
     const cid = await newCompany("B-foreign");
     store.failWrite = () => "no-generation";
-    let foreignGeneration = 0;
+    let foreignGeneration = "";
     vi.mocked(repo.transition)
       .mockImplementationOnce(async () => {
         throw Object.assign(new Error("connection terminated unexpectedly"), { code: "08006" });
@@ -185,7 +185,7 @@ describe("B. a put whose stream reports no generation", () => {
     const name = objectName(row.mirrorKey!);
     const dels = store.deleteCalls.filter((c) => c.name === name);
     expect(dels).toHaveLength(1);
-    expect(dels[0].opts?.ifGenerationMatch, "mirror rollback deleted without the observed generation").toBe(1);
+    expect(dels[0].opts?.ifGenerationMatch, "mirror rollback deleted without the observed generation").toBe("1");
     expect(store.objects.has(name)).toBe(false);
     expect(memoryPrimary.objects.has(row.storageKey)).toBe(false);
   });
@@ -208,13 +208,13 @@ describe("B. a put whose stream reports no generation", () => {
     expect(store.objects.has(name)).toBe(false);
     const dels = store.deleteCalls.filter((c) => c.name === name);
     expect(dels).toHaveLength(1);
-    expect(dels[0].opts?.ifGenerationMatch).toBe(1);
+    expect(dels[0].opts?.ifGenerationMatch).toBe("1");
   });
 
   it("7. no generation and the HEAD shows another owner's marker: nothing deleted, the row fails closed and the sweep keeps the object as OWNERSHIP_UNPROVEN", async () => {
     const cid = await newCompany("B-owner-mismatch");
     store.failWrite = () => "no-generation";
-    let foreignGeneration = 0;
+    let foreignGeneration = "";
     store.afterCommit = (name) => {
       store.afterCommit = undefined;
       foreignGeneration = store.seed(name, Buffer.from("replaced by someone else"), "application/octet-stream", { "lcp-object-id": "another-row" }).generation;
@@ -237,6 +237,6 @@ describe("B. a put whose stream reports no generation", () => {
     await expect(storage.storeBuffer({ companyId: cid, kind: "report", contentType: "application/pdf", buffer: Buffer.from("normal") })).rejects.toBeInstanceOf(StorageError);
     const [row] = await rowsOf(cid);
     const name = objectName(row.storageKey);
-    expect(store.deleteCalls.filter((c) => c.name === name).map((c) => c.opts?.ifGenerationMatch)).toEqual([1]);
+    expect(store.deleteCalls.filter((c) => c.name === name).map((c) => c.opts?.ifGenerationMatch)).toEqual(["1"]);
   });
 });

@@ -216,7 +216,7 @@ describe("A. a server-side activation that COMMITTED but was not acknowledged is
     expect(active.state).toBe("active");
     expect(active.publicationUncertainAt).toBeNull();
     const name = objectName(active.storageKey);
-    expect(store.objects.get(name)?.generation, "the ACTIVE row's committed generation was deleted").toBe(1);
+    expect(store.objects.get(name)?.generation, "the ACTIVE row's committed generation was deleted").toBe("1");
     expect(store.deleteCalls).toEqual([]);
     expect(deletesOf(gcsDriver)).toEqual([]);
     expect(stored, "a committed activation was reported as a failure").not.toBeInstanceOf(Error);

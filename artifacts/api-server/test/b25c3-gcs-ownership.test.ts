@@ -142,7 +142,7 @@ describe("B. GCS objects are deleted only with durable ownership proof", () => {
     expect(store.objects.has(name)).toBe(false);
     const dels = store.deleteCalls.filter((c) => c.name === name);
     expect(dels.length).toBeGreaterThanOrEqual(1);
-    expect(dels.every((c) => Number(c.opts?.ifGenerationMatch) === stored.generation)).toBe(true);
+    expect(dels.every((c) => c.opts?.ifGenerationMatch === stored.generation)).toBe(true);
     expect((await repo.findById(r.objectId))!.state).toBe("deleted");
   });
 
@@ -156,7 +156,7 @@ describe("B. GCS objects are deleted only with durable ownership proof", () => {
     useGcsPrimary();
     await storage.deleteByReference({ companyId: COMPANY, kind: "report", reference: stored.reference });
     expect(store.objects.has(name)).toBe(false);
-    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => Number(c.opts?.ifGenerationMatch) === ours.generation)).toBe(true);
+    expect(store.deleteCalls.filter((c) => c.name === name).every((c) => c.opts?.ifGenerationMatch === ours.generation)).toBe(true);
     expect((await repo.findById(stored.objectId))!.state).toBe("deleted");
 
     const second = await storage.storeBuffer({ companyId: COMPANY, kind: "report", contentType: "application/pdf", buffer: Buffer.from("ours too") });

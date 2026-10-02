@@ -40,7 +40,7 @@ function sha(b: Buffer): string {
 // ── deterministic fake of the Google SDK surface ────────────────────────────
 type FailMode = "transport" | "after-commit" | null;
 class FakeBucketStore {
-  objects = new Map<string, { bytes: Buffer; generation: number; contentType: string }>();
+  objects = new Map<string, { bytes: Buffer; generation: string; contentType: string }>();
   gen = 0;
   deleteCalls: Array<{ name: string; opts: Record<string, unknown> | undefined }> = [];
   failWrite: (name: string) => FailMode = () => null;
@@ -69,9 +69,9 @@ class FakeFile {
         if (mode === "transport") return cb(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }));
         const existing = store.objects.get(name);
         if (opts?.preconditionOpts?.ifGenerationMatch === 0 && existing) return cb(apiError(412, "Precondition Failed"));
-        const generation = ++store.gen;
+        const generation = String(++store.gen); // the real SDK reports a decimal string (B25 Correction 7)
         store.objects.set(name, { bytes: Buffer.concat(chunks), generation, contentType: opts?.contentType ?? "application/octet-stream" });
-        self.metadata = { generation: String(generation), size: String(Buffer.concat(chunks).length) };
+        self.metadata = { generation, size: String(Buffer.concat(chunks).length) };
         if (mode === "after-commit") return cb(Object.assign(new Error("response lost after commit"), { code: "ECONNRESET" }));
         cb();
       },
@@ -84,13 +84,13 @@ class FakeFile {
       if (opts?.ignoreNotFound) return;
       throw apiError(404, "Not Found");
     }
-    if (opts?.ifGenerationMatch !== undefined && Number(opts.ifGenerationMatch) !== o.generation) throw apiError(412, "Precondition Failed");
+    if (opts?.ifGenerationMatch !== undefined && String(opts.ifGenerationMatch) !== o.generation) throw apiError(412, "Precondition Failed");
     this.store.objects.delete(this.name);
   }
   async getMetadata() {
     const o = this.store.objects.get(this.name);
     if (!o) throw apiError(404, "Not Found");
-    return [{ size: String(o.bytes.length), contentType: o.contentType, generation: String(o.generation) }];
+    return [{ size: String(o.bytes.length), contentType: o.contentType, generation: o.generation }];
   }
   async exists() {
     return [this.store.objects.has(this.name)];
@@ -127,7 +127,7 @@ describe("5. real GCS driver over a generation-aware fake SDK", () => {
     const k = key();
     const existing = randomBytes(1000);
     await driver.put(k, existing, { contentType: "application/octet-stream", maxBytes: 4096 });
-    expect(store.objects.get(k)!.generation).toBe(1);
+    expect(store.objects.get(k)!.generation).toBe("1");
 
     // 412: the object must not exist at commit time
     await expect(driver.put(k, randomBytes(1000), { contentType: "application/octet-stream", maxBytes: 4096 })).rejects.toMatchObject({ code: "STORAGE_CONFLICT" });
@@ -139,7 +139,7 @@ describe("5. real GCS driver over a generation-aware fake SDK", () => {
     await expect(driver.put(k, failingSource(randomBytes(100)), { contentType: "application/octet-stream", maxBytes: 4096 })).rejects.toBeInstanceOf(Error);
 
     expect(store.objects.get(k)!.bytes.equals(existing)).toBe(true);
-    expect(store.objects.get(k)!.generation).toBe(1);
+    expect(store.objects.get(k)!.generation).toBe("1");
     expect(store.deleteCalls).toEqual([]); // never a delete by key because a write failed
   });
 
@@ -183,7 +183,7 @@ describe("5. real GCS driver over a generation-aware fake SDK", () => {
     expect(store.objects.has(k2)).toBe(false);
     const cleanup = store.deleteCalls.filter((c) => c.name === k2);
     expect(cleanup).toHaveLength(1);
-    expect(Number(cleanup[0].opts?.ifGenerationMatch)).toBe(2); // exactly the generation this write created
+    expect(cleanup[0].opts?.ifGenerationMatch).toBe("2"); // exactly the generation this write created, as the exact string
   });
 
   it("delete(key, { ifGeneration }) with a stale generation leaves the committed object untouched", async () => {
