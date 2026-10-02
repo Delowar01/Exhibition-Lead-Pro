@@ -18,6 +18,20 @@ export interface DiscoverOptions {
   /** Restrict discovery to one tenant (company deletion). */
   companyId?: number;
   tx?: Executor;
+  /**
+   * B25 Correction 2 (company deletion): a native `/objects/<id>` handle with NO
+   * inventory row is an untracked object — counted as unattributable so the
+   * caller fails closed instead of cascading away its last reference.
+   */
+  requireInventory?: boolean;
+}
+
+export interface DiscoveryResult {
+  candidates: MigrationCandidate[];
+  /** References that cannot be attributed to a provider object (unsupported / malformed shape, or untracked native handle). */
+  unattributable: number;
+  /** Sanitized breakdown of the unattributable references by object kind (never the references themselves). */
+  unattributableKinds: Partial<Record<StorageKind, number>>;
 }
 
 /**
@@ -25,15 +39,31 @@ export interface DiscoverOptions {
  * its tenant and entity. Duplicates (several rows → one object) are returned
  * as separate candidates; migration.ts groups and reports them.
  */
-export async function discoverLegacyReferences(opts: DiscoverOptions = {}): Promise<{ candidates: MigrationCandidate[]; unattributable: number }> {
+export async function discoverLegacyReferences(opts: DiscoverOptions = {}): Promise<DiscoveryResult> {
   const x = exec(opts.tx);
   const candidates: MigrationCandidate[] = [];
   let unattributable = 0;
+  const unattributableKinds: Partial<Record<StorageKind, number>> = {};
+  const inventoryChecks: Array<{ kind: StorageKind; companyId: number; reference: string }> = [];
+  const countUnattributable = (kind: StorageKind) => {
+    unattributable += 1;
+    unattributableKinds[kind] = (unattributableKinds[kind] ?? 0) + 1;
+  };
   const add = (kind: StorageKind, companyId: number, entityType: string, entityId: number, reference: string | null, contentType: string | null) => {
-    if (!reference || isNativeHandle(reference)) return; // native B25 handles already have inventory rows
+    if (!reference) return;
+    if (isNativeHandle(reference)) {
+      // native B25 handles are backed by inventory rows; company deletion proves it
+      if (opts.requireInventory) inventoryChecks.push({ kind, companyId, reference });
+      return;
+    }
     const legacyKey = legacyLocation(kind, reference, companyId);
     if (!legacyKey) {
-      unattributable += 1;
+      // Not a legacy shape for this tenant (or no bucket configured). Company
+      // deletion accepts it only when an inventory row already represents it
+      // (e.g. a natively written logo keeps the legacy-compatible key shape);
+      // otherwise it is unattributable and the deletion must fail closed.
+      if (opts.requireInventory) inventoryChecks.push({ kind, companyId, reference });
+      else countUnattributable(kind);
       return;
     }
     candidates.push({ companyId, kind, entityType, entityId, reference, legacyKey, contentType });
@@ -72,7 +102,10 @@ export async function discoverLegacyReferences(opts: DiscoverOptions = {}): Prom
     .where(companyCond)) {
     add("branding_logo", c.id, "company", c.id, c.brandLogoKey, c.brandLogoContentType);
   }
-  return { candidates, unattributable };
+  for (const n of inventoryChecks) {
+    if (!(await repo.findByReference(n.companyId, n.kind, n.reference, opts.tx))) countUnattributable(n.kind);
+  }
+  return { candidates, unattributable, unattributableKinds };
 }
 
 /** storage_objects-backed inventory for the migration core. */

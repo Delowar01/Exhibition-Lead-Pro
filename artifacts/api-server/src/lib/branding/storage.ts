@@ -10,6 +10,7 @@
 import { logger } from "../logger.js";
 import { AppError } from "../../middlewares/errorHandler.js";
 import { StorageError } from "../../storage/contract.js";
+import { sanitizeStorageError } from "../../storage/log-safety.js";
 import { storageConfigured } from "../../storage/registry.js";
 import * as storage from "../../services/storage.service.js";
 
@@ -38,7 +39,7 @@ export async function putLogo(companyId: number, buffer: Buffer, contentType: st
     const stored = await storage.storeBuffer({ companyId, kind: "branding_logo", contentType, buffer, entityType: "company", entityId: companyId, extension });
     return stored.reference;
   } catch (err) {
-    logger.error({ err, companyId }, "Branding logo upload: storage write failed (branding unchanged)");
+    logger.error({ error: sanitizeStorageError(err), companyId }, "Branding logo upload: storage write failed (branding unchanged)");
     throw storageUnavailable();
   }
 }
@@ -51,7 +52,7 @@ export async function getLogo(companyId: number, key: string): Promise<StoredLog
     return read ? { buffer: read.buffer, contentType: read.contentType } : null;
   } catch (err) {
     if (err instanceof StorageError && err.code === "STORAGE_NOT_FOUND") return null;
-    logger.warn({ err, companyId }, "Branding logo read failed");
+    logger.warn({ error: sanitizeStorageError(err), companyId }, "Branding logo read failed");
     throw storageUnavailable();
   }
 }

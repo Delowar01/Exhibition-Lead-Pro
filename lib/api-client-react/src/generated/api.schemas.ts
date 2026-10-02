@@ -87,6 +87,11 @@ export type MetricsSnapshotStorage = {
      */
   legacyRegistrations: number;
   /**
+     * Reads of a GCS legacy / mirror / native copy whose bytes disagreed with the inventory size or digest since process start (B25 Correction 2; the response is truncated, never completed).
+     * @minimum 0
+     */
+  integrityFailures: number;
+  /**
      * Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.
      * @minimum 0
      * @nullable

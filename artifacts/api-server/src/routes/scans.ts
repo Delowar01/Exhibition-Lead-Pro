@@ -6,6 +6,7 @@ import { auditMutations } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
 import { CreateScanBody, ReprocessScanBody, ReplaceScanImageBody, AnalyzeCaptureBody, StartCaptureBatchBody } from "@workspace/api-zod";
 import * as scans from "../services/scans.service.js";
+import { sanitizeStorageError } from "../storage/log-safety.js";
 import { analyzeCapture } from "../services/capture-intelligence.service.js";
 import { startCaptureBatch, getCaptureBatch } from "../services/capture-batch.service.js";
 
@@ -31,7 +32,7 @@ router.post("/scans", requirePermission("scans", "create"), validateBody(CreateS
     try {
       await scans.storeAndBindScanImage({ scanId, companyId, imageData, previousReference: null });
     } catch (imgErr) {
-      req.log.warn({ err: imgErr }, "scan image upload failed; stored image unavailable");
+      req.log.warn({ error: sanitizeStorageError(imgErr) }, "scan image upload failed; stored image unavailable");
     }
   })();
 

@@ -6,6 +6,11 @@
 //   pnpm --filter @workspace/api-server run migrate-storage -- --verify
 //   ... [--out <summary.json>]
 //
+// --dry-run / --verify never create OBJECT_STORAGE_FS_ROOT or any directory,
+// temp file, probe, inventory row or object (B25 Correction 2); a missing root
+// is reported as "targetRoot": "absent". The explicitly requested --out file
+// is the only output write of those modes.
+//
 // --dry-run and --verify are READ-ONLY (B25 Correction 1): they discover and
 // plan / check but never register an inventory row and never write an object;
 // --copy is the only mutating mode. Resumable and idempotent: rerunning finds
@@ -31,8 +36,8 @@ import { config } from "../src/config.js";
 import { logger } from "../src/lib/logger.js";
 import { OBJECT_LIMITS } from "../src/services/storage.service.js";
 import { runMigration, type MigrationMode } from "../src/storage/migration.js";
+import { openMigrationDrivers, reportMigrationFailure } from "../src/storage/migration-cli.js";
 import { dbInventoryAdapter, discoverLegacyReferences } from "../src/storage/migration-db.js";
-import { getLegacyDriver, getPrimaryDriver, initStorage } from "../src/storage/registry.js";
 
 function usage(msg?: string): never {
   if (msg) console.error(`error: ${msg}`);
@@ -67,10 +72,11 @@ async function main(): Promise<number> {
   if (config.objectStorage.driver !== "fs") usage(`the migration target must be the filesystem driver (OBJECT_STORAGE_DRIVER=fs); current driver: ${config.objectStorage.driver}`);
   if (config.objectStorage.legacyDelete) usage("OBJECT_STORAGE_LEGACY_DELETE must be off while migrating");
 
-  await initStorage();
-  const target = await getPrimaryDriver();
-  const source = await getLegacyDriver();
+  // B25 Correction 2: --dry-run / --verify open the target READ-ONLY (a missing
+  // root is reported, never created); only --copy initializes storage normally.
+  const { source, target, targetRoot, readOnly } = await openMigrationDrivers(mode);
   if (mode !== "verify" && !source) usage("the legacy bucket is not configured (DEFAULT_OBJECT_STORAGE_BUCKET_ID); nothing to migrate from");
+  if (readOnly && targetRoot === "absent") logger.warn({ mode }, "migrate-storage: the filesystem target root does not exist yet (read-only mode never creates it)");
 
   const summary = await runMigration({
     mode,
@@ -91,7 +97,8 @@ async function main(): Promise<number> {
     },
   });
 
-  const json = JSON.stringify(summary, null, 2);
+  const json = JSON.stringify({ ...summary, targetRoot, readOnly }, null, 2);
+  // The explicitly requested local summary file is the ONLY output write a read-only mode performs.
   if (values.out) await writeFile(values.out, json, { mode: 0o600 });
   process.stdout.write(`${json}\n`);
   return summary.complete ? 0 : 2;
@@ -103,7 +110,7 @@ main()
     process.exit(code);
   })
   .catch(async (err) => {
-    logger.error({ err }, "migrate-storage failed");
+    reportMigrationFailure(err);
     await pool.end().catch(() => undefined);
     process.exit(1);
   });

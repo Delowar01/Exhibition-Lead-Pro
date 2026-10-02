@@ -5,6 +5,7 @@ import { extractCardData, scoreLead, logAiError, type ExtractedCardData } from "
 import { validateScanImage, hasReadableCard } from "../lib/image-validation.js";
 import { streamScanImage, loadScanImageBase64, uploadScanImage, deleteScanImage } from "../lib/imageStorage.js";
 import { logger } from "../lib/logger.js";
+import { sanitizeStorageError } from "../storage/log-safety.js";
 import * as scansRepo from "../repositories/scans.repository.js";
 import { parseListQuery } from "../lib/list-query.js";
 import { analyzeCaptureFields } from "../lib/capture-validation.js";
@@ -221,7 +222,7 @@ export async function storeAndBindScanImage(input: { scanId: number; companyId: 
   try {
     bound = await scansRepo.bindImage(input.scanId, input.companyId, reference, input.previousReference);
   } catch (err) {
-    await deleteScanImage(input.companyId, reference).catch((cleanupErr) => logger.warn({ err: cleanupErr, scanId: input.scanId, companyId: input.companyId }, "scan image: cleanup after a failed bind will be retried by the sweep"));
+    await deleteScanImage(input.companyId, reference).catch((cleanupErr) => logger.warn({ error: sanitizeStorageError(cleanupErr), scanId: input.scanId, companyId: input.companyId }, "scan image: cleanup after a failed bind will be retried by the sweep"));
     throw err;
   }
   if (!bound) {

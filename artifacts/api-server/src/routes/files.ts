@@ -9,8 +9,10 @@
 // request goes through the NORMAL application authentication (bearer token +
 // live server-side session) and the platform-owner firewall, then the object
 // manager re-checks, at byte time: the current active user, tenant access to
-// the object's company, the operation, object ownership/state and the feature
-// permission for the object kind. A logged-out or disabled user, a revoked
+// the object's company, the operation, object ownership/state, the feature
+// permission for the object kind and (B25 Correction 2) the LIVE feature
+// association — the current document version / completed export / ready
+// report / current scan image / current logo that still carries the object. A logged-out or disabled user, a revoked
 // permission or a lost tenant membership is refused on the very next request.
 //
 // Uploads additionally present the header-bound capability minted when the
@@ -104,6 +106,10 @@ router.get("/files/:id", async (req: AuthRequest, res: Response) => {
   if (!storage.userHasPermission(user, storage.permissionForKind(row.kind as StorageKind, "get"))) {
     throw new AppError(403, "Missing permission for this file");
   }
+  // B25 Correction 2: the URL is stable and credential-free, so the LIVE feature
+  // association is re-proven at byte time (soft-deleted document, replaced scan
+  // image / logo, failed export, not-ready report → 404, no disclosure).
+  if (!(await storage.liveAssociation(row))) throw new AppError(404, "File not found");
 
   let opened: storage.OpenedObject;
   try {

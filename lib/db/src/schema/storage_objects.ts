@@ -10,9 +10,14 @@ import { pgTable, uuid, text, integer, bigint, timestamp, index, uniqueIndex } f
 //
 // State machine:
 //   pending   reserved (upload link minted / write in progress); no bytes yet
-//   uploading one writer holds the upload lease (lease_token / lease_expires_at)
+//   uploading ONE writer holds the upload lease (lease_token / lease_expires_at)
 //             and is receiving the bytes; a second writer for the same intent is
-//             refused; an expired lease is reclaimable (B25 Correction 1)
+//             refused. An expired or lost lease is NEVER reclaimed (B25
+//             Correction 2): the row is failed and cleaned by the sweep and the
+//             client reserves a fresh object, so no two attempts ever share a
+//             row, a primary key or a mirror key. Every writer transition is a
+//             CAS fenced by state = uploading + lease_token (staging also needs
+//             an unexpired lease).
 //   staged    bytes written + verified, not yet bound to a feature row
 //             (documents: between the client PUT and POST /documents)
 //   active    readable; bound to its feature row
@@ -45,14 +50,17 @@ export const storageObjectsTable = pgTable(
     // migrated (gs://<bucket>/<object>). Null for objects written natively.
     // Kept after migration: it is the verified ROLLBACK copy.
     legacyKey: text("legacy_key"),
-    // B25 Correction 1 — exact location of the strict-mirror copy in the legacy
-    // bucket (gs://<bucket>/<canonical key>), set only after the mirror write
-    // succeeded. A rollback to the GCS driver reads it; a failed/absent mirror
-    // leaves it null and is never presented as a rollback copy.
+    // B25 Correction 1 / 2 — exact location of the strict-mirror copy in the
+    // legacy bucket (gs://<bucket>/<canonical key>). The location is RESERVED
+    // when the row is created (so a failed attempt's copy is always
+    // discoverable for cleanup) but it is readable as a rollback copy ONLY
+    // after the fenced, committed row records mirror_state = "ok" — the
+    // verified copy of the single attempt that published this row. A failed /
+    // absent mirror is never presented as a rollback copy.
     mirrorKey: text("mirror_key"),
-    // B25 Correction 1 — upload lease: exactly one writer may own publication of
-    // an upload intent. Set while state = uploading; cleared on stage/failure;
-    // an expired lease (lease_expires_at < now) is reclaimable.
+    // B25 Correction 1 / 2 — upload lease: exactly one writer may own publication
+    // of an upload intent. Set while state = uploading; cleared on stage /
+    // failure / tombstone; an expired lease is lost (never reclaimed).
     leaseToken: text("lease_token"),
     leaseExpiresAt: timestamp("lease_expires_at"),
     contentType: text("content_type").notNull(),
@@ -61,7 +69,7 @@ export const storageObjectsTable = pgTable(
     state: text("state").notNull().default("pending"),
     // Strict mirror bookkeeping during the hosted transition (null = no mirror).
     mirrorState: text("mirror_state"), // null | ok | failed
-    lastError: text("last_error"), // sanitized code/message only — never a path
+    lastError: text("last_error"), // sanitized code only (e.g. LEASE_EXPIRED, MIRROR_FAILED, CLEANUP_PENDING, LEGACY_RETAINED) — never a path, key or message
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     deletedAt: timestamp("deleted_at"),

@@ -36,6 +36,8 @@ export const getMetricsResponseJobsPendingMin = 0;
 
 export const getMetricsResponseStorageLegacyRegistrationsMin = 0;
 
+export const getMetricsResponseStorageIntegrityFailuresMin = 0;
+
 export const getMetricsResponseStorageRetainedLegacyObjectsMin = 0;
 
 export const getMetricsResponseStoragePrimaryFailuresMin = 0;
@@ -84,6 +86,7 @@ export const GetMetricsResponse = zod.object({
   "mirror": zod.boolean().describe('Whether strict mirrored writes (filesystem + legacy bucket) are active.'),
   "legacyReads": zod.enum(['primary', 'fallback', 'off']).describe('Compatibility state for pre-B25 references without an inventory row: `primary` = the legacy bucket is the configured primary driver (hosted environment unchanged; served and registered on first use), `fallback` = explicit transition fallback on a non-GCS primary, `off` = never served.'),
   "legacyRegistrations": zod.number().min(getMetricsResponseStorageLegacyRegistrationsMin).describe('Pre-B25 references registered in the inventory on first use since process start.'),
+  "integrityFailures": zod.number().min(getMetricsResponseStorageIntegrityFailuresMin).describe('Reads of a GCS legacy \/ mirror \/ native copy whose bytes disagreed with the inventory size or digest since process start (B25 Correction 2; the response is truncated, never completed).'),
   "retainedLegacyObjects": zod.number().min(getMetricsResponseStorageRetainedLegacyObjectsMin).nullable().describe('Tombstoned legacy bucket objects whose bytes were deliberately kept (OBJECT_STORAGE_LEGACY_DELETE off) and remain discoverable for an approved cleanup; null when the inventory could not be read.'),
   "primaryFailures": zod.number().min(getMetricsResponseStoragePrimaryFailuresMin),
   "legacyFallbackReads": zod.number().min(getMetricsResponseStorageLegacyFallbackReadsMin),

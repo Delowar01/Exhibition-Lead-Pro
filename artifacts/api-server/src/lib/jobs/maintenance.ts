@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { config } from "../../config.js";
 import { logger } from "../logger.js";
+import { sanitizeStorageError } from "../../storage/log-safety.js";
 import * as tokensRepo from "../../repositories/verification_tokens.repository.js";
 import { sweepStorage } from "../../services/storage.service.js";
 
@@ -139,7 +140,7 @@ export async function runMaintenance(): Promise<Record<string, number | "error">
       summary[name] = await fn();
     } catch (err) {
       summary[name] = "error";
-      logger.error({ err, task: name }, "Maintenance task failed");
+      logger.error({ error: sanitizeStorageError(err), task: name }, "Maintenance task failed");
     }
   }
   logger.info({ summary }, "Maintenance sweep complete");

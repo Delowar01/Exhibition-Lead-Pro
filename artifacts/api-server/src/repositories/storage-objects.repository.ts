@@ -75,36 +75,75 @@ export async function transition(id: string, from: StorageObjectState[], to: Sto
 }
 
 /**
- * Upload lease (B25 Correction 1): exactly one writer may own publication of an
- * upload intent. Claims succeed only from pending / failed, or from an
- * `uploading` row whose lease has expired (crash recovery). Returns undefined
- * when another writer holds a live lease or the upload already completed.
+ * Upload lease (B25 Correction 1 / 2): ONE upload intent admits exactly ONE
+ * publication attempt. A claim succeeds only from `pending`; an expired or
+ * failed intent is never reclaimed (the client reserves a fresh object), so no
+ * two attempts can ever share a row, a primary key or a mirror key. Returns
+ * undefined when the row is not pending (in progress, completed, expired,
+ * failed or tombstoned).
  */
 export async function claimUpload(id: string, leaseToken: string, leaseMs: number, now: Date = new Date()): Promise<StorageObjectRow | undefined> {
   const [row] = await db
     .update(storageObjectsTable)
     .set({ state: "uploading", leaseToken, leaseExpiresAt: new Date(now.getTime() + leaseMs), lastError: null, updatedAt: now })
-    .where(
-      and(
-        eq(storageObjectsTable.id, id),
-        or(
-          inArray(storageObjectsTable.state, ["pending", "failed"]),
-          and(eq(storageObjectsTable.state, "uploading"), lt(storageObjectsTable.leaseExpiresAt, now)),
-        ),
-      ),
-    )
+    .where(and(eq(storageObjectsTable.id, id), eq(storageObjectsTable.state, "pending")))
     .returning();
   return row;
 }
 
-/** Finish or abandon an upload ONLY while the caller still holds the lease (CAS on the lease token). */
-export async function releaseUpload(id: string, leaseToken: string, to: "staged" | "failed", data: Partial<InsertStorageObject> = {}): Promise<StorageObjectRow | undefined> {
+/**
+ * Fenced writer transition: succeeds only while the row is still `uploading`
+ * under THIS lease token. Staging additionally requires an unexpired lease
+ * (an expired lease is lost: the attempt is abandoned and cleaned, never
+ * published late); abandoning (`failed`) is allowed for an expired lease the
+ * writer still uniquely owns. Returns undefined when the lease was lost.
+ */
+export async function releaseUpload(id: string, leaseToken: string, to: "staged" | "failed", data: Partial<InsertStorageObject> = {}, now: Date = new Date()): Promise<StorageObjectRow | undefined> {
+  const conds = [eq(storageObjectsTable.id, id), eq(storageObjectsTable.state, "uploading"), eq(storageObjectsTable.leaseToken, leaseToken)];
+  if (to === "staged") conds.push(gt(storageObjectsTable.leaseExpiresAt, now));
   const [row] = await db
     .update(storageObjectsTable)
-    .set({ ...data, state: to, leaseToken: null, leaseExpiresAt: null, updatedAt: new Date() })
-    .where(and(eq(storageObjectsTable.id, id), eq(storageObjectsTable.state, "uploading"), eq(storageObjectsTable.leaseToken, leaseToken)))
+    .set({ ...data, state: to, leaseToken: null, leaseExpiresAt: null, updatedAt: now })
+    .where(and(...conds))
     .returning();
   return row;
+}
+
+/** Sentinel: a copy of this row could not be removed yet; the sweep retries from the persisted locations. */
+export const CLEANUP_PENDING = "CLEANUP_PENDING";
+
+/**
+ * Record that bytes of a tombstoned / failed row still need removal WITHOUT
+ * changing its state (a stale writer may never move a row). Only tombstone
+ * states are flagged: a live row's copies are never cleanup candidates.
+ */
+export async function flagCleanupPending(id: string): Promise<boolean> {
+  const rows = await db
+    .update(storageObjectsTable)
+    .set({ lastError: CLEANUP_PENDING, updatedAt: new Date() })
+    .where(and(eq(storageObjectsTable.id, id), inArray(storageObjectsTable.state, ["failed", "deleting", "deleted"])))
+    .returning({ id: storageObjectsTable.id });
+  return rows.length > 0;
+}
+
+/** Rows (any tombstone state) whose cleanup is still pending. */
+export async function listCleanupPending(limit: number): Promise<StorageObjectRow[]> {
+  return db
+    .select()
+    .from(storageObjectsTable)
+    .where(and(eq(storageObjectsTable.lastError, CLEANUP_PENDING), inArray(storageObjectsTable.state, ["failed", "deleting", "deleted"])))
+    .orderBy(storageObjectsTable.updatedAt)
+    .limit(limit);
+}
+
+/** Clear the cleanup flag of a settled `deleted` row (CAS on state + flag). */
+export async function clearCleanupPending(id: string, lastError: string | null): Promise<boolean> {
+  const rows = await db
+    .update(storageObjectsTable)
+    .set({ lastError, updatedAt: new Date() })
+    .where(and(eq(storageObjectsTable.id, id), eq(storageObjectsTable.state, "deleted"), eq(storageObjectsTable.lastError, CLEANUP_PENDING)))
+    .returning({ id: storageObjectsTable.id });
+  return rows.length > 0;
 }
 
 export async function ownsLease(id: string, leaseToken: string): Promise<boolean> {
