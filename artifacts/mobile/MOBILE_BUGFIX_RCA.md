@@ -83,7 +83,7 @@ DB to reproduce the production condition, then exercised against the running API
 | Manual | `POST /contacts` | **PROVEN live** (§0.1); now also protected from the publish regression above. |
 
 ### 0.1 Live per-method evidence (development API, through the proxy at `localhost:80`)
-Captured by logging in as a **real** tenant admin (`admin@techcorp.com`, role normalized to
+Captured by logging in as a **real** tenant admin (TechCorp tenant admin account, identifier redacted, role normalized to
 `primary_admin`) and exercising the real endpoints. Test input images were generated as
 fixtures (a business card and Gmail/Outlook/Apple-Mail signature screenshots); the OCR,
 extraction, scoring and lead creation below are the **real** server outputs, and all test
@@ -354,7 +354,7 @@ fixes whose root causes are well-understood Android platform behaviours:
 - `DELETE /api/follow-ups/:id` — returns 401 unauthenticated (route registered + guarded).
 - `npx expo export --platform android` — Android Hermes bundle builds cleanly (exit 0).
 - **Role-normalization re-validation (2026-06-22, current session):**
-  Logged in as the real production user `admin@techcorp.com` (id=2, stored role=`company_admin`
+  Logged in as the real production user (TechCorp tenant admin, identifier redacted; id=2, stored role=`company_admin`
   in both dev and prod DB). Verified against the running dev API through the shared proxy:
   - `GET /auth/me` → `role: "primary_admin"`, `permissions: {}` — normalization confirmed.
   - `POST /api/scans` (business card, source=`card`) → **201 Created** ✅

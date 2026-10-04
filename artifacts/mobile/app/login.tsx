@@ -33,11 +33,6 @@ import {
   setSecureItem,
 } from "@/lib/secure-prefs";
 
-const DEMO_ACCOUNTS = [
-  { label: "TechCorp Admin", email: "admin@techcorp.com" },
-  { label: "Nexus Admin", email: "admin@nexussys.io" },
-];
-
 const REMEMBER_KEY = "csp_remember_email";
 
 export default function LoginScreen() {
@@ -49,10 +44,8 @@ export default function LoginScreen() {
   const mfaMutation = useMfaVerifyLogin();
   const { t, isRTL, textAlign } = useLocale();
 
-  // Dev builds prefill the seeded staging admin for fast iteration; release
-  // builds (__DEV__ === false) start with empty credentials.
-  const [email, setEmail] = useState(__DEV__ ? "admin@techcorp.com" : "");
-  const [password, setPassword] = useState(__DEV__ ? "Admin123!" : "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
@@ -479,38 +472,6 @@ export default function LoginScreen() {
             </>
           )}
         </View>
-
-        {/* Demo quick-login against seeded dev/staging accounts. Rendered in
-            development builds only — release builds exclude it entirely. */}
-        {__DEV__ && (
-          <>
-            <Text style={styles.demoLabel}>{t("login.demoAccess")}</Text>
-            <View style={[styles.demoRow, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              {DEMO_ACCOUNTS.map((acc) => (
-                <Pressable
-                  key={acc.email}
-                  onPress={() => {
-                    setEmail(acc.email);
-                    setPassword("Admin123!");
-                    handleLogin(acc.email, "Admin123!");
-                  }}
-                  disabled={loginMutation.isPending}
-                  style={({ pressed }) => [
-                    styles.demoChip,
-                    {
-                      borderRadius: colors.radius,
-                      opacity: pressed ? 0.7 : 1,
-                      flexDirection: isRTL ? "row-reverse" : "row",
-                    },
-                  ]}
-                >
-                  <Feather name="zap" size={14} color="#FFFFFF" />
-                  <Text style={styles.demoChipText}>{acc.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </>
-        )}
       </KeyboardAwareScrollViewCompat>
     </View>
   );
@@ -635,34 +596,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FONT.medium,
     flex: 1,
-  },
-  demoLabel: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 11,
-    fontFamily: FONT.semibold,
-    letterSpacing: 0.6,
-    marginTop: 28,
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  demoRow: {
-    flexDirection: "row",
-    gap: 10,
-    justifyContent: "center",
-  },
-  demoChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-  },
-  demoChipText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontFamily: FONT.medium,
   },
 });
