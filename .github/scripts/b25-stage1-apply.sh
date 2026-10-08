@@ -27,8 +27,12 @@
 #                     audit metadata, census)
 #   recreate-api      `compose up -d --no-deps --force-recreate api` + health
 #   smoke-settle      wait for the purge job, remove ONLY the disposable smoke
-#                     objects (marker-proven, generation-conditioned), census
-#                     back to the baseline, original generations unchanged
+#                     objects (marker-proven, generation-conditioned), prove
+#                     every persisted location absent, then remove the EXACT
+#                     recorded tombstone UUIDs in one allow-listed transaction
+#                     (b25-stage1-purge-lib.sh, prepended on the stdin stream);
+#                     census back to the baseline, original generations
+#                     unchanged, zero smoke rows / markers left
 #   cleanup           always-step: guarded removal of the explicit disposable
 #                     rows; durable tombstones identified and verified, never
 #                     deleted; existing rows proven identical before/after
@@ -276,10 +280,8 @@ phase_schema_apply() {
   size="$(stat -c %s "$out")"; sum="$(cut -c1-16 "$out.sha256")"
   echo "backup_file=$(basename "$out") size=$size sha256_prefix=$sum retained=$(ls -1 "$BACKUP_DIR"/leadcapture-*.sql.gz | wc -l)"
   [ "$size" -ge 1024 ] || fail "backup is implausibly small"
-  echo "backup structure: complete_marker=$(zcat "$out" | grep -c '^-- PostgreSQL database dump complete') CREATE_TABLE=$(zcat "$out" | grep -c '^CREATE TABLE') COPY=$(zcat "$out" | grep -c '^COPY ') companies_rows=$(zcat "$out" | awk '/^COPY public.companies /{f=1; next} f && /^\\\.$/{exit} f{n++} END{print n+0}') users_rows=$(zcat "$out" | awk '/^COPY public.users /{f=1; next} f && /^\\\.$/{exit} f{n++} END{print n+0}')"
-  [ "$(zcat "$out" | grep -c '^-- PostgreSQL database dump complete')" = "1" ] || fail "backup is not a complete dump"
-  [ "$(zcat "$out" | grep -c '^CREATE TABLE')" = "72" ] || fail "backup does not contain all 72 hosted tables"
-  [ "$(zcat "$out" | awk '/^COPY public.companies /{f=1; next} f && /^\\\.$/{exit} f{n++} END{print n+0}')" = "$(q "select count(*) from companies")" ] || fail "backup company rows differ from the live table"
+  declare -f backup_structure_check >/dev/null || fail "apply library not loaded (stream b25-stage1-apply-lib.sh before this script)"
+  backup_structure_check "$out" 72 "$(q "select count(*) from companies")" || fail "backup structure check failed (complete marker / 72 tables / companies rows)"
   (cd "$APP_DIR" && BACKUP_DIR="$BACKUP_DIR" BACKUP_MAX_AGE_HOURS=1 bash docker/scripts/backup-check.sh) || fail "backup-check.sh did not pass"
 
   STAGE="record"
@@ -319,20 +321,8 @@ phase_schema_apply() {
   section "11. drizzle-kit push --verbose (allow-list: exactly the 5 accepted statements)"
   run_in_image 'cd lib/db && npx drizzle-kit push --verbose --config ./drizzle.config.ts' 2>&1 | grep -v "Pulling schema" > "$HOME/b25-stage1-push1.log" || true
   sed 's/^/  /' "$HOME/b25-stage1-push1.log"
-  grep -q 'Changes applied' "$HOME/b25-stage1-push1.log" || fail "push did not report 'Changes applied'"
-  grep -qiE 'data.loss|you.re about to|truncate' "$HOME/b25-stage1-push1.log" && fail "data-loss warning raised" || true
-  local st; st="$(grep -E '^(ALTER|CREATE|DROP|TRUNCATE|DELETE|UPDATE|INSERT)' "$HOME/b25-stage1-push1.log" || true)"
-  echo "statements=$(printf '%s\n' "$st" | grep -c . || true)"
-  [ "$(printf '%s\n' "$st" | grep -c . || true)" = "5" ] || fail "statement count is not 5"
-  [ "$(printf '%s\n' "$st" | grep -c '^CREATE TABLE "storage_objects" (' || true)" = "1" ] || fail "CREATE TABLE storage_objects missing"
-  for idx in 'CREATE UNIQUE INDEX "storage_objects_company_kind_reference_uq" ON "storage_objects" USING btree ("company_id","kind","reference");' 'CREATE INDEX "storage_objects_company_idx" ON "storage_objects" USING btree ("company_id");' 'CREATE INDEX "storage_objects_state_updated_idx" ON "storage_objects" USING btree ("state","updated_at");' 'CREATE INDEX "storage_objects_entity_idx" ON "storage_objects" USING btree ("entity_type","entity_id");'; do
-    grep -qF -- "$idx" "$HOME/b25-stage1-push1.log" || fail "expected index statement missing: ${idx:0:60}"
-  done
-  [ "$(printf '%s\n' "$st" | grep -ciE '^(ALTER|DROP|TRUNCATE|DELETE|UPDATE|INSERT)|RENAME' || true)" = "0" ] || fail "forbidden statement class proposed"
-  [ "$(printf '%s\n' "$st" | grep -vc '"storage_objects"' || true)" = "0" ] || fail "a statement touches another table"
-  for col in '"id" uuid PRIMARY KEY NOT NULL' '"company_id" integer NOT NULL' '"kind" text NOT NULL' '"reference" text NOT NULL' '"storage_key" text NOT NULL' '"driver" text NOT NULL' '"content_type" text NOT NULL' "\"state\" text DEFAULT 'pending' NOT NULL" '"created_at" timestamp DEFAULT now() NOT NULL' '"updated_at" timestamp DEFAULT now() NOT NULL' '"publication_uncertain_at" timestamp' '"reconciled_at" timestamp' '"mirror_key" text' '"lease_token" text' '"lease_expires_at" timestamp'; do
-    grep -qF -- "$col" "$HOME/b25-stage1-push1.log" || fail "accepted column definition missing: $col"
-  done
+  declare -f push_allowlist_check >/dev/null || fail "apply library not loaded (stream b25-stage1-apply-lib.sh before this script)"
+  push_allowlist_check "$HOME/b25-stage1-push1.log" || fail "the proposed statements are not exactly the 5 accepted ones — STOP (api restored by the EXIT trap)"
 
   STAGE="verify"
   section "12. verify"
@@ -464,6 +454,7 @@ phase_smoke_verify() {
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and driver<>'gcs'")" = "0" ] || fail "a smoke row is not on the gcs driver"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and state='active' and (lease_token is not null or publication_uncertain_at is not null or legacy_key is null)")" = "0" ] || fail "an active smoke row is inconsistent"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING')")" = "0" ] || fail "ownership-unproven / cleanup-pending residue"
+  echo "smoke_row_ids=$(q "select string_agg(id::text, ',' order by created_at) from storage_objects where company_id in ($C)")"
   section "provider objects of the smoke rows (marker = row id, generation string, size) — names never printed"
   local rows_b64; rows_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 's', size_bytes, 'st', state)), '[]'::json) from storage_objects where company_id in ($C)" | base64 -w0)"
   MARKER_JS=$(cat <<'JS'
@@ -486,7 +477,7 @@ const { Storage } = require("@google-cloud/storage");
 })().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
 JS
 )
-  local mj; mj="$(api_node "$MARKER_JS" "$rows_b64")"; echo "$mj"
+  local mj; mj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$MARKER_JS" "$rows_b64")"; echo "$mj"
   echo "$mj" | grep -q '"marker_matches_row":false' && fail "a smoke object lacks the ownership marker of its row" || true
   echo "$mj" | grep -q '"generation_is_decimal_string":false' && fail "a smoke object generation is not a decimal string" || true
   echo "$mj" | grep -q '"size_matches":false' && fail "a smoke object size differs from its row" || true
@@ -520,21 +511,28 @@ phase_recreate_api() {
   log "recreate-api complete"
 }
 
-# ARG1 = csv of disposable company ids (already deleted through the API), ARG2 = preflight gcs_inventory_md5
+# ARG1 = csv of disposable company ids (already deleted through the API), ARG2 = preflight gcs_inventory_md5,
+# ARG3 = csv of the smoke row UUIDs recorded by smoke-verify (the ONLY rows this phase may ever remove)
 phase_smoke_settle() {
   [[ "$ARG1" =~ ^[0-9]+(,[0-9]+)*$ ]] || fail "ARG1 must be a csv of company ids"
   [[ "$ARG2" =~ ^[0-9a-f]{32}$ ]] || fail "ARG2 must be the preflight inventory md5"
-  local C="$ARG1"
+  [[ "$ARG3" =~ ^[0-9a-f-]{36}(,[0-9a-f-]{36})*$ ]] || fail "ARG3 must be a csv of the recorded smoke row uuids"
+  declare -f purge_rows_sql >/dev/null || fail "purge library not loaded (stream b25-stage1-purge-lib.sh before this script)"
+  local C="$ARG1" UUIDS_Q; UUIDS_Q="'$(printf '%s' "$ARG3" | sed "s/,/','/g")'"
   section "wait for the purge job to settle the smoke tenants' tombstones"
   [ "$(q "select count(*) from companies where id in ($C)")" = "0" ] || fail "a smoke company still exists (API deletion did not happen)"
   local tries=0
   until [ "$(q "select count(*) from storage_objects where company_id in ($C) and state not in ('deleted')")" = "0" ]; do tries=$((tries + 1)); [ "$tries" -le 36 ] || break; sleep 10; done
-  q "select 'tombstone '||id||' kind='||kind||' state='||state||' last_error='||coalesce(last_error,'<null>')||' legacy_key_set='||(legacy_key is not null)||' uncertain='||(publication_uncertain_at is not null)||' reconciled='||(reconciled_at is not null) from storage_objects where company_id in ($C) order by created_at"
+  q "select 'tombstone '||id||' kind='||kind||' state='||state||' last_error='||coalesce(last_error,'<null>')||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' uncertain='||(publication_uncertain_at is not null)||' reconciled='||(reconciled_at is not null) from storage_objects where company_id in ($C) order by created_at"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and state<>'deleted'")" = "0" ] || fail "a smoke tombstone did not settle to deleted within 6 minutes"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and (publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING'))")" = "0" ] || fail "uncertain / unproven / cleanup-pending residue"
-  echo "retained_by_design: $(q "select count(*) from storage_objects where company_id in ($C) and last_error='LEGACY_RETAINED'") tombstones carry LEGACY_RETAINED (legacy deletion is OFF: the product never deletes bucket objects of gcs rows in Stage 1)"
+  # every row of the smoke companies must be one of the recorded uuids, and vice versa (present ones)
+  [ "$(q "select count(*) from storage_objects where company_id in ($C) and id not in ($UUIDS_Q)")" = "0" ] || fail "a smoke-company row was not recorded during this run — STOP, nothing removed"
+  [ "$(q "select count(*) from storage_objects where id in ($UUIDS_Q) and company_id not in ($C)")" = "0" ] || fail "a recorded uuid belongs to a non-smoke company — STOP, nothing removed"
+  echo "legacy_retained_before=$(q "select count(*) from storage_objects where company_id in ($C) and last_error='LEGACY_RETAINED'") (legacy deletion is OFF: the product never deletes bucket objects of gcs rows in Stage 1; this phase removes only the disposable smoke objects and their exact tombstones)"
+
   section "remove ONLY the disposable smoke objects (marker must equal the tombstone id; delete conditioned on the exact generation string)"
-  local rows_b64; rows_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key)), '[]'::json) from storage_objects where company_id in ($C) and state='deleted'" | base64 -w0)"
+  local rows_b64; rows_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key)), '[]'::json) from storage_objects where company_id in ($C) and id in ($UUIDS_Q) and state='deleted'" | base64 -w0)"
   DELETE_JS=$(cat <<'JS'
 const { Storage } = require("@google-cloud/storage");
 (async () => {
@@ -546,22 +544,64 @@ const { Storage } = require("@google-cloud/storage");
     const f = storage.bucket(bucket).file(r.k);
     let m;
     try { [m] = await f.getMetadata(); } catch (e) { if (e && e.code === 404) { absent += 1; continue; } throw e; }
-    const gen = String(m.generation ?? "");
-    if (!(m.metadata && m.metadata["lcp-object-id"] === r.id) || !/^\d+$/.test(gen)) { refused += 1; continue; }
-    await f.delete({ ifGenerationMatch: gen });  // exact decimal string; never a number, never unconditional
+    const d = B25_RULES.shouldDeleteObject(r.id, m);
+    if (!d.ok) { refused += 1; continue; }
+    await f.delete({ ifGenerationMatch: d.generation });  // exact decimal string; never a number, never unconditional
     deleted += 1;
   }
   console.log(JSON.stringify({ candidates: rows.length, deleted, absent, refused_no_marker_or_generation: refused }));
 })().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
 JS
 )
-  local dj; dj="$(api_node "$DELETE_JS" "$rows_b64")"; echo "$dj"
-  [ "$(census_field "$dj" refused_no_marker_or_generation)" = "0" ] || fail "an object was refused (marker / generation) — left in place; investigate"
-  section "census back to the baseline"
+  local dj; dj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$DELETE_JS" "$rows_b64")"; echo "$dj"
+  echo "$dj" | grep -q '"deleted"' || fail "provider cleanup did not run"
+  [ "$(census_field "$dj" refused_no_marker_or_generation)" = "0" ] || fail "an object was refused (marker / generation) — left in place; investigate (no row will be purged)"
+
+  section "prove every persisted provider location of the recorded tombstones is absent (HEAD metadata; names never printed)"
+  local loc_b64; loc_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 'm', mirror_key)), '[]'::json) from storage_objects where id in ($UUIDS_Q)" | base64 -w0)"
+  ABSENT_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const rows = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "[]");
+  const storage = new Storage();
+  const name = (gs) => { if (!gs) return null; const m = /^gs:\/\/([^/]+)\/(.+)$/.exec(gs); return m ? { bucket: m[1], object: m[2] } : null; };
+  const exists = async (b, o) => { try { await storage.bucket(b).file(o).getMetadata(); return true; } catch (e) { if (e && e.code === 404) return false; throw e; } };
+  const out = [];
+  for (const r of rows) {
+    const l = name(r.l), m = name(r.m);
+    const presence = { storage: await exists(bucket, r.k), legacy: l ? await exists(l.bucket, l.object) : null, mirror: m ? await exists(m.bucket, m.object) : null };
+    out.push({ id: r.id, absent: B25_RULES.rowAbsent(presence) });
+  }
+  console.log(JSON.stringify({ checked: rows.length, absent: out.filter((o) => o.absent).length, present_ids: out.filter((o) => !o.absent).map((o) => o.id) }));
+})().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
+JS
+)
+  local aj; aj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$ABSENT_JS" "$loc_b64")"; echo "$aj"
+  echo "$aj" | grep -q '"checked"' || fail "absence verification did not run"
+  local present_rows; present_rows="$(q "select count(*) from storage_objects where id in ($UUIDS_Q)")"
+  [ "$(census_field "$aj" checked)" = "$present_rows" ] && [ "$(census_field "$aj" absent)" = "$present_rows" ] || fail "a persisted provider location of a recorded tombstone still exists — its row is NOT removed; investigate"
+  [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l')" = "0" ] || fail "objectdata is not empty (a filesystem copy would exist)"
+
+  section "remove the EXACT recorded tombstones (one allow-listed transaction; row-locked re-check; count must match)"
+  echo "expected_rows=$present_rows"
+  if [ "$present_rows" = "0" ]; then
+    echo "already removed by a previous run — nothing to delete"
+  else
+    local triple; triple="$(qw "$(purge_rows_sql "$UUIDS_Q" "$C" "$present_rows")")"
+    purge_result_check "$triple" "$present_rows" || fail "the allow-listed delete did not remove exactly the expected rows (nothing is removed when any row differs)"
+  fi
+  [ "$(q "select count(*) from storage_objects where id in ($UUIDS_Q)")" = "0" ] || fail "a recorded tombstone remains"
+  [ "$(q "select count(*) from storage_objects where company_id in ($C)")" = "0" ] || fail "a storage row of a smoke company remains"
+  [ "$(q "select count(*) from storage_objects s where exists (select 1 from unnest(array[$UUIDS_Q]) u where s.reference like '%' || u || '%' or s.storage_key like '%' || u || '%')")" = "0" ] || fail "a storage row still references a smoke object id"
+
+  section "census back to the baseline; original objects unchanged; no marker anywhere"
   local cj; cj="$(census)"; echo "$cj"
   [ "$(census_field "$cj" objects)" = "$CENSUS_OBJECTS" ] && [ "$(census_field "$cj" bytes)" = "$CENSUS_BYTES" ] || fail "bucket census is not back to $CENSUS_OBJECTS / $CENSUS_BYTES"
   [ "$(census_field "$cj" inventory_md5)" = "$ARG2" ] || fail "the original objects' names/generations/sizes changed"
   [ "$(census_field "$cj" with_marker)" = "0" ] || fail "a marked object remains"
+  echo "storage_objects total=$(q "select count(*) from storage_objects") legacy_retained=$(q "select count(*) from storage_objects where last_error='LEGACY_RETAINED'") uncertain=$(q "select count(*) from storage_objects where publication_uncertain_at is not null") unproven=$(q "select count(*) from storage_objects where last_error='OWNERSHIP_UNPROVEN'") (pre-smoke baseline: 0 / 0 / 0 / 0)"
+  [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "storage_objects is not back to the pre-smoke baseline (0 rows)"
   log "smoke-settle complete"
 }
 
@@ -592,12 +632,11 @@ phase_cleanup() {
   echo "owner_users=$(qw "with d as (delete from users where id in ($U) and email like '%@$DOM' returning 1) select count(*) from d")"
   echo "subscriptions=$(qw "with d as (delete from subscriptions where company_id in ($C) returning 1) select count(*) from d")"
   echo "companies=$(qw "with d as (delete from companies where id in ($C) and name like 'B25 SMOKE %' returning 1) select count(*) from d")"
-  section "durable tombstones retained by design (identified and verified, never deleted)"
-  q "select 'tombstone '||id||' company='||company_id||' kind='||kind||' state='||state||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null) from storage_objects where company_id in ($C) order by created_at" || true
-  [ "$(q "select count(*) from storage_objects where company_id in ($C) and (state<>'deleted' or publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING'))")" = "0" ] || fail "a smoke tombstone is not a settled deleted record"
-  echo "retained_tombstones=$(q "select count(*) from storage_objects where company_id in ($C)") legacy_retained=$(q "select count(*) from storage_objects where company_id in ($C) and last_error='LEGACY_RETAINED'") — settled 'deleted' records kept by the accepted design (their disposable bucket objects were removed by smoke-settle; LEGACY_RETAINED rows are counted by /metrics.storage.retainedLegacyObjects)"
+  section "storage rows of the smoke tenants (smoke-settle must have removed the exact recorded tombstones)"
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null) from storage_objects where company_id in ($C) order by created_at" || true
+  [ "$(q "select count(*) from storage_objects where company_id in ($C)")" = "0" ] || fail "storage rows of a smoke tenant remain — smoke-settle did not complete; re-run postdeploy_verify's settle step (never broaden cleanup)"
   section "verify zero other disposable rows remain"
-  local z; z="$(q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B25 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' sessions='||(select count(*) from sessions where user_id in ($U))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')||' documents='||(select count(*) from documents where company_id in ($C))||' document_versions='||(select count(*) from document_versions where company_id in ($C))||' storage_active='||(select count(*) from storage_objects where company_id in ($C) and state<>'deleted')")"; echo "$z"
+  local z; z="$(q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B25 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' sessions='||(select count(*) from sessions where user_id in ($U))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')||' documents='||(select count(*) from documents where company_id in ($C))||' document_versions='||(select count(*) from document_versions where company_id in ($C))||' storage_rows='||(select count(*) from storage_objects where company_id in ($C))")"; echo "$z"
   echo "$z" | grep -vqE '=[1-9]' || fail "disposable rows remain: $z"
   section "existing rows AFTER cleanup"
   local after; after="$(q "$kept_sql")"; echo "$after"
@@ -606,7 +645,12 @@ phase_cleanup() {
   [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "owner scan rows changed"
   echo "owner_scan_rows_md5=$(scan_rows_md5)"
   [ "$(q "select count(*) from storage_objects where publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING')")" = "0" ] || fail "uncertain / unproven residue in the inventory"
+  echo "storage_objects total=$(q "select count(*) from storage_objects") legacy_retained=$(q "select count(*) from storage_objects where last_error='LEGACY_RETAINED'") (pre-smoke baseline 0 / 0)"
+  [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "storage_objects is not back to the pre-smoke baseline"
+  local cj; cj="$(census)"; echo "$cj"
+  [ "$(census_field "$cj" objects)" = "$CENSUS_OBJECTS" ] && [ "$(census_field "$cj" bytes)" = "$CENSUS_BYTES" ] && [ "$(census_field "$cj" with_marker)" = "0" ] || fail "bucket census / markers not back to the baseline"
   echo "objectdata entries: $(compose exec -T api sh -c 'ls -A /data/objects | wc -l' 2>/dev/null || echo unavailable)"
+  [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l' 2>/dev/null || echo 1)" = "0" ] || fail "objectdata is not empty"
   rm -f "$HOME"/.b25-s1-node.err
   echo "leftover_files=$(ls "$HOME" | grep -c '^b25-' || true) readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE) schema_fingerprint=$(fingerprint)"
   log "cleanup complete"

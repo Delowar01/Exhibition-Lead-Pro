@@ -1,6 +1,18 @@
 # =============================================================================
 # TEMPORARY — B25 Stage 1 hosted activation tooling (dispatch-only; one-off ops
 # workflow, NOT the deployment pipeline and NOT application code).
+#
+# FILE PATH: this file deliberately lives at the path of the already REGISTERED
+# workflow `b25-stage1-inspection.yml` (GitHub workflow id 376505024, registered
+# by run #1 on ops/b25-stage1-inspection). GitHub assigns a workflow id only to
+# files on the default branch or files that have produced a run; a dispatch-only
+# file that exists solely on an ops branch is never registered and therefore
+# cannot be dispatched. Dispatching workflow 376505024 with
+# ref=ops/b25-stage1-apply runs THIS file (the content at the dispatched ref) —
+# the same mechanism every earlier ops activation used (b20-hosted-activation.yml
+# dispatched on ops/b23-g6-activation and ops/b24-hosted-activation). The strict
+# ref guard below means the inspection branch's own file never runs this content
+# and this content never runs on any other ref.
 # =============================================================================
 # Trigger: workflow_dispatch ONLY (no push / pull_request trigger; this workflow
 #          never pushes a Git ref, never fast-forwards develop and never deploys —
@@ -107,13 +119,19 @@ jobs:
           set -euo pipefail
           git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
           git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
-          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b25-stage1-apply.sh' ':(exclude).github/scripts/b25-stage1-smoke.mjs' ':(exclude).github/workflows/b25-stage1-apply.yml')"
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b25-stage1-apply.sh' ':(exclude).github/scripts/b25-stage1-apply-lib.sh' ':(exclude).github/scripts/b25-stage1-purge-lib.sh' ':(exclude).github/scripts/b25-stage1-cleanup.test.sh' ':(exclude).github/scripts/b25-stage1-smoke.mjs' ':(exclude).github/workflows/b25-stage1-inspection.yml')"
           [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          [ ! -e .github/workflows/b25-stage1-apply.yml ] || { echo "stale duplicate workflow path present"; exit 1; }
+          bash -n .github/scripts/b25-stage1-purge-lib.sh
+          bash -n .github/scripts/b25-stage1-apply-lib.sh
           bash -n .github/scripts/b25-stage1-apply.sh
+          bash -n .github/scripts/b25-stage1-cleanup.test.sh
           node --check .github/scripts/b25-stage1-smoke.mjs
           grep -q 'default_transaction_read_only = on' .github/scripts/b25-stage1-apply.sh || { echo "read-only session guard missing"; exit 1; }
           grep -q 'trap on_exit_schema EXIT' .github/scripts/b25-stage1-apply.sh || { echo "EXIT trap missing"; exit 1; }
-          echo "branch = $BASE_SHA + ops files only"
+          grep -q '^purge_rows_sql()' .github/scripts/b25-stage1-purge-lib.sh || { echo "purge library incomplete"; exit 1; }
+          grep -q '^push_allowlist_check()' .github/scripts/b25-stage1-apply-lib.sh || { echo "apply library incomplete"; exit 1; }
+          echo "branch = $BASE_SHA + ops files only; workflow served from the registered path"
 
       - name: Validate inputs (exact comparison; nothing is executed from an input)
         env:
@@ -226,7 +244,7 @@ jobs:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
         run: |
           set -euo pipefail
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='preflight' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/preflight.log"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='preflight' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/preflight.log"
           MD5="$(grep -oE '^gcs_inventory_md5=[0-9a-f]{32}' "$RUNNER_TEMP/preflight.log" | head -1 | cut -d= -f2)"
           [[ "$MD5" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::preflight did not report the GCS inventory digest"; exit 1; }
           echo "GCS_INVENTORY_MD5=$MD5" >> "$GITHUB_ENV"
@@ -239,7 +257,7 @@ jobs:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
         run: |
           set -euo pipefail
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='schema-apply' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/schema-apply.log"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='schema-apply' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/schema-apply.log"
           grep -q '^second push: No changes detected' "$RUNNER_TEMP/schema-apply.log" || { echo "::error::second push did not report No changes detected"; exit 1; }
           grep -qE "^schema_fingerprint=$FP_AFTER" "$RUNNER_TEMP/schema-apply.log" || { echo "::error::after-fingerprint not reported as $FP_AFTER"; exit 1; }
 
@@ -247,7 +265,7 @@ jobs:
         if: always() && inputs.mode == 'schema_apply'
         env:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-        run: ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='recover' bash -s" < .github/scripts/b25-stage1-apply.sh
+        run: ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='recover' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
 
       # ── postdeploy_verify (after deploy-dev-vps deployed eb2edb0) ──────────
       - name: Post-deployment verification (read-only; storage_objects must be empty before any smoke)
@@ -256,7 +274,7 @@ jobs:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
         run: |
           set -euo pipefail
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='postdeploy-verify' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/postdeploy.log"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='postdeploy-verify' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/postdeploy.log"
           MD5="$(grep -oE '^gcs_inventory_md5=[0-9a-f]{32}' "$RUNNER_TEMP/postdeploy.log" | head -1 | cut -d= -f2)"
           [[ "$MD5" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::no GCS inventory digest"; exit 1; }
           echo "GCS_INVENTORY_MD5=$MD5" >> "$GITHUB_ENV"
@@ -275,7 +293,7 @@ jobs:
           [[ "$HASH" =~ ^\$2[aby]\$10\$.{53}$ ]] || { echo "::error::bcrypt hash has an unexpected shape"; exit 1; }
           echo "::add-mask::$HASH"
           EMAIL="b25-smoke-$TAG-owner@b25smoke.invalid"
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-setup' ARG1='$HASH' ARG2='$EMAIL' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/smoke-setup.log"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-setup' ARG1='$HASH' ARG2='$EMAIL' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/smoke-setup.log"
           UID_="$(grep -oE '^disposable_owner_user_id=[0-9]+' "$RUNNER_TEMP/smoke-setup.log" | cut -d= -f2)"
           [[ "$UID_" =~ ^[0-9]+$ ]] || { echo "::error::no disposable owner id"; exit 1; }
           printf '%s' "$PW" > "$RUNNER_TEMP/.po-pw"
@@ -298,13 +316,16 @@ jobs:
           P="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.capabilityPrefix)')"
           [[ "$C" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "$U" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "$P" =~ ^[A-Za-z0-9_-]{16}$ ]] || { echo "::error::smoke state malformed"; exit 1; }
           echo "::add-mask::$P"
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-verify' ARG1='$C' ARG2='$U' ARG3='$P' bash -s" < .github/scripts/b25-stage1-apply.sh
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-verify' ARG1='$C' ARG2='$U' ARG3='$P' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/smoke-verify.log"
+          R="$(grep -oE '^smoke_row_ids=[0-9a-f-]{36}(,[0-9a-f-]{36})*' "$RUNNER_TEMP/smoke-verify.log" | head -1 | cut -d= -f2)"
+          [[ "$R" =~ ^[0-9a-f-]{36}(,[0-9a-f-]{36})*$ ]] || { echo "::error::smoke-verify did not record the smoke row uuids"; exit 1; }
+          echo "SMOKE_ROW_IDS=$R" >> "$GITHUB_ENV"
 
       - name: Recreate the api container (readiness returns; volume identity stable)
         if: inputs.mode == 'postdeploy_verify'
         env:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-        run: ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='recreate-api' bash -s" < .github/scripts/b25-stage1-apply.sh
+        run: ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='recreate-api' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
 
       - name: Disposable smoke — re-read after recreation, then delete the disposable tenants through the product API
         if: inputs.mode == 'postdeploy_verify'
@@ -320,9 +341,16 @@ jobs:
           set -euo pipefail
           C="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.companies.join(","))')"
           [[ "$C" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "::error::smoke state malformed"; exit 1; }
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-settle' ARG1='$C' ARG2='$GCS_INVENTORY_MD5' bash -s" < .github/scripts/b25-stage1-apply.sh
+          [[ "${SMOKE_ROW_IDS:-}" =~ ^[0-9a-f-]{36}(,[0-9a-f-]{36})*$ ]] || { echo "::error::no recorded smoke row uuids"; exit 1; }
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-settle' ARG1='$C' ARG2='$GCS_INVENTORY_MD5' ARG3='$SMOKE_ROW_IDS' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
 
-      - name: Cleanup (always after postdeploy_verify — tenants removed through the API if still present; guarded row removal; tombstones verified)
+      - name: Disposable smoke — metrics back to the pre-smoke baseline
+        if: inputs.mode == 'postdeploy_verify'
+        run: |
+          set -euo pipefail
+          PO_PASSWORD="$(cat "$RUNNER_TEMP/.po-pw")" STEP=postcheck node .github/scripts/b25-stage1-smoke.mjs
+
+      - name: Cleanup (always after postdeploy_verify — tenants removed through the API if still present; guarded row removal; zero storage residue verified)
         if: always() && inputs.mode == 'postdeploy_verify'
         env:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
@@ -337,9 +365,9 @@ jobs:
           fi
           if [ -z "$U" ]; then echo "nothing was created; no cleanup needed"; exit 0; fi
           [[ "$C" =~ ^([0-9]+(,[0-9]+)*|none)$ ]] && [[ "$U" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "${SMOKE_TAG:-}" =~ ^[a-z0-9]{6,12}$ ]] || { echo "::error::cleanup arguments malformed"; exit 1; }
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='cleanup' ARG1='$C' ARG2='$U' ARG3='$SMOKE_TAG' bash -s" < .github/scripts/b25-stage1-apply.sh
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='cleanup' ARG1='$C' ARG2='$U' ARG3='$SMOKE_TAG' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
           rm -f "$RUNNER_TEMP/.po-pw" "$RUNNER_TEMP/smoke-state.json"
 
       - name: Remove runner-side logs and state (always)
         if: always()
-        run: rm -f "$RUNNER_TEMP"/preflight.log "$RUNNER_TEMP"/schema-apply.log "$RUNNER_TEMP"/postdeploy.log "$RUNNER_TEMP"/smoke-setup.log "$RUNNER_TEMP"/.po-pw "$RUNNER_TEMP"/smoke-state.json
+        run: rm -f "$RUNNER_TEMP"/preflight.log "$RUNNER_TEMP"/schema-apply.log "$RUNNER_TEMP"/postdeploy.log "$RUNNER_TEMP"/smoke-setup.log "$RUNNER_TEMP"/smoke-verify.log "$RUNNER_TEMP"/.po-pw "$RUNNER_TEMP"/smoke-state.json

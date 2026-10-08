@@ -11,6 +11,8 @@
 // STEP=recheck   (after the api container was recreated) read the smoke
 //                document again, then delete the disposable tenants through
 //                the product API (tombstones + purge job)
+// STEP=postcheck (after smoke-settle) every /metrics storage counter back at the
+//                pre-smoke baseline recorded by STEP=run
 // STEP=teardown  always-step: delete the disposable tenants if they still exist
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
@@ -79,9 +81,18 @@ const toPath = (url) => new URL(String(url), BASE).pathname;
 const state = () => { try { return JSON.parse(readFileSync(OUT, "utf8")); } catch { return { tag: TAG, companies: [], users: [], capabilityPrefix: "" }; } };
 const save = (s) => writeFileSync(OUT, JSON.stringify(s), { mode: 0o600 });
 
+const METRIC_KEYS = ["retainedLegacyObjects", "publicationUncertain", "ownershipUnproven", "pendingDeletes", "pendingUploads", "unreconciledTombstones", "driver", "legacyFallback", "mirror", "legacyReads"];
+async function storageMetrics(po) {
+  const m = await api("GET", "/api/metrics", { token: po });
+  must("metrics readable (platform owner)", m.status === 200 && m.json && m.json.storage, errDetail(m));
+  const out = {}; for (const k of METRIC_KEYS) out[k] = m.json.storage[k] ?? null; return out;
+}
+
 async function run() {
-  const s = { tag: TAG, companies: [], users: [], capabilityPrefix: "", documentId: null, fileUrl: null, fileSha: null, fileSize: 0 };
+  const s = { tag: TAG, companies: [], users: [], capabilityPrefix: "", documentId: null, fileUrl: null, fileSha: null, fileSize: 0, metricsBaseline: null };
   const po = await login(PO_EMAIL, PO_PASSWORD);
+  s.metricsBaseline = await storageMetrics(po); save(s);
+  console.log(`metrics baseline: ${JSON.stringify(s.metricsBaseline)}`);
   // 1. disposable tenants A and B
   const mk = async (suffix) => {
     const r = await api("POST", "/api/companies", { token: po, body: { name: `B25 SMOKE ${TAG} ${suffix}`, plan: "professional", primaryContactName: "disposable", primaryContactEmail: `b25-smoke-${TAG}-${suffix}@b25smoke.invalid` } });
@@ -221,6 +232,16 @@ async function recheck() {
   }
 }
 
+// after smoke-settle: every storage counter must be back at the pre-smoke baseline
+async function postcheck() {
+  const s = state();
+  const po = await login(PO_EMAIL, PO_PASSWORD);
+  const now = await storageMetrics(po);
+  console.log(`metrics after settle: ${JSON.stringify(now)}`);
+  must("metrics baseline recorded by STEP=run", !!s.metricsBaseline);
+  for (const k of METRIC_KEYS) check(`metrics.storage.${k} back to baseline`, JSON.stringify(now[k]) === JSON.stringify(s.metricsBaseline[k]), `${JSON.stringify(now[k])} vs ${JSON.stringify(s.metricsBaseline[k])}`);
+}
+
 async function teardown() {
   const s = state();
   let po = null;
@@ -233,7 +254,7 @@ async function teardown() {
   }
 }
 
-const main = { run, recheck, teardown }[STEP];
+const main = { run, recheck, postcheck, teardown }[STEP];
 if (!main) throw new Error(`unknown STEP ${STEP}`);
 main().then(() => {
   console.log(`\n${STEP}: ${results.length - failures} passed, ${failures} failed`);
