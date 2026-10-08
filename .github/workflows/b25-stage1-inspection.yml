@@ -121,7 +121,7 @@ jobs:
           git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
           DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b25-stage1-apply.sh' ':(exclude).github/scripts/b25-stage1-apply-lib.sh' ':(exclude).github/scripts/b25-stage1-purge-lib.sh' ':(exclude).github/scripts/b25-stage1-cleanup.test.sh' ':(exclude).github/scripts/b25-stage1-smoke.mjs' ':(exclude).github/workflows/b25-stage1-inspection.yml')"
           [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
-          [ ! -e .github/workflows/b25-stage1-apply.yml ] || { echo "stale duplicate workflow path present"; exit 1; }
+          [ "$(git diff --name-only "$BASE_SHA" HEAD -- .github/workflows | wc -l)" = "1" ] || { echo "more than one workflow file differs from the base commit"; exit 1; }
           bash -n .github/scripts/b25-stage1-purge-lib.sh
           bash -n .github/scripts/b25-stage1-apply-lib.sh
           bash -n .github/scripts/b25-stage1-apply.sh
@@ -182,22 +182,86 @@ jobs:
           [ -n "$VPS_SSH_KEY" ] && [ -n "$VPS_KNOWN_HOSTS" ] || { echo "::error::SSH secrets missing"; exit 1; }
           echo "secrets present and well-formed"
 
-      - name: No other activation or deployment may be queued or running
+      - name: No other activation or deployment may be queued or running (registered ids, verified path, fail closed)
         env:
           GH_TOKEN: ${{ github.token }}
           THIS_RUN: ${{ github.run_id }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # Coordination-relevant workflows = every registered workflow that can deploy, activate or reach
+          # the VPS: registered numeric id -> expected path. Each id is resolved through the registry
+          # (id, path, state=active) BEFORE its runs are read; anything else stops the job.
+          ALLOW=(
+            "338196147=.github/workflows/deploy-dev-vps.yml"
+            "358860432=.github/workflows/b20-hosted-activation.yml"
+            "376505024=.github/workflows/b25-stage1-inspection.yml"
+            "373189055=.github/workflows/b25-hosted-inspection.yml"
+            "348767584=.github/workflows/b14-hosted-activation.yml"
+            "350570859=.github/workflows/b15-schema-activation.yml"
+            "352288831=.github/workflows/b16-hosted-activation.yml"
+            "353075182=.github/workflows/b17-hosted-activation.yml"
+            "353427348=.github/workflows/b18-hosted-activation.yml"
+            "354083606=.github/workflows/b20-hosted-inspection.yml"
+          )
+          # Registered workflows documented as NOT sharing the deployment / activation boundary (their runs
+          # are not counted): backup-health-alert is the scheduled read-only backup check with its own
+          # concurrency group "backup-health-alert"; it never runs compose, docker, deploy or SQL.
+          KNOWN_OTHER=(
+            "365534673=.github/workflows/backup-health-alert.yml"
+          )
+          RELEVANT='deploy|activation|inspection|stage1|stage-1'
+          [[ "$THIS_RUN" =~ ^[0-9]+$ ]] || { echo "::error::current run id is malformed"; exit 1; }
+          [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::repository name is malformed"; exit 1; }
+          # GET only. On ANY failure (non-2xx such as 403 / 404 / 429 / 5xx, network or command error,
+          # empty body, invalid JSON) nothing of the response is printed, the reason goes to stderr (so it
+          # is never swallowed by a command substitution) and the job stops: a failed query is never "idle".
+          api_get() {
+            local body
+            if ! body="$(gh api --method GET "$1" 2>/dev/null)"; then echo "::error::GitHub API query failed ($2)" >&2; return 1; fi
+            [ -n "$body" ] || { echo "::error::empty GitHub API response ($2)" >&2; return 1; }
+            printf '%s' "$body" | jq -e . >/dev/null 2>&1 || { echo "::error::GitHub API response is not valid JSON ($2)" >&2; return 1; }
+            printf '%s' "$body"
+          }
+          num() { [[ "$1" =~ ^[0-9]+$ ]] || { echo "::error::non-numeric value where a count was expected ($2)" >&2; return 1; }; }
+          # 1. Live registry: every ACTIVE registered workflow must be classified (allow-listed with the
+          #    expected path, or documented as non-conflicting). An unclassified one stops the job —
+          #    whether or not its name matches the coordination pattern — it is never ignored.
+          reg="$(api_get "repos/$REPO/actions/workflows?per_page=100" "workflow registry")"
+          total="$(printf '%s' "$reg" | jq -r '.total_count // empty')"; num "$total" "registry total_count"
+          listed="$(printf '%s' "$reg" | jq -r '.workflows | length')"; num "$listed" "registry page length"
+          [ "$total" = "$listed" ] || { echo "::error::workflow registry has $total entries but only $listed were returned"; exit 1; }
+          [ "$listed" -gt 0 ] || { echo "::error::workflow registry is empty"; exit 1; }
+          mapfile -t REG < <(printf '%s' "$reg" | jq -r '.workflows[] | "\(.id)|\(.state)|\(.path)|\(.name)"')
+          for line in "${REG[@]}"; do
+            IFS='|' read -r rid rstate rpath rname <<<"$line"
+            num "$rid" "registry workflow id"
+            [ "$rstate" = "active" ] || continue
+            known=0
+            for e in "${ALLOW[@]}" "${KNOWN_OTHER[@]}"; do [ "${e%%=*}" = "$rid" ] && [ "${e#*=}" = "$rpath" ] && known=1; done
+            if [ "$known" = "0" ]; then
+              if printf '%s %s' "$rpath" "$rname" | grep -qiE "$RELEVANT"; then kind="coordination-relevant"; else kind="unclassified"; fi
+              echo "::error::$kind workflow registered but not classified for Stage 1: id $rid path $rpath"; exit 1
+            fi
+          done
+          # 2. Each allow-listed id must resolve to its expected ACTIVE path; then its queued / in_progress /
+          #    waiting runs are counted, excluding only this run id. Any other run = busy.
           busy=0
-          for wf in deploy-dev-vps.yml b25-stage1-apply.yml b20-hosted-activation.yml b25-stage1-inspection.yml b25-hosted-inspection.yml; do
+          for e in "${ALLOW[@]}"; do
+            id="${e%%=*}"; path="${e#*=}"
+            wf="$(api_get "repos/$REPO/actions/workflows/$id" "workflow $id")"
+            rid="$(printf '%s' "$wf" | jq -r '.id // empty')"; rpath="$(printf '%s' "$wf" | jq -r '.path // empty')"; rstate="$(printf '%s' "$wf" | jq -r '.state // empty')"
+            [ "$rid" = "$id" ] && [ "$rpath" = "$path" ] && [ "$rstate" = "active" ] || { echo "::error::workflow $id does not resolve to the expected active path $path"; exit 1; }
             for st in queued in_progress waiting; do
-              n="$(gh api "repos/$REPO/actions/workflows/$wf/runs?status=$st&per_page=20" --jq "[.workflow_runs[] | select(.id != ($THIS_RUN|tonumber))] | length" 2>/dev/null || echo 0)"
-              [ "$n" = "0" ] || { echo "::error::$wf has $n run(s) in state $st"; busy=1; }
+              runs="$(api_get "repos/$REPO/actions/workflows/$id/runs?status=$st&per_page=100" "runs of workflow $id in state $st")"
+              n="$(printf '%s' "$runs" | jq -r '.total_count // empty')"; num "$n" "run count of workflow $id in state $st"
+              mine="$(printf '%s' "$runs" | jq -r --arg me "$THIS_RUN" '[.workflow_runs[]? | select((.id|tostring) == $me)] | length')"; num "$mine" "self count"
+              others=$((n - mine))
+              [ "$others" = "0" ] || { echo "::error::$path has $others other run(s) in state $st"; busy=1; }
             done
           done
           [ "$busy" = "0" ] || exit 1
-          echo "no concurrent activation / deployment run"
+          echo "no concurrent activation / deployment run (${#ALLOW[@]} registered workflows verified by id, path and state)"
 
       - uses: pnpm/action-setup@v4
         if: inputs.mode == 'postdeploy_verify'
