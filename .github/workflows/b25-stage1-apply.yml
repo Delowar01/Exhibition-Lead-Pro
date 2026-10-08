@@ -1,0 +1,345 @@
+# =============================================================================
+# TEMPORARY — B25 Stage 1 hosted activation tooling (dispatch-only; one-off ops
+# workflow, NOT the deployment pipeline and NOT application code).
+# =============================================================================
+# Trigger: workflow_dispatch ONLY (no push / pull_request trigger; this workflow
+#          never pushes a Git ref, never fast-forwards develop and never deploys —
+#          deployment stays the owner's push of develop → deploy-dev-vps.yml).
+# Guard:   runs only on ops/b25-stage1-apply whose content must equal the
+#          accepted B25 commit (eb2edb0) plus the three ops files named below.
+# Modes (input `mode`):
+#   preflight          READ-ONLY final preflight against the fixed baselines
+#   schema_apply       MUTATION: fresh verified backup → migrate image from
+#                      exactly eb2edb0 → api stopped (EXIT trap restarts it) →
+#                      drizzle-kit push allow-listed to the 5 accepted
+#                      statements → verify → second push no-op → OLD api
+#                      restarted and healthy → unchanged-state proof
+#   postdeploy_verify  after deploy-dev-vps deployed eb2edb0: READ-ONLY
+#                      verification → disposable smoke (first-party upload /
+#                      download contract, branding logo, api recreation) →
+#                      settle + guarded cleanup (always-step)
+# Every mutation mode requires the typed confirmations below; they are compared
+# against fixed constants BEFORE any SSH session is opened. No input ever reaches
+# a shell as text — inputs are mapped through `env:` and only compared.
+# Secrets used (same as deploy-dev-vps.yml, nothing new):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_DEPLOY_PATH, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+# Scripts are streamed over SSH stdin (`bash -s`) and never stored on the VPS.
+# Remove this workflow (and the branch) once Stage 1 is recorded.
+
+name: b25-stage1-apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preflight (read-only) | schema_apply (MUTATION) | postdeploy_verify (after deploy-dev-vps deployed eb2edb0)"
+        required: true
+        type: choice
+        options: [preflight, schema_apply, postdeploy_verify]
+      confirm_accepted_sha:
+        description: "Type the accepted commit (eb2edb0ad84d859b66efbc24ea9b895f76c2ed02) — schema_apply / postdeploy_verify"
+        required: false
+        default: ""
+      confirm_hosted_sha:
+        description: "Type the expected CURRENT hosted commit (5a072fdc50e3448bd548574698f81076191cd9bc) — schema_apply"
+        required: false
+        default: ""
+      confirm_fingerprint:
+        description: "Type the expected current schema fingerprint (ce55dfa2959cc89c2baad2923217842a) — schema_apply"
+        required: false
+        default: ""
+      confirm_stage1:
+        description: "Type exactly: I APPROVE B25 STAGE 1 SCHEMA APPLY — schema_apply"
+        required: false
+        default: ""
+      confirm_mobile:
+        description: "Type exactly: ALL FILE-TRANSFER DEVICES USE APK 346a24c1 — schema_apply / postdeploy_verify"
+        required: false
+        default: ""
+      confirm_window:
+        description: "Type exactly: NO-UPLOAD MAINTENANCE WINDOW ACTIVE — schema_apply / postdeploy_verify"
+        required: false
+        default: ""
+      confirm_rollback:
+        description: "Type exactly: NATIVE-HANDLE ROLLBACK LIMIT ACCEPTED — schema_apply / postdeploy_verify"
+        required: false
+        default: ""
+      confirm_smoke:
+        description: "Type exactly: RUN DISPOSABLE SMOKE — postdeploy_verify"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+# Serialize with the deployment workflow so no phase ever overlaps a deploy.
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  BASE_SHA: eb2edb0ad84d859b66efbc24ea9b895f76c2ed02
+  EXPECTED_HOSTED_SHA: 5a072fdc50e3448bd548574698f81076191cd9bc
+  EXPECTED_PREVIOUS_SHA: 6dd8d7e728b83424039cd56749b573988c2da2ea
+  FP_BEFORE: ce55dfa2959cc89c2baad2923217842a
+  FP_AFTER: 30c4ecbd867cd2cd59abcb58581ecb04
+  REQUIRED_STAGE1: "I APPROVE B25 STAGE 1 SCHEMA APPLY"
+  REQUIRED_MOBILE: "ALL FILE-TRANSFER DEVICES USE APK 346a24c1"
+  REQUIRED_WINDOW: "NO-UPLOAD MAINTENANCE WINDOW ACTIVE"
+  REQUIRED_ROLLBACK: "NATIVE-HANDLE ROLLBACK LIMIT ACCEPTED"
+  REQUIRED_SMOKE: "RUN DISPOSABLE SMOKE"
+
+jobs:
+  stage1:
+    name: "B25 Stage 1 — ${{ inputs.mode }}"
+    if: github.ref == 'refs/heads/ops/b25-stage1-apply' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard — branch content = accepted commit + the three ops files; scripts parse
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
+          git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b25-stage1-apply.sh' ':(exclude).github/scripts/b25-stage1-smoke.mjs' ':(exclude).github/workflows/b25-stage1-apply.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the ops files:"; echo "$DIFF"; exit 1; }
+          bash -n .github/scripts/b25-stage1-apply.sh
+          node --check .github/scripts/b25-stage1-smoke.mjs
+          grep -q 'default_transaction_read_only = on' .github/scripts/b25-stage1-apply.sh || { echo "read-only session guard missing"; exit 1; }
+          grep -q 'trap on_exit_schema EXIT' .github/scripts/b25-stage1-apply.sh || { echo "EXIT trap missing"; exit 1; }
+          echo "branch = $BASE_SHA + ops files only"
+
+      - name: Validate inputs (exact comparison; nothing is executed from an input)
+        env:
+          MODE: ${{ inputs.mode }}
+          IN_SHA: ${{ inputs.confirm_accepted_sha }}
+          IN_HOSTED: ${{ inputs.confirm_hosted_sha }}
+          IN_FP: ${{ inputs.confirm_fingerprint }}
+          IN_STAGE1: ${{ inputs.confirm_stage1 }}
+          IN_MOBILE: ${{ inputs.confirm_mobile }}
+          IN_WINDOW: ${{ inputs.confirm_window }}
+          IN_ROLLBACK: ${{ inputs.confirm_rollback }}
+          IN_SMOKE: ${{ inputs.confirm_smoke }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in preflight|schema_apply|postdeploy_verify) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          need() { [ "$2" = "$3" ] || { echo "::error::confirmation '$1' does not match the required value"; exit 1; }; }
+          if [ "$MODE" = "schema_apply" ]; then
+            need confirm_accepted_sha "$IN_SHA" "$BASE_SHA"
+            need confirm_hosted_sha "$IN_HOSTED" "$EXPECTED_HOSTED_SHA"
+            need confirm_fingerprint "$IN_FP" "$FP_BEFORE"
+            need confirm_stage1 "$IN_STAGE1" "$REQUIRED_STAGE1"
+            need confirm_mobile "$IN_MOBILE" "$REQUIRED_MOBILE"
+            need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"
+            need confirm_rollback "$IN_ROLLBACK" "$REQUIRED_ROLLBACK"
+          elif [ "$MODE" = "postdeploy_verify" ]; then
+            need confirm_accepted_sha "$IN_SHA" "$BASE_SHA"
+            need confirm_mobile "$IN_MOBILE" "$REQUIRED_MOBILE"
+            need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"
+            need confirm_rollback "$IN_ROLLBACK" "$REQUIRED_ROLLBACK"
+            need confirm_smoke "$IN_SMOKE" "$REQUIRED_SMOKE"
+          fi
+          echo "mode=$MODE confirmations=ok"
+
+      - name: Validate secrets shape (values never printed)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::VPS_DEPLOY_PATH has an unexpected shape"; exit 1; }
+          [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]] || { echo "::error::VPS_PORT has an unexpected shape"; exit 1; }
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::VPS_HOST has an unexpected shape"; exit 1; }
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "::error::VPS_USER has an unexpected shape"; exit 1; }
+          [ -n "$VPS_SSH_KEY" ] && [ -n "$VPS_KNOWN_HOSTS" ] || { echo "::error::SSH secrets missing"; exit 1; }
+          echo "secrets present and well-formed"
+
+      - name: No other activation or deployment may be queued or running
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THIS_RUN: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          busy=0
+          for wf in deploy-dev-vps.yml b25-stage1-apply.yml b20-hosted-activation.yml b25-stage1-inspection.yml b25-hosted-inspection.yml; do
+            for st in queued in_progress waiting; do
+              n="$(gh api "repos/$REPO/actions/workflows/$wf/runs?status=$st&per_page=20" --jq "[.workflow_runs[] | select(.id != ($THIS_RUN|tonumber))] | length" 2>/dev/null || echo 0)"
+              [ "$n" = "0" ] || { echo "::error::$wf has $n run(s) in state $st"; busy=1; }
+            done
+          done
+          [ "$busy" = "0" ] || exit 1
+          echo "no concurrent activation / deployment run"
+
+      - uses: pnpm/action-setup@v4
+        if: inputs.mode == 'postdeploy_verify'
+      - uses: actions/setup-node@v4
+        if: inputs.mode == 'postdeploy_verify'
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+      - name: Install (frozen lockfile; bcryptjs for the disposable owner hash)
+        if: inputs.mode == 'postdeploy_verify'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install SSH key and pinned host key (strict host verification; no ssh-keyscan)
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+          {
+            echo "Host vps"
+            echo "  HostName $VPS_HOST"
+            echo "  Port $VPS_PORT"
+            echo "  User $VPS_USER"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  StrictHostKeyChecking yes"
+            echo "  ServerAliveInterval 30"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      # ── preflight (read-only) ───────────────────────────────────────────────
+      - name: Preflight (read-only; stops on any difference from the inspection baseline)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='preflight' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/preflight.log"
+          MD5="$(grep -oE '^gcs_inventory_md5=[0-9a-f]{32}' "$RUNNER_TEMP/preflight.log" | head -1 | cut -d= -f2)"
+          [[ "$MD5" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::preflight did not report the GCS inventory digest"; exit 1; }
+          echo "GCS_INVENTORY_MD5=$MD5" >> "$GITHUB_ENV"
+        if: inputs.mode == 'preflight' || inputs.mode == 'schema_apply'
+
+      # ── schema_apply (mutation) ────────────────────────────────────────────
+      - name: Schema apply (backup → migrate image → api stopped under EXIT trap → allow-listed push → verify → old api restarted)
+        if: inputs.mode == 'schema_apply'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='schema-apply' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/schema-apply.log"
+          grep -q '^second push: No changes detected' "$RUNNER_TEMP/schema-apply.log" || { echo "::error::second push did not report No changes detected"; exit 1; }
+          grep -qE "^schema_fingerprint=$FP_AFTER" "$RUNNER_TEMP/schema-apply.log" || { echo "::error::after-fingerprint not reported as $FP_AFTER"; exit 1; }
+
+      - name: Recover (always after schema_apply — api running and healthy, temporary artefacts removed)
+        if: always() && inputs.mode == 'schema_apply'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='recover' bash -s" < .github/scripts/b25-stage1-apply.sh
+
+      # ── postdeploy_verify (after deploy-dev-vps deployed eb2edb0) ──────────
+      - name: Post-deployment verification (read-only; storage_objects must be empty before any smoke)
+        if: inputs.mode == 'postdeploy_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='postdeploy-verify' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/postdeploy.log"
+          MD5="$(grep -oE '^gcs_inventory_md5=[0-9a-f]{32}' "$RUNNER_TEMP/postdeploy.log" | head -1 | cut -d= -f2)"
+          [[ "$MD5" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::no GCS inventory digest"; exit 1; }
+          echo "GCS_INVENTORY_MD5=$MD5" >> "$GITHUB_ENV"
+
+      - name: Disposable smoke — setup (one disposable platform owner; credentials generated here and masked)
+        if: inputs.mode == 'postdeploy_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          TAG="$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          PW="S1-$(head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | head -c 32)"
+          echo "::add-mask::$PW"
+          HASH="$(cd artifacts/api-server && PW="$PW" node -e 'const b=require("bcryptjs");process.stdout.write(b.hashSync(process.env.PW,10))')"
+          [[ "$HASH" =~ ^\$2[aby]\$10\$.{53}$ ]] || { echo "::error::bcrypt hash has an unexpected shape"; exit 1; }
+          echo "::add-mask::$HASH"
+          EMAIL="b25-smoke-$TAG-owner@b25smoke.invalid"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-setup' ARG1='$HASH' ARG2='$EMAIL' bash -s" < .github/scripts/b25-stage1-apply.sh | tee "$RUNNER_TEMP/smoke-setup.log"
+          UID_="$(grep -oE '^disposable_owner_user_id=[0-9]+' "$RUNNER_TEMP/smoke-setup.log" | cut -d= -f2)"
+          [[ "$UID_" =~ ^[0-9]+$ ]] || { echo "::error::no disposable owner id"; exit 1; }
+          printf '%s' "$PW" > "$RUNNER_TEMP/.po-pw"
+          { echo "SMOKE_TAG=$TAG"; echo "PO_EMAIL=$EMAIL"; echo "PO_USER_ID=$UID_"; echo "SMOKE_OUT=$RUNNER_TEMP/smoke-state.json"; } >> "$GITHUB_ENV"
+
+      - name: Disposable smoke — run (first-party upload / download contract, branding logo, metrics)
+        if: inputs.mode == 'postdeploy_verify'
+        run: |
+          set -euo pipefail
+          PO_PASSWORD="$(cat "$RUNNER_TEMP/.po-pw")" STEP=run node .github/scripts/b25-stage1-smoke.mjs
+
+      - name: Disposable smoke — VPS-side verification (inventory rows, ownership marker, generation strings, no leak)
+        if: inputs.mode == 'postdeploy_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          C="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.companies.join(","))')"
+          U="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write([...s.users, process.env.PO_USER_ID].join(","))')"
+          P="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.capabilityPrefix)')"
+          [[ "$C" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "$U" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "$P" =~ ^[A-Za-z0-9_-]{16}$ ]] || { echo "::error::smoke state malformed"; exit 1; }
+          echo "::add-mask::$P"
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-verify' ARG1='$C' ARG2='$U' ARG3='$P' bash -s" < .github/scripts/b25-stage1-apply.sh
+
+      - name: Recreate the api container (readiness returns; volume identity stable)
+        if: inputs.mode == 'postdeploy_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='recreate-api' bash -s" < .github/scripts/b25-stage1-apply.sh
+
+      - name: Disposable smoke — re-read after recreation, then delete the disposable tenants through the product API
+        if: inputs.mode == 'postdeploy_verify'
+        run: |
+          set -euo pipefail
+          PO_PASSWORD="$(cat "$RUNNER_TEMP/.po-pw")" STEP=recheck node .github/scripts/b25-stage1-smoke.mjs
+
+      - name: Settle (purge job → disposable objects removed by marker + exact generation → census back to baseline)
+        if: inputs.mode == 'postdeploy_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          C="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.companies.join(","))')"
+          [[ "$C" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "::error::smoke state malformed"; exit 1; }
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-settle' ARG1='$C' ARG2='$GCS_INVENTORY_MD5' bash -s" < .github/scripts/b25-stage1-apply.sh
+
+      - name: Cleanup (always after postdeploy_verify — tenants removed through the API if still present; guarded row removal; tombstones verified)
+        if: always() && inputs.mode == 'postdeploy_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          if [ -f "$RUNNER_TEMP/.po-pw" ] && [ -f "${SMOKE_OUT:-/nonexistent}" ]; then
+            PO_PASSWORD="$(cat "$RUNNER_TEMP/.po-pw")" STEP=teardown node .github/scripts/b25-stage1-smoke.mjs || true
+            C="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.companies.length? s.companies.join(","):"none")')"
+            U="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write([...s.users, process.env.PO_USER_ID].join(","))')"
+          else
+            C="none"; U="${PO_USER_ID:-}"
+          fi
+          if [ -z "$U" ]; then echo "nothing was created; no cleanup needed"; exit 0; fi
+          [[ "$C" =~ ^([0-9]+(,[0-9]+)*|none)$ ]] && [[ "$U" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "${SMOKE_TAG:-}" =~ ^[a-z0-9]{6,12}$ ]] || { echo "::error::cleanup arguments malformed"; exit 1; }
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='cleanup' ARG1='$C' ARG2='$U' ARG3='$SMOKE_TAG' bash -s" < .github/scripts/b25-stage1-apply.sh
+          rm -f "$RUNNER_TEMP/.po-pw" "$RUNNER_TEMP/smoke-state.json"
+
+      - name: Remove runner-side logs and state (always)
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/preflight.log "$RUNNER_TEMP"/schema-apply.log "$RUNNER_TEMP"/postdeploy.log "$RUNNER_TEMP"/smoke-setup.log "$RUNNER_TEMP"/.po-pw "$RUNNER_TEMP"/smoke-state.json
