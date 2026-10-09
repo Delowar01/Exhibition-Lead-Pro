@@ -112,6 +112,19 @@ LEGACY_HANDLE='^/objects/uploads/[0-9a-f-]{36}$'
 references() { q "select count(*) from (select object_path r from document_versions where object_path ~ '$LEGACY_HANDLE' union all select object_path from export_runs where object_path ~ '$LEGACY_HANDLE' union all select object_path from executive_reports where object_path ~ '$LEGACY_HANDLE' union all select image_url from scans where image_url ~ '^scans/[0-9]+/[0-9]+\.jpg$' union all select brand_logo_key from companies where brand_logo_key ~ '^branding/[0-9]+/[0-9a-f]{32}\.(png|jpg|webp)$') r"; }
 health() { curl -fsS --max-time 5 http://127.0.0.1:18080/healthz >/dev/null && curl -fsS --max-time 5 http://127.0.0.1:18080/api/healthz >/dev/null && curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz | grep -q '"database":"ok","storage":"ok"'; }
 wait_healthy() { local waited=0; until health; do waited=$((waited + 5)); [ "$waited" -ge "${1:-150}" ] && return 1; sleep 5; done; return 0; }
+# capacity <label> <df options…>: ONE non-negative integer from a single-column df query (header removed,
+# whitespace stripped). Fails on a df error, no data row, several data rows, or any value that is not a
+# non-negative decimal integer (for example "-" on a filesystem without inode accounting). Zero is a valid
+# value; the caller compares it against the unchanged thresholds.
+capacity() {
+  local label="$1"; shift
+  local out rows
+  if ! out="$(df "$@" 2>/dev/null)"; then echo "::error::df failed ($label)" >&2; return 1; fi
+  mapfile -t rows < <(printf '%s\n' "$out" | tail -n +2 | sed -E 's/[[:space:]]+//g' | awk 'NF')
+  [ "${#rows[@]}" = "1" ] || { echo "::error::df returned ${#rows[@]} data rows ($label), expected exactly one" >&2; return 1; }
+  [[ "${rows[0]}" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "::error::df value is not a non-negative integer ($label)" >&2; return 1; }
+  printf '%s' "${rows[0]}"
+}
 # Small read-only/controlled node script INSIDE the api container; script and argument travel in env vars (never on disk, never printed).
 api_node() {
   local js="$1" arg="${2:-}" errf="$HOME/.b25-s1-node.err" out b64
@@ -151,7 +164,27 @@ const { createHash } = require("node:crypto");
 JS
 )
 census() { api_node "$CENSUS_JS"; }
-census_field() { printf '%s' "$1" | grep -oE "\"$2\":\"?[0-9a-z]+\"?" | head -1 | sed -E 's/^"[a-z_]+"://; s/"//g'; }
+# census_field <json line> <key> <count|hex32>
+# Validated extraction from the one-line JSON printed by the in-container node snippets. The key must occur
+# EXACTLY once (keys may contain digits, e.g. inventory_md5); a count must be a bare non-negative decimal
+# integer (zero is valid); a hex32 must be a quoted string of exactly 32 lowercase hex characters. Anything
+# else — missing or duplicate key, empty, partial, signed, quoted-number, non-JSON input such as the
+# "unavailable (reason: …)" placeholder or a {"census":"error"} answer — prints nothing, explains on stderr and
+# returns 1, so a caller can never use a bogus value. Raw provider output is never printed here.
+census_field() {
+  local json="$1" key="$2" kind="$3" matches n raw
+  [[ "$key" =~ ^[a-z0-9_]+$ ]] || { echo "::error::census_field: invalid key" >&2; return 1; }
+  case "$kind" in count|hex32) ;; *) echo "::error::census_field: invalid kind for '$key'" >&2; return 1;; esac
+  matches="$(printf '%s' "$json" | grep -oE "\"$key\":(\"[^\"]*\"|[^,}]*)")" || { echo "::error::census_field: field '$key' not found" >&2; return 1; }
+  n="$(printf '%s\n' "$matches" | grep -c .)"
+  [ "$n" = "1" ] || { echo "::error::census_field: field '$key' found $n times (expected exactly one)" >&2; return 1; }
+  raw="${matches#*:}"
+  case "$kind" in
+    count) [[ "$raw" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "::error::census_field: '$key' is not a non-negative decimal integer" >&2; return 1; } ;;
+    hex32) [[ "$raw" =~ ^\"[0-9a-f]{32}\"$ ]] || { echo "::error::census_field: '$key' is not a quoted 32-character lowercase hex digest" >&2; return 1; }; raw="${raw:1:32}" ;;
+  esac
+  printf '%s' "$raw"
+}
 
 cd "$APP_DIR/docker"
 PG_CID="$(compose ps -q postgres)"; [ -n "$PG_CID" ] || fail "postgres container not found"
@@ -218,12 +251,16 @@ guards_before() {
   echo "driver: Google Cloud (pre-B25 code; readyz storage=ok via the bucket probe)"
 
   section "5. Google Cloud census + reconciliation (read-only; counts and digests only)"
-  local cj o b; cj="$(census)"; echo "$cj"
-  o="$(census_field "$cj" objects)"; b="$(census_field "$cj" bytes)"
+  local cj o b gl wm; cj="$(census)"; echo "$cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects count missing or malformed"
+  b="$(census_field "$cj" bytes count)" || fail "census: bytes count missing or malformed"
   [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] || fail "DRIFT: bucket census is not $CENSUS_OBJECTS objects / $CENSUS_BYTES bytes"
-  [ "$(census_field "$cj" generationless)" = "0" ] || fail "DRIFT: generation-less object present"
-  [ "$(census_field "$cj" with_marker)" = "0" ] || fail "DRIFT: an object already carries the B25 ownership marker"
-  INVENTORY_MD5="$(census_field "$cj" inventory_md5)"; echo "gcs_inventory_md5=$INVENTORY_MD5 (sorted name|generation|size digest; names never printed)"
+  gl="$(census_field "$cj" generationless count)" || fail "census: generationless count missing or malformed"
+  [ "$gl" = "0" ] || fail "DRIFT: generation-less object present"
+  wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker count missing or malformed"
+  [ "$wm" = "0" ] || fail "DRIFT: an object already carries the B25 ownership marker"
+  INVENTORY_MD5="$(census_field "$cj" inventory_md5 hex32)" || fail "census: inventory digest missing or malformed"
+  echo "gcs_inventory_md5=$INVENTORY_MD5 (sorted name|generation|size digest; names never printed)"
   local refs_b64; refs_b64="$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" | base64 -w0)"
   RECON_JS=$(cat <<'JS'
 const { Storage } = require("@google-cloud/storage");
@@ -242,13 +279,19 @@ const { Storage } = require("@google-cloud/storage");
 })().catch((e) => console.log(JSON.stringify({ reconciliation: "error", code: e.code || e.name || "unknown" })));
 JS
 )
-  local rj; rj="$(api_node "$RECON_JS" "$refs_b64")"; echo "$rj"
-  [ "$(census_field "$rj" present)" = "$REFERENCES" ] && [ "$(census_field "$rj" missing)" = "0" ] && [ "$(census_field "$rj" size_match)" = "$REFERENCES" ] || fail "DRIFT: a referenced legacy object is missing or its size changed"
+  local rj rpresent rmissing rsize; rj="$(api_node "$RECON_JS" "$refs_b64")"; echo "$rj"
+  rpresent="$(census_field "$rj" present count)" || fail "reconciliation: present count missing or malformed"
+  rmissing="$(census_field "$rj" missing count)" || fail "reconciliation: missing count missing or malformed"
+  rsize="$(census_field "$rj" size_match count)" || fail "reconciliation: size_match count missing or malformed"
+  [ "$rpresent" = "$REFERENCES" ] && [ "$rmissing" = "0" ] && [ "$rsize" = "$REFERENCES" ] || fail "DRIFT: a referenced legacy object is missing or its size changed"
 
   section "6. logs / capacity"
   echo "api error-level lines: $(docker logs "$API_CID" 2>&1 | grep -c '"level":50' || true); unhandled: $(docker logs "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true); storage/sweep warnings: $(docker logs "$API_CID" 2>&1 | grep -E '"level":(40|50)' | grep -ciE 'storage|sweep' || true)"
   [ "$(docker logs "$API_CID" 2>&1 | grep -E '"level":(40|50)' | grep -ciE 'storage|sweep' || true)" = "0" ] || fail "unexpected storage / sweep warnings in the api log"
-  local avail ifree; avail="$(df -B1 --output=avail / | tail -1 | tr -d ' ')"; ifree="$(df -i --output=iavail / | tail -1 | tr -d ' ')"
+  # GNU df: -i and --output are mutually exclusive; the inode column is requested through --output alone.
+  local avail ifree
+  avail="$(capacity "bytes available on /" -B1 --output=avail /)" || fail "could not read the free disk capacity"
+  ifree="$(capacity "inodes available on /" --output=iavail /)" || fail "could not read the free inode capacity"
   echo "disk_avail_bytes=$avail inodes_free=$ifree backup_dir_bytes=$(du -sb "$BACKUP_DIR" 2>/dev/null | cut -f1)"
   [ "$avail" -gt $((10 * 1024 * 1024 * 1024)) ] || fail "less than 10 GiB free"
   [ "$ifree" -gt 1000000 ] || fail "fewer than 1,000,000 free inodes"
@@ -378,8 +421,9 @@ phase_schema_apply() {
   local tb; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
   [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
   [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "owner scan rows changed"
-  local cj; cj="$(census)"; echo "$cj"
-  [ "$(census_field "$cj" inventory_md5)" = "$INVENTORY_MD5" ] || fail "GCS inventory changed"
+  local cj im; cj="$(census)"; echo "$cj"
+  im="$(census_field "$cj" inventory_md5 hex32)" || fail "census after the push: inventory digest missing or malformed"
+  [ "$im" = "$INVENTORY_MD5" ] || fail "GCS inventory changed"
   echo "queue after: $(q "select coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s") (baseline: $q_before)"
   [ "$(q "select count(*) from job_queue where status='dead'")" = "0" ] || fail "dead-letter jobs after restart"
   echo "storage_objects left in place (empty, additive, inert for $EXPECTED_HOSTED_SHA) — never dropped automatically"
@@ -442,11 +486,15 @@ phase_postdeploy_verify() {
   section "storage_objects after deployment (must be 0 rows before any smoke)"
   local n; n="$(q "select count(*) from storage_objects")"; echo "storage_objects_rows=$n"
   if [ "$n" != "0" ]; then q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' created='||created_at from storage_objects order by created_at limit 20"; fail "unexpected storage_objects rows exist — STOP: determine whether a B25-native object was created before any rollback decision"; fi
-  local cj; cj="$(census)"; echo "$cj"
-  [ "$(census_field "$cj" objects)" = "$CENSUS_OBJECTS" ] && [ "$(census_field "$cj" bytes)" = "$CENSUS_BYTES" ] || fail "bucket census changed"
-  [ "$(census_field "$cj" with_marker)" = "0" ] || fail "an object carries a marker before the smoke"
-  echo "gcs_inventory_md5=$(census_field "$cj" inventory_md5)"
-  [ "$ARG1" = "" ] || { [ "$(census_field "$cj" inventory_md5)" = "$ARG1" ] || fail "GCS inventory digest differs from the preflight baseline"; }
+  local cj o b wm im; cj="$(census)"; echo "$cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects count missing or malformed"
+  b="$(census_field "$cj" bytes count)" || fail "census: bytes count missing or malformed"
+  [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] || fail "bucket census changed"
+  wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker count missing or malformed"
+  [ "$wm" = "0" ] || fail "an object carries a marker before the smoke"
+  im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: inventory digest missing or malformed"
+  echo "gcs_inventory_md5=$im"
+  [ "$ARG1" = "" ] || { [ "$im" = "$ARG1" ] || fail "GCS inventory digest differs from the preflight baseline"; }
   echo "api error-level lines since start: $(docker logs "$API_CID" 2>&1 | grep -c '"level":50' || true); storage warnings: $(docker logs "$API_CID" 2>&1 | grep -E '"level":(40|50)' | grep -ciE 'storage|sweep' || true)"
   echo "now_utc=$(date -u +%FT%TZ)"
   log "postdeploy-verify complete (read-only)"
@@ -578,9 +626,11 @@ const { Storage } = require("@google-cloud/storage");
 })().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
 JS
 )
-  local dj; dj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$DELETE_JS" "$rows_b64")"; echo "$dj"
-  echo "$dj" | grep -q '"deleted"' || fail "provider cleanup did not run"
-  [ "$(census_field "$dj" refused_no_marker_or_generation)" = "0" ] || fail "an object was refused (marker / generation) — left in place; investigate (no row will be purged)"
+  local dj ddeleted drefused; dj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$DELETE_JS" "$rows_b64")"; echo "$dj"
+  ddeleted="$(census_field "$dj" deleted count)" || fail "provider cleanup did not run (no deleted count)"
+  drefused="$(census_field "$dj" refused_no_marker_or_generation count)" || fail "provider cleanup did not report the refused count"
+  echo "provider cleanup: deleted=$ddeleted refused=$drefused"
+  [ "$drefused" = "0" ] || fail "an object was refused (marker / generation) — left in place; investigate (no row will be purged)"
 
   section "prove every persisted provider location of the recorded tombstones is absent (HEAD metadata; names never printed)"
   local loc_b64; loc_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 'm', mirror_key)), '[]'::json) from storage_objects where id in ($UUIDS_Q)" | base64 -w0)"
@@ -602,10 +652,11 @@ const { Storage } = require("@google-cloud/storage");
 })().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
 JS
 )
-  local aj; aj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$ABSENT_JS" "$loc_b64")"; echo "$aj"
-  echo "$aj" | grep -q '"checked"' || fail "absence verification did not run"
+  local aj achecked aabsent; aj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$ABSENT_JS" "$loc_b64")"; echo "$aj"
+  achecked="$(census_field "$aj" checked count)" || fail "absence verification did not run (no checked count)"
+  aabsent="$(census_field "$aj" absent count)" || fail "absence verification did not report an absent count"
   local present_rows; present_rows="$(q "select count(*) from storage_objects where id in ($UUIDS_Q)")"
-  [ "$(census_field "$aj" checked)" = "$present_rows" ] && [ "$(census_field "$aj" absent)" = "$present_rows" ] || fail "a persisted provider location of a recorded tombstone still exists — its row is NOT removed; investigate"
+  [ "$achecked" = "$present_rows" ] && [ "$aabsent" = "$present_rows" ] || fail "a persisted provider location of a recorded tombstone still exists — its row is NOT removed; investigate"
   [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l')" = "0" ] || fail "objectdata is not empty (a filesystem copy would exist)"
 
   section "remove the EXACT recorded tombstones (one allow-listed transaction; row-locked re-check; count must match)"
@@ -621,10 +672,14 @@ JS
   [ "$(q "select count(*) from storage_objects s where exists (select 1 from unnest(array[$UUIDS_Q]) u where s.reference like '%' || u || '%' or s.storage_key like '%' || u || '%')")" = "0" ] || fail "a storage row still references a smoke object id"
 
   section "census back to the baseline; original objects unchanged; no marker anywhere"
-  local cj; cj="$(census)"; echo "$cj"
-  [ "$(census_field "$cj" objects)" = "$CENSUS_OBJECTS" ] && [ "$(census_field "$cj" bytes)" = "$CENSUS_BYTES" ] || fail "bucket census is not back to $CENSUS_OBJECTS / $CENSUS_BYTES"
-  [ "$(census_field "$cj" inventory_md5)" = "$ARG2" ] || fail "the original objects' names/generations/sizes changed"
-  [ "$(census_field "$cj" with_marker)" = "0" ] || fail "a marked object remains"
+  local cj o b im wm; cj="$(census)"; echo "$cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects count missing or malformed"
+  b="$(census_field "$cj" bytes count)" || fail "census: bytes count missing or malformed"
+  [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] || fail "bucket census is not back to $CENSUS_OBJECTS / $CENSUS_BYTES"
+  im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: inventory digest missing or malformed"
+  [ "$im" = "$ARG2" ] || fail "the original objects' names/generations/sizes changed"
+  wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker count missing or malformed"
+  [ "$wm" = "0" ] || fail "a marked object remains"
   echo "storage_objects total=$(q "select count(*) from storage_objects") legacy_retained=$(q "select count(*) from storage_objects where last_error='LEGACY_RETAINED'") uncertain=$(q "select count(*) from storage_objects where publication_uncertain_at is not null") unproven=$(q "select count(*) from storage_objects where last_error='OWNERSHIP_UNPROVEN'") (pre-smoke baseline: 0 / 0 / 0 / 0)"
   [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "storage_objects is not back to the pre-smoke baseline (0 rows)"
   log "smoke-settle complete"
@@ -673,8 +728,11 @@ phase_cleanup() {
   [ "$(q "select count(*) from storage_objects where publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING')")" = "0" ] || fail "uncertain / unproven residue in the inventory"
   echo "storage_objects total=$(q "select count(*) from storage_objects") legacy_retained=$(q "select count(*) from storage_objects where last_error='LEGACY_RETAINED'") (pre-smoke baseline 0 / 0)"
   [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "storage_objects is not back to the pre-smoke baseline"
-  local cj; cj="$(census)"; echo "$cj"
-  [ "$(census_field "$cj" objects)" = "$CENSUS_OBJECTS" ] && [ "$(census_field "$cj" bytes)" = "$CENSUS_BYTES" ] && [ "$(census_field "$cj" with_marker)" = "0" ] || fail "bucket census / markers not back to the baseline"
+  local cj o b wm; cj="$(census)"; echo "$cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects count missing or malformed"
+  b="$(census_field "$cj" bytes count)" || fail "census: bytes count missing or malformed"
+  wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker count missing or malformed"
+  [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] && [ "$wm" = "0" ] || fail "bucket census / markers not back to the baseline"
   echo "objectdata entries: $(compose exec -T api sh -c 'ls -A /data/objects | wc -l' 2>/dev/null || echo unavailable)"
   [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l' 2>/dev/null || echo 1)" = "0" ] || fail "objectdata is not empty"
   rm -f "$HOME"/.b25-s1-node.err
