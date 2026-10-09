@@ -503,8 +503,11 @@ guards_deployed() {
   [ "$(sha256sum "$ENV_FILE" | cut -c1-16)" = "$ENV_SHA_PREFIX" ] && [ "$(stat -c %a "$ENV_FILE")" = "$ENV_MODE" ] || fail "env file changed"
   [ "$(compose exec -T api sh -c 'for k in OBJECT_STORAGE_DRIVER OBJECT_STORAGE_FS_ROOT OBJECT_STORAGE_ENCRYPTION_KEY OBJECT_STORAGE_LEGACY_FALLBACK OBJECT_STORAGE_MIRROR OBJECT_STORAGE_LEGACY_DELETE; do eval v=\"\${$k:-}\"; [ -z "$v" ] || echo set; done' | grep -c set || true)" = "0" ] || fail "an OBJECT_STORAGE_* variable is set"
   echo "entrypoint: $(docker logs "$API_CID" 2>&1 | grep -E '^\[entrypoint\]\s+OBJECT_STORAGE_' | tr -s ' ' | tr '\n' ';')"
-  echo "storage init: $(docker logs "$API_CID" 2>&1 | grep -oE '"driver":"[a-z]+","legacyFallback":(true|false),"mirror":(true|false),"legacyDelete":(true|false)' | head -1)"
-  docker logs "$API_CID" 2>&1 | grep -q '"driver":"gcs","legacyFallback":false,"mirror":false,"legacyDelete":false' || fail "storage initialization is not driver=gcs / fallback off / mirror off / legacy delete off"
+  # Both readers consume the whole container log: an early-exiting consumer (head -1 / grep -q) closes
+  # the pipe while `docker logs` is still writing, and under pipefail the producer's broken-pipe exit
+  # fails the guard although the required record is present (observed in run 37925984811).
+  echo "storage init: $(docker logs "$API_CID" 2>&1 | grep -oE '"driver":"[a-z]+","legacyFallback":(true|false),"mirror":(true|false),"legacyDelete":(true|false)' | awk 'NR == 1 { print }')"
+  docker logs "$API_CID" 2>&1 | grep -F '"driver":"gcs","legacyFallback":false,"mirror":false,"legacyDelete":false' >/dev/null || fail "storage initialization is not driver=gcs / fallback off / mirror off / legacy delete off"
   [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}' "$PG_CID")" = "card-scanner-pro_pgdata" ] || fail "postgres volume changed"
   [ "$(docker inspect -f '{{.State.Health.Status}}' "$PG_CID")" = "healthy" ] || fail "postgres not healthy"
   section "objectdata named volume (created by the deployment; must stay empty while GCS is primary)"
