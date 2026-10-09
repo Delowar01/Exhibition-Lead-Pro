@@ -8,7 +8,7 @@
 #
 # B25 CORRECTION 9 TOOLING (ops/b25-c9-postdeploy-tooling): the SAME six ops files rebuilt on the
 # Correction 9 product commit (90a91a2) so the post-deployment verification can accept it:
-# ACCEPTED_SHA = 26ac882 (the commit deploy-dev-vps must have deployed), EXPECTED_HOSTED_SHA = eb2edb0
+# ACCEPTED_SHA = 90a91a2 (the commit deploy-dev-vps must have deployed), EXPECTED_HOSTED_SHA = eb2edb0
 # (previous-deploy.sha after that deployment). Every schema, census, tenant, scan and environment
 # baseline is unchanged. The schema phases (preflight / schema_apply) are NOT applicable on this branch:
 # Correction 9 changes no schema (they fail closed on the fingerprint anyway).
