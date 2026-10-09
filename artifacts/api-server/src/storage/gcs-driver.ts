@@ -183,17 +183,39 @@ export class GcsStorageDriver implements StorageDriver {
     const rs = f.createReadStream();
     const out = new PassThrough();
     let emitted = 0;
+    // B25 Correction 9 — never destroy the SDK's read stream before its HTTP response has been handed
+    // to it. The SDK pipes the response into that stream synchronously from its own 'response'
+    // handler; on Node >= 23 node's pipeline() throws ERR_STREAM_UNABLE_TO_PIPE for a destination that
+    // is already destroyed, inside an event handler nobody can catch, and the process terminates
+    // (observed on the hosted API: a HEAD request opened the object and closed the stream before the
+    // provider answered — run 37930815158). A consumer close that arrives before the response is
+    // remembered and applied once the response has been piped (next macrotask): the pipeline's own
+    // teardown then aborts the transfer. After the response (or an error) a close destroys at once.
+    let responded = false;
+    let stopRequested = false;
+    const stopSource = () => {
+      if (!rs.destroyed) rs.destroy();
+    };
+    const requestStop = () => {
+      if (responded) stopSource();
+      else stopRequested = true;
+    };
+    rs.once("response", () => {
+      responded = true;
+      if (stopRequested) setImmediate(stopSource);
+    });
     rs.on("error", (err) => {
+      responded = true;
       if (!out.destroyed) out.destroy(mapGcsError(err));
     });
     rs.on("data", (chunk: Buffer) => {
       emitted += chunk.length;
       if (opts.maxBytes !== undefined && emitted > opts.maxBytes) {
-        rs.destroy();
+        requestStop();
         if (!out.destroyed) out.destroy(new StorageError("STORAGE_TOO_LARGE"));
       }
     });
-    out.on("close", () => rs.destroy());
+    out.on("close", requestStop);
     rs.pipe(out);
     return { stream: out, sizeBytes: head.sizeBytes, contentType: head.contentType };
   }
