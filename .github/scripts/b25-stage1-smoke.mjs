@@ -1,5 +1,5 @@
 // TEMPORARY — B25 Stage 1 disposable smoke, run on the GitHub runner against the
-// public API origin (ONE-OFF ops script, not application code). No OCR, Gemini,
+// public API origins (ONE-OFF ops script, not application code). No OCR, Gemini,
 // SMTP or Stripe is touched. Everything it creates is disposable (tenant names
 // "B25 SMOKE <tag>", e-mails under b25smoke.invalid) and is removed by the
 // workflow's always-step. Prints ids, status codes and booleans only — never a
@@ -18,8 +18,23 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { readFileSync, writeFileSync } from "node:fs";
 
-const BASE = process.env.SMOKE_BASE === "http://localhost:80" ? "http://localhost:80" : "https://admin.kaptnow.com";
-const LOCAL = BASE === "http://localhost:80"; // local dry run against the development stack only
+// Split-portal deployment (artifacts/api-server/src/lib/portal-host.ts): a platform_owner may
+// sign in only on the platform portal and tenant roles only on the customer portal — the API
+// refuses the other combination with 403 before any session exists. Platform-owner login and
+// platform administration (companies, users, metrics) therefore use PLATFORM; tenant login,
+// tenant file operations, branding and public file / logo reads use CUSTOMER. Both origins are
+// fixed constants: nothing taken from a response ever selects an origin.
+const HOSTED_CUSTOMER = "https://admin.kaptnow.com";
+const HOSTED_PLATFORM = "https://elite.kaptnow.com";
+// Local dry run only (development stack / local harness): SMOKE_BASE must be exactly
+// http://localhost:80; SMOKE_PLATFORM_BASE may then name a second LOOPBACK http origin that
+// stands in for the platform portal (default: the same localhost origin, where every role is
+// accepted). Neither variable can redirect a hosted run.
+const LOCAL = process.env.SMOKE_BASE === "http://localhost:80";
+if (process.env.SMOKE_BASE && !LOCAL) throw new Error("SMOKE_BASE is accepted only as http://localhost:80 (local dry run)");
+if (process.env.SMOKE_PLATFORM_BASE && (!LOCAL || !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{2,5}$/.test(process.env.SMOKE_PLATFORM_BASE))) throw new Error("SMOKE_PLATFORM_BASE is accepted only in the local dry run and only as a loopback http origin");
+const CUSTOMER = LOCAL ? "http://localhost:80" : HOSTED_CUSTOMER;
+const PLATFORM = LOCAL ? (process.env.SMOKE_PLATFORM_BASE || "http://localhost:80") : HOSTED_PLATFORM;
 const STEP = process.env.STEP || "run";
 const TAG = process.env.SMOKE_TAG || "";
 const OUT = process.env.SMOKE_OUT || "";
@@ -43,24 +58,33 @@ function must(name, ok, detail = "") {
 }
 // Fixed-string error details only (code + message of the API's ErrorResponse); never a token, URL or path.
 const errDetail = (r) => `status ${r.status}${r.json && (r.json.code || r.json.error) ? ` ${r.json.code || ""} ${String(r.json.error || r.json.message || "").slice(0, 80)}` : ""}`;
-async function api(method, path, { token, body, headers = {}, raw = false, capability } = {}) {
+async function api(method, path, { token, body, headers = {}, raw = false, capability, origin = CUSTOMER } = {}) {
+  if (origin !== CUSTOMER && origin !== PLATFORM) throw new Error("api: unknown origin");
+  if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) throw new Error("api: path must be origin-relative");
   const h = { ...headers };
   if (token) h.Authorization = `Bearer ${token}`;
   if (capability) h["X-Storage-Capability"] = capability;
   let payload = body;
   if (body !== undefined && !raw) { h["Content-Type"] = "application/json"; payload = JSON.stringify(body); }
-  const res = await fetch(`${BASE}${path}`, { method, headers: h, body: payload, redirect: "manual" });
+  const res = await fetch(`${origin}${path}`, { method, headers: h, body: payload, redirect: "manual" });
   const buf = Buffer.from(await res.arrayBuffer());
   let json = null;
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) { try { json = JSON.parse(buf.toString("utf8")); } catch { json = null; } }
   return { status: res.status, headers: res.headers, buf, json };
 }
-async function login(email, password) {
-  const r = await api("POST", "/api/auth/login", { body: { email, password } });
-  must(`login ${email.replace(/@.*/, "@…")}`, r.status === 200 && r.json && r.json.token, `status ${r.status}`);
+// portal = "platform" (the disposable platform owner) or "customer" (tenant users) — fixed per caller.
+async function login(email, password, portal) {
+  const origin = portal === "platform" ? PLATFORM : portal === "customer" ? CUSTOMER : null;
+  if (!origin) throw new Error("login: portal must be platform or customer");
+  const r = await api("POST", "/api/auth/login", { body: { email, password }, origin });
+  must(`login ${email.replace(/@.*/, "@…")} on the ${portal} portal`, r.status === 200 && r.json && r.json.token, errDetail(r));
   return r.json.token;
 }
+const loginOwner = () => login(PO_EMAIL, PO_PASSWORD, "platform");
+const loginTenant = (email, password) => login(email, password, "customer");
+// Platform administration with the owner token (companies, users, metrics) — always the platform portal.
+const platform = (method, path, opts = {}) => api(method, path, { ...opts, origin: PLATFORM });
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 // Minimal valid 64x64 RGBA PNG (CRC + zlib from node); 32 px per side is the API minimum.
 function png64() {
@@ -73,29 +97,30 @@ function png64() {
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
-// A first-party URL: relative, or absolute on exactly the configured origin (default ports normalized); fixed path shape; no query, no hash.
+// A first-party URL: relative, or absolute on exactly the CUSTOMER origin (default ports normalized); fixed path shape; no query, no hash.
 function firstParty(url, pathRe) {
-  try { const u = new URL(String(url), BASE); return u.origin === new URL(BASE).origin && pathRe.test(u.pathname) && u.search === "" && u.hash === "" && !u.username && !u.password; } catch { return false; }
+  try { const u = new URL(String(url), CUSTOMER); return u.origin === new URL(CUSTOMER).origin && pathRe.test(u.pathname) && u.search === "" && u.hash === "" && !u.username && !u.password; } catch { return false; }
 }
-const toPath = (url) => new URL(String(url), BASE).pathname;
+// Only the PATH of a response URL is reused, and only against the fixed CUSTOMER origin.
+const toPath = (url) => new URL(String(url), CUSTOMER).pathname;
 const state = () => { try { return JSON.parse(readFileSync(OUT, "utf8")); } catch { return { tag: TAG, companies: [], users: [], capabilityPrefix: "" }; } };
 const save = (s) => writeFileSync(OUT, JSON.stringify(s), { mode: 0o600 });
 
 const METRIC_KEYS = ["retainedLegacyObjects", "publicationUncertain", "ownershipUnproven", "pendingDeletes", "pendingUploads", "unreconciledTombstones", "driver", "legacyFallback", "mirror", "legacyReads"];
 async function storageMetrics(po) {
-  const m = await api("GET", "/api/metrics", { token: po });
+  const m = await platform("GET", "/api/metrics", { token: po });
   must("metrics readable (platform owner)", m.status === 200 && m.json && m.json.storage, errDetail(m));
   const out = {}; for (const k of METRIC_KEYS) out[k] = m.json.storage[k] ?? null; return out;
 }
 
 async function run() {
   const s = { tag: TAG, companies: [], users: [], capabilityPrefix: "", documentId: null, fileUrl: null, fileSha: null, fileSize: 0, metricsBaseline: null };
-  const po = await login(PO_EMAIL, PO_PASSWORD);
+  const po = await loginOwner();
   s.metricsBaseline = await storageMetrics(po); save(s);
   console.log(`metrics baseline: ${JSON.stringify(s.metricsBaseline)}`);
   // 1. disposable tenants A and B
   const mk = async (suffix) => {
-    const r = await api("POST", "/api/companies", { token: po, body: { name: `B25 SMOKE ${TAG} ${suffix}`, plan: "professional", primaryContactName: "disposable", primaryContactEmail: `b25-smoke-${TAG}-${suffix}@b25smoke.invalid` } });
+    const r = await platform("POST", "/api/companies", { token: po, body: { name: `B25 SMOKE ${TAG} ${suffix}`, plan: "professional", primaryContactName: "disposable", primaryContactEmail: `b25-smoke-${TAG}-${suffix}@b25smoke.invalid` } });
     must(`create tenant ${suffix}`, r.status === 201 && r.json && Number.isInteger(r.json.id), errDetail(r));
     s.companies.push(r.json.id); save(s);
     return r.json.id;
@@ -104,7 +129,7 @@ async function run() {
   const mkUser = async (cid, suffix, role, permissions) => {
     const email = `b25-smoke-${TAG}-${suffix}@b25smoke.invalid`;
     const password = `S1-${randomBytes(18).toString("base64url")}`;
-    const r = await api("POST", "/api/users", { token: po, body: { email, name: `B25 smoke ${suffix} (disposable)`, role, companyId: cid, password, permissions, contactVisibility: "all", companyVisibility: "own" } });
+    const r = await platform("POST", "/api/users", { token: po, body: { email, name: `B25 smoke ${suffix} (disposable)`, role, companyId: cid, password, permissions, contactVisibility: "all", companyVisibility: "own" } });
     must(`create user ${suffix} (${role})`, r.status === 201 && r.json && Number.isInteger(r.json.id), errDetail(r));
     s.users.push(r.json.id); save(s);
     return { email, password };
@@ -113,9 +138,9 @@ async function run() {
   s.adminA = adminA; save(s);
   const empA = await mkUser(A, "emp-a", "employee", {});
   const adminB = await mkUser(B, "admin-b", "primary_admin", {});
-  const tA = await login(adminA.email, adminA.password);
-  const tE = await login(empA.email, empA.password);
-  const tB = await login(adminB.email, adminB.password);
+  const tA = await loginTenant(adminA.email, adminA.password);
+  const tE = await loginTenant(empA.email, empA.password);
+  const tB = await loginTenant(adminB.email, adminB.password);
 
   // 2. upload intent
   // documents accept a fixed allow-list of types (application/pdf is one); the payload is a PDF-prefixed random blob
@@ -131,8 +156,10 @@ async function run() {
   const putPath = toPath(uploadURL);
   const deniedIntent = await api("POST", "/api/documents/upload-url", { token: tE, body: { fileName: "x.pdf", contentType: MIME, size: 10 } });
   check("employee without documents permission: upload intent denied (403)", deniedIntent.status === 403, `status ${deniedIntent.status}`);
+  // Deliberate: the owner token (obtained on the platform portal) is presented to a TENANT module on the
+  // customer portal; the product's role firewall (requireTenantUser) must refuse it — not a login failure.
   const poIntent = await api("POST", "/api/documents/upload-url", { token: po, body: { fileName: "x.pdf", contentType: MIME, size: 10 } });
-  check("platform owner denied on the tenant documents module (403)", poIntent.status === 403, `status ${poIntent.status}`);
+  check("platform owner denied on the tenant documents module (403, customer portal, authenticated owner token)", poIntent.status === 403, errDetail(poIntent));
 
   // 3. capability rules on the first-party PUT
   const noCap = await api("PUT", putPath, { token: tA, body: bytes, raw: true, headers: { "Content-Type": MIME } });
@@ -178,8 +205,8 @@ async function run() {
   check("Range request handled (recorded, not required)", range.status === 206 || range.status === 200, `status ${range.status}`);
   const cross = await api("GET", getPath, { token: tB });
   check("cross-tenant GET → 404 (no disclosure)", cross.status === 404, `status ${cross.status}`);
-  const poGet = await api("GET", getPath, { token: po });
-  check("platform owner GET → 403 (tenant firewall)", poGet.status === 403, `status ${poGet.status}`);
+  const poGet = await api("GET", getPath, { token: po }); // deliberate: owner token on a tenant file route (customer portal)
+  check("platform owner GET → 403 (tenant firewall, authenticated owner token)", poGet.status === 403, errDetail(poGet));
   const anon = await api("GET", getPath);
   check("anonymous GET → 401", anon.status === 401, `status ${anon.status}`);
   const empGet = await api("GET", getPath, { token: tE });
@@ -205,7 +232,7 @@ async function run() {
   check("branding reports no managed logo after removal", ownerLogo.status === 200 && ownerLogo.json && ownerLogo.json.logoUrl === null, `status ${ownerLogo.status}`);
 
   // 6. metrics (platform owner): driver stays gcs, fallback / mirror off, legacyReads primary
-  const m = await api("GET", "/api/metrics", { token: po });
+  const m = await platform("GET", "/api/metrics", { token: po });
   const st = m.json && m.json.storage;
   check("metrics storage block present", m.status === 200 && !!st, `status ${m.status}`);
   if (LOCAL) check("metrics storage driver (local dry run: recorded only)", !!st, st ? `${st.driver}/${st.legacyFallback}/${st.mirror}/${st.legacyReads}` : "");
@@ -218,16 +245,16 @@ async function recheck() {
   const s = state();
   // the tenant admin's server-side session survives the container recreation; a fresh login is also fine
   if (s.fileUrl && s.adminA) {
-    const tA = await login(s.adminA.email, s.adminA.password);
+    const tA = await loginTenant(s.adminA.email, s.adminA.password);
     const get = await api("GET", s.fileUrl, { token: tA });
     check("smoke document readable after api recreation", get.status === 200 && sha256(get.buf) === s.fileSha && Number(get.headers.get("content-length")) === s.fileSize, `status ${get.status}`);
   } else {
     check("smoke document readable after api recreation", false, "no smoke document recorded");
   }
   // delete the disposable tenants through the product API: tombstones in the same transaction, purge job enqueued
-  const po = await login(PO_EMAIL, PO_PASSWORD);
+  const po = await loginOwner();
   for (const cid of s.companies) {
-    const d = await api("DELETE", `/api/companies/${cid}`, { token: po });
+    const d = await platform("DELETE", `/api/companies/${cid}`, { token: po });
     check(`delete disposable tenant ${cid} through the API`, d.status === 200, `status ${d.status}`);
   }
 }
@@ -235,7 +262,7 @@ async function recheck() {
 // after smoke-settle: every storage counter must be back at the pre-smoke baseline
 async function postcheck() {
   const s = state();
-  const po = await login(PO_EMAIL, PO_PASSWORD);
+  const po = await loginOwner();
   const now = await storageMetrics(po);
   console.log(`metrics after settle: ${JSON.stringify(now)}`);
   must("metrics baseline recorded by STEP=run", !!s.metricsBaseline);
@@ -245,11 +272,11 @@ async function postcheck() {
 async function teardown() {
   const s = state();
   let po = null;
-  try { po = await login(PO_EMAIL, PO_PASSWORD); } catch { console.log("teardown: owner login unavailable (already removed?)"); return; }
+  try { po = await loginOwner(); } catch { console.log("teardown: owner login unavailable (already removed?)"); return; }
   for (const cid of s.companies) {
-    const g = await api("GET", `/api/companies/${cid}`, { token: po });
+    const g = await platform("GET", `/api/companies/${cid}`, { token: po });
     if (g.status === 404) { console.log(`tenant ${cid}: already absent`); continue; }
-    const d = await api("DELETE", `/api/companies/${cid}`, { token: po });
+    const d = await platform("DELETE", `/api/companies/${cid}`, { token: po });
     console.log(`tenant ${cid}: delete status ${d.status}`);
   }
 }
