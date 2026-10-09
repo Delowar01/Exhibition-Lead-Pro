@@ -334,6 +334,7 @@ jobs:
               body=""; [ "$p" = "/api/readyz" ] && body="$(head -c 200 "$RUNNER_TEMP/diag-body" 2>/dev/null | tr -d '\n' || true)"
               echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $o$p -> $code $body"
             done
+            echo "$o/api/healthz response headers (public layer): $(curl -sSI --max-time 10 "$o/api/healthz" 2>/dev/null | tr -d '\r' | grep -iE '^(referrer-policy|cache-control|server|via|x-powered-by|cf-cache-status|alt-svc):' | tr '\n' ' ' || echo unavailable)"
           done
           rm -f "$RUNNER_TEMP/diag-body"
 

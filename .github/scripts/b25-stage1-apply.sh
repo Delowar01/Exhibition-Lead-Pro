@@ -815,6 +815,23 @@ const { Storage } = require("@google-cloud/storage");
 })().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
 JS
 )
+DIAG_RECON_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const priv = (process.env.PRIVATE_OBJECT_DIR || "").replace(/^\/+/, "").split("/").slice(1).join("/");
+  const refs = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "[]");
+  const storage = new Storage();
+  let present = 0, missing = 0, sizeMatch = 0;
+  for (const r of refs) {
+    const name = `${priv}/uploads/${r.r.slice("/objects/uploads/".length)}`;
+    try { const [m] = await storage.bucket(bucket).file(name).getMetadata(); present += 1; if (Number(m.size) === Number(r.s)) sizeMatch += 1; }
+    catch (e) { if (e && e.code === 404) missing += 1; else throw e; }
+  }
+  console.log(JSON.stringify({ referenced: refs.length, present, missing, size_match: sizeMatch }));
+})().catch((e) => console.log(JSON.stringify({ reconciliation: "error", code: e.code || e.name || "unknown" })));
+JS
+)
 san() { sed -E 's#gs://[^"[:space:]]*#<gs>#g; s#https?://[^"[:space:]]*#<url>#g; s#file:///?[^"[:space:])]*#<path>#g; s#(/data|/secrets|/opt|/home|/var|/app|/usr|/root|/etc|/tmp)/[^"[:space:])]*#<path>#g; s#[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}#<email>#g; s#[A-Za-z0-9_-]{40,}#<token>#g' | cut -c1-240; }
 # One sanitized summary line per JSON log line: time level msg err.type err.code statusCode method url(ids masked) err.message.
 jsum() {
@@ -863,6 +880,10 @@ phase_diagnose() {
   echo "web resolves 'api' to: $(compose exec -T web sh -c 'getent hosts api 2>/dev/null || nslookup api 2>/dev/null | grep -A1 "^Name" | tail -1' 2>/dev/null | tr '\n' ' ' || echo unavailable)"
   echo "proxy upstream (nginx -T): $(compose exec -T web sh -c 'nginx -T 2>/dev/null | grep -E "proxy_pass|resolver" | sort -u' 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo unavailable)"
   echo "API_UPSTREAM in the web container: $(compose exec -T web sh -c 'printf %s "$API_UPSTREAM"' 2>/dev/null | cut -c1-120 || echo unavailable)"
+
+  section "2b. response headers by layer for /api/healthz (Referrer-Policy / Cache-Control / Server / Via / X-Powered-By only)"
+  echo "direct api: $(compose exec -T api node -e 'fetch("http://127.0.0.1:8080/api/healthz").then((r) => { const h = r.headers; console.log(["referrer-policy","cache-control","server","via","x-powered-by"].map((k) => `${k}=${h.get(k) ?? "<absent>"}`).join(" ")); }).catch((e) => console.log("FAILED", e.code || e.name))' 2>/dev/null || echo unavailable)"
+  echo "web proxy: $(curl -sSI --max-time 5 http://127.0.0.1:18080/api/healthz 2>/dev/null | tr -d '\r' | grep -iE '^(referrer-policy|cache-control|server|via|x-powered-by):' | tr '\n' ' ' || echo unavailable)"
 
   section "3. api log — window $W1..$W2 (sanitized summaries; each stream read once and status-checked)"
   local win all w2ms
@@ -915,6 +936,9 @@ phase_diagnose() {
   local cj o b im wm tb fp
   cj="$(census)"; echo "$cj"
   o="$(census_field "$cj" objects count 2>/dev/null || echo "?")"; b="$(census_field "$cj" bytes count 2>/dev/null || echo "?")"; im="$(census_field "$cj" inventory_md5 hex32 2>/dev/null || echo "?")"; wm="$(census_field "$cj" with_marker count 2>/dev/null || echo "?")"
+  local refs_b64 rj
+  refs_b64="$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" 2>/dev/null | base64 -w0 || true)"
+  rj="$(api_node "$DIAG_RECON_JS" "$refs_b64" 2>/dev/null || echo unavailable)"; echo "original references reconciliation (expected referenced=$REFERENCES present=$REFERENCES missing=0 size_match=$REFERENCES): $rj"
   if [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] && [ "$im" = "$DIAG_BASELINE_INVENTORY_MD5" ] && [ "$wm" = "0" ]; then echo "census: MATCHES the accepted original inventory ($CENSUS_OBJECTS / $CENSUS_BYTES / $DIAG_BASELINE_INVENTORY_MD5, no marked object)"; else echo "census: DIFFERS from the accepted original inventory (objects=$o/$CENSUS_OBJECTS bytes=$b/$CENSUS_BYTES digest_match=$([ "$im" = "$DIAG_BASELINE_INVENTORY_MD5" ] && echo yes || echo no) with_marker=$wm) — a marked object is a B25-written object"; fi
   tb="$(tenant_md5 2>/dev/null || echo unavailable)"; echo "tenant_baseline_md5=$tb accepted=$TENANT_BASELINE_MD5 $([ "$tb" = "$TENANT_BASELINE_MD5" ] && echo MATCH || echo DIFFERS)"
   echo "owner_scans=$(q "select count(*) from scans where company_id=1" 2>/dev/null || echo ?) (baseline 4) owner_scan_rows_md5=$(scan_rows_md5 2>/dev/null || echo unavailable) (accepted 8a3e378a2acd0d880c6f45613b32473d)"
