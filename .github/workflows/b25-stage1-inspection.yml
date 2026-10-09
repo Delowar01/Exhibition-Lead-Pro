@@ -44,10 +44,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "preflight (read-only) | schema_apply (MUTATION) | postdeploy_verify (after deploy-dev-vps deployed eb2edb0)"
+        description: "preflight (read-only) | schema_apply (MUTATION) | postdeploy_verify (after deploy-dev-vps deployed eb2edb0) | incident_diagnose (read-only evidence after a failed postdeploy_verify)"
         required: true
         type: choice
-        options: [preflight, schema_apply, postdeploy_verify]
+        options: [preflight, schema_apply, postdeploy_verify, incident_diagnose]
       confirm_accepted_sha:
         description: "Type the accepted commit (eb2edb0ad84d859b66efbc24ea9b895f76c2ed02) — schema_apply / postdeploy_verify"
         required: false
@@ -80,6 +80,18 @@ on:
         description: "Type exactly: RUN DISPOSABLE SMOKE — postdeploy_verify"
         required: false
         default: ""
+      diag_window_start:
+        description: "incident_diagnose only — UTC window start, YYYY-MM-DDTHH:MM:SSZ"
+        required: false
+        default: "2026-10-09T12:33:30Z"
+      diag_window_end:
+        description: "incident_diagnose only — UTC window end, YYYY-MM-DDTHH:MM:SSZ"
+        required: false
+        default: "2026-10-09T12:36:00Z"
+      diag_residue:
+        description: "incident_diagnose only — <storage row uuid>|<csv company ids>|<csv user ids>|<smoke tag>"
+        required: false
+        default: "8c91bc11-912a-42e7-abe1-37ddd95d3cc1|47,48|88,89,90,91|8f07767767cc"
 
 permissions:
   contents: read
@@ -144,9 +156,12 @@ jobs:
           IN_WINDOW: ${{ inputs.confirm_window }}
           IN_ROLLBACK: ${{ inputs.confirm_rollback }}
           IN_SMOKE: ${{ inputs.confirm_smoke }}
+          IN_DW1: ${{ inputs.diag_window_start }}
+          IN_DW2: ${{ inputs.diag_window_end }}
+          IN_DRES: ${{ inputs.diag_residue }}
         run: |
           set -euo pipefail
-          case "$MODE" in preflight|schema_apply|postdeploy_verify) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          case "$MODE" in preflight|schema_apply|postdeploy_verify|incident_diagnose) ;; *) echo "::error::unknown mode"; exit 1;; esac
           need() { [ "$2" = "$3" ] || { echo "::error::confirmation '$1' does not match the required value"; exit 1; }; }
           if [ "$MODE" = "schema_apply" ]; then
             need confirm_accepted_sha "$IN_SHA" "$BASE_SHA"
@@ -162,6 +177,12 @@ jobs:
             need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"
             need confirm_rollback "$IN_ROLLBACK" "$REQUIRED_ROLLBACK"
             need confirm_smoke "$IN_SMOKE" "$REQUIRED_SMOKE"
+          elif [ "$MODE" = "incident_diagnose" ]; then
+            # read-only mode: no confirmation strings; the three diagnostic inputs are shape-checked here and
+            # again inside the script before use (they only become docker --since/--until values and SQL literals)
+            TS='^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+            [[ "$IN_DW1" =~ $TS ]] && [[ "$IN_DW2" =~ $TS ]] || { echo "::error::diag_window_start / diag_window_end must be UTC timestamps YYYY-MM-DDTHH:MM:SSZ"; exit 1; }
+            [[ "$IN_DRES" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\|[0-9]+(,[0-9]+)*\|[0-9]+(,[0-9]+)*\|[a-z0-9]{6,12}$ ]] || { echo "::error::diag_residue must be <uuid>|<csv company ids>|<csv user ids>|<tag>"; exit 1; }
           fi
           echo "mode=$MODE confirmations=ok"
 
@@ -301,6 +322,31 @@ jobs:
             echo "  ServerAliveInterval 30"
           } > ~/.ssh/config
           chmod 600 ~/.ssh/config
+
+      # ── incident_diagnose (read-only; no disposable setup, no mutation step runs in this mode) ──────
+      - name: Public health from the runner (incident_diagnose; status codes and the small readiness JSON only)
+        if: inputs.mode == 'incident_diagnose'
+        run: |
+          set -uo pipefail
+          for o in https://admin.kaptnow.com https://elite.kaptnow.com; do
+            for p in /healthz /api/healthz /api/readyz; do
+              code="$(curl -sS --max-time 10 -o "$RUNNER_TEMP/diag-body" -w '%{http_code}' "$o$p" 2>/dev/null || echo 000)"
+              body=""; [ "$p" = "/api/readyz" ] && body="$(head -c 200 "$RUNNER_TEMP/diag-body" 2>/dev/null | tr -d '\n' || true)"
+              echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $o$p -> $code $body"
+            done
+          done
+          rm -f "$RUNNER_TEMP/diag-body"
+
+      - name: Incident diagnosis (read-only; sanitized; streamed over stdin; nothing written on the host except api_node's temporary stderr file)
+        if: inputs.mode == 'incident_diagnose'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          DW1: ${{ inputs.diag_window_start }}
+          DW2: ${{ inputs.diag_window_end }}
+          DRES: ${{ inputs.diag_residue }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='diagnose' ARG1='$DW1' ARG2='$DW2' ARG3='$DRES' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
 
       # ── preflight (read-only) ───────────────────────────────────────────────
       - name: Preflight (read-only; stops on any difference from the inspection baseline)

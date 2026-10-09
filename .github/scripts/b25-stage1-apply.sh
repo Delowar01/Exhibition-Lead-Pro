@@ -784,6 +784,153 @@ phase_cleanup() {
   log "cleanup complete"
 }
 
+# ---------------------------------------------------------------------------
+# incident_diagnose — READ-ONLY evidence collection after a failed postdeploy_verify run. Everything is
+# reported, nothing is repaired: no fail-fast, no database write (q only — qw is never called), no
+# container / volume / git / compose mutation, no deployment command, and nothing is written on the host
+# except api_node's temporary stderr file (created and removed inside each invocation). Container logs are
+# read ONCE per container with a status check (complete readers; a failed read is reported as FAILED and
+# never as a count). Printed text is sanitized: URLs, bucket references, host paths, e-mail addresses and
+# long tokens are replaced, JSON log lines are reduced to fixed fields, object names never leave the
+# container. ARG1 = window start (UTC YYYY-MM-DDTHH:MM:SSZ), ARG2 = window end,
+# ARG3 = "<storage row uuid>|<csv company ids>|<csv user ids>|<smoke tag>" (all regex-validated here).
+DIAG_BASELINE_INVENTORY_MD5="c1b900fd509bafa1f980d863dc0d195b"   # accepted original inventory digest (report-only comparison)
+DIAG_MARKER_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const rows = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "[]");
+  const storage = new Storage();
+  const out = [];
+  for (const r of rows) {
+    try {
+      const [m] = await storage.bucket(bucket).file(r.k).getMetadata();
+      const gen = String(m.generation ?? "");
+      out.push({ id: r.id, state: r.st, present: true, marker_matches_row: !!(m.metadata && m.metadata["lcp-object-id"] === r.id), generation_is_decimal_string: /^\d+$/.test(gen), generation_digits: gen.length, size_matches: String(r.s) === String(m.size), updated: m.updated || null });
+    } catch (e) {
+      out.push({ id: r.id, state: r.st, present: false, code: e && e.code });
+    }
+  }
+  console.log(JSON.stringify(out));
+})().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
+JS
+)
+san() { sed -E 's#gs://[^"[:space:]]*#<gs>#g; s#https?://[^"[:space:]]*#<url>#g; s#file:///?[^"[:space:])]*#<path>#g; s#(/data|/secrets|/opt|/home|/var|/app|/usr|/root|/etc|/tmp)/[^"[:space:])]*#<path>#g; s#[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}#<email>#g; s#[A-Za-z0-9_-]{40,}#<token>#g' | cut -c1-240; }
+# One sanitized summary line per JSON log line: time level msg err.type err.code statusCode method url(ids masked) err.message.
+jsum() {
+  local l lvl t ts msg typ code emsg st meth url
+  while IFS= read -r l; do
+    lvl="$(printf '%s' "$l" | sed -nE 's/.*"level":([0-9]+).*/\1/p')"
+    t="$(printf '%s' "$l" | sed -nE 's/.*"time":([0-9]{13}).*/\1/p')"; ts="-"; [ -n "$t" ] && ts="$(date -u -d "@$((t / 1000))" +%H:%M:%S 2>/dev/null || echo "-")"
+    msg="$(printf '%s' "$l" | sed -nE 's/.*"msg":"((\\.|[^"\\])*)".*/\1/p')"
+    typ="$(printf '%s' "$l" | sed -nE 's/.*"type":"([^"]*)".*/\1/p')"
+    code="$(printf '%s' "$l" | sed -nE 's/.*"code":"?([A-Za-z0-9_.-]+)"?.*/\1/p')"
+    emsg="$(printf '%s' "$l" | sed -nE 's/.*"message":"((\\.|[^"\\])*)".*/\1/p')"
+    st="$(printf '%s' "$l" | sed -nE 's/.*"statusCode":([0-9]+).*/\1/p')"
+    meth="$(printf '%s' "$l" | sed -nE 's/.*"method":"([A-Z]+)".*/\1/p')"
+    url="$(printf '%s' "$l" | sed -nE 's/.*"url":"([^"?]*)[^"]*".*/\1/p' | sed -E 's#[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}#<uuid>#g; s#/[0-9]+(/|$)#/<n>\1#g')"
+    printf '%s level=%s msg=%s type=%s code=%s status=%s req=%s %s err=%s\n' "$ts" "${lvl:--}" "${msg:--}" "${typ:--}" "${code:--}" "${st:--}" "${meth:--}" "${url:--}" "${emsg:--}" | san
+  done
+}
+phase_diagnose() {
+  [[ "$ARG1" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "ARG1 must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ"
+  [[ "$ARG2" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "ARG2 must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ"
+  [[ "$ARG3" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\|[0-9]+(,[0-9]+)*\|[0-9]+(,[0-9]+)*\|[a-z0-9]{6,12}$ ]] || fail "ARG3 must be <uuid>|<csv company ids>|<csv user ids>|<tag>"
+  local W1="$ARG1" W2="$ARG2" UUID C U TAG DOM="$SMOKE_DOMAIN" x cid svc p
+  IFS='|' read -r UUID C U TAG <<<"$ARG3"
+
+  section "0. observation"
+  echo "now_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ) window=$W1..$W2 residue_row=$UUID companies=$C users=$U tag=$TAG"
+  echo "HEAD=$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || echo unavailable) current-deploy.sha=$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null || echo none) previous-deploy.sha=$(cat "$STATE_DIR/previous-deploy.sha" 2>/dev/null || echo none) dirty=$(git -C "$APP_DIR" status --porcelain 2>/dev/null | wc -l) worktrees=$(git -C "$APP_DIR" worktree list 2>/dev/null | wc -l)"
+  if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then echo "read-only guard: FAILED (a write succeeded)"; else echo "read-only guard: session refuses writes OK"; fi
+
+  section "1. containers (state, restarts, exit code, OOM; health-check log = start time and exit code only)"
+  for svc in api web postgres; do
+    cid="$(compose ps -q "$svc" 2>/dev/null || true)"
+    if [ -z "$cid" ]; then echo "$svc: NO RUNNING CONTAINER"; continue; fi
+    docker inspect -f "$svc: id={{printf \"%.12s\" .Id}} image={{.Config.Image}} created={{.Created}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}} restarts={{.RestartCount}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} pid={{.State.Pid}} ip={{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}" "$cid" 2>/dev/null || echo "$svc: inspect unavailable"
+    x="$(docker inspect -f '{{if .State.Health}}{{range .State.Health.Log}}{{.Start}} exit={{.ExitCode}}; {{end}}{{end}}' "$cid" 2>/dev/null | cut -c1-400 || true)"; echo "  health log: ${x:-n/a}"
+  done
+  echo "all project containers (including exited):"; docker ps -a --filter "name=card-scanner-pro" --format '  {{.Names}} | {{.Status}} | created {{.CreatedAt}}' 2>/dev/null || echo "  unavailable"
+
+  section "2. health paths (through the proxy; inside the api container; from the web container to the api)"
+  for p in /healthz /api/healthz /api/readyz; do
+    x="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:18080$p" 2>/dev/null || echo 000)"; echo "proxy 127.0.0.1:18080$p -> $x"
+  done
+  echo "proxy readyz body: $(curl -sS --max-time 5 http://127.0.0.1:18080/api/readyz 2>/dev/null | cut -c1-200 || echo unavailable)"
+  echo "direct api (node fetch inside the api container): $(compose exec -T api node -e 'fetch("http://127.0.0.1:8080/api/readyz").then(async (r) => console.log(r.status, (await r.text()).slice(0, 200))).catch((e) => console.log("FAILED", e.code || e.name))' 2>/dev/null || echo unavailable)"
+  echo "web -> api over the compose network: $(compose exec -T web sh -c 'wget -q -O - --timeout=5 http://api:8080/api/readyz 2>/dev/null | cut -c1-200 || echo FAILED' 2>/dev/null || echo unavailable)"
+  echo "web resolves 'api' to: $(compose exec -T web sh -c 'getent hosts api 2>/dev/null || nslookup api 2>/dev/null | grep -A1 "^Name" | tail -1' 2>/dev/null | tr '\n' ' ' || echo unavailable)"
+  echo "proxy upstream (nginx -T): $(compose exec -T web sh -c 'nginx -T 2>/dev/null | grep -E "proxy_pass|resolver" | sort -u' 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo unavailable)"
+  echo "API_UPSTREAM in the web container: $(compose exec -T web sh -c 'printf %s "$API_UPSTREAM"' 2>/dev/null | cut -c1-120 || echo unavailable)"
+
+  section "3. api log — window $W1..$W2 (sanitized summaries; each stream read once and status-checked)"
+  local win all w2ms
+  if [ -z "$API_CID" ]; then echo "api container not running — log not read"; win=""; all=""; else
+    if ! win="$(docker logs --since "$W1" --until "$W2" "$API_CID" 2>&1)"; then echo "api window log read FAILED (status reported by docker logs)"; win=""; else
+      echo "lines=$(printf '%s\n' "$win" | grep -c . || true) level30=$(printf '%s\n' "$win" | grep -c '"level":30' || true) level40=$(printf '%s\n' "$win" | grep -c '"level":40' || true) level50=$(printf '%s\n' "$win" | grep -c '"level":50' || true) level60=$(printf '%s\n' "$win" | grep -c '"level":60' || true) non_json=$(printf '%s\n' "$win" | grep -vc '^{' || true)"
+      echo "-- level>=40 lines (max 40):"; printf '%s\n' "$win" | grep -E '"level":(40|50|60)' | awk 'NR<=40' | jsum | sed 's/^/  /' || true
+      echo "-- non-JSON lines (max 25: stack traces / process output, paths masked):"; printf '%s\n' "$win" | grep -vE '^\{' | grep -E . | awk 'NR<=25' | san | sed 's/^/  /' || true
+      echo "-- requests answered with status>=500 (max 20):"; printf '%s\n' "$win" | grep -E '"statusCode":5[0-9]{2}' | awk 'NR<=20' | jsum | sed 's/^/  /' || true
+    fi
+    if ! all="$(docker logs "$API_CID" 2>&1)"; then echo "api full log read FAILED"; all=""; else
+      echo "-- process starts in the container's whole log (\"Server listening\"):"; printf '%s\n' "$all" | grep -F '"Server listening"' | jsum | sed 's/^/  /' || true
+      echo "-- whole-log counters: level50=$(printf '%s\n' "$all" | grep -c '"level":50' || true) unhandled=$(printf '%s\n' "$all" | grep '"level":50' | grep -vc '"type":"_AppError"' || true) level60=$(printf '%s\n' "$all" | grep -c '"level":60' || true) non_json=$(printf '%s\n' "$all" | grep -vc '^{' || true)"
+      echo "-- maintenance sweeps (whole log; time + numeric summary):"; printf '%s\n' "$all" | grep -F '"Maintenance sweep complete"' | sed -nE 's/.*"time":([0-9]{13}).*"summary":(\{[^}]*\}).*/\1 \2/p' | while read -r t s; do echo "  $(date -u -d "@$((t / 1000))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo -) $s"; done || true
+      echo "-- storage lines mentioning the residual row (whole log, max 30):"; printf '%s\n' "$all" | grep -F "$UUID" | awk 'NR<=30' | jsum | sed 's/^/  /' || true
+      w2ms="$(( $(date -u -d "$W2" +%s 2>/dev/null || echo 0) * 1000 ))"
+      echo "-- level>=40 after the window (max 20):"; printf '%s\n' "$all" | awk -v w="$w2ms" 'match($0, /"time":[0-9]+/) { t = substr($0, RSTART + 7, RLENGTH - 7) + 0; if (t > w && $0 ~ /"level":(40|50|60)/) print }' | awk 'NR<=20' | jsum | sed 's/^/  /' || true
+    fi
+  fi
+
+  section "4. web (nginx) log — window (status counts; sanitized upstream error reasons)"
+  local wl
+  if ! wl="$(docker logs --since "$W1" --until "$W2" "$WEB_CID" 2>&1)"; then echo "web window log read FAILED"; else
+    echo "lines=$(printf '%s\n' "$wl" | grep -c . || true) status_502=$(printf '%s\n' "$wl" | grep -cE '" 502 ' || true) status_200=$(printf '%s\n' "$wl" | grep -cE '" 200 ' || true) status_4xx=$(printf '%s\n' "$wl" | grep -cE '" 4[0-9]{2} ' || true) error_lines=$(printf '%s\n' "$wl" | grep -c '\[error\]' || true)"
+    echo "-- upstream error reasons (unique, max 10):"; printf '%s\n' "$wl" | grep '\[error\]' | sed -E 's/^.*\] [0-9#]+: \*[0-9]+ //; s/, client:.*$//; s/, server:.*$//' | sort | uniq -c | sort -rn | awk 'NR<=10' | san | sed 's/^/  /' || true
+  fi
+
+  section "5. residue of the recorded disposable identities (read-only)"
+  echo "-- storage rows (id = residual uuid OR company in $C):"
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null)||' size='||coalesce(size_bytes::text,'null')||' sha_set='||(sha256 is not null)||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null)||' deleted_at='||coalesce(deleted_at::text,'<null>')||' reconciled_at='||coalesce(reconciled_at::text,'<null>')||' created='||created_at||' updated='||updated_at from storage_objects where id = '$UUID' or company_id in ($C) order by created_at" 2>/dev/null | sed 's/^/  /' || echo "  unavailable"
+  echo "  rows_for_uuid=$(q "select count(*) from storage_objects where id = '$UUID'" 2>/dev/null || echo unavailable) rows_for_companies=$(q "select count(*) from storage_objects where company_id in ($C)" 2>/dev/null || echo unavailable) rows_mentioning_uuid=$(q "select count(*) from storage_objects where reference like '%$UUID%' or storage_key like '%$UUID%' or coalesce(legacy_key,'') like '%$UUID%' or coalesce(mirror_key,'') like '%$UUID%'" 2>/dev/null || echo unavailable)"
+  echo "-- disposable rows still present:"
+  q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B25 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' sessions='||(select count(*) from sessions where user_id in ($U))||' documents='||(select count(*) from documents where company_id in ($C))||' document_versions='||(select count(*) from document_versions where company_id in ($C))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')" 2>/dev/null | sed 's/^/  /' || echo "  unavailable"
+  echo "-- job queue since $W1 (name status n):"
+  q "select '  '||name||' '||status||' n='||count(*) from job_queue where enqueued_at >= '$W1' group by name, status order by 1" 2>/dev/null || echo "  unavailable"
+  echo "-- maintenance jobs (last 5):"
+  q "select '  maintenance '||status||' enqueued='||enqueued_at||' started='||coalesce(started_at::text,'-')||' completed='||coalesce(completed_at::text,'-')||' attempts='||attempts||' err='||coalesce(left(last_error,100),'-') from job_queue where name='maintenance' order by enqueued_at desc limit 5" 2>/dev/null | san || echo "  unavailable"
+  echo "-- storage jobs since $W1 (max 20):"
+  q "select '  '||name||' '||status||' enqueued='||enqueued_at||' completed='||coalesce(completed_at::text,'-')||' attempts='||attempts||' err='||coalesce(left(last_error,100),'-') from job_queue where name like 'storage.%' and enqueued_at >= '$W1' order by enqueued_at limit 20" 2>/dev/null | san || echo "  unavailable"
+  echo "  $(q "select 'dead_total='||count(*)||' dead_since_window='||count(*) filter (where dead_at >= '$W1') from job_queue where status='dead'" 2>/dev/null || echo "dead jobs: unavailable")"
+
+  section "6. provider metadata of residual rows (ownership marker, generation string, size; names never printed)"
+  local rows_json rows_b64
+  rows_json="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 's', size_bytes, 'st', state)), '[]'::json) from storage_objects where id = '$UUID' or company_id in ($C)" 2>/dev/null || echo "")"
+  if [ -z "$rows_json" ] || [ "$rows_json" = "[]" ]; then echo "no residual rows — provider metadata not queried (the census below shows whether a marked object remains)"; else
+    rows_b64="$(printf '%s' "$rows_json" | base64 -w0)"; api_node "$DIAG_MARKER_JS" "$rows_b64" || true
+  fi
+
+  section "7. census + preservation (compared with the accepted baselines; report only)"
+  local cj o b im wm tb fp
+  cj="$(census)"; echo "$cj"
+  o="$(census_field "$cj" objects count 2>/dev/null || echo "?")"; b="$(census_field "$cj" bytes count 2>/dev/null || echo "?")"; im="$(census_field "$cj" inventory_md5 hex32 2>/dev/null || echo "?")"; wm="$(census_field "$cj" with_marker count 2>/dev/null || echo "?")"
+  if [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] && [ "$im" = "$DIAG_BASELINE_INVENTORY_MD5" ] && [ "$wm" = "0" ]; then echo "census: MATCHES the accepted original inventory ($CENSUS_OBJECTS / $CENSUS_BYTES / $DIAG_BASELINE_INVENTORY_MD5, no marked object)"; else echo "census: DIFFERS from the accepted original inventory (objects=$o/$CENSUS_OBJECTS bytes=$b/$CENSUS_BYTES digest_match=$([ "$im" = "$DIAG_BASELINE_INVENTORY_MD5" ] && echo yes || echo no) with_marker=$wm) — a marked object is a B25-written object"; fi
+  tb="$(tenant_md5 2>/dev/null || echo unavailable)"; echo "tenant_baseline_md5=$tb accepted=$TENANT_BASELINE_MD5 $([ "$tb" = "$TENANT_BASELINE_MD5" ] && echo MATCH || echo DIFFERS)"
+  echo "owner_scans=$(q "select count(*) from scans where company_id=1" 2>/dev/null || echo ?) (baseline 4) owner_scan_rows_md5=$(scan_rows_md5 2>/dev/null || echo unavailable) (accepted 8a3e378a2acd0d880c6f45613b32473d)"
+  fp="$(fingerprint 2>/dev/null || echo unavailable)"; echo "schema_fingerprint=$fp $([ "$fp" = "$FP_AFTER" ] && echo MATCH || echo DIFFERS) $(counts 2>/dev/null || echo "counts unavailable")"
+  echo "env: mode=$(stat -c %a "$ENV_FILE" 2>/dev/null || echo ?) size=$(stat -c %s "$ENV_FILE" 2>/dev/null || echo ?) sha256_prefix=$(sha256sum "$ENV_FILE" 2>/dev/null | cut -c1-16) (accepted $ENV_MODE / $ENV_SIZE / $ENV_SHA_PREFIX)"
+  echo "objectdata: $(compose exec -T api sh -c 'stat -c "owner=%u:%g mode=%a" /data/objects; echo "entries=$(ls -A /data/objects | wc -l)"' 2>/dev/null | tr '\n' ' ' || echo unavailable)"
+  echo "postgres volume: $(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}' "$PG_CID" 2>/dev/null || echo unavailable) (expected card-scanner-pro_pgdata)"
+  echo "existing rows (excluding the disposable ids): $(q "select 'companies='||(select count(*) from companies where id not in ($C))||' users='||(select count(*) from users where id not in ($U) and (company_id is null or company_id not in ($C)))||' subscriptions='||(select count(*) from subscriptions where company_id not in ($C))||' contacts='||(select count(*) from contacts where company_id not in ($C))||' leads='||(select count(*) from leads where company_id not in ($C))||' events='||(select count(*) from events where company_id not in ($C))||' scans='||(select count(*) from scans where company_id not in ($C))||' documents='||(select count(*) from documents where company_id not in ($C))||' export_runs='||(select count(*) from export_runs where company_id not in ($C))||' storage_objects_other='||(select count(*) from storage_objects where company_id not in ($C))" 2>/dev/null || echo unavailable) (accepted companies=1 users=2 subscriptions=1 contacts=1 leads=1 events=1 scans=4 documents=0 export_runs=4 storage_objects_other=0)"
+  echo "inventory totals: $(q "select 'storage_objects_total='||count(*)||' active='||count(*) filter (where state='active')||' deleting='||count(*) filter (where state='deleting')||' deleted='||count(*) filter (where state='deleted')||' uncertain='||count(*) filter (where publication_uncertain_at is not null)||' unproven='||count(*) filter (where last_error='OWNERSHIP_UNPROVEN')||' cleanup_pending='||count(*) filter (where last_error='CLEANUP_PENDING')||' legacy_retained='||count(*) filter (where last_error='LEGACY_RETAINED') from storage_objects" 2>/dev/null || echo unavailable)"
+
+  section "8. capacity"
+  echo "disk_avail_bytes=$(capacity "bytes available on /" -B1 --output=avail / 2>/dev/null || echo unavailable) inodes_free=$(capacity "inodes available on /" --output=iavail / 2>/dev/null || echo unavailable)"
+  rm -f "$HOME"/.b25-s1-node.err
+  log "diagnose complete (read-only; nothing changed)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -794,6 +941,7 @@ case "$PHASE" in
   recreate-api) phase_recreate_api ;;
   smoke-settle) phase_smoke_settle ;;
   cleanup) phase_cleanup ;;
+  diagnose) phase_diagnose ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0
