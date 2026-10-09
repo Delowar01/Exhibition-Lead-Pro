@@ -31,7 +31,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { PassThrough, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { Storage, File } from "@google-cloud/storage";
+import { Storage, type File, type StorageOptions } from "@google-cloud/storage";
 import { StorageError, readAll, type DeleteOptions, type GetOptions, type ObjectHead, type ObjectStream, type PutOptions, type PutResult, type StorageDriver } from "./contract.js";
 import { HashingLimiter, assertBeforeDeadline, mapAbort, putSignal, toReadable, verifyExpected } from "./hashing.js";
 import { assertValidStorageKey, healthKey } from "./keys.js";
@@ -76,6 +76,18 @@ function generationOf(metadata: unknown): string | null {
   return null;
 }
 
+/** B25 Correction 9 — read-stream re-open budget (attempts in total) and the linear delay between attempts. */
+const READ_ATTEMPTS = 3;
+const READ_RETRY_DELAY_MS = 200;
+const TRANSIENT_READ_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN", "EPIPE", "ENOTFOUND"]);
+/** A provider response or transport failure that a fresh request may not repeat (the SDK's own retryable set, minus anything after the first byte). */
+function isTransientReadError(err: unknown): boolean {
+  const status = gcsStatus(err);
+  if (status !== null) return status === 408 || status === 429 || (status >= 500 && status <= 599);
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" && TRANSIENT_READ_CODES.has(code);
+}
+
 export function mapGcsError(err: unknown): StorageError {
   if (err instanceof StorageError) return err;
   const status = gcsStatus(err);
@@ -86,19 +98,42 @@ export function mapGcsError(err: unknown): StorageError {
 export class GcsStorageDriver implements StorageDriver {
   readonly kind = "gcs" as const;
 
+  /**
+   * B25 Correction 9 — object READ STREAMS go through a client whose SDK auto-retry is OFF. The SDK's
+   * streamed GET retries a retryable provider response (5xx) by destroying its in-flight request stream
+   * and issuing a new one, while its transport layer then pipes the first response into that destroyed
+   * stream; on Node >= 23 node's pipeline() throws ERR_STREAM_UNABLE_TO_PIPE inside a promise callback
+   * nobody owns and the process terminates (reproduced with the eb2edb0 driver and with the deferred-
+   * close fix alike: a single 500 on a media read is enough). Without SDK auto-retry a 5xx reaches the
+   * driver as an ordinary stream error; getStream re-opens the stream itself, bounded and only while no
+   * byte has been delivered (READ_ATTEMPTS), so transient provider errors keep the former resilience.
+   * Metadata, uploads, deletes and the readiness probe keep the SDK's retries (non-stream request
+   * paths). The read client reuses the primary client's credentials and endpoint; it is not a second
+   * credential or configuration source.
+   */
+  private readonly readClient: Storage;
+
   constructor(
     private readonly client: Storage,
     private readonly defaultBucket: string,
     private readonly probeTimeoutMs = 2000,
   ) {
     if (!defaultBucket) throw new Error("GCS driver requires a bucket");
+    this.readClient = new Storage({
+      authClient: client.authClient as StorageOptions["authClient"],
+      projectId: client.projectId,
+      apiEndpoint: client.apiEndpoint,
+      universeDomain: client.universeDomain,
+      useAuthWithCustomEndpoint: client.useAuthWithCustomEndpoint,
+      retryOptions: { autoRetry: false },
+    });
   }
 
-  private file(key: string): File {
+  private file(key: string, client: Storage = this.client): File {
     const gs = parseGsUri(key);
-    if (gs) return this.client.bucket(gs.bucket).file(gs.object);
+    if (gs) return client.bucket(gs.bucket).file(gs.object);
     assertValidStorageKey(key);
-    return this.client.bucket(this.defaultBucket).file(key);
+    return client.bucket(this.defaultBucket).file(key);
   }
 
   async put(key: string, source: Readable | Buffer, opts: PutOptions & { allowOverwrite?: boolean }): Promise<PutResult> {
@@ -176,13 +211,15 @@ export class GcsStorageDriver implements StorageDriver {
   }
 
   async getStream(key: string, opts: GetOptions = {}): Promise<ObjectStream> {
-    const f = this.file(key);
     const head = await this.head(key);
     if (!head) throw new StorageError("STORAGE_NOT_FOUND");
     if (opts.maxBytes !== undefined && head.sizeBytes !== null && head.sizeBytes > opts.maxBytes) throw new StorageError("STORAGE_TOO_LARGE");
-    const rs = f.createReadStream();
     const out = new PassThrough();
     let emitted = 0;
+    let attempt = 0;
+    let stopRequested = false;
+    let responded = false;
+    let current: Readable | null = null;
     // B25 Correction 9 — never destroy the SDK's read stream before its HTTP response has been handed
     // to it. The SDK pipes the response into that stream synchronously from its own 'response'
     // handler; on Node >= 23 node's pipeline() throws ERR_STREAM_UNABLE_TO_PIPE for a destination that
@@ -191,32 +228,44 @@ export class GcsStorageDriver implements StorageDriver {
     // provider answered — run 37930815158). A consumer close that arrives before the response is
     // remembered and applied once the response has been piped (next macrotask): the pipeline's own
     // teardown then aborts the transfer. After the response (or an error) a close destroys at once.
-    let responded = false;
-    let stopRequested = false;
     const stopSource = () => {
-      if (!rs.destroyed) rs.destroy();
+      if (current && !current.destroyed) current.destroy();
     };
     const requestStop = () => {
+      stopRequested = true;
       if (responded) stopSource();
-      else stopRequested = true;
     };
-    rs.once("response", () => {
-      responded = true;
-      if (stopRequested) setImmediate(stopSource);
-    });
-    rs.on("error", (err) => {
-      responded = true;
-      if (!out.destroyed) out.destroy(mapGcsError(err));
-    });
-    rs.on("data", (chunk: Buffer) => {
-      emitted += chunk.length;
-      if (opts.maxBytes !== undefined && emitted > opts.maxBytes) {
-        requestStop();
-        if (!out.destroyed) out.destroy(new StorageError("STORAGE_TOO_LARGE"));
-      }
-    });
+    const start = () => {
+      attempt += 1;
+      responded = false;
+      const rs = this.file(key, this.readClient).createReadStream(); // no SDK auto-retry on the streamed GET (see readClient)
+      current = rs;
+      rs.once("response", () => {
+        responded = true;
+        if (stopRequested) setImmediate(stopSource);
+      });
+      rs.on("error", (err) => {
+        responded = true;
+        // Bounded re-open on a transient provider error, only while nothing has been delivered and the
+        // consumer is still there (replaces the SDK's own stream retry, which is what crashes).
+        if (emitted === 0 && !stopRequested && !out.destroyed && attempt < READ_ATTEMPTS && isTransientReadError(err)) {
+          rs.unpipe(out);
+          setTimeout(start, READ_RETRY_DELAY_MS * attempt);
+          return;
+        }
+        if (!out.destroyed) out.destroy(mapGcsError(err));
+      });
+      rs.on("data", (chunk: Buffer) => {
+        emitted += chunk.length;
+        if (opts.maxBytes !== undefined && emitted > opts.maxBytes) {
+          requestStop();
+          if (!out.destroyed) out.destroy(new StorageError("STORAGE_TOO_LARGE"));
+        }
+      });
+      rs.pipe(out);
+    };
     out.on("close", requestStop);
-    rs.pipe(out);
+    start();
     return { stream: out, sizeBytes: head.sizeBytes, contentType: head.contentType };
   }
 
