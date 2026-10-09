@@ -30,6 +30,13 @@
 #                      verification → disposable smoke (first-party upload /
 #                      download contract, branding logo, api recreation) →
 #                      settle + guarded cleanup (always-step)
+#   incident_diagnose  READ-ONLY evidence after a failed postdeploy_verify
+#   residue_settle     MUTATION, incident-specific (run 37930815158): recovery of
+#                      the ONE recorded tombstone — read-only eligibility proof →
+#                      generation-conditioned provider delete → absence proof →
+#                      allow-listed row removal → read-only final verification
+#                      (always). The manifest is a constant; the smoke-settle and
+#                      cleanup phases are NOT used by this mode.
 # Every mutation mode requires the typed confirmations below; they are compared
 # against fixed constants BEFORE any SSH session is opened. No input ever reaches
 # a shell as text — inputs are mapped through `env:` and only compared.
@@ -47,7 +54,7 @@ on:
         description: "preflight (read-only) | schema_apply (MUTATION) | postdeploy_verify (after deploy-dev-vps deployed eb2edb0) | incident_diagnose (read-only evidence after a failed postdeploy_verify)"
         required: true
         type: choice
-        options: [preflight, schema_apply, postdeploy_verify, incident_diagnose]
+        options: [preflight, schema_apply, postdeploy_verify, incident_diagnose, residue_settle]
       confirm_accepted_sha:
         description: "Type the accepted commit (eb2edb0ad84d859b66efbc24ea9b895f76c2ed02) — schema_apply / postdeploy_verify"
         required: false
@@ -89,9 +96,13 @@ on:
         required: false
         default: "2026-10-09T12:36:00Z"
       diag_residue:
-        description: "incident_diagnose only — <storage row uuid>|<csv company ids>|<csv user ids>|<smoke tag>"
+        description: "incident_diagnose only — <storage row uuid>|<csv company ids>|<csv user ids>|<smoke tag>; residue_settle ignores it (its manifest is the fixed RESIDUE_MANIFEST below)"
         required: false
         default: "8c91bc11-912a-42e7-abe1-37ddd95d3cc1|47,48|88,89,90,91|8f07767767cc"
+      confirm_residue:
+        description: "Type exactly: SETTLE RECORDED SMOKE RESIDUE 8c91bc11 — residue_settle (MUTATION: removes ONLY the one recorded tombstone 8c91bc11-… of deleted company 47 and its marker-owned object at its exact generation; nothing else)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -113,6 +124,12 @@ env:
   REQUIRED_WINDOW: "NO-UPLOAD MAINTENANCE WINDOW ACTIVE"
   REQUIRED_ROLLBACK: "NATIVE-HANDLE ROLLBACK LIMIT ACCEPTED"
   REQUIRED_SMOKE: "RUN DISPOSABLE SMOKE"
+  REQUIRED_RESIDUE: "SETTLE RECORDED SMOKE RESIDUE 8c91bc11"
+  # residue_settle is INCIDENT-SPECIFIC: the one tombstone left by run 37930815158 (row uuid | disposable company ids |
+  # disposable user ids | smoke tag). It is a constant here AND in the script (RESIDUE_MANIFEST); any other value is
+  # refused before an SSH session is opened. Accepted ORIGINAL inventory after the recovery: 4 objects / 1299 bytes /
+  # c1b900fd509bafa1f980d863dc0d195b (constant in the script).
+  RESIDUE_MANIFEST: "8c91bc11-912a-42e7-abe1-37ddd95d3cc1|47,48|88,89,90,91|8f07767767cc"
 
 jobs:
   stage1:
@@ -159,9 +176,10 @@ jobs:
           IN_DW1: ${{ inputs.diag_window_start }}
           IN_DW2: ${{ inputs.diag_window_end }}
           IN_DRES: ${{ inputs.diag_residue }}
+          IN_RESIDUE: ${{ inputs.confirm_residue }}
         run: |
           set -euo pipefail
-          case "$MODE" in preflight|schema_apply|postdeploy_verify|incident_diagnose) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          case "$MODE" in preflight|schema_apply|postdeploy_verify|incident_diagnose|residue_settle) ;; *) echo "::error::unknown mode"; exit 1;; esac
           need() { [ "$2" = "$3" ] || { echo "::error::confirmation '$1' does not match the required value"; exit 1; }; }
           if [ "$MODE" = "schema_apply" ]; then
             need confirm_accepted_sha "$IN_SHA" "$BASE_SHA"
@@ -183,6 +201,14 @@ jobs:
             TS='^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
             [[ "$IN_DW1" =~ $TS ]] && [[ "$IN_DW2" =~ $TS ]] || { echo "::error::diag_window_start / diag_window_end must be UTC timestamps YYYY-MM-DDTHH:MM:SSZ"; exit 1; }
             [[ "$IN_DRES" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\|[0-9]+(,[0-9]+)*\|[0-9]+(,[0-9]+)*\|[a-z0-9]{6,12}$ ]] || { echo "::error::diag_residue must be <uuid>|<csv company ids>|<csv user ids>|<tag>"; exit 1; }
+          elif [ "$MODE" = "residue_settle" ]; then
+            # MUTATION, incident-specific: the accepted (currently hosted) product commit, the maintenance window and
+            # the incident-bound confirmation are all required; the manifest is NOT an input (RESIDUE_MANIFEST is a
+            # constant; the diag_residue input must still equal it so a stale or foreign manifest is refused here).
+            need confirm_accepted_sha "$IN_SHA" "$BASE_SHA"
+            need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"
+            need confirm_residue "$IN_RESIDUE" "$REQUIRED_RESIDUE"
+            need diag_residue "$IN_DRES" "$RESIDUE_MANIFEST"
           fi
           echo "mode=$MODE confirmations=ok"
 
@@ -348,6 +374,37 @@ jobs:
         run: |
           set -euo pipefail
           ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='diagnose' ARG1='$DW1' ARG2='$DW2' ARG3='$DRES' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
+
+      # ── residue_settle (MUTATION; the ONE recorded tombstone of run 37930815158; no disposable setup, no smoke) ──
+      # Three SSH sessions, each streamed over stdin, each re-checking the fixed manifest on the host:
+      #   1. residue-eligibility  READ-ONLY full proof (host state, baselines, row identity, provider marker /
+      #                           generation / size, originals intact) — fails closed BEFORE any mutation
+      #   2. residue-settle       re-runs the same proof in its own session, then the two mutation points
+      #                           (generation-conditioned provider delete → absence proof → allow-listed row removal)
+      #   3. residue-verify       READ-ONLY final verification, always (reports and fails on any deviation; never writes)
+      - name: Residue eligibility (read-only; full proof before any mutation; the manifest is a constant)
+        if: inputs.mode == 'residue_settle'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='residue-eligibility' ARG1='$RESIDUE_MANIFEST' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
+
+      - name: Residue settle (MUTATION; eligibility re-read in the same session; provider delete at the exact generation → absence proof at every location → allow-listed removal of the one row)
+        if: inputs.mode == 'residue_settle'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='residue-settle' ARG1='$RESIDUE_MANIFEST' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
+
+      - name: Residue verify (always; READ-ONLY final verification — reports and fails on any deviation from the accepted end state; never deletes)
+        if: always() && inputs.mode == 'residue_settle'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='residue-verify' ARG1='$RESIDUE_MANIFEST' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
 
       # ── preflight (read-only) ───────────────────────────────────────────────
       - name: Preflight (read-only; stops on any difference from the inspection baseline)

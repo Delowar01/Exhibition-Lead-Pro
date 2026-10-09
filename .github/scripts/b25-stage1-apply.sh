@@ -741,6 +741,9 @@ phase_cleanup() {
   [ "$(q "select count(*) from companies where id in ($C) and name not like 'B25 SMOKE %'")" = "0" ] || fail "a target company is not a smoke tenant"
   [ "$(q "select count(*) from users where id in ($U) and email not like '%@$DOM'")" = "0" ] || fail "a target user is not a smoke user"
   [ "$(q "select count(*) from users where company_id in ($C) and email not like '%@$DOM'")" = "0" ] || fail "a smoke tenant holds a non-smoke user"
+  section "storage rows of the smoke tenants BEFORE any deletion (attribution for a later residue_settle: ids, state, key flags)"
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null)||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null)||' deleted_at='||coalesce(deleted_at::text,'<null>') from storage_objects where company_id in ($C) order by created_at" || true
+  echo "smoke_row_ids=$(q "select coalesce(string_agg(id::text, ',' order by created_at), '') from storage_objects where company_id in ($C)" 2>/dev/null || echo unavailable)"
   section "existing rows BEFORE cleanup (must be identical afterwards)"
   local kept_sql="select 'companies='||(select count(*) from companies where id not in ($C))||' users='||(select count(*) from users where id not in ($U) and (company_id is null or company_id not in ($C)))||' subscriptions='||(select count(*) from subscriptions where company_id not in ($C))||' contacts='||(select count(*) from contacts where company_id not in ($C))||' leads='||(select count(*) from leads where company_id not in ($C))||' events='||(select count(*) from events where company_id not in ($C))||' scans='||(select count(*) from scans where company_id not in ($C))||' documents='||(select count(*) from documents where company_id not in ($C))||' export_runs='||(select count(*) from export_runs where company_id not in ($C))||' audit='||(select count(*) from audit_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))||' activity='||(select count(*) from activity_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))||' login_attempts='||(select count(*) from login_attempts where email not like 'b25-smoke-${TAG}%@$DOM')||' storage_objects_other='||(select count(*) from storage_objects where company_id not in ($C))"
   local before; before="$(q "$kept_sql")"; echo "$before"
@@ -1099,6 +1102,317 @@ phase_diagnose() {
   log "diagnose complete (read-only; nothing changed)"
 }
 
+# ---------------------------------------------------------------------------
+# residue_settle — RECOVERY of the single tombstone left behind by the disposable smoke of run
+# 37930815158 (API crash mid-smoke; the always-cleanup removed every disposable row but stopped at its
+# residue guard; the maintenance sweep then tombstoned the orphaned active row with its bucket object
+# RETAINED — legacy deletion is off, so the product itself never removes that object and never purges
+# the row). The recovery is INCIDENT-SPECIFIC: every identity below is a constant of this script and of
+# the workflow; any other manifest is rejected before an SSH session is opened and again here.
+#
+# Phases:
+#   residue-eligibility  READ-ONLY (q only; provider metadata/list only). Proves, in this order, that the
+#                        host is the accepted coordination state and that the residue is exactly the
+#                        recorded tombstone in one of the two recoverable states — before any mutation:
+#                          STATE A  row present + the ONE marked object present at its persisted location
+#                                   with marker == row id, canonical decimal generation, size == row size
+#                          STATE B  row present + object absent at EVERY persisted location (a previous
+#                                   run removed the object and stopped before the row)
+#                          STATE C  row absent + no residue + census == accepted original inventory
+#                                   (already completed: nothing to do)
+#                        Anything else fails closed.
+#   residue-settle       MUTATION, exactly two mutation points, each preceded by the full eligibility
+#                        re-read in the same session:
+#                          (1) provider delete of the ONE object, conditioned on the ownership marker AND
+#                              the exact generation string read moments before (ifGenerationMatch; never
+#                              unconditional) — then the object is proven absent at EVERY persisted
+#                              location (storage_key, legacy_key, mirror_key, filesystem volume);
+#                          (2) removal of the ONE row through the allow-listed, row-locked transaction
+#                              (purge_rows_sql; count must equal 1).
+#                        Partial progress: a failure before (1) changes nothing; a failure between (1)
+#                        and (2) leaves the row in place (deleted / LEGACY_RETAINED, pointing to an
+#                        absent object) — discoverable, and the next run resumes from STATE B; a failure
+#                        after (2) is STATE C on the next run (nothing to do). The row is NEVER removed
+#                        while any persisted location of the object still answers, and the object is
+#                        NEVER deleted when any eligibility check fails.
+#   residue-verify       READ-ONLY final verification (replaces the former always-step cleanup, which
+#                        executed deletes): zero disposable rows, zero residue rows, census back to the
+#                        accepted inventory, originals reconciled, every baseline unchanged, api healthy.
+RESIDUE_UUID="8c91bc11-912a-42e7-abe1-37ddd95d3cc1"
+RESIDUE_COMPANIES="47,48"; RESIDUE_COMPANY="47"; RESIDUE_USERS="88,89,90,91"; RESIDUE_TAG="8f07767767cc"
+RESIDUE_MANIFEST="$RESIDUE_UUID|$RESIDUE_COMPANIES|$RESIDUE_USERS|$RESIDUE_TAG"
+RESIDUE_KIND="document"
+RESIDUE_CREATED_FROM="2026-10-09 12:34:00"; RESIDUE_CREATED_TO="2026-10-09 12:36:00"     # created during the smoke window
+RESIDUE_BASELINE_INVENTORY_MD5="c1b900fd509bafa1f980d863dc0d195b"                       # accepted ORIGINAL inventory (4 / 1299)
+RESIDUE_UUIDS_Q="'$RESIDUE_UUID'"
+# Eligibility JS (read-only): the whole bucket inventory reduced to counts/digests (names never printed), the
+# target object's metadata (marker / generation / size) and the legacy location's presence.
+RESIDUE_ELIG_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+const { createHash } = require("node:crypto");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const a = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "{}");
+  const storage = new Storage();
+  const all = [], unmarked = []; let bytes = 0, marked = 0, markedIsTarget = 0, pageToken, capped = false;
+  do {
+    const [files, next] = await storage.bucket(bucket).getFiles({ maxResults: 1000, autoPaginate: false, pageToken });
+    for (const f of files) {
+      const gen = String(f.metadata.generation ?? ""); const line = `${f.name}|${gen}|${f.metadata.size}`;
+      all.push(line); bytes += Number(f.metadata.size || 0);
+      const mk = f.metadata.metadata && f.metadata.metadata["lcp-object-id"];
+      if (mk) { marked += 1; if (f.name === a.k && mk === a.id) markedIsTarget += 1; } else unmarked.push(line);
+    }
+    pageToken = next && next.pageToken; if (all.length >= 20000) { capped = true; break; }
+  } while (pageToken);
+  all.sort(); unmarked.sort();
+  const md5 = (l) => createHash("md5").update(l.join("\n")).digest("hex");
+  // flat document (one level; the script's strict flat-JSON reader rejects nesting)
+  const t = { target_present: false, target_marker_matches_row: null, target_generation_is_string: null, target_generation_canonical: null, target_generation_digits: 0, target_size_matches: null, target_updated: null };
+  try {
+    const [m] = await storage.bucket(bucket).file(a.k).getMetadata();
+    const gen = m.generation; const gs = gen == null ? "" : String(gen);
+    Object.assign(t, { target_present: true, target_marker_matches_row: !!(m.metadata && m.metadata["lcp-object-id"] === a.id), target_generation_is_string: typeof gen === "string", target_generation_canonical: /^[1-9]\d*$/.test(gs), target_generation_digits: gs.length, target_size_matches: String(m.size) === String(a.s), target_updated: String(m.updated || "") });
+  } catch (e) { if (!(e && e.code === 404)) throw e; }
+  const legacy = { legacy_same_object: null, legacy_present: null };
+  const lm = /^gs:\/\/([^/]+)\/(.+)$/.exec(a.l || "");
+  if (lm) {
+    legacy.legacy_same_object = lm[1] === bucket && lm[2] === a.k;
+    try { await storage.bucket(lm[1]).file(lm[2]).getMetadata(); legacy.legacy_present = true; } catch (e) { if (e && e.code === 404) legacy.legacy_present = false; else throw e; }
+  }
+  console.log(JSON.stringify({ objects: all.length, bytes, capped, with_marker: marked, marked_is_target: markedIsTarget, inventory_md5: md5(all), unmarked_md5: md5(unmarked), unmarked_objects: unmarked.length, ...t, ...legacy }));
+})().catch((e) => console.log(JSON.stringify({ eligibility: "error", code: e.code || e.name || "unknown" })));
+JS
+)
+# Settle JS (the ONLY provider mutation of the recovery): re-read metadata, apply the provider rules
+# (marker == row id, canonical decimal generation string), delete at exactly that generation, re-read.
+RESIDUE_DELETE_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const a = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "{}");
+  const storage = new Storage();
+  const f = storage.bucket(bucket).file(a.k);
+  let m;
+  try { [m] = await f.getMetadata(); } catch (e) { if (e && e.code === 404) { console.log(JSON.stringify({ deleted: 0, absent_before: 1, absent_after: 1 })); return; } throw e; }
+  const d = B25_RULES.shouldDeleteObject(a.id, m);
+  if (!d.ok) { console.log(JSON.stringify({ deleted: 0, refused: 1, reason: d.reason })); return; }
+  if (String(m.size) !== String(a.s)) { console.log(JSON.stringify({ deleted: 0, refused: 1, reason: "size differs from the row" })); return; }
+  await f.delete({ ifGenerationMatch: d.generation });   // exact decimal string; never a number, never unconditional
+  let absent = 0;
+  try { await f.getMetadata(); } catch (e) { if (e && e.code === 404) absent = 1; else throw e; }
+  console.log(JSON.stringify({ deleted: 1, absent_before: 0, absent_after: absent, generation_digits: d.generation.length }));
+})().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
+JS
+)
+RESIDUE_ABSENT_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const rows = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "[]");
+  const storage = new Storage();
+  const name = (gs) => { if (!gs) return null; const m = /^gs:\/\/([^/]+)\/(.+)$/.exec(gs); return m ? { bucket: m[1], object: m[2] } : null; };
+  const exists = async (b, o) => { try { await storage.bucket(b).file(o).getMetadata(); return true; } catch (e) { if (e && e.code === 404) return false; throw e; } };
+  const out = [];
+  for (const r of rows) {
+    const l = name(r.l), m = name(r.m);
+    const presence = { storage: await exists(bucket, r.k), legacy: l ? await exists(l.bucket, l.object) : null, mirror: m ? await exists(m.bucket, m.object) : null };
+    out.push({ id: r.id, absent: B25_RULES.rowAbsent(presence) });
+  }
+  console.log(JSON.stringify({ checked: rows.length, absent: out.filter((o) => o.absent).length, present_ids: out.filter((o) => !o.absent).map((o) => o.id) }));
+})().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
+JS
+)
+residue_manifest_check() {
+  [ "$1" = "$RESIDUE_MANIFEST" ] || fail "manifest differs from the recorded incident residue — refused (nothing read, nothing changed)"
+}
+# json_bool <flat json> <key> → prints true/false; fails on anything else (strict flat reader; null is a failure)
+json_bool() {
+  local json="$1" key="$2" raw
+  raw="$(json_flat_field "$json" "$key")" || return 1
+  case "$raw" in true|false) printf '%s' "$raw";; *) return 1;; esac
+}
+RESIDUE_STATE=""   # A | B | C, set by residue_eligibility
+RESIDUE_SIZE=""
+# The complete eligibility proof. Read-only by construction (q, docker inspect/logs, provider list/HEAD).
+residue_eligibility() {
+  local manifest="$1" n=0
+  residue_manifest_check "$manifest"
+  local pass; pass() { n=$((n + 1)); echo "elig $n: $1 — OK"; }
+  section "eligibility — coordination state of the host (accepted B25 product, healthy, idle, baselines intact)"
+  [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$ACCEPTED_SHA" ] || fail "host checkout is not the accepted commit"
+  [ "$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null)" = "$ACCEPTED_SHA" ] || fail "current-deploy.sha is not the accepted commit"
+  [ "$(cat "$STATE_DIR/previous-deploy.sha" 2>/dev/null)" = "$EXPECTED_HOSTED_SHA" ] || fail "previous-deploy.sha is not the pre-B25 commit"
+  [ -z "$(git -C "$APP_DIR" status --porcelain 2>/dev/null)" ] || fail "host checkout is dirty"
+  pass "checkout HEAD / current-deploy = accepted commit, previous-deploy = pre-B25 commit, clean"
+  [ ! -e "$LOCK_FILE" ] || fail "an activation lock file exists ($LOCK_FILE)"
+  [ -z "$(docker ps -a --filter "name=card-scanner-pro-api" --format '{{.Names}}' | grep -v '^card-scanner-pro-api-1$' || true)" ] || fail "an unexpected api container exists"
+  for svc in api web postgres; do [ "$(compose ps --status running -q "$svc" | wc -l)" = "1" ] || fail "$svc is not running"; done
+  [ "$(docker inspect -f '{{.State.Health.Status}}' "$API_CID")" = "healthy" ] || fail "api is not healthy"
+  echo "  api: $(docker inspect -f 'started={{.State.StartedAt}} restarts={{.RestartCount}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$API_CID")"
+  local rz; rz="$(curl -sS --max-time 5 http://127.0.0.1:18080/api/readyz 2>/dev/null || echo "")"
+  [[ "$rz" == *'"status":"ok"'* ]] && [[ "$rz" == *'"database":"ok"'* ]] && [[ "$rz" == *'"storage":"ok"'* ]] || fail "readiness is not ok/ok/ok"
+  pass "no lock, one api container, api/web/postgres running, api healthy, readyz ok"
+  echo "  storage init: $(docker logs "$API_CID" 2>&1 | grep -oE '"driver":"[a-z]+","legacyFallback":(true|false),"mirror":(true|false),"legacyDelete":(true|false)' | awk 'NR == 1 { print }')"
+  docker logs "$API_CID" 2>&1 | grep -F '"driver":"gcs","legacyFallback":false,"mirror":false,"legacyDelete":false' >/dev/null || fail "storage initialization is not driver=gcs / fallback off / mirror off / legacy delete off"
+  pass "storage initialization = gcs primary, no fallback, no mirror, legacy delete OFF (the product never deletes bucket objects)"
+  [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l')" = "0" ] || fail "objectdata is not empty"
+  local fp; fp="$(fingerprint)"; [ "$fp" = "$FP_AFTER" ] || fail "schema fingerprint differs from the accepted post-apply fingerprint"
+  [ "$(counts)" = "$COUNTS_AFTER" ] || fail "schema object counts differ"
+  local tb; tb="$(tenant_md5)" || fail "tenant baseline unreadable"; [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "existing-tenant composition differs from the accepted baseline"
+  [ "$(q "select count(*) from scans where company_id=1")" = "4" ] && [ "$(scan_rows_md5)" = "8a3e378a2acd0d880c6f45613b32473d" ] || fail "owner scan rows differ from the accepted baseline"
+  [ "$(stat -c %a "$ENV_FILE")" = "$ENV_MODE" ] && [ "$(stat -c %s "$ENV_FILE")" = "$ENV_SIZE" ] && [ "$(sha256sum "$ENV_FILE" | cut -c1-16)" = "$ENV_SHA_PREFIX" ] || fail "environment file differs from the accepted baseline"
+  pass "objectdata empty; schema fingerprint/counts, tenant composition, owner scans and environment file = accepted baselines"
+  if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard FAILED (a write succeeded in a q session)"; fi
+  pass "read-only session guard"
+
+  section "eligibility — the residue (exactly the recorded identities; nothing else may remain)"
+  local C="$RESIDUE_COMPANIES" U="$RESIDUE_USERS" DOM="$SMOKE_DOMAIN" TAG="$RESIDUE_TAG" UUID="$RESIDUE_UUID"
+  [ "$(q "select count(*) from companies where id in ($C) or name like 'B25 SMOKE %'")" = "0" ] || fail "a disposable company still exists"
+  [ "$(q "select count(*) from users where id in ($U) or email like '%@$DOM'")" = "0" ] || fail "a disposable user still exists"
+  [ "$(q "select (select count(*) from subscriptions where company_id in ($C)) + (select count(*) from sessions where user_id in ($U)) + (select count(*) from documents where company_id in ($C)) + (select count(*) from document_versions where company_id in ($C)) + (select count(*) from export_runs where company_id in ($C)) + (select count(*) from executive_reports where company_id in ($C)) + (select count(*) from scans where company_id in ($C)) + (select count(*) from contacts where company_id in ($C)) + (select count(*) from leads where company_id in ($C)) + (select count(*) from audit_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from activity_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')")" = "0" ] || fail "a disposable feature row still exists"
+  pass "companies $C, users $U and every disposable feature/audit/session row are absent"
+  [ "$(q "select count(*) from storage_objects where company_id in ($C) and id <> '$UUID'")" = "0" ] || fail "another storage row of the disposable companies exists — not the recorded residue"
+  [ "$(q "select count(*) from storage_objects where id <> '$UUID' and (reference like '%$UUID%' or storage_key like '%$UUID%' or coalesce(legacy_key,'') like '%$UUID%' or coalesce(mirror_key,'') like '%$UUID%')")" = "0" ] || fail "another storage row references the residue id"
+  [ "$(q "select (select count(*) from document_versions where object_path = '/objects/$UUID') + (select count(*) from export_runs where object_path = '/objects/$UUID') + (select count(*) from executive_reports where object_path = '/objects/$UUID') + (select count(*) from scans where image_url = '/objects/$UUID') + (select count(*) from companies where brand_logo_key = '/objects/$UUID')")" = "0" ] || fail "a live feature row still references the residue object"
+  [ "$(q "select count(*) from job_queue where status in ('pending','running') and (payload::text like '%$UUID%' or payload::text like '%\"companyId\":47%' or payload::text like '%\"companyId\":48%')")" = "0" ] || fail "a pending/running job still references the residue"
+  pass "no other storage row, no live association, no pending job references the residue"
+  local nrow; nrow="$(q "select count(*) from storage_objects where id = '$UUID'")"
+  local cj o b im wm
+  if [ "$nrow" = "0" ]; then
+    section "eligibility — STATE C candidate (row absent): the inventory must already be the accepted original"
+    cj="$(census)"; echo "  $cj"
+    o="$(census_field "$cj" objects count)" || fail "census: objects missing"; b="$(census_field "$cj" bytes count)" || fail "census: bytes missing"
+    im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: digest missing"; wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker missing"
+    [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] && [ "$im" = "$RESIDUE_BASELINE_INVENTORY_MD5" ] && [ "$wm" = "0" ] || fail "row absent but the inventory is not the accepted original — manual review"
+    [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "row absent but other storage rows exist (pre-smoke baseline is 0 rows)"
+    RESIDUE_STATE="C"; pass "STATE C — recovery already completed (row absent, inventory = accepted original, no marked object)"; echo "ELIGIBILITY: STATE C (nothing to do)"; return 0
+  fi
+  [ "$nrow" = "1" ] || fail "unexpected row count for the residue id: $nrow"
+  section "eligibility — row identity (every column of the recorded tombstone)"
+  local facts
+  # every predicate is coalesced to false: a NULL column can never blank the whole line (and is itself a failure)
+  facts="$(q "select coalesce(company_id = $RESIDUE_COMPANY, false)||'|'||coalesce(kind = '$RESIDUE_KIND', false)||'|'||coalesce(driver = 'gcs', false)||'|'||coalesce(state = 'deleted', false)||'|'||coalesce(last_error = 'LEGACY_RETAINED', false)||'|'||(publication_uncertain_at is null)||'|'||(lease_token is null and lease_expires_at is null)||'|'||(mirror_key is null and mirror_state is null)||'|'||(deleted_at is not null)||'|'||(legacy_key is not null)||'|'||coalesce(size_bytes > 0, false)||'|'||coalesce(sha256 ~ '^[0-9a-f]{64}$', false)||'|'||coalesce(reference = '/objects/' || id::text, false)||'|'||coalesce(storage_key ~ ('^tenants/' || company_id || '/documents/' || id::text || '(\\.[a-z0-9]+)?\$'), false)||'|'||coalesce(created_at >= '$RESIDUE_CREATED_FROM' and created_at < '$RESIDUE_CREATED_TO', false)||'|'||(reconciled_at is not null)||'|'||coalesce(content_type <> '', false) from storage_objects where id = '$UUID'")"
+  echo "  facts(company|kind|driver|deleted|legacy_retained|not_uncertain|no_lease|no_mirror|deleted_at|legacy_key|size|sha|reference|storage_key|created_in_window|reconciled|content_type)=$facts"
+  local names=(company kind driver state last_error uncertainty lease mirror deleted_at legacy_key size sha256 reference storage_key created_at reconciled content_type) i=0 v
+  IFS='|' read -ra v <<<"$facts"; [ "${#v[@]}" = "17" ] || fail "row facts unreadable"
+  for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 16; do [ "${v[$i]}" = "true" ] || fail "row identity check failed: ${names[$i]}"; done
+  echo "  reconciled_at set: ${v[15]} (either is eligible: the sweep's final reconciliation keeps LEGACY_RETAINED and never purges)"
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' last_error='||last_error||' size='||size_bytes||' deleted_at='||deleted_at||' reconciled_at='||coalesce(reconciled_at::text,'<null>')||' created='||created_at from storage_objects where id = '$UUID'" | sed 's/^/  /'
+  local bucket; bucket="$(grep -E '^DEFAULT_OBJECT_STORAGE_BUCKET_ID=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"')"
+  [[ "$bucket" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]] || fail "bucket name unreadable or malformed in the environment file"
+  [ "$(q "select (legacy_key = 'gs://$bucket/' || storage_key)::text from storage_objects where id = '$UUID'")" = "true" ] || fail "legacy_key is not the canonical location of storage_key in the configured bucket"
+  RESIDUE_SIZE="$(q "select size_bytes from storage_objects where id = '$UUID'")"
+  pass "row = the recorded tombstone (company $RESIDUE_COMPANY, $RESIDUE_KIND, gcs, deleted, LEGACY_RETAINED, no uncertainty/lease/mirror, reference and storage_key identity, legacy_key canonical, created in the smoke window)"
+
+  section "eligibility — provider state (ownership marker, generation string, size; the four original objects untouched)"
+  local row_b64 ej
+  row_b64="$(q "select json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 's', size_bytes) from storage_objects where id = '$UUID'" | base64 -w0)"
+  ej="$(api_node "$RESIDUE_ELIG_JS" "$row_b64")"; echo "  $ej"
+  local eo eb ewm emt eum euo tp lsame lpres
+  eo="$(census_field "$ej" objects count)" || fail "eligibility: objects missing"; eb="$(census_field "$ej" bytes count)" || fail "eligibility: bytes missing"
+  ewm="$(census_field "$ej" with_marker count)" || fail "eligibility: with_marker missing"; emt="$(census_field "$ej" marked_is_target count)" || fail "eligibility: marked_is_target missing"
+  eum="$(census_field "$ej" unmarked_md5 hex32)" || fail "eligibility: unmarked digest missing"; euo="$(census_field "$ej" unmarked_objects count)" || fail "eligibility: unmarked count missing"
+  tp="$(json_bool "$ej" target_present)" || fail "eligibility: target presence unreadable"
+  [ "$euo" = "$CENSUS_OBJECTS" ] && [ "$eum" = "$RESIDUE_BASELINE_INVENTORY_MD5" ] || fail "the unmarked objects are not exactly the accepted original inventory (names/generations/sizes drifted) — STOP"
+  local rj; rj="$(api_node "$DIAG_RECON_JS" "$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" | base64 -w0)")"; echo "  original references: $rj"
+  [ "$(census_field "$rj" referenced count)" = "$REFERENCES" ] && [ "$(census_field "$rj" present count)" = "$REFERENCES" ] && [ "$(census_field "$rj" missing count)" = "0" ] && [ "$(census_field "$rj" size_match count)" = "$REFERENCES" ] || fail "original references are not fully present / size-matched — STOP"
+  pass "the $CENSUS_OBJECTS original objects = accepted inventory digest; $REFERENCES references present and size-matched"
+  if [ "$tp" = "true" ]; then
+    [ "$eo" = "$((CENSUS_OBJECTS + 1))" ] && [ "$eb" = "$((CENSUS_BYTES + RESIDUE_SIZE))" ] && [ "$ewm" = "1" ] && [ "$emt" = "1" ] || fail "census is not exactly originals + the one marked target object (objects=$eo bytes=$eb marked=$ewm marked_is_target=$emt)"
+    [ "$(json_bool "$ej" target_marker_matches_row)" = "true" ] || fail "the object at storage_key does not carry this row's ownership marker — STOP"
+    [ "$(json_bool "$ej" target_generation_is_string)" = "true" ] && [ "$(json_bool "$ej" target_generation_canonical)" = "true" ] || fail "the object's generation is not a canonical decimal string — STOP"
+    [ "$(json_bool "$ej" target_size_matches)" = "true" ] || fail "the object's size differs from the row — STOP"
+    lsame="$(json_bool "$ej" legacy_same_object)" || fail "legacy location unreadable"; [ "$lsame" = "true" ] || fail "legacy_key is not the same object as storage_key — STOP"
+    RESIDUE_STATE="A"; pass "STATE A — the one marked object is present at its persisted location with marker == row id, canonical generation ($(census_field "$ej" target_generation_digits count) digits), size == row"
+    echo "ELIGIBILITY: STATE A (full recovery: provider delete at the exact generation, absence proof, row removal)"
+  else
+    [ "$eo" = "$CENSUS_OBJECTS" ] && [ "$eb" = "$CENSUS_BYTES" ] && [ "$ewm" = "0" ] || fail "object absent at storage_key but the census is not the accepted original (objects=$eo bytes=$eb marked=$ewm) — STOP"
+    lpres="$(json_bool "$ej" legacy_present)" || fail "legacy location unreadable"; [ "$lpres" = "false" ] || fail "object absent at storage_key but present at legacy_key — STOP"
+    RESIDUE_STATE="B"; pass "STATE B — object absent at every persisted location, row still present (a previous run stopped before the row removal)"
+    echo "ELIGIBILITY: STATE B (resume: absence proof, row removal)"
+  fi
+}
+phase_residue_eligibility() {
+  residue_eligibility "$ARG1"
+  rm -f "$HOME"/.b25-s1-node.err
+  log "residue-eligibility complete (read-only; nothing changed; state=$RESIDUE_STATE)"
+}
+phase_residue_settle() {
+  declare -f purge_rows_sql >/dev/null || fail "purge library not loaded (stream b25-stage1-purge-lib.sh before this script)"
+  residue_manifest_check "$ARG1"
+  exec 9>"$LOCK_FILE"; flock -n 9 || fail "another activation holds the lock"
+  trap 'rm -f "$LOCK_FILE" "$HOME"/.b25-s1-node.err' EXIT
+  # the lock file now exists; the eligibility check tolerates OUR lock (the fd is held by this session)
+  local lock_was="$LOCK_FILE"; LOCK_FILE="$LOCK_FILE.none"; residue_eligibility "$ARG1"; LOCK_FILE="$lock_was"
+  local UUID="$RESIDUE_UUID" C="$RESIDUE_COMPANIES"
+  if [ "$RESIDUE_STATE" = "C" ]; then section "settle — nothing to do (STATE C)"; echo "RESIDUE_SETTLE: already completed; no provider call, no SQL write"; log "residue-settle: nothing to do"; return 0; fi
+  if [ "$RESIDUE_STATE" = "A" ]; then
+    section "settle (1/2) — delete the ONE marked object at its exact generation (marker re-read in the same call; names never printed)"
+    local row_b64 dj
+    row_b64="$(q "select json_build_object('id', id, 'k', storage_key, 's', size_bytes) from storage_objects where id = '$UUID'" | base64 -w0)"
+    dj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$RESIDUE_DELETE_JS" "$row_b64")"; echo "  $dj"
+    [ "$(census_field "$dj" deleted count 2>/dev/null || echo x)" = "1" ] || fail "the provider delete did not happen (refused or failed) — the object and the row stay; investigate"
+    [ "$(census_field "$dj" absent_after count 2>/dev/null || echo x)" = "1" ] || fail "the object still answers after the conditional delete — the row stays; investigate"
+    echo "  provider delete: done at the exact generation ($(census_field "$dj" generation_digits count 2>/dev/null || echo ?) digits)"
+  else
+    section "settle (1/2) — STATE B: the object was already removed by a previous run; no provider mutation"
+  fi
+  section "settle — absence proof at EVERY persisted location (storage_key, legacy_key, mirror_key; filesystem volume)"
+  local loc_b64 aj
+  loc_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 'm', mirror_key)), '[]'::json) from storage_objects where id = '$UUID'" | base64 -w0)"
+  aj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$RESIDUE_ABSENT_JS" "$loc_b64")"; echo "  $aj"
+  [ "$(census_field "$aj" checked count 2>/dev/null || echo x)" = "1" ] && [ "$(census_field "$aj" absent count 2>/dev/null || echo x)" = "1" ] || fail "a persisted provider location of the tombstone still answers — the row is NOT removed (resume from STATE B once it is absent)"
+  [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l')" = "0" ] || fail "objectdata is not empty — the row is NOT removed"
+  section "settle (2/2) — remove the ONE row (allow-listed, row-locked transaction; count must be exactly 1)"
+  local triple; triple="$(qw "$(purge_rows_sql "$RESIDUE_UUIDS_Q" "$C" 1)")"
+  purge_result_check "$triple" 1 || fail "the allow-listed delete did not remove exactly the one row (nothing is removed when the row differs)"
+  [ "$(q "select count(*) from storage_objects where id = '$UUID'")" = "0" ] || fail "the row remains"
+  section "settle — final state"
+  local cj o b im wm; cj="$(census)"; echo "  $cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects missing"; b="$(census_field "$cj" bytes count)" || fail "census: bytes missing"
+  im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: digest missing"; wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker missing"
+  [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] && [ "$im" = "$RESIDUE_BASELINE_INVENTORY_MD5" ] && [ "$wm" = "0" ] || fail "census is not the accepted original inventory after the recovery — investigate (no further change is made)"
+  [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "storage_objects is not back to the pre-smoke baseline (0 rows)"
+  echo "RESIDUE_SETTLE: COMPLETE — census $o / $b / $im, marked objects $wm, storage rows 0"
+  log "residue-settle complete"
+}
+# READ-ONLY final verification (always-step): reports and FAILS on any deviation from the accepted end state; never writes.
+phase_residue_verify() {
+  residue_manifest_check "$ARG1"
+  local C="$RESIDUE_COMPANIES" U="$RESIDUE_USERS" DOM="$SMOKE_DOMAIN" TAG="$RESIDUE_TAG" UUID="$RESIDUE_UUID" bad=0
+  chk() { if [ "$2" = "$3" ]; then echo "verify: $1 = $2 OK"; else echo "verify: $1 = $2 (expected $3) FAILED"; bad=$((bad + 1)); fi; }
+  section "residue-verify (read-only)"
+  if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then echo "verify: read-only guard FAILED"; bad=$((bad + 1)); else echo "verify: read-only session guard OK"; fi
+  chk "residue rows" "$(q "select count(*) from storage_objects where id = '$UUID' or company_id in ($C)")" "0"
+  chk "rows mentioning the residue id" "$(q "select count(*) from storage_objects where reference like '%$UUID%' or storage_key like '%$UUID%' or coalesce(legacy_key,'') like '%$UUID%' or coalesce(mirror_key,'') like '%$UUID%'")" "0"
+  chk "storage_objects total" "$(q "select count(*) from storage_objects")" "0"
+  chk "disposable companies" "$(q "select count(*) from companies where id in ($C) or name like 'B25 SMOKE %'")" "0"
+  chk "disposable users" "$(q "select count(*) from users where id in ($U) or email like '%@$DOM'")" "0"
+  chk "disposable feature/session/audit rows" "$(q "select (select count(*) from subscriptions where company_id in ($C)) + (select count(*) from sessions where user_id in ($U)) + (select count(*) from documents where company_id in ($C)) + (select count(*) from document_versions where company_id in ($C)) + (select count(*) from export_runs where company_id in ($C)) + (select count(*) from scans where company_id in ($C)) + (select count(*) from audit_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from activity_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')")" "0"
+  local cj; cj="$(census)"; echo "  $cj"
+  chk "census objects" "$(census_field "$cj" objects count 2>/dev/null || echo ?)" "$CENSUS_OBJECTS"
+  chk "census bytes" "$(census_field "$cj" bytes count 2>/dev/null || echo ?)" "$CENSUS_BYTES"
+  chk "census inventory digest" "$(census_field "$cj" inventory_md5 hex32 2>/dev/null || echo ?)" "$RESIDUE_BASELINE_INVENTORY_MD5"
+  chk "marked objects" "$(census_field "$cj" with_marker count 2>/dev/null || echo ?)" "0"
+  local rj; rj="$(api_node "$DIAG_RECON_JS" "$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" | base64 -w0)")"; echo "  original references: $rj"
+  chk "original references present" "$(census_field "$rj" present count 2>/dev/null || echo ?)" "$REFERENCES"
+  chk "original references size-matched" "$(census_field "$rj" size_match count 2>/dev/null || echo ?)" "$REFERENCES"
+  chk "tenant composition" "$(tenant_md5 2>/dev/null || echo unavailable)" "$TENANT_BASELINE_MD5"
+  chk "owner scan rows" "$(scan_rows_md5 2>/dev/null || echo unavailable)" "8a3e378a2acd0d880c6f45613b32473d"
+  chk "schema fingerprint" "$(fingerprint 2>/dev/null || echo unavailable)" "$FP_AFTER"
+  chk "env file" "$(stat -c %a "$ENV_FILE" 2>/dev/null)/$(stat -c %s "$ENV_FILE" 2>/dev/null)/$(sha256sum "$ENV_FILE" 2>/dev/null | cut -c1-16)" "$ENV_MODE/$ENV_SIZE/$ENV_SHA_PREFIX"
+  chk "objectdata entries" "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l' 2>/dev/null | tr -d '[:space:]')" "0"
+  chk "existing rows" "$(q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' subscriptions='||(select count(*) from subscriptions)||' contacts='||(select count(*) from contacts)||' leads='||(select count(*) from leads)||' events='||(select count(*) from events)||' scans='||(select count(*) from scans)||' documents='||(select count(*) from documents)||' export_runs='||(select count(*) from export_runs)")" "companies=1 users=2 subscriptions=1 contacts=1 leads=1 events=1 scans=4 documents=0 export_runs=4"
+  chk "readyz" "$(curl -sS --max-time 5 http://127.0.0.1:18080/api/readyz 2>/dev/null | cut -c1-80)" '{"status":"ok","checks":{"database":"ok","storage":"ok"}}'
+  echo "  api: $(docker inspect -f 'status={{.State.Status}} health={{.State.Health.Status}} restarts={{.RestartCount}} started={{.State.StartedAt}}' "$API_CID" 2>/dev/null || echo unavailable)"
+  chk "dead jobs" "$(q "select count(*) from job_queue where status='dead'")" "0"
+  rm -f "$HOME"/.b25-s1-node.err
+  [ "$bad" = "0" ] || fail "residue-verify: $bad check(s) failed (read-only; nothing changed)"
+  echo "RESIDUE_VERIFY: PASS (read-only)"
+  log "residue-verify complete"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -1110,6 +1424,9 @@ case "$PHASE" in
   smoke-settle) phase_smoke_settle ;;
   cleanup) phase_cleanup ;;
   diagnose) phase_diagnose ;;
+  residue-eligibility) phase_residue_eligibility ;;
+  residue-settle) phase_residue_settle ;;
+  residue-verify) phase_residue_verify ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0
