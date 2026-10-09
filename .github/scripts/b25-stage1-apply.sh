@@ -887,7 +887,8 @@ edge_conf_collect() {
 # proxy_pass, return/rewrite/root/alias/try_files/error_page) with their line number and enclosing block path; every
 # other file is counted by directory only (other sites on the host are never printed). Ends with a computed summary.
 edge_conf_summary() {
-  awk -v dre="$EDGE_DOMAIN_RE" -v prefix="$1" '
+  EDGE_DOMAIN_RE="$EDGE_DOMAIN_RE" awk -v prefix="$1" '
+    BEGIN { dre = ENVIRON["EDGE_DOMAIN_RE"] }
     function ctxpath(   k, s) { s = ""; for (k = 1; k <= depth; k++) s = s (k > 1 ? " > " : "") blk[k]; return (s == "" ? "top" : s) }
     function glob2re(g,   r) { r = g; gsub(/[.+^$(){}|\\]/, "\\\\&", r); gsub(/\*/, "[^/]*", r); gsub(/\?/, ".", r); return "^" r "$" }
     function newfile(name, unread) { nf++; fname[nf] = name; funread[nf] = unread; flines[nf] = 0; fsel[nf] = 0; fproj[nf] = 0; fref[nf] = 0; finc[nf] = 0; cur = nf; depth = 0; inApi = 0; if (nf == 1 && name ~ /\/nginx\.conf$/) fmain[nf] = 1 }
@@ -1062,13 +1063,20 @@ phase_diagnose() {
   done
   if [ -z "$nginx_bin" ]; then echo "-- nginx binary: not found on PATH (the edge is not a host nginx reachable by this user)"; else
     echo "-- nginx binary: $nginx_bin version: $("$nginx_bin" -v 2>&1 | edge_san) modules: $("$nginx_bin" -V 2>&1 | grep -oE 'with-http_(ssl|v2|v3|realip|sub)_module|headers-more|ngx_http_headers_more|with-stream' | sort -u | tr '\n' ' ')"
+    local master_args master_conf
+    master_args="$(ps -eo comm=,args= 2>/dev/null | awk '$1 == "nginx" && $2 == "nginx:" && $3 == "master" { $1 = ""; $2 = ""; $3 = ""; $4 = ""; print; exit }' || true)"
+    master_conf="$(printf '%s' "$master_args" | grep -oE -- '-c [^ ]+' | head -1 | cut -d' ' -f2 || true)"
     conf_path="$("$nginx_bin" -V 2>&1 | grep -oE -- '--conf-path=[^ ]+' | cut -d= -f2 || true)"; prefix="$("$nginx_bin" -V 2>&1 | grep -oE -- '--prefix=[^ ]+' | cut -d= -f2 || true)"
-    conf_path="${conf_path:-/etc/nginx/nginx.conf}"; prefix="${prefix:-/etc/nginx}"
-    echo "   conf-path: $(printf '%s' "$conf_path" | edge_san) prefix: $(printf '%s' "$prefix" | edge_san) master-process config: $(ps -eo comm=,args= 2>/dev/null | awk '$1 == "nginx" && $2 == "nginx:" && $3 == "master" { $1 = ""; $2 = ""; $3 = ""; $4 = ""; print; exit }' | edge_san || true)"
-    if dump="$("$nginx_bin" -T 2>/dev/null)" && [ -n "$dump" ]; then dump_src="nginx -T (this user)"
-    elif [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1 && dump="$(sudo -n "$nginx_bin" -T 2>/dev/null)" && [ -n "$dump" ]; then dump_src="sudo -n nginx -T"
+    conf_path="${master_conf:-${conf_path:-/etc/nginx/nginx.conf}}"
+    # nginx resolves a relative `include` against the directory of the main configuration file (ngx_conf_full_name
+    # with conf_prefix), not against the build prefix — a master started with an explicit -c moves that directory.
+    prefix="$(dirname "$conf_path")"
+    echo "   effective conf-path: $(printf '%s' "$conf_path" | edge_san) ($([ -n "$master_conf" ] && echo "from the running master's -c" || echo "compiled default")) prefix: $(printf '%s' "$prefix" | edge_san) master-process args: $(printf '%s' "$master_args" | edge_san)"
+    echo "   conf-path readable by this user: $([ -r "$conf_path" ] && echo yes || echo no) ($(stat -c '%U:%G %a' "$conf_path" 2>/dev/null || echo 'stat unavailable')) running as: uid=$(id -u) groups=$(id -Gn 2>/dev/null | wc -w) sudo: $(command -v sudo >/dev/null 2>&1 && { sudo -n true 2>/dev/null && echo passwordless || echo 'not permitted non-interactively'; } || echo absent)"
+    if dump="$("$nginx_bin" -T -c "$conf_path" 2>/dev/null)" && [ -n "$dump" ]; then dump_src="nginx -T (this user)"
+    elif [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1 && dump="$(sudo -n "$nginx_bin" -T -c "$conf_path" 2>/dev/null)" && [ -n "$dump" ]; then dump_src="sudo -n nginx -T"
     else dump=""; fi
-    if [ -n "$dump" ]; then echo "-- effective configuration: $dump_src ($(printf '%s\n' "$dump" | grep -c '^# configuration file ' || true) files; test: $("$nginx_bin" -t 2>&1 | grep -oE 'syntax is ok|test is successful|test failed' | sort -u | tr '\n' ' ' || echo n/a))"
+    if [ -n "$dump" ]; then echo "-- effective configuration: $dump_src ($(printf '%s\n' "$dump" | grep -c '^# configuration file ' || true) files; test: $("$nginx_bin" -t -c "$conf_path" 2>&1 | grep -oE 'syntax is ok|test is successful|test failed' | sort -u | tr '\n' ' ' || echo n/a))"
     else dump="$(edge_conf_collect "$conf_path" "$prefix")"; echo "-- effective configuration: nginx -T not available to this user — readable files of the tree under conf-path were read instead ($(printf '%s\n' "$dump" | grep -c '^# configuration file ' || true) files)"; fi
     printf '%s\n' "$dump" | edge_conf_summary "$prefix" | edge_san | sed 's/^/  /'
     echo "-- vhost file facts (owner:group mode, first comment lines; for files that mention the project domain):"
