@@ -112,15 +112,16 @@ LEGACY_HANDLE='^/objects/uploads/[0-9a-f-]{36}$'
 references() { q "select count(*) from (select object_path r from document_versions where object_path ~ '$LEGACY_HANDLE' union all select object_path from export_runs where object_path ~ '$LEGACY_HANDLE' union all select object_path from executive_reports where object_path ~ '$LEGACY_HANDLE' union all select image_url from scans where image_url ~ '^scans/[0-9]+/[0-9]+\.jpg$' union all select brand_logo_key from companies where brand_logo_key ~ '^branding/[0-9]+/[0-9a-f]{32}\.(png|jpg|webp)$') r"; }
 health() { curl -fsS --max-time 5 http://127.0.0.1:18080/healthz >/dev/null && curl -fsS --max-time 5 http://127.0.0.1:18080/api/healthz >/dev/null && curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz | grep -q '"database":"ok","storage":"ok"'; }
 wait_healthy() { local waited=0; until health; do waited=$((waited + 5)); [ "$waited" -ge "${1:-150}" ] && return 1; sleep 5; done; return 0; }
-# capacity <label> <df options…>: ONE non-negative integer from a single-column df query (header removed,
-# whitespace stripped). Fails on a df error, no data row, several data rows, or any value that is not a
-# non-negative decimal integer (for example "-" on a filesystem without inode accounting). Zero is a valid
-# value; the caller compares it against the unchanged thresholds.
+# capacity <label> <df options…>: ONE non-negative integer from a single-column df query. The header is
+# removed and ONLY leading / trailing whitespace of the data row is trimmed: the row must then be exactly one
+# canonical decimal integer. Embedded spaces or tabs (joined tokens), several columns, several data rows, an
+# empty answer, "-" (no inode accounting), negative or non-numeric text and a df error all fail closed. Zero is
+# a valid value; the caller compares it against the unchanged thresholds.
 capacity() {
   local label="$1"; shift
   local out rows
   if ! out="$(df "$@" 2>/dev/null)"; then echo "::error::df failed ($label)" >&2; return 1; fi
-  mapfile -t rows < <(printf '%s\n' "$out" | tail -n +2 | sed -E 's/[[:space:]]+//g' | awk 'NF')
+  mapfile -t rows < <(printf '%s\n' "$out" | tail -n +2 | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | awk 'NF')
   [ "${#rows[@]}" = "1" ] || { echo "::error::df returned ${#rows[@]} data rows ($label), expected exactly one" >&2; return 1; }
   [[ "${rows[0]}" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "::error::df value is not a non-negative integer ($label)" >&2; return 1; }
   printf '%s' "${rows[0]}"
@@ -164,21 +165,46 @@ const { createHash } = require("node:crypto");
 JS
 )
 census() { api_node "$CENSUS_JS"; }
-# census_field <json line> <key> <count|hex32>
-# Validated extraction from the one-line JSON printed by the in-container node snippets. The key must occur
-# EXACTLY once (keys may contain digits, e.g. inventory_md5); a count must be a bare non-negative decimal
-# integer (zero is valid); a hex32 must be a quoted string of exactly 32 lowercase hex characters. Anything
-# else — missing or duplicate key, empty, partial, signed, quoted-number, non-JSON input such as the
-# "unavailable (reason: …)" placeholder or a {"census":"error"} answer — prints nothing, explains on stderr and
-# returns 1, so a caller can never use a bogus value. Raw provider output is never printed here.
+# json_flat_fields <document>
+# Strict validation of a COMPLETE, flat JSON object as printed by the in-container node snippets
+# (JSON.stringify of a one-level object: numbers, booleans, null, plain strings, arrays of plain strings;
+# no nesting, no escapes, no whitespace). Prints one "key<TAB>value" line per top-level field, in document
+# order, or prints nothing and fails: anything before the opening or after the closing brace, a missing
+# brace, a nested object, a duplicate key, a trailing comma or an unexpected token rejects the whole
+# document. Implemented with bash's own regex engine — no jq, python or host-side node is assumed.
+json_flat_fields() {
+  local doc="$1" rest field key
+  local STR='"[^"\\]*"'
+  local VAL="(-?[0-9]+|true|false|null|$STR|\[($STR(,$STR)*)?\])"
+  local FIELD="\"[a-z0-9_]+\":$VAL"
+  [[ "$doc" =~ ^\{($FIELD(,$FIELD)*)?\}$ ]] || { echo "::error::census document is not a complete flat JSON object" >&2; return 1; }
+  rest="${doc:1:${#doc}-2}"
+  local -A seen=()
+  while [ -n "$rest" ]; do
+    [[ "$rest" =~ ^$FIELD ]] || { echo "::error::census document: field parse failed" >&2; return 1; }
+    field="${BASH_REMATCH[0]}"; rest="${rest:${#field}}"
+    key="${field%%\":*}"; key="${key#\"}"
+    [ -z "${seen[$key]+x}" ] || { echo "::error::census document: duplicate key '$key'" >&2; return 1; }
+    seen[$key]=1
+    printf '%s\t%s\n' "$key" "${field#*\":}"
+    if [ -n "$rest" ]; then
+      [ "${rest:0:1}" = "," ] || { echo "::error::census document: unexpected token after a field" >&2; return 1; }
+      rest="${rest:1}"; [ -n "$rest" ] || { echo "::error::census document: trailing comma" >&2; return 1; }
+    fi
+  done
+}
+# census_field <json document> <key> <count|hex32>
+# The document must pass json_flat_fields in full (so a truncated, prefixed, suffixed, nested or duplicate-key
+# answer is rejected before any field is read); the key must be a TOP-LEVEL field; a count must be a bare
+# non-negative decimal integer (zero is valid); a hex32 must be a quoted string of exactly 32 lowercase hex
+# characters. Field order never matters. Anything else prints nothing, explains on stderr and returns 1, so
+# a caller can never use a bogus or defaulted value. Raw provider output is never printed here.
 census_field() {
-  local json="$1" key="$2" kind="$3" matches n raw
+  local json="$1" key="$2" kind="$3" fields raw
   [[ "$key" =~ ^[a-z0-9_]+$ ]] || { echo "::error::census_field: invalid key" >&2; return 1; }
   case "$kind" in count|hex32) ;; *) echo "::error::census_field: invalid kind for '$key'" >&2; return 1;; esac
-  matches="$(printf '%s' "$json" | grep -oE "\"$key\":(\"[^\"]*\"|[^,}]*)")" || { echo "::error::census_field: field '$key' not found" >&2; return 1; }
-  n="$(printf '%s\n' "$matches" | grep -c .)"
-  [ "$n" = "1" ] || { echo "::error::census_field: field '$key' found $n times (expected exactly one)" >&2; return 1; }
-  raw="${matches#*:}"
+  fields="$(json_flat_fields "$json")" || return 1
+  raw="$(printf '%s\n' "$fields" | awk -F '\t' -v k="$key" '$1 == k { print $2; found = 1 } END { if (!found) exit 1 }')" || { echo "::error::census_field: top-level field '$key' not found" >&2; return 1; }
   case "$kind" in
     count) [[ "$raw" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "::error::census_field: '$key' is not a non-negative decimal integer" >&2; return 1; } ;;
     hex32) [[ "$raw" =~ ^\"[0-9a-f]{32}\"$ ]] || { echo "::error::census_field: '$key' is not a quoted 32-character lowercase hex digest" >&2; return 1; }; raw="${raw:1:32}" ;;
@@ -228,7 +254,8 @@ guards_before() {
   q "select 'server='||version()"
   local c fp; c="$(counts)"; echo "$c"; [ "$c" = "$COUNTS_BEFORE" ] || fail "DRIFT: catalog counts differ from the inspection baseline ($COUNTS_BEFORE)"
   fp="$(fingerprint)"; echo "schema_fingerprint=$fp"; [ "$fp" = "$FP_BEFORE" ] || fail "DRIFT: schema fingerprint is not $FP_BEFORE"
-  [ "$(q "select coalesce(to_regclass('public.storage_objects')::text,'absent')")" = "absent" ] || fail "DRIFT: storage_objects already exists"
+  local so_exists; so_exists="$(q "select to_regclass('public.storage_objects') is not null")" || fail "could not verify that storage_objects is absent"
+  [ "$so_exists" = "f" ] || fail "DRIFT: storage_objects already exists"
   q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' scans='||(select count(*) from scans)||' export_runs='||(select count(*) from export_runs)||' documents='||(select count(*) from documents)"
   local t; t="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
   echo "tenant_baseline_md5=$t accepted=$TENANT_BASELINE_MD5 (canonical digest: trailing newline excluded; composition never printed)"
@@ -392,7 +419,10 @@ phase_schema_apply() {
 
   STAGE="verify"
   section "12. verify"
-  [ "$(q "select coalesce(to_regclass('public.storage_objects')::text,'absent')")" = "public.storage_objects" ] || fail "storage_objects not created"
+  # Boolean, schema-qualified existence: regclass TEXT rendering depends on search_path (storage_objects vs
+  # public.storage_objects) and must never be compared; a query error, empty or unexpected answer fails closed.
+  local so_exists; so_exists="$(q "select to_regclass('public.storage_objects') is not null")" || fail "could not verify that storage_objects exists"
+  [ "$so_exists" = "t" ] || fail "storage_objects not created"
   [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "storage_objects is not empty"
   [ "$(q "select is_nullable||':'||coalesce(column_default,'<none>') from information_schema.columns where table_name='storage_objects' and column_name='publication_uncertain_at'")" = "YES:<none>" ] || fail "publication_uncertain_at is not nullable-without-default"
   local fp c; fp="$(fingerprint)"; c="$(counts)"; echo "schema_fingerprint=$fp"; echo "$c"
