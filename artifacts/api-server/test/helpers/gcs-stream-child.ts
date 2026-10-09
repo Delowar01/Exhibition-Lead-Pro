@@ -55,6 +55,17 @@ function outcome(s: Readable, boundMs: number): Promise<string> {
     s.once("end", () => { clearTimeout(t); resolve(`END bytes=${bytes}`); });
   });
 }
+/** Poll the stand-in until it has answered `n` media attempts for the object (or give up after `boundMs`). */
+async function untilAttempts(behaviour: string, n: number, boundMs = 5000): Promise<number> {
+  const t = Date.now();
+  for (;;) {
+    const st = await stats();
+    const a = st.media[K(behaviour)] || [];
+    if (a.length >= n) return a.length;
+    if (Date.now() - t > boundMs) return a.length;
+    await sleep(5);
+  }
+}
 const source = async (behaviour: string) => { const st = await stats(); const n = K(behaviour); return `source[${behaviour}]: media_attempts=${JSON.stringify(st.media[n] || [])} aborted=${st.aborted[n] || 0} completed=${st.completed[n] || 0} open_connections=${st.open}`; };
 
 async function run() {
@@ -160,6 +171,29 @@ async function run() {
     await sleep(1500);
     say(await source("late-slowbody")); // aborted=10
     say(`ALIVE after 10 cancels + 8 full reads sha_all_match=${r.every((d) => d.sha === expectedSha && d.n === 200 * 1024)}`);
+  } else if (scenario === "cancel-during-first-backoff") {
+    // attempt 1 answers 500 -> the driver schedules its re-open; the consumer leaves DURING that delay:
+    // no further attempt may be opened (red: a second request still goes out)
+    const s = await open("err500");
+    await untilAttempts("err500", 1);
+    s.stream.destroy();
+    await sleep(1200);
+    say(await source("err500")); // media_attempts=[500]
+    say("ALIVE after cancel during the first backoff");
+  } else if (scenario === "cancel-during-later-backoff") {
+    // attempts 1 and 2 answer 500; the consumer leaves during the second delay (400 ms): attempts stay two
+    const s = await open("err500");
+    await untilAttempts("err500", 2);
+    s.stream.destroy();
+    await sleep(1500);
+    say(await source("err500")); // media_attempts=[500,500]
+    say("ALIVE after cancel during a later backoff");
+  } else if (scenario === "exhausted-attempts") {
+    // an active consumer: three attempts, then the terminal failure surfaces
+    const s = await open("err500");
+    say(await outcome(s.stream, 8000)); // ERROR code=STORAGE_UNAVAILABLE
+    say(await source("err500")); // media_attempts=[500,500,500]
+    say("ALIVE after exhausted attempts");
   } else {
     say(`UNKNOWN scenario ${scenario}`);
     process.exitCode = 95;

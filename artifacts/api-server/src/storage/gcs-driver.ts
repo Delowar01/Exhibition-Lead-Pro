@@ -225,6 +225,7 @@ export class GcsStorageDriver implements StorageDriver {
     let stopRequested = false;
     let responded = false;
     let current: Readable | null = null;
+    let retryTimer: NodeJS.Timeout | null = null;
     // B25 Correction 9 — never destroy the SDK's read stream before its HTTP response has been handed
     // to it. The SDK pipes the response into that stream synchronously from its own 'response'
     // handler; on Node >= 23 node's pipeline() throws ERR_STREAM_UNABLE_TO_PIPE for a destination that
@@ -238,9 +239,18 @@ export class GcsStorageDriver implements StorageDriver {
     };
     const requestStop = () => {
       stopRequested = true;
+      // a re-open still waiting in its back-off is cancelled: a consumer that left gets no further request
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       if (responded) stopSource();
     };
     const start = () => {
+      retryTimer = null;
+      // re-checked at the start of EVERY attempt: a delayed callback never opens a request for a consumer
+      // that is gone (destroy() is observable synchronously, its 'close' handler only afterwards)
+      if (stopRequested || out.destroyed) return;
       attempt += 1;
       responded = false;
       const rs = this.file(key, this.readClient).createReadStream(); // no SDK auto-retry on the streamed GET (see readClient)
@@ -255,7 +265,7 @@ export class GcsStorageDriver implements StorageDriver {
         // consumer is still there (replaces the SDK's own stream retry, which is what crashes).
         if (emitted === 0 && !stopRequested && !out.destroyed && attempt < READ_ATTEMPTS && isTransientReadError(err)) {
           rs.unpipe(out);
-          setTimeout(start, READ_RETRY_DELAY_MS * attempt);
+          retryTimer = setTimeout(start, READ_RETRY_DELAY_MS * attempt);
           return;
         }
         if (!out.destroyed) out.destroy(mapGcsError(err));

@@ -191,6 +191,27 @@ describe(`B25 C9 — GCS read stream closed before the provider responds (child 
     expectClean(r);
   }, 30_000);
 
+  it("cancel during the first retry back-off: no further request is opened (exactly one attempt)", async () => {
+    const r = await child("cancel-during-first-backoff");
+    expect(r.out).toContain("source[err500]: media_attempts=[500] ");
+    expect(r.out).toContain("ALIVE after cancel during the first backoff");
+    expectClean(r);
+  }, 30_000);
+
+  it("cancel during a later retry back-off: the attempts stay at two", async () => {
+    const r = await child("cancel-during-later-backoff");
+    expect(r.out).toContain("source[err500]: media_attempts=[500,500] ");
+    expect(r.out).toContain("ALIVE after cancel during a later backoff");
+    expectClean(r);
+  }, 30_000);
+
+  it("exhausted attempts for an active consumer: three attempts, then STORAGE_UNAVAILABLE", async () => {
+    const r = await child("exhausted-attempts");
+    expect(r.out).toMatch(/^ERROR code=STORAGE_UNAVAILABLE reason=- bytes=0 at=\d+ms$/m);
+    expect(r.out).toContain("source[err500]: media_attempts=[500,500,500] ");
+    expectClean(r);
+  }, 30_000);
+
   it("the API installs no global uncaughtException / unhandledRejection handler (a crash stays a crash; the fix is in the driver)", () => {
     const src = path.join(here, "..", "src");
     const files: string[] = [];
