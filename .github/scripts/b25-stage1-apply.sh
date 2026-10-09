@@ -86,7 +86,26 @@ counts() { q "select 'tables='||(select count(*) from information_schema.tables 
 existing_core() {
   q "select 'company1: status='||c.status||' plan='||c.plan||' name_md5='||md5(c.name)||' | sub: status='||s.status||' plan='||s.plan||' source='||s.billing_source||' overrides='||s.limit_overrides::text||' trial_expires='||coalesce(s.trial_expires_at::text,'null')||' status_changed='||s.status_changed_at::text||' stripe='||(s.stripe_customer_id is not null or s.stripe_subscription_id is not null)||' | users='||(select count(*) from users where company_id=1)||' users_active='||(select count(*) from users where company_id=1 and deleted_at is null and is_active)||' roles='||(select count(*) from roles where company_id=1)||' user_roles='||(select count(*) from user_roles ur join users u on u.id=ur.user_id where u.company_id=1)||' perms_md5='||md5(coalesce((select string_agg(u.id||':'||u.role||':'||u.permissions::text, ',' order by u.id) from users u where u.company_id=1),''))||' contacts='||(select count(*) from contacts where company_id=1)||' leads='||(select count(*) from leads where company_id=1)||' events='||(select count(*) from events where company_id=1)||' tasks='||(select count(*) from tasks where company_id=1)||' tags='||(select count(*) from tags where company_id=1)||' lead_tags='||(select count(*) from lead_tags where company_id=1)||' documents='||(select count(*) from documents where company_id=1)||' wf_defs='||(select count(*) from workflow_definitions where company_id=1)||' wf_runs='||(select count(*) from workflow_runs where company_id=1)||' intents='||(select count(*) from billing_checkout_sessions where company_id=1)||' reservations='||(select count(*) from subscription_usage_reservations where company_id=1) from companies c join subscriptions s on s.company_id=c.id where c.id=1"
 }
-tenant_md5() { existing_core | md5sum | cut -c1-32; }
+# Canonical digest of the existing-tenant composition: the accepted TENANT_BASELINE_MD5 was computed by the Stage 1
+# inspection as md5 of the composition WITHOUT a terminating newline. Bash command substitution removes the trailing
+# newline(s) psql appends; every internal byte is preserved; printf '%s' adds nothing. Fail closed: a failed or empty
+# (or whitespace-only) read never yields a digest, so a caller can never compare a bogus value as a valid baseline.
+tenant_md5() {
+  local core
+  if ! core="$(existing_core)"; then
+    echo "::error::could not read the existing-tenant baseline" >&2
+    return 1
+  fi
+  [ -n "$core" ] || {
+    echo "::error::existing-tenant baseline is empty" >&2
+    return 1
+  }
+  [[ "$core" =~ [^[:space:]] ]] || {
+    echo "::error::existing-tenant baseline is blank" >&2
+    return 1
+  }
+  printf '%s' "$core" | md5sum | cut -c1-32
+}
 # Owner scan rows created during the Gate A device test: existing tenant data, never touched.
 scan_rows_md5() { q "select md5(coalesce(string_agg(id||':'||company_id||':'||coalesce(status,'')||':'||coalesce(image_url,'<null>')||':'||created_at::text, ',' order by id),'')) from scans where company_id=1"; }
 LEGACY_HANDLE='^/objects/uploads/[0-9a-f-]{36}$'
@@ -178,7 +197,9 @@ guards_before() {
   fp="$(fingerprint)"; echo "schema_fingerprint=$fp"; [ "$fp" = "$FP_BEFORE" ] || fail "DRIFT: schema fingerprint is not $FP_BEFORE"
   [ "$(q "select coalesce(to_regclass('public.storage_objects')::text,'absent')")" = "absent" ] || fail "DRIFT: storage_objects already exists"
   q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' scans='||(select count(*) from scans)||' export_runs='||(select count(*) from export_runs)||' documents='||(select count(*) from documents)"
-  local t; t="$(tenant_md5)"; echo "tenant_baseline_md5=$t"; [ "$t" = "$TENANT_BASELINE_MD5" ] || fail "DRIFT: existing-tenant baseline differs from the accepted activation baseline"
+  local t; t="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
+  echo "tenant_baseline_md5=$t accepted=$TENANT_BASELINE_MD5 (canonical digest: trailing newline excluded; composition never printed)"
+  [ "$t" = "$TENANT_BASELINE_MD5" ] || fail "DRIFT: existing-tenant baseline differs from the accepted activation baseline"
   echo "owner_scan_rows_md5=$(scan_rows_md5) (4 image-less scan rows: existing tenant data, never touched)"
   [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "DRIFT: owner scan rows are not 4"
   local refs; refs="$(references)"; echo "database_references=$refs"; [ "$refs" = "$REFERENCES" ] || fail "DRIFT: legacy references are not $REFERENCES"
@@ -286,7 +307,9 @@ phase_schema_apply() {
 
   STAGE="record"
   section "8. pre-mutation record"
-  echo "schema_fingerprint=$(fingerprint) env_sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16) api_container=$API_CID postgres_container=$PG_CID web_container=$WEB_CID pg_volume=card-scanner-pro_pgdata tenant_baseline_md5=$(tenant_md5) gcs_inventory_md5=$INVENTORY_MD5"
+  local tb; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
+  [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed before the mutation"
+  echo "schema_fingerprint=$(fingerprint) env_sha256_prefix=$(sha256sum "$ENV_FILE" | cut -c1-16) api_container=$API_CID postgres_container=$PG_CID web_container=$WEB_CID pg_volume=card-scanner-pro_pgdata tenant_baseline_md5=$tb gcs_inventory_md5=$INVENTORY_MD5"
   local q_before; q_before="$(q "select coalesce(string_agg(status||'='||n, ' '), 'empty') from (select status, count(*) n from job_queue group by status order by status) s")"; echo "queue_baseline: $q_before"
   local pg_net; pg_net="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$PG_CID" | head -c 200)"
 
@@ -352,7 +375,8 @@ phase_schema_apply() {
   [ "$(sha256sum "$ENV_FILE" | cut -c1-16)" = "$ENV_SHA_PREFIX" ] || fail "env file changed"
   [ "$(docker inspect -f '{{.Config.Image}}' "$API_CID")" = "cardscanner/api:latest" ] || fail "api image changed"
   [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}' "$PG_CID")" = "card-scanner-pro_pgdata" ] || fail "postgres volume changed"
-  [ "$(tenant_md5)" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
+  local tb; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
+  [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
   [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "owner scan rows changed"
   local cj; cj="$(census)"; echo "$cj"
   [ "$(census_field "$cj" inventory_md5)" = "$INVENTORY_MD5" ] || fail "GCS inventory changed"
@@ -406,7 +430,8 @@ guards_deployed() {
   [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l')" = "0" ] || fail "objectdata is not empty"
   for body in "$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz)" "$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/healthz)"; do echo "$body" | grep -qE '/data/objects|/var/lib/docker|/opt/' && fail "a filesystem path appears in a health body" || true; done
   section "tenant data / references / census"
-  [ "$(tenant_md5)" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
+  local tb; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
+  [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
   [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "owner scan rows changed"
   [ "$(references)" = "$REFERENCES" ] || fail "legacy references changed"
   [ "$(q "select count(*) from job_queue where status='dead'")" = "0" ] || fail "dead-letter jobs present"
@@ -641,7 +666,8 @@ phase_cleanup() {
   section "existing rows AFTER cleanup"
   local after; after="$(q "$kept_sql")"; echo "$after"
   [ "$after" = "$before" ] || fail "existing rows changed during cleanup: before[$before] after[$after]"
-  [ "$(tenant_md5)" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
+  local tb; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
+  [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
   [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "owner scan rows changed"
   echo "owner_scan_rows_md5=$(scan_rows_md5)"
   [ "$(q "select count(*) from storage_objects where publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING')")" = "0" ] || fail "uncertain / unproven residue in the inventory"
