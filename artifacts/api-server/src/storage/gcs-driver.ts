@@ -119,14 +119,19 @@ export class GcsStorageDriver implements StorageDriver {
     private readonly probeTimeoutMs = 2000,
   ) {
     if (!defaultBucket) throw new Error("GCS driver requires a bucket");
-    this.readClient = new Storage({
-      authClient: client.authClient as StorageOptions["authClient"],
-      projectId: client.projectId,
-      apiEndpoint: client.apiEndpoint,
-      universeDomain: client.universeDomain,
-      useAuthWithCustomEndpoint: client.useAuthWithCustomEndpoint,
-      retryOptions: { autoRetry: false },
-    });
+    // A real SDK client gets a no-auto-retry twin for reads; a test double (no SDK retry layer inside) is
+    // used as it is, so the existing fake-client tests keep observing every read through the double.
+    this.readClient =
+      client instanceof Storage
+        ? new Storage({
+            authClient: client.authClient as StorageOptions["authClient"],
+            projectId: client.projectId,
+            apiEndpoint: client.apiEndpoint,
+            universeDomain: client.universeDomain,
+            useAuthWithCustomEndpoint: client.useAuthWithCustomEndpoint,
+            retryOptions: { autoRetry: false },
+          })
+        : client;
   }
 
   private file(key: string, client: Storage = this.client): File {
