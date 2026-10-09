@@ -794,6 +794,11 @@ phase_cleanup() {
 # long tokens are replaced, JSON log lines are reduced to fixed fields, object names never leave the
 # container. ARG1 = window start (UTC YYYY-MM-DDTHH:MM:SSZ), ARG2 = window end,
 # ARG3 = "<storage row uuid>|<csv company ids>|<csv user ids>|<smoke tag>" (all regex-validated here).
+# Section 9 (Correction 9 preparation) inspects the PUBLIC EDGE outside the compose stack read-only: which
+# process answers :443, the effective host nginx configuration (`nginx -T`, or the readable files of the
+# configuration tree when the dump needs privilege), reduced to structural / header directives of the
+# main configuration, the project vhost and the files it includes (other sites: counted, never printed),
+# and the response headers observed through the local edge versus the public name. No panel is assumed.
 DIAG_BASELINE_INVENTORY_MD5="c1b900fd509bafa1f980d863dc0d195b"   # accepted original inventory digest (report-only comparison)
 DIAG_MARKER_JS=$(cat <<'JS'
 const { Storage } = require("@google-cloud/storage");
@@ -848,6 +853,99 @@ jsum() {
     url="$(printf '%s' "$l" | sed -nE 's/.*"url":"([^"?]*)[^"]*".*/\1/p' | sed -E 's#[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}#<uuid>#g; s#/[0-9]+(/|$)#/<n>\1#g')"
     printf '%s level=%s msg=%s type=%s code=%s status=%s req=%s %s err=%s\n' "$ts" "${lvl:--}" "${msg:--}" "${typ:--}" "${code:--}" "${st:--}" "${meth:--}" "${url:--}" "${emsg:--}" | san
   done
+}
+# ---- public edge (host-level reverse proxy OUTSIDE the compose stack) — read-only inspection helpers ---------------
+# The two public portals are already public constants of the smoke script; nothing else about the host is assumed
+# (no CloudPanel / panel assumption: the edge is whatever process answers :443, found below).
+PUBLIC_HOSTS="admin.kaptnow.com elite.kaptnow.com"
+EDGE_DOMAIN_RE='kaptnow\.com'
+EDGE_HDR_RE='^(referrer-policy|server|via|alt-svc|x-powered-by|cf-[a-z-]+|strict-transport-security|x-frame-options|x-content-type-options):'
+# Mask addresses, OS user names, credentials and long tokens on configuration lines; certificate / key / log / auth
+# lines are never selected by the summarizer in the first place.
+edge_san() { sed -E 's#[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}#<email>#g; s#[0-9]{1,3}(\.[0-9]{1,3}){3}#<ip>#g; s#\[[0-9a-fA-F:]+\]#<ip6>#g; s#/home/[^/[:space:]"]+#/home/<user>#g; s#[A-Za-z0-9_-]{40,}#<token>#g; s#(auth_basic|auth_basic_user_file|ssl_[a-z_]*|secret|password|token|api_key)[^;]*#\1 <masked>#Ig' | cut -c1-200; }
+# Read-only emulation of `nginx -T` from the readable files of a configuration tree (BFS over `include`; max 200
+# files; unreadable files are reported as such). Used only when the real dump is unavailable to this user.
+edge_conf_collect() {
+  local root="$1" prefix="$2" f inc pat g i=0 n=0
+  local -a queue=("$root"); local -A seen=()
+  while [ $i -lt ${#queue[@]} ]; do
+    f="${queue[$i]}"; i=$((i + 1))
+    [ -n "${seen[$f]:-}" ] && continue; seen[$f]=1
+    n=$((n + 1)); [ $n -le 200 ] || { echo "# configuration tree truncated at 200 files"; break; }
+    if [ ! -r "$f" ]; then echo "# configuration file $f: (unreadable)"; continue; fi
+    echo "# configuration file $f:"; cat "$f"; echo
+    while IFS= read -r inc; do
+      pat="$(printf '%s' "$inc" | sed -nE 's/^[[:space:]]*include[[:space:]]+"?([^;"]+)"?[[:space:]]*;.*/\1/p')"
+      [ -n "$pat" ] || continue
+      [[ "$pat" = /* ]] || pat="$prefix/$pat"
+      for g in $pat; do [ -e "$g" ] && queue+=("$g"); done
+    done < <(grep -E '^[[:space:]]*include[[:space:]]' "$f" 2>/dev/null || true)
+  done
+}
+# Summarize a `nginx -T`-style dump: for the main configuration and every file that mentions the project domain or a
+# Referrer-Policy, print ONLY structural lines (block openers/closers, listen, server_name, include, header directives,
+# proxy_pass, return/rewrite/root/alias/try_files/error_page) with their line number and enclosing block path; every
+# other file is counted by directory only (other sites on the host are never printed). Ends with a computed summary.
+edge_conf_summary() {
+  awk -v dre="$EDGE_DOMAIN_RE" -v prefix="$1" '
+    function ctxpath(   k, s) { s = ""; for (k = 1; k <= depth; k++) s = s (k > 1 ? " > " : "") blk[k]; return (s == "" ? "top" : s) }
+    function glob2re(g,   r) { r = g; gsub(/[.+^$(){}|\\]/, "\\\\&", r); gsub(/\*/, "[^/]*", r); gsub(/\?/, ".", r); return "^" r "$" }
+    function newfile(name, unread) { nf++; fname[nf] = name; funread[nf] = unread; flines[nf] = 0; fsel[nf] = 0; fproj[nf] = 0; fref[nf] = 0; finc[nf] = 0; cur = nf; depth = 0; inApi = 0; if (nf == 1 && name ~ /\/nginx\.conf$/) fmain[nf] = 1 }
+    /^# configuration file .*: \(unreadable\)$/ { n = $0; sub(/^# configuration file /, "", n); sub(/: \(unreadable\)$/, "", n); newfile(n, 1); next }
+    /^# configuration file .*:$/ { n = $0; sub(/^# configuration file /, "", n); sub(/:$/, "", n); newfile(n, 0); next }
+    /^# configuration tree truncated/ { truncated = 1; next }
+    cur == 0 { next }
+    { flines[cur]++ }
+    $0 ~ dre { fproj[cur] = 1 }
+    /^[ \t]*#/ { next }
+    { line = $0; gsub(/^[ \t]+/, "", line); gsub(/[ \t]+$/, "", line) }
+    line == "" { next }
+    {
+      selected = 0
+      if (line ~ /^(server|http|location|map|upstream|if|events|stream|limit_except|types)([ \t]|\{|$)/ || line ~ /^\}/) selected = 1
+      if (line ~ /^(server_name|listen|include|add_header|more_set_headers|more_clear_headers|proxy_hide_header|proxy_pass_header|proxy_pass|return|rewrite|root|alias|try_files|error_page|proxy_redirect|proxy_http_version)([ \t]|;|$)/) selected = 1
+      if (line ~ /^include[ \t]/) { g = line; sub(/^include[ \t]+"?/, "", g); sub(/"?[ \t]*;.*$/, "", g); if (g !~ /^\//) g = prefix "/" g; finc[cur]++; fincpat[cur, finc[cur]] = glob2re(g) }
+      isref = (line ~ /[Rr]eferrer-[Pp]olicy/)
+      if (isref) { selected = 1; fref[cur]++ }
+      if (line ~ /^location[ \t]/ && line ~ /\/api/) nApiLoc++
+      opens = gsub(/\{/, "{", line); closes = gsub(/\}/, "}", line)
+      if (opens > 0) { b = line; sub(/[ \t]*\{.*$/, "", b); depth++; blk[depth] = b; if (b ~ /^location[ \t]/ && b ~ /\/api/) inApi = depth }
+      if (selected) { fsel[cur]++; fselL[cur, fsel[cur]] = sprintf("L%d [%s] %s", flines[cur], ctxpath(), line); fselH[cur, fsel[cur]] = (line ~ /^(add_header|more_set_headers|more_clear_headers|proxy_hide_header|include)([ \t]|;|$)/) }
+      if (isref) { tref++; reff[tref] = cur; refl[tref] = sprintf("%d [%s] %s", flines[cur], ctxpath(), line) }
+      if (inApi > 0 && depth >= inApi && line ~ /^(add_header|more_set_headers)[ \t]/) apiOwnAdd++
+      if (inApi > 0 && depth >= inApi && line ~ /^proxy_hide_header[ \t]/) apiHide++
+      while (closes-- > 0 && depth > 0) { if (inApi == depth) inApi = 0; depth-- }
+    }
+    END {
+      # printable set: main configuration, files mentioning the project domain, and (transitively) files they include
+      for (f = 1; f <= nf; f++) show[f] = (fmain[f] || fproj[f]) ? 1 : 0
+      do { changed = 0; for (f = 1; f <= nf; f++) if (show[f] && !fmain[f]) for (i = 1; i <= finc[f]; i++) for (g = 1; g <= nf; g++) if (!show[g] && fname[g] ~ fincpat[f, i]) { show[g] = 2; changed = 1 } } while (changed)
+      for (f = 1; f <= nf; f++) {
+        d = fname[f]; sub(/\/[^\/]*$/, "", d)
+        if (funread[f]) { nunread++; udirs[d]++; continue }
+        if (show[f]) {
+          printf "-- file %d: %s (lines=%d; %s)\n", f, fname[f], flines[f], (fmain[f] ? "main configuration" : (fproj[f] ? "mentions the project domain" : "included by a project file"))
+          for (i = 1; i <= fsel[f] && i <= 140; i++) print "  " fselL[f, i]
+          if (fsel[f] > 140) printf "  ... %d more selected lines\n", fsel[f] - 140
+        } else if (fref[f] > 0) {
+          printf "-- file %d: %s/<other-file> (lines=%d; a Referrer-Policy directive in a file that is neither a project file nor included by one: header directives only, name masked)\n", f, d, flines[f]
+          for (i = 1; i <= fsel[f] && i <= 140; i++) if (fselH[f, i]) print "  " fselL[f, i]
+        } else { nother++; odirs[d]++ }
+      }
+      printf "-- other files (not printed): %d", nother + 0; for (d in odirs) printf " %s=%d", d, odirs[d]; printf "\n"
+      if (nunread > 0) { printf "-- unreadable files: %d", nunread; for (d in udirs) printf " %s=%d", d, udirs[d]; printf "\n" }
+      if (truncated) print "-- NOTE: configuration tree truncated at 200 files"
+      printf "-- referrer_policy_directives=%d api_location_blocks=%d api_location_own_add_header=%d api_location_proxy_hide_header=%d\n", tref + 0, nApiLoc + 0, apiOwnAdd + 0, apiHide + 0
+      for (k = 1; k <= tref; k++) print "   referrer-policy @ " (show[reff[k]] ? fname[reff[k]] : "<other-file>") ":" refl[k]
+    }'
+}
+# Response headers of one URL through a given resolver target: names of every header (no values) + values of the
+# allow-listed security/transport headers only.
+edge_headers() {
+  local url="$1" resolve="${2:-}" raw
+  if [ -n "$resolve" ]; then raw="$(curl -sSI --max-time 8 --resolve "$resolve" "$url" 2>/dev/null | tr -d '\r')" || raw=""; else raw="$(curl -sSI --max-time 8 "$url" 2>/dev/null | tr -d '\r')" || raw=""; fi
+  [ -n "$raw" ] || { echo "unavailable"; return 0; }
+  echo "status=$(printf '%s\n' "$raw" | awk 'NR == 1 { print $2 }') names=[$(printf '%s\n' "$raw" | sed -nE 's/^([A-Za-z0-9-]+):.*/\1/p' | tr 'A-Z' 'a-z' | sort | uniq -c | awk '{ printf "%s%s", (NR > 1 ? "," : ""), ($1 > 1 ? $2 "x" $1 : $2) }')] $(printf '%s\n' "$raw" | tr 'A-Z' 'a-z' | grep -E "$EDGE_HDR_RE" | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g' | cut -c1-120 | tr '\n' ' ')"
 }
 phase_diagnose() {
   [[ "$ARG1" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "ARG1 must be a UTC timestamp YYYY-MM-DDTHH:MM:SSZ"
@@ -951,6 +1049,44 @@ phase_diagnose() {
 
   section "8. capacity"
   echo "disk_avail_bytes=$(capacity "bytes available on /" -B1 --output=avail / 2>/dev/null || echo unavailable) inodes_free=$(capacity "inodes available on /" --output=iavail / 2>/dev/null || echo unavailable)"
+
+  section "9. public edge (host-level reverse proxy outside the compose stack; read-only): what answers :443 and where Referrer-Policy is set"
+  local nginx_bin="" dump="" dump_src="" conf_path="" prefix="" v h hr
+  echo "-- listeners on :80 / :443 (addresses masked) and the owning process names (visible only with privilege):"
+  echo "  ss: $(ss -ltnH '( sport = :443 or sport = :80 )' 2>/dev/null | awk '{ print $4 }' | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g; s/\[[0-9a-fA-F:]*\]/<ip6>/g' | sort -u | tr '\n' ' ' || echo unavailable) owners: $(ss -ltnpH '( sport = :443 )' 2>/dev/null | grep -oE 'users:\(\("[^"]+"' | sed -E 's/users:\(\("//' | sort -u | tr '\n' ' ' || true)"
+  echo "  reverse-proxy / edge processes (user comm count): $(ps -eo user=,comm= 2>/dev/null | awk '$2 ~ /^(nginx|caddy|traefik|haproxy|apache2|httpd|openresty|litespeed|openlitespeed|lshttpd|cloudflared|varnish|envoy)$/ { c[$1 " " $2]++ } END { for (k in c) printf "%s=%d ", k, c[k] }' || echo unavailable)"
+  echo "  containers publishing :80/:443 on the host: $(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null | grep -E '(:80|:443)->' | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g' | tr '\n' ' ' || echo none)"
+  echo "  systemd nginx: active=$({ systemctl is-active nginx 2>/dev/null || true; } | grep -m1 . || echo unknown) enabled=$({ systemctl is-enabled nginx 2>/dev/null || true; } | grep -m1 . || echo unknown) reload=$(systemctl show -p ExecReload --value nginx 2>/dev/null | sed -nE 's/.*argv\[\]=([^;]*);.*/\1/p' | head -1 | edge_san || true)"
+  for v in nginx /usr/sbin/nginx /usr/local/nginx/sbin/nginx /usr/local/openresty/nginx/sbin/nginx; do
+    if command -v "$v" >/dev/null 2>&1; then nginx_bin="$(command -v "$v")"; break; fi
+  done
+  if [ -z "$nginx_bin" ]; then echo "-- nginx binary: not found on PATH (the edge is not a host nginx reachable by this user)"; else
+    echo "-- nginx binary: $nginx_bin version: $("$nginx_bin" -v 2>&1 | edge_san) modules: $("$nginx_bin" -V 2>&1 | grep -oE 'with-http_(ssl|v2|v3|realip|sub)_module|headers-more|ngx_http_headers_more|with-stream' | sort -u | tr '\n' ' ')"
+    conf_path="$("$nginx_bin" -V 2>&1 | grep -oE -- '--conf-path=[^ ]+' | cut -d= -f2 || true)"; prefix="$("$nginx_bin" -V 2>&1 | grep -oE -- '--prefix=[^ ]+' | cut -d= -f2 || true)"
+    conf_path="${conf_path:-/etc/nginx/nginx.conf}"; prefix="${prefix:-/etc/nginx}"
+    echo "   conf-path: $(printf '%s' "$conf_path" | edge_san) prefix: $(printf '%s' "$prefix" | edge_san) master-process config: $(ps -eo comm=,args= 2>/dev/null | awk '$1 == "nginx" && $2 == "nginx:" && $3 == "master" { $1 = ""; $2 = ""; $3 = ""; $4 = ""; print; exit }' | edge_san || true)"
+    if dump="$("$nginx_bin" -T 2>/dev/null)" && [ -n "$dump" ]; then dump_src="nginx -T (this user)"
+    elif [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1 && dump="$(sudo -n "$nginx_bin" -T 2>/dev/null)" && [ -n "$dump" ]; then dump_src="sudo -n nginx -T"
+    else dump=""; fi
+    if [ -n "$dump" ]; then echo "-- effective configuration: $dump_src ($(printf '%s\n' "$dump" | grep -c '^# configuration file ' || true) files; test: $("$nginx_bin" -t 2>&1 | grep -oE 'syntax is ok|test is successful|test failed' | sort -u | tr '\n' ' ' || echo n/a))"
+    else dump="$(edge_conf_collect "$conf_path" "$prefix")"; echo "-- effective configuration: nginx -T not available to this user — readable files of the tree under conf-path were read instead ($(printf '%s\n' "$dump" | grep -c '^# configuration file ' || true) files)"; fi
+    printf '%s\n' "$dump" | edge_conf_summary "$prefix" | edge_san | sed 's/^/  /'
+    echo "-- vhost file facts (owner:group mode, first comment lines; for files that mention the project domain):"
+    printf '%s\n' "$dump" | sed -nE 's/^# configuration file (.*):$/\1/p' | while IFS= read -r v; do
+      [ -r "$v" ] || continue; grep -qE "$EDGE_DOMAIN_RE" "$v" 2>/dev/null || continue
+      echo "  $(printf '%s' "$v" | edge_san) $(stat -c '%U:%G %a %s bytes modified %y' "$v" 2>/dev/null | cut -c1-80 | edge_san) | $(grep -E '^[[:space:]]*#' "$v" | head -3 | tr -s ' ' | tr '\n' ' ' | cut -c1-160 | edge_san)"
+    done
+  fi
+  echo "-- response headers through the LOCAL edge (TLS to 127.0.0.1 with the public host name; proves whether the host nginx is the layer that appends the header) and from the public name:"
+  for h in $PUBLIC_HOSTS; do
+    for v in /api/healthz /healthz /; do
+      hr="$(edge_headers "https://$h$v" "$h:443:127.0.0.1")"; if [ "$hr" = "unavailable" ]; then hr="$(edge_headers "https://$h$v" "$h:443:$(hostname -I 2>/dev/null | awk '{ print $1 }')")"; [ "$hr" = "unavailable" ] || hr="(via primary interface) $hr"; fi
+      echo "  local-edge $h$v -> $hr"
+    done
+    echo "  public     $h/api/healthz -> $(edge_headers "https://$h/api/healthz")"
+  done
+  echo "  web container (compose proxy) /api/healthz -> $(edge_headers "http://127.0.0.1:18080/api/healthz")"
+
   rm -f "$HOME"/.b25-s1-node.err
   log "diagnose complete (read-only; nothing changed)"
 }
