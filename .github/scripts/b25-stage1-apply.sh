@@ -165,46 +165,57 @@ const { createHash } = require("node:crypto");
 JS
 )
 census() { api_node "$CENSUS_JS"; }
-# json_flat_fields <document>
+# json_flat_field <document> <key>
 # Strict validation of a COMPLETE, flat JSON object as printed by the in-container node snippets
-# (JSON.stringify of a one-level object: numbers, booleans, null, plain strings, arrays of plain strings;
-# no nesting, no escapes, no whitespace). Prints one "key<TAB>value" line per top-level field, in document
-# order, or prints nothing and fails: anything before the opening or after the closing brace, a missing
-# brace, a nested object, a duplicate key, a trailing comma or an unexpected token rejects the whole
-# document. Implemented with bash's own regex engine — no jq, python or host-side node is assumed.
-json_flat_fields() {
-  local doc="$1" rest field key
-  local STR='"[^"\\]*"'
-  local VAL="(-?[0-9]+|true|false|null|$STR|\[($STR(,$STR)*)?\])"
+# (JSON.stringify of a one-level object: integers, booleans, null, plain strings, arrays of plain strings;
+# no nesting, no escapes, no whitespace), followed by the value token of ONE top-level field.
+#   - every integer token in the document must satisfy the JSON integer grammar -?(0|[1-9][0-9]*): a
+#     leading-zero form such as 01 or -01 anywhere in the document rejects the whole document;
+#   - a plain string may not contain a quote, a backslash (no escapes are supported) or ANY control
+#     character (raw newline, tab, carriage return, …), inside a field value or inside an array element;
+#   - anything before the opening or after the closing brace, a missing brace, a nested object, a duplicate
+#     key, a trailing comma or an unexpected token rejects the whole document.
+# The value is taken from the regex match of the requested field itself — there is no newline/tab
+# intermediate text that string contents could forge — so a field can exist only at the top level.
+# Prints nothing and returns 1 on any rejection or when the key is absent; error text names the key only.
+# Implemented with bash's own regex engine — no jq, python or host-side node is assumed.
+json_flat_field() {
+  local doc="$1" want="$2" rest field key val found=0 out=""
+  local STR='"[^"\\[:cntrl:]]*"'
+  local INT='-?(0|[1-9][0-9]*)'
+  local VAL="($INT|true|false|null|$STR|\[($STR(,$STR)*)?\])"
   local FIELD="\"[a-z0-9_]+\":$VAL"
+  [[ "$want" =~ ^[a-z0-9_]+$ ]] || { echo "::error::census document: invalid key requested" >&2; return 1; }
   [[ "$doc" =~ ^\{($FIELD(,$FIELD)*)?\}$ ]] || { echo "::error::census document is not a complete flat JSON object" >&2; return 1; }
   rest="${doc:1:${#doc}-2}"
   local -A seen=()
   while [ -n "$rest" ]; do
     [[ "$rest" =~ ^$FIELD ]] || { echo "::error::census document: field parse failed" >&2; return 1; }
     field="${BASH_REMATCH[0]}"; rest="${rest:${#field}}"
-    key="${field%%\":*}"; key="${key#\"}"
+    key="${field%%\":*}"; key="${key#\"}"; val="${field#*\":}"
     [ -z "${seen[$key]+x}" ] || { echo "::error::census document: duplicate key '$key'" >&2; return 1; }
     seen[$key]=1
-    printf '%s\t%s\n' "$key" "${field#*\":}"
+    if [ "$key" = "$want" ]; then found=1; out="$val"; fi
     if [ -n "$rest" ]; then
       [ "${rest:0:1}" = "," ] || { echo "::error::census document: unexpected token after a field" >&2; return 1; }
       rest="${rest:1}"; [ -n "$rest" ] || { echo "::error::census document: trailing comma" >&2; return 1; }
     fi
   done
+  [ "$found" = "1" ] || { echo "::error::census document: top-level field '$want' not found" >&2; return 1; }
+  printf '%s' "$out"
 }
 # census_field <json document> <key> <count|hex32>
-# The document must pass json_flat_fields in full (so a truncated, prefixed, suffixed, nested or duplicate-key
-# answer is rejected before any field is read); the key must be a TOP-LEVEL field; a count must be a bare
-# non-negative decimal integer (zero is valid); a hex32 must be a quoted string of exactly 32 lowercase hex
-# characters. Field order never matters. Anything else prints nothing, explains on stderr and returns 1, so
-# a caller can never use a bogus or defaulted value. Raw provider output is never printed here.
+# The whole document must pass json_flat_field (so a truncated, prefixed, suffixed, nested, duplicate-key,
+# control-character or malformed-number answer is rejected before any field is read); the key must be a
+# TOP-LEVEL field; a count must be a bare non-negative decimal integer (zero is valid); a hex32 must be a
+# quoted string of exactly 32 lowercase hex characters. Field order never matters. Anything else prints
+# nothing, explains on stderr and returns 1, so a caller can never use a bogus or defaulted value. Raw
+# provider output is never printed here.
 census_field() {
-  local json="$1" key="$2" kind="$3" fields raw
+  local json="$1" key="$2" kind="$3" raw
   [[ "$key" =~ ^[a-z0-9_]+$ ]] || { echo "::error::census_field: invalid key" >&2; return 1; }
   case "$kind" in count|hex32) ;; *) echo "::error::census_field: invalid kind for '$key'" >&2; return 1;; esac
-  fields="$(json_flat_fields "$json")" || return 1
-  raw="$(printf '%s\n' "$fields" | awk -F '\t' -v k="$key" '$1 == k { print $2; found = 1 } END { if (!found) exit 1 }')" || { echo "::error::census_field: top-level field '$key' not found" >&2; return 1; }
+  raw="$(json_flat_field "$json" "$key")" || return 1
   case "$kind" in
     count) [[ "$raw" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "::error::census_field: '$key' is not a non-negative decimal integer" >&2; return 1; } ;;
     hex32) [[ "$raw" =~ ^\"[0-9a-f]{32}\"$ ]] || { echo "::error::census_field: '$key' is not a quoted 32-character lowercase hex digest" >&2; return 1; }; raw="${raw:1:32}" ;;
