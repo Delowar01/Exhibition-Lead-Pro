@@ -38,7 +38,31 @@
 #                      generation-conditioned provider delete → absence proof →
 #                      allow-listed row removal → read-only final verification
 #                      (always). The manifest is a constant; the smoke-settle and
-#                      cleanup phases are NOT used by this mode.
+#                      cleanup phases are NOT used by this mode. COMPLETE (run
+#                      37999992533); retained unchanged, answers STATE C.
+#   residue_inspect_4fff751a3395
+#                      READ-ONLY, incident-specific (run 38005492289): the full
+#                      eligibility proof for the THREE recorded tombstones of the
+#                      disposable company 49 (document e3f7f5fd…, branding logos
+#                      f45d91c9… and 665f114f…) — reports the per-row state,
+#                      changes nothing. The minimum inspection before any recovery.
+#   residue_settle_4fff751a3395
+#                      MUTATION, incident-specific (run 38005492289): per row and in
+#                      a fixed order — eligibility (re-read in the same session) →
+#                      generation-conditioned provider delete of the marked object →
+#                      absence proof at every persisted location → allow-listed,
+#                      row-locked removal of THAT row only → read-only final
+#                      verification (always). Partial progress is safe: a row is
+#                      removed only after its own object is proven absent; a later
+#                      run resumes from the per-row state (A = object present,
+#                      B = object absent, row present; C = nothing left).
+#
+# SMOKE CORRECTION (run 38005492289 failed its leak gate): the smoke never places a
+# genuine capability in a URL any more (synthetic probe value only), the gate uses a
+# TOKEN-SPECIFIC detector (the capability's signature component) instead of the shared
+# 16-character prefix, and the detector reaches the host ONLY as the first line of the
+# SSH stdin stream (a shell variable of the streamed script) — never an SSH argument,
+# never a URL, never an artifact, never SQL text; it is masked on the runner first.
 # Every mutation mode requires the typed confirmations below; they are compared
 # against fixed constants BEFORE any SSH session is opened. No input ever reaches
 # a shell as text — inputs are mapped through `env:` and only compared.
@@ -53,10 +77,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "postdeploy_verify (after deploy-dev-vps deployed 72a2437) | incident_diagnose (read-only) | residue_settle (read-only STATE C re-check; the recovery is complete) — preflight / schema_apply are OBSOLETE here and refused before SSH"
+        description: "postdeploy_verify (after deploy-dev-vps deployed 72a2437) | incident_diagnose (read-only) | residue_settle (read-only STATE C re-check; the first recovery is complete) | residue_inspect_4fff751a3395 (READ-ONLY eligibility of the run-38005492289 residue) | residue_settle_4fff751a3395 (MUTATION: that recovery) — preflight / schema_apply are OBSOLETE here and refused before SSH"
         required: true
         type: choice
-        options: [preflight, schema_apply, postdeploy_verify, incident_diagnose, residue_settle]
+        options: [preflight, schema_apply, postdeploy_verify, incident_diagnose, residue_settle, residue_inspect_4fff751a3395, residue_settle_4fff751a3395]
       confirm_accepted_sha:
         description: "Type the accepted commit (72a24378947134ca8e4d3460294474894c9aaee4) — postdeploy_verify (Correction 9 product commit)"
         required: false
@@ -98,11 +122,11 @@ on:
         required: false
         default: "2026-10-09T12:36:00Z"
       diag_residue:
-        description: "incident_diagnose only — <storage row uuid>|<csv company ids>|<csv user ids>|<smoke tag>; residue_settle ignores it (its manifest is the fixed RESIDUE_MANIFEST below)"
+        description: "incident_diagnose — <storage row uuid>|<csv company ids>|<csv user ids>|<smoke tag>; residue_settle must equal RESIDUE_MANIFEST; residue_inspect_4fff751a3395 / residue_settle_4fff751a3395 must equal RESIDUE2_MANIFEST (type it exactly: e3f7f5fd-bbbe-4d7c-9111-4dfe6bef2daf,f45d91c9-2e2c-4c38-a97c-b3f95aa507e3,665f114f-e100-4301-95e0-ad6a18eeae03|49,50|92|4fff751a3395)"
         required: false
         default: "8c91bc11-912a-42e7-abe1-37ddd95d3cc1|47,48|88,89,90,91|8f07767767cc"
       confirm_residue:
-        description: "Type exactly: SETTLE RECORDED SMOKE RESIDUE 8c91bc11 — residue_settle (MUTATION: removes ONLY the one recorded tombstone 8c91bc11-… of deleted company 47 and its marker-owned object at its exact generation; nothing else)"
+        description: "residue_settle: type exactly SETTLE RECORDED SMOKE RESIDUE 8c91bc11 | residue_settle_4fff751a3395: type exactly SETTLE RECORDED SMOKE RESIDUE 4fff751a3395 (MUTATION: removes ONLY the three recorded tombstones of deleted company 49 and their marker-owned objects at their exact generations; nothing else)"
         required: false
         default: ""
 
@@ -132,6 +156,14 @@ env:
   # refused before an SSH session is opened. Accepted ORIGINAL inventory after the recovery: 4 objects / 1299 bytes /
   # c1b900fd509bafa1f980d863dc0d195b (constant in the script).
   RESIDUE_MANIFEST: "8c91bc11-912a-42e7-abe1-37ddd95d3cc1|47,48|88,89,90,91|8f07767767cc"
+  # Second incident (run 38005492289, smoke tag 4fff751a3395): THREE tombstones of the disposable company 49
+  # (document e3f7f5fd…, branding logos f45d91c9… and 665f114f…; all deleted / LEGACY_RETAINED / gcs, no mirror,
+  # no lease, no uncertainty), disposable companies 49 and 50, the ONE recorded disposable user id (92, the
+  # platform-owner principal; the three tenant users were removed by the API's company deletion and their ids
+  # were never recorded — they are checked by address pattern only, never guessed). Constant here AND in the
+  # script (R2_MANIFEST); any other value is refused before an SSH session is opened.
+  RESIDUE2_MANIFEST: "e3f7f5fd-bbbe-4d7c-9111-4dfe6bef2daf,f45d91c9-2e2c-4c38-a97c-b3f95aa507e3,665f114f-e100-4301-95e0-ad6a18eeae03|49,50|92|4fff751a3395"
+  REQUIRED_RESIDUE2: "SETTLE RECORDED SMOKE RESIDUE 4fff751a3395"
 
 jobs:
   stage1:
@@ -181,7 +213,7 @@ jobs:
           IN_RESIDUE: ${{ inputs.confirm_residue }}
         run: |
           set -euo pipefail
-          case "$MODE" in preflight|schema_apply|postdeploy_verify|incident_diagnose|residue_settle) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          case "$MODE" in preflight|schema_apply|postdeploy_verify|incident_diagnose|residue_settle|residue_inspect_4fff751a3395|residue_settle_4fff751a3395) ;; *) echo "::error::unknown mode"; exit 1;; esac
           # POST-FIX TOOLING (Correction 9): the schema phases belong to the eb2edb0 activation and are OBSOLETE here —
           # Correction 9 changes no schema. They are refused before any SSH session, not left to a later fingerprint
           # mismatch on the host. The residue recovery already completed (run 37999992533); residue_settle stays
@@ -216,6 +248,17 @@ jobs:
             need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"
             need confirm_residue "$IN_RESIDUE" "$REQUIRED_RESIDUE"
             need diag_residue "$IN_DRES" "$RESIDUE_MANIFEST"
+          elif [ "$MODE" = "residue_inspect_4fff751a3395" ]; then
+            # READ-ONLY: no mutation confirmation; the typed manifest must still equal the second incident's constant
+            need diag_residue "$IN_DRES" "$RESIDUE2_MANIFEST"
+          elif [ "$MODE" = "residue_settle_4fff751a3395" ]; then
+            # MUTATION, incident-specific (second incident): accepted product commit, maintenance window and the
+            # incident-bound confirmation are required; the manifest is a constant (RESIDUE2_MANIFEST) and the
+            # typed diag_residue must equal it so a stale or foreign manifest is refused here.
+            need confirm_accepted_sha "$IN_SHA" "$BASE_SHA"
+            need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"
+            need confirm_residue "$IN_RESIDUE" "$REQUIRED_RESIDUE2"
+            need diag_residue "$IN_DRES" "$RESIDUE2_MANIFEST"
           fi
           echo "mode=$MODE confirmations=ok"
 
@@ -413,6 +456,34 @@ jobs:
           set -euo pipefail
           ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='residue-verify' ARG1='$RESIDUE_MANIFEST' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
 
+      # ── residue_inspect_4fff751a3395 (READ-ONLY) / residue_settle_4fff751a3395 (MUTATION) — the THREE tombstones of
+      #    run 38005492289. Each SSH session streams the scripts over stdin and re-checks the constant manifest on the
+      #    host. The settle mode works row by row in a fixed order: provider delete at the exact generation (marker
+      #    re-read in the same call) → absence proof at every persisted location → allow-listed removal of THAT row.
+      - name: Residue (second incident) eligibility — READ-ONLY full proof; reports the per-row state; changes nothing
+        if: inputs.mode == 'residue_inspect_4fff751a3395' || inputs.mode == 'residue_settle_4fff751a3395'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='residue2-eligibility' ARG1='$RESIDUE2_MANIFEST' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
+
+      - name: Residue (second incident) settle — MUTATION; eligibility re-read in the same session; per row — provider delete at the exact generation → absence proof → allow-listed removal of that row
+        if: inputs.mode == 'residue_settle_4fff751a3395'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='residue2-settle' ARG1='$RESIDUE2_MANIFEST' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
+
+      - name: Residue (second incident) verify — always; READ-ONLY final verification; reports and fails on any deviation; never deletes
+        if: always() && inputs.mode == 'residue_settle_4fff751a3395'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='residue2-verify' ARG1='$RESIDUE2_MANIFEST' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
+
       # ── preflight (read-only) ───────────────────────────────────────────────
       - name: Preflight (read-only; stops on any difference from the inspection baseline)
         env:
@@ -480,7 +551,7 @@ jobs:
           set -euo pipefail
           PO_PASSWORD="$(cat "$RUNNER_TEMP/.po-pw")" STEP=run node .github/scripts/b25-stage1-smoke.mjs
 
-      - name: Disposable smoke — VPS-side verification (inventory rows, ownership marker, generation strings, no leak)
+      - name: Disposable smoke — VPS-side verification (inventory rows, ownership marker, generation strings, token-specific leak gate over the protected stdin channel)
         if: inputs.mode == 'postdeploy_verify'
         env:
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
@@ -488,10 +559,17 @@ jobs:
           set -euo pipefail
           C="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.companies.join(","))')"
           U="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write([...s.users, process.env.PO_USER_ID].join(","))')"
-          P="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(s.capabilityPrefix)')"
-          [[ "$C" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "$U" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "$P" =~ ^[A-Za-z0-9_-]{16}$ ]] || { echo "::error::smoke state malformed"; exit 1; }
-          echo "::add-mask::$P"
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-verify' ARG1='$C' ARG2='$U' ARG3='$P' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/smoke-verify.log"
+          # Token-specific leak detector recorded by the smoke (the capability's signature component, 43 base64url
+          # characters, unique to this run's capability). It is masked BEFORE any further command, travels to the
+          # host ONLY as the first line of the stdin stream (`B25_LEAK_DETECTOR=…`, a shell variable of the streamed
+          # script — never an SSH command argument, never a URL, never an artifact, never SQL text) and is unset
+          # here afterwards; the state file that holds it is removed by the always-steps.
+          D="$(node -e 'const s=require(process.env.SMOKE_OUT);process.stdout.write(String(s.leakDetector || ""))')"
+          [[ "$D" =~ ^[A-Za-z0-9_-]{43}$ ]] || { echo "::error::smoke state carries no well-formed leak detector"; exit 1; }
+          echo "::add-mask::$D"
+          [[ "$C" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "$U" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "::error::smoke state malformed"; exit 1; }
+          { printf 'B25_LEAK_DETECTOR=%s\n' "$D"; cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh; } | ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='smoke-verify' ARG1='$C' ARG2='$U' bash -s" | tee "$RUNNER_TEMP/smoke-verify.log"
+          unset D
           R="$(grep -oE '^smoke_row_ids=[0-9a-f-]{36}(,[0-9a-f-]{36})*' "$RUNNER_TEMP/smoke-verify.log" | head -1 | cut -d= -f2)"
           [[ "$R" =~ ^[0-9a-f-]{36}(,[0-9a-f-]{36})*$ ]] || { echo "::error::smoke-verify did not record the smoke row uuids"; exit 1; }
           echo "SMOKE_ROW_IDS=$R" >> "$GITHUB_ENV"

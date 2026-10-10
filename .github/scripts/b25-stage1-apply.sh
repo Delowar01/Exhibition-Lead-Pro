@@ -31,7 +31,10 @@
 #                     the runner); nothing else
 #   smoke-verify      VPS-side checks of the disposable smoke rows/objects
 #                     (inventory, ownership marker, generation strings, logs,
-#                     audit metadata, census)
+#                     audit metadata, census). The capability leak gate uses a
+#                     TOKEN-SPECIFIC literal detector (the capability's signature
+#                     component) that arrives ONLY as the first line of the stdin
+#                     stream (shell variable B25_LEAK_DETECTOR) — never ARG3.
 #   recreate-api      `compose up -d --no-deps --force-recreate api` + health
 #   smoke-settle      wait for the purge job, remove ONLY the disposable smoke
 #                     objects (marker-proven, generation-conditioned), prove
@@ -43,6 +46,9 @@
 #   cleanup           always-step: guarded removal of the explicit disposable
 #                     rows; durable tombstones identified and verified, never
 #                     deleted; existing rows proven identical before/after
+#   residue2-eligibility / residue2-settle / residue2-verify
+#                     second incident (run 38005492289): the THREE recorded
+#                     tombstones of disposable company 49 — see the block below
 #
 # SAFETY: every SELECT runs in a psql session pinned read-only (q); writes use
 # qw only inside the mutation phases and only against explicit disposable ids;
@@ -563,17 +569,45 @@ phase_smoke_setup() {
   log "smoke-setup complete"
 }
 
-# ARG1 = csv of disposable company ids, ARG2 = csv of disposable user ids, ARG3 = capability prefix (16 chars) for leak checks
+# ARG1 = csv of disposable company ids, ARG2 = csv of disposable user ids. ARG3 MUST be empty: the leak detector
+# never travels as an argument. It arrives ONLY as the shell variable B25_LEAK_DETECTOR, set by the first line of the
+# stdin stream the workflow prepends (`B25_LEAK_DETECTOR=<43 base64url chars>`), i.e. a variable of this very process:
+# never an SSH command argument, never a URL, never an artifact, never SQL text, never a process-list argument.
+# The detector is the capability's HMAC signature component — unique to the capability of THIS run. Every comparison
+# is a LITERAL fixed-string match (grep -F with the pattern on a process substitution; psql `position()` with the
+# value bound through psql's own variable on stdin). Historical lines of other runs (other capabilities, the shared
+# base64url payload prefix, the former `?t=` probe requests) can never match it; a genuine match of this run's
+# capability anywhere still fails; an unreadable log fails closed.
+read_log_once() {   # <container id> <label>: the complete container log, read exactly once; unreadable or empty → failure
+  local body
+  body="$(docker logs "$1" 2>&1)" || { echo "[b25-s1:$PHASE] ERROR: $2 log unreadable" >&2; return 1; }
+  [ -n "$body" ] || { echo "[b25-s1:$PHASE] ERROR: $2 log is empty" >&2; return 1; }
+  printf '%s\n' "$body"
+}
+count_literal() {   # <text> <literal>: number of lines containing the literal (fixed string; pattern supplied via a process substitution, never argv)
+  local n
+  [ -n "$2" ] || { echo "[b25-s1:$PHASE] ERROR: empty literal" >&2; return 1; }
+  n="$(printf '%s\n' "$1" | grep -c -F -f <(printf '%s\n' "$2") || true)"
+  [[ "$n" =~ ^[0-9]+$ ]] || { echo "[b25-s1:$PHASE] ERROR: literal count unreadable" >&2; return 1; }
+  printf '%s' "$n"
+}
+qd() {   # <sql using :'det'>: read-only psql; the detector is bound through psql's variable mechanism on STDIN (never argv, never SQL text)
+  printf '\\set det %s\n%s\n' "'$B25_LEAK_DETECTOR'" "$1" | compose exec -T postgres sh -c 'exec psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tA -F "|" -c "set default_transaction_read_only = on" -f -'
+}
+SMOKE_SYNTHETIC_QUERY_VALUE="b25-smoke-SYNTHETIC-NOT-A-CREDENTIAL"   # the ONLY query value the corrected smoke sends (informational count)
 phase_smoke_verify() {
   [[ "$ARG1" =~ ^[0-9]+(,[0-9]+)*$ ]] || fail "ARG1 must be a csv of company ids"
   [[ "$ARG2" =~ ^[0-9]+(,[0-9]+)*$ ]] || fail "ARG2 must be a csv of user ids"
-  [[ "$ARG3" =~ ^[A-Za-z0-9_-]{16}$ ]] || fail "ARG3 must be the 16-character capability prefix"
-  local C="$ARG1" U="$ARG2" P="$ARG3"
+  [ -z "$ARG3" ] || fail "ARG3 must be empty — the leak detector travels on the stdin stream only, never as an argument"
+  [[ "${B25_LEAK_DETECTOR:-}" =~ ^[A-Za-z0-9_-]{43}$ ]] || fail "leak detector missing or malformed on the stdin stream — fail closed (no leak verdict without it)"
+  trap 'unset B25_LEAK_DETECTOR' EXIT
+  local C="$ARG1" U="$ARG2"
   section "disposable targets (names verified)"
   [ "$(q "select count(*) from companies where id in ($C) and name not like 'B25 SMOKE %'")" = "0" ] || fail "a target company is not a smoke tenant"
   [ "$(q "select count(*) from users where id in ($U) and email not like '%@$SMOKE_DOMAIN'")" = "0" ] || fail "a target user is not a smoke user"
   section "inventory rows of the smoke tenants"
-  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_cleared='||(lease_token is null)||' size='||coalesce(size_bytes::text,'null')||' sha_set='||(sha256 is not null)||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null) from storage_objects where company_id in ($C) order by created_at"
+  # last_error is printed only when it is a bare code: free text (which could carry a token) is never echoed
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_cleared='||(lease_token is null)||' size='||coalesce(size_bytes::text,'null')||' sha_set='||(sha256 is not null)||' last_error='||case when coalesce(last_error,'') ~ '^[A-Z_]{0,40}$' then coalesce(last_error,'<null>') else '<non-code text, not printed>' end||' uncertain='||(publication_uncertain_at is not null) from storage_objects where company_id in ($C) order by created_at"
   [ "$(q "select count(*) from storage_objects where company_id not in ($C)")" = "0" ] || fail "storage_objects rows exist outside the smoke tenants"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and driver<>'gcs'")" = "0" ] || fail "a smoke row is not on the gcs driver"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and state='active' and (lease_token is not null or publication_uncertain_at is not null or legacy_key is null)")" = "0" ] || fail "an active smoke row is inconsistent"
@@ -605,19 +639,36 @@ JS
   echo "$mj" | grep -q '"marker_matches_row":false' && fail "a smoke object lacks the ownership marker of its row" || true
   echo "$mj" | grep -q '"generation_is_decimal_string":false' && fail "a smoke object generation is not a decimal string" || true
   echo "$mj" | grep -q '"size_matches":false' && fail "a smoke object size differs from its row" || true
-  section "no capability / secret leak (prefix search only)"
-  echo "api log lines with the capability prefix: $(docker logs "$API_CID" 2>&1 | grep -c -- "$P" || true)"
-  [ "$(docker logs "$API_CID" 2>&1 | grep -c -- "$P" || true)" = "0" ] || fail "capability prefix found in the api log"
-  echo "web log lines with the capability prefix: $(docker logs "$WEB_CID" 2>&1 | grep -c -- "$P" || true)"
-  [ "$(docker logs "$WEB_CID" 2>&1 | grep -c -- "$P" || true)" = "0" ] || fail "capability prefix found in the web log"
-  [ "$(q "select count(*) from audit_logs where metadata::text like '%$P%'")" = "0" ] || fail "capability prefix found in audit metadata"
-  [ "$(q "select count(*) from storage_objects where coalesce(last_error,'') like '%$P%'")" = "0" ] || fail "capability prefix found in storage last_error"
+  section "capability leak gate — token-specific literal detector of THIS run's capability (counts and verdicts only)"
+  # Every log is read exactly once and completely; a read failure or an empty log stops the phase (no verdict is
+  # ever derived from a missing log). Producer failures are never masked by an all-zero count.
+  local api_body web_body n_api n_web n_audit n_err n_hist n_probe
+  api_body="$(read_log_once "$API_CID" api)" || fail "api log unreadable — fail closed"
+  web_body="$(read_log_once "$WEB_CID" web)" || fail "web log unreadable — fail closed"
+  n_api="$(count_literal "$api_body" "$B25_LEAK_DETECTOR")" || fail "api log: literal count failed — fail closed"
+  n_web="$(count_literal "$web_body" "$B25_LEAK_DETECTOR")" || fail "web log: literal count failed — fail closed"
+  n_audit="$(qd "select count(*) from audit_logs where position(:'det' in metadata::text) > 0")" || fail "audit metadata: detector query failed — fail closed"
+  n_err="$(qd "select count(*) from storage_objects where position(:'det' in coalesce(last_error, '')) > 0")" || fail "storage last_error: detector query failed — fail closed"
+  [[ "$n_audit" =~ ^[0-9]+$ ]] && [[ "$n_err" =~ ^[0-9]+$ ]] || fail "detector queries returned no count — fail closed"
+  echo "current-run capability (token-specific literal): api log lines=$n_api web log lines=$n_web audit metadata rows=$n_audit storage last_error rows=$n_err"
+  # Historical evidence is reported SEPARATELY and never gates a fresh smoke: request lines carrying a '?t=' query
+  # (any run, any value — the former probe placed a genuine capability there; the corrected smoke sends only the
+  # synthetic value) and the corrected smoke's own two synthetic probes. Logs are never erased or filtered here.
+  n_hist="$(count_literal "$web_body" "?t=")" || fail "web log: historical count failed"
+  n_probe="$(count_literal "$web_body" "$SMOKE_SYNTHETIC_QUERY_VALUE")" || fail "web log: synthetic-probe count failed"
+  echo "historical / informational (web log, no verdict): request lines with a '?t=' query (any run, any value)=$n_hist; lines with this smoke's synthetic probe value=$n_probe (the api request log strips query strings by design)"
+  [ "$n_api" = "0" ] || fail "this run's capability found in the api log ($n_api line(s))"
+  [ "$n_web" = "0" ] || fail "this run's capability found in the web (proxy) log ($n_web line(s))"
+  [ "$n_audit" = "0" ] || fail "this run's capability found in audit metadata ($n_audit row(s))"
+  [ "$n_err" = "0" ] || fail "this run's capability found in storage last_error ($n_err row(s))"
   [ "$(q "select count(*) from audit_logs where metadata::text ~ 'gs://|/var/lib/docker|/data/objects|X-Goog-Signature'")" = "0" ] || fail "bucket / path / signature text found in audit metadata"
-  echo "api error-level lines: $(docker logs "$API_CID" 2>&1 | grep -c '"level":50' || true); unhandled: $(docker logs "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
-  [ "$(docker logs "$API_CID" 2>&1 | grep '"level":50' | grep -vc '"type":"_AppError"' || true)" = "0" ] || fail "unhandled error in the api log"
+  echo "api error-level lines: $(printf '%s\n' "$api_body" | grep -c '"level":50' || true); unhandled: $(printf '%s\n' "$api_body" | grep '"level":50' | grep -vc '"type":"_AppError"' || true)"
+  [ "$(printf '%s\n' "$api_body" | grep '"level":50' | grep -vc '"type":"_AppError"' || true)" = "0" ] || fail "unhandled error in the api log"
+  unset api_body web_body
   section "census during the smoke"
   local cj; cj="$(census)"; echo "$cj"
   echo "storage driver: $(docker logs "$API_CID" 2>&1 | grep -oE '"driver":"[a-z]+","legacyFallback"' | tail -1)"
+  unset B25_LEAK_DETECTOR
   log "smoke-verify complete"
 }
 
@@ -647,7 +698,7 @@ phase_smoke_settle() {
   [ "$(q "select count(*) from companies where id in ($C)")" = "0" ] || fail "a smoke company still exists (API deletion did not happen)"
   local tries=0
   until [ "$(q "select count(*) from storage_objects where company_id in ($C) and state not in ('deleted')")" = "0" ]; do tries=$((tries + 1)); [ "$tries" -le 36 ] || break; sleep 10; done
-  q "select 'tombstone '||id||' kind='||kind||' state='||state||' last_error='||coalesce(last_error,'<null>')||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' uncertain='||(publication_uncertain_at is not null)||' reconciled='||(reconciled_at is not null) from storage_objects where company_id in ($C) order by created_at"
+  q "select 'tombstone '||id||' kind='||kind||' state='||state||' last_error='||case when coalesce(last_error,'') ~ '^[A-Z_]{0,40}$' then coalesce(last_error,'<null>') else '<non-code text, not printed>' end||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' uncertain='||(publication_uncertain_at is not null)||' reconciled='||(reconciled_at is not null) from storage_objects where company_id in ($C) order by created_at"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and state<>'deleted'")" = "0" ] || fail "a smoke tombstone did not settle to deleted within 6 minutes"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and (publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING'))")" = "0" ] || fail "uncertain / unproven / cleanup-pending residue"
   # every row of the smoke companies must be one of the recorded uuids, and vice versa (present ones)
@@ -749,7 +800,7 @@ phase_cleanup() {
   [ "$(q "select count(*) from users where id in ($U) and email not like '%@$DOM'")" = "0" ] || fail "a target user is not a smoke user"
   [ "$(q "select count(*) from users where company_id in ($C) and email not like '%@$DOM'")" = "0" ] || fail "a smoke tenant holds a non-smoke user"
   section "storage rows of the smoke tenants BEFORE any deletion (attribution for a later residue_settle: ids, state, key flags)"
-  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null)||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null)||' deleted_at='||coalesce(deleted_at::text,'<null>') from storage_objects where company_id in ($C) order by created_at" || true
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null)||' last_error='||case when coalesce(last_error,'') ~ '^[A-Z_]{0,40}$' then coalesce(last_error,'<null>') else '<non-code text, not printed>' end||' uncertain='||(publication_uncertain_at is not null)||' deleted_at='||coalesce(deleted_at::text,'<null>') from storage_objects where company_id in ($C) order by created_at" || true
   echo "smoke_row_ids=$(q "select coalesce(string_agg(id::text, ',' order by created_at), '') from storage_objects where company_id in ($C)" 2>/dev/null || echo unavailable)"
   section "existing rows BEFORE cleanup (must be identical afterwards)"
   local kept_sql="select 'companies='||(select count(*) from companies where id not in ($C))||' users='||(select count(*) from users where id not in ($U) and (company_id is null or company_id not in ($C)))||' subscriptions='||(select count(*) from subscriptions where company_id not in ($C))||' contacts='||(select count(*) from contacts where company_id not in ($C))||' leads='||(select count(*) from leads where company_id not in ($C))||' events='||(select count(*) from events where company_id not in ($C))||' scans='||(select count(*) from scans where company_id not in ($C))||' documents='||(select count(*) from documents where company_id not in ($C))||' export_runs='||(select count(*) from export_runs where company_id not in ($C))||' audit='||(select count(*) from audit_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))||' activity='||(select count(*) from activity_logs where (company_id is null or company_id not in ($C)) and (user_id is null or user_id not in ($U)))||' login_attempts='||(select count(*) from login_attempts where email not like 'b25-smoke-${TAG}%@$DOM')||' storage_objects_other='||(select count(*) from storage_objects where company_id not in ($C))"
@@ -767,7 +818,7 @@ phase_cleanup() {
   echo "subscriptions=$(qw "with d as (delete from subscriptions where company_id in ($C) returning 1) select count(*) from d")"
   echo "companies=$(qw "with d as (delete from companies where id in ($C) and name like 'B25 SMOKE %' returning 1) select count(*) from d")"
   section "storage rows of the smoke tenants (smoke-settle must have removed the exact recorded tombstones)"
-  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null) from storage_objects where company_id in ($C) order by created_at" || true
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' last_error='||case when coalesce(last_error,'') ~ '^[A-Z_]{0,40}$' then coalesce(last_error,'<null>') else '<non-code text, not printed>' end||' uncertain='||(publication_uncertain_at is not null) from storage_objects where company_id in ($C) order by created_at" || true
   [ "$(q "select count(*) from storage_objects where company_id in ($C)")" = "0" ] || fail "storage rows of a smoke tenant remain — smoke-settle did not complete; re-run postdeploy_verify's settle step (never broaden cleanup)"
   section "verify zero other disposable rows remain"
   local z; z="$(q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B25 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' sessions='||(select count(*) from sessions where user_id in ($U))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')||' documents='||(select count(*) from documents where company_id in ($C))||' document_versions='||(select count(*) from document_versions where company_id in ($C))||' storage_rows='||(select count(*) from storage_objects where company_id in ($C))")"; echo "$z"
@@ -1022,7 +1073,7 @@ phase_diagnose() {
 
   section "5. residue of the recorded disposable identities (read-only)"
   echo "-- storage rows (id = residual uuid OR company in $C):"
-  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null)||' size='||coalesce(size_bytes::text,'null')||' sha_set='||(sha256 is not null)||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null)||' deleted_at='||coalesce(deleted_at::text,'<null>')||' reconciled_at='||coalesce(reconciled_at::text,'<null>')||' created='||created_at||' updated='||updated_at from storage_objects where id = '$UUID' or company_id in ($C) order by created_at" 2>/dev/null | sed 's/^/  /' || echo "  unavailable"
+  q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null)||' size='||coalesce(size_bytes::text,'null')||' sha_set='||(sha256 is not null)||' last_error='||case when coalesce(last_error,'') ~ '^[A-Z_]{0,40}$' then coalesce(last_error,'<null>') else '<non-code text, not printed>' end||' uncertain='||(publication_uncertain_at is not null)||' deleted_at='||coalesce(deleted_at::text,'<null>')||' reconciled_at='||coalesce(reconciled_at::text,'<null>')||' created='||created_at||' updated='||updated_at from storage_objects where id = '$UUID' or company_id in ($C) order by created_at" 2>/dev/null | sed 's/^/  /' || echo "  unavailable"
   echo "  rows_for_uuid=$(q "select count(*) from storage_objects where id = '$UUID'" 2>/dev/null || echo unavailable) rows_for_companies=$(q "select count(*) from storage_objects where company_id in ($C)" 2>/dev/null || echo unavailable) rows_mentioning_uuid=$(q "select count(*) from storage_objects where reference like '%$UUID%' or storage_key like '%$UUID%' or coalesce(legacy_key,'') like '%$UUID%' or coalesce(mirror_key,'') like '%$UUID%'" 2>/dev/null || echo unavailable)"
   echo "-- disposable rows still present:"
   q "select 'companies='||(select count(*) from companies where id in ($C) or name like 'B25 SMOKE %')||' users='||(select count(*) from users where id in ($U) or email like '%@$DOM')||' subscriptions='||(select count(*) from subscriptions where company_id in ($C))||' sessions='||(select count(*) from sessions where user_id in ($U))||' documents='||(select count(*) from documents where company_id in ($C))||' document_versions='||(select count(*) from document_versions where company_id in ($C))||' audit='||(select count(*) from audit_logs where company_id in ($C) or user_id in ($U))||' activity='||(select count(*) from activity_logs where company_id in ($C) or user_id in ($U))||' login_attempts='||(select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')" 2>/dev/null | sed 's/^/  /' || echo "  unavailable"
@@ -1349,7 +1400,10 @@ phase_residue_settle() {
   declare -f purge_rows_sql >/dev/null || fail "purge library not loaded (stream b25-stage1-purge-lib.sh before this script)"
   residue_manifest_check "$ARG1"
   exec 9>"$LOCK_FILE"; flock -n 9 || fail "another activation holds the lock"
-  trap 'rm -f "$LOCK_FILE" "$HOME"/.b25-s1-node.err' EXIT
+  # The lock path is expanded NOW: the eligibility re-read below temporarily points LOCK_FILE at a '.none' path, and a
+  # trap that read the variable at exit time would remove the wrong path when eligibility fails — leaving the real
+  # lock on the host and refusing every later eligibility run until someone removes it by hand.
+  trap "rm -f '$LOCK_FILE' \"\$HOME\"/.b25-s1-node.err" EXIT
   # the lock file now exists; the eligibility check tolerates OUR lock (the fd is held by this session)
   local lock_was="$LOCK_FILE"; LOCK_FILE="$LOCK_FILE.none"; residue_eligibility "$ARG1"; LOCK_FILE="$lock_was"
   local UUID="$RESIDUE_UUID" C="$RESIDUE_COMPANIES"
@@ -1420,6 +1474,278 @@ phase_residue_verify() {
   log "residue-verify complete"
 }
 
+# ---------------------------------------------------------------------------
+# residue_inspect_4fff751a3395 / residue_settle_4fff751a3395 — RECOVERY of the THREE tombstones left behind by the
+# disposable smoke of run 38005492289 (postdeploy_verify on the Correction 9 product commit 72a2437: the smoke
+# itself passed 55/55; the VPS-side leak gate then failed on its shared-prefix search, so the api recreation,
+# re-read, settle and metrics steps never ran; the always-cleanup deleted the disposable tenants through the API,
+# removed every remaining disposable principal / feature row and stopped at its residue guard). Recorded facts
+# (smoke-verify and cleanup output of that run):
+#   company 49 (disposable tenant a; company 50 held no storage row), rows created during the smoke:
+#     e3f7f5fd-bbbe-4d7c-9111-4dfe6bef2daf  document       deleted  LEGACY_RETAINED  (tombstoned by the API company deletion, 23:40:52Z)
+#     f45d91c9-2e2c-4c38-a97c-b3f95aa507e3  branding_logo  deleted  LEGACY_RETAINED  (replaced logo, 23:40:43Z)
+#     665f114f-e100-4301-95e0-ad6a18eeae03  branding_logo  deleted  LEGACY_RETAINED  (removed logo, 23:40:43Z)
+#   all gcs, legacy_key set, no mirror, no lease, no uncertainty. The three provider objects were PRESENT with
+#   marker == row id, 16-digit decimal generation and matching size at smoke-verify time (BEFORE the cleanup) and
+#   have not been measured since: the eligibility proof below establishes the CURRENT per-row state (A / B / C) and
+#   never assumes a count of objects. Disposable principals: companies 49 and 50; the recorded owner user 92; the
+#   three tenant users were deleted by the API together with their companies and their ids were never recorded —
+#   they are checked by address pattern (%@b25smoke.invalid) only, never guessed.
+# The recovery is INCIDENT-SPECIFIC: every identity is a constant of this script and of the workflow; any other
+# manifest is refused before an SSH session is opened and again here. The first recovery's tooling
+# (residue-eligibility / residue-settle / residue-verify, manifest 8c91bc11…) is retained unchanged above.
+#
+# Per-row states (fixed order: document, logo f45d91c9…, logo 665f114f…):
+#   A  row present + the marked object present at its persisted location (marker == row id, canonical decimal
+#      generation string, size == row size, legacy_key = the same object)
+#   B  row present + object absent at EVERY persisted location (a previous run removed the object and stopped
+#      before the row)
+#   C  row absent (already removed)
+# Whole-incident STATE C = every row absent, no marked object, census == accepted original inventory (4 / 1299).
+#
+#   residue2-eligibility  READ-ONLY (q only; provider list / metadata only): host coordination state, baselines,
+#                         disposable principals absent, no other row / live association / pending job / in-flight
+#                         writer, per-row identity (kind-specific reference and key shapes, creation and deletion
+#                         windows), per-row provider state; prints the per-row states; changes nothing.
+#   residue2-settle       MUTATION, row by row in the fixed order, after the full eligibility re-read in the same
+#                         session: [A] provider delete conditioned on the marker AND the exact generation string
+#                         read moments before (ifGenerationMatch; never unconditional) → absence proof at EVERY
+#                         persisted location (storage_key, legacy_key, mirror_key, filesystem volume) → allow-listed,
+#                         row-locked removal of THAT row (purge_rows_sql; count must equal 1). A failure anywhere
+#                         stops the phase: rows already handled are gone (each only after its own object was proven
+#                         absent), the current row keeps the state it reached (A or B), later rows are untouched;
+#                         the next run resumes from the per-row states. A row is NEVER removed while any persisted
+#                         location of its object still answers; an object is NEVER deleted when any check fails.
+#   residue2-verify       READ-ONLY final verification (always): zero residue rows, zero disposable rows, census =
+#                         accepted inventory, originals reconciled, every baseline unchanged, api healthy.
+R2_UUID_DOC="e3f7f5fd-bbbe-4d7c-9111-4dfe6bef2daf"
+R2_UUID_LOGO1="f45d91c9-2e2c-4c38-a97c-b3f95aa507e3"
+R2_UUID_LOGO2="665f114f-e100-4301-95e0-ad6a18eeae03"
+R2_UUIDS=("$R2_UUID_DOC" "$R2_UUID_LOGO1" "$R2_UUID_LOGO2")
+R2_COMPANIES="49,50"; R2_COMPANY="49"; R2_KNOWN_USERS="92"; R2_TAG="4fff751a3395"
+R2_MANIFEST="$R2_UUID_DOC,$R2_UUID_LOGO1,$R2_UUID_LOGO2|$R2_COMPANIES|$R2_KNOWN_USERS|$R2_TAG"
+R2_UUIDS_Q="'$R2_UUID_DOC','$R2_UUID_LOGO1','$R2_UUID_LOGO2'"
+R2_CREATED_FROM="2026-10-09 23:40:00"; R2_CREATED_TO="2026-10-09 23:41:00"   # created during the smoke (postdeploy-verify stamped 23:40:16Z)
+R2_DELETED_FROM="2026-10-09 23:40:40"; R2_DELETED_TO="2026-10-09 23:41:00"   # tombstoned 23:40:43Z (logos) / 23:40:52Z (document)
+R2_BASELINE_INVENTORY_MD5="c1b900fd509bafa1f980d863dc0d195b"                 # accepted ORIGINAL inventory (4 / 1299)
+r2_kind() { case "$1" in "$R2_UUID_DOC") echo document;; "$R2_UUID_LOGO1"|"$R2_UUID_LOGO2") echo branding_logo;; *) return 1;; esac; }
+r2_manifest_check() { [ "$1" = "$R2_MANIFEST" ] || fail "manifest differs from the recorded second-incident residue — refused (nothing read, nothing changed)"; }
+declare -A R2_STATE=()   # uuid → A | B | C, set by residue2_eligibility
+R2_PRESENT=0
+# The complete eligibility proof. Read-only by construction (q, docker inspect/logs, provider list/HEAD).
+residue2_eligibility() {
+  local manifest="$1" n=0
+  r2_manifest_check "$manifest"
+  local pass; pass() { n=$((n + 1)); echo "elig $n: $1 — OK"; }
+  section "eligibility — coordination state of the host (accepted B25 product, healthy, idle, baselines intact)"
+  [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$ACCEPTED_SHA" ] || fail "host checkout is not the accepted commit"
+  [ "$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null)" = "$ACCEPTED_SHA" ] || fail "current-deploy.sha is not the accepted commit"
+  [ "$(cat "$STATE_DIR/previous-deploy.sha" 2>/dev/null)" = "$EXPECTED_HOSTED_SHA" ] || fail "previous-deploy.sha is not the previously hosted commit"
+  [ -z "$(git -C "$APP_DIR" status --porcelain 2>/dev/null)" ] || fail "host checkout is dirty"
+  pass "checkout HEAD / current-deploy = accepted commit, previous-deploy = previously hosted commit, clean"
+  [ ! -e "$LOCK_FILE" ] || fail "an activation lock file exists ($LOCK_FILE)"
+  [ -z "$(docker ps -a --filter "name=card-scanner-pro-api" --format '{{.Names}}' | grep -v '^card-scanner-pro-api-1$' || true)" ] || fail "an unexpected api container exists"
+  for svc in api web postgres; do [ "$(compose ps --status running -q "$svc" | wc -l)" = "1" ] || fail "$svc is not running"; done
+  [ "$(docker inspect -f '{{.State.Health.Status}}' "$API_CID")" = "healthy" ] || fail "api is not healthy"
+  echo "  api: $(docker inspect -f 'started={{.State.StartedAt}} restarts={{.RestartCount}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$API_CID")"
+  local rz; rz="$(curl -sS --max-time 5 http://127.0.0.1:18080/api/readyz 2>/dev/null || echo "")"
+  [[ "$rz" == *'"status":"ok"'* ]] && [[ "$rz" == *'"database":"ok"'* ]] && [[ "$rz" == *'"storage":"ok"'* ]] || fail "readiness is not ok/ok/ok"
+  pass "no lock, one api container, api/web/postgres running, api healthy, readyz ok"
+  echo "  storage init: $(docker logs "$API_CID" 2>&1 | grep -oE '"driver":"[a-z]+","legacyFallback":(true|false),"mirror":(true|false),"legacyDelete":(true|false)' | awk 'NR == 1 { print }')"
+  docker logs "$API_CID" 2>&1 | grep -F '"driver":"gcs","legacyFallback":false,"mirror":false,"legacyDelete":false' >/dev/null || fail "storage initialization is not driver=gcs / fallback off / mirror off / legacy delete off"
+  pass "storage initialization = gcs primary, no fallback, no mirror, legacy delete OFF (the product never deletes bucket objects)"
+  [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l')" = "0" ] || fail "objectdata is not empty"
+  local fp; fp="$(fingerprint)"; [ "$fp" = "$FP_AFTER" ] || fail "schema fingerprint differs from the accepted post-apply fingerprint"
+  [ "$(counts)" = "$COUNTS_AFTER" ] || fail "schema object counts differ"
+  local tb; tb="$(tenant_md5)" || fail "tenant baseline unreadable"; [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "existing-tenant composition differs from the accepted baseline"
+  [ "$(q "select count(*) from scans where company_id=1")" = "4" ] && [ "$(scan_rows_md5)" = "8a3e378a2acd0d880c6f45613b32473d" ] || fail "owner scan rows differ from the accepted baseline"
+  [ "$(stat -c %a "$ENV_FILE")" = "$ENV_MODE" ] && [ "$(stat -c %s "$ENV_FILE")" = "$ENV_SIZE" ] && [ "$(sha256sum "$ENV_FILE" | cut -c1-16)" = "$ENV_SHA_PREFIX" ] || fail "environment file differs from the accepted baseline"
+  pass "objectdata empty; schema fingerprint/counts, tenant composition, owner scans and environment file = accepted baselines"
+  if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard FAILED (a write succeeded in a q session)"; fi
+  pass "read-only session guard"
+
+  section "eligibility — disposable principals and feature rows of the second incident are absent"
+  local C="$R2_COMPANIES" U="$R2_KNOWN_USERS" DOM="$SMOKE_DOMAIN" TAG="$R2_TAG"
+  [ "$(q "select count(*) from companies where id in ($C) or name like 'B25 SMOKE %'")" = "0" ] || fail "a disposable company still exists"
+  [ "$(q "select count(*) from users where id in ($U) or email like '%@$DOM'")" = "0" ] || fail "a disposable user still exists"
+  [ "$(q "select (select count(*) from subscriptions where company_id in ($C)) + (select count(*) from sessions where user_id in ($U)) + (select count(*) from documents where company_id in ($C)) + (select count(*) from document_versions where company_id in ($C)) + (select count(*) from export_runs where company_id in ($C)) + (select count(*) from executive_reports where company_id in ($C)) + (select count(*) from scans where company_id in ($C)) + (select count(*) from contacts where company_id in ($C)) + (select count(*) from leads where company_id in ($C)) + (select count(*) from audit_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from activity_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')")" = "0" ] || fail "a disposable feature row still exists"
+  echo "  note: the three tenant users' ids were never recorded — audit/activity rows that would carry only such a user id (company_id null) are not attributable from this manifest (reported by the read-only inspection, never guessed)"
+  echo "  dangling user references (read-only, informational): audit_logs=$(q "select count(*) from audit_logs a where a.user_id is not null and a.company_id is null and not exists (select 1 from users u where u.id = a.user_id)") activity_logs=$(q "select count(*) from activity_logs a where a.user_id is not null and a.company_id is null and not exists (select 1 from users u where u.id = a.user_id)")"
+  pass "companies $C, user $U, every %@$DOM address and every disposable feature/audit/session row are absent"
+
+  section "eligibility — the residue is exactly the recorded rows (nothing else; no live association; no pending job; no in-flight writer)"
+  [ "$(q "select count(*) from storage_objects where company_id in ($C) and id not in ($R2_UUIDS_Q)")" = "0" ] || fail "another storage row of the disposable companies exists — not the recorded residue"
+  [ "$(q "select count(*) from storage_objects where id in ($R2_UUIDS_Q) and company_id <> $R2_COMPANY")" = "0" ] || fail "a recorded uuid belongs to another company"
+  [ "$(q "select count(*) from storage_objects s where s.id not in ($R2_UUIDS_Q) and exists (select 1 from unnest(array[$R2_UUIDS_Q]) u where s.reference like '%' || u || '%' or s.reference like '%' || replace(u, '-', '') || '%' or s.storage_key like '%' || u || '%' or coalesce(s.legacy_key,'') like '%' || u || '%' or coalesce(s.mirror_key,'') like '%' || u || '%')")" = "0" ] || fail "another storage row references a residue id"
+  [ "$(q "select count(*) from storage_objects l where l.id in ($R2_UUIDS_Q) and (exists (select 1 from document_versions dv where dv.object_path = l.reference) or exists (select 1 from export_runs e where e.object_path = l.reference) or exists (select 1 from executive_reports r where r.object_path = l.reference) or exists (select 1 from scans sc where sc.image_url = l.reference) or exists (select 1 from companies co where co.brand_logo_key = l.reference))")" = "0" ] || fail "a live feature row still references a residue object"
+  [ "$(q "select count(*) from job_queue where status in ('pending','running') and (payload::text like '%$R2_UUID_DOC%' or payload::text like '%$R2_UUID_LOGO1%' or payload::text like '%$R2_UUID_LOGO2%' or payload::text like '%\"companyId\":49%' or payload::text like '%\"companyId\":50%')")" = "0" ] || fail "a pending/running job still references the residue"
+  [ "$(q "select count(*) from storage_objects where id in ($R2_UUIDS_Q) and (lease_token is not null or lease_expires_at is not null)")" = "0" ] || fail "a residue row carries a lease (in-flight writer)"
+  [ "$(q "select count(*) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() and state <> 'idle' and query ilike '%storage_objects%'")" = "0" ] || fail "an in-flight database session is working on storage_objects"
+  pass "no other storage row, no live association, no pending job, no lease, no in-flight writer"
+
+  section "eligibility — row identity per recorded tombstone (every column; kind-specific reference and key shapes)"
+  local u kind nrow facts v i names ref_pred key_pred bucket present=0
+  names=(company kind driver state last_error uncertainty lease mirror deleted_at legacy_key size sha256 reference storage_key created_at reconciled content_type)
+  bucket="$(grep -E '^DEFAULT_OBJECT_STORAGE_BUCKET_ID=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"')"
+  [[ "$bucket" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]] || fail "bucket name unreadable or malformed in the environment file"
+  for u in "${R2_UUIDS[@]}"; do
+    kind="$(r2_kind "$u")"
+    nrow="$(q "select count(*) from storage_objects where id = '$u'")"
+    if [ "$nrow" = "0" ]; then R2_STATE[$u]="C"; echo "  row $u ($kind): absent — already removed"; continue; fi
+    [ "$nrow" = "1" ] || fail "unexpected row count for $u: $nrow"
+    if [ "$kind" = "branding_logo" ]; then
+      ref_pred="coalesce(reference ~ ('^branding/' || company_id || '/' || replace(id::text, '-', '') || '\\.(png|jpg|webp)\$'), false)"
+      key_pred="coalesce(storage_key ~ ('^tenants/' || company_id || '/branding/' || id::text || '\\.(png|jpg|webp)\$'), false)"
+    else
+      ref_pred="coalesce(reference = '/objects/' || id::text, false)"
+      key_pred="coalesce(storage_key = 'tenants/' || company_id || '/documents/' || id::text, false)"
+    fi
+    # every predicate is coalesced to false: a NULL column can never blank the whole line (and is itself a failure)
+    facts="$(q "select coalesce(company_id = $R2_COMPANY, false)||'|'||coalesce(kind = '$kind', false)||'|'||coalesce(driver = 'gcs', false)||'|'||coalesce(state = 'deleted', false)||'|'||coalesce(last_error = 'LEGACY_RETAINED', false)||'|'||(publication_uncertain_at is null)||'|'||(lease_token is null and lease_expires_at is null)||'|'||(mirror_key is null and mirror_state is null)||'|'||coalesce(deleted_at >= '$R2_DELETED_FROM' and deleted_at < '$R2_DELETED_TO', false)||'|'||(legacy_key is not null)||'|'||coalesce(size_bytes > 0, false)||'|'||coalesce(sha256 ~ '^[0-9a-f]{64}\$', false)||'|'||$ref_pred||'|'||$key_pred||'|'||coalesce(created_at >= '$R2_CREATED_FROM' and created_at < '$R2_CREATED_TO', false)||'|'||(reconciled_at is not null)||'|'||coalesce(content_type <> '', false) from storage_objects where id = '$u'")"
+    echo "  $u ($kind) facts(company|kind|driver|deleted|legacy_retained|not_uncertain|no_lease|no_mirror|deleted_in_window|legacy_key|size|sha|reference|storage_key|created_in_window|reconciled|content_type)=$facts"
+    IFS='|' read -ra v <<<"$facts"; [ "${#v[@]}" = "17" ] || fail "row facts unreadable for $u"
+    for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 16; do [ "${v[$i]}" = "true" ] || fail "row identity check failed for $u: ${names[$i]}"; done
+    [ "$(q "select (legacy_key = 'gs://$bucket/' || storage_key)::text from storage_objects where id = '$u'")" = "true" ] || fail "legacy_key of $u is not the canonical location of storage_key in the configured bucket"
+    q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' last_error='||last_error||' size='||size_bytes||' deleted_at='||deleted_at||' reconciled_at='||coalesce(reconciled_at::text,'<null>')||' created='||created_at from storage_objects where id = '$u'" | sed 's/^/  /'
+    R2_STATE[$u]="present"; present=$((present + 1))
+  done
+  R2_PRESENT=$present
+  pass "$present of 3 recorded rows present; each present row = its recorded tombstone (company $R2_COMPANY, kind, gcs, deleted, LEGACY_RETAINED, no uncertainty/lease/mirror, kind-specific reference and key identity, legacy_key canonical, created and tombstoned in the smoke window)"
+
+  section "eligibility — provider state per present row (marker, generation string, size; the four original objects untouched)"
+  local cj o b im wm
+  if [ "$present" = "0" ]; then
+    cj="$(census)"; echo "  $cj"
+    o="$(census_field "$cj" objects count)" || fail "census: objects missing"; b="$(census_field "$cj" bytes count)" || fail "census: bytes missing"
+    im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: digest missing"; wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker missing"
+    [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] && [ "$im" = "$R2_BASELINE_INVENTORY_MD5" ] && [ "$wm" = "0" ] || fail "rows absent but the inventory is not the accepted original — manual review"
+    [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "rows absent but other storage rows exist (pre-smoke baseline is 0 rows)"
+    pass "STATE C — recovery already completed (rows absent, inventory = accepted original, no marked object)"; echo "ELIGIBILITY: STATE C (nothing to do) doc=C logo1=C logo2=C"; return 0
+  fi
+  local rj; rj="$(api_node "$DIAG_RECON_JS" "$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" | base64 -w0)")"; echo "  original references: $rj"
+  [ "$(census_field "$rj" referenced count)" = "$REFERENCES" ] && [ "$(census_field "$rj" present count)" = "$REFERENCES" ] && [ "$(census_field "$rj" missing count)" = "0" ] && [ "$(census_field "$rj" size_match count)" = "$REFERENCES" ] || fail "original references are not fully present / size-matched — STOP"
+  local a_count=0 b_count=0 sum=0 eo="" eb="" ewm="" emt eum euo tp lsame lpres row_b64 ej size
+  for u in "${R2_UUIDS[@]}"; do
+    [ "${R2_STATE[$u]}" = "present" ] || continue
+    row_b64="$(q "select json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 's', size_bytes) from storage_objects where id = '$u'" | base64 -w0)"
+    size="$(q "select size_bytes from storage_objects where id = '$u'")"; [[ "$size" =~ ^[1-9][0-9]*$ ]] || fail "size of $u unreadable"
+    ej="$(api_node "$RESIDUE_ELIG_JS" "$row_b64")"; echo "  $u: $ej"
+    eo="$(census_field "$ej" objects count)" || fail "eligibility: objects missing"; eb="$(census_field "$ej" bytes count)" || fail "eligibility: bytes missing"
+    ewm="$(census_field "$ej" with_marker count)" || fail "eligibility: with_marker missing"; emt="$(census_field "$ej" marked_is_target count)" || fail "eligibility: marked_is_target missing"
+    eum="$(census_field "$ej" unmarked_md5 hex32)" || fail "eligibility: unmarked digest missing"; euo="$(census_field "$ej" unmarked_objects count)" || fail "eligibility: unmarked count missing"
+    tp="$(json_bool "$ej" target_present)" || fail "eligibility: target presence unreadable"
+    [ "$euo" = "$CENSUS_OBJECTS" ] && [ "$eum" = "$R2_BASELINE_INVENTORY_MD5" ] || fail "the unmarked objects are not exactly the accepted original inventory (names/generations/sizes drifted) — STOP"
+    if [ "$tp" = "true" ]; then
+      [ "$emt" = "1" ] || fail "the object at the storage_key of $u is not the marked target — STOP"
+      [ "$(json_bool "$ej" target_marker_matches_row)" = "true" ] || fail "the object of $u does not carry this row's ownership marker — STOP"
+      [ "$(json_bool "$ej" target_generation_is_string)" = "true" ] && [ "$(json_bool "$ej" target_generation_canonical)" = "true" ] || fail "the generation of the object of $u is not a canonical decimal string — STOP"
+      [ "$(json_bool "$ej" target_size_matches)" = "true" ] || fail "the size of the object of $u differs from its row — STOP"
+      lsame="$(json_bool "$ej" legacy_same_object)" || fail "legacy location of $u unreadable"; [ "$lsame" = "true" ] || fail "legacy_key of $u is not the same object as storage_key — STOP"
+      R2_STATE[$u]="A"; a_count=$((a_count + 1)); sum=$((sum + size))
+      echo "  row $u: STATE A (object present, marker == row id, canonical generation of $(census_field "$ej" target_generation_digits count) digits, size == row)"
+    else
+      [ "$emt" = "0" ] || fail "eligibility of $u is inconsistent (absent yet counted as the marked target)"
+      lpres="$(json_bool "$ej" legacy_present)" || fail "legacy location of $u unreadable"; [ "$lpres" = "false" ] || fail "object of $u absent at storage_key but present at legacy_key — STOP"
+      R2_STATE[$u]="B"; b_count=$((b_count + 1))
+      echo "  row $u: STATE B (object absent at every persisted location, row present)"
+    fi
+  done
+  # aggregate of the (identical) bucket listings: exactly the originals plus the present target objects, nothing else marked
+  [ "$ewm" = "$a_count" ] || fail "marked objects in the bucket ($ewm) differ from the rows whose object is present ($a_count) — a foreign marked object exists — STOP"
+  [ "$eo" = "$((CENSUS_OBJECTS + a_count))" ] && [ "$eb" = "$((CENSUS_BYTES + sum))" ] || fail "census is not exactly originals + the present target objects (objects=$eo bytes=$eb present=$a_count) — STOP"
+  pass "the $CENSUS_OBJECTS original objects = accepted inventory digest; $REFERENCES references present and size-matched; bucket = originals + $a_count target object(s); rows: A=$a_count B=$b_count C=$((3 - present))"
+  echo "ELIGIBILITY: per-row states doc=${R2_STATE[$R2_UUID_DOC]} logo1=${R2_STATE[$R2_UUID_LOGO1]} logo2=${R2_STATE[$R2_UUID_LOGO2]} (A = object present → delete at the exact generation, absence proof, row removal; B = object absent → absence proof, row removal; C = row absent)"
+}
+phase_residue2_eligibility() {
+  residue2_eligibility "$ARG1"
+  rm -f "$HOME"/.b25-s1-node.err
+  log "residue2-eligibility complete (read-only; nothing changed; doc=${R2_STATE[$R2_UUID_DOC]:-?} logo1=${R2_STATE[$R2_UUID_LOGO1]:-?} logo2=${R2_STATE[$R2_UUID_LOGO2]:-?})"
+}
+phase_residue2_settle() {
+  declare -f purge_rows_sql >/dev/null || fail "purge library not loaded (stream b25-stage1-purge-lib.sh before this script)"
+  r2_manifest_check "$ARG1"
+  exec 9>"$LOCK_FILE"; flock -n 9 || fail "another activation holds the lock"
+  # The lock path is expanded NOW: the eligibility re-read below temporarily points LOCK_FILE at a '.none' path, and a
+  # trap that read the variable at exit time would remove the wrong path when eligibility fails — leaving the real
+  # lock on the host and refusing every later eligibility run until someone removes it by hand.
+  trap "rm -f '$LOCK_FILE' \"\$HOME\"/.b25-s1-node.err" EXIT
+  # the lock file now exists; the eligibility check tolerates OUR lock (the fd is held by this session)
+  local lock_was="$LOCK_FILE"; LOCK_FILE="$LOCK_FILE.none"; residue2_eligibility "$ARG1"; LOCK_FILE="$lock_was"
+  local C="$R2_COMPANIES" u st handled=0
+  if [ "$R2_PRESENT" = "0" ]; then section "settle — nothing to do (STATE C)"; echo "RESIDUE2_SETTLE: already completed; no provider call, no SQL write"; log "residue2-settle: nothing to do"; return 0; fi
+  for u in "${R2_UUIDS[@]}"; do
+    st="${R2_STATE[$u]}"
+    if [ "$st" = "C" ]; then echo "row $u: absent — nothing to do"; continue; fi
+    [ "$st" = "A" ] || [ "$st" = "B" ] || fail "row $u has no eligibility state — STOP"
+    section "settle row $u ($(r2_kind "$u"), STATE $st) — object first, row last"
+    local row_b64 dj loc_b64 aj triple
+    if [ "$st" = "A" ]; then
+      echo "  (1/3) delete the marked object at its exact generation (marker and size re-read in the same call; names never printed)"
+      row_b64="$(q "select json_build_object('id', id, 'k', storage_key, 's', size_bytes) from storage_objects where id = '$u'" | base64 -w0)"
+      dj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$RESIDUE_DELETE_JS" "$row_b64")"; echo "  $dj"
+      [ "$(census_field "$dj" deleted count 2>/dev/null || echo x)" = "1" ] || fail "the provider delete of $u did not happen (refused or failed) — the object and the row stay; rows handled so far: $handled; investigate"
+      [ "$(census_field "$dj" absent_after count 2>/dev/null || echo x)" = "1" ] || fail "the object of $u still answers after the conditional delete — the row stays; investigate"
+      echo "  provider delete: done at the exact generation ($(census_field "$dj" generation_digits count 2>/dev/null || echo ?) digits)"
+    else
+      echo "  (1/3) STATE B: the object was already removed by a previous run — no provider mutation"
+    fi
+    echo "  (2/3) absence proof at EVERY persisted location (storage_key, legacy_key, mirror_key; filesystem volume)"
+    loc_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 'm', mirror_key)), '[]'::json) from storage_objects where id = '$u'" | base64 -w0)"
+    aj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$RESIDUE_ABSENT_JS" "$loc_b64")"; echo "  $aj"
+    [ "$(census_field "$aj" checked count 2>/dev/null || echo x)" = "1" ] && [ "$(census_field "$aj" absent count 2>/dev/null || echo x)" = "1" ] || fail "a persisted provider location of $u still answers — the row is NOT removed (resume from STATE B once it is absent)"
+    [ "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l')" = "0" ] || fail "objectdata is not empty — the row of $u is NOT removed"
+    echo "  (3/3) remove the row (allow-listed, row-locked transaction; count must be exactly 1)"
+    triple="$(qw "$(purge_rows_sql "'$u'" "$C" 1)")"
+    purge_result_check "$triple" 1 || fail "the allow-listed delete did not remove exactly the row $u (nothing is removed when the row differs)"
+    [ "$(q "select count(*) from storage_objects where id = '$u'")" = "0" ] || fail "the row $u remains"
+    handled=$((handled + 1)); echo "  row $u: removed (object proven absent first)"
+  done
+  section "settle — final state"
+  local cj o b im wm; cj="$(census)"; echo "  $cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects missing"; b="$(census_field "$cj" bytes count)" || fail "census: bytes missing"
+  im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: digest missing"; wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker missing"
+  [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ] && [ "$im" = "$R2_BASELINE_INVENTORY_MD5" ] && [ "$wm" = "0" ] || fail "census is not the accepted original inventory after the recovery — investigate (no further change is made)"
+  [ "$(q "select count(*) from storage_objects where id in ($R2_UUIDS_Q) or company_id in ($C)")" = "0" ] || fail "a residue row remains"
+  [ "$(q "select count(*) from storage_objects")" = "0" ] || fail "storage_objects is not back to the pre-smoke baseline (0 rows)"
+  echo "RESIDUE2_SETTLE: COMPLETE — rows handled $handled, census $o / $b / $im, marked objects $wm, storage rows 0"
+  log "residue2-settle complete"
+}
+# READ-ONLY final verification (always-step): reports and FAILS on any deviation from the accepted end state; never writes.
+phase_residue2_verify() {
+  r2_manifest_check "$ARG1"
+  local C="$R2_COMPANIES" U="$R2_KNOWN_USERS" DOM="$SMOKE_DOMAIN" TAG="$R2_TAG" bad=0
+  chk() { if [ "$2" = "$3" ]; then echo "verify: $1 = $2 OK"; else echo "verify: $1 = $2 (expected $3) FAILED"; bad=$((bad + 1)); fi; }
+  section "residue2-verify (read-only)"
+  if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then echo "verify: read-only guard FAILED"; bad=$((bad + 1)); else echo "verify: read-only session guard OK"; fi
+  chk "residue rows" "$(q "select count(*) from storage_objects where id in ($R2_UUIDS_Q) or company_id in ($C)")" "0"
+  chk "rows mentioning a residue id" "$(q "select count(*) from storage_objects s where exists (select 1 from unnest(array[$R2_UUIDS_Q]) u where s.reference like '%' || u || '%' or s.reference like '%' || replace(u, '-', '') || '%' or s.storage_key like '%' || u || '%' or coalesce(s.legacy_key,'') like '%' || u || '%' or coalesce(s.mirror_key,'') like '%' || u || '%')")" "0"
+  chk "storage_objects total" "$(q "select count(*) from storage_objects")" "0"
+  chk "disposable companies" "$(q "select count(*) from companies where id in ($C) or name like 'B25 SMOKE %'")" "0"
+  chk "disposable users" "$(q "select count(*) from users where id in ($U) or email like '%@$DOM'")" "0"
+  chk "disposable feature/session/audit rows" "$(q "select (select count(*) from subscriptions where company_id in ($C)) + (select count(*) from sessions where user_id in ($U)) + (select count(*) from documents where company_id in ($C)) + (select count(*) from document_versions where company_id in ($C)) + (select count(*) from export_runs where company_id in ($C)) + (select count(*) from scans where company_id in ($C)) + (select count(*) from audit_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from activity_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from login_attempts where email like 'b25-smoke-${TAG}%@$DOM')")" "0"
+  local cj; cj="$(census)"; echo "  $cj"
+  chk "census objects" "$(census_field "$cj" objects count 2>/dev/null || echo ?)" "$CENSUS_OBJECTS"
+  chk "census bytes" "$(census_field "$cj" bytes count 2>/dev/null || echo ?)" "$CENSUS_BYTES"
+  chk "census inventory digest" "$(census_field "$cj" inventory_md5 hex32 2>/dev/null || echo ?)" "$R2_BASELINE_INVENTORY_MD5"
+  chk "marked objects" "$(census_field "$cj" with_marker count 2>/dev/null || echo ?)" "0"
+  local rj; rj="$(api_node "$DIAG_RECON_JS" "$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" | base64 -w0)")"; echo "  original references: $rj"
+  chk "original references present" "$(census_field "$rj" present count 2>/dev/null || echo ?)" "$REFERENCES"
+  chk "original references size-matched" "$(census_field "$rj" size_match count 2>/dev/null || echo ?)" "$REFERENCES"
+  chk "tenant composition" "$(tenant_md5 2>/dev/null || echo unavailable)" "$TENANT_BASELINE_MD5"
+  chk "owner scan rows" "$(scan_rows_md5 2>/dev/null || echo unavailable)" "8a3e378a2acd0d880c6f45613b32473d"
+  chk "schema fingerprint" "$(fingerprint 2>/dev/null || echo unavailable)" "$FP_AFTER"
+  chk "env file" "$(stat -c %a "$ENV_FILE" 2>/dev/null)/$(stat -c %s "$ENV_FILE" 2>/dev/null)/$(sha256sum "$ENV_FILE" 2>/dev/null | cut -c1-16)" "$ENV_MODE/$ENV_SIZE/$ENV_SHA_PREFIX"
+  chk "objectdata entries" "$(compose exec -T api sh -c 'ls -A /data/objects | wc -l' 2>/dev/null | tr -d '[:space:]')" "0"
+  chk "existing rows" "$(q "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' subscriptions='||(select count(*) from subscriptions)||' contacts='||(select count(*) from contacts)||' leads='||(select count(*) from leads)||' events='||(select count(*) from events)||' scans='||(select count(*) from scans)||' documents='||(select count(*) from documents)||' export_runs='||(select count(*) from export_runs)")" "companies=1 users=2 subscriptions=1 contacts=1 leads=1 events=1 scans=4 documents=0 export_runs=4"
+  chk "readyz" "$(curl -sS --max-time 5 http://127.0.0.1:18080/api/readyz 2>/dev/null | cut -c1-80)" '{"status":"ok","checks":{"database":"ok","storage":"ok"}}'
+  echo "  api: $(docker inspect -f 'status={{.State.Status}} health={{.State.Health.Status}} restarts={{.RestartCount}} started={{.State.StartedAt}}' "$API_CID" 2>/dev/null || echo unavailable)"
+  chk "dead jobs" "$(q "select count(*) from job_queue where status='dead'")" "0"
+  rm -f "$HOME"/.b25-s1-node.err
+  [ "$bad" = "0" ] || fail "residue2-verify: $bad check(s) failed (read-only; nothing changed)"
+  echo "RESIDUE2_VERIFY: PASS (read-only)"
+  log "residue2-verify complete"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -1434,6 +1760,9 @@ case "$PHASE" in
   residue-eligibility) phase_residue_eligibility ;;
   residue-settle) phase_residue_settle ;;
   residue-verify) phase_residue_verify ;;
+  residue2-eligibility) phase_residue2_eligibility ;;
+  residue2-settle) phase_residue2_settle ;;
+  residue2-verify) phase_residue2_verify ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0

@@ -5,6 +5,15 @@
 // workflow's always-step. Prints ids, status codes and booleans only — never a
 // token, capability, password, URL with credentials, bucket name or key.
 //
+// CREDENTIAL HYGIENE (run 38005492289 correction): a genuine capability, bearer token or
+// password is NEVER placed in a URL — the only query-string requests this script sends carry
+// the clearly synthetic, never-valid value SYNTHETIC_QUERY_CREDENTIAL, and the api() helper
+// refuses any other query value. The capability travels only in X-Storage-Capability. The
+// state file records a TOKEN-SPECIFIC leak detector (the capability's HMAC signature
+// component, unique per capability) instead of the former 16-character prefix, which is
+// shared by every capability (base64url of the same JSON payload head) and therefore matched
+// historical log lines of other runs.
+//
 // STEP=run       create 2 disposable tenants (+ admin/employee users), exercise
 //                the first-party upload / download contract, branding logo
 //                upload / read / replace / remove; write ids to OUT (JSON)
@@ -58,9 +67,22 @@ function must(name, ok, detail = "") {
 }
 // Fixed-string error details only (code + message of the API's ErrorResponse); never a token, URL or path.
 const errDetail = (r) => `status ${r.status}${r.json && (r.json.code || r.json.error) ? ` ${r.json.code || ""} ${String(r.json.error || r.json.message || "").slice(0, 80)}` : ""}`;
+// The ONLY value this script ever places in a query string: clearly synthetic and never a valid
+// credential (not a capability, not a bearer token, not a password). Its sole purpose is to prove
+// that the product refuses credential-named query parameters before anything else is evaluated.
+const SYNTHETIC_QUERY_CREDENTIAL = "b25-smoke-SYNTHETIC-NOT-A-CREDENTIAL";
+const CREDENTIAL_QUERY_KEYS = new Set(["t", "token", "capability"]);
 async function api(method, path, { token, body, headers = {}, raw = false, capability, origin = CUSTOMER } = {}) {
   if (origin !== CUSTOMER && origin !== PLATFORM) throw new Error("api: unknown origin");
   if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) throw new Error("api: path must be origin-relative");
+  // Structural guard: a query string may carry ONLY credential-named keys with the synthetic value
+  // (the deliberate rejection probes). Any other query value — in particular anything that could be a
+  // genuine capability, bearer token or password — is refused here, before a request exists.
+  const q = new URL(path, "http://query-guard.invalid").searchParams;
+  for (const [k, v] of q) {
+    if (!CREDENTIAL_QUERY_KEYS.has(k) || v !== SYNTHETIC_QUERY_CREDENTIAL) throw new Error("api: refusing a query-string value that is not the synthetic probe");
+  }
+  if (path.includes("#")) throw new Error("api: fragments are never sent");
   const h = { ...headers };
   if (token) h.Authorization = `Bearer ${token}`;
   if (capability) h["X-Storage-Capability"] = capability;
@@ -103,7 +125,14 @@ function firstParty(url, pathRe) {
 }
 // Only the PATH of a response URL is reused, and only against the fixed CUSTOMER origin.
 const toPath = (url) => new URL(String(url), CUSTOMER).pathname;
-const state = () => { try { return JSON.parse(readFileSync(OUT, "utf8")); } catch { return { tag: TAG, companies: [], users: [], capabilityPrefix: "" }; } };
+const state = () => { try { return JSON.parse(readFileSync(OUT, "utf8")); } catch { return { tag: TAG, companies: [], users: [], leakDetector: "" }; } };
+// Token-specific leak detector: the capability's signature component (base64url HMAC-SHA256, 43 chars,
+// unique per capability). Any occurrence of the complete capability contains it; capabilities of other
+// runs (and the shared payload prefix) never do. Returns "" when the token is not <body>.<signature>.
+function leakDetectorOf(capability) {
+  const m = /^[A-Za-z0-9_-]{20,}\.([A-Za-z0-9_-]{43})$/.exec(String(capability));
+  return m ? m[1] : "";
+}
 const save = (s) => writeFileSync(OUT, JSON.stringify(s), { mode: 0o600 });
 
 const METRIC_KEYS = ["retainedLegacyObjects", "publicationUncertain", "ownershipUnproven", "pendingDeletes", "pendingUploads", "unreconciledTombstones", "driver", "legacyFallback", "mirror", "legacyReads"];
@@ -114,7 +143,7 @@ async function storageMetrics(po) {
 }
 
 async function run() {
-  const s = { tag: TAG, companies: [], users: [], capabilityPrefix: "", documentId: null, fileUrl: null, fileSha: null, fileSize: 0, metricsBaseline: null };
+  const s = { tag: TAG, companies: [], users: [], leakDetector: "", documentId: null, fileUrl: null, fileSha: null, fileSize: 0, metricsBaseline: null };
   const po = await loginOwner();
   s.metricsBaseline = await storageMetrics(po); save(s);
   console.log(`metrics baseline: ${JSON.stringify(s.metricsBaseline)}`);
@@ -150,7 +179,8 @@ async function run() {
   const intent = await api("POST", "/api/documents/upload-url", { token: tA, body: { fileName: `b25-smoke-${TAG}.pdf`, contentType: MIME, size: bytes.length } });
   must("upload intent (tenant admin)", intent.status === 200 && intent.json && intent.json.uploadURL && intent.json.objectPath && intent.json.uploadToken, errDetail(intent));
   const { uploadURL, objectPath, uploadToken } = intent.json;
-  s.capabilityPrefix = String(uploadToken).slice(0, 16); save(s);
+  s.leakDetector = leakDetectorOf(uploadToken); save(s);
+  must("capability has the <payload>.<signature> shape (token-specific detector recorded, never printed)", s.leakDetector.length === 43);
   check("uploadURL is a first-party /api/files/uploads/<uuid> URL on the configured origin, no query", firstParty(uploadURL, /^\/api\/files\/uploads\/[0-9a-f-]{36}$/), "shape");
   check("objectPath is a native handle /objects/<uuid>", /^\/objects\/[0-9a-f-]{36}$/.test(objectPath));
   const putPath = toPath(uploadURL);
@@ -168,16 +198,32 @@ async function run() {
   check("PUT with a tampered capability refused", wrongCap.status === 403 || wrongCap.status === 401, `status ${wrongCap.status}`);
   const noAuth = await api("PUT", putPath, { body: bytes, raw: true, headers: { "Content-Type": MIME }, capability: uploadToken });
   check("PUT without a session refused (401)", noAuth.status === 401, `status ${noAuth.status}`);
-  const queryCred = await api("PUT", `${putPath}?t=${encodeURIComponent(uploadToken)}`, { token: tA, body: bytes, raw: true, headers: { "Content-Type": MIME } });
-  check("PUT with a query-string credential refused", queryCred.status !== 200, `status ${queryCred.status}`);
+  // Query-string credential rejection — the genuine capability is NEVER placed in a URL. Both probes carry
+  // the synthetic value only; the product must answer 403 STORAGE_QUERY_CREDENTIAL_REJECTED before any
+  // authentication, capability or state evaluation (the second probe presents the genuine capability in
+  // the approved header only and must be refused on the query key alone).
+  const queryRejected = (r) => r.status === 403 && !!r.json && r.json.code === "STORAGE_QUERY_CREDENTIAL_REJECTED";
+  const queryProbePath = `${putPath}?t=${encodeURIComponent(SYNTHETIC_QUERY_CREDENTIAL)}`;
+  const queryNoHeader = await api("PUT", queryProbePath, { token: tA, body: bytes, raw: true, headers: { "Content-Type": MIME } });
+  check("PUT with a synthetic query credential and no capability header → 403 STORAGE_QUERY_CREDENTIAL_REJECTED", queryRejected(queryNoHeader), errDetail(queryNoHeader));
+  const queryWithHeader = await api("PUT", queryProbePath, { token: tA, body: bytes, raw: true, headers: { "Content-Type": MIME }, capability: uploadToken });
+  check("PUT with a synthetic query credential and the genuine capability only in X-Storage-Capability → 403 STORAGE_QUERY_CREDENTIAL_REJECTED", queryRejected(queryWithHeader), errDetail(queryWithHeader));
+  // The rejected probes neither consumed nor published the intent: the object is not readable before the
+  // legitimate upload (404), the legitimate credential-free-URL upload then succeeds exactly once, and a
+  // second use is refused as already completed.
+  const objectId = objectPath.slice("/objects/".length);
+  const beforeUpload = await api("GET", `/api/files/${objectId}`, { token: tA });
+  check("intent not published by the rejected probes (GET of the reserved object → 404 before the upload)", beforeUpload.status === 404, `status ${beforeUpload.status}`);
   const put = await api("PUT", putPath, { token: tA, body: bytes, raw: true, headers: { "Content-Type": MIME }, capability: uploadToken });
-  must("first-party PUT with bearer + capability", put.status === 200 && put.json, errDetail(put));
+  must("first-party PUT with bearer + capability on the credential-free URL (intent not consumed by the rejected probes)", put.status === 200 && put.json, errDetail(put));
   check("receipt sizeBytes matches", put.json.sizeBytes === bytes.length, `${put.json.sizeBytes}`);
   check("receipt sha256 matches", put.json.sha256 === s.fileSha);
   const reuse = await api("PUT", putPath, { token: tA, body: bytes, raw: true, headers: { "Content-Type": MIME }, capability: uploadToken });
-  check("reused capability after completion refused (409 STORAGE_CONFLICT)", reuse.status === 409 && reuse.json && reuse.json.code === "STORAGE_CONFLICT", `status ${reuse.status} code ${reuse.json && reuse.json.code}`);
-  for (const r of [noCap, wrongCap, noAuth, queryCred, reuse, put]) {
-    check("no capability echoed in an API body", !Buffer.from(JSON.stringify(r.json || {})).includes(uploadToken.slice(0, 16)));
+  check("reused capability after completion refused (409 STORAGE_CONFLICT) — consumed exactly once, by the legitimate upload", reuse.status === 409 && reuse.json && reuse.json.code === "STORAGE_CONFLICT", `status ${reuse.status} code ${reuse.json && reuse.json.code}`);
+  // Token-specific comparison (complete capability and its signature component) — never a shared prefix.
+  for (const r of [noCap, wrongCap, noAuth, queryNoHeader, queryWithHeader, beforeUpload, reuse, put]) {
+    const b = Buffer.from(JSON.stringify(r.json || {}));
+    check("no capability echoed in an API body (complete token / signature component)", !b.includes(uploadToken) && !b.includes(s.leakDetector));
   }
 
   // 4. live association + authenticated GET / HEAD
