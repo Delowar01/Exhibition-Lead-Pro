@@ -584,11 +584,26 @@ read_log_once() {   # <container id> <label>: the complete container log, read e
   [ -n "$body" ] || { echo "[b25-s1:$PHASE] ERROR: $2 log is empty" >&2; return 1; }
   printf '%s\n' "$body"
 }
-count_literal() {   # <text> <literal>: number of lines containing the literal (fixed string; pattern supplied via a process substitution, never argv)
-  local n
-  [ -n "$2" ] || { echo "[b25-s1:$PHASE] ERROR: empty literal" >&2; return 1; }
-  n="$(printf '%s\n' "$1" | grep -c -F -f <(printf '%s\n' "$2") || true)"
-  [[ "$n" =~ ^[0-9]+$ ]] || { echo "[b25-s1:$PHASE] ERROR: literal count unreadable" >&2; return 1; }
+emit_text() { printf '%s\n' "$1"; }   # the producer stage of count_literal (a named stage so its status is attributable)
+# count_literal <text> <literal>: the number of lines of <text> containing <literal> as PLAIN TEXT.
+#   - Literal matching: awk index() (a substring search; never a regex, so regex punctuation in the literal is text).
+#   - The literal reaches the matcher ONLY through its environment (B25_LIT) — never a command argument, never a
+#     process substitution (an empty pattern file would silently match nothing), never printed.
+#   - No blanket error suppression: the producer (emit_text) and the matcher (awk) statuses are captured
+#     separately through PIPESTATUS in a subshell with errexit/pipefail off, so neither can be mistaken for a
+#     legitimate zero. The count is accepted ONLY when both stages exited 0 AND the output is exactly one decimal
+#     integer; a producer failure before or after its output, a matcher error (even one that printed a number),
+#     an empty or non-numeric answer, an empty literal or empty input all fail closed (return 1, nothing printed).
+#   - A genuine zero is a success: awk exits 0 whether or not anything matched and prints the count only in END,
+#     after the whole input was consumed — no early-exiting consumer, so the producer never sees a broken pipe.
+count_literal() {
+  local lit="$2" out n p0 p1
+  [ -n "$lit" ] || { echo "[b25-s1:$PHASE] ERROR: empty literal" >&2; return 1; }
+  out="$(set +e +o pipefail; emit_text "$1" | B25_LIT="$lit" awk 'BEGIN { if (length(ENVIRON["B25_LIT"]) == 0) { bad = 3; exit 3 } } index($0, ENVIRON["B25_LIT"]) > 0 { n++ } END { if (bad) exit bad; if (NR == 0) exit 4; printf "%d", n + 0 }'; printf '|%s|%s' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}")"
+  n="${out%%|*}"; p1="${out##*|}"; p0="${out%|*}"; p0="${p0##*|}"
+  [ "$p0" = "0" ] || { echo "[b25-s1:$PHASE] ERROR: literal count: producer failed (status ${p0:-?}) — fail closed" >&2; return 1; }
+  [ "$p1" = "0" ] || { echo "[b25-s1:$PHASE] ERROR: literal count: matcher failed (status ${p1:-?}) — fail closed" >&2; return 1; }
+  [[ "$n" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "[b25-s1:$PHASE] ERROR: literal count unreadable — fail closed" >&2; return 1; }
   printf '%s' "$n"
 }
 qd() {   # <sql using :'det'>: read-only psql; the detector is bound through psql's variable mechanism on STDIN (never argv, never SQL text)
