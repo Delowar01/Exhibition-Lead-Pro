@@ -584,11 +584,26 @@ read_log_once() {   # <container id> <label>: the complete container log, read e
   [ -n "$body" ] || { echo "[b25-s1:$PHASE] ERROR: $2 log is empty" >&2; return 1; }
   printf '%s\n' "$body"
 }
-count_literal() {   # <text> <literal>: number of lines containing the literal (fixed string; pattern supplied via a process substitution, never argv)
-  local n
-  [ -n "$2" ] || { echo "[b25-s1:$PHASE] ERROR: empty literal" >&2; return 1; }
-  n="$(printf '%s\n' "$1" | grep -c -F -f <(printf '%s\n' "$2") || true)"
-  [[ "$n" =~ ^[0-9]+$ ]] || { echo "[b25-s1:$PHASE] ERROR: literal count unreadable" >&2; return 1; }
+emit_text() { printf '%s\n' "$1"; }   # the producer stage of count_literal (a named stage so its status is attributable)
+# count_literal <text> <literal>: the number of lines of <text> containing <literal> as PLAIN TEXT.
+#   - Literal matching: awk index() (a substring search; never a regex, so regex punctuation in the literal is text).
+#   - The literal reaches the matcher ONLY through its environment (B25_LIT) — never a command argument, never a
+#     process substitution (an empty pattern file would silently match nothing), never printed.
+#   - No blanket error suppression: the producer (emit_text) and the matcher (awk) statuses are captured
+#     separately through PIPESTATUS in a subshell with errexit/pipefail off, so neither can be mistaken for a
+#     legitimate zero. The count is accepted ONLY when both stages exited 0 AND the output is exactly one decimal
+#     integer; a producer failure before or after its output, a matcher error (even one that printed a number),
+#     an empty or non-numeric answer, an empty literal or empty input all fail closed (return 1, nothing printed).
+#   - A genuine zero is a success: awk exits 0 whether or not anything matched and prints the count only in END,
+#     after the whole input was consumed — no early-exiting consumer, so the producer never sees a broken pipe.
+count_literal() {
+  local lit="$2" out n p0 p1
+  [ -n "$lit" ] || { echo "[b25-s1:$PHASE] ERROR: empty literal" >&2; return 1; }
+  out="$(set +e +o pipefail; emit_text "$1" | B25_LIT="$lit" awk 'BEGIN { if (length(ENVIRON["B25_LIT"]) == 0) { bad = 3; exit 3 } } index($0, ENVIRON["B25_LIT"]) > 0 { n++ } END { if (bad) exit bad; if (NR == 0) exit 4; printf "%d", n + 0 }'; printf '|%s|%s' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}")"
+  n="${out%%|*}"; p1="${out##*|}"; p0="${out%|*}"; p0="${p0##*|}"
+  [ "$p0" = "0" ] || { echo "[b25-s1:$PHASE] ERROR: literal count: producer failed (status ${p0:-?}) — fail closed" >&2; return 1; }
+  [ "$p1" = "0" ] || { echo "[b25-s1:$PHASE] ERROR: literal count: matcher failed (status ${p1:-?}) — fail closed" >&2; return 1; }
+  [[ "$n" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "[b25-s1:$PHASE] ERROR: literal count unreadable — fail closed" >&2; return 1; }
   printf '%s' "$n"
 }
 qd() {   # <sql using :'det'>: read-only psql; the detector is bound through psql's variable mechanism on STDIN (never argv, never SQL text)
@@ -1502,6 +1517,10 @@ phase_residue_verify() {
 #      before the row)
 #   C  row absent (already removed)
 # Whole-incident STATE C = every row absent, no marked object, census == accepted original inventory (4 / 1299).
+# Key shapes (product-authoritative): document  reference /objects/<id>, storage_key tenants/<cid>/documents/<id>;
+#   branding_logo  reference branding/<cid>/<id without dashes>.<ext>, storage_key tenants/<cid>/branding/<id without
+#   dashes>.<png|jpg|webp> (storage.service.ts storeBuffer removes the dashes for logos) — the first read-only
+#   inspection (run 38033721313) failed closed on a dashed-id predicate; the shared rule in purge-lib is now used.
 #
 #   residue2-eligibility  READ-ONLY (q only; provider list / metadata only): host coordination state, baselines,
 #                         disposable principals absent, no other row / live association / pending job / in-flight
@@ -1536,6 +1555,7 @@ R2_PRESENT=0
 residue2_eligibility() {
   local manifest="$1" n=0
   r2_manifest_check "$manifest"
+  declare -f logo_key_rule_sql >/dev/null || fail "purge library not loaded (stream b25-stage1-purge-lib.sh before this script)"
   local pass; pass() { n=$((n + 1)); echo "elig $n: $1 — OK"; }
   section "eligibility — coordination state of the host (accepted B25 product, healthy, idle, baselines intact)"
   [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$ACCEPTED_SHA" ] || fail "host checkout is not the accepted commit"
@@ -1576,7 +1596,7 @@ residue2_eligibility() {
   section "eligibility — the residue is exactly the recorded rows (nothing else; no live association; no pending job; no in-flight writer)"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and id not in ($R2_UUIDS_Q)")" = "0" ] || fail "another storage row of the disposable companies exists — not the recorded residue"
   [ "$(q "select count(*) from storage_objects where id in ($R2_UUIDS_Q) and company_id <> $R2_COMPANY")" = "0" ] || fail "a recorded uuid belongs to another company"
-  [ "$(q "select count(*) from storage_objects s where s.id not in ($R2_UUIDS_Q) and exists (select 1 from unnest(array[$R2_UUIDS_Q]) u where s.reference like '%' || u || '%' or s.reference like '%' || replace(u, '-', '') || '%' or s.storage_key like '%' || u || '%' or coalesce(s.legacy_key,'') like '%' || u || '%' or coalesce(s.mirror_key,'') like '%' || u || '%')")" = "0" ] || fail "another storage row references a residue id"
+  [ "$(q "select count(*) from storage_objects s where s.id not in ($R2_UUIDS_Q) and exists (select 1 from unnest(array[$R2_UUIDS_Q]) u, lateral (select replace(u, '-', '') as h) x where s.reference like '%' || u || '%' or s.reference like '%' || x.h || '%' or s.storage_key like '%' || u || '%' or s.storage_key like '%' || x.h || '%' or coalesce(s.legacy_key,'') like '%' || u || '%' or coalesce(s.legacy_key,'') like '%' || x.h || '%' or coalesce(s.mirror_key,'') like '%' || u || '%' or coalesce(s.mirror_key,'') like '%' || x.h || '%')")" = "0" ] || fail "another storage row references a residue id"
   [ "$(q "select count(*) from storage_objects l where l.id in ($R2_UUIDS_Q) and (exists (select 1 from document_versions dv where dv.object_path = l.reference) or exists (select 1 from export_runs e where e.object_path = l.reference) or exists (select 1 from executive_reports r where r.object_path = l.reference) or exists (select 1 from scans sc where sc.image_url = l.reference) or exists (select 1 from companies co where co.brand_logo_key = l.reference))")" = "0" ] || fail "a live feature row still references a residue object"
   [ "$(q "select count(*) from job_queue where status in ('pending','running') and (payload::text like '%$R2_UUID_DOC%' or payload::text like '%$R2_UUID_LOGO1%' or payload::text like '%$R2_UUID_LOGO2%' or payload::text like '%\"companyId\":49%' or payload::text like '%\"companyId\":50%')")" = "0" ] || fail "a pending/running job still references the residue"
   [ "$(q "select count(*) from storage_objects where id in ($R2_UUIDS_Q) and (lease_token is not null or lease_expires_at is not null)")" = "0" ] || fail "a residue row carries a lease (in-flight writer)"
@@ -1595,7 +1615,8 @@ residue2_eligibility() {
     [ "$nrow" = "1" ] || fail "unexpected row count for $u: $nrow"
     if [ "$kind" = "branding_logo" ]; then
       ref_pred="coalesce(reference ~ ('^branding/' || company_id || '/' || replace(id::text, '-', '') || '\\.(png|jpg|webp)\$'), false)"
-      key_pred="coalesce(storage_key ~ ('^tenants/' || company_id || '/branding/' || id::text || '\\.(png|jpg|webp)\$'), false)"
+      # the product stores a logo under tenants/<cid>/branding/<id WITHOUT dashes>.<ext> — the shared, tested rule of purge-lib
+      key_pred="coalesce($(logo_key_rule_sql), false)"
     else
       ref_pred="coalesce(reference = '/objects/' || id::text, false)"
       key_pred="coalesce(storage_key = 'tenants/' || company_id || '/documents/' || id::text, false)"
@@ -1718,7 +1739,7 @@ phase_residue2_verify() {
   section "residue2-verify (read-only)"
   if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then echo "verify: read-only guard FAILED"; bad=$((bad + 1)); else echo "verify: read-only session guard OK"; fi
   chk "residue rows" "$(q "select count(*) from storage_objects where id in ($R2_UUIDS_Q) or company_id in ($C)")" "0"
-  chk "rows mentioning a residue id" "$(q "select count(*) from storage_objects s where exists (select 1 from unnest(array[$R2_UUIDS_Q]) u where s.reference like '%' || u || '%' or s.reference like '%' || replace(u, '-', '') || '%' or s.storage_key like '%' || u || '%' or coalesce(s.legacy_key,'') like '%' || u || '%' or coalesce(s.mirror_key,'') like '%' || u || '%')")" "0"
+  chk "rows mentioning a residue id" "$(q "select count(*) from storage_objects s where exists (select 1 from unnest(array[$R2_UUIDS_Q]) u, lateral (select replace(u, '-', '') as h) x where s.reference like '%' || u || '%' or s.reference like '%' || x.h || '%' or s.storage_key like '%' || u || '%' or s.storage_key like '%' || x.h || '%' or coalesce(s.legacy_key,'') like '%' || u || '%' or coalesce(s.legacy_key,'') like '%' || x.h || '%' or coalesce(s.mirror_key,'') like '%' || u || '%' or coalesce(s.mirror_key,'') like '%' || x.h || '%')")" "0"
   chk "storage_objects total" "$(q "select count(*) from storage_objects")" "0"
   chk "disposable companies" "$(q "select count(*) from companies where id in ($C) or name like 'B25 SMOKE %'")" "0"
   chk "disposable users" "$(q "select count(*) from users where id in ($U) or email like '%@$DOM'")" "0"

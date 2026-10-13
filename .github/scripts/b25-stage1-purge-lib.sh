@@ -42,6 +42,22 @@ if (process.env.B25_RULES_EXPORT === "1") module.exports = B25_RULES;
 JS
 )
 
+# ---- logo_key_rule_sql [column prefix] ----
+# The storage-key identity of a branding_logo row, exactly as the product forms the key
+# (artifacts/api-server/src/services/storage.service.ts storeBuffer → storage/keys.ts tenantKey):
+#   tenants/<company_id>/branding/<row id with every "-" removed>.<png|jpg|webp>
+# The id transformation is the product's own (replace(id::text, '-', '')); the extension set is the
+# product's accepted logo set (lib/branding/storage.ts keyBelongsTo). The expression is anchored at both
+# ends: a dashed id, another id, a sibling id sharing a prefix, another tenant, another directory, a
+# missing file name, trailing material, a prefix-only match or an extension outside the set all evaluate
+# to false. Used by purge_rows_sql (allow-list) and by the residue2 eligibility proof (row identity), so
+# both tools apply one tested rule. The optional prefix qualifies the column names (e.g. "l.").
+logo_key_rule_sql() {
+  local a="${1:-}"
+  [[ "$a" =~ ^([a-z]+\.)?$ ]] || { echo "logo_key_rule_sql: prefix malformed" >&2; return 1; }
+  printf '%s' "(${a}storage_key ~ ('^tenants/' || ${a}company_id || '/branding/' || replace(${a}id::text, '-', '') || '\\.(png|jpg|webp)\$'))"
+}
+
 # ---- purge_rows_sql <quoted uuid csv> <company id csv> <expected count> ----
 # ONE statement (one transaction): lock the explicit rows, re-evaluate the complete
 # allow-list on the locked rows, delete ONLY when every locked row passes AND the
@@ -70,7 +86,10 @@ with locked as (
       (l.kind <> 'branding_logo' and l.reference = '/objects/' || l.id::text)
       or (l.kind = 'branding_logo' and l.reference ~ ('^branding/' || l.company_id || '/' || replace(l.id::text, '-', '') || '\\.[a-z0-9]+\$'))
     )
-    and l.storage_key ~ ('^tenants/' || l.company_id || '/(documents|exports|reports|scans|branding)/' || l.id::text || '(\\.[a-z0-9]+)?\$')
+    and (
+      (l.kind <> 'branding_logo' and l.storage_key ~ ('^tenants/' || l.company_id || '/(documents|exports|reports|scans)/' || l.id::text || '(\\.[a-z0-9]+)?\$'))
+      or (l.kind = 'branding_logo' and $(logo_key_rule_sql 'l.'))
+    )
     and not exists (select 1 from document_versions dv where dv.company_id = l.company_id and dv.object_path = l.reference)
     and not exists (select 1 from documents d where d.company_id = l.company_id)
     and not exists (select 1 from export_runs e where e.company_id = l.company_id and e.object_path = l.reference)
