@@ -574,10 +574,12 @@ phase_smoke_setup() {
 # stdin stream the workflow prepends (`B25_LEAK_DETECTOR=<43 base64url chars>`), i.e. a variable of this very process:
 # never an SSH command argument, never a URL, never an artifact, never SQL text, never a process-list argument.
 # The detector is the capability's HMAC signature component — unique to the capability of THIS run. Every comparison
-# is a LITERAL fixed-string match (grep -F with the pattern on a process substitution; psql `position()` with the
-# value bound through psql's own variable on stdin). Historical lines of other runs (other capabilities, the shared
-# base64url payload prefix, the former `?t=` probe requests) can never match it; a genuine match of this run's
-# capability anywhere still fails; an unreadable log fails closed.
+# is a LITERAL match: log bodies through count_literal (awk index(), a plain substring search; the literal reaches awk
+# only as B25_LIT in its environment — there is no grep and no process-substitution pattern file; producer and matcher
+# statuses are checked independently), and the database columns through psql `position()` with the value bound
+# through psql's own variable on stdin. Historical lines of other runs (other capabilities, the shared base64url
+# payload prefix, the former `?t=` probe requests) can never match it; a genuine match of this run's capability
+# anywhere still fails; an unreadable log fails closed.
 read_log_once() {   # <container id> <label>: the complete container log, read exactly once; unreadable or empty → failure
   local body
   body="$(docker logs "$1" 2>&1)" || { echo "[b25-s1:$PHASE] ERROR: $2 log unreadable" >&2; return 1; }
