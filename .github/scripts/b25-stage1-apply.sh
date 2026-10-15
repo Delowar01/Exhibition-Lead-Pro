@@ -1844,7 +1844,7 @@ phase_b25phys_inspect() {
   local crow; crow="$(q "select id||'|'||name||'|'||status||'|'||plan||'|'||coalesce(suspended_reason,'<null>')||'|'||created_at||'|'||updated_at||'|'||coalesce(created_by_id::text,'<null>') from companies where id = $C")"
   echo "  company(id|name|status|plan|suspended_reason|created|updated|created_by_id)=${crow:-<absent>}"
   if [ -n "$crow" ]; then fact company_present 1; else fact company_present 0; fi
-  fact company_name_matches "$(q "select coalesce((select name = '$B25PHYS_COMPANY_NAME' from companies where id = $C), false)")"
+  fact company_name_matches "$(q "select coalesce((select name = '$B25PHYS_COMPANY_NAME' from companies where id = $C), false)::text")"
   echo "  subscriptions(id|plan|status|billing_source|created):"; q "select '  '||id||'|'||plan||'|'||status||'|'||billing_source||'|'||created_at from subscriptions where company_id = $C order by id"
   echo "  dependency census from the catalog (every foreign key to companies.id; table|column|on_delete|rows for company $C; zero rows omitted):"
   local gen deps blocking=0 nonzero=0 total=0 line tbl col del cnt
@@ -1877,7 +1877,7 @@ phase_b25phys_inspect() {
   local admin_id=""; [ "$cand" = "1" ] && admin_id="$(q "select id from users where company_id = $C and role = 'primary_admin' and is_active and deleted_at is null")"
   fact admin_user_id "${admin_id:-none}"
   if [ -n "$admin_id" ]; then
-    echo "  dedicated B25 test admin: user id $admin_id (proof: company_id = $C, role primary_admin, active, not deleted; name label matches = $(q "select name = 'B25 Test Admin' from users where id = $admin_id"))"
+    echo "  dedicated B25 test admin: user id $admin_id (proof: company_id = $C, role primary_admin, active, not deleted; name label matches = $(q "select (name = 'B25 Test Admin')::text from users where id = $admin_id"))"
     echo "  sessions of the company's users: $(q "select count(*)||' (revoked='||count(*) filter (where revoked_at is not null)||')' from sessions where user_id in (select id from users where company_id = $C)")"
     echo "  dependency census of user $admin_id (foreign keys to users.id; table|column|on_delete|rows; zero rows omitted):"
     gen="$(q "$(b25phys_fk_counts_gen_sql users "$admin_id")")"; [ -n "$gen" ] && q "$gen" | awk -F'|' '$4 != "0" { print "    " $0 }'
@@ -1899,7 +1899,7 @@ phase_b25phys_inspect() {
 
   section "D. contact $K (id|company|label|status|source|event_id|assigned_to|created_by|created|deleted)"
   q "select '  '||id||'|'||company_id||'|'||coalesce(full_name, trim(coalesce(first_name,'')||' '||coalesce(last_name,'')))||'|'||status||'|'||coalesce(source,'<null>')||'|'||coalesce(event_id::text,'<null>')||'|'||coalesce(assigned_to_id::text,'<null>')||'|'||coalesce(created_by_id::text,'<null>')||'|'||created_at||'|'||coalesce(deleted_at::text,'<null>') from contacts where id = $K"
-  fact contact_ok "$(q "select coalesce((select company_id = $C and coalesce(full_name, trim(coalesce(first_name,'')||' '||coalesce(last_name,''))) = '$B25PHYS_CONTACT_NAME' from contacts where id = $K), false)")"
+  fact contact_ok "$(q "select coalesce((select company_id = $C and coalesce(full_name, trim(coalesce(first_name,'')||' '||coalesce(last_name,''))) = '$B25PHYS_CONTACT_NAME' from contacts where id = $K), false)::text")"
   echo "  documents of contact $K in company $C: $(q "select count(*) from documents where company_id = $C and entity_type = 'contact' and entity_id = $K")  AI rows naming contact $K (insights|copilot|workflow): $(q "select (select count(*) from ai_insights where company_id = $C and entity_type = 'contact' and entity_id = $K)||'|'||(select count(*) from ai_copilot_outputs where company_id = $C and entity_type = 'contact' and entity_id = $K)||'|'||(select count(*) from ai_workflow_recommendations where company_id = $C and entity_type = 'contact' and entity_id = $K)")"
   echo "  dependency census of contact $K (foreign keys to contacts.id; zero rows omitted):"
   gen="$(q "$(b25phys_fk_counts_gen_sql contacts "$K")")"; [ -n "$gen" ] && q "$gen" | awk -F'|' '$4 != "0" { print "    " $0 }'
@@ -1909,7 +1909,7 @@ phase_b25phys_inspect() {
   q "select '  '||id||'|'||company_id||'|'||entity_type||'|'||entity_id||'|'||name||'|'||category||'|'||coalesce(current_version_id::text,'<null>')||'|'||coalesce(created_by_id::text,'<null>')||'|'||created_at||'|'||coalesce(deleted_at::text,'<null>') from documents where id = $D"
   echo "  versions (id|company|version|object_path_is_row_reference|file_size|mime|uploaded_by|uploaded_at):"
   q "select '  '||id||'|'||company_id||'|'||version_number||'|'||(object_path = '/objects/$U')||'|'||file_size||'|'||mime_type||'|'||coalesce(uploaded_by_id::text,'<null>')||'|'||uploaded_at from document_versions where document_id = $D order by version_number"
-  fact document_ok "$(q "select coalesce((select company_id = $C and entity_type = 'contact' and entity_id = $K from documents where id = $D), false)")"
+  fact document_ok "$(q "select coalesce((select company_id = $C and entity_type = 'contact' and entity_id = $K from documents where id = $D), false)::text")"
   fact document_versions "$(q "select count(*) from document_versions where document_id = $D")"
   echo "  dependency census of document $D (foreign keys to documents.id; zero rows omitted):"
   gen="$(q "$(b25phys_fk_counts_gen_sql documents "$D")")"; [ -n "$gen" ] && q "$gen" | awk -F'|' '$4 != "0" { print "    " $0 }'
@@ -1918,12 +1918,12 @@ phase_b25phys_inspect() {
   section "F. storage row $U (every column in a safe form; keys never printed)"
   local srow; srow="$(q "select 'company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' entity='||coalesce(entity_type,'<null>')||'/'||coalesce(entity_id::text,'<null>')||' reference_is_/objects/<id>='||(reference = '/objects/' || id::text)||' storage_key_is_tenants/'||company_id||'/documents/<id>='||(storage_key = 'tenants/' || company_id || '/documents/' || id::text)||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null or lease_expires_at is not null)||' size='||coalesce(size_bytes::text,'null')||' sha256_set='||(sha256 is not null)||' content_type='||content_type||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null)||' mirror_state='||coalesce(mirror_state,'<null>')||' created='||created_at||' updated='||updated_at||' deleted_at='||coalesce(deleted_at::text,'<null>')||' reconciled_at='||coalesce(reconciled_at::text,'<null>') from storage_objects where id = '$U'")"
   echo "  ${srow:-<absent>}"
-  fact storage_row_ok "$(q "select coalesce((select company_id = $C and kind = 'document' and driver = 'gcs' and state = 'active' and reference = '/objects/' || id::text and storage_key = 'tenants/' || company_id || '/documents/' || id::text and mirror_key is null and lease_token is null and lease_expires_at is null and publication_uncertain_at is null and last_error is null and deleted_at is null and size_bytes = $B25PHYS_OBJECT_SIZE from storage_objects where id = '$U'), false)")"
-  fact storage_linked_to_document "$(q "select (select count(*) from document_versions v where v.document_id = $D and v.company_id = $C and v.object_path = '/objects/$U') = 1")"
+  fact storage_row_ok "$(q "select coalesce((select company_id = $C and kind = 'document' and driver = 'gcs' and state = 'active' and reference = '/objects/' || id::text and storage_key = 'tenants/' || company_id || '/documents/' || id::text and mirror_key is null and lease_token is null and lease_expires_at is null and publication_uncertain_at is null and last_error is null and deleted_at is null and size_bytes = $B25PHYS_OBJECT_SIZE from storage_objects where id = '$U'), false)::text")"
+  fact storage_linked_to_document "$(q "select ((select count(*) from document_versions v where v.document_id = $D and v.company_id = $C and v.object_path = '/objects/$U') = 1)::text")"
   local refs_other; refs_other="$(q "select (select count(*) from document_versions v where v.object_path = '/objects/$U' and v.document_id <> $D) + (select count(*) from export_runs where object_path = '/objects/$U') + (select count(*) from executive_reports where object_path = '/objects/$U') + (select count(*) from scans where image_url = '/objects/$U') + (select count(*) from storage_objects where id <> '$U' and (reference like '%$U%' or storage_key like '%$U%' or coalesce(legacy_key,'') like '%$U%' or coalesce(mirror_key,'') like '%$U%'))")"
   echo "  references: document_versions of document $D with this object=$(q "select count(*) from document_versions where document_id = $D and object_path = '/objects/$U'") other references anywhere=$refs_other"
   fact live_refs_other "$refs_other"
-  echo "  legacy_key is the canonical location of storage_key: $(q "select coalesce((select legacy_key = 'gs://' || split_part(split_part(legacy_key, '://', 2), '/', 1) || '/' || storage_key from storage_objects where id = '$U'), false)") (bucket identity is checked by the provider read below)"
+  echo "  legacy_key is the canonical location of storage_key: $(q "select coalesce((select legacy_key = 'gs://' || split_part(split_part(legacy_key, '://', 2), '/', 1) || '/' || storage_key from storage_objects where id = '$U'), false)::text") (bucket identity is checked by the provider read below)"
   pass "storage row read; one live version reference of document $D; other references=$refs_other"
 
   section "G. provider object (by the stored key; two immediate metadata reads; generation kept in-session)"

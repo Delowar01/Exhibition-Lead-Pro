@@ -372,7 +372,19 @@ mut "original references invalid → eligibility FALSE"          FALSE 0 's/^ori
 mut "a missing fact never passes (census fact removed)"        FALSE 0 '/^census_md5=/d'
 mut "a missing identity fact is fatal (contact fact removed)"  FALSE 1 '/^contact_ok=/d'
 check "evaluator ignores malformed lines (no key=value)" "$(printf 'garbage line\n%s\n' "$(golden)" | b25phys_eligibility | verdict)" "TRUE"
-# 5. masked e-mail rule
+# 5. boolean facts reach the evaluator as the words true/false (psql -tA prints a bare boolean as t/f — the run
+#    38808916359 defect): every boolean fact of the phase is cast ::text, and the evaluator never accepts t/f
+check "a bare boolean from psql renders as t (why the cast is required)" "$(q "select 1 = 1")" "t"
+check "a ::text boolean renders as the word the evaluator expects" "$(q "select (1 = 1)::text")" "true"
+check "every boolean fact of the phase is cast ::text (company name, contact, document, storage row, version link)" "$(printf '%s\n' "$PH" | grep -E '^\s*fact (company_name_matches|contact_ok|document_ok|storage_row_ok|storage_linked_to_document) ' | grep -vc '::text")"' || true)" "0"
+check "the evaluator treats t as a failed condition, never as true" "$(golden | sed -E 's/^contact_ok=true/contact_ok=t/' | b25phys_eligibility | verdict)" "FALSE"
+check "a t value is counted as exactly one failed (fatal) condition, not silently accepted" "$(golden | sed -E 's/^contact_ok=true/contact_ok=t/' | b25phys_eligibility | grep -oE '^B25PHYS_(CONDITIONS_FAILED|FATAL)=[0-9]+$' | tr '\n' ' ')" "B25PHYS_CONDITIONS_FAILED=1 B25PHYS_FATAL=1 "
+check "the evaluator accepts the ::text rendering of a TRUE predicate straight from psql" "$(golden | sed -E "s/^contact_ok=true/contact_ok=$(q "select (1 = 1)::text")/" | b25phys_eligibility | verdict)" "TRUE"
+check "an actually FALSE predicate rendered ::text still fails eligibility (fatal)" "$(golden | sed -E "s/^document_ok=true/document_ok=$(q "select (1 = 2)::text")/" | b25phys_eligibility | grep -oE '^(B25PHYS_FATAL=[0-9]+|B25_PHYSICAL_SETTLEMENT_ELIGIBLE=[A-Z]+)$' | tr '\n' ' ')" "B25PHYS_FATAL=1 B25_PHYSICAL_SETTLEMENT_ELIGIBLE=FALSE "
+check "exactly fifteen conditions are still evaluated (none removed or merged)" "$(grep -cE '^  cond (yes|no) "' "$HERE/b25-stage1-apply-lib.sh")" "15"
+check "the golden set fails zero conditions (no condition was weakened into an unconditional pass either way)" "$(golden | b25phys_eligibility | grep -oE '^B25PHYS_CONDITIONS_FAILED=[0-9]+$')" "B25PHYS_CONDITIONS_FAILED=0"
+check "the evaluator never hard-codes its verdict (the TRUE/FALSE lines are derived from the failed count)" "$(grep -cE 'if \[ "\$failed" = "0" \]; then echo "B25_PHYSICAL_SETTLEMENT_ELIGIBLE=TRUE"; else echo "B25_PHYSICAL_SETTLEMENT_ELIGIBLE=FALSE"; fi' "$HERE/b25-stage1-apply-lib.sh")" "1"
+# 6. masked e-mail rule
 check "masked e-mail: first character, ***, domain only" "$(q "select $(b25phys_mask_email_sql "'alpha.person@tenant.example'")")" "a***@tenant.example"
 
 echo; echo "cleanup tests: $pass passed, $failn failed"
