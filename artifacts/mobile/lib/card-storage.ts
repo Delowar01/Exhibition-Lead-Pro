@@ -2,31 +2,41 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import type { BusinessCard } from "@workspace/api-client-react";
 
+import { type OwnedCardCache, parseStoredCardCache, serializeCardCache } from "./card-cache-model";
+
+// Last known good copy of the user's own digital business card, so the card
+// screen renders instantly on cold start and stays visible while offline.
+// The slot holds ONE owner wrapper `{ owner, card }` (lib/card-cache-model.ts);
+// the storage key is unchanged on purpose. A pre-ownership raw card in the slot
+// is legacy: it is removed on load and never attributed to any account.
 const CARD_CACHE_KEY = "csp_own_card";
 
-// Last known good copy of the user's own digital business card, so the Home
-// takeover and card screen render instantly on cold start and stay visible while
-// offline (where no server fetch can succeed).
-export async function loadCachedCard(): Promise<BusinessCard | null> {
+export async function loadCachedCard(): Promise<OwnedCardCache | null> {
   try {
-    const raw = await AsyncStorage.getItem(CARD_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed as BusinessCard;
+    const stored = parseStoredCardCache(await AsyncStorage.getItem(CARD_CACHE_KEY));
+    if (stored.kind === "owned") return stored.cache;
+    if (stored.kind === "legacy") await AsyncStorage.removeItem(CARD_CACHE_KEY);
+    return null;
   } catch {
     return null;
   }
 }
 
-export async function saveCachedCard(card: BusinessCard | null): Promise<void> {
+/** Persist the owner's card; without a tenant owner nothing is written. */
+export async function saveCachedCard(owner: string | null | undefined, card: BusinessCard): Promise<void> {
+  const snapshot = serializeCardCache(owner, card);
+  if (!snapshot) return;
   try {
-    if (card) {
-      await AsyncStorage.setItem(CARD_CACHE_KEY, JSON.stringify(card));
-    } else {
-      await AsyncStorage.removeItem(CARD_CACHE_KEY);
-    }
+    await AsyncStorage.setItem(CARD_CACHE_KEY, snapshot);
   } catch {
     /* best-effort persistence */
+  }
+}
+
+export async function clearCachedCard(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(CARD_CACHE_KEY);
+  } catch {
+    /* noop */
   }
 }

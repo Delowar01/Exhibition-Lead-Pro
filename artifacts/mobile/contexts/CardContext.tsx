@@ -18,7 +18,9 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
-import { loadCachedCard, saveCachedCard } from "@/lib/card-storage";
+import { cacheBelongsTo, optimisticCardFor, visibleCachedCard, type OwnedCardCache } from "@/lib/card-cache-model";
+import { clearCachedCard, loadCachedCard, saveCachedCard } from "@/lib/card-storage";
+import { queueOwnerKey } from "@/lib/offline-queue-model";
 
 interface CardContextValue {
   /** Best known copy of the card: server → local optimistic → cache. */
@@ -47,85 +49,86 @@ const CardContext = createContext<CardContextValue>({
   refresh: () => {},
 });
 
-// Builds an optimistic BusinessCard from a pending input so the UI updates
-// instantly (offline or while the request is in flight). Server-owned fields
-// (token, ids, timestamps) are carried over from the previous card when present.
-function optimisticCard(
-  input: BusinessCardInput,
-  prev: BusinessCard | null,
-  account: { avatarUrl?: string | null; name?: string | null },
-): BusinessCard {
-  const now = new Date().toISOString();
-  return {
-    id: prev?.id ?? 0,
-    userId: prev?.userId ?? 0,
-    companyId: prev?.companyId ?? null,
-    publicToken: prev?.publicToken ?? "",
-    fullName: input.fullName,
-    designation: input.designation ?? null,
-    companyName: input.companyName ?? null,
-    email: input.email ?? null,
-    primaryPhone: input.primaryPhone ?? null,
-    alternatePhone: input.alternatePhone ?? null,
-    officeAddress: input.officeAddress ?? null,
-    website: input.website ?? null,
-    linkedin: input.linkedin ?? null,
-    facebook: input.facebook ?? null,
-    instagram: input.instagram ?? null,
-    twitter: input.twitter ?? null,
-    youtube: input.youtube ?? null,
-    fieldVisibility: input.fieldVisibility ?? prev?.fieldVisibility ?? {},
-    templateId: input.templateId ?? prev?.templateId ?? "classic",
-    isPublished: input.isPublished ?? prev?.isPublished ?? true,
-    avatarUrl: account.avatarUrl ?? prev?.avatarUrl ?? null,
-    accountName: account.name ?? prev?.accountName ?? null,
-    publicUrl: prev?.publicUrl ?? null,
-    createdAt: prev?.createdAt ?? now,
-    updatedAt: now,
-  };
-}
-
 export function CardProvider({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { isOnline, enqueueCard, lastSyncAt } = useOffline();
   const queryClient = useQueryClient();
 
+  // The account the card belongs to: undefined until auth resolves, null when
+  // logged out or not a tenant user. Everything exposed below is scoped to it.
+  const owner = authLoading ? undefined : queueOwnerKey(user);
+  const ownerRef = useRef<string | null | undefined>(owner);
+  ownerRef.current = owner;
+
+  // The stored slot (whoever's it is) and the card the CURRENT owner may see.
+  const cacheRef = useRef<OwnedCardCache | null>(null);
   const [card, setCard] = useState<BusinessCard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pendingSync, setPendingSync] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
-  const cardRef = useRef<BusinessCard | null>(null);
-  cardRef.current = card;
-
+  // Hold `next` as the current owner's card (state + cache). Without a tenant
+  // owner nothing is shown or written; clearing only removes the owner's own
+  // slot, never silently another account's.
   const setAndCache = useCallback((next: BusinessCard | null) => {
-    cardRef.current = next;
+    const o = ownerRef.current;
+    if (next === null) {
+      if (cacheBelongsTo(cacheRef.current, o)) {
+        cacheRef.current = null;
+        void clearCachedCard();
+      }
+      setCard(null);
+      return;
+    }
+    if (typeof o !== "string") {
+      setCard(null);
+      return;
+    }
+    cacheRef.current = { owner: o, card: next };
     setCard(next);
-    void saveCachedCard(next);
+    void saveCachedCard(o, next);
   }, []);
 
-  // --- Cache hydration (instant render on cold start). ----------------------
+  // --- Cache hydration (instant render on cold start, owner-gated). ---------
   useEffect(() => {
     let mounted = true;
     void (async () => {
       const cached = await loadCachedCard();
-      if (mounted && cached) {
-        cardRef.current = cached;
-        setCard(cached);
-      }
+      if (!mounted) return;
+      cacheRef.current = cached;
+      setHydrated(true);
     })();
     return () => {
       mounted = false;
     };
   }, []);
 
+  // --- Owner binding: the visible card is the owner's own cache, or nothing. --
+  // Runs on hydration and on every auth boundary (login, logout, switch): a
+  // different account never sees the previous one's card or pending state.
+  useEffect(() => {
+    if (!hydrated) return;
+    setCard(visibleCachedCard(cacheRef.current, owner));
+    setPendingSync(false);
+  }, [hydrated, owner]);
+
   // --- Server fetch. --------------------------------------------------------
   const fetchCard = useCallback(async () => {
     if (!isAuthenticated) return;
+    const fetchOwner = ownerRef.current;
+    if (typeof fetchOwner !== "string") {
+      setIsLoading(false);
+      return;
+    }
     try {
       const server = await getOwnCard();
+      // The response belongs to the account that was signed in when the
+      // request was sent; if the owner changed meanwhile, it is dropped.
+      if (ownerRef.current !== fetchOwner) return;
       setAndCache(server);
       setPendingSync(false);
     } catch (err) {
+      if (ownerRef.current !== fetchOwner) return;
       // A 404 means "no card yet" — clear any stale cache so the empty state
       // shows. Other errors (offline, server) keep the last known card.
       const status = (err as { status?: number } | null)?.status;
@@ -161,12 +164,18 @@ export function CardProvider({ children }: { children: React.ReactNode }) {
   const saveCard = useCallback(
     async (input: BusinessCardInput) => {
       const account = { avatarUrl: user?.avatarUrl, name: user?.name };
-      const previous = cardRef.current;
+      const saveOwner = ownerRef.current;
+      // Server-owned fields come only from THIS owner's cached card (never
+      // another account's); without a tenant owner nothing is saved.
+      const optimistic = optimisticCardFor(input, cacheRef.current, saveOwner, account);
+      if (!optimistic) throw new Error("No signed-in company account");
+      const previous = visibleCachedCard(cacheRef.current, saveOwner);
       // Optimistic update first so the UI reflects the edit immediately.
-      setAndCache(optimisticCard(input, previous, account));
+      setAndCache(optimistic);
 
       if (isOnline) {
         const server = await upsertOwnCard(input);
+        if (ownerRef.current !== saveOwner) return;
         setAndCache(server);
         setPendingSync(false);
         void queryClient.invalidateQueries();
