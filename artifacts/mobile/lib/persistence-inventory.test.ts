@@ -15,7 +15,7 @@ const MOBILE_ROOT = fileURLToPath(String(new URL("..", import.meta.url)));
 const SOURCE_DIRS = ["app", "components", "contexts", "hooks", "lib"];
 const SKIP_DIRS = new Set(["node_modules", ".expo", "dist", "android", "ios", "assets", "i18n"]);
 
-type Classification = "DEVICE-WIDE SAFE" | "ACCOUNT-SCOPED" | "AUTH/SECURITY";
+type Classification = "DEVICE-WIDE SAFE" | "ACCOUNT-SCOPED" | "AUTH/SECURITY" | "AUTH/SECURITY — NON-SECRET ACCOUNT HINT";
 
 /** Reviewed storage keys: value → classification and the module that owns it. */
 const REVIEWED_KEYS: Record<string, { kind: Classification; owner: string; note: string }> = {
@@ -26,7 +26,8 @@ const REVIEWED_KEYS: Record<string, { kind: Classification; owner: string; note:
   csp_token: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "current session token (secure store); replaced on login, deleted on logout" },
   csp_user: { kind: "AUTH/SECURITY", owner: "lib/auth-storage.ts", note: "current session user (secure store); replaced on login, deleted on logout" },
   csp_remember_email: { kind: "AUTH/SECURITY", owner: "app/login.tsx", note: "remembered login e-mail (opt-in Remember me, secure store)" },
-  csp_biometric_vault: { kind: "AUTH/SECURITY", owner: "lib/biometric.ts", note: "biometric quick sign-in: session of the account that enabled it (secure store, device biometric gated)" },
+  csp_biometric_vault: { kind: "AUTH/SECURITY", owner: "lib/biometric.ts", note: "biometric quick sign-in: session of the account that enabled it (secure store, read only after the biometric prompt); cleared when a different account signs in" },
+  csp_biometric_account: { kind: "AUTH/SECURITY — NON-SECRET ACCOUNT HINT", owner: "lib/biometric.ts", note: "destination of the biometric action: stable <userId>@<companyId> + masked e-mail only, written/cleared with the vault; no token" },
   csp_app_lock_pin: { kind: "AUTH/SECURITY", owner: "lib/biometric.ts", note: "app-lock PIN (secure store), unlocks the current session only" },
   csp_app_lock_pin_state: { kind: "AUTH/SECURITY", owner: "lib/biometric.ts", note: "app-lock attempt counter / lockout (secure store)" },
 };
@@ -120,8 +121,21 @@ describe("mobile persistence inventory", () => {
     expect(read(join(MOBILE_ROOT, "lib", "offline-queue-model.ts"))).toMatch(/owner: string \| null/);
     expect(read(join(MOBILE_ROOT, "lib", "card-cache-model.ts"))).toMatch(/owner: string;/);
     // and all derive it from the one helper
-    for (const m of ["lib/offline-queue-model.ts", "contexts/AuthContext.tsx"]) {
+    for (const m of ["lib/offline-queue-model.ts", "lib/biometric-account-model.ts", "contexts/AuthContext.tsx"]) {
       expect(read(join(MOBILE_ROOT, m))).toMatch(/accountOwnerKey/);
     }
+  });
+
+  it("the biometric account hint persists no secret: exactly { owner, emailHint }, written and cleared with the vault", () => {
+    const model = read(join(MOBILE_ROOT, "lib", "biometric-account-model.ts"));
+    expect(model).toMatch(/JSON\.stringify\(\{ owner: hint\.owner, emailHint: hint\.emailHint \}\)/);
+    const storage = read(join(MOBILE_ROOT, "lib", "biometric.ts"));
+    expect(storage).toMatch(/const ACCOUNT_KEY = "csp_biometric_account"/);
+    // the only writer of the hint record serialises the model's two-field hint
+    const hintWrites = storage.match(/setSecureItem\(ACCOUNT_KEY, ([^)]*)\)/g) ?? [];
+    expect(hintWrites.length).toBeGreaterThan(0);
+    for (const w of hintWrites) expect(w).toMatch(/serializeBiometricAccountHint\(/);
+    // clearing the vault always clears the hint with it
+    expect(storage).toMatch(/deleteSecureItem\(VAULT_KEY\);\s*await deleteSecureItem\(ACCOUNT_KEY\)/);
   });
 });

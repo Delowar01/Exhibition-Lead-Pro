@@ -246,6 +246,7 @@
     "forgotPassword": "Forgot password?",
     "useBiometric": "Use biometrics",
     "signInWith": "Sign in with {{method}}",
+    "signInWithAs": "Sign in with {{method}} as {{account}}",
     "invalidCredentials": "Incorrect email or password.",
     "mfaTitle": "Two-factor verification",
     "mfaPrompt": "Enter the 6-digit code from your authenticator app, or one of your backup codes.",

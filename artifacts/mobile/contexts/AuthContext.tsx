@@ -11,6 +11,7 @@ import type { User } from "@workspace/api-client-react";
 
 import { useSettings } from "@/contexts/SettingsContext";
 import { clearSession, loadSession, saveSession } from "@/lib/auth-storage";
+import { reconcileBiometricLogin } from "@/lib/biometric";
 import { accountOwnerKey } from "@/lib/settings-model";
 
 interface AuthContextValue {
@@ -57,6 +58,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(
     async (newToken: string, newUser: User) => {
       await saveSession(newToken, newUser);
+      // The remembered biometric sign-in belongs to ONE account: it stays when
+      // this is that account and is cleared when a different account has just
+      // authenticated. Best effort — storage trouble must not block a login.
+      try {
+        await reconcileBiometricLogin(newUser);
+      } catch {
+        // ignore
+      }
       bindAccount(accountOwnerKey(newUser));
       setToken(newToken);
       setUser(newUser);

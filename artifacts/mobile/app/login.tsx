@@ -22,10 +22,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import {
+  type BiometricAccountHint,
   authenticateBiometric,
+  clearBiometricLogin,
   getBiometricLabel,
   isBiometricSupported,
-  readBiometricVault,
+  readBiometricAccountHint,
+  readBiometricSignIn,
 } from "@/lib/biometric";
 import {
   deleteSecureItem,
@@ -54,9 +57,15 @@ export default function LoginScreen() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
-  const [bioReady, setBioReady] = useState(false);
+  // The remembered biometric account (non-secret destination record). The
+  // biometric action is offered only when the device supports biometrics AND
+  // this destination is known — never as a generic "sign in with biometrics".
+  const [bioDestination, setBioDestination] = useState<BiometricAccountHint | null>(null);
   const [bioLabel, setBioLabel] = useState(t("auth.biometrics"));
   const [bioBusy, setBioBusy] = useState(false);
+  const bioSignInLabel = bioDestination
+    ? t("auth.signInWithAs", { method: bioLabel, account: bioDestination.emailHint })
+    : "";
 
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
@@ -68,13 +77,13 @@ export default function LoginScreen() {
         setEmail(remembered);
         setRememberMe(true);
       }
-      const [supported, vault, label] = await Promise.all([
+      const [supported, destination, label] = await Promise.all([
         isBiometricSupported(),
-        readBiometricVault(),
+        readBiometricAccountHint(),
         getBiometricLabel(),
       ]);
       if (mounted) {
-        setBioReady(supported && !!vault);
+        setBioDestination(supported ? destination : null);
         setBioLabel(label);
       }
     })();
@@ -189,20 +198,24 @@ export default function LoginScreen() {
   }
 
   async function handleBiometricLogin() {
+    if (!bioDestination) return;
     setError(null);
     setBioBusy(true);
     try {
-      const ok = await authenticateBiometric(
-        t("auth.signInWith", { method: bioLabel }),
-      );
+      const ok = await authenticateBiometric(bioSignInLabel);
       if (!ok) return;
-      const vault = await readBiometricVault();
-      if (!vault) {
+      // The vault is read only now, and only the advertised account may be
+      // opened; a missing, unidentifiable or different vault is invalidated.
+      const target = await readBiometricSignIn(bioDestination);
+      if (!target) {
+        await clearBiometricLogin();
+        setBioDestination(null);
         setError(t("auth.signInFailed"));
-        setBioReady(false);
         return;
       }
-      await login(vault.token, vault.user);
+      // Same path as a password/MFA login: session, biometric reconciliation,
+      // account binding of settings / offline queue / own card.
+      await login(target.token, target.user);
     } catch {
       setError(t("auth.signInFailed"));
     } finally {
@@ -445,10 +458,12 @@ export default function LoginScreen() {
             style={{ marginTop: 20 }}
           />
 
-          {bioReady ? (
+          {bioDestination ? (
             <Pressable
               onPress={handleBiometricLogin}
               disabled={bioBusy}
+              accessibilityRole="button"
+              accessibilityLabel={bioSignInLabel}
               style={({ pressed }) => [
                 styles.bioBtn,
                 {
@@ -464,8 +479,8 @@ export default function LoginScreen() {
                 size={18}
                 color={colors.primary}
               />
-              <Text style={[styles.bioBtnText, { color: colors.foreground }]}>
-                {t("auth.signInWith", { method: bioLabel })}
+              <Text style={[styles.bioBtnText, { color: colors.foreground, textAlign }]}>
+                {bioSignInLabel}
               </Text>
             </Pressable>
           ) : null}

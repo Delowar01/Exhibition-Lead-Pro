@@ -32,13 +32,13 @@ import { useLocale } from "@/hooks/useLocale";
 import { COUNTRY_ORDER, getCountry } from "@/lib/countries";
 import {
   authenticateBiometric,
-  clearBiometricVault,
+  clearBiometricLogin,
   clearPin,
   getBiometricLabel,
   hasPinSet,
   isBiometricSupported,
   savePin,
-  saveBiometricVault,
+  saveBiometricLogin,
 } from "@/lib/biometric";
 import { useAppLock } from "@/contexts/AppLockContext";
 import { PinPad } from "@/components/PinPad";
@@ -135,7 +135,9 @@ export default function SettingsScreen() {
       try {
         const ok = await authenticateBiometric(t("settings.biometricEnablePrompt"));
         if (!ok) return;
-        await saveBiometricVault(token, user);
+        // Remembers THIS account (vault + non-secret destination), replacing
+        // any previously remembered one.
+        await saveBiometricLogin(token, user);
         settings.setBiometricEnabled(true);
         setPinStep(1);
         setPinFirstPin("");
@@ -150,7 +152,8 @@ export default function SettingsScreen() {
     } else {
       setBioBusy(true);
       try {
-        await clearBiometricVault();
+        // Forgets the remembered account: vault AND destination record.
+        await clearBiometricLogin();
         settings.setBiometricEnabled(false);
         unlock();
         const pinExists = await hasPinSet();
