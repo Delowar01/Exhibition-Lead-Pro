@@ -53,6 +53,11 @@
 #                     contact 22, document 6, storage row f048b5d4…): constant
 #                     manifest (apply-lib), never ARG-driven; decides the fifteen
 #                     deletion prerequisites; NO settle phase exists for it
+#   b25phys-postdelete-verify
+#                     READ-ONLY verification after the platform owner deleted company 53
+#                     in the portal: cascade absent, purge job completed, product tombstone
+#                     (deleted / LEGACY_RETAINED), provider object retained with the proven
+#                     generation, inventory unchanged; decides the post-delete eligibility
 #
 # SAFETY: every SELECT runs in a psql session pinned read-only (q); writes use
 # qw only inside the mutation phases and only against explicit disposable ids;
@@ -1989,6 +1994,173 @@ phase_b25phys_inspect() {
   log "b25phys-inspect complete (read-only; nothing changed; $(printf '%s\n' "$verdict" | grep -oE '^B25_PHYSICAL_SETTLEMENT_ELIGIBLE=(TRUE|FALSE)$'))"
 }
 
+# =============================================================================
+# b25phys_postdelete_verify — READ-ONLY verification after the real platform owner deleted
+# company 53 through the Platform portal. Proves the product cascade (user 100, event 17,
+# contact 22, document 6, version 6 absent and unreferenced), the storage.purgeCompany job
+# (identified by its plaintext dedupe key; waited for read-only, never enqueued or retried),
+# the product tombstone of row f048b5d4… (deleted / LEGACY_RETAINED / no lease / no mirror /
+# no uncertainty), the RETAINED provider object (two metadata reads by the stored key; the
+# generation digest must equal the pre-delete proof) and the unchanged inventory
+# (5 / 1398 / 1 marked; originals 4 / c1b900fd…). Then decides
+# B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE (apply-lib). Reads only: q sessions pinned
+# read-only (write attempt proven to fail first), provider HEAD/list, container logs. Never
+# reads ARG1 / ARG2 / ARG3; the manifest is the readonly constant set. No settle phase exists.
+# =============================================================================
+phase_b25phys_postdelete_verify() {
+  declare -f b25phys_postdelete_eligibility >/dev/null || fail "apply library not loaded (stream b25-stage1-apply-lib.sh before this script)"
+  local n=0; pass() { n=$((n + 1)); echo "postdelete $n: $1 — OK"; }
+  local facts=""; fact() { facts+="$1=$2"$'\n'; }
+  local C="$B25PHYS_COMPANY" K="$B25PHYS_CONTACT" D="$B25PHYS_DOCUMENT" U="$B25PHYS_UUID" AU="$B25PHYS_USER" EV="$B25PHYS_EVENT" VR="$B25PHYS_VERSION"
+  local gen cnt
+
+  section "0. host state (read-only guard, accepted product, healthy, idle) — manifest $(b25phys_manifest)|user $AU|event $EV|version $VR"
+  [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$ACCEPTED_SHA" ] || fail "host checkout is not the accepted commit"
+  [ "$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null)" = "$ACCEPTED_SHA" ] || fail "current-deploy.sha is not the accepted commit"
+  [ -z "$(git -C "$APP_DIR" status --porcelain 2>/dev/null)" ] || fail "host checkout is dirty"
+  [ ! -e "$LOCK_FILE" ] || fail "an activation lock file exists"
+  local svc; for svc in api web postgres; do [ "$(compose ps --status running -q "$svc" | wc -l)" = "1" ] || fail "$svc is not running"; done
+  [ "$(docker inspect -f '{{.State.Health.Status}}' "$API_CID")" = "healthy" ] || fail "api is not healthy"
+  local rz; rz="$(curl -sS --max-time 5 http://127.0.0.1:18080/api/readyz 2>/dev/null || echo "")"
+  [[ "$rz" == *'"status":"ok"'* ]] && [[ "$rz" == *'"database":"ok"'* ]] && [[ "$rz" == *'"storage":"ok"'* ]] || fail "readiness is not ok/ok/ok"
+  if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard FAILED (a write succeeded in a q session)"; fi
+  docker logs "$API_CID" 2>&1 | grep -F '"driver":"gcs","legacyFallback":false,"mirror":false,"legacyDelete":false' >/dev/null || fail "storage initialization is not driver=gcs / fallback off / mirror off / legacy delete off"
+  local fp; fp="$(fingerprint)"; [ "$fp" = "$FP_AFTER" ] || fail "schema fingerprint differs from the accepted post-apply fingerprint"
+  echo "  api: $(docker inspect -f 'started={{.State.StartedAt}} restarts={{.RestartCount}} health={{.State.Health.Status}}' "$API_CID")"
+  pass "accepted commit deployed and clean, no lock, api/web/postgres running, api healthy, readyz ok, q session refuses writes, storage init gcs/no fallback/no mirror/legacy delete OFF, schema fingerprint accepted"
+
+  section "A. company $C — must be absent with no dependent tenant row (catalog-driven) and no tenant AI row"
+  cnt="$(q "select count(*) from companies where id = $C")"; echo "  companies rows for id $C: $cnt"
+  if [ "$cnt" = "0" ]; then fact company_absent true; else fact company_absent false; fi
+  local deps total=0 nonzero=0 tbl col del
+  gen="$(q "$(b25phys_fk_counts_gen_sql companies "$C")")"; [ -n "$gen" ] || fail "no foreign key references companies — catalog unreadable"
+  deps="$(q "$gen")"
+  while IFS='|' read -r tbl col del cnt; do
+    [ -n "$tbl" ] || continue; total=$((total + 1)); [[ "$cnt" =~ ^[0-9]+$ ]] || fail "dependency count unreadable for $tbl.$col"
+    [ "$cnt" = "0" ] && continue; nonzero=$((nonzero + cnt)); echo "    STILL PRESENT: $tbl|$col|$del|$cnt"
+  done <<<"$deps"
+  echo "  foreign keys examined=$total dependent rows remaining=$nonzero"
+  fact company_dependents "$nonzero"
+  echo "  company_id columns WITHOUT a foreign key (retained by schema design; table|rows for company $C):"
+  gen="$(q "$(b25phys_plain_company_counts_gen_sql "$C")")"; [ -n "$gen" ] && q "$gen" | sed 's/^/    /'
+  local t ai=0 aic
+  for t in ai_insights ai_conversations ai_messages ai_copilot_outputs ai_workflow_recommendations ai_settings ai_usage_reservations; do
+    aic="$(q "select count(*) from $t where company_id = $C")"; [ "$aic" = "0" ] || echo "    AI residue: $t rows=$aic"; ai=$((ai + aic))
+  done
+  echo "  tenant AI rows for company $C: $ai; ai_invocations rows still carrying company $C or user $AU: $(q "select count(*) from ai_invocations where company_id = $C or user_id = $AU") (set-null on deletion: must be 0)"
+  fact ai_residue "$ai"
+  pass "company $C rows=$(q "select count(*) from companies where id = $C"); dependents remaining=$nonzero; AI residue=$ai"
+
+  section "B. user $AU — absent and unreferenced (every foreign key to users.id)"
+  cnt="$(q "select count(*) from users where id = $AU")"; echo "  users rows for id $AU: $cnt (sessions of user $AU: $(q "select count(*) from sessions where user_id = $AU"))"
+  if [ "$cnt" = "0" ]; then fact user_absent true; else fact user_absent false; fi
+  gen="$(q "$(b25phys_fk_counts_gen_sql users "$AU")")"; cnt="$(q "$gen" | awk -F'|' '{ s += $4 } END { print s + 0 }')"; q "$gen" | awk -F'|' '$4 != "0" { print "    STILL REFERENCED: " $0 }'
+  fact user_refs "$cnt"; pass "user $AU references remaining=$cnt"
+
+  section "C. event $EV — absent and unreferenced"
+  cnt="$(q "select count(*) from events where id = $EV")"; echo "  events rows for id $EV: $cnt; events of company $C: $(q "select count(*) from events where company_id = $C")"
+  if [ "$cnt" = "0" ]; then fact event_absent true; else fact event_absent false; fi
+  gen="$(q "$(b25phys_fk_counts_gen_sql events "$EV")")"; cnt="$(q "$gen" | awk -F'|' '{ s += $4 } END { print s + 0 }')"; q "$gen" | awk -F'|' '$4 != "0" { print "    STILL REFERENCED: " $0 }'
+  fact event_refs "$cnt"; pass "event $EV references remaining=$cnt"
+
+  section "D. contact $K — absent and unreferenced"
+  cnt="$(q "select count(*) from contacts where id = $K")"; echo "  contacts rows for id $K: $cnt; contacts of company $C: $(q "select count(*) from contacts where company_id = $C")"
+  if [ "$cnt" = "0" ]; then fact contact_absent true; else fact contact_absent false; fi
+  gen="$(q "$(b25phys_fk_counts_gen_sql contacts "$K")")"; cnt="$(q "$gen" | awk -F'|' '{ s += $4 } END { print s + 0 }')"; q "$gen" | awk -F'|' '$4 != "0" { print "    STILL REFERENCED: " $0 }'
+  fact contact_refs "$cnt"; pass "contact $K references remaining=$cnt"
+
+  section "E. document $D and version $VR — absent and unreferenced"
+  cnt="$(q "select count(*) from documents where id = $D")"; echo "  documents rows for id $D: $cnt; documents of company $C: $(q "select count(*) from documents where company_id = $C")"
+  if [ "$cnt" = "0" ]; then fact document_absent true; else fact document_absent false; fi
+  gen="$(q "$(b25phys_fk_counts_gen_sql documents "$D")")"; cnt="$(q "$gen" | awk -F'|' '{ s += $4 } END { print s + 0 }')"; q "$gen" | awk -F'|' '$4 != "0" { print "    STILL REFERENCED: " $0 }'
+  fact document_refs "$cnt"
+  cnt="$(q "select count(*) from document_versions where id = $VR or document_id = $D or object_path = '/objects/$U'")"; echo "  document_versions rows (id $VR, document $D, or the object path): $cnt"
+  if [ "$cnt" = "0" ]; then fact version_absent true; else fact version_absent false; fi
+  pass "document $D references remaining=$(q "$gen" | awk -F'|' '{ s += $4 } END { print s + 0 }'); version rows=$cnt"
+
+  section "F. storage.purgeCompany job of company $C (identified by its plaintext dedupe key; payloads never read; read-only wait, never enqueued or retried)"
+  local pr poll=0
+  pr="$(q "select count(*) from job_queue where dedupe_key like 'storage.purge:$C:%' and status in ('pending','running')")"
+  while [ "$pr" != "0" ] && [ "$poll" -lt 12 ]; do poll=$((poll + 1)); echo "  purge job still $(q "select string_agg(status, ',') from job_queue where dedupe_key like 'storage.purge:$C:%' and status in ('pending','running')") — waiting (poll $poll of 12, 10 s)"; sleep 10; pr="$(q "select count(*) from job_queue where dedupe_key like 'storage.purge:$C:%' and status in ('pending','running')")"; done
+  echo "  purge jobs (id|status|enqueued|started|completed|attempts|last_error):"
+  q "select '  '||id||'|'||status||'|'||enqueued_at||'|'||coalesce(started_at::text,'-')||'|'||coalesce(completed_at::text,'-')||'|'||attempts||'|'||coalesce(left(last_error, 80),'-') from job_queue where dedupe_key like 'storage.purge:$C:%' order by enqueued_at" | san
+  fact purge_total "$(q "select count(*) from job_queue where dedupe_key like 'storage.purge:$C:%'")"
+  fact purge_completed "$(q "select count(*) from job_queue where dedupe_key like 'storage.purge:$C:%' and status = 'completed'")"
+  fact purge_pending_running "$pr"
+  fact purge_dead "$(q "select count(*) from job_queue where dedupe_key like 'storage.purge:$C:%' and status = 'dead'")"
+  echo "  storage.deleteObject job for the uuid: $(q "select count(*) from job_queue where dedupe_key = 'storage.delete:$U'") (status: $(q "select coalesce(string_agg(status, ','), 'none') from job_queue where dedupe_key = 'storage.delete:$U'"))"
+  fact jobs_conflicting "$(q "select (select count(*) from job_queue where status in ('pending','running') and (dedupe_key like 'storage.purge:$C:%' or dedupe_key = 'storage.delete:$U')) + (select count(*) from job_queue where status in ('pending','running') and name like 'ai.%')")"
+  fact dead_storage_jobs "$(q "select count(*) from job_queue where status = 'dead' and name like 'storage.%'")"
+  echo "  pending/running jobs by name: $(q "select coalesce(string_agg(name||'='||n, ', '), 'none') from (select name, count(*) n from job_queue where status in ('pending','running') group by name) x")  dead jobs total=$(q "select count(*) from job_queue where status = 'dead'")  in-flight sessions on storage_objects: $(q "select count(*) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() and state <> 'idle' and query ilike '%storage_objects%'")"
+  pass "purge jobs total=$(q "select count(*) from job_queue where dedupe_key like 'storage.purge:$C:%'") completed=$(q "select count(*) from job_queue where dedupe_key like 'storage.purge:$C:%' and status = 'completed'") pending/running=$pr"
+
+  section "G. storage row $U — the product tombstone (every column in a safe form; keys never printed)"
+  cnt="$(q "select count(*) from storage_objects where id = '$U'")"; fact row_count "$cnt"
+  echo "  rows for the uuid: $cnt; storage rows of company $C: $(q "select count(*) from storage_objects where company_id = $C"); storage_objects total: $(q "select count(*) from storage_objects")"
+  q "select '  company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' entity='||coalesce(entity_type,'<null>')||'/'||coalesce(entity_id::text,'<null>')||' reference_is_/objects/<id>='||(reference = '/objects/' || id::text)||' storage_key_is_tenants/'||company_id||'/documents/<id>='||(storage_key = 'tenants/' || company_id || '/documents/' || id::text)||' legacy_key_canonical='||coalesce(legacy_key = 'gs://' || split_part(split_part(legacy_key, '://', 2), '/', 1) || '/' || storage_key, false)||' mirror_key_set='||(mirror_key is not null)||' mirror_state='||coalesce(mirror_state,'<null>')||' lease_set='||(lease_token is not null or lease_expires_at is not null)||' size='||coalesce(size_bytes::text,'null')||' sha256_set='||(sha256 is not null)||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null)||' created='||created_at||' updated='||updated_at||' deleted_at='||coalesce(deleted_at::text,'<null>')||' reconciled_at='||coalesce(reconciled_at::text,'<null>') from storage_objects where id = '$U'"
+  fact row_state "$(q "select coalesce((select state from storage_objects where id = '$U'), '<absent>')")"
+  fact row_last_error "$(q "select coalesce((select coalesce(last_error, '<null>') from storage_objects where id = '$U'), '<absent>')")"
+  fact row_uncertain "$(q "select coalesce((select (publication_uncertain_at is not null)::text from storage_objects where id = '$U'), '<absent>')")"
+  fact row_deleted_at_set "$(q "select coalesce((select (deleted_at is not null)::text from storage_objects where id = '$U'), 'false')")"
+  fact row_lease "$(q "select coalesce((select (lease_token is not null or lease_expires_at is not null)::text from storage_objects where id = '$U'), '<absent>')")"
+  fact row_mirror "$(q "select coalesce((select (mirror_key is not null or mirror_state is not null)::text from storage_objects where id = '$U'), '<absent>')")"
+  fact row_identity_ok "$(q "select coalesce((select (company_id = $C and kind = 'document' and driver = 'gcs' and reference = '/objects/' || id::text and storage_key = 'tenants/' || company_id || '/documents/' || id::text and coalesce(legacy_key = 'gs://' || split_part(split_part(legacy_key, '://', 2), '/', 1) || '/' || storage_key, false) and size_bytes = $B25PHYS_OBJECT_SIZE)::text from storage_objects where id = '$U'), 'false')")"
+  local refs; refs="$(q "select (select count(*) from document_versions where object_path = '/objects/$U') + (select count(*) from export_runs where object_path = '/objects/$U') + (select count(*) from executive_reports where object_path = '/objects/$U') + (select count(*) from scans where image_url = '/objects/$U') + (select count(*) from storage_objects where id <> '$U' and (reference like '%$U%' or storage_key like '%$U%' or coalesce(legacy_key,'') like '%$U%' or coalesce(mirror_key,'') like '%$U%'))")"
+  fact live_refs "$refs"; echo "  live application references to the object: $refs"
+  pass "tombstone row read; live references=$refs"
+
+  section "H. provider object — RETAINED by design (two immediate metadata reads by the stored key; generation kept in-session)"
+  local row_b64 gj present
+  row_b64="$(q "select coalesce((select json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 's', size_bytes) from storage_objects where id = '$U'), '{}'::json)" | base64 -w0)"
+  gj="$(api_node "$B25PHYS_GEN_JS" "$row_b64")"; echo "  $gj"
+  present="$(json_bool "$gj" present)" || fail "provider read unreadable"
+  fact provider_present "$present"
+  if [ "$present" = "true" ]; then
+    fact provider_marker_ok "$(json_bool "$gj" marker_matches_row || echo false)"; fact provider_size "$(census_field "$gj" size count || echo 0)"; fact provider_size_matches "$(json_bool "$gj" size_matches || echo false)"
+    fact provider_generation_canonical "$(json_bool "$gj" generation_canonical || echo false)"; fact provider_generation_stable "$(json_bool "$gj" generation_stable || echo false)"
+    fact provider_metageneration_stable "$(json_bool "$gj" metageneration_stable || echo false)"; fact provider_generation_digits "$(census_field "$gj" generation_digits count || echo 0)"
+    local dg; dg="$(json_flat_field "$gj" generation_sha256_16 2>/dev/null | tr -d '"' || true)"; fact provider_generation_digest "${dg:-none}"
+    echo "  generation digest sha256/16=$dg (pre-delete proof $B25PHYS_PRE_GEN_DIGEST → $([ "$dg" = "$B25PHYS_PRE_GEN_DIGEST" ] && echo UNCHANGED || echo CHANGED))"
+  else
+    echo "  UNEXPECTED: the provider object is ABSENT although legacy delete is off and no settlement was authorized — investigate before any further step"
+    fact provider_marker_ok false; fact provider_size 0; fact provider_size_matches false; fact provider_generation_canonical false; fact provider_generation_stable false; fact provider_metageneration_stable false; fact provider_generation_digits 0; fact provider_generation_digest none
+  fi
+  local ej; ej="$(api_node "$RESIDUE_ELIG_JS" "$row_b64")"; echo "  listing: $ej"
+  fact provider_marked_is_target "$(census_field "$ej" marked_is_target count 2>/dev/null || echo "?")"
+  local eum euo; eum="$(census_field "$ej" unmarked_md5 hex32 2>/dev/null || echo "?")"; euo="$(census_field "$ej" unmarked_objects count 2>/dev/null || echo "?")"
+  if [ "$eum" = "$B25PHYS_ORIGINALS_MD5" ] && [ "$euo" = "$CENSUS_OBJECTS" ]; then fact unmarked_md5_ok true; else fact unmarked_md5_ok false; fi
+  pass "provider object present=$present; unmarked objects $euo / $eum"
+
+  section "I. census (locked method) and originals"
+  local cj o b im wm; cj="$(census)"; echo "  $cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects missing"; b="$(census_field "$cj" bytes count)" || fail "census: bytes missing"
+  im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: digest missing"; wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker missing"
+  fact census_objects "$o"; fact census_bytes "$b"; fact census_marked "$wm"; fact census_md5 "$im"
+  if [ "$o" = "$CENSUS_OBJECTS" ] && [ "$b" = "$CENSUS_BYTES" ]; then echo "  UNEXPECTED: the inventory already equals the pre-test baseline ($o / $b) although no provider settlement was authorized — not a success; investigate"; fi
+  local rj; rj="$(api_node "$DIAG_RECON_JS" "$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" | base64 -w0)")"; echo "  original references: $rj"
+  if [ "$(census_field "$rj" referenced count 2>/dev/null)" = "$REFERENCES" ] && [ "$(census_field "$rj" present count 2>/dev/null)" = "$REFERENCES" ] && [ "$(census_field "$rj" missing count 2>/dev/null)" = "0" ] && [ "$(census_field "$rj" size_match count 2>/dev/null)" = "$REFERENCES" ]; then fact originals_ok true; else fact originals_ok false; fi
+  echo "  inventory totals: $(q "select 'storage_objects_total='||count(*)||' active='||count(*) filter (where state='active')||' deleting='||count(*) filter (where state='deleting')||' deleted='||count(*) filter (where state='deleted')||' uncertain='||count(*) filter (where publication_uncertain_at is not null)||' unproven='||count(*) filter (where last_error='OWNERSHIP_UNPROVEN')||' cleanup_pending='||count(*) filter (where last_error='CLEANUP_PENDING')||' legacy_retained='||count(*) filter (where last_error='LEGACY_RETAINED') from storage_objects")"
+  pass "census objects=$o bytes=$b marked=$wm md5=$im"
+
+  section "J. api log window $B25PHYS_POSTDELETE_WINDOW_START..now (sanitized; the operator deletion and the purge)"
+  local W1="$B25PHYS_POSTDELETE_WINDOW_START" W2 win; W2="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if ! win="$(docker logs --since "$W1" --until "$W2" "$API_CID" 2>&1)"; then echo "  api window log read FAILED"; win=""; fi
+  echo "  lines=$(printf '%s\n' "$win" | grep -c . || true) level50=$(printf '%s\n' "$win" | grep -c '"level":50' || true) status5xx=$(printf '%s\n' "$win" | grep -cE '"statusCode":5[0-9]{2}' || true)"
+  echo "  -- company deletion requests (method DELETE on /api/companies/<n>; max 10):"; printf '%s\n' "$win" | grep -E '"method":"DELETE"' | grep -E '"url":"/api/companies/[0-9]+' | awk 'NR<=10' | jsum | sed 's/^/    /' || true
+  echo "  -- storage / purge lines (max 20):"; printf '%s\n' "$win" | grep -iE 'purge|tombstone|storage' | grep -vE '"url":"/api/(healthz|readyz)' | awk 'NR<=20' | jsum | sed 's/^/    /' || true
+  echo "  -- lines mentioning the uuid (max 10):"; printf '%s\n' "$win" | grep -F "$U" | awk 'NR<=10' | jsum | sed 's/^/    /' || true
+  echo "  -- level>=50 lines (max 20):"; printf '%s\n' "$win" | grep -E '"level":(50|60)' | awk 'NR<=20' | jsum | sed 's/^/    /' || true
+  echo "  -- uncertainty / dead-job / storage error lines (max 10):"; printf '%s\n' "$win" | grep -iE 'uncertain|dead|STORAGE_UNAVAILABLE|DELETE_RETRY|OWNERSHIP_UNPROVEN' | awk 'NR<=10' | jsum | sed 's/^/    /' || true
+  pass "log window read (status5xx=$(printf '%s\n' "$win" | grep -cE '"statusCode":5[0-9]{2}' || true))"
+
+  section "K. post-delete prerequisites (read-only decision; nothing is changed by this phase)"
+  local verdict; verdict="$(printf '%s' "$facts" | b25phys_postdelete_eligibility)"; printf '%s\n' "$verdict"
+  rm -f "$HOME"/.b25-s1-node.err
+  echo "FACTS: $(printf '%s' "$facts" | tr '\n' ' ')"
+  printf '%s\n' "$verdict" | grep -qx 'B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=TRUE' || fail "b25phys-postdelete-verify: $(printf '%s\n' "$verdict" | grep -oE '^B25PHYS_POSTDELETE_CONDITIONS_FAILED=[0-9]+$') — the tombstone is not in the expected state (read-only; nothing changed)"
+  log "b25phys-postdelete-verify complete (read-only; nothing changed; B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=TRUE)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -2007,6 +2179,7 @@ case "$PHASE" in
   residue2-settle) phase_residue2_settle ;;
   residue2-verify) phase_residue2_verify ;;
   b25phys-inspect) phase_b25phys_inspect ;;
+  b25phys-postdelete-verify) phase_b25phys_postdelete_verify ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0

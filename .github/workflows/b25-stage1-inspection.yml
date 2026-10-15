@@ -17,9 +17,10 @@
 # Trigger: workflow_dispatch ONLY (no push / pull_request trigger; this workflow
 #          never pushes a Git ref, never fast-forwards develop and never deploys —
 #          deployment stays the owner's push of develop → deploy-dev-vps.yml).
-# Guard:   runs only on ops/b25-physical-residue-inspect whose content must equal
+# Guard:   runs only on ops/b25-physical-postdelete-verify whose content must equal
 #          the Correction 9 product commit (72a2437) plus the six ops files
-#          (the tooling-r2 content 7189ded plus the READ-ONLY b25phys_inspect mode).
+#          (the tooling-r2 content 7189ded plus the READ-ONLY b25phys_inspect and
+#          b25phys_postdelete_verify modes).
 #          (Branch for the post-fix verification; the recovery runs BEFORE the
 #          fix is deployed, on ops/b25-stage1-apply.)
 # Modes (input `mode`):
@@ -66,6 +67,14 @@
 #                      The manifest is a readonly constant of apply-lib — NO input
 #                      reaches it (the step passes no ARG). There is NO settle mode
 #                      for this manifest; adding one is a separate reviewed change.
+#   b25phys_postdelete_verify
+#                      READ-ONLY, after the real platform owner deleted company 53 in
+#                      the Platform portal: cascade absent and unreferenced, the
+#                      storage.purgeCompany job completed (waited for read-only, never
+#                      enqueued), the product tombstone (deleted / LEGACY_RETAINED),
+#                      the RETAINED provider object with the proven generation digest,
+#                      inventory unchanged (5 / 1398 / 1); decides
+#                      B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE. No input used.
 #
 # SMOKE CORRECTION (run 38005492289 failed its leak gate): the smoke never places a
 # genuine capability in a URL any more (synthetic probe value only), the gate uses a
@@ -87,10 +96,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "b25phys_inspect (READ-ONLY inspection of the physical-test residue: company 53 / contact 22 / document 6 / storage row f048b5d4…; constant manifest, no input used) | postdeploy_verify (after deploy-dev-vps deployed 72a2437) | incident_diagnose (read-only) | residue_settle (read-only STATE C re-check; the first recovery is complete) | residue_inspect_4fff751a3395 (READ-ONLY eligibility of the run-38005492289 residue) | residue_settle_4fff751a3395 (MUTATION: that recovery) — preflight / schema_apply are OBSOLETE here and refused before SSH"
+        description: "b25phys_inspect (READ-ONLY inspection of the physical-test residue: company 53 / contact 22 / document 6 / storage row f048b5d4…; constant manifest, no input used) | b25phys_postdelete_verify (READ-ONLY verification after the platform owner deleted company 53 in the portal: cascade, purge job, tombstone, retained provider object, unchanged inventory; no input used) | postdeploy_verify (after deploy-dev-vps deployed 72a2437) | incident_diagnose (read-only) | residue_settle (read-only STATE C re-check; the first recovery is complete) | residue_inspect_4fff751a3395 (READ-ONLY eligibility of the run-38005492289 residue) | residue_settle_4fff751a3395 (MUTATION: that recovery) — preflight / schema_apply are OBSOLETE here and refused before SSH"
         required: true
         type: choice
-        options: [preflight, schema_apply, postdeploy_verify, incident_diagnose, residue_settle, residue_inspect_4fff751a3395, residue_settle_4fff751a3395, b25phys_inspect]
+        options: [preflight, schema_apply, postdeploy_verify, incident_diagnose, residue_settle, residue_inspect_4fff751a3395, residue_settle_4fff751a3395, b25phys_inspect, b25phys_postdelete_verify]
       confirm_accepted_sha:
         description: "Type the accepted commit (72a24378947134ca8e4d3460294474894c9aaee4) — postdeploy_verify (Correction 9 product commit)"
         required: false
@@ -178,7 +187,7 @@ env:
 jobs:
   stage1:
     name: "B25 Stage 1 — ${{ inputs.mode }}"
-    if: github.ref == 'refs/heads/ops/b25-physical-residue-inspect' && github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/ops/b25-physical-postdelete-verify' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -223,7 +232,7 @@ jobs:
           IN_RESIDUE: ${{ inputs.confirm_residue }}
         run: |
           set -euo pipefail
-          case "$MODE" in preflight|schema_apply|postdeploy_verify|incident_diagnose|residue_settle|residue_inspect_4fff751a3395|residue_settle_4fff751a3395|b25phys_inspect) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          case "$MODE" in preflight|schema_apply|postdeploy_verify|incident_diagnose|residue_settle|residue_inspect_4fff751a3395|residue_settle_4fff751a3395|b25phys_inspect|b25phys_postdelete_verify) ;; *) echo "::error::unknown mode"; exit 1;; esac
           # POST-FIX TOOLING (Correction 9): the schema phases belong to the eb2edb0 activation and are OBSOLETE here —
           # Correction 9 changes no schema. They are refused before any SSH session, not left to a later fingerprint
           # mismatch on the host. The residue recovery already completed (run 37999992533); residue_settle stays
@@ -269,11 +278,12 @@ jobs:
             need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"
             need confirm_residue "$IN_RESIDUE" "$REQUIRED_RESIDUE2"
             need diag_residue "$IN_DRES" "$RESIDUE2_MANIFEST"
-          elif [ "$MODE" = "b25phys_inspect" ]; then
-            # READ-ONLY: no confirmation string, and NO input is used at all — the manifest (company 53, contact 22,
-            # document 6, storage row f048b5d4…) is a readonly constant of b25-stage1-apply-lib.sh and the SSH step
-            # below passes no ARG. A typed mutation confirmation is refused so this mode can never be mistaken for one.
-            [ -z "$IN_RESIDUE" ] || { echo "::error::b25phys_inspect is read-only — confirm_residue must be empty"; exit 1; }
+          elif [ "$MODE" = "b25phys_inspect" ] || [ "$MODE" = "b25phys_postdelete_verify" ]; then
+            # READ-ONLY: no confirmation string, and NO input is used at all — the manifest (company 53, user 100,
+            # event 17, contact 22, document 6, storage row f048b5d4…) is a readonly constant of
+            # b25-stage1-apply-lib.sh and the SSH steps below pass no ARG. A typed mutation confirmation is refused
+            # so these modes can never be mistaken for one.
+            [ -z "$IN_RESIDUE" ] || { echo "::error::$MODE is read-only — confirm_residue must be empty"; exit 1; }
           fi
           echo "mode=$MODE confirmations=ok"
 
@@ -511,6 +521,15 @@ jobs:
         run: |
           set -euo pipefail
           ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b25phys-inspect' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
+
+      # ── b25phys_postdelete_verify (READ-ONLY; after the operator's portal deletion of company 53; no ARG passed) ──
+      - name: B25 physical residue — READ-ONLY post-delete verification (cascade absent, purge job completed, tombstone deleted/LEGACY_RETAINED, provider object retained with the proven generation, inventory unchanged; decides B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE; changes nothing)
+        if: inputs.mode == 'b25phys_postdelete_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='b25phys-postdelete-verify' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
 
       # ── preflight (read-only) ───────────────────────────────────────────────
       - name: Preflight (read-only; stops on any difference from the inspection baseline)

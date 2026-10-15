@@ -262,11 +262,11 @@ check "phase proves the read-only session before reading (write attempt must fai
 check "phase fails closed on identity / ownership / provider mismatches (B25PHYS_FATAL)" "$(printf '%s\n' "$PH" | grep -c 'B25PHYS_FATAL')" "1"
 check "dispatch entry maps b25phys-inspect to the phase" "$(grep -c '^  b25phys-inspect) phase_b25phys_inspect ;;$' "$APPLY")" "1"
 check "no settle / delete phase exists for this manifest" "$(grep -ciE 'b25phys[-_](settle|delete|purge)' "$APPLY" "$WF" "$HERE/b25-stage1-apply-lib.sh" "$HERE/b25-stage1-purge-lib.sh" | awk -F: '{ s += $2 } END { print s + 0 }')" "0"
-check "workflow offers b25phys_inspect and no b25phys mutation mode" "$(grep -oE 'b25phys_[a-z]+' "$WF" | sort -u | tr '\n' ' ')" "b25phys_inspect "
+check "workflow offers only READ-ONLY b25phys modes (inspect, postdelete_verify) and no b25phys mutation mode" "$(grep -oE 'b25phys_[a-z_]+' "$WF" | sort -u | tr '\n' ' ')" "b25phys_inspect b25phys_postdelete_verify "
 check "workflow SSH step for the mode passes no ARG" "$(grep -E "PHASE='b25phys-inspect'" "$WF" | grep -cE "ARG[123]=" || true)" "0"
 check "workflow SSH step for the mode exists exactly once" "$(grep -cE "PHASE='b25phys-inspect' bash -s" "$WF")" "1"
 check "workflow validation for the mode uses no input and refuses a mutation confirmation" "$(awk '/"\$MODE" = "b25phys_inspect"/{on=1} on && /fi$/{print; exit} on' "$WF" | grep -cE 'need |IN_DRES|IN_SHA|IN_WINDOW')" "0"
-check "workflow job guard is the dedicated inspect branch" "$(grep -c "github.ref == 'refs/heads/ops/b25-physical-residue-inspect'" "$WF")" "1"
+check "workflow job guard is a dedicated read-only physical branch (postdelete-verify supersedes inspect)" "$(grep -c "github.ref == 'refs/heads/ops/b25-physical-postdelete-verify'" "$WF")" "1"
 # 3. the SQL builders are read-only and catalog-driven (local database, read-only session)
 check "fk generator refuses a non-integer id" "$(b25phys_fk_counts_gen_sql companies 'x; drop table y' 2>/dev/null | wc -c)" "0"
 check "fk generator refuses a non-identifier parent" "$(b25phys_fk_counts_gen_sql 'companies; drop' 1 2>/dev/null | wc -c)" "0"
@@ -386,6 +386,129 @@ check "the golden set fails zero conditions (no condition was weakened into an u
 check "the evaluator never hard-codes its verdict (the TRUE/FALSE lines are derived from the failed count)" "$(grep -cE 'if \[ "\$failed" = "0" \]; then echo "B25_PHYSICAL_SETTLEMENT_ELIGIBLE=TRUE"; else echo "B25_PHYSICAL_SETTLEMENT_ELIGIBLE=FALSE"; fi' "$HERE/b25-stage1-apply-lib.sh")" "1"
 # 6. masked e-mail rule
 check "masked e-mail: first character, ***, domain only" "$(q "select $(b25phys_mask_email_sql "'alpha.person@tenant.example'")")" "a***@tenant.example"
+
+echo "== b25phys_postdelete_verify — READ-ONLY post-operator-deletion tombstone verification rules"
+# 1. constants: readonly, never from ARG/env/input
+check "post-delete constants (user 100, event 17, version 6, pre-delete digest)" "$B25PHYS_USER|$B25PHYS_EVENT|$B25PHYS_VERSION|$B25PHYS_PRE_GEN_DIGEST" "100|17|6|3545c17e5f3aa940"
+( B25PHYS_USER=1 ) 2>/dev/null && bad "B25PHYS_USER could be reassigned" || ok "B25PHYS_USER is readonly (reassignment refused)"
+( B25PHYS_PRE_GEN_DIGEST=x ) 2>/dev/null && bad "B25PHYS_PRE_GEN_DIGEST could be reassigned" || ok "B25PHYS_PRE_GEN_DIGEST is readonly (reassignment refused)"
+# 2. the phase never reads an argument, never writes, never mutates; the workflow step passes no ARG
+PD="$(awk '/^phase_b25phys_postdelete_verify\(\) \{/{on=1} on{print} on && /^\}/{exit}' "$APPLY")"
+check "post-delete phase body present" "$(printf '%s\n' "$PD" | grep -c '^phase_b25phys_postdelete_verify')" "1"
+check "post-delete phase never references ARG1/ARG2/ARG3" "$(printf '%s\n' "$PD" | grep -cE '\$ARG[123]|\$\{ARG[123]' || true)" "0"
+check "post-delete phase never calls the writing psql helper (qw)" "$(printf '%s\n' "$PD" | grep -cE '(^|[^a-z_])qw ' || true)" "0"
+check "post-delete phase has no mutation command (delete/update/insert/truncate/drop/alter, compose/docker mutations, rm -r, purge/delete JS, ifGenerationMatch, enqueue call)" "$(printf '%s\n' "$PD" | grep -ciE '"(delete|update|insert|truncate|drop|alter) |compose (up|down|rm|restart|stop|kill)|docker (rm|stop|kill|restart)|rm -r|purge_rows_sql|RESIDUE_DELETE_JS|ifGenerationMatch|\.delete\(|enqueue\(|getQueue' || true)" "0"
+check "post-delete phase writes nothing on the host except the node stderr temp file" "$(printf '%s\n' "$PD" | grep -cE '> *"?\$HOME|>>' || true)" "0"
+check "post-delete phase proves the read-only session first" "$(printf '%s\n' "$PD" | grep -c 'create temp table b25_should_fail')" "1"
+check "post-delete phase waits for the purge job read-only (bounded) and never enqueues or retries it" "$(printf '%s\n' "$PD" | grep -cE 'poll.*-lt 12' )" "1"
+check "post-delete phase flags an already-settled inventory as UNEXPECTED (never as success)" "$(printf '%s\n' "$PD" | grep -c 'UNEXPECTED: the inventory already equals the pre-test baseline')" "1"
+check "post-delete phase flags an absent provider object as UNEXPECTED" "$(printf '%s\n' "$PD" | grep -c 'UNEXPECTED: the provider object is ABSENT')" "1"
+check "every boolean fact of the post-delete phase is cast ::text" "$(printf '%s\n' "$PD" | grep -E '^\s*fact (row_uncertain|row_deleted_at_set|row_lease|row_mirror|row_identity_ok) ' | grep -vc '::text' || true)" "0"
+check "dispatch entry maps b25phys-postdelete-verify to the phase" "$(grep -c '^  b25phys-postdelete-verify) phase_b25phys_postdelete_verify ;;$' "$APPLY")" "1"
+check "still no settle / delete / purge mode for the physical manifest" "$(grep -ciE 'b25phys[-_](settle|delete|purge)' "$APPLY" "$WF" "$HERE/b25-stage1-apply-lib.sh" "$HERE/b25-stage1-purge-lib.sh" | awk -F: '{ s += $2 } END { print s + 0 }')" "0"
+check "workflow offers exactly the two read-only physical modes" "$(grep -oE 'b25phys_[a-z_]+' "$WF" | sort -u | tr '\n' ' ')" "b25phys_inspect b25phys_postdelete_verify "
+check "workflow SSH step for the post-delete mode passes no ARG" "$(grep -E "PHASE='b25phys-postdelete-verify'" "$WF" | grep -cE "ARG[123]=" || true)" "0"
+check "workflow SSH step for the post-delete mode exists exactly once" "$(grep -cE "PHASE='b25phys-postdelete-verify' bash -s" "$WF")" "1"
+check "workflow validation for the read-only physical modes uses no input" "$(awk '/"\$MODE" = "b25phys_inspect"/{on=1} on && /fi$/{print; exit} on' "$WF" | grep -cE 'need |IN_DRES|IN_SHA|IN_WINDOW')" "0"
+check "workflow job guard is the dedicated post-delete branch" "$(grep -c "github.ref == 'refs/heads/ops/b25-physical-postdelete-verify'" "$WF")" "1"
+# 3. the evaluator: golden post-delete facts TRUE; every unmet prerequisite FALSE
+pgolden() { cat <<'F'
+company_absent=true
+company_dependents=0
+ai_residue=0
+user_absent=true
+user_refs=0
+event_absent=true
+event_refs=0
+contact_absent=true
+contact_refs=0
+document_absent=true
+document_refs=0
+version_absent=true
+live_refs=0
+row_count=1
+row_state=deleted
+row_last_error=LEGACY_RETAINED
+row_uncertain=false
+row_deleted_at_set=true
+row_lease=false
+row_mirror=false
+row_identity_ok=true
+provider_present=true
+provider_marker_ok=true
+provider_marked_is_target=1
+provider_size=99
+provider_size_matches=true
+provider_generation_canonical=true
+provider_generation_stable=true
+provider_metageneration_stable=true
+provider_generation_digits=16
+provider_generation_digest=3545c17e5f3aa940
+purge_total=1
+purge_completed=1
+purge_pending_running=0
+purge_dead=0
+jobs_conflicting=0
+dead_storage_jobs=0
+census_objects=5
+census_bytes=1398
+census_marked=1
+census_md5=36d90200a6dc0b043a11aeadee20863c
+unmarked_md5_ok=true
+originals_ok=true
+F
+}
+pverdict() { grep -oE '^B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=(TRUE|FALSE)$' | cut -d= -f2; }
+PG="$(pgolden | b25phys_postdelete_eligibility)"
+check "post-delete golden facts → ELIGIBLE TRUE" "$(printf '%s\n' "$PG" | pverdict)" "TRUE"
+check "post-delete golden facts → zero failed conditions" "$(printf '%s\n' "$PG" | grep -oE '^B25PHYS_POSTDELETE_CONDITIONS_FAILED=[0-9]+$')" "B25PHYS_POSTDELETE_CONDITIONS_FAILED=0"
+check "post-delete evaluator evaluates exactly twenty-three conditions" "$(printf '%s\n' "$PG" | grep -c '^post [0-9]*: ')" "23"
+check "post-delete evaluator derives its verdict from the failed count (never hard-coded)" "$(grep -cE 'if \[ "\$failed" = "0" \]; then echo "B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=TRUE"; else echo "B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=FALSE"; fi' "$HERE/b25-stage1-apply-lib.sh")" "1"
+pmut() { local out; out="$(pgolden | sed -E "$2" | b25phys_postdelete_eligibility)"; local v; v="$(printf '%s\n' "$out" | pverdict)"; if [ "$v" = "FALSE" ]; then ok "$1 → FALSE"; else bad "$1 → got $v, want FALSE"; fi; }
+pmut "company 53 still present"                 's/^company_absent=true/company_absent=false/'
+pmut "a dependent tenant row remains"            's/^company_dependents=0/company_dependents=1/'
+pmut "a tenant AI row remains"                   's/^ai_residue=0/ai_residue=1/'
+pmut "user 100 still present"                    's/^user_absent=true/user_absent=false/'
+pmut "a row still references user 100"           's/^user_refs=0/user_refs=1/'
+pmut "event 17 still present"                    's/^event_absent=true/event_absent=false/'
+pmut "a row still references event 17"           's/^event_refs=0/event_refs=1/'
+pmut "contact 22 still present"                  's/^contact_absent=true/contact_absent=false/'
+pmut "a row still references contact 22"         's/^contact_refs=0/contact_refs=1/'
+pmut "document 6 still present"                  's/^document_absent=true/document_absent=false/'
+pmut "document version 6 still present"          's/^version_absent=true/version_absent=false/'
+pmut "a live application reference remains"      's/^live_refs=0/live_refs=1/'
+pmut "storage row absent (row removed early)"    's/^row_count=1/row_count=0/'
+pmut "two storage rows"                          's/^row_count=1/row_count=2/'
+pmut "row still active (purge not applied)"      's/^row_state=deleted/row_state=active/'
+pmut "row still deleting"                        's/^row_state=deleted/row_state=deleting/'
+pmut "last_error not LEGACY_RETAINED"            's/^row_last_error=LEGACY_RETAINED/row_last_error=<null>/'
+pmut "OWNERSHIP_UNPROVEN row"                    's/^row_last_error=LEGACY_RETAINED/row_last_error=OWNERSHIP_UNPROVEN/'
+pmut "publication uncertainty set"               's/^row_uncertain=false/row_uncertain=true/'
+pmut "deleted_at missing"                        's/^row_deleted_at_set=true/row_deleted_at_set=false/'
+pmut "lease present"                             's/^row_lease=false/row_lease=true/'
+pmut "mirror present"                            's/^row_mirror=false/row_mirror=true/'
+pmut "row identity drifted (key/reference/size)" 's/^row_identity_ok=true/row_identity_ok=false/'
+pmut "provider object absent (unexpected deletion)" 's/^provider_present=true/provider_present=false/'
+pmut "provider marker mismatch"                  's/^provider_marker_ok=true/provider_marker_ok=false/'
+pmut "another marked object"                     's/^provider_marked_is_target=1/provider_marked_is_target=0/'
+pmut "provider size 98"                          's/^provider_size=99/provider_size=98/'
+pmut "generation non-canonical"                  's/^provider_generation_canonical=true/provider_generation_canonical=false/'
+pmut "generation unstable"                       's/^provider_generation_stable=true/provider_generation_stable=false/'
+pmut "metageneration unstable"                   's/^provider_metageneration_stable=true/provider_metageneration_stable=false/'
+pmut "generation digest changed since the pre-delete proof" 's/^provider_generation_digest=.*/provider_generation_digest=0000000000000000/'
+pmut "purge job never completed"                 's/^purge_completed=1/purge_completed=0/'
+pmut "purge job still pending/running"           's/^purge_pending_running=0/purge_pending_running=1/'
+pmut "purge job dead"                            's/^purge_dead=0/purge_dead=1/'
+pmut "conflicting job active"                    's/^jobs_conflicting=0/jobs_conflicting=1/'
+pmut "dead storage job"                          's/^dead_storage_jobs=0/dead_storage_jobs=1/'
+pmut "inventory already 4 objects (unexpected early settlement)" 's/^census_objects=5/census_objects=4/'
+pmut "inventory bytes already 1299"              's/^census_bytes=1398/census_bytes=1299/'
+pmut "marked count 0"                            's/^census_marked=1/census_marked=0/'
+pmut "inventory digest mismatch"                 's/^census_md5=.*/census_md5=c1b900fd509bafa1f980d863dc0d195b/'
+pmut "originals drifted"                         's/^unmarked_md5_ok=true/unmarked_md5_ok=false/'
+pmut "original references invalid"               's/^originals_ok=true/originals_ok=false/'
+pmut "a missing fact never passes (row_state removed)" '/^row_state=/d'
+check "post-delete evaluator rejects a t boolean rendering" "$(pgolden | sed -E 's/^row_deleted_at_set=true/row_deleted_at_set=t/' | b25phys_postdelete_eligibility | pverdict)" "FALSE"
 
 echo; echo "cleanup tests: $pass passed, $failn failed"
 [ "$failn" = "0" ]

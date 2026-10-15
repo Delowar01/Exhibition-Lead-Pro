@@ -215,3 +215,94 @@ b25phys_eligibility() {
   if [ "$failed" = "0" ]; then echo "B25_PHYSICAL_SETTLEMENT_ELIGIBLE=TRUE"; else echo "B25_PHYSICAL_SETTLEMENT_ELIGIBLE=FALSE"; fi
   return 0
 }
+
+# =============================================================================
+# B25 PHYSICAL TEST RESIDUE — POST-OPERATOR-DELETION TOMBSTONE VERIFICATION
+# (b25phys_postdelete_verify). READ-ONLY. After the real platform owner deleted
+# company 53 through the Platform portal, the product cascade must have removed
+# the tenant graph (user 100, event 17, contact 22, document 6, version 6), the
+# storage.purgeCompany job must have settled the one storage row to the
+# product's tombstone (deleted / LEGACY_RETAINED; the bucket object is retained
+# because legacy delete is off) and the provider inventory must be UNCHANGED
+# (5 / 1398 / 1 marked). The evaluator below decides whether the tombstone is
+# eligible for a later, separately reviewed provider settlement. Nothing here
+# mutates anything; no settle mode exists for this manifest.
+# =============================================================================
+readonly B25PHYS_USER=100
+readonly B25PHYS_EVENT=17
+readonly B25PHYS_VERSION=6
+# sha256/16 of the provider generation proven by the pre-delete gate (run 38822576943); a changed
+# generation after the deletion is a settlement blocker, never something to adopt.
+readonly B25PHYS_PRE_GEN_DIGEST="3545c17e5f3aa940"
+# Log window start = the pre-delete gate; the operator deletion and the purge happened after it.
+readonly B25PHYS_POSTDELETE_WINDOW_START="2026-10-15T23:16:00Z"
+
+# ---- b25phys_postdelete_eligibility ----
+# key=value facts on stdin → the 23 post-delete prerequisites with OK / FAIL, then
+#   B25PHYS_POSTDELETE_CONDITIONS_FAILED=<n>
+#   B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=TRUE|FALSE
+# A missing or malformed fact fails its condition. Always returns 0 (the caller reads the lines).
+b25phys_postdelete_eligibility() {
+  local -A f=()
+  local line k v
+  while IFS= read -r line; do
+    [[ "$line" =~ ^([a-z0-9_]+)=(.*)$ ]] || continue
+    k="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"; f[$k]="$v"
+  done
+  local failed=0 n=0
+  g() { printf '%s' "${f[$1]:-<missing>}"; }
+  is_true() { [ "$(g "$1")" = "true" ]; }
+  is_zero() { [ "$(g "$1")" = "0" ]; }
+  is_eq() { [ "$(g "$1")" = "$2" ]; }
+  cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "post $n: $1 — OK ($3)"; else echo "post $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
+  local ok
+  ok=1; is_true company_absent && is_zero company_dependents && is_zero ai_residue && ok=0
+  cond "company $B25PHYS_COMPANY absent, no dependent tenant row, no tenant AI row" $ok "absent=$(g company_absent) dependents=$(g company_dependents) ai_residue=$(g ai_residue)"
+  ok=1; is_true user_absent && is_zero user_refs && ok=0
+  cond "user $B25PHYS_USER absent and unreferenced" $ok "absent=$(g user_absent) references=$(g user_refs)"
+  ok=1; is_true event_absent && is_zero event_refs && ok=0
+  cond "event $B25PHYS_EVENT absent and unreferenced" $ok "absent=$(g event_absent) references=$(g event_refs)"
+  ok=1; is_true contact_absent && is_zero contact_refs && ok=0
+  cond "contact $B25PHYS_CONTACT absent and unreferenced" $ok "absent=$(g contact_absent) references=$(g contact_refs)"
+  ok=1; is_true document_absent && is_zero document_refs && ok=0
+  cond "document $B25PHYS_DOCUMENT absent and unreferenced" $ok "absent=$(g document_absent) references=$(g document_refs)"
+  ok=1; is_true version_absent && ok=0
+  cond "document version $B25PHYS_VERSION absent" $ok "absent=$(g version_absent)"
+  ok=1; is_zero live_refs && ok=0
+  cond "no live application reference to the storage uuid" $ok "live_references=$(g live_refs)"
+  ok=1; is_eq row_count 1 && ok=0
+  cond "exactly one storage row for the uuid" $ok "rows=$(g row_count)"
+  ok=1; is_eq row_state deleted && ok=0
+  cond "row state = deleted" $ok "state=$(g row_state)"
+  ok=1; is_eq row_last_error LEGACY_RETAINED && ok=0
+  cond "row last_error = LEGACY_RETAINED" $ok "last_error=$(g row_last_error)"
+  ok=1; is_eq row_uncertain false && is_true row_deleted_at_set && ok=0
+  cond "no publication uncertainty; deleted_at populated" $ok "uncertain=$(g row_uncertain) deleted_at_set=$(g row_deleted_at_set)"
+  ok=1; is_eq row_lease false && ok=0
+  cond "no lease" $ok "lease=$(g row_lease)"
+  ok=1; is_eq row_mirror false && is_true row_identity_ok && ok=0
+  cond "no mirror; reference / storage_key / legacy_key keep the approved identity" $ok "mirror=$(g row_mirror) identity=$(g row_identity_ok)"
+  ok=1; is_true provider_present && ok=0
+  cond "provider object present (retained by design: legacy delete off)" $ok "present=$(g provider_present)"
+  ok=1; is_true provider_marker_ok && is_eq provider_marked_is_target 1 && ok=0
+  cond "provider marker == the uuid; it is the only marked object" $ok "marker=$(g provider_marker_ok) marked_is_target=$(g provider_marked_is_target)"
+  ok=1; is_eq provider_size "$B25PHYS_OBJECT_SIZE" && is_true provider_size_matches && ok=0
+  cond "provider size = $B25PHYS_OBJECT_SIZE" $ok "size=$(g provider_size) matches_row=$(g provider_size_matches)"
+  ok=1; is_true provider_generation_canonical && is_true provider_generation_stable && is_true provider_metageneration_stable && ok=0
+  cond "provider generation canonical and stable across two reads (metageneration stable)" $ok "canonical=$(g provider_generation_canonical) stable=$(g provider_generation_stable) metagen=$(g provider_metageneration_stable) digits=$(g provider_generation_digits)"
+  ok=1; is_eq provider_generation_digest "$B25PHYS_PRE_GEN_DIGEST" && ok=0
+  cond "provider generation digest unchanged from the pre-delete proof" $ok "digest=$(g provider_generation_digest) expected=$B25PHYS_PRE_GEN_DIGEST"
+  ok=1; is_zero jobs_conflicting && is_zero purge_pending_running && [[ "$(g purge_completed)" =~ ^[1-9][0-9]*$ ]] && ok=0
+  cond "purge job completed; no purge / delete / settlement / AI job active" $ok "purge_completed=$(g purge_completed) purge_pending_running=$(g purge_pending_running) conflicting=$(g jobs_conflicting)"
+  ok=1; is_zero dead_storage_jobs && is_zero purge_dead && ok=0
+  cond "no dead storage job" $ok "dead_storage=$(g dead_storage_jobs) purge_dead=$(g purge_dead)"
+  ok=1; is_eq census_objects "$B25PHYS_CENSUS_OBJECTS" && is_eq census_bytes "$B25PHYS_CENSUS_BYTES" && is_eq census_marked "$B25PHYS_CENSUS_MARKED" && is_eq census_md5 "$B25PHYS_CENSUS_MD5" && ok=0
+  cond "provider inventory still exactly $B25PHYS_CENSUS_OBJECTS / $B25PHYS_CENSUS_BYTES / $B25PHYS_CENSUS_MARKED / $B25PHYS_CENSUS_MD5 (not yet settled)" $ok "objects=$(g census_objects) bytes=$(g census_bytes) marked=$(g census_marked) md5=$(g census_md5)"
+  ok=1; is_true unmarked_md5_ok && ok=0
+  cond "the four original objects unchanged ($B25PHYS_ORIGINALS_MD5)" $ok "unmarked_md5_ok=$(g unmarked_md5_ok)"
+  ok=1; is_true originals_ok && ok=0
+  cond "original references 4/4 present and size-matched" $ok "originals_ok=$(g originals_ok)"
+  echo "B25PHYS_POSTDELETE_CONDITIONS_FAILED=$failed"
+  if [ "$failed" = "0" ]; then echo "B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=TRUE"; else echo "B25_POSTDELETE_PROVIDER_SETTLEMENT_ELIGIBLE=FALSE"; fi
+  return 0
+}
