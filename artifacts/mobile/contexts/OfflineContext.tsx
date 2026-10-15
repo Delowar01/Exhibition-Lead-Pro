@@ -20,14 +20,22 @@ import {
   type ExtractedCardData,
 } from "@workspace/api-client-react";
 
+import { useAuth } from "@/contexts/AuthContext";
 import i18n from "@/lib/i18n";
 
+import { loadQueue, saveQueue, type QueueItem } from "@/lib/offline-queue";
 import {
-  loadQueue,
-  makeQueueId,
-  saveQueue,
-  type QueueItem,
-} from "@/lib/offline-queue";
+  canStartSync,
+  discardQuarantined,
+  enqueueItem,
+  quarantinedCount as countQuarantined,
+  queueCounts,
+  queueOwnerKey,
+  removeOwnedItem,
+  retryOwnedItem,
+  syncOwnedQueue,
+  visibleQueue,
+} from "@/lib/offline-queue-model";
 
 const MANUAL_OFFLINE_KEY = "csp_offline_manual";
 
@@ -44,25 +52,31 @@ interface EnqueueMeta {
 interface OfflineContextValue {
   /** True network reachability (ignores the manual override). */
   isConnected: boolean;
-  /** User-controlled "work offline" override. */
+  /** User-controlled "work offline" override (device-wide). */
   manualOffline: boolean;
   /** Effective online state used by the app: connected AND not forced offline. */
   isOnline: boolean;
+  /** The signed-in account's own queued work — never another account's. */
   queue: QueueItem[];
-  /** Items still waiting to sync (pending + syncing). */
+  /** Items still waiting to sync (pending + syncing), this account only. */
   pendingCount: number;
   failedCount: number;
-  /** Everything in the queue (pending + syncing + failed). */
+  /** Everything of this account (pending + syncing + failed). */
   queuedCount: number;
+  /** Items from an older app version (no ownership) kept quarantined on the device; count only. */
+  legacyCount: number;
   isSyncing: boolean;
   lastSyncAt: number | null;
   setManualOffline: (value: boolean) => void;
-  enqueueContact: (payload: ContactInput, meta: EnqueueMeta) => void;
-  enqueueScan: (imageData: string, meta: EnqueueMeta) => void;
-  enqueueCard: (payload: BusinessCardInput, label: string) => void;
+  /** Each enqueue returns false (nothing kept) when no tenant account is signed in. */
+  enqueueContact: (payload: ContactInput, meta: EnqueueMeta) => boolean;
+  enqueueScan: (imageData: string, meta: EnqueueMeta) => boolean;
+  enqueueCard: (payload: BusinessCardInput, label: string) => boolean;
   syncNow: () => void;
   retryItem: (id: string) => void;
   removeItem: (id: string) => void;
+  /** Explicitly drop the quarantined legacy items (they are never adopted or synced). */
+  discardLegacyItems: () => void;
 }
 
 const OfflineContext = createContext<OfflineContextValue>({
@@ -73,15 +87,17 @@ const OfflineContext = createContext<OfflineContextValue>({
   pendingCount: 0,
   failedCount: 0,
   queuedCount: 0,
+  legacyCount: 0,
   isSyncing: false,
   lastSyncAt: null,
   setManualOffline: () => {},
-  enqueueContact: () => {},
-  enqueueScan: () => {},
-  enqueueCard: () => {},
+  enqueueContact: () => false,
+  enqueueScan: () => false,
+  enqueueCard: () => false,
   syncNow: () => {},
   retryItem: () => {},
   removeItem: () => {},
+  discardLegacyItems: () => {},
 });
 
 function extractedToContact(
@@ -104,6 +120,13 @@ function extractedToContact(
 
 export function OfflineProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
+  // The account that owns new work and may see / sync existing work:
+  // undefined until auth resolves, null when logged out or not a tenant user.
+  const { user, isLoading: authLoading } = useAuth();
+  const owner = authLoading ? undefined : queueOwnerKey(user);
+  const ownerRef = useRef<string | null | undefined>(owner);
+  ownerRef.current = owner;
+  // Every persisted item (all owners + quarantined); only `owner`'s subset is exposed.
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isConnected, setIsConnected] = useState(true);
   const [manualOffline, setManualOfflineState] = useState(false);
@@ -134,12 +157,9 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.getItem(MANUAL_OFFLINE_KEY),
       ]);
       if (!mounted) return;
-      // Any item left mid-"syncing" from a previous session is reset to pending.
-      const normalized = stored.map((it) =>
-        it.status === "syncing" ? { ...it, status: "pending" as const } : it,
-      );
-      queueRef.current = normalized;
-      setQueue(normalized);
+      // Ownership + "syncing" → pending normalization happen in the parser.
+      queueRef.current = stored;
+      setQueue(stored);
       setManualOfflineState(manual === "1");
       setHydrated(true);
     })();
@@ -187,74 +207,63 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // --- Sync engine. ---------------------------------------------------------
-  const updateItem = useCallback(
-    (id: string, patch: Partial<QueueItem>) => {
-      commit(queueRef.current.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    },
-    [commit],
-  );
+  // --- Sync engine (lib/offline-queue-model.ts syncOwnedQueue). ------------
+  // The network work for one item. It runs under the session active at that
+  // moment, which is why the engine re-checks the owner right before calling it.
+  const performItem = useCallback(async (item: QueueItem) => {
+    if (item.kind === "contact" && item.payload) {
+      await createContact(item.payload);
+    } else if (item.kind === "card" && item.cardPayload) {
+      await upsertOwnCard(item.cardPayload);
+    } else if (item.kind === "scan" && item.imageData) {
+      const scan = await createScan({
+        imageData: item.imageData,
+        appLanguage: item.appLanguage ?? (i18n.language === "ar" ? "ar" : "en"),
+        eventId: item.eventId ?? undefined,
+        latitude: item.latitude ?? undefined,
+        longitude: item.longitude ?? undefined,
+        gpsAccuracy: item.gpsAccuracy ?? undefined,
+      });
+      await createContact(
+        extractedToContact(scan.extractedData ?? {}, {
+          eventId: item.eventId ?? null,
+          latitude: item.latitude ?? null,
+          longitude: item.longitude ?? null,
+          gpsAccuracy: item.gpsAccuracy ?? null,
+        }),
+      );
+    } else {
+      throw new Error("Malformed queue item");
+    }
+  }, []);
 
   const syncNow = useCallback(async () => {
     if (syncingRef.current) return;
     if (!isOnlineRef.current) return;
-    const targets = queueRef.current.filter(
-      (it) => it.status === "pending" || it.status === "failed",
-    );
-    if (targets.length === 0) return;
+    // Only a signed-in tenant account syncs, and only its own items. The owner
+    // is captured here and re-read before every request inside the engine.
+    const syncOwner = ownerRef.current;
+    if (!canStartSync({ hydrated: true, owner: syncOwner })) return;
 
     syncingRef.current = true;
     setIsSyncing(true);
-    let syncedAny = false;
-
+    let result = { synced: 0 };
     try {
-      for (const item of targets) {
-        if (!isOnlineRef.current) break;
-        updateItem(item.id, { status: "syncing", lastError: undefined });
-        try {
-          if (item.kind === "contact" && item.payload) {
-            await createContact(item.payload);
-          } else if (item.kind === "card" && item.cardPayload) {
-            await upsertOwnCard(item.cardPayload);
-          } else if (item.kind === "scan" && item.imageData) {
-            const scan = await createScan({
-              imageData: item.imageData,
-              appLanguage:
-                item.appLanguage ?? (i18n.language === "ar" ? "ar" : "en"),
-              eventId: item.eventId ?? undefined,
-              latitude: item.latitude ?? undefined,
-              longitude: item.longitude ?? undefined,
-              gpsAccuracy: item.gpsAccuracy ?? undefined,
-            });
-            await createContact(
-              extractedToContact(scan.extractedData ?? {}, {
-                eventId: item.eventId ?? null,
-                latitude: item.latitude ?? null,
-                longitude: item.longitude ?? null,
-                gpsAccuracy: item.gpsAccuracy ?? null,
-              }),
-            );
-          } else {
-            throw new Error("Malformed queue item");
-          }
-          // Success → drop it from the queue.
-          commit(queueRef.current.filter((it) => it.id !== item.id));
-          syncedAny = true;
-        } catch (err) {
-          updateItem(item.id, {
-            status: "failed",
-            attempts: item.attempts + 1,
-            lastError: err instanceof Error ? err.message : "Sync failed",
-          });
-        }
-      }
+      result = await syncOwnedQueue({
+        owner: syncOwner,
+        currentOwner: () => ownerRef.current,
+        isOnline: () => isOnlineRef.current,
+        getQueue: () => queueRef.current,
+        setQueue: commit,
+        perform: performItem,
+      });
     } finally {
       syncingRef.current = false;
       setIsSyncing(false);
       setLastSyncAt(Date.now());
-      if (syncedAny) void queryClient.invalidateQueries();
+      if (result.synced > 0) void queryClient.invalidateQueries();
     }
-  }, [commit, updateItem, queryClient]);
+  }, [commit, performItem, queryClient]);
 
   // --- Auto-sync when we (re)gain connectivity. -----------------------------
   const prevOnlineRef = useRef(isOnline);
@@ -266,108 +275,121 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isOnline, syncNow]);
 
-  // --- Initial sync on launch when already online with a restored queue. -----
+  // --- Initial sync on launch / on login with a restored queue. --------------
   // The reconnect effect only fires on a false→true transition, so a relaunch
-  // that starts online would otherwise leave restored items unsynced.
-  const didInitialSyncRef = useRef(false);
+  // that starts online would otherwise leave restored items unsynced. Nothing
+  // runs until the queue is hydrated AND auth has resolved to a tenant owner;
+  // a launch while logged out syncs nothing, and a later login syncs only that
+  // owner's items (once per owner change).
+  const autoSyncedOwnerRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!hydrated || didInitialSyncRef.current) return;
-    didInitialSyncRef.current = true;
+    if (!canStartSync({ hydrated, owner })) {
+      if (owner === null) autoSyncedOwnerRef.current = null;
+      return;
+    }
+    if (autoSyncedOwnerRef.current === owner) return;
+    autoSyncedOwnerRef.current = owner ?? null;
     if (isOnlineRef.current) void syncNow();
-  }, [hydrated, syncNow]);
+  }, [hydrated, owner, syncNow]);
 
   const setManualOffline = useCallback((value: boolean) => {
     setManualOfflineState(value);
     void AsyncStorage.setItem(MANUAL_OFFLINE_KEY, value ? "1" : "0");
   }, []);
 
+  // Every enqueue stamps the item with the signed-in tenant owner; without one
+  // nothing is kept and the caller is told (false) so it can inform the user.
   const enqueueContact = useCallback(
-    (payload: ContactInput, meta: EnqueueMeta) => {
-      const item: QueueItem = {
-        id: makeQueueId(),
-        kind: "contact",
-        status: "pending",
-        createdAt: Date.now(),
-        attempts: 0,
-        label: meta.label,
-        source: meta.source,
-        payload,
-      };
-      commit([item, ...queueRef.current]);
+    (payload: ContactInput, meta: EnqueueMeta): boolean => {
+      const next = enqueueItem(
+        queueRef.current,
+        { kind: "contact", label: meta.label, source: meta.source, payload },
+        ownerRef.current,
+      );
+      if (!next) return false;
+      commit(next);
+      return true;
     },
     [commit],
   );
 
   const enqueueScan = useCallback(
-    (imageData: string, meta: EnqueueMeta) => {
-      const item: QueueItem = {
-        id: makeQueueId(),
-        kind: "scan",
-        status: "pending",
-        createdAt: Date.now(),
-        attempts: 0,
-        label: meta.label,
-        source: meta.source,
-        imageData,
-        appLanguage: meta.appLanguage,
-        eventId: meta.eventId ?? null,
-        latitude: meta.latitude ?? null,
-        longitude: meta.longitude ?? null,
-        gpsAccuracy: meta.gpsAccuracy ?? null,
-      };
-      commit([item, ...queueRef.current]);
+    (imageData: string, meta: EnqueueMeta): boolean => {
+      const next = enqueueItem(
+        queueRef.current,
+        {
+          kind: "scan",
+          label: meta.label,
+          source: meta.source,
+          imageData,
+          appLanguage: meta.appLanguage,
+          eventId: meta.eventId ?? null,
+          latitude: meta.latitude ?? null,
+          longitude: meta.longitude ?? null,
+          gpsAccuracy: meta.gpsAccuracy ?? null,
+        },
+        ownerRef.current,
+      );
+      if (!next) return false;
+      commit(next);
+      return true;
     },
     [commit],
   );
 
   const enqueueCard = useCallback(
-    (payload: BusinessCardInput, label: string) => {
-      // Collapse to a single pending card edit — only the latest matters, so an
-      // earlier unsynced edit is superseded rather than queued twice.
-      const withoutCards = queueRef.current.filter((it) => it.kind !== "card");
-      const item: QueueItem = {
-        id: makeQueueId(),
-        kind: "card",
-        status: "pending",
-        createdAt: Date.now(),
-        attempts: 0,
-        label,
-        source: "card",
-        cardPayload: payload,
-      };
-      commit([item, ...withoutCards]);
+    (payload: BusinessCardInput, label: string): boolean => {
+      // Collapses to a single pending card edit PER OWNER — only the latest of
+      // this account matters; another account's queued card edit is kept.
+      const next = enqueueItem(
+        queueRef.current,
+        { kind: "card", label, source: "card", cardPayload: payload },
+        ownerRef.current,
+      );
+      if (!next) return false;
+      commit(next);
+      return true;
     },
     [commit],
   );
 
+  // retry / remove act only on the current owner's own item (a foreign or
+  // quarantined id is a safe no-op).
   const retryItem = useCallback(
     (id: string) => {
-      updateItem(id, { status: "pending", lastError: undefined });
+      const next = retryOwnedItem(queueRef.current, id, ownerRef.current);
+      if (next === queueRef.current) return;
+      commit(next);
       void syncNow();
     },
-    [updateItem, syncNow],
+    [commit, syncNow],
   );
 
   const removeItem = useCallback(
     (id: string) => {
-      commit(queueRef.current.filter((it) => it.id !== id));
+      const next = removeOwnedItem(queueRef.current, id, ownerRef.current);
+      if (next === queueRef.current) return;
+      commit(next);
     },
     [commit],
   );
 
-  const pendingCount = queue.filter(
-    (it) => it.status === "pending" || it.status === "syncing",
-  ).length;
-  const failedCount = queue.filter((it) => it.status === "failed").length;
+  const discardLegacyItems = useCallback(() => {
+    commit(discardQuarantined(queueRef.current));
+  }, [commit]);
+
+  const visible = visibleQueue(queue, owner);
+  const counts = queueCounts(queue, owner);
 
   const value: OfflineContextValue = {
     isConnected,
     manualOffline,
     isOnline,
-    queue,
-    pendingCount,
-    failedCount,
-    queuedCount: queue.length,
+    queue: visible,
+    pendingCount: counts.pending,
+    failedCount: counts.failed,
+    queuedCount: counts.queued,
+    legacyCount: countQuarantined(queue),
     isSyncing,
     lastSyncAt,
     setManualOffline,
@@ -377,6 +399,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     syncNow: () => void syncNow(),
     retryItem,
     removeItem,
+    discardLegacyItems,
   };
 
   return <OfflineContext.Provider value={value}>{children}</OfflineContext.Provider>;

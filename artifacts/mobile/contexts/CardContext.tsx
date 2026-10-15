@@ -161,17 +161,21 @@ export function CardProvider({ children }: { children: React.ReactNode }) {
   const saveCard = useCallback(
     async (input: BusinessCardInput) => {
       const account = { avatarUrl: user?.avatarUrl, name: user?.name };
+      const previous = cardRef.current;
       // Optimistic update first so the UI reflects the edit immediately.
-      setAndCache(optimisticCard(input, cardRef.current, account));
+      setAndCache(optimisticCard(input, previous, account));
 
       if (isOnline) {
         const server = await upsertOwnCard(input);
         setAndCache(server);
         setPendingSync(false);
         void queryClient.invalidateQueries();
-      } else {
-        enqueueCard(input, input.fullName || "My business card");
+      } else if (enqueueCard(input, input.fullName || "My business card")) {
         setPendingSync(true);
+      } else {
+        // No signed-in tenant account: nothing is queued; roll back the optimistic edit and surface a save error.
+        setAndCache(previous);
+        throw new Error("No signed-in company account");
       }
     },
     [isOnline, enqueueCard, queryClient, setAndCache, user?.avatarUrl, user?.name],

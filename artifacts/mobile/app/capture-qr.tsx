@@ -10,6 +10,7 @@ import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Platform,
   Pressable,
@@ -61,7 +62,10 @@ export default function CaptureQrScreen() {
         [data.firstName, data.lastName].filter(Boolean).join(" ") ||
         data.company ||
         t("qr.contactFallback");
-      enqueueContact(payload, { label, source: "qr", eventId });
+      if (!enqueueContact(payload, { label, source: "qr", eventId })) {
+        Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
+        return;
+      }
       router.replace("/contacts");
       return;
     }

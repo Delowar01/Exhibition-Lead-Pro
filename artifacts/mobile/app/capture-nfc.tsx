@@ -16,6 +16,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Alert,
   Linking,
   Platform,
   Pressable,
@@ -531,10 +532,10 @@ export default function CaptureNfcScreen() {
           [data.firstName, data.lastName].filter(Boolean).join(" ") ||
           data.company ||
           t("nfc.contactFallback");
-        enqueueContact(
-          { ...extractedToContact(data), eventId },
-          { label, source: "nfc", eventId },
-        );
+        if (!enqueueContact({ ...extractedToContact(data), eventId }, { label, source: "nfc", eventId })) {
+          Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
+          return;
+        }
         router.replace("/contacts");
         return;
       }

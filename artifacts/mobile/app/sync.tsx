@@ -56,11 +56,13 @@ export default function SyncScreen() {
     queue,
     pendingCount,
     failedCount,
+    legacyCount,
     isSyncing,
     lastSyncAt,
     syncNow,
     retryItem,
     removeItem,
+    discardLegacyItems,
   } = useOffline();
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
@@ -232,7 +234,19 @@ export default function SyncScreen() {
           </Text>
         ) : null}
 
-        {/* Queue */}
+        {/* Items from an older app version carry no account ownership: never shown, never synced; only an explicit discard. */}
+        {legacyCount > 0 ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={[styles.statusSub, { color: colors.mutedForeground, textAlign }]}>
+              {t("sync.legacyItemsWarning", { count: legacyCount })}
+            </Text>
+            <Pressable onPress={discardLegacyItems} hitSlop={8} style={{ alignSelf: isRTL ? "flex-end" : "flex-start", marginTop: 8 }}>
+              <Text style={[styles.toggleTitle, { color: colors.destructive }]}>{t("sync.legacyItemsDiscard")}</Text>
+            </Pressable>
+          </Card>
+        ) : null}
+
+        {/* Queue (this account's items only) */}
         {queue.length === 0 ? (
           <View style={{ marginTop: 40 }}>
             <EmptyState

@@ -558,16 +558,19 @@ export default function CaptureCameraScreen() {
           longitude: gps.longitude,
           gpsAccuracy: gps.gpsAccuracy,
         };
+        if (!enqueueScan(imageData, meta)) {
+          // No signed-in tenant account: nothing is kept (fail closed).
+          setErrorMsg(t("sync.notSignedInBody"));
+          return;
+        }
         if (mode === "single") {
-          enqueueScan(imageData, meta);
           if (Platform.OS !== "web") {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
           router.replace("/sync");
           return;
         }
-        // rapid: queue and keep the camera open for the next capture.
-        enqueueScan(imageData, meta);
+        // rapid: queued; keep the camera open for the next capture.
         setRapidCount((c) => c + 1);
         setSavedCount((c) => c + 1);
         setLastSaved(t("capture.offlineSuffix", { label: queueLabel }));

@@ -372,7 +372,7 @@ export default function ScanReviewScreen() {
         [payload.firstName, payload.lastName].filter(Boolean).join(" ") ||
         payload.contactCompany ||
         t("contacts.newContact");
-      enqueueContact(payload, {
+      const kept = enqueueContact(payload, {
         label,
         source: params.source ?? "card",
         eventId,
@@ -380,6 +380,10 @@ export default function ScanReviewScreen() {
         longitude: gps.longitude,
         gpsAccuracy: gps.gpsAccuracy,
       });
+      if (!kept) {
+        Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
+        return;
+      }
       router.replace("/contacts");
       return;
     }

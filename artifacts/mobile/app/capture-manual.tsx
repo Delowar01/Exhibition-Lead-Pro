@@ -2,7 +2,7 @@ import { Feather } from "@/components/icons";
 import { useRouter } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import React from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCreateContact } from "@workspace/api-client-react";
@@ -44,7 +44,11 @@ export default function CaptureManualScreen() {
     const payload = withCaptureEvent(toContactPayload(values), settings);
     const { eventId } = payload;
     if (!isOnline) {
-      enqueueContact(payload, { label: payloadLabel(payload, t("contacts.newContact")), source: "manual", eventId });
+      // Fails closed without a signed-in tenant account: nothing is kept, the form stays.
+      if (!enqueueContact(payload, { label: payloadLabel(payload, t("contacts.newContact")), source: "manual", eventId })) {
+        Alert.alert(t("sync.notSignedInTitle"), t("sync.notSignedInBody"));
+        return;
+      }
       router.replace("/contacts");
       return;
     }

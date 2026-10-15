@@ -1281,7 +1281,12 @@
     "needsAttention": "NEEDS ATTENTION",
     "queued": "QUEUED",
     "needsOcr": " · needs OCR",
-    "justNow": "just now"
+    "justNow": "just now",
+    "legacyItemsWarning_one": "{{count}} offline item from an older app version has no account ownership and must be removed before it can be used.",
+    "legacyItemsWarning_other": "{{count}} offline items from an older app version have no account ownership and must be removed before they can be used.",
+    "legacyItemsDiscard": "Remove older items",
+    "notSignedInTitle": "Not saved",
+    "notSignedInBody": "Sign in to your company account to keep captures for later sync."
   },
   "validation": {
     "required": "This field is required",
