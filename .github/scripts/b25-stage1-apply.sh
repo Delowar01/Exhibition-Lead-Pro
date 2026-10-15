@@ -49,6 +49,10 @@
 #   residue2-eligibility / residue2-settle / residue2-verify
 #                     second incident (run 38005492289): the THREE recorded
 #                     tombstones of disposable company 49 — see the block below
+#   b25phys-inspect   READ-ONLY inspection of the physical-test residue (company 53,
+#                     contact 22, document 6, storage row f048b5d4…): constant
+#                     manifest (apply-lib), never ARG-driven; decides the fifteen
+#                     deletion prerequisites; NO settle phase exists for it
 #
 # SAFETY: every SELECT runs in a psql session pinned read-only (q); writes use
 # qw only inside the mutation phases and only against explicit disposable ids;
@@ -1769,6 +1773,222 @@ phase_residue2_verify() {
   log "residue2-verify complete"
 }
 
+# =============================================================================
+# b25phys_inspect — B25 PHYSICAL TEST RESIDUE, READ-ONLY MANIFEST INSPECTION.
+# The physical Android acceptance (APK b36b2f36…) left ONE tenant behind: company 53 "B25 Physical
+# Android Test 20261015" with its dedicated test admin, event, contact 22, document 6 and the active
+# storage row f048b5d4… (99 bytes, gcs). Before any settlement is designed, this phase enumerates the
+# exact rows, keys, dependencies, provider metadata and job state and decides the fifteen deletion
+# prerequisites (b25phys_eligibility, apply-lib). It READS ONLY: every SQL statement runs through q
+# (session pinned read-only; a write attempt is proven to fail first), the provider is listed and
+# HEADed, nothing is written on the host except api_node's temporary stderr file. The manifest is the
+# readonly constant set of apply-lib — this phase never reads ARG1 / ARG2 / ARG3, so no workflow
+# input can redirect it. There is NO settle phase for this manifest (deliberately absent).
+# Identity / ownership / provider-metadata mismatches fail the phase closed AFTER the full report;
+# every other unmet prerequisite is reported as B25_PHYSICAL_SETTLEMENT_ELIGIBLE=FALSE.
+# =============================================================================
+# Two immediate metadata reads of the row's object (by the stored key, never derived from the id):
+# presence, marker, size, canonical generation, stability across the two reads, a digest of the
+# generation (the value itself stays in-session), legacy location identity. Flat JSON only.
+B25PHYS_GEN_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+const { createHash } = require("node:crypto");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const a = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "{}");
+  const storage = new Storage();
+  const file = storage.bucket(bucket).file(a.k);
+  const read = async () => { try { const [m] = await file.getMetadata(); return m; } catch (e) { if (e && e.code === 404) return null; throw e; } };
+  const t1 = new Date().toISOString(); const m1 = await read(); const m2 = await read(); const t2 = new Date().toISOString();
+  const out = { present: !!m1, present_again: !!m2, read1_at: t1, read2_at: t2 };
+  if (m1 && m2) {
+    const g1 = m1.generation == null ? "" : String(m1.generation), g2 = m2.generation == null ? "" : String(m2.generation);
+    const marker = (m) => !!(m.metadata && m.metadata["lcp-object-id"] === a.id);
+    const lm = /^gs:\/\/([^/]+)\/(.+)$/.exec(a.l || "");
+    Object.assign(out, {
+      marker_matches_row: marker(m1) && marker(m2),
+      size: Number(m1.size), size_matches: Number(m1.size) === Number(a.s) && Number(m2.size) === Number(a.s),
+      generation_is_string: typeof m1.generation === "string" && typeof m2.generation === "string",
+      generation_canonical: /^[1-9]\d*$/.test(g1) && /^[1-9]\d*$/.test(g2),
+      generation_digits: g1.length, generation_stable: g1 !== "" && g1 === g2,
+      generation_sha256_16: createHash("sha256").update(g1).digest("hex").slice(0, 16),
+      metageneration_stable: String(m1.metageneration ?? "") === String(m2.metageneration ?? ""),
+      updated: String(m1.updated || ""), content_type_set: !!m1.contentType,
+      legacy_same_object: lm ? (lm[1] === bucket && lm[2] === a.k) : false,
+    });
+  }
+  console.log(JSON.stringify(out));
+})().catch((e) => console.log(JSON.stringify({ provider: "error", code: e.code || e.name || "unknown" })));
+JS
+)
+phase_b25phys_inspect() {
+  declare -f b25phys_eligibility >/dev/null || fail "apply library not loaded (stream b25-stage1-apply-lib.sh before this script)"
+  local n=0; pass() { n=$((n + 1)); echo "inspect $n: $1 — OK"; }
+  local facts=""; fact() { facts+="$1=$2"$'\n'; }
+  local C="$B25PHYS_COMPANY" K="$B25PHYS_CONTACT" D="$B25PHYS_DOCUMENT" U="$B25PHYS_UUID"
+
+  section "0. host state (read-only guard, accepted product, healthy, idle) — manifest $(b25phys_manifest)"
+  [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$ACCEPTED_SHA" ] || fail "host checkout is not the accepted commit"
+  [ "$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null)" = "$ACCEPTED_SHA" ] || fail "current-deploy.sha is not the accepted commit"
+  [ -z "$(git -C "$APP_DIR" status --porcelain 2>/dev/null)" ] || fail "host checkout is dirty"
+  [ ! -e "$LOCK_FILE" ] || fail "an activation lock file exists"
+  [ "$(docker inspect -f '{{.State.Health.Status}}' "$API_CID")" = "healthy" ] || fail "api is not healthy"
+  local rz; rz="$(curl -sS --max-time 5 http://127.0.0.1:18080/api/readyz 2>/dev/null || echo "")"
+  [[ "$rz" == *'"status":"ok"'* ]] && [[ "$rz" == *'"database":"ok"'* ]] && [[ "$rz" == *'"storage":"ok"'* ]] || fail "readiness is not ok/ok/ok"
+  if q "create temp table b25_should_fail (x int)" >/dev/null 2>&1; then fail "read-only guard FAILED (a write succeeded in a q session)"; fi
+  docker logs "$API_CID" 2>&1 | grep -F '"driver":"gcs","legacyFallback":false,"mirror":false,"legacyDelete":false' >/dev/null || fail "storage initialization is not driver=gcs / fallback off / mirror off / legacy delete off"
+  local fp; fp="$(fingerprint)"; [ "$fp" = "$FP_AFTER" ] || fail "schema fingerprint differs from the accepted post-apply fingerprint"
+  pass "accepted commit deployed and clean, no lock, api healthy, readyz ok, q session refuses writes, storage init gcs/no fallback/no mirror/legacy delete OFF, schema fingerprint accepted"
+
+  section "A. company $C"
+  local crow; crow="$(q "select id||'|'||name||'|'||status||'|'||plan||'|'||coalesce(suspended_reason,'<null>')||'|'||created_at||'|'||updated_at||'|'||coalesce(created_by_id::text,'<null>') from companies where id = $C")"
+  echo "  company(id|name|status|plan|suspended_reason|created|updated|created_by_id)=${crow:-<absent>}"
+  if [ -n "$crow" ]; then fact company_present 1; else fact company_present 0; fi
+  fact company_name_matches "$(q "select coalesce((select name = '$B25PHYS_COMPANY_NAME' from companies where id = $C), false)")"
+  echo "  subscriptions(id|plan|status|billing_source|created):"; q "select '  '||id||'|'||plan||'|'||status||'|'||billing_source||'|'||created_at from subscriptions where company_id = $C order by id"
+  echo "  dependency census from the catalog (every foreign key to companies.id; table|column|on_delete|rows for company $C; zero rows omitted):"
+  local gen deps blocking=0 nonzero=0 total=0 line tbl col del cnt
+  gen="$(q "$(b25phys_fk_counts_gen_sql companies "$C")")"; [ -n "$gen" ] || fail "no foreign key references companies — catalog unreadable"
+  deps="$(q "$gen")"
+  while IFS='|' read -r tbl col del cnt; do
+    [ -n "$tbl" ] || continue; total=$((total + 1))
+    [[ "$cnt" =~ ^[0-9]+$ ]] || fail "dependency count unreadable for $tbl.$col"
+    [ "$cnt" = "0" ] && continue
+    nonzero=$((nonzero + 1)); echo "    $tbl|$col|$del|$cnt"
+    case "$del" in cascade|"set null") ;; *) blocking=$((blocking + 1)); echo "    ^ BLOCKING: on_delete=$del would refuse the company cascade";; esac
+  done <<<"$deps"
+  echo "  foreign keys examined=$total tables_with_rows=$nonzero blocking=$blocking"
+  fact deps_blocking "$blocking"; fact deps_tables_with_rows "$nonzero"
+  echo "  company_id columns WITHOUT a foreign key (retained by design on tenant deletion; table|rows for company $C):"
+  gen="$(q "$(b25phys_plain_company_counts_gen_sql "$C")")"; [ -n "$gen" ] && q "$gen" | sed 's/^/    /'
+  local xt; xt="$(q "$(b25phys_cross_tenant_sql "$C")")"; [[ "$xt" =~ ^[0-9]+$ ]] || fail "cross-tenant check unreadable"
+  echo "  cross-tenant links (tenant rows whose parents resolve outside company $C, or other tenants' rows pointing into it): $xt"
+  fact cross_tenant_links "$xt"
+  pass "company row, subscriptions, catalog-driven dependency census ($total foreign keys), retained-by-design tables, cross-tenant closure read"
+
+  section "B. users of company $C (id|company|role|active|deleted|mfa|created|last_login|masked email|name_is_expected_label)"
+  local urows; urows="$(q "select id||'|'||company_id||'|'||role||'|'||is_active||'|'||(deleted_at is not null)||'|'||mfa_enabled||'|'||created_at||'|'||coalesce(last_login_at::text,'<never>')||'|'||$(b25phys_mask_email_sql email)||'|'||(name = 'B25 Test Admin') from users where company_id = $C order by id")"
+  printf '%s\n' "$urows" | sed 's/^/  /'
+  fact users_total "$(q "select count(*) from users where company_id = $C")"
+  fact users_outside_company "$(q "select count(*) from users where company_id = $C and company_id <> $C")"
+  fact users_platform_role "$(q "select count(*) from users where company_id = $C and role = 'platform_owner'")"
+  local cand; cand="$(q "select count(*) from users where company_id = $C and role = 'primary_admin' and is_active and deleted_at is null")"
+  fact admin_candidates "$cand"
+  local admin_id=""; [ "$cand" = "1" ] && admin_id="$(q "select id from users where company_id = $C and role = 'primary_admin' and is_active and deleted_at is null")"
+  fact admin_user_id "${admin_id:-none}"
+  if [ -n "$admin_id" ]; then
+    echo "  dedicated B25 test admin: user id $admin_id (proof: company_id = $C, role primary_admin, active, not deleted; name label matches = $(q "select name = 'B25 Test Admin' from users where id = $admin_id"))"
+    echo "  sessions of the company's users: $(q "select count(*)||' (revoked='||count(*) filter (where revoked_at is not null)||')' from sessions where user_id in (select id from users where company_id = $C)")"
+    echo "  dependency census of user $admin_id (foreign keys to users.id; table|column|on_delete|rows; zero rows omitted):"
+    gen="$(q "$(b25phys_fk_counts_gen_sql users "$admin_id")")"; [ -n "$gen" ] && q "$gen" | awk -F'|' '$4 != "0" { print "    " $0 }'
+  else
+    echo "  dedicated B25 test admin: $cand candidate(s) — AMBIGUOUS / UNIDENTIFIED (nothing is inferred from names)"
+  fi
+  pass "$(q "select count(*) from users where company_id = $C") user row(s) enumerated by company ownership; admin candidates=$cand"
+
+  section "C. events of company $C (id|company|name|status|start|end|created|deleted|contacts|leads|scans)"
+  q "select '  '||e.id||'|'||e.company_id||'|'||e.name||'|'||e.status||'|'||coalesce(e.start_date::text,'<null>')||'|'||coalesce(e.end_date::text,'<null>')||'|'||e.created_at||'|'||coalesce(e.deleted_at::text,'<null>')||'|'||(select count(*) from contacts where event_id = e.id)||'|'||(select count(*) from leads where event_id = e.id)||'|'||(select count(*) from scans where event_id = e.id) from events e where e.company_id = $C order by e.id"
+  local ev_n ev_id; ev_n="$(q "select count(*) from events where company_id = $C and name = '$B25PHYS_EVENT_NAME'")"
+  if [ "$ev_n" = "1" ]; then ev_id="$(q "select id from events where company_id = $C and name = '$B25PHYS_EVENT_NAME'")"; fact event_ok true; fact event_id "$ev_id"; else fact event_ok false; fact event_id none; fi
+  fact events_unexpected "$(q "select count(*) from events where company_id = $C and name <> '$B25PHYS_EVENT_NAME'")"
+  if [ -n "${ev_id:-}" ]; then
+    echo "  dependency census of event $ev_id (foreign keys to events.id; zero rows omitted):"
+    gen="$(q "$(b25phys_fk_counts_gen_sql events "$ev_id")")"; [ -n "$gen" ] && q "$gen" | awk -F'|' '$4 != "0" { print "    " $0 }'
+  fi
+  pass "expected event rows=$ev_n (id ${ev_id:-none}); unexpected events of company $C=$(q "select count(*) from events where company_id = $C and name <> '$B25PHYS_EVENT_NAME'")"
+
+  section "D. contact $K (id|company|label|status|source|event_id|assigned_to|created_by|created|deleted)"
+  q "select '  '||id||'|'||company_id||'|'||coalesce(full_name, trim(coalesce(first_name,'')||' '||coalesce(last_name,'')))||'|'||status||'|'||coalesce(source,'<null>')||'|'||coalesce(event_id::text,'<null>')||'|'||coalesce(assigned_to_id::text,'<null>')||'|'||coalesce(created_by_id::text,'<null>')||'|'||created_at||'|'||coalesce(deleted_at::text,'<null>') from contacts where id = $K"
+  fact contact_ok "$(q "select coalesce((select company_id = $C and coalesce(full_name, trim(coalesce(first_name,'')||' '||coalesce(last_name,''))) = '$B25PHYS_CONTACT_NAME' from contacts where id = $K), false)")"
+  echo "  documents of contact $K in company $C: $(q "select count(*) from documents where company_id = $C and entity_type = 'contact' and entity_id = $K")  AI rows naming contact $K (insights|copilot|workflow): $(q "select (select count(*) from ai_insights where company_id = $C and entity_type = 'contact' and entity_id = $K)||'|'||(select count(*) from ai_copilot_outputs where company_id = $C and entity_type = 'contact' and entity_id = $K)||'|'||(select count(*) from ai_workflow_recommendations where company_id = $C and entity_type = 'contact' and entity_id = $K)")"
+  echo "  dependency census of contact $K (foreign keys to contacts.id; zero rows omitted):"
+  gen="$(q "$(b25phys_fk_counts_gen_sql contacts "$K")")"; [ -n "$gen" ] && q "$gen" | awk -F'|' '$4 != "0" { print "    " $0 }'
+  pass "contact $K read with ownership and dependents"
+
+  section "E. document $D (id|company|entity_type|entity_id|name|category|current_version|created_by|created|deleted) and its versions"
+  q "select '  '||id||'|'||company_id||'|'||entity_type||'|'||entity_id||'|'||name||'|'||category||'|'||coalesce(current_version_id::text,'<null>')||'|'||coalesce(created_by_id::text,'<null>')||'|'||created_at||'|'||coalesce(deleted_at::text,'<null>') from documents where id = $D"
+  echo "  versions (id|company|version|object_path_is_row_reference|file_size|mime|uploaded_by|uploaded_at):"
+  q "select '  '||id||'|'||company_id||'|'||version_number||'|'||(object_path = '/objects/$U')||'|'||file_size||'|'||mime_type||'|'||coalesce(uploaded_by_id::text,'<null>')||'|'||uploaded_at from document_versions where document_id = $D order by version_number"
+  fact document_ok "$(q "select coalesce((select company_id = $C and entity_type = 'contact' and entity_id = $K from documents where id = $D), false)")"
+  fact document_versions "$(q "select count(*) from document_versions where document_id = $D")"
+  echo "  dependency census of document $D (foreign keys to documents.id; zero rows omitted):"
+  gen="$(q "$(b25phys_fk_counts_gen_sql documents "$D")")"; [ -n "$gen" ] && q "$gen" | awk -F'|' '$4 != "0" { print "    " $0 }'
+  pass "document $D and $(q "select count(*) from document_versions where document_id = $D") version(s) read"
+
+  section "F. storage row $U (every column in a safe form; keys never printed)"
+  local srow; srow="$(q "select 'company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' entity='||coalesce(entity_type,'<null>')||'/'||coalesce(entity_id::text,'<null>')||' reference_is_/objects/<id>='||(reference = '/objects/' || id::text)||' storage_key_is_tenants/'||company_id||'/documents/<id>='||(storage_key = 'tenants/' || company_id || '/documents/' || id::text)||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' lease_set='||(lease_token is not null or lease_expires_at is not null)||' size='||coalesce(size_bytes::text,'null')||' sha256_set='||(sha256 is not null)||' content_type='||content_type||' last_error='||coalesce(last_error,'<null>')||' uncertain='||(publication_uncertain_at is not null)||' mirror_state='||coalesce(mirror_state,'<null>')||' created='||created_at||' updated='||updated_at||' deleted_at='||coalesce(deleted_at::text,'<null>')||' reconciled_at='||coalesce(reconciled_at::text,'<null>') from storage_objects where id = '$U'")"
+  echo "  ${srow:-<absent>}"
+  fact storage_row_ok "$(q "select coalesce((select company_id = $C and kind = 'document' and driver = 'gcs' and state = 'active' and reference = '/objects/' || id::text and storage_key = 'tenants/' || company_id || '/documents/' || id::text and mirror_key is null and lease_token is null and lease_expires_at is null and publication_uncertain_at is null and last_error is null and deleted_at is null and size_bytes = $B25PHYS_OBJECT_SIZE from storage_objects where id = '$U'), false)")"
+  fact storage_linked_to_document "$(q "select (select count(*) from document_versions v where v.document_id = $D and v.company_id = $C and v.object_path = '/objects/$U') = 1")"
+  local refs_other; refs_other="$(q "select (select count(*) from document_versions v where v.object_path = '/objects/$U' and v.document_id <> $D) + (select count(*) from export_runs where object_path = '/objects/$U') + (select count(*) from executive_reports where object_path = '/objects/$U') + (select count(*) from scans where image_url = '/objects/$U') + (select count(*) from storage_objects where id <> '$U' and (reference like '%$U%' or storage_key like '%$U%' or coalesce(legacy_key,'') like '%$U%' or coalesce(mirror_key,'') like '%$U%'))")"
+  echo "  references: document_versions of document $D with this object=$(q "select count(*) from document_versions where document_id = $D and object_path = '/objects/$U'") other references anywhere=$refs_other"
+  fact live_refs_other "$refs_other"
+  echo "  legacy_key is the canonical location of storage_key: $(q "select coalesce((select legacy_key = 'gs://' || split_part(split_part(legacy_key, '://', 2), '/', 1) || '/' || storage_key from storage_objects where id = '$U'), false)") (bucket identity is checked by the provider read below)"
+  pass "storage row read; one live version reference of document $D; other references=$refs_other"
+
+  section "G. provider object (by the stored key; two immediate metadata reads; generation kept in-session)"
+  local row_b64 gj; row_b64="$(q "select json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 's', size_bytes) from storage_objects where id = '$U'" | base64 -w0)"
+  gj="$(api_node "$B25PHYS_GEN_JS" "$row_b64")"; echo "  $gj"
+  local present marker sizem gcan gstab gdig
+  present="$(json_bool "$gj" present)" || fail "provider read unreadable"
+  fact provider_present "$present"
+  if [ "$present" = "true" ]; then
+    marker="$(json_bool "$gj" marker_matches_row)" || fail "provider marker unreadable"; sizem="$(json_bool "$gj" size_matches)" || fail "provider size unreadable"
+    gcan="$(json_bool "$gj" generation_canonical)" || fail "provider generation unreadable"; gstab="$(json_bool "$gj" generation_stable)" || fail "provider stability unreadable"
+    gdig="$(census_field "$gj" generation_digits count)" || fail "provider generation digits unreadable"
+    fact provider_marker_ok "$marker"; fact provider_size "$(census_field "$gj" size count)"; fact provider_size_matches "$sizem"
+    fact provider_generation_canonical "$gcan"; fact provider_generation_stable "$gstab"; fact provider_generation_digits "$gdig"
+    echo "  generation: $gdig digits, canonical=$gcan, stable across two reads=$gstab, sha256/16=$(json_flat_field "$gj" generation_sha256_16), legacy_same_object=$(json_flat_field "$gj" legacy_same_object)"
+  else
+    fact provider_marker_ok false; fact provider_size 0; fact provider_size_matches false; fact provider_generation_canonical false; fact provider_generation_stable false; fact provider_generation_digits 0
+  fi
+  local ej; ej="$(api_node "$RESIDUE_ELIG_JS" "$row_b64")"; echo "  listing: $ej"
+  fact provider_marked_is_target "$(census_field "$ej" marked_is_target count 2>/dev/null || echo "?")"
+  local eum euo; eum="$(census_field "$ej" unmarked_md5 hex32 2>/dev/null || echo "?")"; euo="$(census_field "$ej" unmarked_objects count 2>/dev/null || echo "?")"
+  if [ "$eum" = "$B25PHYS_ORIGINALS_MD5" ] && [ "$euo" = "$CENSUS_OBJECTS" ]; then fact unmarked_md5_ok true; else fact unmarked_md5_ok false; fi
+  pass "provider object read twice by the stored key; the unmarked objects are exactly the accepted originals ($euo / $eum)"
+
+  section "H. tenant AI tables for company $C (rows; on-delete action from the catalog) and ai_invocations"
+  local t aic aiok=true del_act
+  for t in ai_insights ai_conversations ai_messages ai_copilot_outputs ai_workflow_recommendations ai_settings ai_usage_reservations; do
+    aic="$(q "select count(*) from $t where company_id = $C")"
+    del_act="$(q "select case c.confdeltype when 'c' then 'cascade' when 'n' then 'set null' else 'other' end from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1] where c.contype = 'f' and c.conrelid = '$t'::regclass and c.confrelid = 'companies'::regclass and a.attname = 'company_id'")"
+    echo "  $t: rows=$aic on_delete=${del_act:-<no fk>} $( [ "$aic" != "0" ] && q "select '  statuses: '||string_agg(s||'='||n, ', ') from (select coalesce(status,'-') s, count(*) n from $t where company_id = $C group by 1) x" 2>/dev/null || true)"
+    fact "$t" "$aic"
+    [ "$aic" = "0" ] || [ "$del_act" = "cascade" ] || aiok=false
+  done
+  local inv; inv="$(q "select count(*) from ai_invocations where company_id = $C or user_id in (select id from users where company_id = $C) or (entity_type = 'contact' and entity_id = $K)")"
+  echo "  ai_invocations relevant rows=$inv (company_id set null, user_id set null on deletion: historical ledger rows are RETAINED with nulled ownership) $( [ "$inv" != "0" ] && q "select '  (feature|status|n): '||string_agg(f||'|'||s||'|'||n, ', ') from (select feature f, status s, count(*) n from ai_invocations where company_id = $C or user_id in (select id from users where company_id = $C) or (entity_type = 'contact' and entity_id = $K) group by 1,2) x" || true)"
+  fact ai_invocations "$inv"; fact ai_rows_classified "$aiok"
+  pass "AI tables classified (cascade rows of the tenant only; ledger rows set-null)"
+
+  section "I. job queue (dedupe keys are plain text; payloads are encrypted and never read)"
+  echo "  storage jobs for company $C / object $U (name|status|enqueued|completed|attempts):"; q "select '  '||name||'|'||status||'|'||enqueued_at||'|'||coalesce(completed_at::text,'-')||'|'||attempts from job_queue where dedupe_key like 'storage.purge:$C:%' or dedupe_key = 'storage.delete:$U' order by enqueued_at"
+  local jc; jc="$(q "select (select count(*) from job_queue where status in ('pending','running') and (dedupe_key like 'storage.purge:$C:%' or dedupe_key = 'storage.delete:$U')) + (select count(*) from job_queue where status in ('pending','running') and name like 'ai.%') + (select count(*) from job_queue where status = 'dead' and name like 'storage.%')")"
+  fact jobs_conflicting "$jc"; fact dead_storage_jobs "$(q "select count(*) from job_queue where status = 'dead' and name like 'storage.%'")"
+  echo "  pending/running jobs by name: $(q "select coalesce(string_agg(name||'='||n, ', '), 'none') from (select name, count(*) n from job_queue where status in ('pending','running') group by name) x")  dead jobs total=$(q "select count(*) from job_queue where status = 'dead'")"
+  echo "  in-flight sessions on storage_objects: $(q "select count(*) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() and state <> 'idle' and query ilike '%storage_objects%'")"
+  pass "no conflicting job = $jc"
+
+  section "J. census (same method as the locked baseline: sorted name|generation|size → md5) and originals"
+  local cj o b im wm; cj="$(census)"; echo "  $cj"
+  o="$(census_field "$cj" objects count)" || fail "census: objects missing"; b="$(census_field "$cj" bytes count)" || fail "census: bytes missing"
+  im="$(census_field "$cj" inventory_md5 hex32)" || fail "census: digest missing"; wm="$(census_field "$cj" with_marker count)" || fail "census: with_marker missing"
+  fact census_objects "$o"; fact census_bytes "$b"; fact census_marked "$wm"; fact census_md5 "$im"
+  fact storage_rows "$(q "select count(*) from storage_objects")"
+  local rj; rj="$(api_node "$DIAG_RECON_JS" "$(q "select coalesce(json_agg(json_build_object('r', object_path, 's', file_size)), '[]'::json) from export_runs where object_path ~ '$LEGACY_HANDLE'" | base64 -w0)")"; echo "  original references: $rj"
+  if [ "$(census_field "$rj" referenced count 2>/dev/null)" = "$REFERENCES" ] && [ "$(census_field "$rj" present count 2>/dev/null)" = "$REFERENCES" ] && [ "$(census_field "$rj" missing count 2>/dev/null)" = "0" ] && [ "$(census_field "$rj" size_match count 2>/dev/null)" = "$REFERENCES" ]; then fact originals_ok true; else fact originals_ok false; fi
+  pass "census objects=$o bytes=$b marked=$wm md5=$im storage_rows=$(q "select count(*) from storage_objects")"
+
+  section "K. deletion prerequisites (read-only decision; nothing is changed by this phase)"
+  local verdict; verdict="$(printf '%s' "$facts" | b25phys_eligibility)"; printf '%s\n' "$verdict"
+  rm -f "$HOME"/.b25-s1-node.err
+  echo "FACTS: $(printf '%s' "$facts" | tr '\n' ' ')"
+  local fatal; fatal="$(printf '%s\n' "$verdict" | grep -oE '^B25PHYS_FATAL=[0-9]+$' | cut -d= -f2)"
+  [ "${fatal:-1}" = "0" ] || fail "b25phys-inspect: $fatal identity / ownership / provider mismatch(es) — the manifest does not describe the hosted state (read-only; nothing changed)"
+  log "b25phys-inspect complete (read-only; nothing changed; $(printf '%s\n' "$verdict" | grep -oE '^B25_PHYSICAL_SETTLEMENT_ELIGIBLE=(TRUE|FALSE)$'))"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -1786,6 +2006,7 @@ case "$PHASE" in
   residue2-eligibility) phase_residue2_eligibility ;;
   residue2-settle) phase_residue2_settle ;;
   residue2-verify) phase_residue2_verify ;;
+  b25phys-inspect) phase_b25phys_inspect ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0
