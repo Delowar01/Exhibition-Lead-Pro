@@ -1137,7 +1137,9 @@
     "createFirstDesc": "Create your first event to start capturing leads.",
     "tracked": "{{count}} tracked",
     "boothShort": "Booth",
-    "createNew": "Create new event"
+    "createNew": "Create new event",
+    "noEvent": "No event",
+    "noEventSub": "Captures are not tagged to an event"
   },
   "card": {
     "title": "Digital Business Card",

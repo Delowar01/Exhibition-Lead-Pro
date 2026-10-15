@@ -62,6 +62,11 @@ export default function EventPickerScreen() {
     router.back();
   }
 
+  function clearSelection() {
+    setActiveEvent(null, null);
+    router.back();
+  }
+
   async function handleCreate() {
     if (!name.trim()) {
       setError(t("events.nameRequired"));
@@ -183,6 +188,36 @@ export default function EventPickerScreen() {
               <Feather name="plus" size={20} color="#FFFFFF" />
             </View>
             <Text style={[styles.createLabel, { color: colors.primary }]}>{t("events.createNew")}</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={clearSelection}
+            accessibilityRole="button"
+            accessibilityState={{ selected: activeEventId === null }}
+            style={({ pressed }) => [
+              styles.eventRow,
+              {
+                backgroundColor: colors.card,
+                borderColor: activeEventId === null ? colors.primary : colors.border,
+                borderRadius: colors.radius + 4,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <View style={[styles.eventIcon, { backgroundColor: colors.muted }]}>
+              <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={[styles.eventName, { color: colors.foreground }]}>
+                {t("events.noEvent")}
+              </Text>
+              <Text numberOfLines={1} style={[styles.eventMeta, { color: colors.mutedForeground }]}>
+                {t("events.noEventSub")}
+              </Text>
+            </View>
+            {activeEventId === null ? (
+              <Feather name="check-circle" size={20} color={colors.primary} />
+            ) : null}
           </Pressable>
 
           {events.length === 0 ? (

@@ -21,6 +21,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 
+import { ActiveEventGuard } from "@/components/ActiveEventGuard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NotificationsManager } from "@/components/NotificationsManager";
 import { AppLockOverlay } from "@/components/AppLockOverlay";
@@ -130,6 +131,7 @@ function RootLayoutNav() {
   return (
     <>
       <NotificationsManager />
+      <ActiveEventGuard />
       <AppLockOverlay />
       <Stack
         screenOptions={{

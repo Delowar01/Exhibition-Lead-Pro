@@ -18,6 +18,7 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { withCaptureEvent } from "@/lib/settings-model";
 
 function payloadLabel(
   payload: { firstName?: string | null; lastName?: string | null; contactCompany?: string | null },
@@ -37,11 +38,11 @@ export default function CaptureManualScreen() {
   const { t, textAlign, isRTL } = useLocale();
   const createContact = useCreateContact();
   const { isOnline, enqueueContact } = useOffline();
-  const { activeEventId } = useSettings();
-  const eventId = activeEventId ?? null;
+  const settings = useSettings();
 
   async function handleSave(values: ContactFormValues) {
-    const payload = { ...toContactPayload(values), eventId };
+    const payload = withCaptureEvent(toContactPayload(values), settings);
+    const { eventId } = payload;
     if (!isOnline) {
       enqueueContact(payload, { label: payloadLabel(payload, t("contacts.newContact")), source: "manual", eventId });
       router.replace("/contacts");
