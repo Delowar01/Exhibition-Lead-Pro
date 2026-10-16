@@ -2905,6 +2905,8 @@ stage2a_residue_row_facts() {
   # the two named rows: one read-only statement, one fact per line (counts over the rows whose id is in the constant list)
   q "select 'res_rows_named='||count(*)||E'\n'||'res_rows_deleted='||count(*) filter (where state = 'deleted')||E'\n'||'res_rows_fs='||count(*) filter (where driver = 'fs')||E'\n'||'res_rows_legacy_null='||count(*) filter (where legacy_key is null)||E'\n'||'res_rows_mirror_canonical='||count(*) filter (where mirror_key is not null and mirror_key = 'gs://' || split_part(split_part(mirror_key, '://', 2), '/', 1) || '/' || storage_key)||E'\n'||'res_rows_mirror_ok='||count(*) filter (where mirror_state = 'ok')||E'\n'||'res_rows_error_null='||count(*) filter (where last_error is null)||E'\n'||'res_rows_not_uncertain='||count(*) filter (where publication_uncertain_at is null)||E'\n'||'res_rows_no_lease='||count(*) filter (where lease_token is null and lease_expires_at is null)||E'\n'||'res_rows_deleted_at_set='||count(*) filter (where deleted_at is not null)||E'\n'||'res_rows_deleted_in_window='||count(*) filter (where deleted_at >= '$S2AR_DELETED_FROM' and deleted_at < '$S2AR_DELETED_TO')||E'\n'||'res_rows_created_in_window='||count(*) filter (where created_at >= '$S2AR_CREATED_FROM' and created_at < '$S2AR_CREATED_TO')||E'\n'||'res_rows_wrong_company='||count(*) filter (where company_id <> $S2AR_COMPANY)||E'\n'||'res_rows_exception='||count(*) filter (where id = '$B25PHYS_UUID')||E'\n'||'res_rows_company53='||count(*) filter (where company_id = $B25PHYS_COMPANY)||E'\n'||'res_rows_identity_ok='||count(*) filter (where company_id = $S2AR_COMPANY and sha256 ~ '^[0-9a-f]{64}\$' and coalesce(content_type, '') <> '' and ((id = '$DOC' and kind = 'document' and size_bytes = $S2AR_DOC_SIZE and reference = '/objects/' || id::text and storage_key = 'tenants/' || company_id || '/documents/' || id::text) or (id = '$LOGO' and kind = 'branding_logo' and size_bytes = $S2AR_LOGO_SIZE and reference ~ ('^branding/' || company_id || '/' || replace(id::text, '-', '') || '\\.(png|jpg|webp)\$') and $(logo_key_rule_sql)))) from storage_objects where id in ($Q)"
   echo "res_rows_other=$(q "select count(*) from storage_objects where company_id in ($C) and id not in ($Q)")"
+  echo "res_doc_size=$(q "select coalesce((select size_bytes::text from storage_objects where id = '$DOC'), '<absent>')")"
+  echo "res_logo_size=$(q "select coalesce((select size_bytes::text from storage_objects where id = '$LOGO'), '<absent>')")"
   echo "res_live_refs=$(q "select count(*) from storage_objects l where l.id in ($Q) and (exists (select 1 from document_versions dv where dv.object_path = l.reference) or exists (select 1 from export_runs e where e.object_path = l.reference) or exists (select 1 from executive_reports r where r.object_path = l.reference) or exists (select 1 from scans sc where sc.image_url = l.reference) or exists (select 1 from companies co where co.brand_logo_key = l.reference))")"
   echo "res_docs_company=$(q "select count(*) from documents where company_id in ($C)")"
   echo "res_brand_refs=$(q "select count(*) from companies co where co.brand_logo_key ~ '^branding/($BR)/'")"
@@ -3020,6 +3022,134 @@ phase_stage2a_residue_settle() {
   log "stage2a-residue-settle complete (B25_STAGE2A_RESIDUE_SETTLED=TRUE)"
 }
 
+# =============================================================================
+# B25 STAGE 2A — CORRECTION 2: settlement of the EXACT residue of the failed
+# corrected smoke run 38922592504 (tag 5d408c442c64): the two plain `deleted`
+# tombstones of the deleted company 56 (document c69a3706…, branding_logo
+# candidate 06228d82… — a reconstruction the eligibility must PROVE). Same
+# structure as the reviewed and executed Correction 1 phases above, bound to the
+# readonly S2AR2_* constants (no ARG is read; one is refused); the shared probe
+# readers stage2a_residue_fs_facts / _provider_facts / _host_facts are reused.
+#   stage2a-residue2-eligibility  READ-ONLY: 26 prerequisites (B25_STAGE2A_RESIDUE2_ELIGIBLE);
+#                                 reports explicitly when the product sweep already
+#                                 purged the rows (nothing to settle, ever)
+#   stage2a-residue2-settle       MUTATION, one session: the same eligibility proof →
+#                                 fs + mirror absence re-proven PER UUID → exactly the
+#                                 two rows removed by the Stage 2A allow-list in one
+#                                 row-locked transaction → post proof (B25_STAGE2A_RESIDUE2_SETTLED)
+# No provider delete and no file delete exist in these phases either.
+# =============================================================================
+S2AR2_FROWS_B64=""; S2AR2_LOC_B64=""   # key blobs of the two rows, captured by the eligibility read (in-session; never printed)
+# Read-only facts about the two named rows, the disposable identities and everything that could reference them.
+stage2a_residue2_row_facts() {
+  local C="$S2AR2_COMPANIES" U="$S2AR2_USERS" DOM="$SMOKE_DOMAIN" TAG="$S2AR2_TAG" Q="$S2AR2_UUIDS_Q" DOC="$S2AR2_UUID_DOC" LOGO="$S2AR2_UUID_LOGO" BR="${S2AR_COMPANIES//,/|}" cid jobs=""
+  echo "res_constants_ok=$(s2ar2_constants_ok && echo true || echo false)"
+  echo "res_companies_present=$(q "select count(*) from companies where id in ($C) or name like 'B25 SMOKE $TAG%'")"
+  echo "res_users_present=$(q "select count(*) from users where id in ($U) or email like 'b25-smoke-$TAG-%@$DOM'")"
+  echo "res_sessions=$(q "select count(*) from sessions where user_id in ($U) or user_id in (select id from users where company_id in ($C))")"
+  echo "res_feature_rows=$(q "select (select count(*) from subscriptions where company_id in ($C)) + (select count(*) from documents where company_id in ($C)) + (select count(*) from document_versions where company_id in ($C)) + (select count(*) from export_runs where company_id in ($C)) + (select count(*) from executive_reports where company_id in ($C)) + (select count(*) from scans where company_id in ($C)) + (select count(*) from contacts where company_id in ($C)) + (select count(*) from leads where company_id in ($C)) + (select count(*) from audit_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from activity_logs where company_id in ($C) or user_id in ($U)) + (select count(*) from login_attempts where email like 'b25-smoke-$TAG%@$DOM')")"
+  # the two named rows: one read-only statement, one fact per line (counts over the rows whose id is in the constant list)
+  q "select 'res_rows_named='||count(*)||E'\n'||'res_rows_deleted='||count(*) filter (where state = 'deleted')||E'\n'||'res_rows_fs='||count(*) filter (where driver = 'fs')||E'\n'||'res_rows_legacy_null='||count(*) filter (where legacy_key is null)||E'\n'||'res_rows_mirror_canonical='||count(*) filter (where mirror_key is not null and mirror_key = 'gs://' || split_part(split_part(mirror_key, '://', 2), '/', 1) || '/' || storage_key)||E'\n'||'res_rows_mirror_ok='||count(*) filter (where mirror_state = 'ok')||E'\n'||'res_rows_error_null='||count(*) filter (where last_error is null)||E'\n'||'res_rows_not_uncertain='||count(*) filter (where publication_uncertain_at is null)||E'\n'||'res_rows_no_lease='||count(*) filter (where lease_token is null and lease_expires_at is null)||E'\n'||'res_rows_deleted_at_set='||count(*) filter (where deleted_at is not null)||E'\n'||'res_rows_deleted_in_window='||count(*) filter (where deleted_at >= '$S2AR2_DELETED_FROM' and deleted_at < '$S2AR2_DELETED_TO')||E'\n'||'res_rows_created_in_window='||count(*) filter (where created_at >= '$S2AR2_CREATED_FROM' and created_at < '$S2AR2_CREATED_TO')||E'\n'||'res_rows_wrong_company='||count(*) filter (where company_id <> $S2AR2_COMPANY)||E'\n'||'res_rows_exception='||count(*) filter (where id = '$B25PHYS_UUID')||E'\n'||'res_rows_company53='||count(*) filter (where company_id = $B25PHYS_COMPANY)||E'\n'||'res_rows_identity_ok='||count(*) filter (where company_id = $S2AR2_COMPANY and sha256 ~ '^[0-9a-f]{64}\$' and coalesce(content_type, '') <> '' and ((id = '$DOC' and kind = 'document' and size_bytes = $S2AR2_DOC_SIZE and reference = '/objects/' || id::text and storage_key = 'tenants/' || company_id || '/documents/' || id::text) or (id = '$LOGO' and kind = 'branding_logo' and size_bytes = $S2AR2_LOGO_SIZE and reference ~ ('^branding/' || company_id || '/' || replace(id::text, '-', '') || '\\.(png|jpg|webp)\$') and $(logo_key_rule_sql)))) from storage_objects where id in ($Q)"
+  echo "res_rows_other=$(q "select count(*) from storage_objects where company_id in ($C) and id not in ($Q)")"
+  echo "res_doc_size=$(q "select coalesce((select size_bytes::text from storage_objects where id = '$DOC'), '<absent>')")"
+  echo "res_logo_size=$(q "select coalesce((select size_bytes::text from storage_objects where id = '$LOGO'), '<absent>')")"
+  echo "res_live_refs=$(q "select count(*) from storage_objects l where l.id in ($Q) and (exists (select 1 from document_versions dv where dv.object_path = l.reference) or exists (select 1 from export_runs e where e.object_path = l.reference) or exists (select 1 from executive_reports r where r.object_path = l.reference) or exists (select 1 from scans sc where sc.image_url = l.reference) or exists (select 1 from companies co where co.brand_logo_key = l.reference))")"
+  echo "res_docs_company=$(q "select count(*) from documents where company_id in ($C)")"
+  echo "res_brand_refs=$(q "select count(*) from companies co where co.brand_logo_key ~ '^branding/($BR)/'")"
+  echo "res_foreign_mentions=$(q "select count(*) from storage_objects s where s.id not in ($Q) and exists (select 1 from unnest(array[$Q]) u, lateral (select replace(u, '-', '') as h) x where s.reference like '%' || u || '%' or s.reference like '%' || x.h || '%' or s.storage_key like '%' || u || '%' or s.storage_key like '%' || x.h || '%' or coalesce(s.legacy_key,'') like '%' || u || '%' or coalesce(s.legacy_key,'') like '%' || x.h || '%' or coalesce(s.mirror_key,'') like '%' || u || '%' or coalesce(s.mirror_key,'') like '%' || x.h || '%')")"
+  for cid in ${C//,/ }; do jobs+=" or payload::text like '%\"companyId\":$cid%'"; done
+  echo "res_jobs_pending=$(q "select count(*) from job_queue where status in ('pending','running') and (payload::text like '%$DOC%' or payload::text like '%$LOGO%'$jobs)")"
+  echo "res_inflight_sessions=$(q "select count(*) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() and state <> 'idle' and query ilike '%storage_objects%'")"
+  echo "res_inv_outside=$(q "select count(*) from storage_objects where id <> '$B25PHYS_UUID' and id not in ($Q)")"
+  echo "res_inv_outside_exception=$(q "select count(*) from storage_objects where id <> '$B25PHYS_UUID'")"
+}
+# Capture the key blobs of the named rows (base64 JSON, in-session only; never printed) for the physical proofs —
+# taken BEFORE any removal so the post-settlement proof re-reads the very same locations.
+stage2a_residue2_blobs() {
+  S2AR2_FROWS_B64="$(q "select json_build_object('companies', array[$S2AR2_COMPANIES], 'rows', coalesce(json_agg(json_build_object('id', id, 'k', storage_key)), '[]'::json)) from storage_objects where id in ($S2AR2_UUIDS_Q)" | base64 -w0)"
+  S2AR2_LOC_B64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 'm', mirror_key)), '[]'::json) from storage_objects where id in ($S2AR2_UUIDS_Q)" | base64 -w0)"
+}
+# ---- stage2a_residue2_eligibility_run: READ-ONLY; gathers every fact; returns 0 only on B25_STAGE2A_RESIDUE2_ELIGIBLE=TRUE ----
+stage2a_residue2_eligibility_run() {
+  declare -f stage2a_residue2_eligibility >/dev/null && declare -f logo_key_rule_sql >/dev/null || fail "libraries not loaded (stream b25-stage1-purge-lib.sh and b25-stage1-apply-lib.sh before this script)"
+  s2ar2_constants_ok || fail "residue constants collide with the Stage 1 exception or are malformed — STOP"
+  local facts="" cid rf rfacts ff pf verdict; cid="$(compose ps -q api || true)"
+  section "0. read-only guard"; stage2a_readonly_guard
+  section "1. host / containers / readiness / storage configuration (names, counts, digests and booleans only)"
+  facts+="$(stage2a_residue_host_facts "$cid")"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(head_sha|current_deploy_sha|dirty|lock_absent|api_running|api_health|readyz_status|readyz_database|readyz_storage|init_record_found|init_driver|init_fallback|init_mirror|init_legacy_delete|env_names_set|env_mode|key_line_count|env_core_identity_ok|env_record_present|env_file_managed_ok|dead_jobs_total|storage_jobs_active|schema_fingerprint)=' | sed 's/^/  /'
+  section "2. the named volume (no write test)"
+  rf="$(stage2a_root_facts "$cid")"; facts+="$rf"$'\n'; printf '%s\n' "$rf" | grep -E '^(mount_type|mount_name|root_tenant_files|root_regular_files|root_symlinks|root_other_entries)=' | sed 's/^/  /'
+  section "3. Stage 1 exception, inventory, census, originals (read-only)"
+  facts+="$(stage2a_exception_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(exc_|inv_|census_|unmarked_|refs_count|originals_)' | sed 's/^/  /'
+  section "4. the residue rows, the disposable identities and every possible reference (ids, counts, booleans only)"
+  rfacts="$(stage2a_residue2_row_facts)"; facts+="$rfacts"$'\n'; printf '%s\n' "$rfacts" | sed 's/^/  /'
+  section "5. physical absence (read-only): fs primary by stored key + tenant directory walk; every persisted provider location by HEAD"
+  stage2a_residue2_blobs
+  ff="$(stage2a_residue_fs_facts "$S2AR2_FROWS_B64")"; pf="$(stage2a_residue_provider_facts "$S2AR2_LOC_B64")"
+  facts+="$ff"$'\n'; facts+="$pf"$'\n'; printf '%s\n%s\n' "$ff" "$pf" | sed 's/^/  /'
+  section "6. settlement prerequisites (read-only decision; nothing is changed)"
+  verdict="$(printf '%s' "$facts" | stage2a_residue2_eligibility)"; printf '%s\n' "$verdict"
+  rm -f "$HOME"/.b25-s1-node.err
+  printf '%s\n' "$verdict" | grep -qx 'B25_STAGE2A_RESIDUE2_ELIGIBLE=TRUE'
+}
+phase_stage2a_residue2_eligibility() {
+  [ -z "$ARG1$ARG2$ARG3" ] || fail "stage2a-residue2-eligibility takes no argument — the residue is bound by constants"
+  section "manifest (readonly constants of the library; never an input; the branding uuid is a CANDIDATE the proof must confirm)"; echo "  $S2AR2_MANIFEST (run $S2AR2_RUN)"
+  if stage2a_residue2_eligibility_run; then log "stage2a-residue2-eligibility complete (read-only; nothing changed; B25_STAGE2A_RESIDUE2_ELIGIBLE=TRUE)"
+  else
+    # auto-purge race: the product sweep purges reconciled tombstones of a deleted company on its own schedule;
+    # when the rows are already gone this is reported explicitly — nothing is recreated and nothing can ever settle.
+    local left; left="$(q "select count(*) from storage_objects where id in ($S2AR2_UUIDS_Q)" 2>/dev/null || echo "?")"
+    if [ "$left" = "0" ]; then echo "B25_STAGE2A_RESIDUE2_ROWS_ALREADY_ABSENT=TRUE (the product sweep purged the company-$S2AR2_COMPANY tombstones; the reviewed settlement did NOT run and never will for this manifest; independent review decides)"; fi
+    fail "stage2a-residue2-eligibility: prerequisites not met (read-only; nothing changed; B25_STAGE2A_RESIDUE2_ELIGIBLE=FALSE; rows_present=$left)"
+  fi
+}
+# MUTATION — ONE session: A eligibility (TRUE or nothing happens) → B1/B2 absence re-proven per uuid → C the two rows
+# removed in one row-locked, allow-listed transaction → D post-settlement proof over re-read facts.
+phase_stage2a_residue2_settle() {
+  [ -z "$ARG1$ARG2$ARG3" ] || fail "stage2a-residue2-settle takes no argument — the residue is bound by constants"
+  declare -f purge_result_check >/dev/null || fail "purge library not loaded (stream b25-stage1-purge-lib.sh before this script)"
+  section "manifest (readonly constants of the library; never an input)"; echo "  $S2AR2_MANIFEST (run $S2AR2_RUN)"
+  section "A. eligibility — read-only proof in THIS session (no mutation unless B25_STAGE2A_RESIDUE2_ELIGIBLE=TRUE)"
+  stage2a_residue2_eligibility_run || fail "settlement refused: B25_STAGE2A_RESIDUE2_ELIGIBLE is not TRUE in this session — nothing changed"
+  stage2a_lock
+  local frows="$S2AR2_FROWS_B64" loc="$S2AR2_LOC_B64" u k1 fj pj triple
+  [ -n "$frows" ] && [ -n "$loc" ] || fail "the key blobs of the residue rows were not captured — STOP (nothing changed)"
+  section "B1. fs primary absence re-proven PER UUID immediately before the removal (lstat of the stored key; nothing is deleted to make this true)"
+  for u in "$S2AR2_UUID_DOC" "$S2AR2_UUID_LOGO"; do
+    k1="$(q "select json_build_object('companies', array[$S2AR2_COMPANIES], 'rows', coalesce(json_agg(json_build_object('id', id, 'k', storage_key)), '[]'::json)) from storage_objects where id = '$u'" | base64 -w0)"
+    fj="$(api_node "$STAGE2A_FS_ABSENT_JS" "$k1")"; echo "  $u ($(s2ar2_kind "$u")): fs $fj"
+    [ "$(census_field "$fj" checked count 2>/dev/null || echo x)" = "1" ] && [ "$(census_field "$fj" absent count 2>/dev/null || echo x)" = "1" ] && [ "$(census_field "$fj" tenant_files count 2>/dev/null || echo x)" = "0" ] || fail "the fs primary of $u still exists or could not be checked — STOP: no row is removed, nothing is deleted"
+  done
+  section "B2. mirror absence re-proven PER UUID (every persisted provider location by HEAD; a read failure is NOT absence)"
+  for u in "$S2AR2_UUID_DOC" "$S2AR2_UUID_LOGO"; do
+    k1="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 'm', mirror_key)), '[]'::json) from storage_objects where id = '$u'" | base64 -w0)"
+    pj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$STAGE2A_PROVIDER_ABSENT_JS" "$k1")"; echo "  $u ($(s2ar2_kind "$u")): provider $pj"
+    if printf '%s' "$pj" | grep -q '"error"'; then fail "the provider state of $u could not be read — STOP: no row is removed, no provider call is issued"; fi
+    [ "$(census_field "$pj" checked count 2>/dev/null || echo x)" = "1" ] && [ "$(census_field "$pj" absent count 2>/dev/null || echo x)" = "1" ] || fail "a persisted provider location of $u still answers — STOP: no row is removed, no provider delete is issued (never unconditioned)"
+  done
+  section "C. remove EXACTLY the two tombstone rows (Stage 2A allow-list; ONE row-locked transaction; locked = allowed = deleted = $S2AR2_ROWS or nothing is deleted)"
+  triple="$(qw "$(stage2a_purge_rows_sql "$S2AR2_UUIDS_Q" "$S2AR2_COMPANY" "$S2AR2_ROWS")")"
+  purge_result_check "$triple" "$S2AR2_ROWS" || fail "the allow-listed delete did not remove exactly the two rows (the statement deletes nothing unless locked = allowed = expected = $S2AR2_ROWS): $triple — STOP"
+  [ "$(q "select count(*) from storage_objects where id in ($S2AR2_UUIDS_Q)")" = "0" ] || fail "a residue row remains after the transaction — STOP"
+  echo "  rows removed: $S2AR2_ROWS ($S2AR2_UUID_DOC, $S2AR2_UUID_LOGO)"
+  rm -f "$STAGE2A_LOCK_FILE"   # the mutation is complete; the proof below is read-only and must find no lock
+  section "D. post-settlement proof (read-only; fs / provider absence re-read with the key blobs captured BEFORE the removal; census re-read)"
+  local facts="" cid verdict; cid="$(compose ps -q api || true)"
+  facts+="$(stage2a_residue_host_facts "$cid")"$'\n'
+  facts+="$(stage2a_root_facts "$cid")"$'\n'
+  facts+="$(stage2a_exception_facts)"$'\n'
+  facts+="$(stage2a_residue2_row_facts)"$'\n'
+  facts+="$(stage2a_residue_fs_facts "$frows")"$'\n'; facts+="$(stage2a_residue_provider_facts "$loc")"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(res_|exc_|inv_|census_|unmarked_|originals_|root_tenant_files|leak_|web_leak_|readyz_|api_health|lock_absent|head_sha|current_deploy_sha|dirty|init_driver|init_fallback|init_mirror|init_legacy_delete|env_record_present|env_file_managed_ok|key_line_count|env_mode)=' | sed 's/^/  /'
+  verdict="$(printf '%s' "$facts" | stage2a_residue2_settled)"; printf '%s\n' "$verdict"
+  rm -f "$HOME"/.b25-s1-node.err
+  printf '%s\n' "$verdict" | grep -qx 'B25_STAGE2A_RESIDUE2_SETTLED=TRUE' || fail "post-settlement proof FAILED — the two rows are removed; no further change is made; independent review required"
+  log "stage2a-residue2-settle complete (B25_STAGE2A_RESIDUE2_SETTLED=TRUE)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -3051,6 +3181,8 @@ case "$PHASE" in
   stage2a-cleanup) phase_stage2a_cleanup ;;
   stage2a-residue-eligibility) phase_stage2a_residue_eligibility ;;
   stage2a-residue-settle) phase_stage2a_residue_settle ;;
+  stage2a-residue2-eligibility) phase_stage2a_residue2_eligibility ;;
+  stage2a-residue2-settle) phase_stage2a_residue2_settle ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0

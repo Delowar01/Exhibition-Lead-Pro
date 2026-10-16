@@ -619,10 +619,13 @@ s2ar_read_facts() {
 
 # ---- stage2a_residue_eligibility ----
 # key=value facts on stdin → the 26 settlement prerequisites with OK / FAIL, then
-#   B25_STAGE2A_RESIDUE_CONDITIONS_FAILED=<n>
-#   B25_STAGE2A_RESIDUE_ELIGIBLE=TRUE|FALSE
+#   B25_STAGE2A_${MK}_CONDITIONS_FAILED=<n>
+#   B25_STAGE2A_${MK}_ELIGIBLE=TRUE|FALSE
 # A missing or malformed fact fails its condition (never defaults to a pass). Always returns 0.
-stage2a_residue_eligibility() {
+stage2a_residue_eligibility_for() {   # <manifest prefix: S2AR | S2AR2> <marker: RESIDUE | RESIDUE2>
+  local P="$1" MK="$2"
+  [[ "$P" =~ ^S2AR2?$ ]] && [[ "$MK" =~ ^RESIDUE2?$ ]] || { echo "stage2a_residue_eligibility_for: unknown manifest" >&2; return 1; }
+  local -n M_RUN="${P}_RUN" M_TAG="${P}_TAG" M_COMPANY="${P}_COMPANY" M_COMPANIES="${P}_COMPANIES" M_USERS="${P}_USERS" M_UUID_DOC="${P}_UUID_DOC" M_UUID_LOGO="${P}_UUID_LOGO" M_DOC_SIZE="${P}_DOC_SIZE" M_LOGO_SIZE="${P}_LOGO_SIZE" M_ROWS="${P}_ROWS"
   local -A f=()
   s2ar_read_facts
   local failed=0 n=0
@@ -632,7 +635,7 @@ stage2a_residue_eligibility() {
   is_zero() { [ "$(g "$1")" = "0" ]; }
   is_eq() { [ "$(g "$1")" = "$2" ]; }
   cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "res $n: $1 — OK ($3)"; else echo "res $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
-  local ok R="$S2AR_ROWS"
+  local ok R="$M_ROWS"
   ok=1; is_eq head_sha "$STAGE2A_PRODUCT_SHA" && is_eq current_deploy_sha "$STAGE2A_PRODUCT_SHA" && is_zero dirty && ok=0
   cond "hosted product commit is still $STAGE2A_PRODUCT_SHA (checkout and current-deploy.sha; clean)" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty)"
   ok=1; is_true init_record_found && is_eq init_driver fs && is_eq init_fallback true && is_eq init_mirror true && is_eq init_legacy_delete false && is_true env_driver_is_fs && is_true env_root_is_locked && is_true env_fallback_is_true && is_true env_mirror_is_gcs && is_true env_legacy_delete_off && is_true env_key_set && ok=0
@@ -640,13 +643,13 @@ stage2a_residue_eligibility() {
   ok=1; is_true lock_absent && is_true env_record_present && is_true env_core_identity_ok && is_eq env_mode 600 && is_eq key_line_count 1 && is_true env_file_managed_ok && ok=0
   cond "no activation lock; the activation env record still matches the env file (core identity, mode 600, exactly one key line, managed lines = the fixed activation set)" $ok "lock_absent=$(g lock_absent) record_present=$(g env_record_present) core_identity_ok=$(g env_core_identity_ok) mode=$(g env_mode) key_line_count=$(g key_line_count) managed_ok=$(g env_file_managed_ok)"
   ok=1; is_zero res_companies_present && ok=0
-  cond "company $S2AR_COMPANY is absent (and company 55 and every 'B25 SMOKE $S2AR_TAG' tenant)" $ok "companies_present=$(g res_companies_present)"
+  cond "company $M_COMPANY is absent (and company 55 and every 'B25 SMOKE $M_TAG' tenant)" $ok "companies_present=$(g res_companies_present)"
   ok=1; is_zero res_users_present && is_zero res_sessions && is_zero res_feature_rows && ok=0
-  cond "the disposable identities of run $S2AR_RUN are absent (user $S2AR_USERS, every b25-smoke-$S2AR_TAG address, sessions, feature / audit / activity / login rows)" $ok "users_present=$(g res_users_present) sessions=$(g res_sessions) feature_rows=$(g res_feature_rows)"
+  cond "the disposable identities of run $M_RUN are absent (user $M_USERS, every b25-smoke-$M_TAG address, sessions, feature / audit / activity / login rows)" $ok "users_present=$(g res_users_present) sessions=$(g res_sessions) feature_rows=$(g res_feature_rows)"
   ok=1; is_eq res_rows_named "$R" && ok=0
-  cond "exactly the two named company-$S2AR_COMPANY storage rows exist ($S2AR_UUID_DOC, $S2AR_UUID_LOGO)" $ok "rows_named=$(g res_rows_named)"
+  cond "exactly the two named company-$M_COMPANY storage rows exist ($M_UUID_DOC, $M_UUID_LOGO)" $ok "rows_named=$(g res_rows_named)"
   ok=1; is_zero res_rows_other && is_zero res_rows_wrong_company && ok=0
-  cond "no third storage row of companies $S2AR_COMPANIES exists and neither named row belongs to another company" $ok "rows_other=$(g res_rows_other) rows_wrong_company=$(g res_rows_wrong_company)"
+  cond "no third storage row of companies $M_COMPANIES exists and neither named row belongs to another company" $ok "rows_other=$(g res_rows_other) rows_wrong_company=$(g res_rows_wrong_company)"
   ok=1; is_eq res_rows_deleted "$R" && ok=0
   cond "both rows are state = deleted" $ok "rows_deleted=$(g res_rows_deleted)"
   ok=1; is_eq res_rows_fs "$R" && ok=0
@@ -662,12 +665,12 @@ stage2a_residue_eligibility() {
   ok=1; is_eq res_rows_no_lease "$R" && ok=0
   cond "lease_token and lease_expires_at are cleared on both rows" $ok "rows_no_lease=$(g res_rows_no_lease)"
   ok=1; is_eq res_rows_deleted_at_set "$R" && is_eq res_rows_deleted_in_window "$R" && ok=0
-  cond "deleted_at is set on both rows and lies in the tenant-deletion window of run $S2AR_RUN" $ok "rows_deleted_at_set=$(g res_rows_deleted_at_set) rows_deleted_in_window=$(g res_rows_deleted_in_window)"
+  cond "deleted_at is set on both rows and lies in the tenant-deletion window of run $M_RUN" $ok "rows_deleted_at_set=$(g res_rows_deleted_at_set) rows_deleted_in_window=$(g res_rows_deleted_in_window)"
   ok=1; is_zero res_live_refs && is_zero res_docs_company && is_zero res_brand_refs && ok=0
-  cond "no live document / company / branding association (no document version, export, report, scan or brand_logo_key references either row; no document of company $S2AR_COMPANY)" $ok "live_refs=$(g res_live_refs) docs_company=$(g res_docs_company) brand_refs=$(g res_brand_refs)"
+  cond "no live document / company / branding association (no document version, export, report, scan or brand_logo_key references either row; no document of company $M_COMPANY)" $ok "live_refs=$(g res_live_refs) docs_company=$(g res_docs_company) brand_refs=$(g res_brand_refs)"
   ok=1; is_true res_constants_ok && is_zero res_rows_exception && ok=0
   cond "neither uuid is the Stage 1 exception $B25PHYS_UUID (constants and rows)" $ok "constants_ok=$(g res_constants_ok) rows_exception=$(g res_rows_exception)"
-  ok=1; is_true res_constants_ok && is_zero res_rows_company53 && [ "$S2AR_COMPANY" != "$B25PHYS_COMPANY" ] && ok=0
+  ok=1; is_true res_constants_ok && is_zero res_rows_company53 && [ "$M_COMPANY" != "$B25PHYS_COMPANY" ] && ok=0
   cond "company != $B25PHYS_COMPANY (constants and rows)" $ok "constants_ok=$(g res_constants_ok) rows_company53=$(g res_rows_company53)"
   ok=1; is_zero res_foreign_mentions && is_zero res_jobs_pending && is_zero res_inflight_sessions && ok=0
   cond "no cross-tenant / live reference: no other storage row mentions a residue id, no pending or running job references the residue, no in-flight database session on storage_objects" $ok "foreign_mentions=$(g res_foreign_mentions) jobs_pending=$(g res_jobs_pending) inflight_sessions=$(g res_inflight_sessions)"
@@ -675,28 +678,32 @@ stage2a_residue_eligibility() {
   cond "Stage 1 exception still exactly intact (row $B25PHYS_UUID deleted / LEGACY_RETAINED / gcs / company $B25PHYS_COMPANY absent / 0 live references; provider object present, marker, size $B25PHYS_OBJECT_SIZE, canonical stable generation with the proven digest)" $ok "rows=$(g exc_row_count) state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) company=$(g exc_company) kind=$(g exc_kind) size=$(g exc_size) identity=$(g exc_identity_ok) uncertain=$(g exc_uncertain) lease=$(g exc_lease) mirror=$(g exc_mirror) live_refs=$(g exc_live_refs) company_absent=$(g exc_company_absent) present=$(g exc_provider_present) marker=$(g exc_provider_marker_ok) size_matches=$(g exc_provider_size_matches) canonical=$(g exc_generation_canonical) stable=$(g exc_generation_stable) digest=$(g exc_generation_digest)"
   ok=1; is_eq inv_total 3 && is_zero res_inv_outside && is_zero inv_uncertain && is_zero inv_unproven && is_zero inv_cleanup_pending && is_zero inv_leases && is_zero inv_inflight && ok=0
   cond "no unexpected storage_objects row outside the exception and the two tombstones (total 3; none uncertain / unproven / cleanup-pending / leased / in flight)" $ok "total=$(g inv_total) outside=$(g res_inv_outside) uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leases=$(g inv_leases) inflight=$(g inv_inflight)"
-  ok=1; is_eq res_rows_identity_ok "$R" && is_eq res_rows_created_in_window "$R" && ok=0
-  cond "row identity: document $S2AR_DOC_SIZE bytes and branding_logo $S2AR_LOGO_SIZE bytes with the product-shaped reference and key, a 64-hex digest and a content type, both created in the smoke window of run $S2AR_RUN" $ok "rows_identity_ok=$(g res_rows_identity_ok) rows_created_in_window=$(g res_rows_created_in_window)"
+  ok=1; is_eq res_rows_identity_ok "$R" && is_eq res_rows_created_in_window "$R" && is_eq res_doc_size "$M_DOC_SIZE" && is_eq res_logo_size "$M_LOGO_SIZE" && ok=0
+  cond "row identity: document $M_DOC_SIZE bytes and branding_logo $M_LOGO_SIZE bytes (sizes read from the rows; the logo size must equal the normalized served-object size observed by the run) with the product-shaped reference and key, a 64-hex digest and a content type, both created in the smoke window of run $M_RUN" $ok "rows_identity_ok=$(g res_rows_identity_ok) rows_created_in_window=$(g res_rows_created_in_window) doc_size=$(g res_doc_size) logo_size=$(g res_logo_size)"
   ok=1; is_true api_running && is_eq api_health healthy && is_eq readyz_status ok && is_eq readyz_database ok && is_eq readyz_storage ok && is_zero dead_jobs_total && is_zero storage_jobs_active && is_eq schema_fingerprint "30c4ecbd867cd2cd59abcb58581ecb04" && ok=0
   cond "api running and healthy, readiness ok / ok / ok, no dead job, no active storage job, schema fingerprint = the accepted post-Stage-1 fingerprint" $ok "api=$(g api_running)/$(g api_health) readyz=$(g readyz_status)/$(g readyz_database)/$(g readyz_storage) dead_jobs=$(g dead_jobs_total) storage_jobs_active=$(g storage_jobs_active) fingerprint=$(g schema_fingerprint)"
   ok=1; is_eq res_fs_checked "$R" && is_eq res_fs_absent "$R" && is_zero res_fs_tenant_files && ok=0
-  cond "FS PRIMARY ABSENT: the encrypted file of each row is absent at its stored key and no file remains under the tenant directories of companies $S2AR_COMPANIES (nothing is deleted to make this true)" $ok "fs_checked=$(g res_fs_checked) fs_absent=$(g res_fs_absent) tenant_files=$(g res_fs_tenant_files) tenant_dirs=$(g res_fs_tenant_dirs)"
+  cond "FS PRIMARY ABSENT: the encrypted file of each row is absent at its stored key and no file remains under the tenant directories of companies $M_COMPANIES (nothing is deleted to make this true)" $ok "fs_checked=$(g res_fs_checked) fs_absent=$(g res_fs_absent) tenant_files=$(g res_fs_tenant_files) tenant_dirs=$(g res_fs_tenant_dirs)"
   ok=1; is_true res_prov_read_ok && is_eq res_prov_checked "$R" && is_eq res_prov_absent "$R" && ok=0
   cond "GCS MIRROR ABSENT: every persisted provider location of each row answers 404 (provider read succeeded — a read failure is NOT absence)" $ok "provider_read_ok=$(g res_prov_read_ok) provider_checked=$(g res_prov_checked) provider_absent=$(g res_prov_absent)"
   ok=1; is_eq census_objects "$B25PHYS_CENSUS_OBJECTS" && is_eq census_bytes "$B25PHYS_CENSUS_BYTES" && is_eq census_marked "$B25PHYS_CENSUS_MARKED" && is_eq census_generationless "$B25PHYS_CENSUS_GENERATIONLESS" && is_eq census_md5 "$B25PHYS_CENSUS_MD5" && is_eq unmarked_objects 4 && is_eq unmarked_md5 "$B25PHYS_ORIGINALS_MD5" && is_eq originals_present 4 && is_zero originals_missing && is_eq originals_size_match 4 && ok=0
   cond "bucket census = the locked baseline ($B25PHYS_CENSUS_OBJECTS / $B25PHYS_CENSUS_BYTES / marked $B25PHYS_CENSUS_MARKED / generationless $B25PHYS_CENSUS_GENERATIONLESS / $B25PHYS_CENSUS_MD5) and the four originals intact" $ok "objects=$(g census_objects) bytes=$(g census_bytes) marked=$(g census_marked) generationless=$(g census_generationless) md5=$(g census_md5) unmarked_objects=$(g unmarked_objects) unmarked_md5=$(g unmarked_md5) originals_present=$(g originals_present) missing=$(g originals_missing) size_match=$(g originals_size_match)"
-  echo "B25_STAGE2A_RESIDUE_CONDITIONS_FAILED=$failed"
-  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_RESIDUE_ELIGIBLE=TRUE"; else echo "B25_STAGE2A_RESIDUE_ELIGIBLE=FALSE"; fi
+  echo "B25_STAGE2A_${MK}_CONDITIONS_FAILED=$failed"
+  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_${MK}_ELIGIBLE=TRUE"; else echo "B25_STAGE2A_${MK}_ELIGIBLE=FALSE"; fi
   return 0
 }
 
-# ---- stage2a_residue_settled ----
+# ---- stage2a_residue_settled_for <prefix> <marker> ----
+# Wrappers: stage2a_residue_settled (S2AR / RESIDUE) and stage2a_residue2_settled (S2AR2 / RESIDUE2).
 # key=value facts (read AFTER the row removal, the fs / provider absence facts re-read with the key blobs captured
 # BEFORE it) on stdin → the 12 post-settlement proofs with OK / FAIL, then
-#   B25_STAGE2A_RESIDUE_SETTLED_CONDITIONS_FAILED=<n>
-#   B25_STAGE2A_RESIDUE_SETTLED=TRUE|FALSE
+#   B25_STAGE2A_${MK}_SETTLED_CONDITIONS_FAILED=<n>
+#   B25_STAGE2A_${MK}_SETTLED=TRUE|FALSE
 # A missing or malformed fact fails its proof. Always returns 0.
-stage2a_residue_settled() {
+stage2a_residue_settled_for() {   # <manifest prefix: S2AR | S2AR2> <marker: RESIDUE | RESIDUE2>
+  local P="$1" MK="$2"
+  [[ "$P" =~ ^S2AR2?$ ]] && [[ "$MK" =~ ^RESIDUE2?$ ]] || { echo "stage2a_residue_settled_for: unknown manifest" >&2; return 1; }
+  local -n M_RUN="${P}_RUN" M_TAG="${P}_TAG" M_COMPANY="${P}_COMPANY" M_COMPANIES="${P}_COMPANIES" M_USERS="${P}_USERS" M_UUID_DOC="${P}_UUID_DOC" M_UUID_LOGO="${P}_UUID_LOGO" M_DOC_SIZE="${P}_DOC_SIZE" M_LOGO_SIZE="${P}_LOGO_SIZE" M_ROWS="${P}_ROWS"
   local -A f=()
   s2ar_read_facts
   local failed=0 n=0
@@ -706,15 +713,15 @@ stage2a_residue_settled() {
   is_zero() { [ "$(g "$1")" = "0" ]; }
   is_eq() { [ "$(g "$1")" = "$2" ]; }
   cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "post $n: $1 — OK ($3)"; else echo "post $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
-  local ok R="$S2AR_ROWS"
+  local ok R="$M_ROWS"
   ok=1; is_zero res_rows_named && ok=0
-  cond "the two tombstones $S2AR_UUID_DOC and $S2AR_UUID_LOGO are absent" $ok "rows_named=$(g res_rows_named)"
+  cond "the two tombstones $M_UUID_DOC and $M_UUID_LOGO are absent" $ok "rows_named=$(g res_rows_named)"
   ok=1; is_zero res_companies_present && is_zero res_rows_other && ok=0
-  cond "company $S2AR_COMPANY absent; no storage row of companies $S2AR_COMPANIES remains" $ok "companies_present=$(g res_companies_present) rows_other=$(g res_rows_other)"
+  cond "company $M_COMPANY absent; no storage row of companies $M_COMPANIES remains" $ok "companies_present=$(g res_companies_present) rows_other=$(g res_rows_other)"
   ok=1; is_zero res_users_present && is_zero res_sessions && is_zero res_feature_rows && ok=0
-  cond "no disposable identity of run $S2AR_RUN remains" $ok "users_present=$(g res_users_present) sessions=$(g res_sessions) feature_rows=$(g res_feature_rows)"
+  cond "no disposable identity of run $M_RUN remains" $ok "users_present=$(g res_users_present) sessions=$(g res_sessions) feature_rows=$(g res_feature_rows)"
   ok=1; is_eq res_fs_checked "$R" && is_eq res_fs_absent "$R" && is_zero res_fs_tenant_files && is_zero root_tenant_files && ok=0
-  cond "no tenant-$S2AR_COMPANY file on the volume: both stored keys (captured before the removal) absent, no file under the tenant directories, no tenant file anywhere under the root" $ok "fs_checked=$(g res_fs_checked) fs_absent=$(g res_fs_absent) tenant_files=$(g res_fs_tenant_files) root_tenant_files=$(g root_tenant_files)"
+  cond "no tenant-$M_COMPANY file on the volume: both stored keys (captured before the removal) absent, no file under the tenant directories, no tenant file anywhere under the root" $ok "fs_checked=$(g res_fs_checked) fs_absent=$(g res_fs_absent) tenant_files=$(g res_fs_tenant_files) root_tenant_files=$(g root_tenant_files)"
   ok=1; is_true res_prov_read_ok && is_eq res_prov_checked "$R" && is_eq res_prov_absent "$R" && ok=0
   cond "no corresponding mirror object: every persisted provider location (captured before the removal) answers 404; provider read succeeded" $ok "provider_read_ok=$(g res_prov_read_ok) provider_checked=$(g res_prov_checked) provider_absent=$(g res_prov_absent)"
   ok=1; is_eq exc_row_count 1 && is_eq exc_state deleted && is_eq exc_last_error LEGACY_RETAINED && is_eq exc_driver gcs && is_eq exc_company "$B25PHYS_COMPANY" && is_eq exc_kind document && is_eq exc_size "$B25PHYS_OBJECT_SIZE" && is_true exc_identity_ok && is_false exc_uncertain && is_false exc_lease && is_false exc_mirror && is_zero exc_live_refs && is_true exc_company_absent && is_true exc_provider_present && is_true exc_provider_marker_ok && is_true exc_provider_size_matches && is_true exc_generation_canonical && is_true exc_generation_stable && is_eq exc_generation_digest "$B25PHYS_PRE_GEN_DIGEST" && ok=0
@@ -731,7 +738,56 @@ stage2a_residue_settled() {
   cond "no secret leaked: no plaintext storage path, key-shaped token, key assignment, bucket reference or signed-URL text in the api / web logs" $ok "root_path=$(g leak_root_path) key_shaped=$(g leak_key_shaped) key_assignment=$(g leak_key_assignment) bucket_ref=$(g leak_bucket_ref) signature=$(g leak_signature) web_root_path=$(g web_leak_root_path) web_signature=$(g web_leak_signature)"
   ok=1; is_eq head_sha "$STAGE2A_PRODUCT_SHA" && is_eq current_deploy_sha "$STAGE2A_PRODUCT_SHA" && is_zero dirty && is_true lock_absent && ok=0
   cond "hosted product commit still $STAGE2A_PRODUCT_SHA, checkout clean, no foreign lock" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty) lock_absent=$(g lock_absent)"
-  echo "B25_STAGE2A_RESIDUE_SETTLED_CONDITIONS_FAILED=$failed"
-  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_RESIDUE_SETTLED=TRUE"; else echo "B25_STAGE2A_RESIDUE_SETTLED=FALSE"; fi
+  echo "B25_STAGE2A_${MK}_SETTLED_CONDITIONS_FAILED=$failed"
+  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_${MK}_SETTLED=TRUE"; else echo "B25_STAGE2A_${MK}_SETTLED=FALSE"; fi
   return 0
+}
+
+# ---- the two manifests behind the generic evaluators (names kept for the reviewed Correction 1 phases and tests) ----
+stage2a_residue_eligibility() { stage2a_residue_eligibility_for S2AR RESIDUE; }
+stage2a_residue_settled() { stage2a_residue_settled_for S2AR RESIDUE; }
+stage2a_residue2_eligibility() { stage2a_residue_eligibility_for S2AR2 RESIDUE2; }
+stage2a_residue2_settled() { stage2a_residue_settled_for S2AR2 RESIDUE2; }
+
+# =============================================================================
+# B25 STAGE 2A — CORRECTION 2: EXACT RESIDUE OF THE FAILED CORRECTED SMOKE RUN
+# 38922592504 (tag 5d408c442c64). That run's client-side gate on the PUBLIC logo
+# route's Content-Length stopped STEP=run after the logo upload; the always-step
+# teardown deleted the disposable tenants through the product API and the
+# product's purge settled the two fresh rows to plain `deleted` tombstones of the
+# deleted company 56 (fs primary and mirror copy reported removed; last_error
+# NULL). The branding uuid below is the CANDIDATE reconstructed from GitHub's
+# masking of the digit pair "22" in the run log ("06***8d82-…"): it is NOT trusted —
+# the hosted read-only eligibility must prove it is the ONE branding_logo residue
+# row of company 56 satisfying every identity predicate, or the verdict is FALSE
+# and the settlement stays impossible. Both manifests deny the Stage 1 exception
+# (f048b5d4…, company 53) and each other.
+# =============================================================================
+readonly S2AR2_RUN="38922592504"
+readonly S2AR2_TAG="5d408c442c64"
+readonly S2AR2_COMPANY=56
+readonly S2AR2_COMPANIES="56,57"
+readonly S2AR2_USERS="105"
+readonly S2AR2_UUID_DOC="c69a3706-84f8-456b-ba40-e983118f2751"
+readonly S2AR2_UUID_LOGO="06228d82-7da6-4c5c-9ed7-d66fb97a1a2f"
+readonly S2AR2_DOC_SIZE=21546
+readonly S2AR2_LOGO_SIZE=181          # the normalized served-object size observed by the failed client run (public GET body length)
+readonly S2AR2_ROWS=2
+readonly S2AR2_UUIDS_Q="'$S2AR2_UUID_DOC','$S2AR2_UUID_LOGO'"
+readonly S2AR2_MANIFEST="$S2AR2_UUID_DOC,$S2AR2_UUID_LOGO|$S2AR2_COMPANIES|$S2AR2_USERS|$S2AR2_TAG"
+# Both rows were created during STEP=run (upload intent 15:17:46Z, logo upload 15:17:55Z) and tombstoned by the API
+# deletion of tenant 56 (15:17:57Z; both rows read `deleted` at 15:18:03Z) — run 38922592504 log.
+readonly S2AR2_CREATED_FROM="2026-10-16 15:17:40"
+readonly S2AR2_CREATED_TO="2026-10-16 15:18:00"
+readonly S2AR2_DELETED_FROM="2026-10-16 15:17:55"
+readonly S2AR2_DELETED_TO="2026-10-16 15:19:00"
+s2ar2_kind() { case "$1" in "$S2AR2_UUID_DOC") echo document;; "$S2AR2_UUID_LOGO") echo branding_logo;; *) return 1;; esac; }
+s2ar2_size() { case "$1" in "$S2AR2_UUID_DOC") echo "$S2AR2_DOC_SIZE";; "$S2AR2_UUID_LOGO") echo "$S2AR2_LOGO_SIZE";; *) return 1;; esac; }
+# The Correction 2 constants can never name the Stage 1 exception, nor overlap the Correction 1 manifest.
+s2ar2_constants_ok() {
+  [ "$S2AR2_UUID_DOC" != "$B25PHYS_UUID" ] && [ "$S2AR2_UUID_LOGO" != "$B25PHYS_UUID" ] && [ "$S2AR2_UUID_DOC" != "$S2AR2_UUID_LOGO" ] \
+    && [ "$S2AR2_COMPANY" != "$B25PHYS_COMPANY" ] && [[ ",$S2AR2_COMPANIES," != *",$B25PHYS_COMPANY,"* ]] && [[ ",$S2AR2_COMPANIES," == *",$S2AR2_COMPANY,"* ]] \
+    && [[ "$S2AR2_UUID_DOC" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] && [[ "$S2AR2_UUID_LOGO" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
+    && [ "$S2AR2_UUID_DOC" != "$S2AR_UUID_DOC" ] && [ "$S2AR2_UUID_LOGO" != "$S2AR_UUID_LOGO" ] && [ "$S2AR2_UUID_DOC" != "$S2AR_UUID_LOGO" ] && [ "$S2AR2_UUID_LOGO" != "$S2AR_UUID_DOC" ] \
+    && [[ ",$S2AR2_COMPANIES," != *",$S2AR_COMPANY,"* ]] && [ "$S2AR2_TAG" != "$S2AR_TAG" ] && [ "$S2AR2_ROWS" = "2" ]
 }

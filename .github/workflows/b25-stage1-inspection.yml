@@ -132,10 +132,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "STAGE 2A: stage2a_precheck (READ-ONLY pre-switch gate) | stage2a_postswitch_verify (READ-ONLY, after an authorized activation) | stage2a_activate (MUTATION: fs primary + strict mirror + legacy fallback; confirm_product_sha + confirm_window + confirm_stage2a) | stage2a_smoke (MUTATION: disposable fs + mirror smoke; confirm_product_sha + confirm_window + confirm_stage2a_smoke) | stage2a_rollback (MUTATION: explicit rollback to the bucket primary; confirm_product_sha + confirm_window + confirm_stage2a_rollback) | stage2a_residue_inspect_1c512c90f2c8 (READ-ONLY: 26-prerequisite eligibility of the EXACT residue of the failed smoke run 38847884691 — the two deleted/fs tombstones 593fd8be… and b3cf7f44… of deleted company 54; constants only, no input used) | stage2a_residue_settle_1c512c90f2c8 (MUTATION: that settlement — eligibility re-proven in the same session, fs + mirror absence re-proven per uuid, exactly the two rows removed, post-settlement proof; confirm_product_sha + confirm_window + confirm_stage2a_residue). STAGE 1 (read-only, still dispatchable): b25phys_inspect (READ-ONLY inspection of the physical-test residue: company 53 / contact 22 / document 6 / storage row f048b5d4…; constant manifest, no input used) | b25phys_postdelete_verify (READ-ONLY verification after the platform owner deleted company 53 in the portal: cascade, purge job, tombstone, retained provider object, unchanged inventory; no input used) | postdeploy_verify (after deploy-dev-vps deployed 72a2437) | incident_diagnose (read-only) | residue_settle (read-only STATE C re-check; the first recovery is complete) | residue_inspect_4fff751a3395 (READ-ONLY eligibility of the run-38005492289 residue) | residue_settle_4fff751a3395 (MUTATION: that recovery) — preflight / schema_apply are OBSOLETE here and refused before SSH"
+        description: "STAGE 2A: stage2a_precheck (READ-ONLY pre-switch gate) | stage2a_postswitch_verify (READ-ONLY, after an authorized activation) | stage2a_activate (MUTATION: fs primary + strict mirror + legacy fallback; confirm_product_sha + confirm_window + confirm_stage2a) | stage2a_smoke (MUTATION: disposable fs + mirror smoke; confirm_product_sha + confirm_window + confirm_stage2a_smoke) | stage2a_rollback (MUTATION: explicit rollback to the bucket primary; confirm_product_sha + confirm_window + confirm_stage2a_rollback) | stage2a_residue_inspect_1c512c90f2c8 (READ-ONLY: 26-prerequisite eligibility of the EXACT residue of the failed smoke run 38847884691 — the two deleted/fs tombstones 593fd8be… and b3cf7f44… of deleted company 54; constants only, no input used) | stage2a_residue_settle_1c512c90f2c8 (MUTATION: that settlement — eligibility re-proven in the same session, fs + mirror absence re-proven per uuid, exactly the two rows removed, post-settlement proof; confirm_product_sha + confirm_window + confirm_stage2a_residue) | stage2a_residue_inspect_5d408c442c64 (READ-ONLY: 26-prerequisite eligibility of the EXACT residue of the failed corrected smoke run 38922592504 — the two deleted/fs tombstones c69a3706… and candidate 06228d82… of deleted company 56; constants only, no input used) | stage2a_residue_settle_5d408c442c64 (MUTATION: that settlement — eligibility re-proven in the same session, fs + mirror absence re-proven per uuid, exactly the two rows removed, post-settlement proof; confirm_product_sha + confirm_window + confirm_stage2a_residue2). STAGE 1 (read-only, still dispatchable): b25phys_inspect (READ-ONLY inspection of the physical-test residue: company 53 / contact 22 / document 6 / storage row f048b5d4…; constant manifest, no input used) | b25phys_postdelete_verify (READ-ONLY verification after the platform owner deleted company 53 in the portal: cascade, purge job, tombstone, retained provider object, unchanged inventory; no input used) | postdeploy_verify (after deploy-dev-vps deployed 72a2437) | incident_diagnose (read-only) | residue_settle (read-only STATE C re-check; the first recovery is complete) | residue_inspect_4fff751a3395 (READ-ONLY eligibility of the run-38005492289 residue) | residue_settle_4fff751a3395 (MUTATION: that recovery) — preflight / schema_apply are OBSOLETE here and refused before SSH"
         required: true
         type: choice
-        options: [stage2a_precheck, stage2a_postswitch_verify, stage2a_activate, stage2a_smoke, stage2a_rollback, stage2a_residue_inspect_1c512c90f2c8, stage2a_residue_settle_1c512c90f2c8, incident_diagnose, b25phys_inspect, b25phys_postdelete_verify, residue_inspect_4fff751a3395, preflight, schema_apply, postdeploy_verify, residue_settle, residue_settle_4fff751a3395]
+        options: [stage2a_precheck, stage2a_postswitch_verify, stage2a_activate, stage2a_smoke, stage2a_rollback, stage2a_residue_inspect_1c512c90f2c8, stage2a_residue_settle_1c512c90f2c8, stage2a_residue_inspect_5d408c442c64, stage2a_residue_settle_5d408c442c64, incident_diagnose, b25phys_inspect, b25phys_postdelete_verify, residue_inspect_4fff751a3395, preflight, schema_apply, postdeploy_verify, residue_settle, residue_settle_4fff751a3395]
       confirm_accepted_sha:
         description: "Type the accepted commit (72a24378947134ca8e4d3460294474894c9aaee4) — postdeploy_verify (Correction 9 product commit)"
         required: false
@@ -200,6 +200,10 @@ on:
         description: "stage2a_residue_settle_1c512c90f2c8 — type exactly: SETTLE_B25_STAGE2A_RESIDUE_1c512c90f2c8 (MUTATION: removes ONLY the two recorded tombstones 593fd8be-72be-4798-b56a-e3af02574dfb and b3cf7f44-8d23-4eae-8d44-27e4138a0249 of deleted company 54 after their fs file and mirror object are proven absent; nothing else; must be EMPTY for every other mode)"
         required: false
         default: ""
+      confirm_stage2a_residue2:
+        description: "stage2a_residue_settle_5d408c442c64 — type exactly: SETTLE_B25_STAGE2A_RESIDUE_5d408c442c64 (MUTATION: removes ONLY the two recorded tombstones c69a3706-84f8-456b-ba40-e983118f2751 and 06228d82-7da6-4c5c-9ed7-d66fb97a1a2f of deleted company 56 after their fs file and mirror object are proven absent; nothing else; must be EMPTY for every other mode)"
+        required: false
+        default: ""
       confirm_residue:
         description: "residue_settle: type exactly SETTLE RECORDED SMOKE RESIDUE 8c91bc11 | residue_settle_4fff751a3395: type exactly SETTLE RECORDED SMOKE RESIDUE 4fff751a3395 (MUTATION: removes ONLY the three recorded tombstones of deleted company 49 and their marker-owned objects at their exact generations; nothing else)"
         required: false
@@ -230,6 +234,11 @@ env:
   # the two residue modes pass NO ARG, so no input can redirect them. The Stage 1 exception (f048b5d4…,
   # company 53) is denied by constant in the library, the allow-list and every predicate.
   REQUIRED_STAGE2A_RESIDUE: "SETTLE_B25_STAGE2A_RESIDUE_1c512c90f2c8"
+  # STAGE 2A CORRECTION 2 — the EXACT residue of the failed corrected smoke run 38922592504 (tag 5d408c442c64):
+  # two plain `deleted` fs tombstones of deleted company 56 (document c69a3706…, branding_logo candidate
+  # 06228d82… reconstructed from the masked log — the hosted eligibility must prove it). Constants of
+  # b25-stage1-apply-lib.sh (S2AR2_*); the two modes pass NO ARG. Distinct markers: B25_STAGE2A_RESIDUE2_*.
+  REQUIRED_STAGE2A_RESIDUE2: "SETTLE_B25_STAGE2A_RESIDUE_5d408c442c64"
   EXPECTED_HOSTED_SHA: eb2edb0ad84d859b66efbc24ea9b895f76c2ed02
   EXPECTED_PREVIOUS_SHA: 5a072fdc50e3448bd548574698f81076191cd9bc
   FP_BEFORE: ce55dfa2959cc89c2baad2923217842a
@@ -286,6 +295,7 @@ jobs:
           grep -q '^stage2a_purge_rows_sql()' .github/scripts/b25-stage1-purge-lib.sh || { echo "stage 2a purge rule missing"; exit 1; }
           grep -q '^stage2a_precheck_eligibility()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_postswitch_eligibility()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_env_render()' .github/scripts/b25-stage1-apply-lib.sh || { echo "stage 2a library incomplete"; exit 1; }
           grep -q '^stage2a_residue_eligibility()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_residue_settled()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^readonly S2AR_MANIFEST=' .github/scripts/b25-stage1-apply-lib.sh || { echo "stage 2a residue library incomplete"; exit 1; }
+          grep -q '^stage2a_residue2_eligibility()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_residue2_settled()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^readonly S2AR2_MANIFEST=' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^function servedLogoRule(' .github/scripts/b25-stage1-smoke.mjs || { echo "stage 2a correction 2 tooling incomplete"; exit 1; }
           if grep -qE 'migrate.storage|--dry-run|--copy|--verify' .github/scripts/b25-stage1-apply.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-purge-lib.sh; then echo "a migration wrapper is present on the Stage 2A tooling branch"; exit 1; fi
           echo "branch = $BASE_SHA + ops files only; workflow served from the registered path"
 
@@ -309,9 +319,10 @@ jobs:
           IN_STAGE2A_SMOKE: ${{ inputs.confirm_stage2a_smoke }}
           IN_STAGE2A_ROLLBACK: ${{ inputs.confirm_stage2a_rollback }}
           IN_STAGE2A_RESIDUE: ${{ inputs.confirm_stage2a_residue }}
+          IN_STAGE2A_RESIDUE2: ${{ inputs.confirm_stage2a_residue2 }}
         run: |
           set -euo pipefail
-          case "$MODE" in stage2a_precheck|stage2a_postswitch_verify|stage2a_activate|stage2a_smoke|stage2a_rollback|stage2a_residue_inspect_1c512c90f2c8|stage2a_residue_settle_1c512c90f2c8|preflight|schema_apply|postdeploy_verify|incident_diagnose|residue_settle|residue_inspect_4fff751a3395|residue_settle_4fff751a3395|b25phys_inspect|b25phys_postdelete_verify) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          case "$MODE" in stage2a_precheck|stage2a_postswitch_verify|stage2a_activate|stage2a_smoke|stage2a_rollback|stage2a_residue_inspect_1c512c90f2c8|stage2a_residue_settle_1c512c90f2c8|stage2a_residue_inspect_5d408c442c64|stage2a_residue_settle_5d408c442c64|preflight|schema_apply|postdeploy_verify|incident_diagnose|residue_settle|residue_inspect_4fff751a3395|residue_settle_4fff751a3395|b25phys_inspect|b25phys_postdelete_verify) ;; *) echo "::error::unknown mode"; exit 1;; esac
           # STAGE 2A TOOLING BRANCH: every Stage 1 MUTATION mode (schema phases pinned to eb2edb0, the 72a2437
           # post-deployment smoke, the two incident recoveries) is complete and pinned to earlier product commits;
           # they are refused here BEFORE any SSH session, not left to a later guard on the host.
@@ -321,24 +332,29 @@ jobs:
           # Stage 2A: the three mutation confirmations are mutually exclusive — exactly the one of the chosen mode may
           # be typed; the read-only modes refuse every confirmation; nothing typed ever reaches a shell as text.
           case "$MODE" in
-            stage2a_precheck|stage2a_postswitch_verify|stage2a_residue_inspect_1c512c90f2c8)
-              empty confirm_product_sha "$IN_PRODUCT_SHA"; empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_window "$IN_WINDOW"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE" ;;
+            stage2a_precheck|stage2a_postswitch_verify|stage2a_residue_inspect_1c512c90f2c8|stage2a_residue_inspect_5d408c442c64)
+              empty confirm_product_sha "$IN_PRODUCT_SHA"; empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_window "$IN_WINDOW"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE"; empty confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2" ;;
             stage2a_activate)
               need confirm_product_sha "$IN_PRODUCT_SHA" "$STAGE2A_PRODUCT_SHA"; need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"; need confirm_stage2a "$IN_STAGE2A" "$REQUIRED_STAGE2A"
-              empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE" ;;
+              empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE"; empty confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2" ;;
             stage2a_smoke)
               need confirm_product_sha "$IN_PRODUCT_SHA" "$STAGE2A_PRODUCT_SHA"; need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"; need confirm_stage2a_smoke "$IN_STAGE2A_SMOKE" "$REQUIRED_STAGE2A_SMOKE"
-              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE" ;;
+              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE"; empty confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2" ;;
             stage2a_rollback)
               need confirm_product_sha "$IN_PRODUCT_SHA" "$STAGE2A_PRODUCT_SHA"; need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"; need confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK" "$REQUIRED_STAGE2A_ROLLBACK"
-              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE" ;;
+              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE"; empty confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2" ;;
             stage2a_residue_settle_1c512c90f2c8)
               # CORRECTION 1 MUTATION, incident-specific: the locked product commit, the maintenance window and the
               # incident-bound confirmation are required; the residue itself is a constant of the scripts (no input).
               need confirm_product_sha "$IN_PRODUCT_SHA" "$STAGE2A_PRODUCT_SHA"; need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"; need confirm_stage2a_residue "$IN_STAGE2A_RESIDUE" "$REQUIRED_STAGE2A_RESIDUE"
-              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE" ;;
+              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2" ;;
+            stage2a_residue_settle_5d408c442c64)
+              # CORRECTION 2 MUTATION, incident-specific: the locked product commit, the maintenance window and the
+              # incident-bound confirmation are required; the residue itself is a constant of the scripts (no input).
+              need confirm_product_sha "$IN_PRODUCT_SHA" "$STAGE2A_PRODUCT_SHA"; need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"; need confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2" "$REQUIRED_STAGE2A_RESIDUE2"
+              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE" ;;
             *)
-              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE" ;;
+              empty confirm_stage2a "$IN_STAGE2A"; empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE"; empty confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2" ;;
           esac
           if [ "$MODE" = "schema_apply" ]; then
             need confirm_accepted_sha "$IN_SHA" "$BASE_SHA"
@@ -933,6 +949,25 @@ jobs:
           ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2a-residue-settle' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/stage2a-residue.log"
           grep -qx 'B25_STAGE2A_RESIDUE_SETTLED=TRUE' "$RUNNER_TEMP/stage2a-residue.log" || { echo "::error::the host did not report B25_STAGE2A_RESIDUE_SETTLED=TRUE"; exit 1; }
 
+      # ── Stage 2A CORRECTION 2 — residue of the failed corrected smoke run 38922592504 (constants only; no ARG) ──
+      - name: Stage 2A — residue 5d408c442c64 — READ-ONLY eligibility (26 prerequisites over the exact two tombstones of deleted company 56; proves the candidate branding uuid; decides B25_STAGE2A_RESIDUE2_ELIGIBLE; changes nothing)
+        if: inputs.mode == 'stage2a_residue_inspect_5d408c442c64'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2a-residue2-eligibility' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/stage2a-residue2.log"
+          grep -qx 'B25_STAGE2A_RESIDUE2_ELIGIBLE=TRUE' "$RUNNER_TEMP/stage2a-residue2.log" || { echo "::error::the host did not report B25_STAGE2A_RESIDUE2_ELIGIBLE=TRUE"; exit 1; }
+
+      - name: Stage 2A — residue 5d408c442c64 — SETTLE (MUTATION; one session — eligibility re-proven → fs and mirror absence re-proven per uuid → exactly the two tombstone rows removed in one row-locked allow-listed transaction → post-settlement proof; the Stage 1 exception is denied by constant)
+        if: inputs.mode == 'stage2a_residue_settle_5d408c442c64'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2a-residue2-settle' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/stage2a-residue2.log"
+          grep -qx 'B25_STAGE2A_RESIDUE2_SETTLED=TRUE' "$RUNNER_TEMP/stage2a-residue2.log" || { echo "::error::the host did not report B25_STAGE2A_RESIDUE2_SETTLED=TRUE"; exit 1; }
+
       - name: Remove runner-side logs and state (always)
         if: always()
-        run: rm -f "$RUNNER_TEMP"/preflight.log "$RUNNER_TEMP"/schema-apply.log "$RUNNER_TEMP"/postdeploy.log "$RUNNER_TEMP"/smoke-setup.log "$RUNNER_TEMP"/smoke-verify.log "$RUNNER_TEMP"/stage2a-activate.log "$RUNNER_TEMP"/stage2a-rollback.log "$RUNNER_TEMP"/stage2a-residue.log "$RUNNER_TEMP"/.po-pw "$RUNNER_TEMP"/smoke-state.json
+        run: rm -f "$RUNNER_TEMP"/preflight.log "$RUNNER_TEMP"/schema-apply.log "$RUNNER_TEMP"/postdeploy.log "$RUNNER_TEMP"/smoke-setup.log "$RUNNER_TEMP"/smoke-verify.log "$RUNNER_TEMP"/stage2a-activate.log "$RUNNER_TEMP"/stage2a-rollback.log "$RUNNER_TEMP"/stage2a-residue.log "$RUNNER_TEMP"/stage2a-residue2.log "$RUNNER_TEMP"/.po-pw "$RUNNER_TEMP"/smoke-state.json

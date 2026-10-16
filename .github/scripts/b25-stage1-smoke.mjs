@@ -46,6 +46,9 @@ const CUSTOMER = LOCAL ? "http://localhost:80" : HOSTED_CUSTOMER;
 const PLATFORM = LOCAL ? (process.env.SMOKE_PLATFORM_BASE || "http://localhost:80") : HOSTED_PLATFORM;
 // B25 STAGE 2A CORRECTION 1 (run 38847884691): the stored-logo facts (logoSha / logoSize) are the
 // bytes the first-party logo route SERVED, never the uploaded fixture — the product normalizes logos.
+// B25 STAGE 2A CORRECTION 2 (run 38922592504): the AUTHENTICATED tenant logo route is the authoritative
+// served observation; the public randomized route must serve the identical bytes; Content-Length is
+// validated only when present (contentLengthRule / servedLogoRule below).
 // B25 STAGE 2A: SMOKE_STAGE=2a runs the SAME first-party contract against the filesystem
 // primary with the strict GCS mirror (ops/b25-stage2a-fs-activation-tooling). Differences:
 // a DETERMINISTIC fixture carrying a plaintext marker (the VPS side proves the encrypted
@@ -146,6 +149,46 @@ function leakDetectorOf(capability) {
   return m ? m[1] : "";
 }
 const save = (s) => writeFileSync(OUT, JSON.stringify(s), { mode: 0o600 });
+
+// ── CORRECTION 2 (run 38922592504): served-logo rules, pure functions over sanitized response facts ──────────
+// Content-Length is NOT mandatory proof of completeness through the public edge (run 38922592504 served the
+// 181-byte stored PNG with status 200 and image/png while the client gate on Content-Length failed; the header
+// value itself was not recorded). Rule: a PRESENT Content-Length must be ONE canonical non-negative decimal
+// integer (no sign, no leading zero, no list) equal to the received body length; an ABSENT Content-Length is
+// acceptable by itself because a completed body read is the integrity fact; present-but-malformed or
+// present-but-mismatched FAILS. Returns sanitized facts only (never a header dump).
+function contentLengthRule(headers, bodyLength) {
+  const raw = headers && typeof headers.get === "function" ? headers.get("content-length") : null;
+  if (raw === null || raw === undefined) return { ok: true, present: false, value: null, exact: null, reason: "content-length absent (body read completed)" };
+  if (!/^(0|[1-9][0-9]*)$/.test(String(raw))) return { ok: false, present: true, value: null, exact: false, reason: "content-length present but malformed" };
+  const value = Number(raw);
+  if (value !== bodyLength) return { ok: false, present: true, value, exact: false, reason: `content-length ${value} differs from the received body length ${bodyLength}` };
+  return { ok: true, present: true, value, exact: true, reason: `content-length ${value} equals the body length` };
+}
+// The AUTHENTICATED tenant route (GET /api/organization/branding/logo, the tenant's own logo bytes) is the
+// authoritative observation of the STORED, NORMALIZED logo: logoSha / logoSize are derived from ITS body only
+// (never from the uploaded fixture, never from a database row, never from the public route's metadata). The
+// PUBLIC randomized route must then serve exactly the same bytes (sha256, length and Buffer.equals), under the
+// same conditional Content-Length rule. Inputs are {status, contentType, buf, headers}; output is a verdict with
+// sanitized facts (status, content type, body length, content-length presence / value / exactness).
+function servedLogoRule(auth, pub) {
+  const facts = (r, cl) => ({ status: r.status, contentType: String(r.contentType || "").split(";")[0], length: r.buf ? r.buf.length : -1, contentLengthPresent: cl.present, contentLengthValue: cl.value, contentLengthExact: cl.exact });
+  const image = (r) => r && r.status === 200 && String(r.contentType || "").startsWith("image/") && Buffer.isBuffer(r.buf) && r.buf.length > 0;
+  const aCl = contentLengthRule(auth && auth.headers, auth && auth.buf ? auth.buf.length : -1);
+  const out = { ok: false, reason: "", authenticated: facts(auth || {}, aCl), public: null, logoSha: null, logoSize: 0 };
+  if (!image(auth)) { out.reason = "authenticated logo GET did not serve an image (200 + image/* + non-empty body required)"; return out; }
+  if (!aCl.ok) { out.reason = `authenticated ${aCl.reason}`; return out; }
+  out.logoSha = sha256(auth.buf); out.logoSize = auth.buf.length;   // the ONLY source of the stored-logo expectation
+  const pCl = contentLengthRule(pub && pub.headers, pub && pub.buf ? pub.buf.length : -1);
+  out.public = facts(pub || {}, pCl);
+  if (!image(pub)) { out.reason = "public logo GET did not serve an image (200 + image/* + non-empty body required)"; return out; }
+  if (!pCl.ok) { out.reason = `public ${pCl.reason}`; return out; }
+  if (pub.buf.length !== auth.buf.length) { out.reason = `public body length ${pub.buf.length} differs from the authenticated body length ${auth.buf.length}`; return out; }
+  if (sha256(pub.buf) !== out.logoSha || !pub.buf.equals(auth.buf)) { out.reason = "public body bytes differ from the authenticated body (same length, different content)"; return out; }
+  out.ok = true; out.reason = "public route served exactly the authenticated stored bytes";
+  return out;
+}
+const asServed = (r) => ({ status: r.status, contentType: r.headers.get("content-type") || "", buf: r.buf, headers: r.headers });
 
 const METRIC_KEYS = ["retainedLegacyObjects", "publicationUncertain", "ownershipUnproven", "pendingDeletes", "pendingUploads", "unreconciledTombstones", "driver", "legacyFallback", "mirror", "legacyReads"];
 async function storageMetrics(po) {
@@ -284,22 +327,29 @@ async function run() {
   must("logo upload", up1.status === 200 && up1.json && up1.json.logoUrl, errDetail(up1));
   check("logoUrl is the first-party randomized route on the configured origin", firstParty(up1.json.logoUrl, /^\/api\/branding\/logos\/[0-9]+\/[0-9a-f-]+$/), "shape");
   const logoPath = toPath(up1.json.logoUrl);
-  const rd = await api("GET", logoPath);
-  check("logo readable (public randomized route, image/png)", rd.status === 200 && (rd.headers.get("content-type") || "").startsWith("image/"), `status ${rd.status}`);
   if (STAGE2A) {
     // CORRECTION 1 (run 38847884691): the product NORMALIZES every uploaded logo before storing it
     // (artifacts/api-server/src/lib/branding/logo.ts validateLogoUpload — sharp decode, rotate(), resize
-    // within 1024, metadata-stripped PNG / JPEG re-encode), so the STORED bytes are never the uploaded
-    // bytes. The stored-logo facts the VPS verification matches against the storage row are therefore
-    // taken from the bytes the first-party logo route actually SERVED (rd.buf — the client-observed
-    // representation of the stored object), and only after that GET succeeded with an image type and a
-    // Content-Length equal to the body. The uploaded buffer is never recorded as a stored fact.
-    must("stage 2a: the first-party logo GET served a complete image (stored-logo facts are taken from these bytes only)", rd.status === 200 && (rd.headers.get("content-type") || "").startsWith("image/") && rd.buf.length > 0 && Number(rd.headers.get("content-length")) === rd.buf.length, `status ${rd.status} length ${rd.buf.length}`);
-    s.logoSha = sha256(rd.buf); s.logoSize = rd.buf.length; save(s);
-    check("stage 2a: stored-logo facts recorded from the served first-party bytes, not from the upload", s.logoSha === sha256(rd.buf) && s.logoSize === rd.buf.length && s.logoSize > 0, `served ${rd.buf.length} bytes (uploaded ${logo.length} bytes)`);
+    // within 1024, metadata-stripped PNG / JPEG re-encode), so the STORED bytes are never the uploaded bytes.
+    // CORRECTION 2 (run 38922592504): the AUTHENTICATED tenant route is the authoritative observation of the
+    // stored bytes (both routes serve the same stored buffer through the same sendLogo helper); the public
+    // randomized route is fetched AFTERWARDS and must serve exactly the same bytes; Content-Length is checked
+    // only when present (see contentLengthRule / servedLogoRule). The uploaded buffer is never a stored fact.
+    const au = await api("GET", "/api/organization/branding/logo", { token: tA });
+    const auCl = contentLengthRule(au.headers, au.buf.length);
+    must("stage 2a: authenticated tenant logo GET served the stored image (200, image/*, non-empty body)", au.status === 200 && (au.headers.get("content-type") || "").startsWith("image/") && au.buf.length > 0, `status ${au.status} type ${(au.headers.get("content-type") || "").split(";")[0]} length ${au.buf.length}`);
+    must("stage 2a: authenticated Content-Length — absent, or one canonical integer equal to the body", auCl.ok, auCl.reason);
+    const rd = await api("GET", logoPath);   // the public randomized route, fetched after the authenticated observation
+    check("logo readable (public randomized route, image/png)", rd.status === 200 && (rd.headers.get("content-type") || "").startsWith("image/"), `status ${rd.status}`);
+    const verdict = servedLogoRule(asServed(au), asServed(rd));
+    s.logoSha = verdict.logoSha; s.logoSize = verdict.logoSize; s.logoAuthenticated = verdict.authenticated; s.logoPublic = verdict.public; save(s);
+    must("stage 2a: stored-logo facts derived from the authenticated served bytes only (never the upload, never a row)", typeof s.logoSha === "string" && /^[0-9a-f]{64}$/.test(s.logoSha) && s.logoSize === au.buf.length && s.logoSize > 0 && s.logoSha === sha256(au.buf), `authenticated ${au.buf.length} bytes (uploaded fixture ${logo.length} bytes)`);
+    must("stage 2a: public randomized route serves exactly the authenticated stored bytes (200, image/*, same length, same sha256, Buffer.equals; Content-Length absent or exact)", verdict.ok, `${verdict.reason}; public status ${verdict.public ? verdict.public.status : "?"} type ${verdict.public ? verdict.public.contentType : "?"} length ${verdict.public ? verdict.public.length : "?"} content-length present=${verdict.public ? verdict.public.contentLengthPresent : "?"} value=${verdict.public ? verdict.public.contentLengthValue : "?"} exact=${verdict.public ? verdict.public.contentLengthExact : "?"}`);
     // the logo stays with the tenant: the company purge must remove its encrypted file AND its mirror
     check("stage 2a: logo kept for the tenant purge (no replace / remove)", true);
   } else {
+  const rd = await api("GET", logoPath);
+  check("logo readable (public randomized route, image/png)", rd.status === 200 && (rd.headers.get("content-type") || "").startsWith("image/"), `status ${rd.status}`);
   const up2 = await api("POST", "/api/organization/branding/logo", { token: tA, body: logo, raw: true, headers: { "Content-Type": "image/png" } });
   check("logo replace", up2.status === 200 && up2.json && up2.json.logoUrl && up2.json.logoUrl !== up1.json.logoUrl, `status ${up2.status}`);
   const oldRd = await api("GET", logoPath);
