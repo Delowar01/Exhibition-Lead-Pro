@@ -58,6 +58,13 @@
 #                     in the portal: cascade absent, purge job completed, product tombstone
 #                     (deleted / LEGACY_RETAINED), provider object retained with the proven
 #                     generation, inventory unchanged; decides the post-delete eligibility
+#   stage2a-tenant-drift
+#                     READ-ONLY localization of the existing-tenant baseline drift that stopped
+#                     the corrected smoke run 38934705535 before any write (tenant_md5 ≠ the
+#                     accepted TENANT_BASELINE_MD5): digest verdict, kept-row counts, per-table
+#                     rows created / modified / soft-deleted since the last matching guard,
+#                     audit action counts, recurring-sweep evidence; prints no tenant value and
+#                     changes no constant (see the block before the dispatch)
 #
 # SAFETY: every SELECT runs in a psql session pinned read-only (q); writes use
 # qw only inside the mutation phases and only against explicit disposable ids;
@@ -3150,6 +3157,105 @@ phase_stage2a_residue2_settle() {
   log "stage2a-residue2-settle complete (B25_STAGE2A_RESIDUE2_SETTLED=TRUE)"
 }
 
+# =============================================================================
+# Stage 2A — existing-tenant baseline DRIFT LOCALIZATION (READ-ONLY; no input used; constants only).
+# The corrected smoke run 38934705535 stopped inside guards_stage2a_switched — before the disposable owner
+# insert and before any other write — because tenant_md5 (ONE digest over the composition of the existing
+# tenant, company 1) no longer equals the accepted TENANT_BASELINE_MD5. A digest cannot say WHICH component
+# moved. This phase localizes the movement without printing the composition: the digest verdict, the kept-row
+# counts in the cleanup's accepted format, and per table of the digest the number of company rows created /
+# modified / soft-deleted at or after the instant the guard LAST matched (run 38922592504, step "Stage 2A
+# smoke — setup", started 2026-10-16T15:17:33Z, passed) — the guard FIRST differed in run 38934705535 (same
+# step, started 2026-10-16T16:48:22Z). Only counts, booleans, digests, fixed action / task identifiers and the
+# tooling's own step timestamps are printed: no status, plan, name digest, subscription field, permission or
+# any other tenant value. Nothing is written. TENANT_BASELINE_MD5 is NOT changed here: re-acceptance of a
+# moved baseline is an owner decision taken on this report, never a tooling constant edited to make a guard pass.
+# =============================================================================
+S2A_TENANT_COMPANY=1
+S2A_TENANT_LAST_MATCH="2026-10-16 15:17:33"      # UTC wall clock as stored (timestamp without time zone, like the S2AR2 windows)
+S2A_TENANT_FIRST_DIFFERS="2026-10-16 16:48:22"   # run 38934705535 — the first guards_stage2a_switched that failed
+S2A_COUNTS_RE='^[a-z0-9_]+=[0-9]+( [a-z0-9_]+=[0-9]+)*$'
+s2a_counts_line() {   # <label> <sql returning ONE "k=n k=n" line> → "  <label>: <line>" after shape validation; fails closed, never prints an unexpected shape
+  local v; v="$(q "$2")" || fail "tenant drift: could not read $1"
+  [[ "$v" =~ $S2A_COUNTS_RE ]] || fail "tenant drift: $1 returned an unexpected shape (not printed)"
+  echo "  $1: $v"
+}
+s2a_bool() { case "$1" in t) echo true ;; f) echo false ;; *) echo unknown ;; esac; }
+stage2a_tenant_drift_table_facts() {   # <table with company_id> <has updated_at 0|1> <has deleted_at 0|1> — counts only
+  local t="$1" T="$S2A_TENANT_LAST_MATCH" sel
+  sel="select 'total='||count(*)||' created_since='||count(*) filter (where created_at >= '$T')"
+  [ "$2" = 1 ] && sel+="||' modified_since='||count(*) filter (where created_at < '$T' and updated_at >= '$T')"
+  [ "$3" = 1 ] && sel+="||' soft_deleted_since='||count(*) filter (where deleted_at >= '$T')"
+  sel+=" from $t where company_id = $S2A_TENANT_COMPANY"
+  s2a_counts_line "$t" "$sel"
+}
+phase_stage2a_tenant_drift() {
+  local T="$S2A_TENANT_LAST_MATCH"
+  section "0. read-only guard"; stage2a_readonly_guard
+  section "1. the digest that stopped the smoke (guards_stage2a_switched; compared here, never re-accepted here)"
+  local tb verdict; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
+  if [ "$tb" = "$TENANT_BASELINE_MD5" ]; then verdict=MATCH; else verdict=DIFFERS; fi
+  echo "tenant_baseline_md5=$tb accepted=$TENANT_BASELINE_MD5 verdict=$verdict last_match_utc=${T/ /T}Z first_differs_utc=${S2A_TENANT_FIRST_DIFFERS/ /T}Z now_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  section "2. kept-row counts (the cleanup's accepted format; whole database; the Stage 1 exception is the one storage row)"
+  s2a_counts_line "rows" "select 'companies='||(select count(*) from companies)||' users='||(select count(*) from users)||' subscriptions='||(select count(*) from subscriptions)||' contacts='||(select count(*) from contacts)||' leads='||(select count(*) from leads)||' events='||(select count(*) from events)||' scans='||(select count(*) from scans)||' documents='||(select count(*) from documents)||' export_runs='||(select count(*) from export_runs)||' audit='||(select count(*) from audit_logs)||' activity='||(select count(*) from activity_logs)||' login_attempts='||(select count(*) from login_attempts)||' storage_objects='||(select count(*) from storage_objects)"
+  section "3. company $S2A_TENANT_COMPANY rows created / modified / soft-deleted at or after the last matching guard (every table of the digest; counts only)"
+  stage2a_tenant_drift_table_facts users 1 1
+  stage2a_tenant_drift_table_facts roles 1 0
+  s2a_counts_line "user_roles" "select 'total='||count(*)||' created_since='||count(*) filter (where ur.created_at >= '$T') from user_roles ur join users u on u.id = ur.user_id where u.company_id = $S2A_TENANT_COMPANY"
+  stage2a_tenant_drift_table_facts contacts 1 1
+  stage2a_tenant_drift_table_facts leads 1 1
+  stage2a_tenant_drift_table_facts events 1 1
+  stage2a_tenant_drift_table_facts tasks 1 0
+  stage2a_tenant_drift_table_facts tags 1 1
+  stage2a_tenant_drift_table_facts lead_tags 0 0
+  stage2a_tenant_drift_table_facts documents 1 1
+  stage2a_tenant_drift_table_facts workflow_definitions 1 0
+  stage2a_tenant_drift_table_facts workflow_runs 1 0
+  stage2a_tenant_drift_table_facts billing_checkout_sessions 1 0
+  stage2a_tenant_drift_table_facts subscription_usage_reservations 0 0
+  stage2a_tenant_drift_table_facts scans 0 1
+  section "4. the company and subscription rows (movement booleans only; no field value)"
+  local cu su sc sn
+  cu="$(q "select (updated_at >= '$T') from companies where id = $S2A_TENANT_COMPANY")" || fail "tenant drift: could not read the company row"
+  su="$(q "select (updated_at >= '$T') from subscriptions where company_id = $S2A_TENANT_COMPANY")" || fail "tenant drift: could not read the subscription row"
+  sc="$(q "select (status_changed_at >= '$T') from subscriptions where company_id = $S2A_TENANT_COMPANY")" || fail "tenant drift: could not read the subscription row"
+  sn="$(q "select count(*) from subscriptions where company_id = $S2A_TENANT_COMPANY")" || fail "tenant drift: could not count the subscription rows"
+  [[ "$sn" =~ ^[0-9]+$ ]] || fail "tenant drift: subscription count has an unexpected shape"
+  echo "  company_modified_since=$(s2a_bool "$cu") subscription_rows=$sn subscription_modified_since=$(s2a_bool "$su") subscription_status_changed_since=$(s2a_bool "$sc")"
+  section "5. audit trail since the last matching guard (fixed action identifiers and counts only; no entity, user or metadata)"
+  s2a_counts_line "audit_rows_since" "select 'company='||count(*) filter (where company_id = $S2A_TENANT_COMPANY)||' other_company='||count(*) filter (where company_id is not null and company_id <> $S2A_TENANT_COMPANY)||' no_company='||count(*) filter (where company_id is null) from audit_logs where created_at >= '$T'"
+  local acts line
+  acts="$(q "select action||' n='||count(*) from audit_logs where company_id = $S2A_TENANT_COMPANY and created_at >= '$T' group by action order by action limit 40")" || fail "tenant drift: could not read the audit actions"
+  if [ -z "$acts" ]; then echo "  (no audit row of company $S2A_TENANT_COMPANY since the last matching guard)"; else
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^[A-Za-z0-9._:-]{1,80}\ n=[0-9]+$ ]]; then echo "  $line"; else echo "  <action with an unexpected shape — not printed> n=?"; fi
+    done <<<"$acts"
+  fi
+  section "6. automatic processes since the last matching guard (recurring sweeps by task and status; subscription lifecycle log counters of company $S2A_TENANT_COMPANY)"
+  local sweeps
+  sweeps="$(q "select t||' '||s||' n='||n from (select coalesce((payload::json)->>'task', '?') as t, status as s, count(*) as n from job_queue where name = 'recurring.sweep' and enqueued_at >= '$T' group by 1, 2) x order by 1")" || fail "tenant drift: could not read the recurring sweeps"
+  if [ -z "$sweeps" ]; then echo "  (no recurring sweep enqueued since the last matching guard)"; else
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^[A-Za-z?]{1,40}\ [a-z_]{1,20}\ n=[0-9]+$ ]]; then echo "  $line"; else echo "  <sweep line with an unexpected shape — not printed>"; fi
+    done <<<"$sweeps"
+  fi
+  if [ -z "$API_CID" ]; then echo "  api container not running — log counters unavailable"; else
+    local alog
+    if ! alog="$(docker logs --since "${T/ /T}Z" "$API_CID" 2>&1)"; then echo "  api log read FAILED (counters unavailable)"; else
+      echo "  api_log_trial_expired_by_sweep_company=$(printf '%s\n' "$alog" | grep -F '"Manual trial expired by lifecycle sweep"' | grep -cF "\"companyId\":$S2A_TENANT_COMPANY," || true) api_log_subscription_lifecycle_change_company=$(printf '%s\n' "$alog" | grep -F '"Subscription lifecycle change"' | grep -cF "\"companyId\":$S2A_TENANT_COMPANY," || true) api_log_sweeps_finished=$(printf '%s\n' "$alog" | grep -cF '"Subscription lifecycle sweep finished"' || true)"
+    fi
+  fi
+  section "7. the two guard checks that follow the digest in guards_stage2a_switched (so the review knows whether they would pass)"
+  local scans refs
+  scans="$(q "select count(*) from scans where company_id = $S2A_TENANT_COMPANY")" || fail "tenant drift: could not count the owner scan rows"
+  refs="$(references)" || fail "tenant drift: could not count the legacy references"
+  [[ "$scans" =~ ^[0-9]+$ ]] && [[ "$refs" =~ ^[0-9]+$ ]] || fail "tenant drift: guard counts have an unexpected shape"
+  echo "  owner_scan_rows=$scans (guard expects 4) legacy_references=$refs (guard expects $REFERENCES)"
+  echo "B25_STAGE2A_TENANT_DIGEST=$verdict"
+  echo "B25_STAGE2A_TENANT_DRIFT_REPORTED=TRUE"
+  log "stage2a-tenant-drift complete (read-only; nothing changed; B25_STAGE2A_TENANT_DIGEST=$verdict)"
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -3183,6 +3289,7 @@ case "$PHASE" in
   stage2a-residue-settle) phase_stage2a_residue_settle ;;
   stage2a-residue2-eligibility) phase_stage2a_residue2_eligibility ;;
   stage2a-residue2-settle) phase_stage2a_residue2_settle ;;
+  stage2a-tenant-drift) phase_stage2a_tenant_drift ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0
