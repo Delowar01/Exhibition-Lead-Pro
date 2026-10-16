@@ -30,6 +30,19 @@ describe("describeScanError", () => {
     expect(describeScanError(401, {}).key).toBe("capture.errAuth");
   });
 
+  it("MOBILE-R1: maps the server readiness gate (503 AI_NOT_CONFIGURED) to the localized not-configured message, never to the retake-the-photo OCR text", () => {
+    const d = describeScanError(503, {
+      code: "AI_NOT_CONFIGURED",
+      error: "AI features are not configured for this environment. Please contact your administrator.",
+    });
+    expect(d.key).toBe("capture.errAiNotConfigured");
+    expect(d.serverMessage).toBeNull(); // localized key preferred (Arabic users get Arabic; batch review shows the key alone)
+    // A 503 WITHOUT the machine code keeps the previous contract (server text when present).
+    const plain = describeScanError(503, { error: "Upstream unavailable" });
+    expect(plain.key).toBe("capture.errOcr");
+    expect(plain.serverMessage).toBe("Upstream unavailable");
+  });
+
   it("maps size rejections from both transport (413) and validation (400 + code)", () => {
     expect(describeScanError(413, {}).key).toBe("capture.errTooLarge");
     expect(describeScanError(400, { code: "SCAN_IMAGE_TOO_LARGE" }).key).toBe("capture.errTooLarge");
@@ -64,6 +77,7 @@ describe("describeScanError", () => {
       "capture.errRateLimit",
       "capture.errNoCard",
       "capture.errAiDisabled",
+      "capture.errAiNotConfigured",
       "capture.errTooLarge",
       "capture.errInvalid",
       "capture.errHeic",

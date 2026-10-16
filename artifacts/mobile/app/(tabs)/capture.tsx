@@ -12,10 +12,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useGetAiHealth } from "@workspace/api-client-react";
+
 import { FONT } from "@/components/ui";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { aiReadinessFromHealth } from "@/lib/ai-readiness";
 import { RADIUS, SPACING, TOUCH_TARGET } from "@/constants/tokens";
 
 type CaptureMode = "single" | "rapid" | "batch";
@@ -41,6 +44,13 @@ export default function CaptureScreen() {
       setMode(captureMode);
     }
   }, [isLoaded, captureMode]);
+
+  // MOBILE-R1 — pre-scan readiness: the server reports whether the tenant's AI provider is
+  // configured. "unconfigured" shows a notice BEFORE a photo is taken; any other answer
+  // (loading, transport failure, 401/403) never blocks scanning — the scan request itself
+  // still receives the authoritative 503 AI_NOT_CONFIGURED, mapped in lib/scan-error.ts.
+  const aiHealth = useGetAiHealth({ query: { staleTime: 60_000, retry: false, refetchOnWindowFocus: false } });
+  const aiReadiness = aiReadinessFromHealth(aiHealth.data);
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
   const activeMode = MODES.find((m) => m.key === mode)!;
@@ -146,6 +156,31 @@ export default function CaptureScreen() {
           <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
         </Pressable>
 
+        {/* MOBILE-R1 — AI readiness notice (server-reported; manual / QR / NFC capture stay available) */}
+        {aiReadiness === "unconfigured" ? (
+          <View
+            accessibilityRole="alert"
+            style={[
+              styles.readinessCard,
+              { backgroundColor: colors.warning + "14", borderColor: colors.warning + "66", borderRadius: RADIUS.lg, flexDirection: isRTL ? "row-reverse" : "row" },
+            ]}
+          >
+            <Feather name="alert-triangle" size={20} color={colors.warning} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.readinessTitle, { color: colors.foreground, textAlign }]}>{t("capture.aiNotConfiguredTitle")}</Text>
+              <Text style={[styles.readinessBody, { color: colors.mutedForeground, textAlign }]}>{t("capture.aiNotConfiguredBody")}</Text>
+              <Pressable
+                onPress={() => aiHealth.refetch()}
+                disabled={aiHealth.isFetching}
+                hitSlop={8}
+                style={({ pressed }) => [styles.readinessRetry, { opacity: pressed || aiHealth.isFetching ? 0.6 : 1, alignSelf: isRTL ? "flex-end" : "flex-start" }]}
+              >
+                <Text style={[styles.readinessRetryText, { color: colors.primary }]}>{t("capture.aiReadinessRetry")}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         {/* Mode Selector */}
         <Text style={[styles.sectionTitle, { color: colors.mutedForeground, textAlign }]}>
           {t("capture.captureMode").toUpperCase()}
@@ -238,6 +273,11 @@ const styles = StyleSheet.create({
   eventIcon: { width: 44, height: 44, borderRadius: RADIUS.full, alignItems: "center", justifyContent: "center" },
   eventTitle: { fontSize: 16, fontFamily: FONT.semibold },
   eventSub: { fontSize: 13, fontFamily: FONT.regular, marginTop: 2 },
+  readinessCard: { alignItems: "flex-start", gap: SPACING.md, padding: SPACING.lg, borderWidth: 1, marginTop: SPACING.md },
+  readinessTitle: { fontSize: 15, fontFamily: FONT.semibold },
+  readinessBody: { fontSize: 13, fontFamily: FONT.regular, marginTop: 4, lineHeight: 18 },
+  readinessRetry: { marginTop: SPACING.sm, minHeight: 32, justifyContent: "center" },
+  readinessRetryText: { fontSize: 14, fontFamily: FONT.semibold },
   modeBar: { flexDirection: "row", padding: SPACING.xs, gap: SPACING.xs },
   modeChip: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12 },
   modeChipActive: { shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },

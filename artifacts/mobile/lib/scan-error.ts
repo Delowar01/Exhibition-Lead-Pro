@@ -29,6 +29,11 @@ export function describeScanError(status: number, data: unknown): ScanErrorDescr
   if (code === "AI_BUDGET_EXCEEDED") return { key: "capture.errBudget", serverMessage: null };
   if (code === "AI_RATE_LIMITED") return { key: "capture.errRateLimit", serverMessage: null };
   if (code === "AI_DISABLED") return { key: "capture.errAiDisabled", serverMessage: null };
+  // MOBILE-R1 — the provider has no credential on the server (503 AI_NOT_CONFIGURED from the
+  // readiness gate). A deployment-configuration state, never an image problem: the localized
+  // key is preferred over the server's English text so the user is told to contact an
+  // administrator instead of retaking photos (batch review shows the key alone).
+  if (code === "AI_NOT_CONFIGURED") return { key: "capture.errAiNotConfigured", serverMessage: null };
   if (code === "SCAN_NO_CARD" || status === 422) return { key: "capture.errNoCard", serverMessage: null };
   if (code === "SCAN_IMAGE_TOO_LARGE" || status === 413) return { key: "capture.errTooLarge", serverMessage: null };
   // Batch 8 — HEIC (HEVC) cannot be decoded server-side; tell the user to use JPEG.
