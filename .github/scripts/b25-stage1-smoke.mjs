@@ -44,6 +44,8 @@ if (process.env.SMOKE_BASE && !LOCAL) throw new Error("SMOKE_BASE is accepted on
 if (process.env.SMOKE_PLATFORM_BASE && (!LOCAL || !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{2,5}$/.test(process.env.SMOKE_PLATFORM_BASE))) throw new Error("SMOKE_PLATFORM_BASE is accepted only in the local dry run and only as a loopback http origin");
 const CUSTOMER = LOCAL ? "http://localhost:80" : HOSTED_CUSTOMER;
 const PLATFORM = LOCAL ? (process.env.SMOKE_PLATFORM_BASE || "http://localhost:80") : HOSTED_PLATFORM;
+// B25 STAGE 2A CORRECTION 1 (run 38847884691): the stored-logo facts (logoSha / logoSize) are the
+// bytes the first-party logo route SERVED, never the uploaded fixture — the product normalizes logos.
 // B25 STAGE 2A: SMOKE_STAGE=2a runs the SAME first-party contract against the filesystem
 // primary with the strict GCS mirror (ops/b25-stage2a-fs-activation-tooling). Differences:
 // a DETERMINISTIC fixture carrying a plaintext marker (the VPS side proves the encrypted
@@ -285,8 +287,17 @@ async function run() {
   const rd = await api("GET", logoPath);
   check("logo readable (public randomized route, image/png)", rd.status === 200 && (rd.headers.get("content-type") || "").startsWith("image/"), `status ${rd.status}`);
   if (STAGE2A) {
+    // CORRECTION 1 (run 38847884691): the product NORMALIZES every uploaded logo before storing it
+    // (artifacts/api-server/src/lib/branding/logo.ts validateLogoUpload — sharp decode, rotate(), resize
+    // within 1024, metadata-stripped PNG / JPEG re-encode), so the STORED bytes are never the uploaded
+    // bytes. The stored-logo facts the VPS verification matches against the storage row are therefore
+    // taken from the bytes the first-party logo route actually SERVED (rd.buf — the client-observed
+    // representation of the stored object), and only after that GET succeeded with an image type and a
+    // Content-Length equal to the body. The uploaded buffer is never recorded as a stored fact.
+    must("stage 2a: the first-party logo GET served a complete image (stored-logo facts are taken from these bytes only)", rd.status === 200 && (rd.headers.get("content-type") || "").startsWith("image/") && rd.buf.length > 0 && Number(rd.headers.get("content-length")) === rd.buf.length, `status ${rd.status} length ${rd.buf.length}`);
+    s.logoSha = sha256(rd.buf); s.logoSize = rd.buf.length; save(s);
+    check("stage 2a: stored-logo facts recorded from the served first-party bytes, not from the upload", s.logoSha === sha256(rd.buf) && s.logoSize === rd.buf.length && s.logoSize > 0, `served ${rd.buf.length} bytes (uploaded ${logo.length} bytes)`);
     // the logo stays with the tenant: the company purge must remove its encrypted file AND its mirror
-    s.logoSha = sha256(logo); s.logoSize = logo.length; save(s);
     check("stage 2a: logo kept for the tenant purge (no replace / remove)", true);
   } else {
   const up2 = await api("POST", "/api/organization/branding/logo", { token: tA, body: logo, raw: true, headers: { "Content-Type": "image/png" } });

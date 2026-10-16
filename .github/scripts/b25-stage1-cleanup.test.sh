@@ -532,14 +532,14 @@ check "activate requires the product commit, the window and ACTIVATE_B25_STAGE2A
 check "activate refuses the smoke / rollback / residue confirmations (mutually exclusive)" "$(awk '/^            stage2a_activate\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -c 'empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"')" "1"
 check "smoke requires RUN_B25_STAGE2A_DISPOSABLE_SMOKE and refuses the activate / rollback confirmations" "$(awk '/^            stage2a_smoke\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -cE 'need confirm_stage2a_smoke "\$IN_STAGE2A_SMOKE" "\$REQUIRED_STAGE2A_SMOKE"|empty confirm_stage2a "\$IN_STAGE2A"; empty confirm_stage2a_rollback')" "2"
 check "rollback requires ROLLBACK_B25_STAGE2A_TO_GCS and refuses the activate / smoke confirmations" "$(awk '/^            stage2a_rollback\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -cE 'need confirm_stage2a_rollback "\$IN_STAGE2A_ROLLBACK" "\$REQUIRED_STAGE2A_ROLLBACK"|empty confirm_stage2a "\$IN_STAGE2A"; empty confirm_stage2a_smoke')" "2"
-check "the read-only Stage 2A modes refuse EVERY confirmation input" "$(awk '/^            stage2a_precheck\|stage2a_postswitch_verify\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -oE 'empty confirm_[a-z0-9_]+' | sort -u | tr '\n' ' ')" "empty confirm_product_sha empty confirm_residue empty confirm_stage2a empty confirm_stage2a_rollback empty confirm_stage2a_smoke empty confirm_window "
+check "the read-only Stage 2A modes refuse EVERY confirmation input" "$(awk '/^            stage2a_precheck\|stage2a_postswitch_verify\|stage2a_residue_inspect_1c512c90f2c8\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -oE 'empty confirm_[a-z0-9_]+' | sort -u | tr '\n' ' ')" "empty confirm_product_sha empty confirm_residue empty confirm_stage2a empty confirm_stage2a_residue empty confirm_stage2a_rollback empty confirm_stage2a_smoke empty confirm_window "
 check "no workflow input, env or secret carries the encryption key" "$(grep -cE '^\s+(IN_[A-Z_]+|[A-Z_]+):.*(ENCRYPTION_KEY|secrets\.OBJECT)' "$WF" || true)" "0"
 check "no workflow input names a driver, a root or a bucket" "$(grep -cE '^      (driver|fs_root|root|bucket|storage_[a-z_]+):$' "$WF" || true)" "0"
-for ph in stage2a-precheck stage2a-postswitch-verify stage2a-activate stage2a-rollback stage2a-state stage2a-smoke-setup stage2a-smoke-verify stage2a-recreate-api stage2a-smoke-settle stage2a-cleanup; do
+for ph in stage2a-precheck stage2a-postswitch-verify stage2a-activate stage2a-rollback stage2a-state stage2a-smoke-setup stage2a-smoke-verify stage2a-recreate-api stage2a-smoke-settle stage2a-cleanup stage2a-residue-eligibility stage2a-residue-settle; do
   check "workflow SSH step for $ph exists exactly once" "$(grep -cE "PHASE='$ph' " "$WF")" "1"
   check "dispatch entry maps $ph to its phase" "$(grep -cE "^  $ph\) phase_$(printf '%s' "$ph" | tr '-' '_') ;;$" "$APPLY")" "1"
 done
-for ph in stage2a-precheck stage2a-postswitch-verify stage2a-activate stage2a-rollback stage2a-state; do
+for ph in stage2a-precheck stage2a-postswitch-verify stage2a-activate stage2a-rollback stage2a-state stage2a-residue-eligibility stage2a-residue-settle; do
   check "SSH step for $ph passes no ARG (no value, path or key can arrive through an argument)" "$(grep -E "PHASE='$ph' " "$WF" | grep -cE "ARG[123]=" || true)" "0"
 done
 check "the activate step requires the TRUE marker from the host" "$(grep -c "grep -qx 'B25_STAGE2A_ACTIVATED=TRUE'" "$WF")" "1"
@@ -959,7 +959,7 @@ check "the Stage 1 purge rule (unchanged) still refuses an fs-shaped row" "$(run
 
 echo "== Stage 2A — phase bodies (static: read-only modes never write; the key is never read; the activation is narrow)"
 body() { awk -v f="$1" '$0 ~ "^"f"\\(\\) \\{" {on=1} on {print} on && /^}$/ {exit}' "$APPLY"; }
-for fn in stage2a_precheck_run stage2a_postswitch_run phase_stage2a_state stage2a_host_facts stage2a_init_facts stage2a_container_env_facts stage2a_root_facts stage2a_exception_facts stage2a_readyz_facts; do
+for fn in stage2a_precheck_run stage2a_postswitch_run phase_stage2a_state stage2a_host_facts stage2a_init_facts stage2a_container_env_facts stage2a_root_facts stage2a_exception_facts stage2a_readyz_facts stage2a_residue_eligibility_run stage2a_residue_row_facts stage2a_residue_blobs stage2a_residue_fs_facts stage2a_residue_provider_facts stage2a_residue_host_facts; do
   B="$(body "$fn")"
   check "$fn: body present" "$(printf '%s\n' "$B" | grep -c "^$fn")" "1"
   check "$fn: never calls the writing psql helper (qw)" "$(printf '%s\n' "$B" | grep -cE '(^|[^a-z_])qw ' || true)" "0"
@@ -1014,6 +1014,442 @@ check "no B26 path in the ops files" "$(grep -c 'B26' "$APPLY" "$WF" "$HERE/b25-
 check "OBJECT_STORAGE_LEGACY_DELETE=true never appears in the ops files" "$(grep -c 'OBJECT_STORAGE_LEGACY_DELETE=true' "$APPLY" "$WF" "$HERE/b25-stage1-apply-lib.sh" | awk -F: '{ s += $2 } END { print s + 0 }')" "0"
 check "bash -n passes for every script" "$(bash -n "$APPLY" && bash -n "$HERE/b25-stage1-apply-lib.sh" && bash -n "$HERE/b25-stage1-purge-lib.sh" && bash -n "$HERE/b25-stage1-cleanup.test.sh" && echo ok)" "ok"
 check "the workflow parses as YAML with the single Stage 2A job" "$(python3 -I -c 'import yaml,sys; d=yaml.safe_load(open(sys.argv[1])); print(list(d["jobs"].keys())[0], d["jobs"]["stage1"]["if"].split(" && ")[0])' "$WF" 2>/dev/null || echo "yaml unavailable")" "stage1 github.ref == 'refs/heads/ops/b25-stage2a-fs-activation-tooling'"
+
+
+# =============================================================================
+# B25 STAGE 2A — CORRECTION 1 (failed smoke run 38847884691, tag 1c512c90f2c8)
+# =============================================================================
+echo "== Correction 1 — stored-logo facts come from the SERVED first-party bytes (rule, golden, mutations)"
+# The product normalizes every logo before storing it (lib/branding/logo.ts: sharp decode → rotate → resize ≤ 1024 →
+# metadata-stripped re-encode), so the smoke must record logoSha / logoSize from the bytes the first-party logo route
+# served (rd.buf) — never from the uploaded buffer — and the VPS verification must still demand exactly one
+# branding_logo row carrying BOTH that digest and that size. logo_fact_rule prints ok, or the first broken rule.
+logo_fact_rule() {   # <smoke text> <verify-body text>
+  local sm="$1" vb="$2" a g
+  [ "$(printf '%s\n' "$sm" | grep -cF 's.logoSha = sha256(rd.buf); s.logoSize = rd.buf.length; save(s);')" = "1" ] || { echo "no-served-assignment"; return 0; }
+  [ "$(printf '%s\n' "$sm" | grep -cE 's\.logoSha = sha256\(logo\)|s\.logoSize = logo\.length' || true)" = "0" ] || { echo "upload-derived-assignment"; return 0; }
+  g="$(printf '%s\n' "$sm" | grep -nF 'must("stage 2a: the first-party logo GET served a complete image' | head -1 | cut -d: -f1)"
+  a="$(printf '%s\n' "$sm" | grep -nF 's.logoSha = sha256(rd.buf); s.logoSize = rd.buf.length; save(s);' | head -1 | cut -d: -f1)"
+  [ -n "$g" ] && [ -n "$a" ] && [ "$g" -lt "$a" ] || { echo "assignment-not-gated-by-served-get"; return 0; }
+  [ "$(printf '%s\n' "$sm" | grep -cF 'Number(rd.headers.get("content-length")) === rd.buf.length')" = "1" ] || { echo "served-body-not-length-checked"; return 0; }
+  [ "$(printf '%s\n' "$vb" | grep -cF "kind = 'branding_logo' and sha256 = '\$B25_LOGO_SHA256' and size_bytes = \$B25_LOGO_SIZE\")\" = \"1\" ] || fail \"exactly one branding_logo row must carry the logo digest and size\"")" = "1" ] || { echo "vps-assertion-weakened-or-missing"; return 0; }
+  [ "$(printf '%s\n' "$vb" | grep -cE '\[\[ "\$\{B25_LOGO_SHA256:-\}" =~ \^\[0-9a-f\]\{64\}\$ \]\] && \[\[ "\$\{B25_LOGO_SIZE:-\}" =~ \^\[1-9\]\[0-9\]\*\$ \]\] \|\| fail')" = "1" ] || { echo "vps-stdin-facts-not-required"; return 0; }
+  echo ok
+}
+SMOKE_TXT="$(cat "$SMOKE")"; VERIFY_TXT="$(body phase_stage2a_smoke_verify)"
+check "golden: the shipped smoke + verify satisfy the served-bytes rule" "$(logo_fact_rule "$SMOKE_TXT" "$VERIFY_TXT")" "ok"
+check "mutation: the former upload-derived recording (sha256(logo) / logo.length) is rejected" "$(logo_fact_rule "$(printf '%s\n' "$SMOKE_TXT" | sed 's/s\.logoSha = sha256(rd\.buf); s\.logoSize = rd\.buf\.length; save(s);/s.logoSha = sha256(logo); s.logoSize = logo.length; save(s);/')" "$VERIFY_TXT")" "no-served-assignment"
+check "mutation: an upload-derived assignment added next to the served one is rejected" "$(logo_fact_rule "$(printf '%s\n' "$SMOKE_TXT" | sed 's/s\.logoSha = sha256(rd\.buf); s\.logoSize = rd\.buf\.length; save(s);/s.logoSha = sha256(logo); s.logoSize = logo.length; s.logoSha = sha256(rd.buf); s.logoSize = rd.buf.length; save(s);/')" "$VERIFY_TXT")" "upload-derived-assignment"
+check "mutation: removing the GET-derived digest assignment is rejected" "$(logo_fact_rule "$(printf '%s\n' "$SMOKE_TXT" | grep -vF 's.logoSha = sha256(rd.buf); s.logoSize = rd.buf.length; save(s);')" "$VERIFY_TXT")" "no-served-assignment"
+check "mutation: recording the facts BEFORE the served GET is proven is rejected" "$(logo_fact_rule "$(printf '%s\n' "$SMOKE_TXT" | grep -vF 'must("stage 2a: the first-party logo GET served a complete image' | sed 's/^\(\s*\)s\.logoSha = sha256(rd\.buf); s\.logoSize = rd\.buf\.length; save(s);$/\1s.logoSha = sha256(rd.buf); s.logoSize = rd.buf.length; save(s);\n\1must("stage 2a: the first-party logo GET served a complete image", true);/')" "$VERIFY_TXT")" "assignment-not-gated-by-served-get"
+check "mutation: dropping the Content-Length = body check is rejected" "$(logo_fact_rule "$(printf '%s\n' "$SMOKE_TXT" | sed 's/ \&\& Number(rd\.headers\.get("content-length")) === rd\.buf\.length//')" "$VERIFY_TXT")" "served-body-not-length-checked"
+check "mutation: a size-only VPS assertion is rejected" "$(logo_fact_rule "$SMOKE_TXT" "$(printf '%s\n' "$VERIFY_TXT" | sed "s/ and sha256 = '\$B25_LOGO_SHA256' and size_bytes = \$B25_LOGO_SIZE/ and size_bytes = \$B25_LOGO_SIZE/")")" "vps-assertion-weakened-or-missing"
+check "mutation: a digest-only VPS assertion is rejected" "$(logo_fact_rule "$SMOKE_TXT" "$(printf '%s\n' "$VERIFY_TXT" | sed "s/ and sha256 = '\$B25_LOGO_SHA256' and size_bytes = \$B25_LOGO_SIZE/ and sha256 = '\$B25_LOGO_SHA256'/")")" "vps-assertion-weakened-or-missing"
+check "mutation: accepting either the uploaded or the normalized digest is rejected" "$(logo_fact_rule "$SMOKE_TXT" "$(printf '%s\n' "$VERIFY_TXT" | sed "s/ and sha256 = '\$B25_LOGO_SHA256' and/ and sha256 in ('\$B25_LOGO_SHA256', '\$B25_UPLOAD_SHA256') and/")")" "vps-assertion-weakened-or-missing"
+check "mutation: removing the branding-logo VPS assertion is rejected" "$(logo_fact_rule "$SMOKE_TXT" "$(printf '%s\n' "$VERIFY_TXT" | grep -vF 'exactly one branding_logo row must carry the logo digest and size')")" "vps-assertion-weakened-or-missing"
+check "mutation: no longer requiring the stdin logo facts is rejected" "$(logo_fact_rule "$SMOKE_TXT" "$(printf '%s\n' "$VERIFY_TXT" | grep -vF 'logo digest / size missing on the stdin stream')")" "vps-stdin-facts-not-required"
+check "the smoke never reads the database (no digest can be copied from a row into the expectation)" "$(grep -ciE 'storage_objects|psql|DATABASE_URL|pg_|sha256_from_db' "$SMOKE" || true)" "0"
+check "the VPS verification never derives the expected logo digest from the row (the expectation arrives on stdin only)" "$(printf '%s\n' "$VERIFY_TXT" | grep -cE 'B25_LOGO_SHA256=\$\(q |B25_LOGO_SIZE=\$\(q ' || true)" "0"
+check "stage 1 logo behaviour unchanged (replace + remove + no-logo probes remain in the else branch)" "$(grep -cE '"logo replace"|"logo remove"|"branding reports no managed logo after removal"' "$SMOKE")" "3"
+check "the served-bytes recording lives only in the Stage 2A branch" "$(awk '/if \(STAGE2A\) \{/{on=1} on&&/s\.logoSha = sha256\(rd\.buf\)/{print "in-2a"; exit} /\} else \{/{on=0}' "$SMOKE")" "in-2a"
+check "the smoke script still parses after the correction" "$(node --check "$SMOKE" >/dev/null 2>&1 && echo ok || echo fail)" "ok"
+
+echo "== Correction 1 — residue 1c512c90f2c8: readonly constants (exact, exception-denied, never an input)"
+check "manifest = exactly the recorded residue of run 38847884691" "$S2AR_MANIFEST" "593fd8be-72be-4798-b56a-e3af02574dfb,b3cf7f44-8d23-4eae-8d44-27e4138a0249|54,55|101|1c512c90f2c8"
+check "run / tag / company / companies / users / rows" "$S2AR_RUN|$S2AR_TAG|$S2AR_COMPANY|$S2AR_COMPANIES|$S2AR_USERS|$S2AR_ROWS" "38847884691|1c512c90f2c8|54|54,55|101|2"
+check "row identities (uuid → kind → recorded size)" "$(s2ar_kind "$S2AR_UUID_DOC")=$(s2ar_size "$S2AR_UUID_DOC")|$(s2ar_kind "$S2AR_UUID_LOGO")=$(s2ar_size "$S2AR_UUID_LOGO")" "document=21546|branding_logo=181"
+check "an unknown uuid has no kind and no size" "$(s2ar_kind 00000000-0000-0000-0000-000000000000 2>/dev/null || echo none)|$(s2ar_size "$B25PHYS_UUID" 2>/dev/null || echo none)" "none|none"
+check "quoted uuid list for SQL" "$S2AR_UUIDS_Q" "'593fd8be-72be-4798-b56a-e3af02574dfb','b3cf7f44-8d23-4eae-8d44-27e4138a0249'"
+check "smoke window constants (created during the run; tombstoned by the tenant deletion)" "$S2AR_CREATED_FROM|$S2AR_CREATED_TO|$S2AR_DELETED_FROM|$S2AR_DELETED_TO" "2026-10-16 03:55:30|2026-10-16 03:56:00|2026-10-16 03:55:50|2026-10-16 03:57:00"
+check "constants are readonly (a later assignment is refused by the shell)" "$(bash -c 'source "'"$HERE"'/b25-stage1-purge-lib.sh"; source "'"$HERE"'/b25-stage1-apply-lib.sh"; (S2AR_COMPANY=53) 2>/dev/null; (S2AR_UUID_DOC=f048b5d4-b366-4227-857f-42b2589e54b7) 2>/dev/null; (S2AR_MANIFEST=x) 2>/dev/null; echo "$S2AR_COMPANY|$S2AR_UUID_DOC|${S2AR_MANIFEST%%|*}"')" "54|593fd8be-72be-4798-b56a-e3af02574dfb|593fd8be-72be-4798-b56a-e3af02574dfb,b3cf7f44-8d23-4eae-8d44-27e4138a0249"
+check "an environment value cannot override the residue constants" "$(S2AR_COMPANY=53 S2AR_UUID_LOGO=f048b5d4-b366-4227-857f-42b2589e54b7 bash -c 'source "'"$HERE"'/b25-stage1-purge-lib.sh"; source "'"$HERE"'/b25-stage1-apply-lib.sh"; echo "$S2AR_COMPANY|$S2AR_UUID_LOGO"')" "54|b3cf7f44-8d23-4eae-8d44-27e4138a0249"
+check "the constants never name the Stage 1 exception (row or company) and are well-formed" "$(s2ar_constants_ok && echo true || echo false)|$([ "$S2AR_UUID_DOC" != "$B25PHYS_UUID" ] && [ "$S2AR_UUID_LOGO" != "$B25PHYS_UUID" ] && [ "$S2AR_COMPANY" != "$B25PHYS_COMPANY" ] && echo distinct)|$(printf '%s' "$S2AR_MANIFEST" | grep -cE 'f048b5d4|\|53' || true)" "true|distinct|0"
+check "authoritative census constants of the locked baseline: 5 objects / 1398 bytes / with_marker 1 / generationless 0 (run 38847884691 read generationless=0, with_marker=1)" "$B25PHYS_CENSUS_OBJECTS|$B25PHYS_CENSUS_BYTES|$B25PHYS_CENSUS_MARKED|$B25PHYS_CENSUS_GENERATIONLESS|$B25PHYS_CENSUS_MD5" "5|1398|1|0|36d90200a6dc0b043a11aeadee20863c"
+check "the exception deny constants of the allow-list and the residue constants agree on the protected row" "$STAGE2A_DENY_UUID|$STAGE2A_DENY_COMPANY" "$B25PHYS_UUID|$B25PHYS_COMPANY"
+
+echo "== Correction 1 — residue eligibility evaluator (golden TRUE; every mutated prerequisite FALSE; exactly 26 conditions, each covered)"
+S2AR_GOLDEN="head_sha=e559b0024b28d4a77becdcb10c4168004dddea75
+current_deploy_sha=e559b0024b28d4a77becdcb10c4168004dddea75
+dirty=0
+init_record_found=true
+init_driver=fs
+init_fallback=true
+init_mirror=true
+init_legacy_delete=false
+env_driver_is_fs=true
+env_root_is_locked=true
+env_fallback_is_true=true
+env_mirror_is_gcs=true
+env_legacy_delete_off=true
+env_key_set=true
+lock_absent=true
+env_record_present=true
+env_core_identity_ok=true
+env_mode=600
+key_line_count=1
+env_file_managed_ok=true
+res_companies_present=0
+res_users_present=0
+res_sessions=0
+res_feature_rows=0
+res_rows_named=2
+res_rows_other=0
+res_rows_wrong_company=0
+res_rows_deleted=2
+res_rows_fs=2
+res_rows_legacy_null=2
+res_rows_mirror_canonical=2
+res_rows_mirror_ok=2
+res_rows_error_null=2
+res_rows_not_uncertain=2
+res_rows_no_lease=2
+res_rows_deleted_at_set=2
+res_rows_deleted_in_window=2
+res_live_refs=0
+res_docs_company=0
+res_brand_refs=0
+res_constants_ok=true
+res_rows_exception=0
+res_rows_company53=0
+res_foreign_mentions=0
+res_jobs_pending=0
+res_inflight_sessions=0
+exc_row_count=1
+exc_state=deleted
+exc_last_error=LEGACY_RETAINED
+exc_driver=gcs
+exc_company=53
+exc_kind=document
+exc_size=99
+exc_identity_ok=true
+exc_uncertain=false
+exc_lease=false
+exc_mirror=false
+exc_live_refs=0
+exc_company_absent=true
+exc_provider_present=true
+exc_provider_marker_ok=true
+exc_provider_size_matches=true
+exc_generation_canonical=true
+exc_generation_stable=true
+exc_generation_digest=3545c17e5f3aa940
+inv_total=3
+res_inv_outside=0
+res_inv_outside_exception=2
+inv_uncertain=0
+inv_unproven=0
+inv_cleanup_pending=0
+inv_leases=0
+inv_inflight=0
+res_rows_identity_ok=2
+res_rows_created_in_window=2
+api_running=true
+api_health=healthy
+readyz_status=ok
+readyz_database=ok
+readyz_storage=ok
+dead_jobs_total=0
+storage_jobs_active=0
+schema_fingerprint=30c4ecbd867cd2cd59abcb58581ecb04
+res_fs_checked=2
+res_fs_absent=2
+res_fs_tenant_files=0
+res_fs_tenant_dirs=0
+res_prov_read_ok=true
+res_prov_checked=2
+res_prov_absent=2
+census_objects=5
+census_bytes=1398
+census_marked=1
+census_generationless=0
+census_md5=36d90200a6dc0b043a11aeadee20863c
+unmarked_objects=4
+unmarked_md5=c1b900fd509bafa1f980d863dc0d195b
+originals_present=4
+originals_missing=0
+originals_size_match=4
+root_tenant_files=0
+leak_root_path=0
+leak_key_shaped=0
+leak_key_assignment=0
+leak_bucket_ref=0
+leak_signature=0
+web_leak_root_path=0
+web_leak_signature=0"
+# s2ar_mut <facts> <"k=v;k2=v2;-k3"> → facts with each key replaced (or removed with a leading '-')
+s2ar_mut() { local out="$1" kv k; IFS=';' read -ra arr <<<"$2"; for kv in "${arr[@]}"; do k="${kv%%=*}"; k="${k#-}"; out="$(printf '%s\n' "$out" | grep -vE "^${k}=")"; [[ "$kv" == -* ]] || out="$out"$'\n'"$kv"; done; printf '%s\n' "$out"; }
+s2ar_failed() { printf '%s\n' "$1" | sed -nE 's/^(res|post) ([0-9]+): .* — FAIL \(.*$/\2/p' | sort -n | tr '\n' ',' | sed 's/,$//'; }
+V="$(printf '%s\n' "$S2AR_GOLDEN" | stage2a_residue_eligibility)"
+check "golden facts → ELIGIBLE=TRUE, 0 failed" "$(printf '%s\n' "$V" | grep -E '^B25_STAGE2A_RESIDUE_' | tr '\n' ' ')" "B25_STAGE2A_RESIDUE_CONDITIONS_FAILED=0 B25_STAGE2A_RESIDUE_ELIGIBLE=TRUE "
+check "exactly 26 numbered conditions, all OK" "$(printf '%s\n' "$V" | grep -cE '^res [0-9]+: ')|$(printf '%s\n' "$V" | grep -cE '^res [0-9]+: .* — OK \(')" "26|26"
+check "the golden verdict prints no secret-shaped value (no 64-hex token, no gs:// reference, no signature text)" "$(printf '%s\n' "$V" | grep -cE '[0-9a-f]{64}|gs://|X-Goog' || true)" "0"
+S2AR_COVERED=""
+# <label>|<mutation>|<expected failing condition numbers (csv)>
+while IFS='|' read -r label mut want; do
+  [ -n "$label" ] || continue
+  V="$(s2ar_mut "$S2AR_GOLDEN" "$mut" | stage2a_residue_eligibility)"
+  got="$(s2ar_failed "$V")"; verdict="$(printf '%s\n' "$V" | grep -oE '^B25_STAGE2A_RESIDUE_ELIGIBLE=[A-Z]+')"
+  if [ "$got" = "$want" ] && [ "$verdict" = "B25_STAGE2A_RESIDUE_ELIGIBLE=FALSE" ]; then ok "denied: $label (condition $got FAIL → FALSE)"; else bad "NOT denied as expected: $label (failed=[$got] want=[$want] $verdict)"; fi
+  S2AR_COVERED="$S2AR_COVERED,$want"
+done <<'MUT'
+hosted product commit changed|head_sha=0000000000000000000000000000000000000000|1
+current-deploy.sha not the locked commit|current_deploy_sha=72a24378947134ca8e4d3460294474894c9aaee4|1
+dirty checkout|dirty=1|1
+driver no longer fs (startup record)|init_driver=gcs|2
+legacy fallback off|init_fallback=false|2
+mirror off|init_mirror=false|2
+legacy delete ON|init_legacy_delete=true|2
+container env mirror not gcs|env_mirror_is_gcs=false|2
+container env legacy delete not off|env_legacy_delete_off=false|2
+encryption key not present in the container|env_key_set=false|2
+an activation lock exists|lock_absent=false|3
+activation env record missing|env_record_present=false|3
+env core identity differs from the record|env_core_identity_ok=false|3
+env file mode not 600|env_mode=644|3
+no key line|key_line_count=0|3
+two key lines|key_line_count=2|3
+managed env lines not the fixed activation set|env_file_managed_ok=false|3
+company 54 (or 55 / a smoke-named tenant) present|res_companies_present=1|4
+disposable user present|res_users_present=1|5
+disposable session present|res_sessions=1|5
+disposable feature / audit rows present|res_feature_rows=3|5
+1 row instead of 2 (wrong or missing uuid)|res_rows_named=1|6
+3 rows carry the named ids|res_rows_named=3|6
+a third company-54 storage row|res_rows_other=1|7
+a named row belongs to another company|res_rows_wrong_company=1|7
+active row (not deleted)|res_rows_deleted=1|8
+a row is not driver fs|res_rows_fs=1|9
+legacy key present|res_rows_legacy_null=1|10
+mirror location not canonical|res_rows_mirror_canonical=1|11
+mirror_state not ok|res_rows_mirror_ok=1|11
+last_error present|res_rows_error_null=1|12
+publication uncertainty|res_rows_not_uncertain=1|13
+lease present|res_rows_no_lease=1|14
+deleted_at not set|res_rows_deleted_at_set=1|15
+deleted_at outside the tenant-deletion window|res_rows_deleted_in_window=1|15
+live association (document version / export / report / scan / brand_logo_key)|res_live_refs=1|16
+a document of company 54 exists|res_docs_company=1|16
+another company's brand_logo_key points into branding/54|res_brand_refs=1|16
+constants collide with the exception|res_constants_ok=false|17,18
+protected exception uuid among the rows|res_rows_exception=1|17
+a row of company 53|res_rows_company53=1|18
+another storage row mentions a residue id|res_foreign_mentions=1|19
+pending / running job references the residue|res_jobs_pending=1|19
+in-flight database session on storage_objects|res_inflight_sessions=1|19
+exception row changed (state)|exc_state=active|20
+exception row absent|exc_row_count=0|20
+exception provider object absent|exc_provider_present=false|20
+exception generation differs from the accepted digest|exc_generation_digest=0000000000000000|20
+exception company present|exc_company_absent=false|20
+a fourth storage row exists|inv_total=4|21
+a row outside the exception + the two tombstones|res_inv_outside=1|21
+an uncertain row anywhere|inv_uncertain=1|21
+a leased row anywhere|inv_leases=1|21
+row identity (kind / size / reference / key / digest / content type) wrong|res_rows_identity_ok=1|22
+created outside the smoke window|res_rows_created_in_window=1|22
+api unhealthy|api_health=unhealthy|23
+storage readiness degraded|readyz_storage=degraded|23
+dead job present|dead_jobs_total=1|23
+active storage job|storage_jobs_active=1|23
+schema fingerprint differs|schema_fingerprint=00000000000000000000000000000000|23
+FS object still present (one stored key answers)|res_fs_absent=1|24
+a file remains under a tenant directory|res_fs_tenant_files=1|24
+fs check covered one row only|res_fs_checked=1|24
+GCS object still present (one location answers)|res_prov_absent=1|25
+provider read failure (never absence)|res_prov_read_ok=false;res_prov_checked=?;res_prov_absent=?|25
+provider check covered one row only|res_prov_checked=1|25
+census objects 6|census_objects=6|26
+census bytes drifted|census_bytes=1399|26
+marked objects 0 (the exception object lost its marker)|census_marked=0|26
+a generationless object|census_generationless=1|26
+inventory digest differs|census_md5=00000000000000000000000000000000|26
+an original object missing|originals_missing=1;originals_present=3|26
+missing fact: rows_named|-res_rows_named|6
+missing fact: provider read status|-res_prov_read_ok|25
+missing fact: exception generation digest|-exc_generation_digest|20
+missing fact: fs absence|-res_fs_absent|24
+MUT
+check "every one of the 26 conditions is covered by at least one denying mutation" "$(printf '%s' "$S2AR_COVERED" | tr ',' '\n' | grep -E '^[0-9]+$' | sort -n -u | tr '\n' ',')" "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,"
+check "a completely empty fact stream fails every condition" "$(printf '' | stage2a_residue_eligibility | grep -E '^B25_STAGE2A_RESIDUE_' | tr '\n' ' ')" "B25_STAGE2A_RESIDUE_CONDITIONS_FAILED=26 B25_STAGE2A_RESIDUE_ELIGIBLE=FALSE "
+
+echo "== Correction 1 — post-settlement evaluator (golden TRUE; mutations FALSE; exactly 12 proofs, each covered)"
+S2AR_POST="$(s2ar_mut "$S2AR_GOLDEN" "res_rows_named=0;inv_total=1;res_inv_outside_exception=0")"
+V="$(printf '%s\n' "$S2AR_POST" | stage2a_residue_settled)"
+check "golden post facts → SETTLED=TRUE, 0 failed" "$(printf '%s\n' "$V" | grep -E '^B25_STAGE2A_RESIDUE_SETTLED' | tr '\n' ' ')" "B25_STAGE2A_RESIDUE_SETTLED_CONDITIONS_FAILED=0 B25_STAGE2A_RESIDUE_SETTLED=TRUE "
+check "exactly 12 numbered proofs, all OK" "$(printf '%s\n' "$V" | grep -cE '^post [0-9]+: ')|$(printf '%s\n' "$V" | grep -cE '^post [0-9]+: .* — OK \(')" "12|12"
+check "the pre-settlement golden facts (rows still present) are NOT a settled state" "$(printf '%s\n' "$S2AR_GOLDEN" | stage2a_residue_settled | grep -oE '^B25_STAGE2A_RESIDUE_SETTLED=[A-Z]+')|$(s2ar_failed "$(printf '%s\n' "$S2AR_GOLDEN" | stage2a_residue_settled)")" "B25_STAGE2A_RESIDUE_SETTLED=FALSE|1,7"
+S2AR_COVERED=""
+while IFS='|' read -r label mut want; do
+  [ -n "$label" ] || continue
+  V="$(s2ar_mut "$S2AR_POST" "$mut" | stage2a_residue_settled)"
+  got="$(s2ar_failed "$V")"; verdict="$(printf '%s\n' "$V" | grep -oE '^B25_STAGE2A_RESIDUE_SETTLED=[A-Z]+')"
+  if [ "$got" = "$want" ] && [ "$verdict" = "B25_STAGE2A_RESIDUE_SETTLED=FALSE" ]; then ok "not settled: $label (proof $got FAIL → FALSE)"; else bad "NOT refused as expected: $label (failed=[$got] want=[$want] $verdict)"; fi
+  S2AR_COVERED="$S2AR_COVERED,$want"
+done <<'MUT'
+a tombstone row remains|res_rows_named=1|1
+company 54 reappeared|res_companies_present=1|2
+another company-54 storage row remains|res_rows_other=1|2
+a disposable identity remains|res_users_present=1|3
+a stored key still answers on the volume|res_fs_absent=1|4
+a file remains under a tenant directory|res_fs_tenant_files=1|4
+a tenant file remains anywhere under the root|root_tenant_files=1|4
+provider read failure|res_prov_read_ok=false;res_prov_checked=?;res_prov_absent=?|5
+a mirror object still answers|res_prov_absent=1|5
+exception generation changed|exc_generation_digest=0000000000000000|6
+exception row changed|exc_state=active|6
+exception provider object gone|exc_provider_present=false|6
+two storage rows remain|inv_total=2|7
+a row outside the exception|res_inv_outside_exception=1|7
+census objects 4 (an original is gone)|census_objects=4;census_bytes=1299|8
+a generationless object|census_generationless=1|8
+inventory digest differs|census_md5=00000000000000000000000000000000|8
+marked objects 0|census_marked=0|8
+driver no longer fs|init_driver=gcs|9
+key line count changed|key_line_count=0|9
+managed env lines changed|env_file_managed_ok=false|9
+mirror off|init_mirror=false|9
+api unhealthy|api_health=unhealthy|10
+dead job present|dead_jobs_total=1|10
+root path leaked into the api log|leak_root_path=1|11
+signed-URL text leaked|leak_signature=1|11
+root path leaked into the web log|web_leak_root_path=1|11
+key-shaped token in the api log|leak_key_shaped=1|11
+hosted product commit changed|head_sha=0000000000000000000000000000000000000000|12
+a lock was left behind|lock_absent=false|12
+MUT
+check "every one of the 12 proofs is covered by at least one refusing mutation" "$(printf '%s' "$S2AR_COVERED" | tr ',' '\n' | grep -E '^[0-9]+$' | sort -n -u | tr '\n' ',')" "1,2,3,4,5,6,7,8,9,10,11,12,"
+
+echo "== Correction 1 — provider / fs probe readers (behavioural, with a stubbed in-container call): a read failure is never absence"
+PROBE_SRC="$(body json_flat_field; body census_field; body stage2a_residue_provider_facts; body stage2a_residue_fs_facts)"
+probe() {   # <provider|fs> <canned api_node output> → the facts lines
+  B25_STUB="$2" bash -c "$PROBE_SRC"$'\n''api_node() { printf "%s\n" "$B25_STUB"; }; PROVIDER_RULES_JS=x; STAGE2A_PROVIDER_ABSENT_JS=y; STAGE2A_FS_ABSENT_JS=z; HOME=/nonexistent; if [ "$1" = provider ]; then stage2a_residue_provider_facts blob; else stage2a_residue_fs_facts blob; fi' probe "$1" 2>/dev/null | tr '\n' ' '
+}
+check "provider: both locations 404 → read ok, checked 2, absent 2" "$(probe provider '{"checked":2,"absent":2,"present_ids":[]}')" "res_prov_read_ok=true res_prov_checked=2 res_prov_absent=2 "
+check "provider: one object still answers → absent 1 (settlement refused by condition 25)" "$(probe provider '{"checked":2,"absent":1,"present_ids":["593fd8be-72be-4798-b56a-e3af02574dfb"]}')" "res_prov_read_ok=true res_prov_checked=2 res_prov_absent=1 "
+check "provider: an error document → read NOT ok, no count (never absence)" "$(probe provider '{"error":"ECONNRESET"}')" "res_prov_read_ok=false res_prov_checked=? res_prov_absent=? "
+check "provider: counts accompanied by an error key → read NOT ok" "$(probe provider '{"checked":2,"absent":2,"error":"partial"}')" "res_prov_read_ok=false res_prov_checked=2 res_prov_absent=2 "
+check "provider: the in-container call itself unavailable → read NOT ok" "$(probe provider 'unavailable (reason: <path>)')" "res_prov_read_ok=false res_prov_checked=? res_prov_absent=? "
+check "provider: a truncated / malformed document → read NOT ok" "$(probe provider '{"checked":2,"absent":')" "res_prov_read_ok=false res_prov_checked=? res_prov_absent=? "
+check "fs: both keys absent, no tenant file" "$(probe fs '{"checked":2,"absent":2,"tenant_files":0,"tenant_dirs":2}')" "res_fs_checked=2 res_fs_absent=2 res_fs_tenant_files=0 res_fs_tenant_dirs=2 "
+check "fs: one key still present and a stray tenant file → reported, not hidden" "$(probe fs '{"checked":2,"absent":1,"tenant_files":1,"tenant_dirs":2}')" "res_fs_checked=2 res_fs_absent=1 res_fs_tenant_files=1 res_fs_tenant_dirs=2 "
+check "fs: unavailable → unreadable counts (fail closed)" "$(probe fs 'unavailable (reason: x)')" "res_fs_checked=? res_fs_absent=? res_fs_tenant_files=? res_fs_tenant_dirs=? "
+check "fs / provider: the evaluator denies unreadable counts (condition 24 / 25)" "$(s2ar_failed "$(s2ar_mut "$S2AR_GOLDEN" "res_fs_checked=?;res_fs_absent=?;res_fs_tenant_files=?;res_fs_tenant_dirs=?" | stage2a_residue_eligibility)")|$(s2ar_failed "$(s2ar_mut "$S2AR_GOLDEN" "res_prov_checked=?;res_prov_absent=?" | stage2a_residue_eligibility)")" "24|25"
+
+echo "== Correction 1 — modeled settlement against the local database (the exact constants; allow-list; the exception and company 53 denied)"
+SMOKE_DOMAIN="b25smoke.invalid"
+eval "$(body stage2a_residue_row_facts)"   # the hosted fact reader, bound here to the local read-only q
+if [ "$(q "select (select count(*) from companies where id in ($S2AR_COMPANIES)) + (select count(*) from storage_objects where id in ($S2AR_UUIDS_Q, '$B25PHYS_UUID')) + (select count(*) from users where id in ($S2AR_USERS))")" = "0" ]; then
+  C1_LOGO_BEFORE="$(q "select coalesce(brand_logo_key, '<null>') from companies where id = 1")"
+  cleanup_s2ar() {
+    qw "delete from storage_objects where id in ($S2AR_UUIDS_Q, '$B25PHYS_UUID') and company_id in ($S2AR_COMPANIES, $B25PHYS_COMPANY)" >/dev/null || true
+    if [ "$C1_LOGO_BEFORE" = "<null>" ]; then qw "update companies set brand_logo_key = null where id = 1" >/dev/null || true; else qw "update companies set brand_logo_key = '$C1_LOGO_BEFORE' where id = 1" >/dev/null || true; fi
+  }
+  trap 'cleanup_s2ar; cleanup' EXIT
+  ins_fs "$S2AR_UUID_DOC" "$S2AR_COMPANY" document deleted NULL no fs canon ok NULL
+  ins_fs "$S2AR_UUID_LOGO" "$S2AR_COMPANY" branding_logo deleted NULL no fs canon ok NULL
+  qw "update storage_objects set size_bytes = case id when '$S2AR_UUID_DOC' then $S2AR_DOC_SIZE else $S2AR_LOGO_SIZE end, content_type = case id when '$S2AR_UUID_DOC' then 'application/pdf' else 'image/png' end, created_at = '2026-10-16 03:55:40', deleted_at = '2026-10-16 03:55:54', lease_token = null, lease_expires_at = null where id in ($S2AR_UUIDS_Q)" >/dev/null
+  ins "$B25PHYS_UUID" "$B25PHYS_COMPANY" document deleted LEGACY_RETAINED no gcs NULL   # the protected exception, modeled (gcs / LEGACY_RETAINED / company 53)
+  run_s2ar() { local triple; triple="$(qw "$(stage2a_purge_rows_sql "$1" "$2" "$3")")"; echo "$triple"; }
+  both_present() { q "select count(*) from storage_objects where id in ($S2AR_UUIDS_Q)"; }
+  # --- the hosted fact reader against the modeled rows (real SQL, local read-only session) ---
+  RF="$(stage2a_residue_row_facts 2>/dev/null)"
+  rowfact() { printf '%s\n' "$RF" | sed -nE "s/^$1=(.*)$/\1/p" | head -1; }
+  check "row facts: 2 named rows, all deleted / fs / no legacy / canonical ok mirror / no error / not uncertain / no lease / deleted_at set in window / created in window" "$(rowfact res_rows_named)|$(rowfact res_rows_deleted)|$(rowfact res_rows_fs)|$(rowfact res_rows_legacy_null)|$(rowfact res_rows_mirror_canonical)|$(rowfact res_rows_mirror_ok)|$(rowfact res_rows_error_null)|$(rowfact res_rows_not_uncertain)|$(rowfact res_rows_no_lease)|$(rowfact res_rows_deleted_at_set)|$(rowfact res_rows_deleted_in_window)|$(rowfact res_rows_created_in_window)" "2|2|2|2|2|2|2|2|2|2|2|2"
+  check "row facts: identity 2/2 (kind, recorded size, product-shaped reference and key, digest, content type); none wrong-company / exception / company 53; no other company-54 row" "$(rowfact res_rows_identity_ok)|$(rowfact res_rows_wrong_company)|$(rowfact res_rows_exception)|$(rowfact res_rows_company53)|$(rowfact res_rows_other)" "2|0|0|0|0"
+  check "row facts: no live association, no foreign mention, no pending job, no disposable company / user / session / feature row; constants ok" "$(rowfact res_live_refs)|$(rowfact res_docs_company)|$(rowfact res_brand_refs)|$(rowfact res_foreign_mentions)|$(rowfact res_jobs_pending)|$(rowfact res_companies_present)|$(rowfact res_users_present)|$(rowfact res_sessions)|$(rowfact res_feature_rows)|$(rowfact res_constants_ok)" "0|0|0|0|0|0|0|0|0|true"
+  check "row facts: the protected exception is counted outside the residue but not among the named rows (inventory facts are the local database's, informational)" "$(rowfact res_inv_outside_exception | awk '{ print ($1 >= 2) ? "ge2" : "lt2" }')|$(rowfact res_rows_exception)" "ge2|0"
+  # the real facts merged into the golden host/provider facts must evaluate TRUE (the inventory facts of the local database are replaced by the golden ones)
+  MERGED="$(printf '%s\n' "$S2AR_GOLDEN" | grep -vE '^res_(rows_|live_refs|docs_company|brand_refs|foreign_mentions|jobs_pending|inflight_sessions|companies_present|users_present|sessions|feature_rows|constants_ok)'; printf '%s\n' "$RF" | grep -vE '^res_inv_')"
+  check "evaluator over the REAL row facts of the modeled residue → ELIGIBLE=TRUE" "$(printf '%s\n' "$MERGED" | stage2a_residue_eligibility | grep -oE '^B25_STAGE2A_RESIDUE_ELIGIBLE=[A-Z]+')" "B25_STAGE2A_RESIDUE_ELIGIBLE=TRUE"
+  # --- database-driven denials: the facts change, the evaluator denies, the allow-list refuses, both rows stay ---
+  dbcase() {   # <label> <mutating sql> <restoring sql> <expected failing condition> <expected triple prefix>
+    local label="$1" mut="$2" restore="$3" want="$4" tp="$5" facts merged got triple
+    qw "$mut" >/dev/null
+    facts="$(stage2a_residue_row_facts 2>/dev/null)"
+    merged="$(printf '%s\n' "$S2AR_GOLDEN" | grep -vE '^res_(rows_|live_refs|docs_company|brand_refs|foreign_mentions|jobs_pending|inflight_sessions|companies_present|users_present|sessions|feature_rows|constants_ok)'; printf '%s\n' "$facts" | grep -vE '^res_inv_')"
+    got="$(s2ar_failed "$(printf '%s\n' "$merged" | stage2a_residue_eligibility)")"
+    triple="$(run_s2ar "$S2AR_UUIDS_Q" "$S2AR_COMPANY" "$S2AR_ROWS")"
+    qw "$restore" >/dev/null
+    if [ "$got" = "$want" ] && [ "$triple" = "$tp" ] && [ "$(both_present)" = "2" ]; then ok "db: $label — evaluator condition $got FAIL, allow-list $triple, both rows kept"; else bad "db: $label — failed=[$got] want=[$want] triple=$triple present=$(both_present)"; fi
+  }
+  dbcase "active row" "update storage_objects set state = 'active', deleted_at = null where id = '$S2AR_UUID_DOC'" "update storage_objects set state = 'deleted', deleted_at = '2026-10-16 03:55:54' where id = '$S2AR_UUID_DOC'" "8,15" "0|2|1"
+  dbcase "legacy key present" "update storage_objects set legacy_key = 'gs://synthetic/legacy' where id = '$S2AR_UUID_LOGO'" "update storage_objects set legacy_key = null where id = '$S2AR_UUID_LOGO'" "10" "0|2|1"
+  dbcase "publication uncertainty" "update storage_objects set publication_uncertain_at = now() where id = '$S2AR_UUID_DOC'" "update storage_objects set publication_uncertain_at = null where id = '$S2AR_UUID_DOC'" "13" "0|2|1"
+  dbcase "last_error set (retained / unproven / cleanup-pending)" "update storage_objects set last_error = 'CLEANUP_PENDING' where id = '$S2AR_UUID_LOGO'" "update storage_objects set last_error = null where id = '$S2AR_UUID_LOGO'" "12" "0|2|1"
+  dbcase "lease present (in-flight writer)" "update storage_objects set lease_token = 'x', lease_expires_at = now() + interval '5 minutes' where id = '$S2AR_UUID_DOC'" "update storage_objects set lease_token = null, lease_expires_at = null where id = '$S2AR_UUID_DOC'" "14" "0|2|1"
+  dbcase "mirror_state not ok" "update storage_objects set mirror_state = 'failed' where id = '$S2AR_UUID_LOGO'" "update storage_objects set mirror_state = 'ok' where id = '$S2AR_UUID_LOGO'" "11" "0|2|1"
+  dbcase "mirror location not canonical" "update storage_objects set mirror_key = 'gs://synthetic/tenants/54/documents/other' where id = '$S2AR_UUID_DOC'" "update storage_objects set mirror_key = 'gs://synthetic/' || storage_key where id = '$S2AR_UUID_DOC'" "11" "0|2|1"
+  dbcase "driver not fs" "update storage_objects set driver = 'gcs' where id = '$S2AR_UUID_DOC'" "update storage_objects set driver = 'fs' where id = '$S2AR_UUID_DOC'" "9" "0|2|1"
+  dbcase "wrong company on a named row" "update storage_objects set company_id = 55 where id = '$S2AR_UUID_LOGO'" "update storage_objects set company_id = 54 where id = '$S2AR_UUID_LOGO'" "7,22" "0|2|1"
+  dbcase "live association: an existing company's brand_logo_key points at the residue logo" "update companies set brand_logo_key = (select reference from storage_objects where id = '$S2AR_UUID_LOGO') where id = 1" "update companies set brand_logo_key = $([ "$C1_LOGO_BEFORE" = "<null>" ] && echo null || echo "'$C1_LOGO_BEFORE'") where id = 1" "16" "0|2|1"
+  # row identity (recorded size / kind / shape / window) is a prerequisite of the EVALUATOR — the allow-list itself does
+  # not know sizes — so the settle phase stops at eligibility and never opens the transaction; evaluated on facts only:
+  evalcase() {   # <label> <mutating sql> <restoring sql> <expected failing condition>
+    local facts merged got; qw "$2" >/dev/null
+    facts="$(stage2a_residue_row_facts 2>/dev/null)"
+    merged="$(printf '%s\n' "$S2AR_GOLDEN" | grep -vE '^res_(rows_|live_refs|docs_company|brand_refs|foreign_mentions|jobs_pending|inflight_sessions|companies_present|users_present|sessions|feature_rows|constants_ok)'; printf '%s\n' "$facts" | grep -vE '^res_inv_')"
+    got="$(s2ar_failed "$(printf '%s\n' "$merged" | stage2a_residue_eligibility)")"; qw "$3" >/dev/null
+    if [ "$got" = "$4" ]; then ok "db: $1 — evaluator condition $got FAIL (the settle phase stops before any transaction)"; else bad "db: $1 — failed=[$got] want=[$4]"; fi
+  }
+  evalcase "row identity: recorded size differs" "update storage_objects set size_bytes = 182 where id = '$S2AR_UUID_LOGO'" "update storage_objects set size_bytes = $S2AR_LOGO_SIZE where id = '$S2AR_UUID_LOGO'" "22"
+  evalcase "row identity: kind swapped" "update storage_objects set kind = 'document' where id = '$S2AR_UUID_LOGO'" "update storage_objects set kind = 'branding_logo' where id = '$S2AR_UUID_LOGO'" "22"
+  evalcase "row identity: created outside the smoke window" "update storage_objects set created_at = '2026-10-16 04:30:00' where id = '$S2AR_UUID_DOC'" "update storage_objects set created_at = '2026-10-16 03:55:40' where id = '$S2AR_UUID_DOC'" "22"
+  evalcase "tombstoned outside the tenant-deletion window" "update storage_objects set deleted_at = '2026-10-16 05:00:00' where id = '$S2AR_UUID_DOC'" "update storage_objects set deleted_at = '2026-10-16 03:55:54' where id = '$S2AR_UUID_DOC'" "15"
+  check "modeled rows intact for the allow-list cases" "$(both_present)" "2"
+  # --- allow-list refusals (the statement deletes nothing unless locked = allowed = expected = 2) ---
+  triple="$(run_s2ar "$S2AR_UUIDS_Q" "55" 2)"; [[ "$triple" == 0\|2\|0 ]] && [ "$(both_present)" = "2" ] && ok "allow-list: wrong company list → nothing deleted ($triple)" || bad "allow-list wrong company not refused ($triple)"
+  triple="$(run_s2ar "$S2AR_UUIDS_Q" "$S2AR_COMPANY" 1)"; [[ "$triple" == 0\|2\|2 ]] && [ "$(both_present)" = "2" ] && ok "allow-list: expected 1 with 2 locked rows → nothing deleted ($triple)" || bad "allow-list count mismatch (1) not refused ($triple)"
+  triple="$(run_s2ar "$S2AR_UUIDS_Q" "$S2AR_COMPANY" 3)"; [[ "$triple" == 0\|2\|2 ]] && [ "$(both_present)" = "2" ] && ok "allow-list: expected 3 with 2 locked rows → nothing deleted ($triple)" || bad "allow-list count mismatch (3) not refused ($triple)"
+  mk X3; ins_fs "$X3" "$S2AR_COMPANY" document deleted NULL no fs canon ok NULL
+  triple="$(run_s2ar "$S2AR_UUIDS_Q,'$X3'" "$S2AR_COMPANY" 2)"; [[ "$triple" == 0\|3\|3 ]] && [ "$(both_present)" = "2" ] && [ "$(present "$X3")" = "1" ] && ok "allow-list: a third listed row with expected 2 → nothing deleted ($triple)" || bad "allow-list third row not refused ($triple)"
+  qw "delete from storage_objects where id = '$X3' and company_id = $S2AR_COMPANY" >/dev/null
+  triple="$(run_s2ar "$S2AR_UUIDS_Q,'$B25PHYS_UUID'" "$S2AR_COMPANY,$B25PHYS_COMPANY" 3)"; [[ "$triple" == 0\|3\|2 ]] && [ "$(both_present)" = "2" ] && [ "$(present "$B25PHYS_UUID")" = "1" ] && ok "allow-list: the protected exception listed alongside → denied by constant, nothing deleted ($triple)" || bad "exception not denied ($triple)"
+  mk X53; ins_fs "$X53" "$B25PHYS_COMPANY" document deleted NULL no fs canon ok NULL
+  triple="$(run_s2ar "'$X53'" "$B25PHYS_COMPANY" 1)"; [[ "$triple" == 0\|1\|0 ]] && [ "$(present "$X53")" = "1" ] && ok "allow-list: a company-53 row → denied by constant ($triple)" || bad "company 53 not denied ($triple)"
+  qw "delete from storage_objects where id = '$X53' and company_id = $B25PHYS_COMPANY" >/dev/null
+  # --- the positive path: exactly the two physically-absent (modeled) rows; the exception untouched; idempotent ---
+  triple="$(run_s2ar "$S2AR_UUIDS_Q" "$S2AR_COMPANY" "$S2AR_ROWS")"
+  purge_result_check "$triple" "$S2AR_ROWS" >/dev/null && [ "$(both_present)" = "0" ] && ok "settlement: exactly the two rows removed in one transaction ($triple)" || bad "settlement positive path failed ($triple, present=$(both_present))"
+  check "exception row unchanged after the modeled settlement (present, deleted / LEGACY_RETAINED / gcs / company 53)" "$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID' and state = 'deleted' and last_error = 'LEGACY_RETAINED' and driver = 'gcs' and company_id = $B25PHYS_COMPANY")" "1"
+  triple="$(run_s2ar "$S2AR_UUIDS_Q" "$S2AR_COMPANY" "$S2AR_ROWS")"; [[ "$triple" == 0\|0\|0 ]] && ok "settlement second run: already removed → 0|0|0" || bad "settlement second run changed something ($triple)"
+  RF2="$(stage2a_residue_row_facts 2>/dev/null)"
+  check "row facts after the settlement: 0 named rows, 0 company-54 rows" "$(printf '%s\n' "$RF2" | sed -nE 's/^res_rows_named=(.*)$/\1/p')|$(printf '%s\n' "$RF2" | sed -nE 's/^res_rows_other=(.*)$/\1/p')" "0|0"
+  cleanup_s2ar
+  check "modeled exception removed again; local database back to its previous state for these ids" "$(q "select count(*) from storage_objects where id in ($S2AR_UUIDS_Q, '$B25PHYS_UUID')")" "0"
+else
+  echo "note: the local database already holds company 54/55, user 101 or one of the residue ids — the modeled settlement is exercised by the evaluator mutations only"
+fi
+
+echo "== Correction 1 — phase bodies and workflow wiring (static)"
+EB="$(body phase_stage2a_residue_eligibility)"; SB="$(body phase_stage2a_residue_settle)"; RB2="$(body stage2a_residue_eligibility_run)"
+check "both residue phases exist and refuse any argument (the residue is bound by constants)" "$(printf '%s\n' "$EB" | grep -c '\[ -z "$ARG1$ARG2$ARG3" \] || fail')|$(printf '%s\n' "$SB" | grep -c '\[ -z "$ARG1$ARG2$ARG3" \] || fail')" "1|1"
+check "the eligibility run proves the read-only session first and decides through the library evaluator" "$(printf '%s\n' "$RB2" | grep -c stage2a_readonly_guard)|$(printf '%s\n' "$RB2" | grep -c '| stage2a_residue_eligibility)')|$(printf '%s\n' "$RB2" | grep -c "grep -qx 'B25_STAGE2A_RESIDUE_ELIGIBLE=TRUE'")" "1|1|1"
+check "the eligibility run reads the fs and provider absence facts (read-only probes) and the Stage 1 exception facts" "$(printf '%s\n' "$RB2" | grep -oE 'stage2a_residue_fs_facts|stage2a_residue_provider_facts|stage2a_exception_facts' | sort -u | wc -l | tr -d ' ')" "3"
+check "settle: no mutation unless the SAME session returned ELIGIBLE=TRUE (eligibility run guarded by fail)" "$(printf '%s\n' "$SB" | grep -c 'stage2a_residue_eligibility_run || fail')" "1"
+check "settle order: eligibility → lock → fs absence per uuid → provider absence per uuid → the ONE allow-listed delete → post evaluator" "$(printf '%s\n' "$SB" | grep -n -E 'stage2a_residue_eligibility_run \|\| fail|^  stage2a_lock$|STAGE2A_FS_ABSENT_JS|STAGE2A_PROVIDER_ABSENT_JS|stage2a_purge_rows_sql "\$S2AR_UUIDS_Q"|\| stage2a_residue_settled\)' | cut -d: -f1 | tr '\n' ' ' | awk '{ ok = (NF == 6); for (i = 2; i <= NF; i++) if ($i <= $(i-1)) ok = 0; print ok ? "ordered" : "wrong-order" }')" "ordered"
+check "settle: each uuid's fs primary and every provider location are re-proven absent individually (two loops over the two constants)" "$(printf '%s\n' "$SB" | grep -c 'for u in "$S2AR_UUID_DOC" "$S2AR_UUID_LOGO"; do')" "2"
+check "settle: a provider read failure stops before any row removal (error document → fail), and a present copy stops too" "$(printf '%s\n' "$SB" | grep -c 'grep -q .\"error\".; then fail')|$(printf '%s\n' "$SB" | grep -cE 'fail "the fs primary of \$u still exists|fail "a persisted provider location of \$u still answers')" "1|2"
+check "settle: the allow-listed delete uses exactly the constant uuid list, company and count, and requires locked = allowed = deleted = 2" "$(printf '%s\n' "$SB" | grep -c 'stage2a_purge_rows_sql "$S2AR_UUIDS_Q" "$S2AR_COMPANY" "$S2AR_ROWS"')|$(printf '%s\n' "$SB" | grep -c 'purge_result_check "$triple" "$S2AR_ROWS" || fail')" "1|1"
+check "settle: exactly ONE writing statement (the row-locked delete) — no other qw" "$(printf '%s\n' "$SB" | grep -cE '(^|[^a-z_])qw ')" "1"
+check "settle: NO provider delete, NO file delete, NO unconditioned mutation (no ifGenerationMatch / .delete( / rm -r / find -delete / unlink / purge_rows_sql of Stage 1)" "$(printf '%s\n' "$SB" | grep -ciE 'ifGenerationMatch|\.delete\(|rm -r|find[^|]*-delete|unlink|[^a-z0-9_]purge_rows_sql ' || true)" "0"
+check "settle: the post-settlement proof re-reads the fs / provider absence with the blobs captured BEFORE the removal and ends on the library verdict" "$(printf '%s\n' "$SB" | grep -c 'stage2a_residue_fs_facts "$frows"')|$(printf '%s\n' "$SB" | grep -c 'stage2a_residue_provider_facts "$loc"')|$(printf '%s\n' "$SB" | grep -c "grep -qx 'B25_STAGE2A_RESIDUE_SETTLED=TRUE' || fail")" "1|1|1"
+check "settle: the lock is released before the read-only post proof and the post proof re-reads the census (exception facts) and the host facts" "$(printf '%s\n' "$SB" | grep -c 'rm -f "$STAGE2A_LOCK_FILE"')|$(printf '%s\n' "$SB" | grep -c 'facts+="$(stage2a_exception_facts)"')|$(printf '%s\n' "$SB" | grep -c 'facts+="$(stage2a_residue_host_facts "$cid")"')" "1|1|1"
+S2AR_BLOCK="$(awk '/^# B25 STAGE 2A — CORRECTION 1: settlement of the EXACT residue/{on=1} on{print} /^case "\$PHASE" in$/{exit}' "$APPLY")"
+check "the residue block never edits the environment, recreates a container, touches a volume or renders a storage variable" "$(printf '%s\n' "$S2AR_BLOCK" | grep -ciE 'stage2a_env_apply|stage2a_recreate_api|OBJECT_STORAGE_[A-Z_]+=|compose (up|down|rm|restart|stop|kill)|docker (rm|stop|kill|restart|volume)|sed -i|>> *"?\$ENV_FILE' || true)" "0"
+check "the residue block denies the exception in its own predicates (id <> exception, company = 53 counted, constants checked)" "$(printf '%s\n' "$S2AR_BLOCK" | grep -cE "id <> '\\\$B25PHYS_UUID'|company_id = \\\$B25PHYS_COMPANY|s2ar_constants_ok \|\| fail")" "4"
+check "the row facts are read in ONE read-only statement per table group and never through qw" "$(body stage2a_residue_row_facts | grep -cE '(^|[^a-z_])qw ' || true)|$(body stage2a_residue_row_facts | grep -c 'from storage_objects where id in ($Q)')" "0|1"
+check "the fs probe is lstat + readdir only (no write, no delete) and the provider probe is HEAD metadata only" "$(awk '/^STAGE2A_FS_ABSENT_JS=\$\(cat <<.JS.$/{on=1;next} on&&/^JS$/{exit} on{print}' "$APPLY" | grep -ciE 'unlink|rmSync|rmdir|writeFile|mkdir|rename' || true)|$(awk '/^STAGE2A_PROVIDER_ABSENT_JS=\$\(cat <<.JS.$/{on=1;next} on&&/^JS$/{exit} on{print}' "$APPLY" | grep -ciE '\.delete\(|\.save\(|\.upload\(|\.createWriteStream\(' || true)" "0|0"
+check "dispatch entries for both residue phases exist exactly once" "$(grep -cE '^  stage2a-residue-(eligibility|settle)\) phase_stage2a_residue_(eligibility|settle) ;;$' "$APPLY")" "2"
+check "workflow offers the two residue modes (inspect = read-only, settle = mutation)" "$(grep -oE 'stage2a_residue_(inspect|settle)_1c512c90f2c8' "$WF" | sort -u | tr '\n' ' ')" "stage2a_residue_inspect_1c512c90f2c8 stage2a_residue_settle_1c512c90f2c8 "
+check "the incident-specific typed confirmation is a fixed constant" "$(grep -cE '^  REQUIRED_STAGE2A_RESIDUE: "SETTLE_B25_STAGE2A_RESIDUE_1c512c90f2c8"$' "$WF")|$(grep -cE '^      confirm_stage2a_residue:$' "$WF")" "1|1"
+check "settle mode requires the product commit, the window and SETTLE_B25_STAGE2A_RESIDUE_1c512c90f2c8 and refuses every other confirmation" "$(awk '/^            stage2a_residue_settle_1c512c90f2c8\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -cE 'need confirm_product_sha "\$IN_PRODUCT_SHA" "\$STAGE2A_PRODUCT_SHA"; need confirm_window "\$IN_WINDOW" "\$REQUIRED_WINDOW"; need confirm_stage2a_residue "\$IN_STAGE2A_RESIDUE" "\$REQUIRED_STAGE2A_RESIDUE"|empty confirm_stage2a "\$IN_STAGE2A"; empty confirm_stage2a_smoke "\$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "\$IN_STAGE2A_ROLLBACK"; empty confirm_residue "\$IN_RESIDUE"')" "2"
+check "every other Stage 2A mode (read-only, activate, smoke, rollback) and the default branch refuse the residue confirmation" "$(grep -c 'empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE"' "$WF")" "5"
+check "the residue manifest / uuids are NOT workflow inputs (no input default carries them; the SSH steps pass no ARG)" "$(grep -E '^        default:' "$WF" | grep -cE '593fd8be|b3cf7f44|1c512c90f2c8' || true)|$(grep -E "PHASE='stage2a-residue-(eligibility|settle)' " "$WF" | grep -cE 'ARG[123]=' || true)" "0|0"
+check "both residue steps are ONE SSH session each and require the host's TRUE marker" "$(grep -c "grep -qx 'B25_STAGE2A_RESIDUE_ELIGIBLE=TRUE'" "$WF")|$(grep -c "grep -qx 'B25_STAGE2A_RESIDUE_SETTLED=TRUE'" "$WF")|$(grep -cE "if: inputs.mode == 'stage2a_residue_settle_1c512c90f2c8'$" "$WF")" "1|1|1"
+check "the branch guard requires the residue library (evaluators + manifest constant) before any SSH" "$(grep -c "grep -q '^stage2a_residue_eligibility()'" "$WF")|$(grep -c "stage 2a residue library incomplete" "$WF")" "1|1"
+check "the residue log is removed by the always-step" "$(grep -c '"$RUNNER_TEMP"/stage2a-residue.log' "$WF")" "1"
+check "no legacy migration, no fallback / mirror disable, no legacyDelete enable, no GCS retirement in the correction (library + residue block + workflow)" "$(printf '%s\n' "$S2AR_BLOCK" | grep -ciE 'migrate.storage|--dry-run|--copy|--verify|LEGACY_FALLBACK=false|OBJECT_STORAGE_MIRROR=$|OBJECT_STORAGE_MIRROR=\"\"|LEGACY_DELETE=true|gcs-driver|service-account' || true)|$(awk '/CORRECTION 1: EXACT RESIDUE/{on=1} on{print}' "$HERE/b25-stage1-apply-lib.sh" | grep -ciE 'migrate.storage|--copy|--verify|LEGACY_DELETE=true|stage2a_env_apply' || true)" "0|0"
+check "no product, mobile or schema file differs from the product commit (the branch is still product + the six ops files)" "$(git -C "$HERE/../.." diff --name-only e559b0024b28d4a77becdcb10c4168004dddea75 -- . ':(exclude).github' 2>/dev/null | wc -l | tr -d ' ')|$(git -C "$HERE/../.." diff --name-only e559b0024b28d4a77becdcb10c4168004dddea75 -- .github 2>/dev/null | wc -l | tr -d ' ')" "0|6"
 
 echo; echo "cleanup tests: $pass passed, $failn failed"
 [ "$failn" = "0" ]
