@@ -2675,7 +2675,7 @@ stage2a_tenant_start_gate() {
 # the shell variable B25_TENANT_SNAPSHOT (first stdin line of this session), never as an argument.
 stage2a_tenant_post_gate() {   # <disposable company csv or -1> <disposable user csv>
   local C="$1" U="$2" snap since facts verdict
-  [[ "${B25_TENANT_SNAPSHOT:-}" =~ ^[A-Za-z0-9+/=]{40,20000}$ ]] || fail "pre-smoke tenant snapshot missing or malformed on the stdin stream — fail closed (no post-smoke verdict without it)"
+  s2a_b64_line_ok "${B25_TENANT_SNAPSHOT:-}" || fail "pre-smoke tenant snapshot missing or malformed on the stdin stream — fail closed (no post-smoke verdict without it)"
   snap="$(printf '%s' "$B25_TENANT_SNAPSHOT" | base64 -d 2>/dev/null)" || fail "pre-smoke tenant snapshot does not decode"
   s2a_facts_ok "$snap" || fail "pre-smoke tenant snapshot has an unexpected shape"
   since="$(s2a_fv "$snap" snapshot_at)"; [[ "$since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?$ ]] || fail "pre-smoke snapshot instant malformed"
@@ -2742,7 +2742,7 @@ stage2a_tenant_incident_facts() {   # <window start> <window end> <disposable co
 }
 stage2a_tenant_incident_proof() {   # <pre-smoke snapshot b64 (reviewed constant)> <incident end> <disposable company csv> <disposable user csv>
   local SNAPB="$1" E="$2" C="$3" U="$4" snap since facts verdict
-  [[ "$SNAPB" =~ ^[A-Za-z0-9+/=]{40,20000}$ ]] || fail "incident snapshot malformed"
+  s2a_b64_line_ok "$SNAPB" || fail "incident snapshot malformed"
   snap="$(printf '%s' "$SNAPB" | base64 -d 2>/dev/null)" || fail "incident snapshot does not decode"
   s2a_facts_ok "$snap" || fail "incident snapshot has an unexpected shape"
   since="$(s2a_fv "$snap" snapshot_at)"; [[ "$since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?$ ]] || fail "incident snapshot instant malformed"

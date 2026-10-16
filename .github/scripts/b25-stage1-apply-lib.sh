@@ -855,7 +855,7 @@ s2ar3_constants_ok() {
     && [ "$S2AR3_UUID_DOC" != "$S2AR2_UUID_DOC" ] && [ "$S2AR3_UUID_LOGO" != "$S2AR2_UUID_LOGO" ] && [ "$S2AR3_UUID_DOC" != "$S2AR2_UUID_LOGO" ] && [ "$S2AR3_UUID_LOGO" != "$S2AR2_UUID_DOC" ] \
     && [[ ",$S2AR3_COMPANIES," != *",$S2AR_COMPANY,"* ]] && [[ ",$S2AR3_COMPANIES," != *",$S2AR2_COMPANY,"* ]] && [ "$S2AR3_TAG" != "$S2AR_TAG" ] && [ "$S2AR3_TAG" != "$S2AR2_TAG" ] && [ "$S2AR3_ROWS" = "2" ] \
     && [[ "$S2AR3_SNAPSHOT_AT" < "$S2AR3_INCIDENT_END" ]] && [[ "$S2AR3_CREATED_FROM" < "$S2AR3_CREATED_TO" ]] && [[ "$S2AR3_DELETED_FROM" < "$S2AR3_DELETED_TO" ]] \
-    && [[ "$S2AR3_TENANT_SNAPSHOT_B64" =~ ^[A-Za-z0-9+/=]{40,20000}$ ]] && snap="$(printf '%s' "$S2AR3_TENANT_SNAPSHOT_B64" | base64 -d 2>/dev/null)" \
+    && s2a_b64_line_ok "$S2AR3_TENANT_SNAPSHOT_B64" && snap="$(printf '%s' "$S2AR3_TENANT_SNAPSHOT_B64" | base64 -d 2>/dev/null)" \
     && s2a_facts_ok "$snap" && [ "$(s2a_fv "$snap" snapshot_at)" = "$S2AR3_SNAPSHOT_AT" ] && [ "$(printf '%s\n' "$snap" | grep -cE '^pre_id_[a-z0-9_]+=')" = "12" ]
 }
 stage2a_residue3_eligibility() { stage2a_residue_eligibility_for S2AR3 RESIDUE3; }
@@ -962,6 +962,11 @@ s2a_fv() {   # <facts text> <key> → value ('' when absent)
   printf '%s\n' "$1" | awk -F= -v k="$2" '$1==k{print substr($0, length(k)+2); exit}'
 }
 s2a_num() { [[ "$1" =~ ^[0-9]+$ ]] && echo "$1" || echo 0; }
+# One base64 line of 40..20000 characters. NEVER written as the bounded repetition `{40,20000}`: glibc compiles that
+# bound into a huge automaton (~26 s and > 200 MB for one 1664-character evaluation, measured) — the host session of
+# the read-only inspection run 38969325283 died silently exactly there (exit 255, the remote shell killed). The class
+# match is unbounded; the length is checked arithmetically.
+s2a_b64_line_ok() { [[ "$1" =~ ^[A-Za-z0-9+/=]+$ ]] && [ "${#1}" -ge 40 ] && [ "${#1}" -le 20000 ]; }
 # Per-table attribution capabilities (the schema facts the readers rely on): deleted_at column? updated_at column?
 # actor column? creation-instant column (document_versions records uploaded_at instead of created_at).
 s2a_tbl_spec() {   # <table> → "deleted updated actor created_column"
