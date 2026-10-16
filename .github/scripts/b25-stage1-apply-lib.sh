@@ -791,3 +791,153 @@ s2ar2_constants_ok() {
     && [ "$S2AR2_UUID_DOC" != "$S2AR_UUID_DOC" ] && [ "$S2AR2_UUID_LOGO" != "$S2AR_UUID_LOGO" ] && [ "$S2AR2_UUID_DOC" != "$S2AR_UUID_LOGO" ] && [ "$S2AR2_UUID_LOGO" != "$S2AR_UUID_DOC" ] \
     && [[ ",$S2AR2_COMPANIES," != *",$S2AR_COMPANY,"* ]] && [ "$S2AR2_TAG" != "$S2AR_TAG" ] && [ "$S2AR2_ROWS" = "2" ]
 }
+
+# =============================================================================
+# B25 Stage 2A — CORRECTION 3: the existing-tenant safety model of the disposable smoke.
+#
+# The former gate compared ONE md5 over the whole composition of the existing tenant (users, roles,
+# permissions, subscription fields and every mutable business count) with a constant accepted at the
+# Stage 1 inspection. Any ordinary use of the product by that tenant (one card scan creates a scan row
+# and a usage reservation) changed the digest and stopped every future smoke before it started — the
+# read-only drift localization of run 38946910989 proved exactly that (three scans, three reservations,
+# one login touch; nothing else). A frozen whole-tenant hash is therefore the wrong invariant: it cannot
+# tell a login from a permission grant, and it can never be true again once the tenant works.
+#
+# The corrected invariant is PRE-SMOKE SNAPSHOT → disposable smoke → POST-SMOKE COMPARISON, in tiers:
+#   IDENTITY tier (strict): company identity / security configuration, subscription plan / source /
+#     provider identity / overrides / trial, the user set, each user's role + permissions + activity +
+#     MFA + visibility, roles, user_roles, the managed logo. Identical before and after the smoke, or
+#     the smoke FAILS. Before the smoke the same tier must be UNMOVED since the last owner review
+#     (S2A_TENANT_REVIEW_UTC) — proven by row evidence (no user created / removed, every modified user
+#     row explained by its own login, no role / user_role movement, no identity / permission audit
+#     action) — or the gate FAILS and names the moved component for review. The one expected automated
+#     movement (the manual-trial lifecycle sweep: status → expired) is accepted ONLY with evidence:
+#     the sweep's own audit row (subscription.trial_expired, system actor) + an elapsed trial + the
+#     expired status; the subscription's plan / source / provider identity / overrides stay strict.
+#   BUSINESS tier (attributed): contacts, leads, events, tasks, tags, lead_tags, documents, versions,
+#     follow-ups, workflow definitions / runs, checkout intents, usage reservations, scans. Counts and
+#     the highest id are snapshotted; after the smoke a hard deletion (count decreased) FAILS; rows
+#     created / modified / soft-deleted during the smoke FAIL when attributed to a disposable identity
+#     (actor column or audit row), are reported as concurrent tenant activity when attributed to the
+#     tenant's own users (actor column and / or the tenant's own audit rows in the window) or to a
+#     deterministic automated product transition, and FAIL CLOSED when nothing attributes them.
+#   ISOLATION: no audit row of a disposable actor on the tenant, no tenant row referencing a
+#     disposable event / user, no disposable row referencing a tenant user, no tenant storage object
+#     created or deleted, the legacy originals' references unchanged.
+# Only counts, booleans, md5 digests, fixed status tokens and the tooling's own timestamps leave the
+# host; no customer value is ever printed. TENANT_BASELINE_MD5 is no longer a gate: it stays a
+# documented historical reference for the read-only drift report.
+# =============================================================================
+readonly S2A_TENANT_ID=1
+readonly S2A_TENANT_REVIEW_UTC="2026-10-16 15:17:33"   # run 38922592504, stage2a-smoke-setup: the last instant the whole accepted composition was proven equal; advanced only by owner review
+readonly S2A_IDENTITY_KEYS="id_company_md5 id_sub_core_md5 id_users_count id_users_active id_users_md5 id_roles_count id_roles_md5 id_user_roles_count id_user_roles_md5 id_brand_logo_set"
+readonly S2A_SWEEP_KEYS="id_company_status_md5 id_sub_status_md5"
+readonly S2A_BUSINESS_TABLES="contacts leads events tasks tags lead_tags documents document_versions follow_ups workflow_definitions workflow_runs billing_checkout_sessions subscription_usage_reservations scans"
+# Every fact line: a key and a count, a boolean, an md5, a fixed token, a tooling timestamp or '-' (not applicable).
+readonly S2A_FACT_LINE_RE='^[a-z0-9_]+=([0-9]+|true|false|[0-9a-f]{32}|-|[A-Za-z_][A-Za-z0-9_.-]{0,39}|[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?)?$'
+s2a_facts_ok() {   # <facts text> → 0 when every non-empty line has the sanitized shape (nothing else may leave the host)
+  local line; while IFS= read -r line; do [ -z "$line" ] && continue; [[ "$line" =~ $S2A_FACT_LINE_RE ]] || return 1; done <<<"$1"; return 0
+}
+s2a_fv() {   # <facts text> <key> → value ('' when absent)
+  printf '%s\n' "$1" | awk -F= -v k="$2" '$1==k{print substr($0, length(k)+2); exit}'
+}
+s2a_num() { [[ "$1" =~ ^[0-9]+$ ]] && echo "$1" || echo 0; }
+# Per-table attribution capabilities (the schema facts the readers rely on): deleted_at column? updated_at column?
+# actor column? creation-instant column (document_versions records uploaded_at instead of created_at).
+s2a_tbl_spec() {   # <table> → "deleted updated actor created_column"
+  case "$1" in
+    contacts|leads|events|documents) echo "yes yes created_by_id created_at" ;;
+    tags) echo "yes yes - created_at" ;;
+    tasks) echo "no yes - created_at" ;;
+    lead_tags) echo "no no - created_at" ;;
+    document_versions) echo "no no uploaded_by_id uploaded_at" ;;
+    follow_ups|workflow_definitions) echo "no yes created_by_id created_at" ;;
+    workflow_runs|billing_checkout_sessions) echo "no yes - created_at" ;;
+    subscription_usage_reservations) echo "no no - created_at" ;;
+    scans) echo "yes no user_id created_at" ;;
+    *) return 1 ;;
+  esac
+}
+
+# ---- stage2a_tenant_start_eval: the pre-smoke gate over the "since the review" evidence (facts on stdin) ----
+stage2a_tenant_start_eval() {
+  local F; F="$(cat)"; local failed=0 surfaced=0 r
+  s2a_facts_ok "$F" || { echo "start: facts have an unexpected shape (nothing printed)"; echo "B25_STAGE2A_TENANT_START_GATE=FAIL"; return 1; }
+  v() { s2a_fv "$F" "$1"; }
+  say() { echo "start: $*"; }
+  bad() { say "SURFACED FOR REVIEW: $*"; failed=$((failed+1)); surfaced=$((surfaced+1)); }
+  [ "$(v review_utc_ok)" = "true" ] || { say "review instant is not in the past or unreadable"; failed=$((failed+1)); }
+  # identity tier since the review
+  [ "$(s2a_num "$(v users_created_since)")" = "0" ] && [ "$(s2a_num "$(v users_soft_deleted_since)")" = "0" ] && say "user set unchanged since the review: OK" || bad "user set changed since the review (created=$(v users_created_since) removed=$(v users_soft_deleted_since))"
+  local um le; um="$(s2a_num "$(v users_modified_since)")"; le="$(s2a_num "$(v users_modified_login_explained)")"
+  [ "$um" -le "$le" ] && say "modified user rows since the review: $um, every one explained by its own login (last_login_at = updated_at): OK" || bad "$((um-le)) user row(s) modified since the review without a login explanation"
+  [ "$(s2a_num "$(v sec_audit_rows_since)")" = "0" ] && say "identity / permission audit actions since the review: 0: OK" || bad "$(v sec_audit_rows_since) identity / permission audit action(s) since the review (team / profile / roles / security / user.* other than login)"
+  [ "$(s2a_num "$(v roles_changed_since)")" = "0" ] && [ "$(s2a_num "$(v user_roles_created_since)")" = "0" ] && say "roles / user_roles unmoved since the review: OK" || bad "role movement since the review (roles changed=$(v roles_changed_since) user_roles created=$(v user_roles_created_since))"
+  # billing: strict unless the expected sweep is proven
+  local sweep_ok=false
+  if [ "$(s2a_num "$(v sweep_audit_rows_since)")" -ge 1 ] && [ "$(v sub_status)" = "expired" ] && [ "$(v sub_trial_elapsed)" = "true" ]; then sweep_ok=true; fi
+  if [ "$(v sub_modified_since)" = "true" ] || [ "$(v sub_status_changed_since)" = "true" ]; then
+    if [ "$sweep_ok" = true ]; then say "subscription moved since the review — EXPECTED SWEEP (evidence: subscription.trial_expired audit row by the system actor, elapsed trial, status expired): accepted"; else bad "subscription movement since the review without sweep evidence (modified=$(v sub_modified_since) status_changed=$(v sub_status_changed_since) sweep_audit=$(v sweep_audit_rows_since) status=$(v sub_status) trial_elapsed=$(v sub_trial_elapsed))"; fi
+  else say "subscription unmoved since the review: OK"; fi
+  if [ "$(v company_modified_since)" = "true" ]; then
+    if [ "$sweep_ok" = true ]; then say "company row moved since the review — the sweep's status mirror: accepted"; else bad "company row modified since the review without sweep evidence"; fi
+  else say "company row unmoved since the review: OK"; fi
+  [ "$(s2a_num "$(v tenant_storage_rows)")" = "0" ] && say "tenant storage objects: 0: OK" || { say "the existing tenant holds $(v tenant_storage_rows) storage object(s) — the Stage 2A inventory baseline is the exception row only"; failed=$((failed+1)); }
+  [ -n "$(v references)" ] && [ "$(v references)" = "$(v references_expected)" ] && say "legacy original references = $(v references_expected): OK" || { say "legacy original references $(v references) differ from the expected $(v references_expected)"; failed=$((failed+1)); }
+  # business tier: ordinary activity since the review is reported, never a reason to stop
+  local t spec c m d
+  for t in $S2A_BUSINESS_TABLES; do
+    c="$(v "bz_${t}_created_since")"; m="$(v "bz_${t}_modified_since")"; d="$(v "bz_${t}_soft_deleted_since")"
+    [ "$(s2a_num "$c")$(s2a_num "$m")$(s2a_num "$d")" = "000" ] || say "ordinary tenant activity since the review in $t (created=${c:--} modified=${m:--} soft_deleted=${d:--}): allowed"
+  done
+  echo "B25_STAGE2A_TENANT_START_SURFACED=$surfaced"
+  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_TENANT_START_GATE=PASS"; return 0; fi
+  echo "B25_STAGE2A_TENANT_START_GATE=FAIL"; return 1
+}
+
+# ---- stage2a_tenant_post_eval: the post-smoke comparison (pre_* snapshot facts + post_* facts + window attribution on stdin) ----
+stage2a_tenant_post_eval() {
+  local F; F="$(cat)"; local failed=0 concurrent=0 k t spec
+  s2a_facts_ok "$F" || { echo "post: facts have an unexpected shape (nothing printed)"; echo "B25_STAGE2A_TENANT_POST_GATE=FAIL"; return 1; }
+  v() { s2a_fv "$F" "$1"; }
+  say() { echo "post: $*"; }
+  bad() { say "FAIL: $*"; failed=$((failed+1)); }
+  [ -n "$(v snapshot_at)" ] || bad "no pre-smoke snapshot instant"
+  for k in $S2A_IDENTITY_KEYS; do
+    [ -n "$(v "pre_$k")" ] || { bad "snapshot lacks $k"; continue; }
+    [ "$(v "pre_$k")" = "$(v "post_$k")" ] && say "identity: $k unchanged" || bad "identity / security state changed during the smoke: $k"
+  done
+  local sweep_ok=false
+  if [ "$(s2a_num "$(v sweep_audit_rows_window)")" -ge 1 ] && [ "$(v sub_status_post)" = "expired" ] && [ "$(v sub_trial_elapsed)" = "true" ]; then sweep_ok=true; fi
+  for k in $S2A_SWEEP_KEYS; do
+    if [ "$(v "pre_$k")" = "$(v "post_$k")" ]; then say "identity: $k unchanged"
+    elif [ "$sweep_ok" = true ]; then say "identity: $k moved — EXPECTED SWEEP during the smoke (evidence: subscription.trial_expired audit row by the system actor, elapsed trial, status expired): accepted"
+    else bad "status movement during the smoke without sweep evidence: $k"; fi
+  done
+  local tenant_audit; tenant_audit="$(s2a_num "$(v tenant_audit_rows_window)")"
+  for t in $S2A_BUSINESS_TABLES; do
+    spec="$(s2a_tbl_spec "$t")" || { bad "unknown table $t"; continue; }
+    local _d _u has_actor _c pre post cw mw dw cbd cbt auto activity
+    read -r _d _u has_actor _c <<<"$spec"
+    pre="$(v "pre_${t}_count")"; post="$(v "post_${t}_count")"
+    [[ "$pre" =~ ^[0-9]+$ ]] && [[ "$post" =~ ^[0-9]+$ ]] || { bad "$t: counts unreadable"; continue; }
+    [ "$post" -ge "$pre" ] || { bad "$t: $((pre-post)) tenant row(s) hard-deleted during the smoke (count $pre → $post)"; continue; }
+    cw="$(s2a_num "$(v "${t}_created_window")")"; mw="$(s2a_num "$(v "${t}_modified_window")")"; dw="$(s2a_num "$(v "${t}_soft_deleted_window")")"
+    cbd="$(s2a_num "$(v "${t}_created_by_disposable")")"; cbt="$(s2a_num "$(v "${t}_created_by_tenant")")"; auto="$(s2a_num "$(v "${t}_automated_explained")")"
+    activity=$((cw+mw+dw))
+    if [ "$cbd" -gt 0 ]; then bad "$t: $cbd row(s) created by a disposable smoke identity — the smoke mutated the existing tenant"; continue; fi
+    if [ "$activity" = "0" ]; then say "$t: no movement during the smoke"; continue; fi
+    if [ "$has_actor" != "-" ] && [ "$cw" -gt 0 ] && [ "$cbt" -ne "$cw" ]; then bad "$t: $((cw-cbt)) row(s) created during the smoke by nobody attributable (not a tenant user)"; continue; fi
+    if [ "$tenant_audit" -ge 1 ] || { [ "$cw" = "0" ] && [ "$dw" = "0" ] && [ "$auto" -ge "$mw" ]; } || { [ "$has_actor" != "-" ] && [ "$cw" -gt 0 ] && [ "$cbt" = "$cw" ] && [ "$mw" = "0" ] && [ "$dw" = "0" ]; }; then
+      say "$t: concurrent tenant activity during the smoke (created=$cw modified=$mw soft_deleted=$dw; attributed: tenant users / tenant audit rows=$tenant_audit / automated=$auto) — not smoke-caused: allowed"; concurrent=$((concurrent+1))
+    else bad "$t: movement during the smoke that nothing attributes (created=$cw modified=$mw soft_deleted=$dw tenant_audit=$tenant_audit automated=$auto) — fail closed"; fi
+  done
+  [ "$(s2a_num "$(v disposable_audit_on_tenant)")" = "0" ] && say "isolation: no audit action of a disposable identity on the tenant" || bad "isolation: $(v disposable_audit_on_tenant) audit action(s) of a disposable identity on the existing tenant"
+  [ "$(s2a_num "$(v tenant_rows_ref_disposables)")" = "0" ] && say "isolation: no tenant row references a disposable event / user" || bad "isolation: $(v tenant_rows_ref_disposables) tenant row(s) reference a disposable event / user (cross-tenant association)"
+  [ "$(s2a_num "$(v disposable_rows_ref_tenant)")" = "0" ] && say "isolation: no disposable row references a tenant user" || bad "isolation: $(v disposable_rows_ref_tenant) disposable row(s) reference a tenant user (cross-tenant association)"
+  [ "$(s2a_num "$(v tenant_storage_rows_post)")" = "0" ] && [ "$(s2a_num "$(v tenant_storage_created_window)")" = "0" ] && [ "$(s2a_num "$(v tenant_storage_deleted_window)")" = "0" ] && say "isolation: no tenant storage object created / deleted / present" || bad "isolation: tenant storage objects moved (present=$(v tenant_storage_rows_post) created=$(v tenant_storage_created_window) deleted=$(v tenant_storage_deleted_window))"
+  [ -n "$(v references_post)" ] && [ "$(v references_post)" = "$(v references_expected)" ] && say "legacy original references = $(v references_expected): OK" || bad "legacy original references $(v references_post) differ from the expected $(v references_expected)"
+  echo "B25_STAGE2A_TENANT_CONCURRENT_TABLES=$concurrent"
+  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_TENANT_POST_GATE=PASS"; return 0; fi
+  echo "B25_STAGE2A_TENANT_POST_GATE=FAIL"; return 1
+}

@@ -1025,7 +1025,7 @@ echo "== Correction 2 — served-logo rules (pure functions of the smoke, behavi
 # Content-Length absent → accepted; present + exact → accepted; present + malformed / smaller / larger → rejected;
 # the stored-logo expectation comes ONLY from the authenticated body; the public body must be byte-identical.
 RULES_DIR="$(mktemp -d)"
-cleanup_all() { rm -rf "$RULES_DIR"; if declare -f cleanup_s2ar >/dev/null; then cleanup_s2ar; fi; cleanup; }   # the modeled-settlement cleanup is added once it exists
+cleanup_all() { rm -rf "$RULES_DIR"; if declare -f cleanup_s2ar >/dev/null; then cleanup_s2ar; fi; if declare -f cleanup_c3 >/dev/null; then cleanup_c3; fi; cleanup; }   # the modeled-settlement cleanup is added once it exists
 trap cleanup_all EXIT
 { echo 'const { createHash } = require("node:crypto");'; echo 'const sha256 = (b) => createHash("sha256").update(b).digest("hex");'
   awk '/^function contentLengthRule\(/{on=1} on{print} on&&/^}$/{exit}' "$SMOKE"; awk '/^function servedLogoRule\(/{on=1} on{print} on&&/^}$/{exit}' "$SMOKE"
@@ -1554,7 +1554,7 @@ check "the Correction 2 eligibility phase reports an already-purged residue expl
 check "the shared probe / host readers exist exactly once (reused by both corrections, not duplicated)" "$(grep -cE '^stage2a_residue_(fs|provider|host)_facts\(\) \{' "$APPLY")" "3"
 check "the generic evaluators are the single implementation behind both manifests (four thin wrappers)" "$(grep -cE '^stage2a_residue2?_(eligibility|settled)\(\) \{ stage2a_residue_(eligibility|settled)_for S2AR2? RESIDUE2?; \}$' "$HERE/b25-stage1-apply-lib.sh")|$(grep -cE '^stage2a_residue_(eligibility|settled)_for\(\) \{' "$HERE/b25-stage1-apply-lib.sh")" "4|2"
 echo "== Stage 2A — tenant baseline drift localization (read-only; prepared after smoke run 38934705535 stopped in guards_stage2a_switched)"
-check "the smoke guard compares the existing-tenant digest BEFORE the disposable owner insert (the failed run wrote nothing)" "$(body guards_stage2a_switched | grep -c 'fail "tenant baseline changed"')|$(body phase_stage2a_smoke_setup | grep -n 'guards_stage2a_switched\|insert into users' | awk -F: '{print $1}' | tr '\n' ' ')" "1|2 10 "
+check "the smoke setup still proves the switched state first, then the Correction 3 start gate, and only then inserts the disposable owner (the frozen digest is gone from the switched guard)" "$(body guards_stage2a_switched | grep -c 'fail "tenant baseline changed"' || true)|$(body phase_stage2a_smoke_setup | grep -n 'guards_stage2a_switched\|stage2a_tenant_start_gate$\|insert into users' | awk -F: '{print $1}' | tr '\n' ' ')" "0|2 8 11 "
 check "the drift phase exists exactly once and is dispatched by PHASE=stage2a-tenant-drift" "$(grep -c '^phase_stage2a_tenant_drift() {$' "$APPLY")|$(grep -c '^  stage2a-tenant-drift) phase_stage2a_tenant_drift ;;$' "$APPLY")" "1|1"
 check "the window constants are the tooling's own step instants (last matching guard of run 38922592504 < first differing guard of run 38934705535)" "$(grep -oE '^S2A_TENANT_LAST_MATCH="[^"]+"' "$APPLY")|$(grep -oE '^S2A_TENANT_FIRST_DIFFERS="[^"]+"' "$APPLY")" 'S2A_TENANT_LAST_MATCH="2026-10-16 15:17:33"|S2A_TENANT_FIRST_DIFFERS="2026-10-16 16:48:22"'
 check "the window is ordered (last match precedes first differs)" "$([ "$(date -u -d "$(grep -oE '^S2A_TENANT_LAST_MATCH="[^"]+"' "$APPLY" | cut -d'"' -f2)Z" +%s)" -lt "$(date -u -d "$(grep -oE '^S2A_TENANT_FIRST_DIFFERS="[^"]+"' "$APPLY" | cut -d'"' -f2)Z" +%s)" ] && echo ordered)" "ordered"
@@ -1585,6 +1585,273 @@ check "modeled: the kept-row counts and the user_roles / audit readers return sh
 check "modeled: a reader whose result is not a counts line fails closed and prints nothing of the value" "$(s2a_counts_line probe "select 'secret value'" 2>&1 | grep -c 'unexpected shape (not printed)')|$(s2a_counts_line probe "select 'secret value'" 2>&1 | grep -c 'secret' || true)" "1|0"
 check "modeled: the subscription / company booleans and the sweep reader are valid read-only SQL" "$(q "select (updated_at >= '$S2A_TENANT_LAST_MATCH') from companies where id = 1" | grep -cE '^(t|f)?$')|$(q "select (status_changed_at >= '$S2A_TENANT_LAST_MATCH') from subscriptions where company_id = 1" >/dev/null && echo ok)|$(q "select t||' '||s||' n='||n from (select coalesce((payload::json)->>'task', '?') as t, status as s, count(*) as n from job_queue where name = 'recurring.sweep' and enqueued_at >= '$S2A_TENANT_LAST_MATCH' group by 1, 2) x order by 1" >/dev/null && echo ok)|$(s2a_bool t)|$(s2a_bool f)|$(s2a_bool "")" "1|ok|ok|true|false|unknown"
 unset -f fail
+echo "== Stage 2A — CORRECTION 3: existing-tenant safety model (pre-smoke snapshot → post-smoke comparison; attributed business movement; strict identity)"
+LIB="$HERE/b25-stage1-apply-lib.sh"
+check "constants: the protected tenant is company 1; the review instant is the last instant the whole accepted composition was proven equal (same as the drift report's last-match instant)" "$S2A_TENANT_ID|$S2A_TENANT_REVIEW_UTC|$(grep -oE '^S2A_TENANT_LAST_MATCH="[^"]+"' "$APPLY" | cut -d'"' -f2)" "1|2026-10-16 15:17:33|2026-10-16 15:17:33"
+check "tiers: 10 strict identity keys, 2 sweep-movable status keys, 14 business tables each with an attribution spec" "$(echo $S2A_IDENTITY_KEYS | wc -w)|$(echo $S2A_SWEEP_KEYS | wc -w)|$(echo $S2A_BUSINESS_TABLES | wc -w)|$(n=0; for t in $S2A_BUSINESS_TABLES; do s2a_tbl_spec "$t" >/dev/null && n=$((n+1)); done; echo $n)|$(s2a_tbl_spec nonsense >/dev/null 2>&1 && echo bad || echo refused)" "10|2|14|14|refused"
+check "the business tier covers every mutable table the old digest protected (contacts leads events tasks tags lead_tags documents workflow definitions/runs checkout intents usage reservations) plus scans, versions and follow-ups" "$(for t in contacts leads events tasks tags lead_tags documents workflow_definitions workflow_runs billing_checkout_sessions subscription_usage_reservations scans document_versions follow_ups; do echo " $S2A_BUSINESS_TABLES " | grep -q " $t " && printf y || printf n; done)" "yyyyyyyyyyyyyy"
+check "the frozen whole-tenant digest and the fixed scan count are no longer Stage 2A gates (switched guard / smoke setup / cleanup bodies)" "$(for f in guards_stage2a_switched phase_stage2a_smoke_setup phase_stage2a_cleanup; do body "$f" | grep -cE 'TENANT_BASELINE_MD5|tenant_md5\)|company_id=1\")" = "4"' || true; done | tr '\n' ' ')" "0 0 0 "
+check "the legacy originals' references invariant is kept in the switched guard" "$(body guards_stage2a_switched | grep -c 'references)" = "\$REFERENCES" ] || fail')" "1"
+check "the start gate runs in the setup BEFORE the disposable owner insert" "$(a=$(body phase_stage2a_smoke_setup | grep -n '^  stage2a_tenant_start_gate$' | cut -d: -f1); b=$(body phase_stage2a_smoke_setup | grep -n 'insert into users' | cut -d: -f1); [ -n "$a" ] && [ -n "$b" ] && [ "$a" -lt "$b" ] && echo ordered)" "ordered"
+check "the post gate runs in the cleanup after the existing-rows equality proof and before the final inventory / census checks" "$(a=$(body phase_stage2a_cleanup | grep -n 'after" = "\$before"' | cut -d: -f1); b=$(body phase_stage2a_cleanup | grep -n '^  stage2a_tenant_post_gate "\$C" "\$U"$' | cut -d: -f1); c=$(body phase_stage2a_cleanup | grep -n 'final inventory / census / volume' | cut -d: -f1); [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && echo ordered)" "ordered"
+check "the snapshot leaves the host as ONE base64 line and returns as the shell variable B25_TENANT_SNAPSHOT (never an argument; fail closed without it)" "$(body stage2a_tenant_start_gate | grep -c 'echo "B25_TENANT_SNAPSHOT=\$(printf')|$(body stage2a_tenant_post_gate | grep -c 'B25_TENANT_SNAPSHOT:-}" =~ \^\[A-Za-z0-9+/=\]{40,20000}\$')|$(body stage2a_tenant_post_gate | grep -c 'fail closed (no post-smoke verdict without it)')|$(body stage2a_tenant_post_gate | grep -cE '\$ARG[123]' || true)" "1|1|1|0"
+check "every reader shape-checks its facts before anything is printed (counts, booleans, md5, fixed tokens, the tooling's own clock only)" "$(for fn in stage2a_tenant_start_gate stage2a_tenant_post_gate; do body "$fn" | grep -c 's2a_facts_ok'; done | tr '\n' ' ')|$(printf 'a_b=12\nc=true\nd=false\ne=0123456789abcdef0123456789abcdef\nf=-\ng=expired\nh=2026-10-16 15:17:33.123456\n' | { s2a_facts_ok "$(cat)" && echo ok; })|$(printf 'sub_status=John Doe\n' | { s2a_facts_ok "$(cat)" && echo accepted || echo refused; })|$(printf 'k=someone@example.com\n' | { s2a_facts_ok "$(cat)" && echo accepted || echo refused; })|$(printf 'k=/data/objects\n' | { s2a_facts_ok "$(cat)" && echo accepted || echo refused; })" "2 2 |ok|refused|refused|refused"
+check "the identity digests never expose a value: emails and password hashes enter only through md5(), names through md5(), permissions only inside a digest" "$(body stage2a_tenant_identity_facts | grep -c 'md5(email)')|$(body stage2a_tenant_identity_facts | grep -c 'md5(password_hash)')|$(body stage2a_tenant_identity_facts | grep -c 'md5(name)')|$(body stage2a_tenant_identity_facts | grep -c '^  echo "id_')|$(body stage2a_tenant_identity_facts | grep -E '^  echo "id_' | grep -cvE 'select (md5\(|count\(|\(brand_logo_key is not null\))' || true)" "1|1|1|12|0"
+check "the drift report reads the recurring sweep task from the plaintext dedupe key (queue payloads are encrypted at rest on the host)" "$(body phase_stage2a_tenant_drift | grep -c "split_part(dedupe_key, ':', 2)")|$(body phase_stage2a_tenant_drift | grep -c 'payload::json' || true)" "1|0"
+for ph in stage2a-smoke-setup stage2a-cleanup; do
+  check "workflow SSH step for $ph still exists exactly once" "$(grep -cE "PHASE='$ph' " "$WF")" "1"
+done
+check "workflow: the setup step requires B25_STAGE2A_TENANT_START_GATE=PASS, captures the snapshot line into a runner file and exports its path" "$(grep -c "grep -qx 'B25_STAGE2A_TENANT_START_GATE=PASS' \"\$RUNNER_TEMP/smoke-setup.log\"" "$WF")|$(grep -c "grep -oE '\^B25_TENANT_SNAPSHOT=\[A-Za-z0-9+/=\]+' \"\$RUNNER_TEMP/smoke-setup.log\"" "$WF")|$(grep -c 'printf .%s. "\$SNAP" > "\$RUNNER_TEMP/stage2a-tenant-snapshot.b64"' "$WF")|$(grep -c 'echo "S2A_TENANT_SNAPSHOT_FILE=\$RUNNER_TEMP/stage2a-tenant-snapshot.b64"' "$WF")" "1|1|1|1"
+check "workflow: the cleanup step returns the snapshot as the FIRST stdin line (shell variable, never an argument) and fails closed without the runner file" "$(grep -c "{ printf 'B25_TENANT_SNAPSHOT=%s\\\\n' \"\$SNAP\"; cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh; } | ssh vps \"DEPLOY_PATH='\$VPS_DEPLOY_PATH' PHASE='stage2a-cleanup' ARG1='\$C' ARG2='\$U' ARG3='\$SMOKE_TAG' bash -s\"" "$WF")|$(grep -c 'echo "::error::pre-smoke tenant snapshot missing on the runner"' "$WF")|$(grep -E "PHASE='stage2a-cleanup' " "$WF" | grep -c 'SNAPSHOT' )" "1|1|1"
+check "workflow: the snapshot file is removed by the cleanup and by the always-step; the branch guard requires the five Correction 3 functions and refuses a frozen digest inside the Stage 2A gates" "$(grep -c '"\$RUNNER_TEMP"/stage2a-tenant-snapshot.b64' "$WF")|$(grep -c '"\$RUNNER_TEMP/stage2a-tenant-snapshot.b64"' "$WF")|$(grep -c "grep -q '^stage2a_tenant_start_eval()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_tenant_post_eval()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^readonly S2A_TENANT_REVIEW_UTC=' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_tenant_start_gate()' .github/scripts/b25-stage1-apply.sh && grep -q '^stage2a_tenant_post_gate()' .github/scripts/b25-stage1-apply.sh" "$WF")|$(grep -c 'the frozen whole-tenant digest is still a Stage 2A gate' "$WF")" "1|2|1|1"
+for fn in stage2a_tenant_identity_facts stage2a_tenant_business_facts stage2a_tenant_window_facts stage2a_tenant_since_facts stage2a_tenant_start_gate stage2a_tenant_post_gate; do
+  B="$(body "$fn")"
+  check "$fn: body present, read-only (no qw, no mutation command), never ARG-driven" "$(printf '%s\n' "$B" | grep -c "^$fn")|$(printf '%s\n' "$B" | grep -cE '(^|[^a-z_])qw ' || true)|$(printf '%s\n' "$B" | grep -ciE '"(delete|update|insert|truncate|drop|alter) |compose (up|down|rm|restart|stop|kill)|docker (rm|stop|kill|restart|volume rm)|rm -r|purge_rows_sql|\.delete\(|stage2a_env_apply|stage2a_recreate_api' || true)|$(printf '%s\n' "$B" | grep -cE '\$ARG[123]|\$\{ARG[123]' || true)" "1|0|0|0"
+done
+
+# ---- evaluator unit tests (pure; canned facts) ----
+c3_mut() { local F="$1" m k v; shift; for m in "$@"; do k="${m%%=*}"; v="${m#*=}"; if printf '%s\n' "$F" | grep -q "^$k="; then F="$(printf '%s\n' "$F" | sed "s|^$k=.*|$k=$v|")"; else F="$F"$'\n'"$k=$v"; fi; done; printf '%s\n' "$F"; }
+c3_del() { local F="$1" k; shift; for k in "$@"; do F="$(printf '%s\n' "$F" | grep -v "^$k=")"; done; printf '%s\n' "$F"; }
+START_GOLDEN="$(cat <<'G'
+review_utc_ok=true
+users_created_since=0
+users_soft_deleted_since=0
+users_modified_since=0
+users_modified_login_explained=0
+sec_audit_rows_since=0
+roles_changed_since=0
+user_roles_created_since=0
+company_modified_since=false
+sub_modified_since=false
+sub_status_changed_since=false
+sub_status=trialing
+sweep_audit_rows_since=0
+sub_trial_elapsed=false
+tenant_storage_rows=0
+references=4
+references_expected=4
+G
+)"
+sv() { printf '%s\n' "$1" | stage2a_tenant_start_eval || true; }   # a FAIL verdict is data here, never an abort
+check "start gate: golden evidence → PASS, nothing surfaced" "$(sv "$START_GOLDEN" | grep -E '^B25_STAGE2A_TENANT_START_' | tr '\n' ' ')" "B25_STAGE2A_TENANT_START_SURFACED=0 B25_STAGE2A_TENANT_START_GATE=PASS "
+while IFS='|' read -r label mut want; do
+  V="$(sv "$(c3_mut "$START_GOLDEN" $mut)")"
+  check "start gate: $label" "$(printf '%s\n' "$V" | grep -oE '^B25_STAGE2A_TENANT_START_GATE=(PASS|FAIL)' | cut -d= -f2)|$(printf '%s\n' "$V" | grep -cE 'SURFACED FOR REVIEW' || true)" "$want"
+done <<'T'
+ordinary contact creation between the historical review and today does NOT invalidate the gate|bz_contacts_created_since=25|PASS|0
+ordinary event / task / lead activity before the smoke does NOT invalidate the starting gate|bz_events_created_since=2 bz_tasks_modified_since=3 bz_leads_created_since=1 bz_leads_modified_since=4|PASS|0
+the exact evidence of run 38946910989 (three scans, three reservations, one login-explained user touch) → PASS|bz_scans_created_since=3 bz_subscription_usage_reservations_created_since=3 users_modified_since=1 users_modified_login_explained=1|PASS|0
+a user created since the review is surfaced|users_created_since=1|FAIL|1
+a user removed since the review is surfaced|users_soft_deleted_since=1|FAIL|1
+a user row modified without a login explanation is surfaced|users_modified_since=1 users_modified_login_explained=0|FAIL|1
+two modified rows with one login explanation are surfaced|users_modified_since=2 users_modified_login_explained=1|FAIL|1
+a role change is surfaced|roles_changed_since=1|FAIL|1
+a role assignment is surfaced|user_roles_created_since=1|FAIL|1
+an identity / permission audit action is surfaced (permission digest change)|sec_audit_rows_since=1|FAIL|1
+subscription modified without sweep evidence is surfaced|sub_modified_since=true|FAIL|1
+subscription status moved without sweep evidence is surfaced|sub_status_changed_since=true|FAIL|1
+the expected manual-trial sweep is accepted ONLY with evidence (audit row by the system actor + elapsed trial + expired status)|sub_modified_since=true sub_status_changed_since=true sub_status=expired sweep_audit_rows_since=1 sub_trial_elapsed=true|PASS|0
+sweep claimed but the trial has not elapsed → surfaced|sub_modified_since=true sub_status_changed_since=true sub_status=expired sweep_audit_rows_since=1 sub_trial_elapsed=false|FAIL|1
+sweep claimed without its audit row → surfaced|sub_modified_since=true sub_status_changed_since=true sub_status=expired sweep_audit_rows_since=0 sub_trial_elapsed=true|FAIL|1
+sweep claimed but the status is not expired → surfaced|sub_modified_since=true sub_status_changed_since=true sub_status=active sweep_audit_rows_since=1 sub_trial_elapsed=true|FAIL|1
+company row modified without sweep evidence is surfaced|company_modified_since=true|FAIL|1
+company status mirror of a proven sweep is accepted|company_modified_since=true sub_status_changed_since=true sub_status=expired sweep_audit_rows_since=1 sub_trial_elapsed=true|PASS|0
+a storage object of the existing tenant fails the gate|tenant_storage_rows=1|FAIL|0
+a changed legacy originals' reference count fails the gate|references=5|FAIL|0
+a review instant that is not in the past fails the gate|review_utc_ok=false|FAIL|0
+T
+check "start gate: a surfaced component is named (user set / role / permission / subscription) so the reviewer knows what moved" "$(sv "$(c3_mut "$START_GOLDEN" users_created_since=1 roles_changed_since=1 sec_audit_rows_since=2 sub_modified_since=true)" | grep -E 'SURFACED FOR REVIEW' | grep -oE 'user set changed|role movement|identity / permission audit|subscription movement' | sort -u | tr '\n' ' ')" "identity / permission audit role movement subscription movement user set changed "
+check "start gate: evidence with a customer-looking value is refused before anything is evaluated" "$(sv "$(c3_mut "$START_GOLDEN" "sub_status=John")" | grep -c PASS || true)|$(sv "$(c3_mut "$START_GOLDEN" "sub_status=John Doe")" | grep -c 'unexpected shape')" "1|1"
+
+POST_GOLDEN="$(cat <<'G'
+snapshot_at=2026-10-16 17:00:00.000000
+pre_id_company_md5=11111111111111111111111111111111
+post_id_company_md5=11111111111111111111111111111111
+pre_id_company_status_md5=22222222222222222222222222222222
+post_id_company_status_md5=22222222222222222222222222222222
+pre_id_sub_core_md5=33333333333333333333333333333333
+post_id_sub_core_md5=33333333333333333333333333333333
+pre_id_sub_status_md5=44444444444444444444444444444444
+post_id_sub_status_md5=44444444444444444444444444444444
+pre_id_users_count=1
+post_id_users_count=1
+pre_id_users_active=1
+post_id_users_active=1
+pre_id_users_md5=55555555555555555555555555555555
+post_id_users_md5=55555555555555555555555555555555
+pre_id_roles_count=0
+post_id_roles_count=0
+pre_id_roles_md5=66666666666666666666666666666666
+post_id_roles_md5=66666666666666666666666666666666
+pre_id_user_roles_count=0
+post_id_user_roles_count=0
+pre_id_user_roles_md5=77777777777777777777777777777777
+post_id_user_roles_md5=77777777777777777777777777777777
+pre_id_brand_logo_set=false
+post_id_brand_logo_set=false
+tenant_audit_rows_window=0
+disposable_audit_on_tenant=0
+tenant_rows_ref_disposables=0
+disposable_rows_ref_tenant=0
+tenant_storage_rows_post=0
+tenant_storage_created_window=0
+tenant_storage_deleted_window=0
+sweep_audit_rows_window=0
+sub_status_post=trialing
+sub_trial_elapsed=false
+references_post=4
+references_expected=4
+G
+)"
+for t in $S2A_BUSINESS_TABLES; do
+  POST_GOLDEN="$POST_GOLDEN"$'\n'"pre_${t}_count=5"$'\n'"post_${t}_count=5"$'\n'"${t}_created_window=0"$'\n'"${t}_modified_window=0"$'\n'"${t}_soft_deleted_window=0"$'\n'"${t}_created_by_disposable=0"$'\n'"${t}_created_by_tenant=0"$'\n'"${t}_automated_explained=0"
+done
+pv() { printf '%s\n' "$1" | stage2a_tenant_post_eval || true; }
+check "post gate: golden facts (nothing moved) → PASS, 0 concurrent tables" "$(pv "$POST_GOLDEN" | grep -E '^B25_STAGE2A_TENANT_' | tr '\n' ' ')" "B25_STAGE2A_TENANT_CONCURRENT_TABLES=0 B25_STAGE2A_TENANT_POST_GATE=PASS "
+while IFS='|' read -r label mut want; do
+  V="$(pv "$(c3_mut "$POST_GOLDEN" $mut)")"
+  check "post gate: $label" "$(printf '%s\n' "$V" | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=(PASS|FAIL)' | cut -d= -f2)|$(printf '%s\n' "$V" | grep -oE '^B25_STAGE2A_TENANT_CONCURRENT_TABLES=[0-9]+' | cut -d= -f2)|$(printf '%s\n' "$V" | grep -cE '^post: FAIL' || true)" "$want"
+done <<'T'
+concurrent tenant activity DURING the smoke, attributed by actor and audit (contacts created by tenant users) → allowed, reported|contacts_created_window=2 contacts_created_by_tenant=2 post_contacts_count=7 tenant_audit_rows_window=2|PASS|1|0
+a scan + its reservation during the smoke by a tenant user (actor-less reservation attributed by the tenant's audit rows) → allowed|scans_created_window=1 scans_created_by_tenant=1 post_scans_count=6 subscription_usage_reservations_created_window=1 post_subscription_usage_reservations_count=6 tenant_audit_rows_window=1|PASS|2|0
+the smoke itself created a tenant row (actor = disposable identity) → detected|contacts_created_window=1 contacts_created_by_disposable=1 post_contacts_count=6|FAIL|0|1
+a disposable identity acted on the existing tenant (audit) → detected|disposable_audit_on_tenant=1|FAIL|0|1
+a tenant row hard-deleted during the smoke → detected|post_contacts_count=4|FAIL|0|1
+the existing tenant deleted during the smoke (identity gone, every count down) → detected|post_id_users_count=0 post_id_users_active=0 post_contacts_count=0 post_leads_count=0 post_events_count=0 post_scans_count=0|FAIL|0|6
+a tenant row referencing a disposable event / user (cross-tenant association) → detected|tenant_rows_ref_disposables=1|FAIL|0|1
+a disposable row referencing a tenant user → detected|disposable_rows_ref_tenant=1|FAIL|0|1
+an unexplained during-smoke modification (no actor, no tenant audit, not automated) fails closed|contacts_modified_window=1|FAIL|0|1
+an unexplained during-smoke creation in an actor-less table fails closed|tags_created_window=1 post_tags_count=6|FAIL|0|1
+a creation in an actor table by nobody attributable fails closed|contacts_created_window=1 contacts_created_by_tenant=0 post_contacts_count=6 tenant_audit_rows_window=1|FAIL|0|1
+an automated product transition (workflow runs finished) is explained|workflow_runs_modified_window=2 workflow_runs_automated_explained=2|PASS|1|0
+a partially explained automated transition fails closed|workflow_runs_modified_window=2 workflow_runs_automated_explained=1|FAIL|0|1
+permission digest changed during the smoke → detected|post_id_users_md5=99999999999999999999999999999999|FAIL|0|1
+user count changed during the smoke → detected|post_id_users_count=2|FAIL|0|1
+role digest changed during the smoke → detected|post_id_roles_md5=99999999999999999999999999999999|FAIL|0|1
+role assignment changed during the smoke → detected|post_id_user_roles_count=1|FAIL|0|1
+subscription plan / source / provider identity / overrides changed during the smoke → detected|post_id_sub_core_md5=99999999999999999999999999999999|FAIL|0|1
+company identity (name / plan / mfa / logo key) changed during the smoke → detected|post_id_company_md5=99999999999999999999999999999999|FAIL|0|1
+the managed logo touched during the smoke → detected|post_id_brand_logo_set=true|FAIL|0|1
+subscription status moved during the smoke without sweep evidence → detected|post_id_sub_status_md5=99999999999999999999999999999999|FAIL|0|1
+the expected sweep during the smoke is accepted with evidence (status + mirror)|post_id_sub_status_md5=99999999999999999999999999999999 post_id_company_status_md5=99999999999999999999999999999999 sweep_audit_rows_window=1 sub_status_post=expired sub_trial_elapsed=true|PASS|0|0
+a tenant storage object created during the smoke → detected|tenant_storage_created_window=1|FAIL|0|1
+a tenant storage object present after the smoke → detected|tenant_storage_rows_post=1|FAIL|0|1
+a legacy originals' reference lost → detected|references_post=3|FAIL|0|1
+T
+check "post gate: a snapshot lacking an identity key fails closed" "$(pv "$(c3_del "$POST_GOLDEN" pre_id_users_md5)" | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=(PASS|FAIL)' | cut -d= -f2)|$(pv "$(c3_del "$POST_GOLDEN" snapshot_at)" | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=(PASS|FAIL)' | cut -d= -f2)" "FAIL|FAIL"
+check "post gate: concurrent activity is distinguishable from smoke-caused activity in the same run (one table attributed to tenant users, another to the disposable owner → FAIL names the smoke-caused one)" "$(pv "$(c3_mut "$POST_GOLDEN" contacts_created_window=1 contacts_created_by_tenant=1 post_contacts_count=6 tenant_audit_rows_window=1 leads_created_window=1 leads_created_by_disposable=1 post_leads_count=6)" | grep -E '^post: (FAIL|contacts)' | sed -E 's/ *\(.*//' | tr '\n' ' ')" "post: contacts: concurrent tenant activity during the smoke post: FAIL: leads: 1 row "
+check "post gate: no verdict line ever carries a customer-looking value (digests and counts only in the golden run)" "$(pv "$POST_GOLDEN" | grep -cE '@|/data|gs://|[A-Z][a-z]+ [A-Z][a-z]+' || true)" "0"
+
+# ---- database-modeled tests: the readers against the local read-only database (company 1 = the local fixture tenant) ----
+C3_C=900003; C3_TAG="c3$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')"; C3_UIDS=""; C3_CIDS=""; C3_EIDS=""; C3_AIDS=""; C3_SUB_BEFORE=""
+cleanup_c3() {
+  [ -n "$C3_AIDS" ] && qw "delete from audit_logs where id in ($C3_AIDS)" >/dev/null 2>&1 || true
+  [ -n "$C3_CIDS" ] && qw "delete from contacts where id in ($C3_CIDS)" >/dev/null 2>&1 || true
+  [ -n "$C3_EIDS" ] && qw "delete from events where id in ($C3_EIDS)" >/dev/null 2>&1 || true
+  qw "delete from contacts where company_id = $C3_C" >/dev/null 2>&1 || true
+  qw "delete from events where company_id = $C3_C" >/dev/null 2>&1 || true
+  [ -n "$C3_UIDS" ] && qw "delete from users where id in ($C3_UIDS)" >/dev/null 2>&1 || true
+  qw "delete from users where company_id = $C3_C" >/dev/null 2>&1 || true
+  qw "delete from subscriptions where company_id = $C3_C" >/dev/null 2>&1 || true
+  qw "delete from companies where id = $C3_C" >/dev/null 2>&1 || true
+  [ -n "$C3_SUB_BEFORE" ] && qw "update subscriptions set status = split_part('$C3_SUB_BEFORE','|',1), status_changed_at = split_part('$C3_SUB_BEFORE','|',2)::timestamp, trial_expires_at = nullif(split_part('$C3_SUB_BEFORE','|',3),'')::timestamp, ended_at = null where company_id = 1" >/dev/null 2>&1 || true
+}
+if [ "$(q "select count(*) from companies where id = 1")" = "1" ] && [ "$(q "select count(*) from companies where id = $C3_C")" = "0" ] && [ "$(q "select count(*) from users where company_id = 1 and deleted_at is null")" -ge 1 ]; then
+  eval "$(body stage2a_tenant_identity_facts)"; eval "$(body stage2a_tenant_business_facts)"; eval "$(body stage2a_tenant_window_facts)"; eval "$(body stage2a_tenant_since_facts)"
+  s2a_tenant_users_in="(select id from users where company_id = $S2A_TENANT_ID)"
+  references() { echo 4; }; REFERENCES=4
+  fail() { echo "FAIL:$*"; exit 1; }
+  TENANT_UID="$(q "select min(id) from users where company_id = 1 and deleted_at is null")"
+  # pre-smoke snapshot
+  SNAP="$( { echo "snapshot_at=$(q "select to_char(clock_timestamp(), 'YYYY-MM-DD HH24:MI:SS.US')")"; stage2a_tenant_identity_facts | sed 's/^/pre_/'; stage2a_tenant_business_facts pre; } )"
+  check "modeled: the pre-smoke snapshot has the sanitized shape, every identity key, every business count and the instant" "$(s2a_facts_ok "$SNAP" && echo ok)|$(for k in $S2A_IDENTITY_KEYS $S2A_SWEEP_KEYS; do printf '%s\n' "$SNAP" | grep -q "^pre_$k=" && printf y || printf n; done)|$(for t in $S2A_BUSINESS_TABLES; do printf '%s\n' "$SNAP" | grep -q "^pre_${t}_count=[0-9]" && printf y || printf n; done)|$(printf '%s\n' "$SNAP" | grep -c '^snapshot_at=20')" "ok|yyyyyyyyyyyy|yyyyyyyyyyyyyy|1"
+  check "modeled: the snapshot prints no email, name, path or permission text (digests and counts only)" "$(printf '%s\n' "$SNAP" | grep -cE '@|/|\{|"' || true)" "0"
+  SINCE="$(printf '%s\n' "$SNAP" | awk -F= '$1=="snapshot_at"{print $2}')"
+  B64="$(printf '%s\n' "$SNAP" | base64 -w0)"
+  check "modeled: the snapshot round-trips through base64 unchanged" "$([ "$(printf '%s' "$B64" | base64 -d)" = "$SNAP" ] && echo same)" "same"
+  # start gate evidence with a review instant one second in the past: a quiet tenant passes
+  # The local fixture tenant carries the Stage 1 rehearsal's storage rows (a hosted tenant has none): that one fact is
+  # neutralized here so the modeled run exercises the readers and every other rule on the quiet tenant.
+  c3_quiet() { stage2a_tenant_since_facts "$1" | sed 's/^tenant_storage_rows=.*/tenant_storage_rows=0/'; }
+  check "modeled: the start gate passes on a quiet tenant with a review instant in the past; fails closed on a review instant in the future; the real storage-row fact of the fixture tenant is read" "$(c3_quiet "$(date -u -d '1 second ago' '+%Y-%m-%d %H:%M:%S')" | stage2a_tenant_start_eval | grep -oE '^B25_STAGE2A_TENANT_START_GATE=(PASS|FAIL)' | cut -d= -f2)|$(c3_quiet "$(date -u -d '1 day' '+%Y-%m-%d %H:%M:%S')" | stage2a_tenant_start_eval | grep -oE '^B25_STAGE2A_TENANT_START_GATE=(PASS|FAIL)' | cut -d= -f2)|$(stage2a_tenant_since_facts "$(date -u -d '1 second ago' '+%Y-%m-%d %H:%M:%S')" | grep -c '^tenant_storage_rows=[0-9]')" "PASS|FAIL|1"
+  # disposable identities: an owner without a tenant (as the smoke inserts it), a disposable company with an event
+  DU="$(qw "insert into users (email, name, role, company_id, password_hash, is_active, permissions) values ('b25-smoke-$C3_TAG-owner@b25smoke.invalid', 'B25 smoke operator (disposable)', 'platform_owner', null, 'x', true, '{}'::jsonb) returning id")"; C3_UIDS="$DU"
+  qw "insert into companies (id, name, plan, status) values ($C3_C, 'B25 SMOKE $C3_TAG', 'free', 'active')" >/dev/null
+  DE="$(qw "insert into events (company_id, name, status, created_by_id) values ($C3_C, 'B25 SMOKE $C3_TAG event', 'active', $DU) returning id")"
+  # The fixture tenant's Stage 1 rehearsal storage rows are neutralized the same way for the post gate (see c3_quiet);
+  # the real reader value is asserted once below.
+  post_facts() { { printf '%s\n' "$SNAP"; stage2a_tenant_identity_facts | sed 's/^/post_/'; stage2a_tenant_business_facts post; stage2a_tenant_window_facts "$SINCE" "$C3_C" "$DU"; echo "references_post=4"; echo "references_expected=4"; } | sed 's/^tenant_storage_rows_post=.*/tenant_storage_rows_post=0/'; }
+  check "modeled: the storage reader reports the fixture tenant's real storage-row count (neutralized only for the modeled verdicts)" "$(stage2a_tenant_window_facts "$SINCE" "$C3_C" "$DU" | grep -oE '^tenant_storage_rows_post=[0-9]+' | cut -d= -f2)" "$(q "select count(*) from storage_objects where company_id = 1")"
+  verdict() { post_facts | stage2a_tenant_post_eval | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=(PASS|FAIL)' | cut -d= -f2; }
+  check "modeled: a disposable owner (no tenant) and a disposable company with an event do not move the existing tenant → PASS" "$(verdict)|$(post_facts | grep -c '^disposable_rows_ref_tenant=0$')" "PASS|1"
+  # (a) concurrent tenant activity during the smoke: a contact created by a tenant user with its audit row → allowed and attributed
+  TC="$(qw "insert into contacts (company_id, first_name, last_name, full_name, tags, status, created_by_id) values (1, 'C3', 'Concurrent $C3_TAG', 'C3 Concurrent $C3_TAG', '[]', 'new', $TENANT_UID) returning id")"; C3_CIDS="$TC"
+  TA="$(qw "insert into audit_logs (company_id, user_id, action, entity_type, entity_id) values (1, $TENANT_UID, 'contacts.post', 'contacts', '$TC') returning id")"; C3_AIDS="$TA"
+  check "modeled: concurrent tenant activity during the smoke (contact by a tenant user + its audit row) → PASS, attributed (created_by_tenant=1, tenant audit=1), reported as concurrent" "$(verdict)|$(post_facts | grep -E '^(contacts_created_window|contacts_created_by_tenant|contacts_created_by_disposable|tenant_audit_rows_window)=' | tr '\n' ' ')|$(post_facts | stage2a_tenant_post_eval | grep -c '^post: contacts: concurrent tenant activity')" "PASS|contacts_created_window=1 contacts_created_by_disposable=0 contacts_created_by_tenant=1 tenant_audit_rows_window=1 |1"
+  # (b) the smoke mutates the tenant: a contact created by the disposable owner → FAIL
+  DC="$(qw "insert into contacts (company_id, first_name, last_name, full_name, tags, status, created_by_id) values (1, 'C3', 'Smoke $C3_TAG', 'C3 Smoke $C3_TAG', '[]', 'new', $DU) returning id")"; C3_CIDS="$C3_CIDS,$DC"
+  check "modeled: a tenant row created by the disposable owner → FAIL (smoke mutated the existing tenant)" "$(verdict)|$(post_facts | stage2a_tenant_post_eval | grep -c 'created by a disposable smoke identity')" "FAIL|1"
+  qw "delete from contacts where id = $DC" >/dev/null; C3_CIDS="$TC"
+  # (c) a disposable identity acting on the tenant (audit) → FAIL
+  DA="$(qw "insert into audit_logs (company_id, user_id, action, entity_type, entity_id) values (1, $DU, 'contacts.patch', 'contacts', '$TC') returning id")"; C3_AIDS="$C3_AIDS,$DA"
+  check "modeled: an audit action of the disposable owner on the existing tenant → FAIL" "$(verdict)|$(post_facts | grep -c '^disposable_audit_on_tenant=1$')" "FAIL|1"
+  qw "delete from audit_logs where id = $DA" >/dev/null; C3_AIDS="$TA"
+  # (d) cross-tenant association: the tenant contact points at the disposable event → FAIL
+  qw "update contacts set event_id = $DE where id = $TC" >/dev/null
+  check "modeled: a tenant contact referencing a disposable event (cross-tenant association) → FAIL" "$(verdict)|$(post_facts | grep -c '^tenant_rows_ref_disposables=1$')" "FAIL|1"
+  qw "update contacts set event_id = null where id = $TC" >/dev/null
+  # (e) a disposable row referencing a tenant user → FAIL
+  XC="$(qw "insert into contacts (company_id, first_name, last_name, full_name, tags, status, created_by_id) values ($C3_C, 'X', 'Ref $C3_TAG', 'X Ref $C3_TAG', '[]', 'new', $TENANT_UID) returning id")"
+  check "modeled: a disposable-tenant row created by a tenant user → FAIL" "$(verdict)|$(post_facts | grep -c '^disposable_rows_ref_tenant=1$')" "FAIL|1"
+  qw "delete from contacts where id = $XC" >/dev/null
+  # (f) a hard deletion of a pre-existing tenant row is detected (count below the snapshot)
+  PRE_CONTACT="$(q "select min(id) from contacts where company_id = 1 and created_at < '$SINCE'")"
+  if [ -n "$PRE_CONTACT" ]; then
+    ROW="$(q "select row_to_json(c)::text from contacts c where id = $PRE_CONTACT")"
+    qw "delete from contacts where id = $PRE_CONTACT" >/dev/null
+    check "modeled: a pre-existing tenant row hard-deleted during the smoke → FAIL (hard deletion named)" "$(verdict)|$(post_facts | stage2a_tenant_post_eval | grep -c 'hard-deleted during the smoke')" "FAIL|1"
+    qw "insert into contacts select * from json_populate_record(null::contacts, '$(printf '%s' "$ROW" | sed "s/'/''/g")')" >/dev/null
+  else
+    TC2="$(qw "insert into contacts (company_id, first_name, last_name, full_name, tags, status, created_by_id, created_at) values (1, 'C3', 'Old $C3_TAG', 'C3 Old $C3_TAG', '[]', 'new', $TENANT_UID, now() - interval '1 day') returning id")"
+    SNAP2="$( { echo "snapshot_at=$(q "select to_char(clock_timestamp(), 'YYYY-MM-DD HH24:MI:SS.US')")"; stage2a_tenant_identity_facts | sed 's/^/pre_/'; stage2a_tenant_business_facts pre; } )"
+    qw "delete from contacts where id = $TC2" >/dev/null
+    check "modeled: a pre-existing tenant row hard-deleted during the smoke → FAIL (hard deletion named)" "$( { printf '%s\n' "$SNAP2"; stage2a_tenant_identity_facts | sed 's/^/post_/'; stage2a_tenant_business_facts post; stage2a_tenant_window_facts "$(printf '%s\n' "$SNAP2" | awk -F= '$1=="snapshot_at"{print $2}')" "$C3_C" "$DU"; echo "references_post=4"; echo "references_expected=4"; } | stage2a_tenant_post_eval | grep -cE 'hard-deleted during the smoke|B25_STAGE2A_TENANT_POST_GATE=FAIL')" "2"
+  fi
+  # (g) identity: a permission change of a tenant user during the smoke → FAIL (digest), then reverted
+  PERM_BEFORE="$(q "select coalesce(permissions::text,'{}') from users where id = $TENANT_UID")"
+  qw "update users set permissions = '{\"c3\":[\"view\"]}'::jsonb where id = $TENANT_UID" >/dev/null
+  check "modeled: a permission change of a tenant user during the smoke → FAIL on the users digest" "$(verdict)|$(post_facts | stage2a_tenant_post_eval | grep -c 'id_users_md5')" "FAIL|1"
+  qw "update users set permissions = '$(printf '%s' "$PERM_BEFORE" | sed "s/'/''/g")'::jsonb where id = $TENANT_UID" >/dev/null
+  check "modeled: after the revert the users digest is the snapshot's again → PASS" "$(verdict)" "PASS"
+  # (h) the expected sweep during the smoke: accepted only with the audit row by the system actor
+  C3_SUB_BEFORE="$(q "select status||'|'||status_changed_at||'|'||coalesce(trial_expires_at::text,'') from subscriptions where company_id = 1")"
+  if [ -n "$C3_SUB_BEFORE" ]; then
+    # The sweep moves ONLY status / status_changed_at / ended_at: the trial instant is part of the strict core digest and
+    # belongs to the PRE state, so the modeled snapshot is taken with the elapsed trial already recorded.
+    qw "update subscriptions set trial_expires_at = now() - interval '1 hour' where company_id = 1" >/dev/null
+    SNAP_SW="$( { echo "snapshot_at=$(q "select to_char(clock_timestamp(), 'YYYY-MM-DD HH24:MI:SS.US')")"; stage2a_tenant_identity_facts | sed 's/^/pre_/'; stage2a_tenant_business_facts pre; } )"
+    SINCE_SW="$(printf '%s\n' "$SNAP_SW" | awk -F= '$1=="snapshot_at"{print $2}')"
+    sw_facts() { { printf '%s\n' "$SNAP_SW"; stage2a_tenant_identity_facts | sed 's/^/post_/'; stage2a_tenant_business_facts post; stage2a_tenant_window_facts "$SINCE_SW" "$C3_C" "$DU"; echo "references_post=4"; echo "references_expected=4"; } | sed 's/^tenant_storage_rows_post=.*/tenant_storage_rows_post=0/'; }
+    sw_verdict() { sw_facts | stage2a_tenant_post_eval | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=(PASS|FAIL)' | cut -d= -f2; }
+    qw "update subscriptions set status = 'expired', status_changed_at = now(), ended_at = now() where company_id = 1" >/dev/null
+    check "modeled: a subscription status movement during the smoke WITHOUT the sweep's audit row → FAIL (status digest named)" "$(sw_verdict)|$(sw_facts | stage2a_tenant_post_eval | grep -c 'status movement during the smoke without sweep evidence: id_sub_status_md5')" "FAIL|1"
+    SA="$(qw "insert into audit_logs (company_id, user_id, action, entity_type, entity_id) values (1, null, 'subscription.trial_expired', 'subscription', '1') returning id")"; C3_AIDS="$C3_AIDS,$SA"
+    check "modeled: the same movement WITH the sweep's audit row (system actor), an elapsed trial and the expired status → accepted as the expected sweep" "$(sw_verdict)|$(sw_facts | stage2a_tenant_post_eval | grep -c 'EXPECTED SWEEP')" "PASS|1"
+    check "modeled: a sweep audit row written by a USER (not the system actor) is not sweep evidence" "$(qw "update audit_logs set user_id = $TENANT_UID where id = $SA" >/dev/null; sw_verdict)" "FAIL"
+    qw "update subscriptions set status = split_part('$C3_SUB_BEFORE','|',1), status_changed_at = split_part('$C3_SUB_BEFORE','|',2)::timestamp, trial_expires_at = nullif(split_part('$C3_SUB_BEFORE','|',3),'')::timestamp, ended_at = null where company_id = 1" >/dev/null; C3_SUB_BEFORE=""
+    qw "delete from audit_logs where id = $SA" >/dev/null; C3_AIDS="$TA"
+  fi
+  # (i) the start gate surfaces a user created since the review
+  NU="$(qw "insert into users (email, name, role, company_id, password_hash, is_active, permissions) values ('c3-$C3_TAG@example.invalid', 'C3 new user', 'employee', 1, 'x', true, '{}'::jsonb) returning id")"; C3_UIDS="$C3_UIDS,$NU"
+  check "modeled: a tenant user created since the review instant is SURFACED by the start gate; the post gate also sees the identity change" "$(c3_quiet "$(date -u -d '1 hour ago' '+%Y-%m-%d %H:%M:%S')" | stage2a_tenant_start_eval | grep -c 'SURFACED FOR REVIEW: user set changed' || true)|$(verdict)" "1|FAIL"
+  qw "delete from users where id = $NU" >/dev/null; C3_UIDS="$DU"
+  check "modeled: the Stage 1 exception row and the provider baseline are never touched by the tenant gates (the readers only select from the tenant's tables; the exception company is not the tenant)" "$(for fn in stage2a_tenant_identity_facts stage2a_tenant_business_facts stage2a_tenant_window_facts stage2a_tenant_since_facts; do body "$fn" | grep -cE 'B25PHYS_|gs://|ifGenerationMatch' || true; done | tr '\n' ' ')|$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID'")" "0 0 0 0 |$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID'")"
+  unset -f fail
+  cleanup_c3
+else
+  echo "note: the local database has no company-1 fixture tenant (or id $C3_C is taken) — the modeled Correction 3 cases are exercised by the evaluator mutations only"
+fi
+
 check "the branch guard also requires the served-logo rule function of the smoke" "$(grep -c "grep -q '^function servedLogoRule(' .github/scripts/b25-stage1-smoke.mjs" "$WF")" "1"
 check "no product, mobile or schema file differs from the product commit (the branch is still product + the six ops files)" "$(git -C "$HERE/../.." diff --name-only e559b0024b28d4a77becdcb10c4168004dddea75 -- . ':(exclude).github' 2>/dev/null | wc -l | tr -d ' ')|$(git -C "$HERE/../.." diff --name-only e559b0024b28d4a77becdcb10c4168004dddea75 -- .github 2>/dev/null | wc -l | tr -d ' ')" "0|6"
 

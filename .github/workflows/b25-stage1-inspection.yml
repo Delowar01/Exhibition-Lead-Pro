@@ -55,6 +55,11 @@
 #                             filesystem back to the pre-smoke state (always-step cleanup).
 #   stage2a_rollback          MUTATION (typed confirmation ROLLBACK_B25_STAGE2A_TO_GCS): the explicit
 #                             rollback; fs files and bucket objects are never deleted.
+#   (Correction 3)            the smoke protects the existing tenant with a tiered PRE-SMOKE SNAPSHOT →
+#                             POST-SMOKE COMPARISON (identity / security / billing strict, business
+#                             movement attributed, isolation proven) instead of the frozen whole-tenant
+#                             digest; the snapshot is one base64 line of counts / booleans / digests kept
+#                             on the runner and returned to the cleanup session on its stdin stream.
 #   stage2a_tenant_drift_inspect
 #                             READ-ONLY: localizes the existing-tenant baseline drift that stopped
 #                             the corrected smoke run 38934705535 before any write (tenant_md5 ≠
@@ -304,6 +309,8 @@ jobs:
           grep -q '^stage2a_residue_eligibility()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_residue_settled()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^readonly S2AR_MANIFEST=' .github/scripts/b25-stage1-apply-lib.sh || { echo "stage 2a residue library incomplete"; exit 1; }
           grep -q '^stage2a_residue2_eligibility()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_residue2_settled()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^readonly S2AR2_MANIFEST=' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^function servedLogoRule(' .github/scripts/b25-stage1-smoke.mjs || { echo "stage 2a correction 2 tooling incomplete"; exit 1; }
           grep -q '^phase_stage2a_tenant_drift()' .github/scripts/b25-stage1-apply.sh && grep -q '^S2A_TENANT_LAST_MATCH=' .github/scripts/b25-stage1-apply.sh || { echo "stage 2a tenant drift localization incomplete"; exit 1; }
+          grep -q '^stage2a_tenant_start_eval()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_tenant_post_eval()' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^readonly S2A_TENANT_REVIEW_UTC=' .github/scripts/b25-stage1-apply-lib.sh && grep -q '^stage2a_tenant_start_gate()' .github/scripts/b25-stage1-apply.sh && grep -q '^stage2a_tenant_post_gate()' .github/scripts/b25-stage1-apply.sh || { echo "stage 2a correction 3 tenant safety model incomplete"; exit 1; }
+          if awk '/^(guards_stage2a_switched|phase_stage2a_smoke_setup|phase_stage2a_cleanup)\(\) \{/{on=1} on{print} on&&/^}$/{on=0}' .github/scripts/b25-stage1-apply.sh | grep -q 'TENANT_BASELINE_MD5'; then echo "the frozen whole-tenant digest is still a Stage 2A gate"; exit 1; fi
           if grep -qE 'migrate.storage|--dry-run|--copy|--verify' .github/scripts/b25-stage1-apply.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-purge-lib.sh; then echo "a migration wrapper is present on the Stage 2A tooling branch"; exit 1; fi
           echo "branch = $BASE_SHA + ops files only; workflow served from the registered path"
 
@@ -853,8 +860,15 @@ jobs:
           ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2a-smoke-setup' ARG1='$HASH' ARG2='$EMAIL' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/smoke-setup.log"
           UID_="$(grep -oE '^disposable_owner_user_id=[0-9]+' "$RUNNER_TEMP/smoke-setup.log" | cut -d= -f2)"
           [[ "$UID_" =~ ^[0-9]+$ ]] || { echo "::error::no disposable owner id"; exit 1; }
+          # Correction 3: the pre-smoke snapshot of the existing tenant (counts, booleans and digests only, one base64
+          # line printed by the host BEFORE the disposable owner existed) is kept on the runner and returned to the
+          # cleanup session as the first line of its stdin stream — never as an SSH argument.
+          grep -qx 'B25_STAGE2A_TENANT_START_GATE=PASS' "$RUNNER_TEMP/smoke-setup.log" || { echo "::error::the host did not report B25_STAGE2A_TENANT_START_GATE=PASS"; exit 1; }
+          SNAP="$(grep -oE '^B25_TENANT_SNAPSHOT=[A-Za-z0-9+/=]+' "$RUNNER_TEMP/smoke-setup.log" | cut -d= -f2-)"
+          [[ "$SNAP" =~ ^[A-Za-z0-9+/=]{40,20000}$ ]] || { echo "::error::no pre-smoke tenant snapshot"; exit 1; }
+          printf '%s' "$SNAP" > "$RUNNER_TEMP/stage2a-tenant-snapshot.b64"
           printf '%s' "$PW" > "$RUNNER_TEMP/.po-pw"
-          { echo "SMOKE_TAG=$TAG"; echo "PO_EMAIL=$EMAIL"; echo "PO_USER_ID=$UID_"; echo "SMOKE_OUT=$RUNNER_TEMP/smoke-state.json"; echo "SMOKE_STAGE=2a"; } >> "$GITHUB_ENV"
+          { echo "SMOKE_TAG=$TAG"; echo "PO_EMAIL=$EMAIL"; echo "PO_USER_ID=$UID_"; echo "SMOKE_OUT=$RUNNER_TEMP/smoke-state.json"; echo "SMOKE_STAGE=2a"; echo "S2A_TENANT_SNAPSHOT_FILE=$RUNNER_TEMP/stage2a-tenant-snapshot.b64"; } >> "$GITHUB_ENV"
 
       - name: Stage 2A smoke — run (first-party upload / download contract with the deterministic fixture, branding logo kept, metrics fs / fallback / mirror)
         if: inputs.mode == 'stage2a_smoke'
@@ -930,8 +944,12 @@ jobs:
           fi
           if [ -z "$U" ]; then echo "nothing was created; no cleanup needed"; exit 0; fi
           [[ "$C" =~ ^([0-9]+(,[0-9]+)*|none)$ ]] && [[ "$U" =~ ^[0-9]+(,[0-9]+)*$ ]] && [[ "${SMOKE_TAG:-}" =~ ^[a-z0-9]{6,12}$ ]] || { echo "::error::cleanup arguments malformed"; exit 1; }
-          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2a-cleanup' ARG1='$C' ARG2='$U' ARG3='$SMOKE_TAG' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh)
-          rm -f "$RUNNER_TEMP/.po-pw" "$RUNNER_TEMP/smoke-state.json"
+          # Correction 3: the pre-smoke tenant snapshot returns as the FIRST line of the stdin stream (a shell variable of
+          # the streamed script); the cleanup fails closed without it — no post-smoke verdict, no silent pass.
+          SNAP="$(cat "${S2A_TENANT_SNAPSHOT_FILE:-/nonexistent}" 2>/dev/null || true)"
+          [[ "$SNAP" =~ ^[A-Za-z0-9+/=]{40,20000}$ ]] || { echo "::error::pre-smoke tenant snapshot missing on the runner"; exit 1; }
+          { printf 'B25_TENANT_SNAPSHOT=%s\n' "$SNAP"; cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage1-apply.sh; } | ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2a-cleanup' ARG1='$C' ARG2='$U' ARG3='$SMOKE_TAG' bash -s"
+          rm -f "$RUNNER_TEMP/.po-pw" "$RUNNER_TEMP/smoke-state.json" "$RUNNER_TEMP/stage2a-tenant-snapshot.b64"
 
       # ── Stage 2A CORRECTION 1 — residue of the failed smoke run 38847884691 (constants only; no ARG passed) ──
       # Each mode is ONE SSH session streaming the three scripts over stdin. The eligibility phase reads 26
@@ -987,4 +1005,4 @@ jobs:
 
       - name: Remove runner-side logs and state (always)
         if: always()
-        run: rm -f "$RUNNER_TEMP"/preflight.log "$RUNNER_TEMP"/schema-apply.log "$RUNNER_TEMP"/postdeploy.log "$RUNNER_TEMP"/smoke-setup.log "$RUNNER_TEMP"/smoke-verify.log "$RUNNER_TEMP"/stage2a-activate.log "$RUNNER_TEMP"/stage2a-rollback.log "$RUNNER_TEMP"/stage2a-residue.log "$RUNNER_TEMP"/stage2a-residue2.log "$RUNNER_TEMP"/stage2a-tenant-drift.log "$RUNNER_TEMP"/.po-pw "$RUNNER_TEMP"/smoke-state.json
+        run: rm -f "$RUNNER_TEMP"/preflight.log "$RUNNER_TEMP"/schema-apply.log "$RUNNER_TEMP"/postdeploy.log "$RUNNER_TEMP"/smoke-setup.log "$RUNNER_TEMP"/smoke-verify.log "$RUNNER_TEMP"/stage2a-activate.log "$RUNNER_TEMP"/stage2a-rollback.log "$RUNNER_TEMP"/stage2a-residue.log "$RUNNER_TEMP"/stage2a-residue2.log "$RUNNER_TEMP"/stage2a-tenant-drift.log "$RUNNER_TEMP"/stage2a-tenant-snapshot.b64 "$RUNNER_TEMP"/.po-pw "$RUNNER_TEMP"/smoke-state.json

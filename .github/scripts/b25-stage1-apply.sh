@@ -58,6 +58,10 @@
 #                     in the portal: cascade absent, purge job completed, product tombstone
 #                     (deleted / LEGACY_RETAINED), provider object retained with the proven
 #                     generation, inventory unchanged; decides the post-delete eligibility
+#   (Correction 3)    the Stage 2A smoke protects the existing tenant with a tiered pre-smoke snapshot /
+#                     post-smoke comparison (stage2a_tenant_start_gate / stage2a_tenant_post_gate) instead
+#                     of the frozen whole-tenant digest TENANT_BASELINE_MD5, which stays a historical
+#                     reference of the read-only drift report only
 #   stage2a-tenant-drift
 #                     READ-ONLY localization of the existing-tenant baseline drift that stopped
 #                     the corrected smoke run 38934705535 before any write (tenant_md5 ≠ the
@@ -2556,6 +2560,126 @@ phase_stage2a_rollback() {
 # =============================================================================
 # Stage 2A disposable smoke (fs primary + strict mirror). Same architecture as the Stage 1 smoke.
 # =============================================================================
+# =============================================================================
+# Stage 2A — CORRECTION 3: existing-tenant safety gates of the disposable smoke (readers; the rules live in
+# apply-lib: stage2a_tenant_start_eval / stage2a_tenant_post_eval). Company $S2A_TENANT_ID is the protected
+# existing tenant. Readers print only counts, booleans, md5 digests, fixed status tokens and the database's own
+# clock; every line is shape-checked before it leaves the host. The snapshot travels back to the runner as ONE
+# base64 line (B25_TENANT_SNAPSHOT=…) and returns on the stdin stream of the later sessions as a shell variable —
+# never as an SSH argument.
+# =============================================================================
+s2a_tenant_users_in="(select id from users where company_id = $S2A_TENANT_ID)"
+stage2a_tenant_identity_facts() {   # the IDENTITY tier (strict) + the two sweep-movable status digests
+  local T="$S2A_TENANT_ID"
+  echo "id_company_md5=$(q "select md5(coalesce(name,'')||'|'||coalesce(plan,'')||'|'||coalesce(mfa_required::text,'')||'|'||coalesce(brand_logo_key,'')||'|'||coalesce(brand_logo_content_type,'')||'|'||coalesce(created_by_id::text,'')||'|'||coalesce(trial_ends_at::text,'')||'|'||coalesce(legal_name,'')||'|'||coalesce(registration_number,'')||'|'||coalesce(vat_number,'')) from companies where id = $T")"
+  echo "id_company_status_md5=$(q "select md5(coalesce(status,'')||'|'||coalesce(suspended_reason,'')) from companies where id = $T")"
+  echo "id_sub_core_md5=$(q "select md5(coalesce(plan,'')||'|'||coalesce(billing_source,'')||'|'||coalesce(limit_overrides::text,'')||'|'||coalesce(trial_started_at::text,'')||'|'||coalesce(trial_expires_at::text,'')||'|'||(stripe_customer_id is not null)::text||'|'||(stripe_subscription_id is not null)::text||'|'||coalesce(stripe_price_id,'')||'|'||coalesce(provider_status,'')||'|'||coalesce(cancel_at_period_end::text,'')||'|'||coalesce(usage_anchor_at::text,'')||'|'||coalesce(current_period_ends_at::text,'')) from subscriptions where company_id = $T")"
+  echo "id_sub_status_md5=$(q "select md5(coalesce(status,'')||'|'||coalesce(status_changed_at::text,'')||'|'||coalesce(ended_at::text,'')||'|'||coalesce(suspended_at::text,'')||'|'||coalesce(past_due_since::text,'')||'|'||coalesce(canceled_at::text,'')) from subscriptions where company_id = $T")"
+  echo "id_users_count=$(q "select count(*) from users where company_id = $T")"
+  echo "id_users_active=$(q "select count(*) from users where company_id = $T and deleted_at is null and is_active")"
+  echo "id_users_md5=$(q "select md5(coalesce(string_agg(id||':'||role||':'||coalesce(permissions::text,'')||':'||is_active||':'||(deleted_at is not null)||':'||coalesce(mfa_enabled::text,'')||':'||coalesce(contact_visibility,'')||':'||coalesce(company_visibility,'')||':'||coalesce(selected_user_ids::text,'')||':'||coalesce(manager_id::text,'')||':'||coalesce(department_id::text,'')||':'||coalesce(team_id::text,'')||':'||(email_verified_at is not null)||':'||md5(email)||':'||md5(password_hash), ',' order by id),'')) from users where company_id = $T")"
+  echo "id_roles_count=$(q "select count(*) from roles where company_id = $T")"
+  echo "id_roles_md5=$(q "select md5(coalesce(string_agg(id||':'||md5(name)||':'||coalesce(is_system::text,'')||':'||coalesce(is_default::text,''), ',' order by id),'')) from roles where company_id = $T")"
+  echo "id_user_roles_count=$(q "select count(*) from user_roles ur join users u on u.id = ur.user_id where u.company_id = $T")"
+  echo "id_user_roles_md5=$(q "select md5(coalesce(string_agg(ur.user_id||':'||ur.role_id, ',' order by ur.user_id, ur.role_id),'')) from user_roles ur join users u on u.id = ur.user_id where u.company_id = $T")"
+  echo "id_brand_logo_set=$(q "select (brand_logo_key is not null) from companies where id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+}
+stage2a_tenant_business_facts() {   # <prefix pre|post>: counts + highest id per BUSINESS table (soft-deleted rows stay counted; a count can only fall by a hard delete)
+  local P="$1" T="$S2A_TENANT_ID" t
+  for t in $S2A_BUSINESS_TABLES; do
+    echo "${P}_${t}_count=$(q "select count(*) from $t where company_id = $T")"
+    echo "${P}_${t}_max_id=$(q "select coalesce(max(id),0) from $t where company_id = $T")"
+  done
+}
+stage2a_tenant_window_facts() {   # <since ts> <disposable company csv or -1> <disposable user csv or -1>: movement + attribution in the window
+  local W="$1" C="$2" U="$3" T="$S2A_TENANT_ID" t spec del upd actor cc cw mw dw cbd cbt auto
+  for t in $S2A_BUSINESS_TABLES; do
+    spec="$(s2a_tbl_spec "$t")" || fail "unknown business table $t"
+    read -r del upd actor cc <<<"$spec"
+    cw="$(q "select count(*) from $t where company_id = $T and $cc >= '$W'")"
+    if [ "$upd" = yes ]; then mw="$(q "select count(*) from $t where company_id = $T and $cc < '$W' and updated_at >= '$W'")"; else mw="-"; fi
+    if [ "$del" = yes ]; then dw="$(q "select count(*) from $t where company_id = $T and deleted_at >= '$W'")"; else dw="-"; fi
+    if [ "$actor" != "-" ]; then
+      cbd="$(q "select count(*) from $t where company_id = $T and $cc >= '$W' and $actor in ($U)")"
+      cbt="$(q "select count(*) from $t where company_id = $T and $cc >= '$W' and $actor in $s2a_tenant_users_in")"
+    else cbd="-"; cbt="-"; fi
+    case "$t" in
+      workflow_runs) auto="$(q "select count(*) from $t where company_id = $T and created_at < '$W' and updated_at >= '$W' and status not in ('pending','queued','running','scheduled')")" ;;
+      billing_checkout_sessions) auto="$(q "select count(*) from $t where company_id = $T and created_at < '$W' and updated_at >= '$W' and status = 'expired' and expires_at <= now()")" ;;
+      *) auto="-" ;;
+    esac
+    echo "${t}_created_window=$cw"; echo "${t}_modified_window=$mw"; echo "${t}_soft_deleted_window=$dw"
+    echo "${t}_created_by_disposable=$cbd"; echo "${t}_created_by_tenant=$cbt"; echo "${t}_automated_explained=$auto"
+  done
+  echo "tenant_audit_rows_window=$(q "select count(*) from audit_logs where company_id = $T and created_at >= '$W' and user_id in $s2a_tenant_users_in")"
+  echo "disposable_audit_on_tenant=$(q "select count(*) from audit_logs where created_at >= '$W' and user_id in ($U) and company_id = $T")"
+  echo "tenant_rows_ref_disposables=$(q "select (select count(*) from contacts where company_id = $T and (event_id in (select id from events where company_id in ($C)) or assigned_to_id in ($U) or created_by_id in ($U))) + (select count(*) from leads where company_id = $T and (event_id in (select id from events where company_id in ($C)) or assigned_to_id in ($U) or created_by_id in ($U))) + (select count(*) from scans where company_id = $T and (event_id in (select id from events where company_id in ($C)) or user_id in ($U))) + (select count(*) from documents where company_id = $T and created_by_id in ($U)) + (select count(*) from tasks where company_id = $T and assigned_to_id in ($U)) + (select count(*) from follow_ups where company_id = $T and (assigned_to_id in ($U) or created_by_id in ($U)))")"
+  echo "disposable_rows_ref_tenant=$(q "select (select count(*) from contacts where company_id in ($C) and (created_by_id in $s2a_tenant_users_in or assigned_to_id in $s2a_tenant_users_in)) + (select count(*) from documents where company_id in ($C) and created_by_id in $s2a_tenant_users_in) + (select count(*) from scans where company_id in ($C) and user_id in $s2a_tenant_users_in) + (select count(*) from events where company_id in ($C) and created_by_id in $s2a_tenant_users_in) + (select count(*) from users where company_id in ($C) and manager_id in $s2a_tenant_users_in)")"
+  echo "tenant_storage_rows_post=$(q "select count(*) from storage_objects where company_id = $T")"
+  echo "tenant_storage_created_window=$(q "select count(*) from storage_objects where company_id = $T and created_at >= '$W'")"
+  echo "tenant_storage_deleted_window=$(q "select count(*) from storage_objects where company_id = $T and deleted_at >= '$W'")"
+  echo "sweep_audit_rows_window=$(q "select count(*) from audit_logs where company_id = $T and created_at >= '$W' and action = 'subscription.trial_expired' and user_id is null")"
+  echo "sub_status_post=$(q "select coalesce(status,'-') from subscriptions where company_id = $T")"
+  echo "sub_trial_elapsed=$(q "select coalesce((trial_expires_at <= now())::text, 'false') from subscriptions where company_id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+}
+stage2a_tenant_since_facts() {   # <review instant>: the IDENTITY tier evidence since the last owner review (start gate)
+  local R="$1" T="$S2A_TENANT_ID" t spec del upd actor cc
+  echo "review_utc_ok=$(q "select ('$R'::timestamp <= now())::text" | sed 's/^t$/true/; s/^f$/false/')"
+  echo "users_created_since=$(q "select count(*) from users where company_id = $T and created_at >= '$R'")"
+  echo "users_soft_deleted_since=$(q "select count(*) from users where company_id = $T and deleted_at >= '$R'")"
+  echo "users_modified_since=$(q "select count(*) from users where company_id = $T and created_at < '$R' and updated_at >= '$R'")"
+  echo "users_modified_login_explained=$(q "select count(*) from users where company_id = $T and created_at < '$R' and updated_at >= '$R' and last_login_at >= '$R' and abs(extract(epoch from (updated_at - last_login_at))) <= 2")"
+  echo "sec_audit_rows_since=$(q "select count(*) from audit_logs where company_id = $T and created_at >= '$R' and (action ~ '^(team|profile|roles|security)\\.' or (action ~ '^user\\.' and action <> 'user.login'))")"
+  echo "roles_changed_since=$(q "select count(*) from roles where company_id = $T and (created_at >= '$R' or updated_at >= '$R')")"
+  echo "user_roles_created_since=$(q "select count(*) from user_roles ur join users u on u.id = ur.user_id where u.company_id = $T and ur.created_at >= '$R'")"
+  echo "company_modified_since=$(q "select (updated_at >= '$R')::text from companies where id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+  echo "sub_modified_since=$(q "select coalesce((updated_at >= '$R')::text,'false') from subscriptions where company_id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+  echo "sub_status_changed_since=$(q "select coalesce((status_changed_at >= '$R')::text,'false') from subscriptions where company_id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+  echo "sub_status=$(q "select coalesce(status,'-') from subscriptions where company_id = $T")"
+  echo "sweep_audit_rows_since=$(q "select count(*) from audit_logs where company_id = $T and created_at >= '$R' and action = 'subscription.trial_expired' and user_id is null")"
+  echo "sub_trial_elapsed=$(q "select coalesce((trial_expires_at <= now())::text, 'false') from subscriptions where company_id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+  echo "tenant_storage_rows=$(q "select count(*) from storage_objects where company_id = $T")"
+  echo "references=$(references)"; echo "references_expected=$REFERENCES"
+  for t in $S2A_BUSINESS_TABLES; do
+    spec="$(s2a_tbl_spec "$t")" || fail "unknown business table $t"; read -r del upd actor cc <<<"$spec"
+    echo "bz_${t}_created_since=$(q "select count(*) from $t where company_id = $T and $cc >= '$R'")"
+    [ "$upd" = yes ] && echo "bz_${t}_modified_since=$(q "select count(*) from $t where company_id = $T and $cc < '$R' and updated_at >= '$R'")"
+    [ "$del" = yes ] && echo "bz_${t}_soft_deleted_since=$(q "select count(*) from $t where company_id = $T and deleted_at >= '$R'")"
+  done
+}
+# The START gate: runs BEFORE the disposable owner exists. Prints the evidence, the verdict and the snapshot line.
+stage2a_tenant_start_gate() {
+  section "existing tenant (company $S2A_TENANT_ID) — identity tier unmoved since the review $S2A_TENANT_REVIEW_UTC; business tier reported (read-only; counts, booleans and digests only)"
+  local facts verdict
+  facts="$(stage2a_tenant_since_facts "$S2A_TENANT_REVIEW_UTC")" || fail "tenant start gate: evidence unreadable"
+  s2a_facts_ok "$facts" || fail "tenant start gate: evidence has an unexpected shape (not printed)"
+  printf '%s\n' "$facts" | grep -E '^(users_|sec_audit|roles_|user_roles|company_modified|sub_|sweep_|tenant_storage|references|review_utc)' | sed 's/^/  /'
+  verdict="$(printf '%s\n' "$facts" | stage2a_tenant_start_eval)" || { printf '%s\n' "$verdict"; fail "tenant start gate FAILED — the existing tenant's identity / security / billing state moved since the last review; nothing was created (review the surfaced components; never widen the gate)"; }
+  printf '%s\n' "$verdict"
+  section "pre-smoke snapshot of the existing tenant (identity digests + business counts; carried back to the runner as one base64 line)"
+  local snap
+  snap="$( { echo "snapshot_at=$(q "select to_char(clock_timestamp(), 'YYYY-MM-DD HH24:MI:SS.US')")"; stage2a_tenant_identity_facts | sed 's/^/pre_/'; stage2a_tenant_business_facts pre; } )" || fail "tenant snapshot unreadable"
+  s2a_facts_ok "$snap" || fail "tenant snapshot has an unexpected shape (not printed)"
+  printf '%s\n' "$snap" | grep -E '^(snapshot_at|pre_id_users_count|pre_id_users_active|pre_id_roles_count|pre_id_user_roles_count|pre_id_brand_logo_set|pre_[a-z_]+_count)=' | sed 's/^/  /'
+  echo "B25_TENANT_SNAPSHOT=$(printf '%s\n' "$snap" | base64 -w0)"
+}
+# The POST gate: recomputes the tiers, attributes every movement of the window and decides. The snapshot arrives as
+# the shell variable B25_TENANT_SNAPSHOT (first stdin line of this session), never as an argument.
+stage2a_tenant_post_gate() {   # <disposable company csv or -1> <disposable user csv>
+  local C="$1" U="$2" snap since facts verdict
+  [[ "${B25_TENANT_SNAPSHOT:-}" =~ ^[A-Za-z0-9+/=]{40,20000}$ ]] || fail "pre-smoke tenant snapshot missing or malformed on the stdin stream — fail closed (no post-smoke verdict without it)"
+  snap="$(printf '%s' "$B25_TENANT_SNAPSHOT" | base64 -d 2>/dev/null)" || fail "pre-smoke tenant snapshot does not decode"
+  s2a_facts_ok "$snap" || fail "pre-smoke tenant snapshot has an unexpected shape"
+  since="$(s2a_fv "$snap" snapshot_at)"; [[ "$since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?$ ]] || fail "pre-smoke snapshot instant malformed"
+  section "post-smoke comparison of the existing tenant (company $S2A_TENANT_ID) against the pre-smoke snapshot taken at $since (identity strict; business attributed; isolation)"
+  facts="$( { printf '%s\n' "$snap"; stage2a_tenant_identity_facts | sed 's/^/post_/'; stage2a_tenant_business_facts post; stage2a_tenant_window_facts "$since" "$C" "$U"; echo "references_post=$(references)"; echo "references_expected=$REFERENCES"; } )" || fail "tenant post gate: evidence unreadable"
+  s2a_facts_ok "$facts" || fail "tenant post gate: evidence has an unexpected shape (not printed)"
+  printf '%s\n' "$facts" | grep -E '^([a-z_]+_(created|modified|soft_deleted)_window|[a-z_]+_created_by_(disposable|tenant)|[a-z_]+_automated_explained|tenant_audit_rows_window|disposable_audit_on_tenant|tenant_rows_ref_disposables|disposable_rows_ref_tenant|tenant_storage_|sweep_audit_rows_window|sub_status_post|sub_trial_elapsed|references_post)=' | grep -vE '=(0|-)$' | sed 's/^/  /'
+  verdict="$(printf '%s\n' "$facts" | stage2a_tenant_post_eval)" || { printf '%s\n' "$verdict"; fail "tenant post gate FAILED — see the FAIL lines above (identity change, smoke-caused or unattributed movement, cross-tenant association or storage movement of the existing tenant)"; }
+  printf '%s\n' "$verdict"
+  unset B25_TENANT_SNAPSHOT
+}
+
 guards_stage2a_switched() {
   section "read-only guard"; stage2a_readonly_guard
   section "switched state"
@@ -2574,9 +2698,10 @@ guards_stage2a_switched() {
   [ "$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID' and state = 'deleted' and last_error = 'LEGACY_RETAINED' and driver = 'gcs' and company_id = $B25PHYS_COMPANY")" = "1" ] || fail "the Stage 1 exception row is not in its documented state"
   [ "$(q "select count(*) from storage_objects where publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING') or lease_token is not null")" = "0" ] || fail "uncertain / unproven / cleanup-pending / leased rows exist"
   [ "$(q "select count(*) from job_queue where status='dead'")" = "0" ] || fail "dead-letter jobs present"
-  local tb; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
-  [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
-  [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "owner scan rows changed"
+  # Correction 3: the existing tenant is protected by the tiered start / post gates (stage2a_tenant_start_gate before
+  # the disposable owner exists, stage2a_tenant_post_gate in the cleanup) instead of a frozen whole-tenant digest and a
+  # fixed scan count — ordinary use of the product by the tenant no longer stops the smoke, while identity / security /
+  # billing movement, smoke-caused or unattributed movement and cross-tenant association still fail closed.
   [ "$(references)" = "$REFERENCES" ] || fail "legacy references changed"
 }
 stage2a_census_expect() {   # <objects> <bytes-or-skip> <marked> <md5-or-skip> <label>
@@ -2595,6 +2720,7 @@ phase_stage2a_smoke_setup() {
   section "pre-smoke census must be the locked baseline"
   stage2a_census_expect "$B25PHYS_CENSUS_OBJECTS" "$B25PHYS_CENSUS_BYTES" "$B25PHYS_CENSUS_MARKED" "$B25PHYS_CENSUS_MD5" "pre-smoke census"
   [ "$(compose exec -T api sh -c 'find /data/objects/tenants -type f 2>/dev/null | wc -l')" = "0" ] || fail "a tenant object already exists on the volume"
+  stage2a_tenant_start_gate
   section "insert ONE disposable platform owner (the smoke creates its tenants and users through the API)"
   local pco uid; pco="$(q "select coalesce(min(company_id)::text,'null') from users where role='platform_owner' and deleted_at is null")"
   uid="$(qw "insert into users (email, name, role, company_id, password_hash, is_active, contact_visibility, company_visibility, permissions, email_verified_at) values ('$ARG2', 'B25 smoke operator (disposable)', 'platform_owner', $pco, '$ARG1', true, 'all', 'own', '{}'::jsonb, now()) returning id")"
@@ -2871,9 +2997,7 @@ phase_stage2a_cleanup() {
   section "existing rows AFTER cleanup"
   local after; after="$(q "$kept_sql")"; echo "$after"
   [ "$after" = "$before" ] || fail "existing rows changed during cleanup: before[$before] after[$after]"
-  local tb; tb="$(tenant_md5)" || fail "could not compute the existing-tenant baseline digest"
-  [ "$tb" = "$TENANT_BASELINE_MD5" ] || fail "tenant baseline changed"
-  [ "$(q "select count(*) from scans where company_id=1")" = "4" ] || fail "owner scan rows changed"
+  stage2a_tenant_post_gate "$C" "$U"
   section "final inventory / census / volume = the pre-smoke Stage 2A state (the exception row only)"
   [ "$(q "select count(*) from storage_objects where publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING')")" = "0" ] || fail "uncertain / unproven residue in the inventory"
   [ "$(q "select count(*) from storage_objects")" = "1" ] && [ "$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID' and state = 'deleted' and last_error = 'LEGACY_RETAINED' and driver = 'gcs' and company_id = $B25PHYS_COMPANY")" = "1" ] || fail "storage_objects is not back to the one documented exception row"
@@ -3233,7 +3357,8 @@ phase_stage2a_tenant_drift() {
   fi
   section "6. automatic processes since the last matching guard (recurring sweeps by task and status; subscription lifecycle log counters of company $S2A_TENANT_COMPANY)"
   local sweeps
-  sweeps="$(q "select t||' '||s||' n='||n from (select coalesce((payload::json)->>'task', '?') as t, status as s, count(*) as n from job_queue where name = 'recurring.sweep' and enqueued_at >= '$T' group by 1, 2) x order by 1")" || fail "tenant drift: could not read the recurring sweeps"
+  # Payloads are encrypted at rest (JOBS_PAYLOAD_ENCRYPTION_KEY); the task name is read from the plaintext cadence dedupe key.
+  sweeps="$(q "select t||' '||s||' n='||n from (select coalesce(nullif(split_part(dedupe_key, ':', 2), ''), '?') as t, status as s, count(*) as n from job_queue where name = 'recurring.sweep' and enqueued_at >= '$T' group by 1, 2) x order by 1")" || fail "tenant drift: could not read the recurring sweeps"
   if [ -z "$sweeps" ]; then echo "  (no recurring sweep enqueued since the last matching guard)"; else
     while IFS= read -r line; do
       if [[ "$line" =~ ^[A-Za-z?]{1,40}\ [a-z_]{1,20}\ n=[0-9]+$ ]]; then echo "  $line"; else echo "  <sweep line with an unexpected shape — not printed>"; fi
