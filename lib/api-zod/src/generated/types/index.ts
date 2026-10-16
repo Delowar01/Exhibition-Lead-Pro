@@ -107,6 +107,8 @@ export * from './authResponse';
 export * from './brandingDerivedColors';
 export * from './brandingDerivedColorsTokens';
 export * from './brandTheme';
+export * from './bulkAssignContactsEventInput';
+export * from './bulkAssignContactsEventResult';
 export * from './bulkAssignInput';
 export * from './bulkAssignInputStrategy';
 export * from './bulkAssignResult';

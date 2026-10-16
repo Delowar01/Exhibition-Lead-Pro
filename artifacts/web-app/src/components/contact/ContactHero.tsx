@@ -13,6 +13,7 @@ import {
 import {
   ArrowLeft,
   CalendarClock,
+  CalendarDays,
   Flame,
   Mail,
   MapPin,
@@ -61,6 +62,8 @@ export interface ContactHeroProps {
   onEdit: () => void;
   onDelete: () => void;
   onOpenCompany?: () => void;
+  /** MOBILE-R2 — later event assignment ("Assign to Event" without an event, "Change Event" with one). */
+  onAssignEvent?: () => void;
 }
 
 export default function ContactHero({
@@ -74,7 +77,9 @@ export default function ContactHero({
   onEdit,
   onDelete,
   onOpenCompany,
+  onAssignEvent,
 }: ContactHeroProps) {
+  const eventActionLabel = contact.eventId != null ? "Change Event" : "Assign to Event";
   const [collapsed, setCollapsed] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -224,6 +229,25 @@ export default function ContactHero({
                   )}
                 </div>
 
+                {onAssignEvent && (
+                  <div className="flex items-center gap-2 flex-wrap mt-2 text-sm">
+                    <span className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                      <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <span className="truncate" data-testid="text-hero-event">
+                        {contact.eventName ? `Met at ${contact.eventName}` : "No Event"}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onAssignEvent}
+                      className="text-primary hover:underline font-medium"
+                      data-testid="button-hero-assign-event"
+                    >
+                      {eventActionLabel}
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
                   {tags.map((t) => (
                     <Badge key={t} variant="secondary" className="text-[11px] px-2 py-0.5 rounded-md">
@@ -292,7 +316,7 @@ export default function ContactHero({
               <Button variant="outline" size="icon" onClick={onEmail} disabled={!contact.email} aria-label="Email contact" className="h-11 w-11">
                 <Mail className="h-4 w-4" />
               </Button>
-              <HeroMoreMenu onEdit={onEdit} onScheduleFollowUp={onScheduleFollowUp} onDelete={onDelete} />
+              <HeroMoreMenu onEdit={onEdit} onScheduleFollowUp={onScheduleFollowUp} onDelete={onDelete} onAssignEvent={onAssignEvent} eventActionLabel={eventActionLabel} />
             </div>
           )}
         </div>
@@ -335,7 +359,7 @@ export default function ContactHero({
             >
               <CalendarClock className="h-4 w-4 mr-2" /> Schedule Follow-up
             </Button>
-            <HeroMoreMenu onEdit={onEdit} onScheduleFollowUp={onScheduleFollowUp} onDelete={onDelete} label />
+            <HeroMoreMenu onEdit={onEdit} onScheduleFollowUp={onScheduleFollowUp} onDelete={onDelete} onAssignEvent={onAssignEvent} eventActionLabel={eventActionLabel} label />
           </div>
         )}
       </header>
@@ -347,11 +371,15 @@ function HeroMoreMenu({
   onEdit,
   onScheduleFollowUp,
   onDelete,
+  onAssignEvent,
+  eventActionLabel,
   label = false,
 }: {
   onEdit: () => void;
   onScheduleFollowUp: () => void;
   onDelete: () => void;
+  onAssignEvent?: () => void;
+  eventActionLabel: string;
   label?: boolean;
 }) {
   return (
@@ -374,6 +402,11 @@ function HeroMoreMenu({
         <DropdownMenuItem onClick={onScheduleFollowUp}>
           <CalendarClock className="h-4 w-4 mr-2" /> Schedule follow-up
         </DropdownMenuItem>
+        {onAssignEvent && (
+          <DropdownMenuItem onClick={onAssignEvent} data-testid="menu-assign-event">
+            <CalendarDays className="h-4 w-4 mr-2" /> {eventActionLabel}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={onDelete}

@@ -3217,6 +3217,32 @@ export const MakeContactOriginalResponse = zod.object({
 
 
 /**
+ * Updates `eventId` on every listed contact the caller can access (tenant-scoped; soft-deleted contacts are skipped).
+`eventId` null clears the event ("No Event"). The event must belong to the caller's tenant (404 otherwise).
+At most 200 contacts per call. One audit entry per changed contact records the move, e.g. "No Event → LEAP 2026".
+
+ * @summary Assign many contacts to an event, move them to another event, or clear their event (MOBILE-R2 later assignment)
+ */
+export const bulkAssignContactsEventBodyContactIdsMax = 200;
+
+
+
+export const BulkAssignContactsEventBody = zod.object({
+  "contactIds": zod.array(zod.number()).min(1).max(bulkAssignContactsEventBodyContactIdsMax),
+  "eventId": zod.number().nullable().describe('Target event (tenant-scoped), or null to clear the event.')
+})
+
+export const BulkAssignContactsEventResponse = zod.object({
+  "updated": zod.number().describe('Contacts whose event changed.'),
+  "unchanged": zod.number().describe('Contacts that already had the target event.'),
+  "skipped": zod.number().describe('Listed ids that are not accessible contacts of the caller (foreign tenant, deleted or unknown).'),
+  "eventId": zod.number().nullable(),
+  "eventName": zod.string().nullable(),
+  "contactIds": zod.array(zod.number()).describe('Ids of the contacts whose event changed.')
+})
+
+
+/**
  * @summary List logged communications for a contact
  */
 export const ListContactCommunicationsParams = zod.object({

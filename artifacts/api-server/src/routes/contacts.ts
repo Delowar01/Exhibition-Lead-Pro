@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { requireAuth, requireTenantUser, blockReadOnlyMutations, requirePermission, type AuthRequest } from "../middlewares/requireAuth.js";
-import { auditMutations } from "../lib/audit.js";
+import { auditMutations, writeAudit } from "../lib/audit.js";
 import { validateBody } from "../middlewares/validate.js";
-import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody, SetContactCustomFieldsBody, LogContactCommunicationBody, CreateContactCalendarInviteBody, CreateContactNoteBody } from "@workspace/api-zod";
+import { CreateContactBody, UpdateContactBody, MakeContactOriginalBody, MergeContactsBody, BulkAssignContactsEventBody, SetContactCustomFieldsBody, LogContactCommunicationBody, CreateContactCalendarInviteBody, CreateContactNoteBody } from "@workspace/api-zod";
 import * as contacts from "../services/contacts.service.js";
 import * as timeline from "../services/timeline.service.js";
 import * as comms from "../services/communications.service.js";
@@ -44,6 +44,22 @@ router.post("/contacts/make-original", requirePermission("contacts", "edit"), va
 // POST /contacts/merge — consolidate duplicates into a primary contact
 router.post("/contacts/merge", requirePermission("contacts", "delete"), validateBody(MergeContactsBody), async (req: AuthRequest, res) => {
   res.json(await contacts.mergeContacts(req.user!, req.body ?? {}));
+});
+
+// POST /contacts/bulk-assign-event — MOBILE-R2 later event assignment (static path before /:id).
+// Same write permission as editing a contact; one audit entry per changed contact
+// ("No Event → LEAP 2026") is written before the response so the trail is complete.
+router.post("/contacts/bulk-assign-event", requirePermission("contacts", "edit"), validateBody(BulkAssignContactsEventBody), async (req: AuthRequest, res) => {
+  const { result, moves } = await contacts.bulkAssignEvent(req.user!, req.body ?? {});
+  for (const m of moves) {
+    await writeAudit(req, {
+      action: "contacts.event_assign",
+      entityType: "contact",
+      entityId: m.contactId,
+      metadata: { fromEventId: m.fromEventId, fromEventName: m.fromEventName, toEventId: m.toEventId, toEventName: m.toEventName, summary: contacts.describeEventMove(m) },
+    });
+  }
+  res.json(result);
 });
 
 // GET /contacts/merge-history — formal merge audit trail (static path before /:id)

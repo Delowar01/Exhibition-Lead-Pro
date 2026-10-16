@@ -1967,6 +1967,34 @@ export interface DuplicatesResponse {
   groups: DuplicateGroup[];
 }
 
+export interface BulkAssignContactsEventInput {
+  /**
+     * @minItems 1
+     * @maxItems 200
+     */
+  contactIds: number[];
+  /**
+     * Target event (tenant-scoped), or null to clear the event.
+     * @nullable
+     */
+  eventId: number | null;
+}
+
+export interface BulkAssignContactsEventResult {
+  /** Contacts whose event changed. */
+  updated: number;
+  /** Contacts that already had the target event. */
+  unchanged: number;
+  /** Listed ids that are not accessible contacts of the caller (foreign tenant, deleted or unknown). */
+  skipped: number;
+  /** @nullable */
+  eventId: number | null;
+  /** @nullable */
+  eventName: string | null;
+  /** Ids of the contacts whose event changed. */
+  contactIds: number[];
+}
+
 /**
  * Optional per-field winning values chosen in the merge UI; override the automatic backfill.
  */

@@ -16,6 +16,12 @@
 //   • the exposed view hides tenant data unless the stored owner equals the
 //     bound account, so nothing leaks while auth or storage is still loading;
 //   • an event missing from the tenant's complete event list is dropped.
+//
+// MOBILE-R2 — intentional "No Event" capture. `noEventAcknowledged` records that
+// the bound account chose to capture without an event (picked "No event" in the
+// picker, or confirmed "Continue with No Event" on the first scan). While it is
+// set no further warning is shown; selecting an event, or any auth boundary,
+// clears it. It is tenant data like the active event and is reset with it.
 import { DEFAULT_COUNTRY, type CountryCode } from "./countries";
 
 export type ThemePref = "light" | "dark" | "system";
@@ -58,6 +64,8 @@ export interface AppSettings {
   lockTimeoutMs: LockTimeoutMs;
   activeEventId: number | null;
   activeEventName: string | null;
+  /** The bound account intentionally captures without an event (no repeated warning). */
+  noEventAcknowledged: boolean;
   contactFilters: ContactFilters;
   /** Account that owns the tenant-scoped values above; null = nobody. */
   scopeOwner: string | null;
@@ -74,6 +82,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lockTimeoutMs: 30_000,
   activeEventId: null,
   activeEventName: null,
+  noEventAcknowledged: false,
   contactFilters: DEFAULT_CONTACT_FILTERS,
   scopeOwner: null,
 };
@@ -87,6 +96,7 @@ export function parseStoredSettings(raw: string | null): AppSettings {
       ...DEFAULT_SETTINGS,
       ...parsed,
       contactFilters: { ...DEFAULT_CONTACT_FILTERS, ...parsed.contactFilters },
+      noEventAcknowledged: parsed.noEventAcknowledged === true,
       // Pre-ownership settings carry no owner: they never match an account.
       scopeOwner: typeof parsed.scopeOwner === "string" ? parsed.scopeOwner : null,
     };
@@ -118,6 +128,7 @@ function withoutTenantState(settings: AppSettings, owner: string | null): AppSet
     ...settings,
     activeEventId: null,
     activeEventName: null,
+    noEventAcknowledged: false,
     contactFilters: { ...settings.contactFilters, eventId: null },
     scopeOwner: owner,
   };
@@ -132,6 +143,7 @@ export function bindSettingsToAccount(settings: AppSettings, owner: string | nul
   const hasTenantState =
     settings.activeEventId !== null ||
     settings.activeEventName !== null ||
+    settings.noEventAcknowledged ||
     settings.contactFilters.eventId !== null;
   if (!hasTenantState && settings.scopeOwner === owner) return settings;
   return withoutTenantState(settings, owner);
@@ -146,17 +158,46 @@ export function visibleSettings(settings: AppSettings, boundOwner: string | null
   return withoutTenantState(settings, settings.scopeOwner);
 }
 
-/** Choose (or clear, with null) the capture event for the bound account. */
+/**
+ * Choose (or clear, with null) the capture event for the bound account.
+ * Clearing from the picker is an INTENTIONAL "No Event" choice (`intentional`,
+ * default true): the first-scan warning is then not shown again for this account
+ * until an event is selected. Selecting an event always resets the acknowledgement.
+ */
 export function selectActiveEvent(
   settings: AppSettings,
   id: number | null,
   name: string | null,
   owner: string | null | undefined,
+  opts: { intentional?: boolean } = {},
 ): AppSettings {
   const bound = owner ?? null;
   // Never carry another owner's filter into the newly stamped scope.
   const base = settings.scopeOwner === bound ? settings : withoutTenantState(settings, bound);
-  return applyPatch(base, { activeEventId: id, activeEventName: id === null ? null : name, scopeOwner: bound });
+  const noEventAcknowledged = id === null ? (opts.intentional ?? true) && bound !== null : false;
+  return applyPatch(base, { activeEventId: id, activeEventName: id === null ? null : name, noEventAcknowledged, scopeOwner: bound });
+}
+
+/** The user confirmed "Continue with No Event" on the first-scan warning. */
+export function acknowledgeNoEvent(settings: AppSettings, owner: string | null | undefined): AppSettings {
+  const bound = owner ?? null;
+  if (bound === null) return settings;
+  const base = settings.scopeOwner === bound ? settings : withoutTenantState(settings, bound);
+  if (base.activeEventId !== null) return base;
+  if (base.noEventAcknowledged && base === settings) return settings;
+  return applyPatch(base, { noEventAcknowledged: true, scopeOwner: bound });
+}
+
+export type CaptureEventDecision = "proceed" | "warn";
+
+/**
+ * Before a capture starts: "warn" exactly when no event is active AND the account
+ * has not yet chosen to capture without one; otherwise the capture proceeds
+ * (with the active event, or intentionally with none).
+ */
+export function captureEventDecision(settings: Pick<AppSettings, "activeEventId" | "noEventAcknowledged">): CaptureEventDecision {
+  if (settings.activeEventId !== null) return "proceed";
+  return settings.noEventAcknowledged ? "proceed" : "warn";
 }
 
 /**

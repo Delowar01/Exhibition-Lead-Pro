@@ -144,7 +144,7 @@ export default function CaptureCameraScreen() {
   const createScan = useCreateScan();
   const createContact = useCreateContact();
   const { isOnline, enqueueScan } = useOffline();
-  const { activeEventId, language } = useSettings();
+  const { activeEventId, activeEventName, language } = useSettings();
   const eventId = activeEventId ?? null;
 
   const [capturing, setCapturing] = useState(false);
@@ -783,6 +783,16 @@ export default function CaptureCameraScreen() {
             {source === "signature" ? t("capture.scanSignature") : t("capture.scanCardTitle")}
           </Text>
           <Text style={styles.overlaySub}>{t("capture.alignFrame", { label: sourceLabel })}</Text>
+          {/* MOBILE-R2 — the event every capture on this screen is saved with, or an explicit "No Event" badge */}
+          <View
+            accessibilityLabel={eventId ? (activeEventName ?? "") : t("capture.noEventBadge")}
+            style={[styles.eventChip, { backgroundColor: eventId ? "rgba(255,255,255,0.18)" : "rgba(245,158,11,0.28)", borderColor: eventId ? "rgba(255,255,255,0.35)" : "#F59E0B" }]}
+          >
+            <Feather name={eventId ? "map-pin" : "calendar"} size={12} color="#FFFFFF" />
+            <Text style={styles.eventChipText} numberOfLines={1}>
+              {eventId ? activeEventName ?? "" : t("capture.noEventBadge")}
+            </Text>
+          </View>
         </View>
       </LinearGradient>
 
@@ -926,6 +936,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  eventChip: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1, maxWidth: 260 },
+  eventChipText: { color: "#FFFFFF", fontSize: 12, fontFamily: FONT.semibold },
   closeBtn: {
     width: 44,
     height: 44,

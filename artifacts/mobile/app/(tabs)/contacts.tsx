@@ -55,6 +55,7 @@ import {
 } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
+import { toggleSelected } from "@/lib/event-assign-model";
 
 function contactName(c: Contact, fallback: string): string {
   if (c.fullName) return c.fullName;
@@ -77,6 +78,9 @@ const ContactRow = React.memo(function ContactRow({
   t,
   unnamedLabel,
   onPress,
+  onLongPress,
+  selectionMode,
+  selected,
 }: {
   item: Contact;
   colors: ColorTokens;
@@ -85,22 +89,32 @@ const ContactRow = React.memo(function ContactRow({
   t: TFn;
   unnamedLabel: string;
   onPress: (id: number) => void;
+  /** MOBILE-R2 — long-press starts multi-select; in selection mode a tap toggles the row. */
+  onLongPress: (id: number) => void;
+  selectionMode: boolean;
+  selected: boolean;
 }) {
   const statusColor = CONTACT_STATUS_COLORS[item.status] ?? colors.mutedForeground;
   return (
     <Pressable
       onPress={() => onPress(item.id)}
+      onLongPress={() => onLongPress(item.id)}
+      delayLongPress={350}
+      accessibilityState={selectionMode ? { selected } : undefined}
       style={({ pressed }) => [
         styles.row,
         {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
+          backgroundColor: selected ? colors.primary + "12" : colors.card,
+          borderColor: selected ? colors.primary : colors.border,
           borderRadius: colors.radius + 4,
           opacity: pressed ? 0.7 : 1,
           flexDirection: isRTL ? "row-reverse" : "row",
         },
       ]}
     >
+      {selectionMode ? (
+        <Feather name={selected ? "check-circle" : "circle"} size={22} color={selected ? colors.primary : colors.mutedForeground} />
+      ) : null}
       <Avatar name={contactName(item, unnamedLabel)} color={statusColor} />
       <View style={{ flex: 1 }}>
         <Text numberOfLines={1} style={[styles.name, { color: colors.foreground, textAlign }]}>
@@ -169,6 +183,9 @@ export default function ContactsScreen() {
   const [debounced, setDebounced] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  // MOBILE-R2 — multi-select for the later bulk event assignment.
+  const [selected, setSelected] = useState<ReadonlySet<number>>(() => new Set());
+  const selectionMode = selected.size > 0;
   const { user } = useAuth();
   const showExport = canExport(user);
 
@@ -325,9 +342,20 @@ export default function ContactsScreen() {
 
   const unnamedLabel = t("common.unnamedContact");
   const onRowPress = React.useCallback(
-    (id: number) => router.push(`/contact/${id}`),
-    [router],
+    (id: number) => {
+      if (!selectionMode) {
+        router.push(`/contact/${id}`);
+        return;
+      }
+      setSelected((prev) => toggleSelected(prev, id));
+    },
+    [router, selectionMode],
   );
+  const onRowLongPress = React.useCallback((id: number) => {
+    if (Platform.OS !== "web") Haptics.selectionAsync();
+    setSelected((prev) => (prev.has(id) ? prev : toggleSelected(prev, id)));
+  }, []);
+  const clearSelection = React.useCallback(() => setSelected(new Set()), []);
   const renderItem = React.useCallback(
     ({ item }: { item: Contact }) => (
       <ContactRow
@@ -338,9 +366,12 @@ export default function ContactsScreen() {
         t={t}
         unnamedLabel={unnamedLabel}
         onPress={onRowPress}
+        onLongPress={onRowLongPress}
+        selectionMode={selectionMode}
+        selected={selected.has(item.id)}
       />
     ),
-    [colors, isRTL, textAlign, t, unnamedLabel, onRowPress],
+    [colors, isRTL, textAlign, t, unnamedLabel, onRowPress, onRowLongPress, selectionMode, selected],
   );
 
   return (
@@ -510,6 +541,34 @@ export default function ContactsScreen() {
           }
         />
       )}
+
+      {/* MOBILE-R2 — selection bar: assign the selected contacts to an event (or clear it) */}
+      {selectionMode ? (
+        <View
+          accessibilityRole="toolbar"
+          style={[
+            styles.selectionBar,
+            { backgroundColor: colors.card, borderColor: colors.border, bottom: insets.bottom + 92, flexDirection: isRTL ? "row-reverse" : "row" },
+          ]}
+        >
+          <Pressable onPress={clearSelection} hitSlop={10} accessibilityLabel={t("common.cancel")} style={styles.selectionCancel}>
+            <Feather name="x" size={20} color={colors.foreground} />
+          </Pressable>
+          <Text style={[styles.selectionCount, { color: colors.foreground, textAlign }]}>{t("contacts.selectedCount", { count: selected.size })}</Text>
+          <Pressable
+            onPress={() => {
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              const ids = [...selected].join(",");
+              clearSelection();
+              router.push({ pathname: "/event-assign", params: { ids } });
+            }}
+            style={({ pressed }) => [styles.selectionAction, { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1, flexDirection: isRTL ? "row-reverse" : "row" }]}
+          >
+            <Feather name="calendar" size={16} color="#FFFFFF" />
+            <Text style={styles.selectionActionText}>{t("contacts.assignToEvent")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <FilterSheet
         open={sheetOpen}
@@ -803,6 +862,11 @@ function FilterSheet({
 }
 
 const styles = StyleSheet.create({
+  selectionBar: { position: "absolute", left: 16, right: 16, alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderRadius: 16, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  selectionCancel: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  selectionCount: { flex: 1, fontSize: 15, fontFamily: FONT.semibold },
+  selectionAction: { alignItems: "center", gap: 6, paddingHorizontal: 14, minHeight: 40, borderRadius: 12 },
+  selectionActionText: { color: "#FFFFFF", fontSize: 14, fontFamily: FONT.semibold },
   heading: {
     fontSize: 30,
     fontFamily: FONT.bold,

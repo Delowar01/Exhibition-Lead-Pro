@@ -32,6 +32,7 @@ import {
   CreateTaskDialog,
   DeleteContactDialog,
 } from "@/components/contact/dialogs";
+import { AssignEventDialog } from "@/components/contact/AssignEventDialog";
 
 function normalizePhone(p: string): string {
   return p.replace(/[^\d+]/g, "");
@@ -90,6 +91,7 @@ export default function AdminContactDetail() {
   const [taskOpen, setTaskOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [aiSheetOpen, setAiSheetOpen] = useState(false);
+  const [assignEventOpen, setAssignEventOpen] = useState(false); // MOBILE-R2
 
   // After a task/follow-up is created from the workspace dialogs, refresh every
   // consumer without a reload: the Timeline feed, the task/follow-up lists the
@@ -205,11 +207,19 @@ export default function AdminContactDetail() {
         onScheduleFollowUp={() => setFollowUpOpen(true)}
         onEdit={() => setEditOpen(true)}
         onDelete={() => setDeleteOpen(true)}
+        onAssignEvent={() => setAssignEventOpen(true)}
         onOpenCompany={
           contact.organizationId
             ? () => setLocation(`/admin/companies/${contact.organizationId}`)
             : undefined
         }
+      />
+
+      <AssignEventDialog
+        open={assignEventOpen}
+        onOpenChange={setAssignEventOpen}
+        contactIds={[contactId]}
+        currentEventId={contact.eventId ?? null}
       />
 
       <WorkspaceTabs contactId={contactId} active={active} />

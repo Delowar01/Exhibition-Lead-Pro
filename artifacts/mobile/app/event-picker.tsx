@@ -63,7 +63,8 @@ export default function EventPickerScreen() {
   }
 
   function clearSelection() {
-    setActiveEvent(null, null);
+    // MOBILE-R2 — an explicit "No event" choice: captures proceed without the first-scan warning.
+    setActiveEvent(null, null, { intentional: true });
     router.back();
   }
 

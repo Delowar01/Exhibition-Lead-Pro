@@ -246,3 +246,66 @@ describe("11. persisted contact-filter event", () => {
     expect(reconcileAccessibleEvents(s, [{ id: 1 }], 1).contactFilters.eventId).toBeNull();
   });
 });
+
+// MOBILE-R2 — intentional "No Event" capture: warn once, never repeatedly; the
+// acknowledgement is tenant data (reset on every auth boundary and when an event
+// is selected), so it can never leak a choice across accounts.
+import { acknowledgeNoEvent, captureEventDecision } from "./settings-model";
+
+describe("11. first-scan warning without an event (MOBILE-R2)", () => {
+  it("a freshly bound account with no event is warned before the first capture", () => {
+    const s = bindSettingsToAccount(parseStoredSettings(null), OWNER_A);
+    expect(captureEventDecision(s)).toBe("warn");
+  });
+
+  it("'Continue with No Event' acknowledges once; later captures proceed without another warning (also after a restart)", () => {
+    let s = bindSettingsToAccount(parseStoredSettings(null), OWNER_A);
+    s = acknowledgeNoEvent(s, OWNER_A);
+    expect(s.noEventAcknowledged).toBe(true);
+    expect(captureEventDecision(s)).toBe("proceed");
+    expect(withCaptureEvent({ firstName: "A" }, s).eventId).toBeNull();
+    const reloaded = persistAndReload(s);
+    expect(captureEventDecision(visibleSettings(reloaded, OWNER_A))).toBe("proceed");
+    expect(acknowledgeNoEvent(reloaded, OWNER_A)).toBe(reloaded); // idempotent: no storage write
+  });
+
+  it("picking 'No event' in the picker is intentional: no warning follows", () => {
+    let s = tenantAWithLeap();
+    s = selectActiveEvent(s, null, null, OWNER_A);
+    expect(s.activeEventId).toBeNull();
+    expect(s.activeEventName).toBeNull();
+    expect(s.noEventAcknowledged).toBe(true);
+    expect(captureEventDecision(s)).toBe("proceed");
+  });
+
+  it("clearing non-intentionally (e.g. reconciliation drops a deleted event) keeps the warning", () => {
+    let s = tenantAWithLeap();
+    s = reconcileAccessibleEvents(s, [], 0);
+    expect(s.activeEventId).toBeNull();
+    expect(s.noEventAcknowledged).toBe(false);
+    expect(captureEventDecision(s)).toBe("warn");
+    expect(captureEventDecision(selectActiveEvent(tenantAWithLeap(), null, null, OWNER_A, { intentional: false }))).toBe("warn");
+  });
+
+  it("selecting an event resets the acknowledgement, so clearing it later warns again unless chosen intentionally", () => {
+    let s = acknowledgeNoEvent(bindSettingsToAccount(parseStoredSettings(null), OWNER_A), OWNER_A);
+    s = selectActiveEvent(s, LEAP.id, LEAP.name, OWNER_A);
+    expect(s.noEventAcknowledged).toBe(false);
+    expect(captureEventDecision(s)).toBe("proceed"); // an event is active
+    expect(captureEventDecision(reconcileAccessibleEvents(s, [], 0))).toBe("warn");
+  });
+
+  it("the acknowledgement is tenant state: logout, a different account and legacy settings never inherit it", () => {
+    const acked = persistAndReload(acknowledgeNoEvent(bindSettingsToAccount(parseStoredSettings(null), OWNER_A), OWNER_A));
+    expect(bindSettingsToAccount(acked, null).noEventAcknowledged).toBe(false);
+    expect(bindSettingsToAccount(acked, OWNER_B).noEventAcknowledged).toBe(false);
+    expect(visibleSettings(acked, OWNER_B).noEventAcknowledged).toBe(false);
+    expect(visibleSettings(acked, undefined).noEventAcknowledged).toBe(false);
+    const legacy = parseStoredSettings(JSON.stringify({ ...DEFAULT_SETTINGS, noEventAcknowledged: true, scopeOwner: null }));
+    expect(bindSettingsToAccount(legacy, OWNER_A).noEventAcknowledged).toBe(false);
+    expect(captureEventDecision(bindSettingsToAccount(legacy, OWNER_A))).toBe("warn");
+    // Nobody signed in: nothing to acknowledge, nothing stored.
+    expect(acknowledgeNoEvent(DEFAULT_SETTINGS, null)).toBe(DEFAULT_SETTINGS);
+    expect(parseStoredSettings(JSON.stringify({ noEventAcknowledged: "yes" })).noEventAcknowledged).toBe(false);
+  });
+});

@@ -163,6 +163,10 @@ function RootLayoutNav() {
         options={{ headerShown: false, presentation: "modal" }}
       />
       <Stack.Screen
+        name="event-assign"
+        options={{ headerShown: false, presentation: "modal" }}
+      />
+      <Stack.Screen
         name="capture-qr"
         options={{ headerShown: false, presentation: "fullScreenModal" }}
       />

@@ -167,6 +167,14 @@ export async function byIds(ids: number[]): Promise<ContactRow[]> {
 
 // Tenant-scoped, soft-delete-excluding single fetch (undefined for missing,
 // deleted, or inaccessible).
+// MOBILE-R2 — the listed contacts the caller may act on: tenant-scoped (tenantScope via
+// activeScope), soft-deleted rows excluded, unknown / foreign ids simply absent.
+export async function findAccessibleByIds(user: AuthUser, ids: number[]): Promise<ContactRow[]> {
+  if (ids.length === 0) return [];
+  const where = activeScope(user, contactsTable.companyId, contactsTable.deletedAt, { extra: [inArray(contactsTable.id, ids)] });
+  return db.select().from(contactsTable).where(where);
+}
+
 export async function findById(user: AuthUser, id: number): Promise<ContactRow | undefined> {
   const where = activeScope(user, contactsTable.companyId, contactsTable.deletedAt, { extra: [eq(contactsTable.id, id)] });
   const [row] = await db.select().from(contactsTable).where(where).limit(1);

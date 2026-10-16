@@ -2109,6 +2109,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /contacts/bulk-assign-event:
+    post:
+      operationId: bulkAssignContactsEvent
+      tags: [contacts]
+      summary: Assign many contacts to an event, move them to another event, or clear their event (MOBILE-R2 later assignment)
+      description: |
+        Updates `eventId` on every listed contact the caller can access (tenant-scoped; soft-deleted contacts are skipped).
+        `eventId` null clears the event ("No Event"). The event must belong to the caller's tenant (404 otherwise).
+        At most 200 contacts per call. One audit entry per changed contact records the move, e.g. "No Event → LEAP 2026".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkAssignContactsEventInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkAssignContactsEventResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /contacts/{id}/communications:
     get:
       operationId: listContactCommunications
@@ -10666,6 +10701,43 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DuplicateGroup"
+
+    BulkAssignContactsEventInput:
+      type: object
+      required: [contactIds, eventId]
+      properties:
+        contactIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: integer
+        eventId:
+          type: ["integer", "null"]
+          description: Target event (tenant-scoped), or null to clear the event.
+
+    BulkAssignContactsEventResult:
+      type: object
+      required: [updated, unchanged, skipped, eventId, eventName, contactIds]
+      properties:
+        updated:
+          type: integer
+          description: Contacts whose event changed.
+        unchanged:
+          type: integer
+          description: Contacts that already had the target event.
+        skipped:
+          type: integer
+          description: Listed ids that are not accessible contacts of the caller (foreign tenant, deleted or unknown).
+        eventId:
+          type: ["integer", "null"]
+        eventName:
+          type: ["string", "null"]
+        contactIds:
+          type: array
+          description: Ids of the contacts whose event changed.
+          items:
+            type: integer
 
     MergeRequest:
       type: object

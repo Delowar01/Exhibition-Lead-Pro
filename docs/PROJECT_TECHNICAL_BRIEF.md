@@ -122,6 +122,41 @@ remainders). Gap register and release gates: `B23_FINAL_RECONCILIATION.md`.
 B23 G-6D Hostinger off-host backup: CODE COMPLETE — ACTIVATION DEFERRED BY OWNER. Frozen on `claude/b23-g6d-hostinger-only`
 (`e82e5cb…`). The off-host deferral is not a blocker for product development, testing, B24, B25, or later feature batches.
 
+**B25 Stage 2A (filesystem primary + strict GCS mirror on the hosted stack) — status 2026-10-16:**
+activated on the hosted dev stack with the locked configuration (ops branch
+`ops/b25-stage2a-fs-activation-tooling`, product commit `e559b002`); both failed-smoke residues
+(companies 54 and 56) are settled and the hosted inventory is exactly the Stage 1 exception
+again. **Stage 2A is NOT closed: the corrected disposable smoke (run 38934705535) stopped
+inside the pre-mutation guard — the existing-tenant composition digest no longer matches the
+accepted Stage 1 baseline — before anything was written, so the maintenance window is still
+active and the production track is BLOCKED FOR INDEPENDENT REVIEW.** A read-only drift
+localization mode (`stage2a_tenant_drift_inspect`) is prepared on the ops branch and has
+not been dispatched; the baseline constant was not changed. Stage 2B migration tooling is
+NOT STARTED.
+
+**Mobile release blockers (code complete, hosted / device verification PENDING) — branch
+`claude/mobile-release-blockers` (from `develop` `e559b002`):**
+*MOBILE-R1 — AI card-scanning readiness:* diagnosis from source and the environment inventory
+of record — the production API has no Gemini credential (`GEMINI_API_KEY` set-but-empty,
+`AI_INTEGRATIONS_GEMINI_API_KEY` unset), so scans correctly answer `503 AI_NOT_CONFIGURED`
+(`artifacts/api-server/src/ai/readiness.ts`); the mobile client now maps that code to a
+localized message, shows a pre-scan "AI scanning unavailable" notice from `GET /ai/health`
+(manual / QR / NFC capture stay available) and guards the bundle against any AI credential
+(`artifacts/mobile/lib/no-bundled-secrets.test.ts`). Operator requirement (server-side only):
+a non-empty `GEMINI_API_KEY` or the `AI_INTEGRATIONS_GEMINI_API_KEY` +
+`AI_INTEGRATIONS_GEMINI_BASE_URL` pair in the api service environment, then recreate the api
+container (`LOCAL_AND_STAGING_RUNBOOK.md` troubleshooting table). *Implementation COMPLETE —
+deployment / physical verification PENDING.*
+*MOBILE-R2 — No Event workflow + later event assignment:* capturing without an event is an
+intentional choice (one "No Event Selected" warning per account, "Select Event" / "Continue
+with No Event", no repeats; "No Event" badge on the scanner); later assignment — single from
+the mobile contact detail and the admin contact page, bulk from the mobile list long-press
+multi-select and the admin directory checkboxes — through the new tenant-scoped, permission-
+gated, bounded (≤ 200) `POST /contacts/bulk-assign-event` (No Event → Event, A → B,
+Event → No Event; one audit entry per changed contact, e.g. "No Event → LEAP 2026").
+*Implementation COMPLETE — deployment / physical verification PENDING.* No APK / EAS build
+was created.
+
 **Branch model** — `develop` is the product integration line and the only
 auto-deploy source; `export-ready` is the GitHub default branch carrying the
 export baseline plus the external backup-health workflow (not the product

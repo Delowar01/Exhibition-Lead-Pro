@@ -18,6 +18,7 @@ import {
   type LanguagePref,
   type LockTimeoutMs,
   type ThemePref,
+  acknowledgeNoEvent,
   applyPatch,
   bindSettingsToAccount,
   parseStoredSettings,
@@ -47,7 +48,10 @@ interface SettingsContextValue extends Omit<AppSettings, "scopeOwner"> {
   setCountry: (value: CountryCode) => void;
   setBiometricEnabled: (value: boolean) => void;
   setLockTimeoutMs: (value: LockTimeoutMs) => void;
-  setActiveEvent: (id: number | null, name: string | null) => void;
+  /** Select an event; `null` clears it — an intentional "No Event" choice unless `intentional: false`. */
+  setActiveEvent: (id: number | null, name: string | null, opts?: { intentional?: boolean }) => void;
+  /** First-scan warning answered with "Continue with No Event": no further warning for this account. */
+  acknowledgeNoEvent: () => void;
   setContactFilters: (value: ContactFilters) => void;
   /** Auth boundary: the account now signed in (owner key), or null after logout. */
   bindAccount: (owner: string | null) => void;
@@ -71,6 +75,7 @@ const SettingsContext = createContext<SettingsContextValue>({
   setBiometricEnabled: () => {},
   setLockTimeoutMs: () => {},
   setActiveEvent: () => {},
+  acknowledgeNoEvent: () => {},
   setContactFilters: () => {},
   bindAccount: () => {},
   reconcileEvents: () => {},
@@ -163,8 +168,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setCountry: (country) => patch({ country }),
     setBiometricEnabled: (biometricEnabled) => patch({ biometricEnabled }),
     setLockTimeoutMs: (lockTimeoutMs) => patch({ lockTimeoutMs }),
-    setActiveEvent: (activeEventId, activeEventName) =>
-      update((prev) => selectActiveEvent(prev, activeEventId, activeEventName, ownerRef.current)),
+    setActiveEvent: (activeEventId, activeEventName, opts) =>
+      update((prev) => selectActiveEvent(prev, activeEventId, activeEventName, ownerRef.current, opts)),
+    acknowledgeNoEvent: () => update((prev) => acknowledgeNoEvent(prev, ownerRef.current)),
     setContactFilters: (contactFilters) => patch({ contactFilters }),
     bindAccount,
     reconcileEvents,

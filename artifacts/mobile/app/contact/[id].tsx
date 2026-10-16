@@ -57,6 +57,7 @@ import {
 } from "@/lib/notifications";
 
 import { DateTimeField } from "@/components/DateTimeField";
+import { eventActionKey } from "@/lib/event-assign-model";
 import {
   Avatar,
   Badge,
@@ -696,9 +697,23 @@ export default function ContactDetailScreen() {
                   <DetailRow icon="linkedin" label="LinkedIn" value={contact.linkedin} />
                   <DetailRow icon="map-pin" label={t("contacts.fields.address")} value={contact.address} />
                   <DetailRow icon="flag" label={t("contacts.fields.country")} value={contact.country} />
-                  {contact.eventName ? (
-                    <DetailRow icon="calendar" label={t("contacts.fields.event")} value={contact.eventName} />
-                  ) : null}
+                  {/* MOBILE-R2 — event with later assignment (No Event → Event, A → B, Event → No Event) */}
+                  <Pressable
+                    onPress={() => router.push({ pathname: "/event-assign", params: { ids: String(contact.id), current: contact.eventId != null ? String(contact.eventId) : "" } })}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(eventActionKey(contact.eventId))}
+                    style={({ pressed }) => [styles.detailRow, { opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <Feather name="calendar" size={17} color={colors.mutedForeground} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.detailLabel, { color: colors.mutedForeground }]}>{t("contacts.fields.event")}</Text>
+                      <Text style={[styles.detailValue, { color: contact.eventName ? colors.foreground : colors.mutedForeground }]}>
+                        {contact.eventName ?? t("events.noEvent")}
+                      </Text>
+                    </View>
+                    <Text style={[styles.detailAction, { color: colors.primary }]}>{t(eventActionKey(contact.eventId))}</Text>
+                    <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                  </Pressable>
                   {contact.latitude && contact.longitude ? (
                     <Pressable onPress={openMaps} style={styles.detailRow}>
                       <Feather name="map-pin" size={17} color={colors.primary} />
@@ -1512,6 +1527,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: FONT.regular,
   },
+  detailAction: { fontSize: 13, fontFamily: FONT.semibold },
   detailValue: {
     fontSize: 15,
     fontFamily: FONT.medium,

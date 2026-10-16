@@ -38,8 +38,8 @@ describe("aiReadinessNoticeKey", () => {
     expect(key).toBe("capture.aiNotConfiguredBody");
     for (const k of ["capture.aiNotConfiguredTitle", "capture.aiNotConfiguredBody", "capture.aiReadinessRetry", "capture.errAiNotConfigured"]) {
       const [ns, name] = k.split(".");
-      expect(typeof (en as Record<string, Record<string, unknown>>)[ns][name], `en ${k}`).toBe("string");
-      expect(typeof (ar as Record<string, Record<string, unknown>>)[ns][name], `ar ${k}`).toBe("string");
+      expect(typeof (en as unknown as Record<string, Record<string, unknown>>)[ns][name], `en ${k}`).toBe("string");
+      expect(typeof (ar as unknown as Record<string, Record<string, unknown>>)[ns][name], `ar ${k}`).toBe("string");
     }
   });
 });

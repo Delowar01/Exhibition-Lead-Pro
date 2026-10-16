@@ -1033,6 +1033,62 @@ export async function updateContact(user: AuthUser, id: number, body: UpdateCont
   return formatContact(c, eventName, assignedToName, organizationName);
 }
 
+// MOBILE-R2 — later event assignment: assign many contacts to an event, move them to
+// another event, or clear their event (eventId null = "No Event"). Tenant-scoped like
+// every contact write: the target event must be accessible to the caller (404 — never
+// a hint that a foreign event exists), the contacts are read through tenantScope and
+// ids outside it are skipped (not errors), the change is bounded (≤ 200 ids), and
+// every changed contact gets the same workflow events as a PATCH. The caller (route)
+// records one audit entry per move from the returned list; nothing is auto-executed.
+export interface BulkAssignEventInput { contactIds: number[]; eventId: number | null }
+export interface ContactEventMove { contactId: number; fromEventId: number | null; fromEventName: string | null; toEventId: number | null; toEventName: string | null }
+export async function bulkAssignEvent(user: AuthUser, input: BulkAssignEventInput) {
+  const ids = [...new Set(input.contactIds ?? [])].filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) throw new AppError(400, "contactIds must be a non-empty array");
+  if (ids.length > 200) throw new AppError(400, "Cannot assign more than 200 contacts at once");
+  const eventId = input.eventId ?? null;
+  if (eventId !== null && !Number.isInteger(eventId)) throw new AppError(400, "Invalid eventId");
+  if (eventId !== null && !(await refAccessible(user, "events", eventId))) throw new AppError(404, "Event not found");
+  const toEventName = eventId === null ? null : ((await contactsRepo.eventName(eventId))?.name ?? null);
+
+  const rows = await contactsRepo.findAccessibleByIds(user, ids);
+  const skipped = ids.length - rows.length;
+  const changing = rows.filter((r) => (r.eventId ?? null) !== eventId);
+  const unchanged = rows.length - changing.length;
+  const fromNameRows = await contactsRepo.eventNamesByIds([...new Set(changing.map((r) => r.eventId).filter((v): v is number => v != null))]);
+  const fromNames = new Map(fromNameRows.map((r) => [r.id, r.name] as const));
+
+  const moves: ContactEventMove[] = [];
+  if (changing.length > 0) {
+    const runs = await db.transaction(async (tx) => {
+      const all = [];
+      for (const existing of changing) {
+        const c = await contactsRepo.update(existing.id, { eventId, updatedAt: new Date() }, tx);
+        if (!c) throw new AppError(404, "Contact not found");
+        all.push(...(await persistWorkflowRuns(contactUpdatedEvents(existing, c, user.id), tx)));
+        moves.push({
+          contactId: existing.id,
+          fromEventId: existing.eventId ?? null,
+          fromEventName: existing.eventId != null ? (fromNames.get(existing.eventId) ?? null) : null,
+          toEventId: eventId,
+          toEventName,
+        });
+      }
+      return all;
+    });
+    await enqueueWorkflowRuns(runs);
+  }
+  return {
+    result: { updated: moves.length, unchanged, skipped, eventId, eventName: toEventName, contactIds: moves.map((m) => m.contactId) },
+    moves,
+  };
+}
+
+/** Human summary used in the audit trail: "No Event → LEAP 2026", "LEAP 2026 → GITEX 2026", "LEAP 2026 → No Event". */
+export function describeEventMove(m: Pick<ContactEventMove, "fromEventName" | "toEventName">): string {
+  return `${m.fromEventName ?? "No Event"} → ${m.toEventName ?? "No Event"}`;
+}
+
 export async function deleteContact(user: AuthUser, id: number) {
   const existing = await contactsRepo.findById(user, id);
   if (!existing) throw new AppError(404, "Contact not found");

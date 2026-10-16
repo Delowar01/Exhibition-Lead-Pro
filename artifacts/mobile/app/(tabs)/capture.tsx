@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -12,13 +13,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useGetAiHealth } from "@workspace/api-client-react";
+import { getGetAiHealthQueryKey, useGetAiHealth } from "@workspace/api-client-react";
 
 import { FONT } from "@/components/ui";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { useLocale } from "@/hooks/useLocale";
 import { aiReadinessFromHealth } from "@/lib/ai-readiness";
+import { captureEventDecision } from "@/lib/settings-model";
 import { RADIUS, SPACING, TOUCH_TARGET } from "@/constants/tokens";
 
 type CaptureMode = "single" | "rapid" | "batch";
@@ -34,7 +36,7 @@ export default function CaptureScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { t, isRTL, textAlign } = useLocale();
-  const { captureMode, isLoaded, activeEventId, activeEventName } = useSettings();
+  const { captureMode, isLoaded, activeEventId, activeEventName, noEventAcknowledged, acknowledgeNoEvent } = useSettings();
   const [mode, setMode] = useState<CaptureMode>(captureMode);
 
   const hydrated = useRef(false);
@@ -49,19 +51,32 @@ export default function CaptureScreen() {
   // configured. "unconfigured" shows a notice BEFORE a photo is taken; any other answer
   // (loading, transport failure, 401/403) never blocks scanning — the scan request itself
   // still receives the authoritative 503 AI_NOT_CONFIGURED, mapped in lib/scan-error.ts.
-  const aiHealth = useGetAiHealth({ query: { staleTime: 60_000, retry: false, refetchOnWindowFocus: false } });
+  const aiHealth = useGetAiHealth({ query: { queryKey: getGetAiHealthQueryKey(), staleTime: 60_000, retry: false, refetchOnWindowFocus: false } });
   const aiReadiness = aiReadinessFromHealth(aiHealth.data);
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
   const activeMode = MODES.find((m) => m.key === mode)!;
 
+  // MOBILE-R2 — capturing without an event is allowed and intentional: the first capture
+  // of an account without an active event asks once ("Select Event" opens the picker,
+  // "Continue with No Event" records the choice); afterwards no warning repeats until an
+  // event is selected again (lib/settings-model.ts, captureEventDecision).
   function requireEvent(run: () => void) {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (!activeEventId) {
-      router.push("/event-picker");
+    if (captureEventDecision({ activeEventId, noEventAcknowledged }) === "proceed") {
+      run();
       return;
     }
-    run();
+    Alert.alert(t("capture.noEventWarnTitle"), t("capture.noEventWarnBody"), [
+      { text: t("capture.noEventSelect"), onPress: () => router.push("/event-picker") },
+      {
+        text: t("capture.noEventContinue"),
+        onPress: () => {
+          acknowledgeNoEvent();
+          run();
+        },
+      },
+    ]);
   }
 
   const primaryMethods = [
@@ -150,7 +165,7 @@ export default function CaptureScreen() {
               {activeEventName ?? t("home.noActiveEvent")}
             </Text>
             <Text style={[styles.eventSub, { color: colors.mutedForeground, textAlign }]}>
-              {activeEventId ? t("capture.eventTagged") : t("capture.eventSelectHint")}
+              {activeEventId ? t("capture.eventTagged") : noEventAcknowledged ? t("capture.noEventAcknowledgedHint") : t("capture.eventSelectHint")}
             </Text>
           </View>
           <Feather name="chevron-right" size={20} color={colors.mutedForeground} />

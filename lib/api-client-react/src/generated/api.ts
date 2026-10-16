@@ -66,6 +66,8 @@ import type {
   AttachLeadTagInput,
   AuditLogListResponse,
   AuthResponse,
+  BulkAssignContactsEventInput,
+  BulkAssignContactsEventResult,
   BulkAssignInput,
   BulkAssignResult,
   BusinessCard,
@@ -7011,6 +7013,81 @@ export const useMakeContactOriginal = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getMakeContactOriginalMutationOptions(options));
+    }
+
+export const getBulkAssignContactsEventUrl = () => {
+
+
+
+
+  return `/api/contacts/bulk-assign-event`
+}
+
+/**
+ * Updates `eventId` on every listed contact the caller can access (tenant-scoped; soft-deleted contacts are skipped).
+`eventId` null clears the event ("No Event"). The event must belong to the caller's tenant (404 otherwise).
+At most 200 contacts per call. One audit entry per changed contact records the move, e.g. "No Event → LEAP 2026".
+
+ * @summary Assign many contacts to an event, move them to another event, or clear their event (MOBILE-R2 later assignment)
+ */
+export const bulkAssignContactsEvent = async (bulkAssignContactsEventInput: BulkAssignContactsEventInput, options?: RequestInit): Promise<BulkAssignContactsEventResult> => {
+
+  return customFetch<BulkAssignContactsEventResult>(getBulkAssignContactsEventUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bulkAssignContactsEventInput,)
+  }
+);}
+
+
+
+
+export const getBulkAssignContactsEventMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkAssignContactsEvent>>, TError,{data: BodyType<BulkAssignContactsEventInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkAssignContactsEvent>>, TError,{data: BodyType<BulkAssignContactsEventInput>}, TContext> => {
+
+const mutationKey = ['bulkAssignContactsEvent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkAssignContactsEvent>>, {data: BodyType<BulkAssignContactsEventInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  bulkAssignContactsEvent(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkAssignContactsEventMutationResult = NonNullable<Awaited<ReturnType<typeof bulkAssignContactsEvent>>>
+    export type BulkAssignContactsEventMutationBody = BodyType<BulkAssignContactsEventInput>
+    export type BulkAssignContactsEventMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Assign many contacts to an event, move them to another event, or clear their event (MOBILE-R2 later assignment)
+ */
+export const useBulkAssignContactsEvent = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkAssignContactsEvent>>, TError,{data: BodyType<BulkAssignContactsEventInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkAssignContactsEvent>>,
+        TError,
+        {data: BodyType<BulkAssignContactsEventInput>},
+        TContext
+      > => {
+      return useMutation(getBulkAssignContactsEventMutationOptions(options));
     }
 
 export const getListContactCommunicationsUrl = (id: number,) => {

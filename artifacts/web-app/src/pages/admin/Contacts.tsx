@@ -20,6 +20,8 @@ import { ExportDialog } from "@/components/import-export/ExportDialog";
 import { ImportWizard } from "@/components/import-export/ImportWizard";
 import { useImportExportPermissions } from "@/components/import-export/usePermissions";
 import { PageHeader, StatusBadge, EmptyState, TableSkeleton } from "@/components/ds";
+import { Checkbox } from "@/components/ui/checkbox";
+import { AssignEventDialog } from "@/components/contact/AssignEventDialog";
 
 const TEMPERATURE_STYLES: Record<string, { label: string; tone: "destructive" | "warning" | "info"; icon: React.ReactNode }> = {
   hot: { label: "Hot", tone: "destructive", icon: <Flame className="h-3 w-3" /> },
@@ -37,6 +39,9 @@ export default function AdminContacts() {
   const [advancedResult, setAdvancedResult] = useState<SearchContactsResult | null>(null);
   const [advancedInput, setAdvancedInput] = useState<SearchContactsInput | null>(null);
   const [advancedSummary, setAdvancedSummary] = useState("");
+  // MOBILE-R2 — multi-select for the later bulk event assignment (ids survive filter changes until cleared).
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [assignOpen, setAssignOpen] = useState(false);
   const { canExport, canImportContacts } = useImportExportPermissions();
 
   const advancedActive = advancedResult !== null;
@@ -62,6 +67,24 @@ export default function AdminContacts() {
   };
 
   const exportFilters = { search, status };
+
+  const pageIds = (data?.contacts ?? []).map((c) => c.id);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggleOne = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const togglePage = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
 
   const getStatusTone = (status: string): "success" | "neutral" | "primary" | "destructive" => {
     switch (status) {
@@ -157,10 +180,35 @@ export default function AdminContacts() {
           </div>
         )}
 
+        {selected.size > 0 && (
+          <div className="px-4 py-2.5 bg-primary/5 border-b border-border flex items-center justify-between gap-4" role="toolbar" aria-label="Selected contacts" data-testid="contacts-bulk-bar">
+            <div className="text-sm font-medium">
+              {selected.size} selected
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => setAssignOpen(true)} data-testid="button-bulk-assign-event">
+                <CalendarIcon className="h-3.5 w-3.5 mr-1.5" /> Assign to Event
+              </Button>
+              <Button variant="ghost" size="sm" onClick={clearSelection} className="text-muted-foreground hover:text-foreground">
+                <XIcon className="h-3.5 w-3.5 mr-1" /> Clear
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/20">
               <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[44px]">
+                  <Checkbox
+                    aria-label="Select all contacts on this page"
+                    checked={allOnPageSelected}
+                    onCheckedChange={togglePage}
+                    disabled={pageIds.length === 0}
+                    data-testid="checkbox-select-all-contacts"
+                  />
+                </TableHead>
                 <TableHead className="w-[280px]">Contact</TableHead>
                 <TableHead className="w-[200px]">Organization</TableHead>
                 <TableHead>Contact Info</TableHead>
@@ -172,13 +220,13 @@ export default function AdminContacts() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="p-4">
+                  <TableCell colSpan={7} className="p-4">
                     <TableSkeleton rows={8} />
                   </TableCell>
                 </TableRow>
               ) : data?.contacts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="p-12">
+                  <TableCell colSpan={7} className="p-12">
                     <EmptyState
                       icon={ContactIcon}
                       title="No contacts found"
@@ -195,7 +243,15 @@ export default function AdminContacts() {
                 </TableRow>
               ) : (
                 data?.contacts.map((contact) => (
-                  <TableRow key={contact.id} className="hover:bg-muted/30 group transition-colors cursor-pointer" onClick={() => navigate(`/admin/contacts/${contact.id}`)}>
+                  <TableRow key={contact.id} className="hover:bg-muted/30 group transition-colors cursor-pointer" onClick={() => navigate(`/admin/contacts/${contact.id}`)} data-state={selected.has(contact.id) ? "selected" : undefined}>
+                    <TableCell onClick={(e) => e.stopPropagation()} className="align-middle">
+                      <Checkbox
+                        aria-label={`Select ${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim()}
+                        checked={selected.has(contact.id)}
+                        onCheckedChange={() => toggleOne(contact.id)}
+                        data-testid={`checkbox-contact-${contact.id}`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 uppercase">
@@ -305,6 +361,12 @@ export default function AdminContacts() {
         filteredCount={data?.total}
       />
       <ImportWizard open={importOpen} onOpenChange={setImportOpen} entityType="contact" />
+      <AssignEventDialog
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+        contactIds={[...selected]}
+        onDone={clearSelection}
+      />
     </div>
   );
 }
