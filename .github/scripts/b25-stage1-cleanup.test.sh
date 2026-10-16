@@ -532,7 +532,7 @@ check "activate requires the product commit, the window and ACTIVATE_B25_STAGE2A
 check "activate refuses the smoke / rollback / residue confirmations (mutually exclusive)" "$(awk '/^            stage2a_activate\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -c 'empty confirm_stage2a_smoke "$IN_STAGE2A_SMOKE"; empty confirm_stage2a_rollback "$IN_STAGE2A_ROLLBACK"; empty confirm_residue "$IN_RESIDUE"')" "1"
 check "smoke requires RUN_B25_STAGE2A_DISPOSABLE_SMOKE and refuses the activate / rollback confirmations" "$(awk '/^            stage2a_smoke\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -cE 'need confirm_stage2a_smoke "\$IN_STAGE2A_SMOKE" "\$REQUIRED_STAGE2A_SMOKE"|empty confirm_stage2a "\$IN_STAGE2A"; empty confirm_stage2a_rollback')" "2"
 check "rollback requires ROLLBACK_B25_STAGE2A_TO_GCS and refuses the activate / smoke confirmations" "$(awk '/^            stage2a_rollback\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -cE 'need confirm_stage2a_rollback "\$IN_STAGE2A_ROLLBACK" "\$REQUIRED_STAGE2A_ROLLBACK"|empty confirm_stage2a "\$IN_STAGE2A"; empty confirm_stage2a_smoke')" "2"
-check "the read-only Stage 2A modes refuse EVERY confirmation input" "$(awk '/^            stage2a_precheck\|stage2a_postswitch_verify\|stage2a_residue_inspect_1c512c90f2c8\|stage2a_residue_inspect_5d408c442c64\|stage2a_tenant_drift_inspect\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -oE 'empty confirm_[a-z0-9_]+' | sort -u | tr '\n' ' ')" "empty confirm_product_sha empty confirm_residue empty confirm_stage2a empty confirm_stage2a_residue empty confirm_stage2a_residue2 empty confirm_stage2a_rollback empty confirm_stage2a_smoke empty confirm_window "
+check "the read-only Stage 2A modes refuse EVERY confirmation input" "$(awk '/^            stage2a_precheck\|stage2a_postswitch_verify\|stage2a_residue_inspect_1c512c90f2c8\|stage2a_residue_inspect_5d408c442c64\|stage2a_residue_inspect_ec7ceda89a58\|stage2a_tenant_drift_inspect\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -oE 'empty confirm_[a-z0-9_]+' | sort -u | tr '\n' ' ')" "empty confirm_product_sha empty confirm_residue empty confirm_stage2a empty confirm_stage2a_residue empty confirm_stage2a_residue2 empty confirm_stage2a_residue3 empty confirm_stage2a_rollback empty confirm_stage2a_smoke empty confirm_window "
 check "no workflow input, env or secret carries the encryption key" "$(grep -cE '^\s+(IN_[A-Z_]+|[A-Z_]+):.*(ENCRYPTION_KEY|secrets\.OBJECT)' "$WF" || true)" "0"
 check "no workflow input names a driver, a root or a bucket" "$(grep -cE '^      (driver|fs_root|root|bucket|storage_[a-z_]+):$' "$WF" || true)" "0"
 for ph in stage2a-precheck stage2a-postswitch-verify stage2a-activate stage2a-rollback stage2a-state stage2a-smoke-setup stage2a-smoke-verify stage2a-recreate-api stage2a-smoke-settle stage2a-cleanup stage2a-residue-eligibility stage2a-residue-settle stage2a-residue2-eligibility stage2a-residue2-settle stage2a-tenant-drift; do
@@ -1131,7 +1131,7 @@ mutated_lib_ok() {   # <sed expression over the library> → the s2ar2_constants
 }
 check "the manifest-2 self-check denies a Stage 1 uuid collision, a company-53 collision and an overlap with manifest 1 (mutated library copies)" "$(mutated_lib_ok 's/^readonly S2AR2_UUID_LOGO=.*/readonly S2AR2_UUID_LOGO="f048b5d4-b366-4227-857f-42b2589e54b7"/')|$(mutated_lib_ok 's/^readonly S2AR2_COMPANY=.*/readonly S2AR2_COMPANY=53/')|$(mutated_lib_ok 's/^readonly S2AR2_COMPANIES=.*/readonly S2AR2_COMPANIES="56,53"/')|$(mutated_lib_ok 's/^readonly S2AR2_UUID_DOC=.*/readonly S2AR2_UUID_DOC="593fd8be-72be-4798-b56a-e3af02574dfb"/')|$(mutated_lib_ok 's/^readonly S2AR2_TAG=.*/readonly S2AR2_TAG="1c512c90f2c8"/')|$(mutated_lib_ok 's/^readonly S2AR2_ROWS=.*/readonly S2AR2_ROWS=3/')|$(mutated_lib_ok 's/^readonly S2AR2_UUID_LOGO=.*/readonly S2AR2_UUID_LOGO="not-a-uuid"/')" "false|false|false|false|false|false|false"
 check "the manifest-1 self-check denies the same collisions on a mutated copy" "$(sed -E 's/^readonly S2AR_UUID_DOC=.*/readonly S2AR_UUID_DOC="f048b5d4-b366-4227-857f-42b2589e54b7"/' "$HERE/b25-stage1-apply-lib.sh" > "$RULES_DIR/lib-mut.sh"; bash -c 'source "'"$HERE"'/b25-stage1-purge-lib.sh"; source "'"$RULES_DIR"'/lib-mut.sh"; s2ar_constants_ok && echo true || echo false' 2>/dev/null)|$(sed -E 's/^readonly S2AR_COMPANY=.*/readonly S2AR_COMPANY=53/' "$HERE/b25-stage1-apply-lib.sh" > "$RULES_DIR/lib-mut.sh"; bash -c 'source "'"$HERE"'/b25-stage1-purge-lib.sh"; source "'"$RULES_DIR"'/lib-mut.sh"; s2ar_constants_ok && echo true || echo false' 2>/dev/null)" "false|false"
-check "the generic evaluators refuse an unknown manifest prefix / marker" "$(printf '' | stage2a_residue_eligibility_for S2AR3 RESIDUE 2>/dev/null; echo "rc=$?")|$(printf '' | stage2a_residue_settled_for S2AR RESIDUE9 2>/dev/null; echo "rc=$?")" "rc=1|rc=1"
+check "the generic evaluators refuse an unknown manifest prefix / marker" "$(printf '' | stage2a_residue_eligibility_for S2AR4 RESIDUE 2>/dev/null; echo "rc=$?")|$(printf '' | stage2a_residue_settled_for S2AR RESIDUE9 2>/dev/null; echo "rc=$?")" "rc=1|rc=1"
 check "authoritative census constants of the locked baseline: 5 / 1398 / with_marker 1 / generationless 0" "$B25PHYS_CENSUS_OBJECTS|$B25PHYS_CENSUS_BYTES|$B25PHYS_CENSUS_MARKED|$B25PHYS_CENSUS_GENERATIONLESS|$B25PHYS_CENSUS_MD5" "5|1398|1|0|36d90200a6dc0b043a11aeadee20863c"
 check "the exception deny constants of the allow-list and the residue constants agree on the protected row" "$STAGE2A_DENY_UUID|$STAGE2A_DENY_COMPANY" "$B25PHYS_UUID|$B25PHYS_COMPANY"
 
@@ -1253,7 +1253,7 @@ elig_suite() {   # <evaluator> <marker RESIDUE|RESIDUE2>
   local EVAL="$1" MK="$2" V covered="" label mut want got verdict
   V="$(printf '%s\n' "$S2AR_GOLDEN" | "$EVAL")"
   check "[$MK] golden facts → ELIGIBLE=TRUE, 0 failed" "$(printf '%s\n' "$V" | grep -E "^B25_STAGE2A_${MK}_" | tr '\n' ' ')" "B25_STAGE2A_${MK}_CONDITIONS_FAILED=0 B25_STAGE2A_${MK}_ELIGIBLE=TRUE "
-  check "[$MK] exactly 26 numbered conditions, all OK; no other marker family printed" "$(printf '%s\n' "$V" | grep -cE '^res [0-9]+: ')|$(printf '%s\n' "$V" | grep -cE '^res [0-9]+: .* — OK \(')|$(printf '%s\n' "$V" | grep -cE '^B25_STAGE2A_RESIDUE2?_' )" "26|26|2"
+  check "[$MK] exactly 26 numbered conditions, all OK; no other marker family printed" "$(printf '%s\n' "$V" | grep -cE '^res [0-9]+: ')|$(printf '%s\n' "$V" | grep -cE '^res [0-9]+: .* — OK \(')|$(printf '%s\n' "$V" | grep -cE '^B25_STAGE2A_RESIDUE[23]?_' )" "26|26|2"
   check "[$MK] the golden verdict prints no secret-shaped value (no 64-hex token, no gs:// reference, no signature text)" "$(printf '%s\n' "$V" | grep -cE '[0-9a-f]{64}|gs://|X-Goog' || true)" "0"
   while IFS='|' read -r label mut want; do
     [ -n "$label" ] || continue
@@ -1348,6 +1348,8 @@ MUT
 }
 elig_suite stage2a_residue_eligibility RESIDUE
 elig_suite stage2a_residue2_eligibility RESIDUE2
+elig_suite stage2a_residue3_eligibility RESIDUE3
+check "the third evaluator names its own manifest (company 58; the two recorded uuids) in the same condition slot" "$(printf '%s\n' "$S2AR_GOLDEN" | stage2a_residue3_eligibility | grep -cE '^res 6: .*company-58 .*ac3c33c3-853e-4003-a03e-a8b357a282ac, c097cd52-270e-418c-8e75-0a0dfd1f2312')" "1"
 check "the two evaluators name their own manifest (company 54 vs 56; the two uuid pairs) in the same condition slots" "$(printf '%s\n' "$S2AR_GOLDEN" | stage2a_residue_eligibility | grep -cE '^res 6: .*company-54 .*593fd8be-72be-4798-b56a-e3af02574dfb, b3cf7f44-8d23-4eae-8d44-27e4138a0249')|$(printf '%s\n' "$S2AR_GOLDEN" | stage2a_residue2_eligibility | grep -cE '^res 6: .*company-56 .*c69a3706-84f8-456b-ba40-e983118f2751, 06228d82-7da6-4c5c-9ed7-d66fb97a1a2f')" "1|1"
 
 echo "== Corrections 1 + 2 — post-settlement evaluators (golden TRUE; mutations FALSE; exactly 12 proofs, each covered)"
@@ -1401,6 +1403,7 @@ MUT
 }
 settled_suite stage2a_residue_settled RESIDUE
 settled_suite stage2a_residue2_settled RESIDUE2
+settled_suite stage2a_residue3_settled RESIDUE3
 
 echo "== Correction 1 — provider / fs probe readers (behavioural, with a stubbed in-container call): a read failure is never absence"
 PROBE_SRC="$(body json_flat_field; body census_field; body stage2a_residue_provider_facts; body stage2a_residue_fs_facts)"
@@ -1420,10 +1423,10 @@ check "fs / provider: both evaluators deny unreadable counts (condition 24 / 25)
 
 echo "== Corrections 1 + 2 — modeled settlement against the local database (the exact constants; allow-list; the exception and company 53 denied)"
 SMOKE_DOMAIN="b25smoke.invalid"
-eval "$(body stage2a_residue_row_facts)"; eval "$(body stage2a_residue2_row_facts)"   # the hosted fact readers, bound here to the local read-only q
+eval "$(body stage2a_residue_row_facts)"; eval "$(body stage2a_residue2_row_facts)"; eval "$(body stage2a_residue3_row_facts)"   # the hosted fact readers, bound here to the local read-only q
 C1_LOGO_BEFORE="$(q "select coalesce(brand_logo_key, '<null>') from companies where id = 1")"
 cleanup_s2ar() {
-  qw "delete from storage_objects where id in ($S2AR_UUIDS_Q, $S2AR2_UUIDS_Q, '$B25PHYS_UUID') and company_id in ($S2AR_COMPANIES, $S2AR2_COMPANIES, $B25PHYS_COMPANY)" >/dev/null || true
+  qw "delete from storage_objects where id in ($S2AR_UUIDS_Q, $S2AR2_UUIDS_Q, $S2AR3_UUIDS_Q, '$B25PHYS_UUID') and company_id in ($S2AR_COMPANIES, $S2AR2_COMPANIES, $S2AR3_COMPANIES, $B25PHYS_COMPANY)" >/dev/null || true
   if [ "$C1_LOGO_BEFORE" = "<null>" ]; then qw "update companies set brand_logo_key = null where id = 1" >/dev/null || true; else qw "update companies set brand_logo_key = '$C1_LOGO_BEFORE' where id = 1" >/dev/null || true; fi
 }
 FILTER='^res_(rows_|live_refs|docs_company|brand_refs|foreign_mentions|jobs_pending|inflight_sessions|companies_present|users_present|sessions|feature_rows|constants_ok|doc_size|logo_size)'
@@ -1512,6 +1515,7 @@ modeled_suite() {   # <prefix S2AR|S2AR2> <facts function> <evaluator> <marker>
 }
 modeled_suite S2AR stage2a_residue_row_facts stage2a_residue_eligibility RESIDUE
 modeled_suite S2AR2 stage2a_residue2_row_facts stage2a_residue2_eligibility RESIDUE2
+modeled_suite S2AR3 stage2a_residue3_row_facts stage2a_residue3_eligibility RESIDUE3
 
 echo "== Corrections 1 + 2 — phase bodies and workflow wiring (static)"
 wiring_suite() {   # <suffix ""|2> <prefix> <marker> <tag> <required env name> <required value>
@@ -1519,7 +1523,8 @@ wiring_suite() {   # <suffix ""|2> <prefix> <marker> <tag> <required env name> <
   local -n WP_UUID_DOC="${P}_UUID_DOC" WP_UUID_LOGO="${P}_UUID_LOGO"
   EB="$(body "phase_stage2a_residue${SFX}_eligibility")"; SB="$(body "phase_stage2a_residue${SFX}_settle")"; RB2="$(body "stage2a_residue${SFX}_eligibility_run")"
   if [ -z "$SFX" ]; then BLK="$(awk '/^# B25 STAGE 2A — CORRECTION 1: settlement of the EXACT residue/{on=1} /^# B25 STAGE 2A — CORRECTION 2: settlement of the EXACT residue/{exit} on{print}' "$APPLY")"
-  else BLK="$(awk '/^# B25 STAGE 2A — CORRECTION 2: settlement of the EXACT residue/{on=1} on{print} /^case "\$PHASE" in$/{exit}' "$APPLY")"; fi
+  elif [ "$SFX" = 3 ]; then BLK="$(awk '/^# B25 STAGE 2A — CORRECTION 4: settlement of the EXACT residue/{on=1} /^# Stage 2A — existing-tenant baseline DRIFT LOCALIZATION/{exit} on{print}' "$APPLY")"
+  else BLK="$(awk '/^# B25 STAGE 2A — CORRECTION 2: settlement of the EXACT residue/{on=1} /^# B25 STAGE 2A — CORRECTION 4: settlement of the EXACT residue/{exit} on{print}' "$APPLY")"; fi
   check "[$MK] both residue phases exist and refuse any argument (the residue is bound by constants)" "$(printf '%s\n' "$EB" | grep -c '\[ -z "$ARG1$ARG2$ARG3" \] || fail')|$(printf '%s\n' "$SB" | grep -c '\[ -z "$ARG1$ARG2$ARG3" \] || fail')" "1|1"
   check "[$MK] the eligibility run proves the read-only session first and decides through the library evaluator" "$(printf '%s\n' "$RB2" | grep -c stage2a_readonly_guard)|$(printf '%s\n' "$RB2" | grep -c "| stage2a_residue${SFX}_eligibility)")|$(printf '%s\n' "$RB2" | grep -c "grep -qx 'B25_STAGE2A_${MK}_ELIGIBLE=TRUE'")" "1|1|1"
   check "[$MK] the eligibility run reads the fs and provider absence facts (read-only probes) and the Stage 1 exception facts" "$(printf '%s\n' "$RB2" | grep -oE 'stage2a_residue_fs_facts|stage2a_residue_provider_facts|stage2a_exception_facts' | sort -u | wc -l | tr -d ' ')" "3"
@@ -1541,7 +1546,7 @@ wiring_suite() {   # <suffix ""|2> <prefix> <marker> <tag> <required env name> <
   check "[$MK] workflow offers the two residue modes (inspect = read-only, settle = mutation)" "$(grep -oE "stage2a_residue_(inspect|settle)_${TAG}" "$WF" | sort -u | tr '\n' ' ')" "stage2a_residue_inspect_${TAG} stage2a_residue_settle_${TAG} "
   check "[$MK] the incident-specific typed confirmation is a fixed constant with its own input" "$(grep -cE "^  ${REQ}: \"${REQV}\"\$" "$WF")|$(grep -cE "^      confirm_stage2a_residue${SFX}:\$" "$WF")" "1|1"
   check "[$MK] settle mode requires the product commit, the window and ${REQV} and refuses every other confirmation" "$(awk "/^            stage2a_residue_settle_${TAG}\\)\$/{on=1;next} on&&/;;\$/{print;exit} on{print}" "$WF" | grep -cE "need confirm_product_sha \"\\\$IN_PRODUCT_SHA\" \"\\\$STAGE2A_PRODUCT_SHA\"; need confirm_window \"\\\$IN_WINDOW\" \"\\\$REQUIRED_WINDOW\"; need confirm_stage2a_residue${SFX} \"\\\$IN_STAGE2A_RESIDUE${SFX}\" \"\\\$${REQ}\"|empty confirm_stage2a \"\\\$IN_STAGE2A\"; empty confirm_stage2a_smoke \"\\\$IN_STAGE2A_SMOKE\"; empty confirm_stage2a_rollback \"\\\$IN_STAGE2A_ROLLBACK\"; empty confirm_residue \"\\\$IN_RESIDUE\"")" "2"
-  check "[$MK] every other Stage 2A mode (read-only, activate, smoke, rollback, the other residue settle) and the default branch refuse this residue confirmation" "$(grep -c "empty confirm_stage2a_residue${SFX} \"\$IN_STAGE2A_RESIDUE${SFX}\"" "$WF")" "6"
+  check "[$MK] every other Stage 2A mode (read-only, activate, smoke, rollback, the two other residue settles) and the default branch refuse this residue confirmation" "$(grep -c "empty confirm_stage2a_residue${SFX} \"\$IN_STAGE2A_RESIDUE${SFX}\"" "$WF")" "7"
   check "[$MK] the residue manifest / uuids are NOT workflow inputs (no input default carries them; the SSH steps pass no ARG)" "$(grep -E '^        default:' "$WF" | grep -cE "${WP_UUID_DOC:0:8}|${WP_UUID_LOGO:0:8}|${TAG}" || true)|$(grep -E "PHASE='stage2a-residue${SFX}-(eligibility|settle)' " "$WF" | grep -cE 'ARG[123]=' || true)" "0|0"
   check "[$MK] both residue steps are ONE SSH session each and require the host's TRUE marker" "$(grep -c "grep -qx 'B25_STAGE2A_${MK}_ELIGIBLE=TRUE'" "$WF")|$(grep -c "grep -qx 'B25_STAGE2A_${MK}_SETTLED=TRUE'" "$WF")|$(grep -cE "if: inputs.mode == 'stage2a_residue_settle_${TAG}'\$" "$WF")|$(grep -cE "if: inputs.mode == 'stage2a_residue_inspect_${TAG}'\$" "$WF")" "1|1|1|1"
   check "[$MK] the branch guard requires the residue library (evaluators + manifest constant) before any SSH" "$(grep -c "grep -q '^stage2a_residue${SFX}_eligibility()'" "$WF")|$(grep -c "grep -q '^readonly ${P}_MANIFEST='" "$WF")" "1|1"
@@ -1549,10 +1554,11 @@ wiring_suite() {   # <suffix ""|2> <prefix> <marker> <tag> <required env name> <
 }
 wiring_suite "" S2AR RESIDUE 1c512c90f2c8 REQUIRED_STAGE2A_RESIDUE SETTLE_B25_STAGE2A_RESIDUE_1c512c90f2c8
 wiring_suite 2 S2AR2 RESIDUE2 5d408c442c64 REQUIRED_STAGE2A_RESIDUE2 SETTLE_B25_STAGE2A_RESIDUE_5d408c442c64
+wiring_suite 3 S2AR3 RESIDUE3 ec7ceda89a58 REQUIRED_STAGE2A_RESIDUE3 SETTLE_B25_STAGE2A_RESIDUE_ec7ceda89a58
 check "the two settlement modes refuse each other's confirmation (Correction 1 settle refuses confirm_stage2a_residue2; Correction 2 settle refuses confirm_stage2a_residue)" "$(awk '/^            stage2a_residue_settle_1c512c90f2c8\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -c 'empty confirm_stage2a_residue2 "$IN_STAGE2A_RESIDUE2"')|$(awk '/^            stage2a_residue_settle_5d408c442c64\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -c 'empty confirm_stage2a_residue "$IN_STAGE2A_RESIDUE"')" "1|1"
 check "the Correction 2 eligibility phase reports an already-purged residue explicitly (auto-purge race) without recreating anything" "$(body phase_stage2a_residue2_eligibility | grep -c 'B25_STAGE2A_RESIDUE2_ROWS_ALREADY_ABSENT=TRUE')|$(body phase_stage2a_residue2_eligibility | grep -c 'rows_present=$left')" "1|1"
 check "the shared probe / host readers exist exactly once (reused by both corrections, not duplicated)" "$(grep -cE '^stage2a_residue_(fs|provider|host)_facts\(\) \{' "$APPLY")" "3"
-check "the generic evaluators are the single implementation behind both manifests (four thin wrappers)" "$(grep -cE '^stage2a_residue2?_(eligibility|settled)\(\) \{ stage2a_residue_(eligibility|settled)_for S2AR2? RESIDUE2?; \}$' "$HERE/b25-stage1-apply-lib.sh")|$(grep -cE '^stage2a_residue_(eligibility|settled)_for\(\) \{' "$HERE/b25-stage1-apply-lib.sh")" "4|2"
+check "the generic evaluators are the single implementation behind the three manifests (six thin wrappers)" "$(grep -cE '^stage2a_residue[23]?_(eligibility|settled)\(\) \{ stage2a_residue_(eligibility|settled)_for S2AR[23]? RESIDUE[23]?; \}$' "$HERE/b25-stage1-apply-lib.sh")|$(grep -cE '^stage2a_residue_(eligibility|settled)_for\(\) \{' "$HERE/b25-stage1-apply-lib.sh")" "6|2"
 echo "== Stage 2A — tenant baseline drift localization (read-only; prepared after smoke run 38934705535 stopped in guards_stage2a_switched)"
 check "the smoke setup still proves the switched state first, then the Correction 3 start gate, and only then inserts the disposable owner (the frozen digest is gone from the switched guard)" "$(body guards_stage2a_switched | grep -c 'fail "tenant baseline changed"' || true)|$(body phase_stage2a_smoke_setup | grep -n 'guards_stage2a_switched\|stage2a_tenant_start_gate$\|insert into users' | awk -F: '{print $1}' | tr '\n' ' ')" "0|2 8 11 "
 check "the drift phase exists exactly once and is dispatched by PHASE=stage2a-tenant-drift" "$(grep -c '^phase_stage2a_tenant_drift() {$' "$APPLY")|$(grep -c '^  stage2a-tenant-drift) phase_stage2a_tenant_drift ;;$' "$APPLY")" "1|1"
@@ -1567,7 +1573,7 @@ check "every database line is shape-validated before it is printed (counts regex
 check "the audit section prints action identifiers and counts only (no entity, user, ip or metadata column is selected)" "$(body phase_stage2a_tenant_drift | grep 'from audit_logs' | grep -cE 'entity_id|user_name|user_id|ip_address|metadata' || true)|$(body phase_stage2a_tenant_drift | grep -c 'from audit_logs')" "0|3"
 check "the api log counters are counts of fixed message literals (the log text itself is never printed)" "$(body phase_stage2a_tenant_drift | grep -o 'grep -cF' | wc -l | tr -d ' ')|$(body phase_stage2a_tenant_drift | grep -cE 'printf .%s.n. "\$alog" \| (jsum|san|sed|head|tail|awk)' || true)" "3|0"
 check "the drift phase ends with the digest verdict marker and the REPORTED marker the workflow requires" "$(body phase_stage2a_tenant_drift | grep -c '^  echo "B25_STAGE2A_TENANT_DIGEST=\$verdict"$')|$(body phase_stage2a_tenant_drift | grep -c '^  echo "B25_STAGE2A_TENANT_DRIFT_REPORTED=TRUE"$')" "1|1"
-check "workflow offers the read-only drift mode, validates it as read-only (every confirmation empty) and allow-lists it before SSH" "$(grep -c 'stage2a_tenant_drift_inspect, incident_diagnose' "$WF")|$(awk '/^            stage2a_precheck\|stage2a_postswitch_verify\|stage2a_residue_inspect_1c512c90f2c8\|stage2a_residue_inspect_5d408c442c64\|stage2a_tenant_drift_inspect\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -oE 'empty confirm_[a-z0-9_]+' | sort -u | wc -l | tr -d ' ')|$(grep -c '|stage2a_tenant_drift_inspect|preflight|' "$WF")" "1|8|1"
+check "workflow offers the read-only drift mode, validates it as read-only (every confirmation empty) and allow-lists it before SSH" "$(grep -c 'stage2a_tenant_drift_inspect, incident_diagnose' "$WF")|$(awk '/^            stage2a_precheck\|stage2a_postswitch_verify\|stage2a_residue_inspect_1c512c90f2c8\|stage2a_residue_inspect_5d408c442c64\|stage2a_residue_inspect_ec7ceda89a58\|stage2a_tenant_drift_inspect\)$/{on=1;next} on&&/;;$/{print;exit} on{print}' "$WF" | grep -oE 'empty confirm_[a-z0-9_]+' | sort -u | wc -l | tr -d ' ')|$(grep -c '|stage2a_tenant_drift_inspect|preflight|' "$WF")" "1|9|1"
 check "the drift step runs only for its mode, passes no ARG, requires the REPORTED marker and its log is removed by the always-step" "$(grep -c "if: inputs.mode == 'stage2a_tenant_drift_inspect'" "$WF")|$(grep -E "PHASE='stage2a-tenant-drift' " "$WF" | grep -cE 'ARG[123]=' || true)|$(grep -c "grep -qx 'B25_STAGE2A_TENANT_DRIFT_REPORTED=TRUE'" "$WF")|$(grep -c '"\$RUNNER_TEMP"/stage2a-tenant-drift.log' "$WF")|$(grep -c 'tee "\$RUNNER_TEMP/stage2a-tenant-drift.log"' "$WF")" "1|0|1|1|1"
 check "the branch guard requires the drift phase and its window constant" "$(grep -c "grep -q '^phase_stage2a_tenant_drift()' .github/scripts/b25-stage1-apply.sh && grep -q '^S2A_TENANT_LAST_MATCH=' .github/scripts/b25-stage1-apply.sh" "$WF")" "1"
 # Modeled against the local read-only database: every reader returns a shape-valid counts line and nothing else.
@@ -1850,6 +1856,280 @@ if [ "$(q "select count(*) from companies where id = 1")" = "1" ] && [ "$(q "sel
   cleanup_c3
 else
   echo "note: the local database has no company-1 fixture tenant (or id $C3_C is taken) — the modeled Correction 3 cases are exercised by the evaluator mutations only"
+fi
+
+echo "== Stage 2A — CORRECTION 4: mid-smoke guard form, company-58 manifest, retrospective incident proof, residue-3 modes"
+# ---- manifest 3 (the EXACT residue of run 38958264416) ----
+check "manifest 3 = exactly the recorded residue of run 38958264416 (both uuids read unmasked from the run log)" "$S2AR3_MANIFEST" "ac3c33c3-853e-4003-a03e-a8b357a282ac,c097cd52-270e-418c-8e75-0a0dfd1f2312|58,59|109|ec7ceda89a58"
+check "manifest 3 run / tag / company / companies / users / rows / sizes" "$S2AR3_RUN|$S2AR3_TAG|$S2AR3_COMPANY|$S2AR3_COMPANIES|$S2AR3_USERS|$S2AR3_ROWS|$S2AR3_DOC_SIZE|$S2AR3_LOGO_SIZE" "38958264416|ec7ceda89a58|58|58,59|109|2|21546|181"
+check "manifest 3 row identities (uuid → kind → recorded size) and an unknown uuid" "$(s2ar3_kind "$S2AR3_UUID_DOC")=$(s2ar3_size "$S2AR3_UUID_DOC")|$(s2ar3_kind "$S2AR3_UUID_LOGO")=$(s2ar3_size "$S2AR3_UUID_LOGO")|$(s2ar3_kind "$S2AR2_UUID_DOC" 2>/dev/null || echo none)" "document=21546|branding_logo=181|none"
+check "manifest 3 window constants (STEP=run 19:54:56–19:55:04Z; tenant 58 deleted 19:55:22Z; rows deleted by 19:55:35Z) and the incident window (snapshot instant → cleanup end)" "$S2AR3_CREATED_FROM|$S2AR3_CREATED_TO|$S2AR3_DELETED_FROM|$S2AR3_DELETED_TO|$S2AR3_SNAPSHOT_AT|$S2AR3_INCIDENT_END" "2026-10-16 19:54:50|2026-10-16 19:55:10|2026-10-16 19:55:20|2026-10-16 19:56:00|2026-10-16 19:54:40.127290|2026-10-16 19:55:40"
+check "manifest 3 self-check passes; the recorded snapshot decodes to 41 sanitized facts (12 identity digests; 28 business counts / highest ids + 3 identity counts) with the recorded instant; no exception / company-53 text" "$(s2ar3_constants_ok && echo true || echo false)|$(printf '%s' "$S2AR3_TENANT_SNAPSHOT_B64" | base64 -d | grep -c '^')|$(printf '%s' "$S2AR3_TENANT_SNAPSHOT_B64" | base64 -d | grep -cE '^pre_id_[a-z0-9_]+=')|$(printf '%s' "$S2AR3_TENANT_SNAPSHOT_B64" | base64 -d | grep -cE '^pre_[a-z_]+_(count|max_id)=' )|$(printf '%s\n%s' "$S2AR3_MANIFEST" "$(printf '%s' "$S2AR3_TENANT_SNAPSHOT_B64" | base64 -d)" | grep -cE 'f048b5d4|\|53|=53$' || true)" "true|41|12|31|0"
+mutated_lib3_ok() { sed -E "$1" "$HERE/b25-stage1-apply-lib.sh" > "$RULES_DIR/lib-mut3.sh"; bash -c 'source "'"$HERE"'/b25-stage1-purge-lib.sh"; source "'"$RULES_DIR"'/lib-mut3.sh"; s2ar3_constants_ok && echo true || echo false' 2>/dev/null; }
+check "the manifest-3 self-check denies a Stage 1 uuid collision, a company-53 collision, an overlap with manifest 1 / 2, an unordered incident window and a tampered snapshot (mutated library copies)" "$(mutated_lib3_ok 's/^readonly S2AR3_UUID_LOGO=.*/readonly S2AR3_UUID_LOGO="f048b5d4-b366-4227-857f-42b2589e54b7"/')|$(mutated_lib3_ok 's/^readonly S2AR3_COMPANY=.*/readonly S2AR3_COMPANY=53/')|$(mutated_lib3_ok 's/^readonly S2AR3_UUID_DOC=.*/readonly S2AR3_UUID_DOC="593fd8be-72be-4798-b56a-e3af02574dfb"/')|$(mutated_lib3_ok 's/^readonly S2AR3_UUID_DOC=.*/readonly S2AR3_UUID_DOC="c69a3706-84f8-456b-ba40-e983118f2751"/')|$(mutated_lib3_ok 's/^readonly S2AR3_INCIDENT_END=.*/readonly S2AR3_INCIDENT_END="2026-10-16 19:00:00"/')|$(mutated_lib3_ok 's/^readonly S2AR3_TENANT_SNAPSHOT_B64=.*/readonly S2AR3_TENANT_SNAPSHOT_B64="c25hcHNob3RfYXQ9MjAyNi0xMC0xNiAxOTo1NDo0MC4xMjcyOTAK"/')" "false|false|false|false|false|false"
+check "manifest 3 constants are readonly and cannot be overridden from the environment" "$(bash -c 'source "'"$HERE"'/b25-stage1-purge-lib.sh"; source "'"$HERE"'/b25-stage1-apply-lib.sh"; (S2AR3_COMPANY=53) 2>/dev/null; (S2AR3_UUID_DOC=x) 2>/dev/null; echo "$S2AR3_COMPANY|$S2AR3_UUID_DOC"')|$(env S2AR3_COMPANY=53 S2AR3_TENANT_SNAPSHOT_B64=x bash -c 'source "'"$HERE"'/b25-stage1-purge-lib.sh"; source "'"$HERE"'/b25-stage1-apply-lib.sh"; echo "$S2AR3_COMPANY|${#S2AR3_TENANT_SNAPSHOT_B64}"' 2>/dev/null)" "58|ac3c33c3-853e-4003-a03e-a8b357a282ac|58|1664"
+check "the three settlement modes refuse each other's confirmations" "$(for m in 1c512c90f2c8 5d408c442c64 ec7ceda89a58; do awk "/^            stage2a_residue_settle_$m\\)\$/{on=1;next} on&&/;;\$/{print;exit} on{print}" "$WF" | grep -oE 'empty confirm_stage2a_residue[23]? "' | sed 's/^empty //; s/ "$//' | sort | tr '\n' ','; printf '|'; done)" "confirm_stage2a_residue2,confirm_stage2a_residue3,|confirm_stage2a_residue,confirm_stage2a_residue3,|confirm_stage2a_residue,confirm_stage2a_residue2,|"
+check "the Correction 4 eligibility phase reports an already-purged residue explicitly (auto-purge race) without recreating anything" "$(body phase_stage2a_residue3_eligibility | grep -c 'B25_STAGE2A_RESIDUE3_ROWS_ALREADY_ABSENT=TRUE')|$(body phase_stage2a_residue3_eligibility | grep -c 'rows_present=$left')" "1|1"
+check "the residue-3 reader filters the brand references against ITS manifest's companies (the Correction 2 reader filtered against manifest 1)" "$(body stage2a_residue3_row_facts | grep -c 'BR="${S2AR3_COMPANIES//,/|}"')" "1"
+RB3="$(body stage2a_residue3_eligibility_run)"
+check "residue-3 eligibility run: temporary stderr metadata is read FIRST (before the read-only guard and any in-container reader), the retrospective tenant proof runs as section 7 bound to the recorded snapshot and incident window, eligibility TRUE requires both verdicts, a pre-existing stderr file is reported and never removed" "$(printf '%s\n' "$RB3" | grep -n 'S2AR3_TMP_PRE="$(stage2a_tmp_stderr_facts)"\|stage2a_readonly_guard\|api_node\|stage2a_residue_fs_facts' | awk -F: 'NR==1{first=$1} {if ($1<first) first=$1} /stage2a_tmp_stderr_facts/{t=$1} END{print (t==first) ? "first" : "late"}')|$(printf '%s\n' "$RB3" | grep -c 'stage2a_tenant_incident_proof "$S2AR3_TENANT_SNAPSHOT_B64" "$S2AR3_INCIDENT_END" "$S2AR3_COMPANIES" "$S2AR3_USERS"')|$(printf '%s\n' "$RB3" | grep -c 'B25_STAGE2A_RESIDUE3_TENANT_PROOF=$S2AR3_TENANT_PROOF')|$(printf '%s\n' "$RB3" | grep -c "grep -qx 'B25_STAGE2A_RESIDUE3_ELIGIBLE=TRUE' && \[ \"\$S2AR3_TENANT_PROOF\" = \"PASS\" \]")|$(printf '%s\n' "$RB3" | grep -c "grep -qx 'tmp_stderr_present=true' || rm -f")|$(printf '%s\n' "$RB3" | grep -cE '^\s*rm -f' || true)|$(body phase_stage2a_residue3_settle | grep -c "grep -qx 'tmp_stderr_present=true' || rm -f")" "first|1|1|1|1|0|1"
+eval "$(body stage2a_tmp_stderr_facts)"
+TSF="$(HOME="$RULES_DIR" stage2a_tmp_stderr_facts)"; printf 'x' > "$RULES_DIR/.b25-s1-node.err"; TSF2="$(HOME="$RULES_DIR" stage2a_tmp_stderr_facts)"; rm -f "$RULES_DIR/.b25-s1-node.err"
+check "temporary stderr metadata: absent → false / 0 / -; present → true, the byte size and an UTC mtime; never the contents" "$(printf '%s' "$TSF" | tr '\n' ' ')|$(printf '%s\n' "$TSF2" | grep -c '^tmp_stderr_present=true$')|$(printf '%s\n' "$TSF2" | grep -c '^tmp_stderr_size=1$')|$(printf '%s\n' "$TSF2" | grep -cE '^tmp_stderr_mtime=[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$')|$(printf '%s\n' "$TSF2" | grep -c '=x$' || true)|$(body stage2a_tmp_stderr_facts | grep -ciE '(^|[^a-z])(cat|head|tail|less|grep) ' || true)" "tmp_stderr_present=false tmp_stderr_size=0 tmp_stderr_mtime=-|1|1|1|0|0"
+# ---- the mid-smoke guard form: the evaluator (golden PASS; every listed denial) ----
+MS_GOLDEN="$(cat <<'G'
+ms_ids_ok=true
+ms_ids_count=2
+inv_total=3
+ms_rows_named=2
+ms_rows_outside=0
+ms_rows_active=2
+ms_rows_fs=2
+ms_rows_legacy_null=2
+ms_rows_mirror_canonical=2
+ms_rows_mirror_ok=2
+ms_rows_error_null=2
+ms_rows_not_uncertain=2
+ms_rows_no_lease=2
+ms_rows_sized=2
+ms_rows_digest_ok=2
+ms_rows_identity_ok=2
+ms_rows_fixture_match=2
+ms_rows_document=1
+ms_rows_logo=1
+ms_rows_smoke_tenant=2
+ms_rows_companies=1
+ms_rows_company1=0
+ms_rows_company53=0
+inv_company1=0
+inv_company53_outside_exception=0
+ms_rows_bytes=21727
+exc_row_count=1
+exc_state=deleted
+exc_last_error=LEGACY_RETAINED
+exc_driver=gcs
+exc_company=53
+exc_kind=document
+exc_size=99
+exc_identity_ok=true
+exc_uncertain=false
+exc_lease=false
+exc_live_refs=0
+exc_provider_present=true
+exc_provider_marker_ok=true
+exc_provider_size_matches=true
+exc_generation_canonical=true
+exc_generation_stable=true
+exc_generation_digest=3545c17e5f3aa940
+inv_uncertain=0
+inv_unproven=0
+inv_cleanup_pending=0
+inv_leases=0
+inv_inflight=0
+inv_active=2
+ms_fs_rows=2
+ms_fs_present=2
+ms_fs_regular=2
+ms_fs_owner_ok=2
+ms_fs_mode_ok=2
+ms_fs_magic_ok=2
+ms_fs_marker_free=2
+ms_fs_pdf_free=2
+ms_fs_size_differs=2
+ms_fs_tenant_files=2
+ms_fs_other_files=0
+ms_fs_symlinks=0
+ms_fs_keys_match=true
+ms_mirror_rows=2
+ms_mirror_present=2
+ms_mirror_bucket_ok=2
+ms_mirror_canonical_key=2
+ms_mirror_marker_ok=2
+ms_mirror_generation_ok=2
+ms_mirror_size_ok=2
+ms_mirror_sha_ok=2
+ms_mirror_generation_digits_min=16
+census_objects=7
+census_bytes=23125
+census_marked=3
+census_generationless=0
+unmarked_objects=4
+unmarked_md5=c1b900fd509bafa1f980d863dc0d195b
+originals_present=4
+originals_missing=0
+originals_size_match=4
+dead_jobs=0
+references=4
+references_expected=4
+G
+)"
+ms_verdict() { printf '%s\n' "$1" | stage2a_midsmoke_eval; }
+MSV="$(ms_verdict "$MS_GOLDEN")"
+check "mid-smoke evaluator: golden facts (exception + the two verified smoke rows, their files, their mirrors, census 7 / 23125 / marked 3) → PASS, 13 conditions all OK; it lives in the library" "$(printf '%s\n' "$MSV" | grep -E '^B25_STAGE2A_MIDSMOKE_' | tr '\n' ' ')|$(printf '%s\n' "$MSV" | grep -cE '^mid [0-9]+: ')|$(printf '%s\n' "$MSV" | grep -cE '^mid [0-9]+: .* — OK \(')|$(grep -c '^stage2a_midsmoke_eval() {$' "$LIB")" "B25_STAGE2A_MIDSMOKE_CONDITIONS_FAILED=0 B25_STAGE2A_MIDSMOKE_GATE=PASS |13|13|1"
+check "mid-smoke evaluator: an empty fact stream fails every condition" "$(printf '' | stage2a_midsmoke_eval | grep -E '^B25_STAGE2A_MIDSMOKE_' | tr '\n' ' ')" "B25_STAGE2A_MIDSMOKE_CONDITIONS_FAILED=13 B25_STAGE2A_MIDSMOKE_GATE=FAIL "
+ms_covered=""
+while IFS='|' read -r label mut want; do
+  [ -n "$label" ] || continue
+  V="$(s2ar_mut "$MS_GOLDEN" "$mut" | stage2a_midsmoke_eval)"; got="$(printf '%s\n' "$V" | sed -nE 's/^mid ([0-9]+): .* — FAIL \(.*$/\1/p' | sort -n | tr '\n' ',' | sed 's/,$//')"
+  verdict="$(printf '%s\n' "$V" | grep -oE '^B25_STAGE2A_MIDSMOKE_GATE=[A-Z]+')"
+  if [ "$verdict" = "B25_STAGE2A_MIDSMOKE_GATE=FAIL" ] && [[ ",$got," == *",$want,"* ]]; then ok "mid-smoke denied: $label (condition $want FAIL; failed=[$got])"; else bad "mid-smoke NOT denied as expected: $label (failed=[$got] want=$want $verdict)"; fi
+  ms_covered="$ms_covered,$want"
+done <<'MUT'
+exception-only inventory (the pre-smoke state) is NOT the mid-smoke state|inv_total=1;ms_rows_named=0;inv_active=0;ms_rows_active=0|2
+a third storage row|inv_total=4;ms_rows_outside=1|2
+a recorded row missing|inv_total=2;ms_rows_named=1|2
+a wrong uuid in the list (one recorded row not found)|ms_rows_named=1|2
+a malformed / non-canonical uuid list|ms_ids_ok=false|1
+a duplicate uuid (the list is not two distinct rows)|ms_ids_ok=false;ms_ids_count=2|1
+the Stage 1 exception uuid presented as a smoke row|ms_ids_ok=false|1
+three uuids|ms_ids_ok=false;ms_ids_count=3|1
+a company-53 smoke row|ms_rows_company53=1;ms_rows_smoke_tenant=1;inv_company53_outside_exception=1|7
+a foreign (non-smoke) company row|ms_rows_smoke_tenant=1;ms_rows_companies=2|7
+a company-1 row|ms_rows_company1=1;inv_company1=1|7
+a row not active|ms_rows_active=1;inv_active=1|3
+a row on the wrong driver|ms_rows_fs=1|3
+a legacy key set|ms_rows_legacy_null=1|3
+mirror location missing / not canonical|ms_rows_mirror_canonical=1|4
+mirror state not ok|ms_rows_mirror_ok=1|4
+publication uncertainty|ms_rows_not_uncertain=1;inv_uncertain=1|5
+a lease|ms_rows_no_lease=1;inv_leases=1|5
+last_error present|ms_rows_error_null=1|5
+size or digest not populated / identity mismatch|ms_rows_sized=1;ms_rows_digest_ok=1|6
+the rows do not match this run's fixture facts|ms_rows_fixture_match=1|6
+two documents instead of document + logo|ms_rows_document=2;ms_rows_logo=0|6
+Stage 1 exception moved (state)|exc_state=active|8
+Stage 1 exception provider object missing|exc_provider_present=false|8
+cleanup-pending / unproven rows|inv_cleanup_pending=1|9
+an encrypted file missing before the recreate|ms_fs_present=1;ms_fs_regular=1;ms_fs_magic_ok=1|10
+an extra tenant file on the volume|ms_fs_tenant_files=3;ms_fs_keys_match=false|10
+a plaintext marker found in a file|ms_fs_marker_free=1|10
+a mirror object missing before the recreate|ms_mirror_present=1;ms_mirror_sha_ok=1|11
+a mirror digest mismatch|ms_mirror_sha_ok=1|11
+provider census: unexpected object count|census_objects=8|12
+provider census: unexpected bytes|census_bytes=23126|12
+provider census: unexpected marked count|census_marked=4|12
+provider census: an original changed|unmarked_md5=00000000000000000000000000000000|12
+a dead-letter job|dead_jobs=1|13
+legacy references changed|references=5|13
+MUT
+check "mid-smoke evaluator: every one of the 13 conditions is covered by at least one denying mutation" "$(printf '%s' "$ms_covered" | tr ',' '\n' | grep -E '^[0-9]+$' | sort -n -u | tr '\n' ',')" "1,2,3,4,5,6,7,8,9,10,11,12,13,"
+check "mid-smoke evaluator: the expected census bytes are derived from the verified plaintext sizes (bytes = 1398 + the rows' bytes), never a loose constant" "$(ms_verdict "$(s2ar_mut "$MS_GOLDEN" "ms_rows_bytes=21728")" | grep -oE '^B25_STAGE2A_MIDSMOKE_GATE=[A-Z]+')|$(ms_verdict "$(s2ar_mut "$MS_GOLDEN" "ms_rows_bytes=21728;census_bytes=23126")" | grep -oE '^B25_STAGE2A_MIDSMOKE_GATE=[A-Z]+')" "B25_STAGE2A_MIDSMOKE_GATE=FAIL|B25_STAGE2A_MIDSMOKE_GATE=PASS"
+# ---- the smoke-row list validator (shell level) ----
+eval "$(body stage2a_smoke_rows_validate)"
+U1="ac3c33c3-853e-4003-a03e-a8b357a282ac"; U2="c097cd52-270e-418c-8e75-0a0dfd1f2312"
+check "smoke-row list validator: exactly two canonical distinct uuids pass; one uuid, three uuids, a duplicate, the exception uuid, a malformed / upper-case / spaced / empty list fail" "$(stage2a_smoke_rows_validate "$U1,$U2" && echo ok || echo no)|$(stage2a_smoke_rows_validate "$U1" && echo ok || echo no)|$(stage2a_smoke_rows_validate "$U1,$U2,$U1" && echo ok || echo no)|$(stage2a_smoke_rows_validate "$U1,$U1" && echo ok || echo no)|$(stage2a_smoke_rows_validate "$U1,$B25PHYS_UUID" && echo ok || echo no)|$(stage2a_smoke_rows_validate "$U1,xyz" && echo ok || echo no)|$(stage2a_smoke_rows_validate "${U1^^},$U2" && echo ok || echo no)|$(stage2a_smoke_rows_validate "$U1, $U2" && echo ok || echo no)|$(stage2a_smoke_rows_validate "" && echo ok || echo no)" "ok|no|no|no|no|no|no|no|no"
+# ---- the mid-smoke guard + the recreate phase: static wiring ----
+GB="$(body guards_stage2a_switched_with_smoke_rows)"; RB="$(body phase_stage2a_recreate_api)"; MF="$(body stage2a_midsmoke_facts)"
+check "the normal switched guard is UNCHANGED since the reviewed f67c371 and still strict (exception-only inventory; still the gate of the smoke setup)" "$(body guards_stage2a_switched | md5sum | cut -c1-32)|$(body guards_stage2a_switched | grep -c 'fail "storage_objects is not exactly the one exception row"')|$(body phase_stage2a_smoke_setup | grep -c '^  guards_stage2a_switched$')" "$(git -C "$HERE/../.." show f67c371cdd085194e061179238d705241cfb2723:.github/scripts/b25-stage1-apply.sh | awk '$0 ~ "^guards_stage2a_switched\\(\\) \\{" {on=1} on {print} on && /^}$/ {exit}' | md5sum | cut -c1-32)|1|1"
+check "the recreate phase applies ONLY the mid-smoke guard form (never the pre-smoke form), refuses any ARG and reads the uuids + the run's fixture facts from the stdin stream only" "$(printf '%s\n' "$RB" | grep -c 'guards_stage2a_switched_with_smoke_rows "$csv"')|$(printf '%s\n' "$RB" | grep -cE '^  guards_stage2a_switched$' || true)|$(printf '%s\n' "$RB" | grep -c '\[ -z "$ARG1$ARG2$ARG3" \] || fail')|$(printf '%s\n' "$RB" | grep -c 'B25_SMOKE_ROW_IDS:-')|$(printf '%s\n' "$RB" | grep -oE 'B25_(FIXTURE_SHA256|FIXTURE_SIZE|FIXTURE_MARKER|LOGO_SHA256|LOGO_SIZE):-' | sort -u | wc -l | tr -d ' ')" "1|0|1|1|5"
+check "the mid-smoke guard keeps every host check of the normal guard (product commit, clean checkout, api, health, init record, fingerprint, mount, owner / mode) and decides through the library evaluator" "$(for s in 'STAGE2A_PRODUCT_SHA' 'checkout dirty' 'api not running' 'health || fail' 'STAGE2A_INIT_FS' 'fingerprint)" = "$FP_AFTER"' 'volume:$STAGE2A_VOLUME' 'STAGE2A_ROOT_OWNER'; do printf '%s\n' "$GB" | grep -cF "$s" | tr -d '\n'; done)|$(printf '%s\n' "$GB" | grep -c '| stage2a_midsmoke_eval)')|$(printf '%s\n' "$GB" | grep -c "grep -qx 'B25_STAGE2A_MIDSMOKE_GATE=PASS' || fail")|$(printf '%s\n' "$GB" | grep -c 'stage2a_readonly_guard')" "11111111|1|1|1"
+check "the mid-smoke guard, its fact reader and the recreate phase never write to the database and never touch web / postgres (the recreation = the one api-only helper)" "$(printf '%s\n%s\n%s\n' "$GB" "$MF" "$RB" | grep -vE '^\s*#' | grep -ciE '(^|[^a-z_])qw |"(delete|update|insert|truncate|drop|alter) ' || true)|$(printf '%s\n' "$RB" | grep -c 'stage2a_recreate_api || fail')|$(printf '%s\n' "$RB" | grep -vE '^\s*(#|section )' | grep -ciE 'compose (up|down|restart|rm) |force-recreate (web|postgres)|compose exec -T (web|postgres)' || true)|$(printf '%s\n%s' "$GB" "$MF" | grep -ciE 'compose up|force-recreate|rm -r|unlink|\.delete\(' || true)" "0|1|0|0"
+check "the recreate phase proves, after the recreation: readiness ok, the same product commit, the same volume identity, the same ciphertext set (sha256 of every tenant file), the same two rows (digest over state / driver / digest / size / mirror / lease / key / updated_at) and the two mirrors re-read" "$(printf '%s\n' "$RB" | grep -c '"status":"ok"')|$(printf '%s\n' "$RB" | grep -c 'product commit changed across the recreation')|$(printf '%s\n' "$RB" | grep -c 'objectdata volume identity changed')|$(printf '%s\n' "$RB" | grep -c 'sha256sum {} +')|$(printf '%s\n' "$RB" | grep -c 'the two smoke rows changed across the recreation')|$(printf '%s\n' "$RB" | grep -c 'stage2a_fields_ok "$mj" 2 rows present bucket_ok canonical_key marker_ok generation_ok size_ok sha_ok')" "1|1|1|2|1|1"
+check "the mid-smoke fact reader re-proves the files with the run's plaintext marker, the mirrors with digest + size, the exception facts, the census and the references, and reads the two rows in one statement" "$(printf '%s\n' "$MF" | grep -c 'STAGE2A_FS_VERIFY_JS')|$(printf '%s\n' "$MF" | grep -c 'STAGE2A_MIRROR_JS')|$(printf '%s\n' "$MF" | grep -c 'stage2a_exception_facts')|$(printf '%s\n' "$MF" | grep -c "'marker', '\$B25_FIXTURE_MARKER'")|$(printf '%s\n' "$MF" | grep -c 'from storage_objects where id in ($Q)"$')|$(printf '%s\n' "$MF" | grep -c 'references=$(references)')" "1|1|1|1|1|1"
+check "workflow: the recreate step validates exactly two recorded uuids and streams them with the fixture facts as the stdin preamble; no ARG and no workflow input carries a uuid" "$(grep -c "B25_SMOKE_ROW_IDS=%s" "$WF")|$(grep -E "PHASE='stage2a-recreate-api' " "$WF" | grep -cE 'ARG[123]=' || true)|$(grep -cF '[[ "${SMOKE_ROW_IDS:-}" =~ ^[0-9a-f-]{36},[0-9a-f-]{36}$ ]] ||' "$WF")|$(grep -E '^        default:' "$WF" | grep -cE 'ac3c33c3|c097cd52|SMOKE_ROW' || true)" "1|0|1|0"
+check "workflow: the branch guard requires the Correction 4 functions and refuses a recreate phase that still applies the pre-smoke guard form" "$(grep -c "grep -q '^guards_stage2a_switched_with_smoke_rows()'" "$WF")|$(grep -c "grep -q '^stage2a_midsmoke_eval()'" "$WF")|$(grep -c "grep -q '^stage2a_tenant_incident_proof()'" "$WF")|$(grep -c 'the recreate phase still applies the pre-smoke form of the switched guard' "$WF")|$(grep -c "grep -q '^readonly S2AR3_TENANT_SNAPSHOT_B64='" "$WF")" "1|1|1|1|1"
+# ---- the retrospective incident proof: the evaluator in its incident form ----
+INC_GOLDEN="$(cat <<'G'
+snapshot_at=2026-10-16 19:54:40.127290
+review_utc_ok=true
+pre_id_company_md5=11111111111111111111111111111111
+post_id_company_md5=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+pre_id_company_status_md5=22222222222222222222222222222222
+post_id_company_status_md5=22222222222222222222222222222222
+pre_id_sub_core_md5=33333333333333333333333333333333
+post_id_sub_core_md5=33333333333333333333333333333333
+pre_id_sub_status_md5=44444444444444444444444444444444
+post_id_sub_status_md5=44444444444444444444444444444444
+pre_id_users_count=1
+post_id_users_count=2
+pre_id_users_active=1
+post_id_users_active=2
+pre_id_users_md5=55555555555555555555555555555555
+post_id_users_md5=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+pre_id_roles_count=0
+post_id_roles_count=0
+pre_id_roles_md5=66666666666666666666666666666666
+post_id_roles_md5=66666666666666666666666666666666
+pre_id_user_roles_count=0
+post_id_user_roles_count=0
+pre_id_user_roles_md5=77777777777777777777777777777777
+post_id_user_roles_md5=77777777777777777777777777777777
+pre_id_brand_logo_set=false
+post_id_brand_logo_set=false
+users_created_since=0
+users_soft_deleted_since=0
+users_modified_since=1
+users_modified_login_explained=1
+sec_audit_rows_since=0
+roles_changed_since=0
+user_roles_created_since=0
+company_modified_since=false
+sub_modified_since=false
+sub_status_changed_since=false
+tenant_audit_rows_window=0
+tenant_audit_rows_since=0
+disposable_audit_on_tenant=0
+tenant_rows_ref_disposables=0
+disposable_rows_ref_tenant=0
+tenant_storage_rows_post=0
+tenant_storage_created_window=0
+tenant_storage_deleted_window=0
+sweep_audit_rows_window=0
+sub_status_post=active
+sub_trial_elapsed=true
+references_post=4
+references_expected=4
+G
+)"
+for t in $S2A_BUSINESS_TABLES; do INC_GOLDEN+=$'\n'"pre_${t}_count=5"$'\n'"pre_${t}_max_id=5"$'\n'"post_${t}_count=6"$'\n'"post_${t}_max_id=6"$'\n'"${t}_created_window=0"$'\n'"${t}_modified_window=0"$'\n'"${t}_soft_deleted_window=0"$'\n'"${t}_created_by_disposable=0"$'\n'"${t}_created_by_tenant=0"$'\n'"${t}_automated_explained=0"; done
+pi() { printf '%s\n' "$1" | stage2a_tenant_post_eval incident || true; }
+IV="$(pi "$INC_GOLDEN")"
+check "incident proof: golden (quiet window; the tenant worked normally afterwards — counts grew, a user was added later, identity digests differ from the snapshot NOW) → PASS in the incident form; the strict form of the same facts FAILS (frozen comparison)" "$(printf '%s\n' "$IV" | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=[A-Z]+')|$(printf '%s\n' "$IV" | grep -c 'incident form')|$(pv "$INC_GOLDEN" | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=[A-Z]+')" "B25_STAGE2A_TENANT_POST_GATE=PASS|1|B25_STAGE2A_TENANT_POST_GATE=FAIL"
+check "incident proof: an unknown mode is refused; the strict form is the default (the smoke's own post gate is unchanged: the strict golden still passes)" "$(printf '%s\n' "$INC_GOLDEN" | stage2a_tenant_post_eval bogus | tail -1)|$(pv "$POST_GOLDEN" | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=[A-Z]+')" "B25_STAGE2A_TENANT_POST_GATE=FAIL|B25_STAGE2A_TENANT_POST_GATE=PASS"
+while IFS='|' read -r label mut want; do
+  [ -n "$label" ] || continue
+  V="$(pi "$(s2ar_mut "$INC_GOLDEN" "$mut")")"; got="$(printf '%s\n' "$V" | grep -oE '^B25_STAGE2A_TENANT_POST_GATE=[A-Z]+' | cut -d= -f2)"
+  if [ "$got" = "$want" ]; then ok "incident proof: $label → $want"; else bad "incident proof: $label (got $got want $want)"; fi
+done <<'MUT'
+a disposable actor created a tenant row in the window|contacts_created_window=1;contacts_created_by_disposable=1|FAIL
+a tenant row references a disposable event / user|tenant_rows_ref_disposables=1|FAIL
+a disposable row references a tenant user|disposable_rows_ref_tenant=1|FAIL
+an audit action of a disposable identity on the tenant|disposable_audit_on_tenant=1|FAIL
+a tenant storage object created in the window|tenant_storage_created_window=1|FAIL
+a tenant storage object deleted in the window|tenant_storage_deleted_window=1|FAIL
+a security / permission audit action in the window|sec_audit_rows_since=1|FAIL
+a user created in the window|users_created_since=1|FAIL
+a user soft-deleted in the window|users_soft_deleted_since=1|FAIL
+a user row modified in the window without a login explanation|users_modified_since=2;users_modified_login_explained=1|FAIL
+a role / user_role movement in the window|user_roles_created_since=1|FAIL
+a subscription status change in the window without sweep evidence|sub_status_changed_since=true|FAIL
+a subscription status change in the window WITH sweep evidence (system-actor audit row, elapsed trial, expired)|sub_status_changed_since=true;sweep_audit_rows_window=1;sub_status_post=expired;sub_trial_elapsed=true|PASS
+a company row modified in the window without sweep evidence|company_modified_since=true|FAIL
+unexplained movement in the window (a table without actor column, no tenant audit row, no automation)|tasks_modified_window=1|FAIL
+benign tenant activity in the window attributed to a tenant actor|contacts_created_window=1;contacts_created_by_tenant=1|PASS
+benign tenant activity in the window attributed by the tenant's own audit rows|tasks_modified_window=1;tenant_audit_rows_window=1|PASS
+an automated transition in the window (a workflow run finished)|workflow_runs_modified_window=1;workflow_runs_automated_explained=1|PASS
+rows created in the window by nobody attributable|contacts_created_window=2;contacts_created_by_tenant=1;tenant_audit_rows_window=1|FAIL
+a hard deletion since the snapshot that nothing attributes|post_tasks_count=4|FAIL
+a hard deletion since the snapshot attributed to the tenant's own audited activity|post_tasks_count=4;tenant_audit_rows_since=1|PASS
+legacy original references changed|references_post=5|FAIL
+the window is not ordered / not in the past|review_utc_ok=false|FAIL
+a snapshot lacking an identity digest|-pre_id_users_md5|FAIL
+MUT
+if [ "$(q "select count(*) from companies where id = 1")" = "1" ]; then
+  s2a_tenant_users_in="(select id from users where company_id = 1)"; REFERENCES=4; references() { echo 4; }
+  eval "$(body stage2a_tenant_identity_facts)"; eval "$(body stage2a_tenant_business_facts)"; eval "$(body stage2a_tenant_window_facts)"; eval "$(body stage2a_tenant_incident_facts)"; eval "$(body stage2a_tenant_incident_proof)"
+  fail() { echo "FAIL:$*"; return 1; }; section() { :; }
+  IW="$(date -u -d '2 hours ago' '+%Y-%m-%d %H:%M:%S')"; IE="$(date -u -d '1 hour ago' '+%Y-%m-%d %H:%M:%S')"
+  IF="$(stage2a_tenant_incident_facts "$IW" "$IE" "900001,900002" "999999")"
+  check "modeled: the incident reader runs against the local fixture tenant and prints only sanitized facts with the expected keys (identity window, 14 × 3 movement keys + the tenant storage window, attribution, isolation, references)" "$(s2a_facts_ok "$IF" && echo ok)|$(printf '%s\n' "$IF" | grep -cE '^(review_utc_ok|users_created_since|sec_audit_rows_since|tenant_audit_rows_window|tenant_audit_rows_since|disposable_audit_on_tenant|tenant_rows_ref_disposables|disposable_rows_ref_tenant|tenant_storage_rows_post|references_post|references_expected)=')|$(printf '%s\n' "$IF" | grep -cE '^[a-z_]+_(created|modified|soft_deleted)_window=')" "ok|11|43"
+  LSNAP="$( { echo "snapshot_at=$IW"; stage2a_tenant_identity_facts | sed 's/^/pre_/'; stage2a_tenant_business_facts pre; } | base64 -w0)"
+  IP="$(stage2a_tenant_incident_proof "$LSNAP" "$IE" "900001,900002" "999999" 2>&1 || true)"
+  check "modeled: the incident proof over a quiet past window of the local fixture tenant evaluates end to end; the only FAIL it may report here is the fixture's own storage rows (the regression tenant holds fixture storage rows; the hosted tenant holds none)" "$(printf '%s\n' "$IP" | grep -cE '^B25_STAGE2A_TENANT_POST_GATE=')|$(printf '%s\n' "$IP" | grep -E '^post: FAIL' | grep -vc 'isolation: tenant storage objects moved' || true)|$(printf '%s\n' "$IP" | grep -c 'incident form')" "1|0|1"
+  check "modeled: a malformed snapshot, an unordered window end or malformed disposable ids stop the proof before any read" "$(stage2a_tenant_incident_proof "not-base64!" "$IE" "1" "1" 2>&1 | grep -c '^FAIL:incident snapshot malformed')|$(stage2a_tenant_incident_proof "$LSNAP" "yesterday" "1" "1" 2>&1 | grep -c '^FAIL:incident end malformed')|$(stage2a_tenant_incident_proof "$LSNAP" "$IE" "a,b" "1" 2>&1 | grep -c '^FAIL:disposable ids malformed')" "1|1|1"
+  unset -f fail section references
+else
+  echo "note: the local database has no company-1 fixture tenant — the modeled incident reader / proof cases are exercised by the evaluator mutations only"
 fi
 
 check "the branch guard also requires the served-logo rule function of the smoke" "$(grep -c "grep -q '^function servedLogoRule(' .github/scripts/b25-stage1-smoke.mjs" "$WF")" "1"

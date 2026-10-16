@@ -622,9 +622,9 @@ s2ar_read_facts() {
 #   B25_STAGE2A_${MK}_CONDITIONS_FAILED=<n>
 #   B25_STAGE2A_${MK}_ELIGIBLE=TRUE|FALSE
 # A missing or malformed fact fails its condition (never defaults to a pass). Always returns 0.
-stage2a_residue_eligibility_for() {   # <manifest prefix: S2AR | S2AR2> <marker: RESIDUE | RESIDUE2>
+stage2a_residue_eligibility_for() {   # <manifest prefix: S2AR | S2AR2 | S2AR3> <marker: RESIDUE | RESIDUE2 | RESIDUE3>
   local P="$1" MK="$2"
-  [[ "$P" =~ ^S2AR2?$ ]] && [[ "$MK" =~ ^RESIDUE2?$ ]] || { echo "stage2a_residue_eligibility_for: unknown manifest" >&2; return 1; }
+  [[ "$P" =~ ^S2AR[23]?$ ]] && [[ "$MK" =~ ^RESIDUE[23]?$ ]] || { echo "stage2a_residue_eligibility_for: unknown manifest" >&2; return 1; }
   local -n M_RUN="${P}_RUN" M_TAG="${P}_TAG" M_COMPANY="${P}_COMPANY" M_COMPANIES="${P}_COMPANIES" M_USERS="${P}_USERS" M_UUID_DOC="${P}_UUID_DOC" M_UUID_LOGO="${P}_UUID_LOGO" M_DOC_SIZE="${P}_DOC_SIZE" M_LOGO_SIZE="${P}_LOGO_SIZE" M_ROWS="${P}_ROWS"
   local -A f=()
   s2ar_read_facts
@@ -643,7 +643,7 @@ stage2a_residue_eligibility_for() {   # <manifest prefix: S2AR | S2AR2> <marker:
   ok=1; is_true lock_absent && is_true env_record_present && is_true env_core_identity_ok && is_eq env_mode 600 && is_eq key_line_count 1 && is_true env_file_managed_ok && ok=0
   cond "no activation lock; the activation env record still matches the env file (core identity, mode 600, exactly one key line, managed lines = the fixed activation set)" $ok "lock_absent=$(g lock_absent) record_present=$(g env_record_present) core_identity_ok=$(g env_core_identity_ok) mode=$(g env_mode) key_line_count=$(g key_line_count) managed_ok=$(g env_file_managed_ok)"
   ok=1; is_zero res_companies_present && ok=0
-  cond "company $M_COMPANY is absent (and company 55 and every 'B25 SMOKE $M_TAG' tenant)" $ok "companies_present=$(g res_companies_present)"
+  cond "company $M_COMPANY is absent (and every other company of $M_COMPANIES and every 'B25 SMOKE $M_TAG' tenant)" $ok "companies_present=$(g res_companies_present)"
   ok=1; is_zero res_users_present && is_zero res_sessions && is_zero res_feature_rows && ok=0
   cond "the disposable identities of run $M_RUN are absent (user $M_USERS, every b25-smoke-$M_TAG address, sessions, feature / audit / activity / login rows)" $ok "users_present=$(g res_users_present) sessions=$(g res_sessions) feature_rows=$(g res_feature_rows)"
   ok=1; is_eq res_rows_named "$R" && ok=0
@@ -700,9 +700,9 @@ stage2a_residue_eligibility_for() {   # <manifest prefix: S2AR | S2AR2> <marker:
 #   B25_STAGE2A_${MK}_SETTLED_CONDITIONS_FAILED=<n>
 #   B25_STAGE2A_${MK}_SETTLED=TRUE|FALSE
 # A missing or malformed fact fails its proof. Always returns 0.
-stage2a_residue_settled_for() {   # <manifest prefix: S2AR | S2AR2> <marker: RESIDUE | RESIDUE2>
+stage2a_residue_settled_for() {   # <manifest prefix: S2AR | S2AR2 | S2AR3> <marker: RESIDUE | RESIDUE2 | RESIDUE3>
   local P="$1" MK="$2"
-  [[ "$P" =~ ^S2AR2?$ ]] && [[ "$MK" =~ ^RESIDUE2?$ ]] || { echo "stage2a_residue_settled_for: unknown manifest" >&2; return 1; }
+  [[ "$P" =~ ^S2AR[23]?$ ]] && [[ "$MK" =~ ^RESIDUE[23]?$ ]] || { echo "stage2a_residue_settled_for: unknown manifest" >&2; return 1; }
   local -n M_RUN="${P}_RUN" M_TAG="${P}_TAG" M_COMPANY="${P}_COMPANY" M_COMPANIES="${P}_COMPANIES" M_USERS="${P}_USERS" M_UUID_DOC="${P}_UUID_DOC" M_UUID_LOGO="${P}_UUID_LOGO" M_DOC_SIZE="${P}_DOC_SIZE" M_LOGO_SIZE="${P}_LOGO_SIZE" M_ROWS="${P}_ROWS"
   local -A f=()
   s2ar_read_facts
@@ -790,6 +790,126 @@ s2ar2_constants_ok() {
     && [[ "$S2AR2_UUID_DOC" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] && [[ "$S2AR2_UUID_LOGO" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
     && [ "$S2AR2_UUID_DOC" != "$S2AR_UUID_DOC" ] && [ "$S2AR2_UUID_LOGO" != "$S2AR_UUID_LOGO" ] && [ "$S2AR2_UUID_DOC" != "$S2AR_UUID_LOGO" ] && [ "$S2AR2_UUID_LOGO" != "$S2AR_UUID_DOC" ] \
     && [[ ",$S2AR2_COMPANIES," != *",$S2AR_COMPANY,"* ]] && [ "$S2AR2_TAG" != "$S2AR_TAG" ] && [ "$S2AR2_ROWS" = "2" ]
+}
+
+# =============================================================================
+# B25 STAGE 2A — CORRECTION 4: EXACT RESIDUE OF THE CORRECTION-3 SMOKE RUN
+# 38958264416 (tag ec7ceda89a58). That run passed its setup (switched state,
+# B25_STAGE2A_TENANT_START_GATE=PASS, pre-smoke snapshot), STEP=run (62 / 62) and
+# the VPS-side verification (two fs rows, encrypted files 2 / 2, mirror objects
+# 2 / 2, leak gates 0, census 7 / 23125 / marked 3), then stopped in
+# stage2a-recreate-api: the PRE-SMOKE form of guards_stage2a_switched demanded
+# "inventory = the exception row only" while the smoke's own two rows
+# legitimately existed — the state-form defect corrected in b25-stage1-apply.sh
+# (guards_stage2a_switched_with_smoke_rows + stage2a_midsmoke_eval below; no
+# container was recreated). The always-cleanup deleted the two disposable
+# tenants through the product API (both 200), removed the disposable owner and
+# the explicit disposable rows, then stopped closed on the two tombstones that
+# only the settle step may remove (never broadened) — so the Correction 3
+# post-smoke comparison of the existing tenant was never reached. The residue:
+# two plain `deleted` fs tombstones of deleted company 58 (document ac3c33c3…,
+# branding_logo c097cd52…; mirror recorded; last_error NULL; both uuids read
+# unmasked from the run log). The pre-smoke snapshot that run's setup printed
+# (one base64 line: snapshot instant, identity digests, business counts and
+# highest ids — no customer value) is recorded below so the read-only inspection
+# can prove the incident window retrospectively. Denies the Stage 1 exception
+# (f048b5d4…, company 53) and both earlier manifests.
+# =============================================================================
+readonly S2AR3_RUN="38958264416"
+readonly S2AR3_TAG="ec7ceda89a58"
+readonly S2AR3_COMPANY=58
+readonly S2AR3_COMPANIES="58,59"
+readonly S2AR3_USERS="109"
+readonly S2AR3_UUID_DOC="ac3c33c3-853e-4003-a03e-a8b357a282ac"
+readonly S2AR3_UUID_LOGO="c097cd52-270e-418c-8e75-0a0dfd1f2312"
+readonly S2AR3_DOC_SIZE=21546
+readonly S2AR3_LOGO_SIZE=181          # the stored plaintext size of the kept logo (run 38958264416 verification: size=181)
+readonly S2AR3_ROWS=2
+readonly S2AR3_UUIDS_Q="'$S2AR3_UUID_DOC','$S2AR3_UUID_LOGO'"
+readonly S2AR3_MANIFEST="$S2AR3_UUID_DOC,$S2AR3_UUID_LOGO|$S2AR3_COMPANIES|$S2AR3_USERS|$S2AR3_TAG"
+# Both rows were created during STEP=run (upload intent 19:54:56Z, logo upload 19:55:04Z) and tombstoned by the API
+# deletion of tenant 58 in the always-cleanup (19:55:22Z; both rows read `deleted` at 19:55:35Z) — run 38958264416 log.
+readonly S2AR3_CREATED_FROM="2026-10-16 19:54:50"
+readonly S2AR3_CREATED_TO="2026-10-16 19:55:10"
+readonly S2AR3_DELETED_FROM="2026-10-16 19:55:20"
+readonly S2AR3_DELETED_TO="2026-10-16 19:56:00"
+# The incident window of the retrospective Correction 3 proof: from the pre-smoke snapshot instant printed by the
+# setup of run 38958264416 to the end of its always-cleanup step (19:55:37Z, rounded up).
+readonly S2AR3_SNAPSHOT_AT="2026-10-16 19:54:40.127290"
+readonly S2AR3_INCIDENT_END="2026-10-16 19:55:40"
+# The pre-smoke snapshot of the existing tenant exactly as the setup of run 38958264416 printed it (B25_TENANT_SNAPSHOT:
+# key=value facts, base64). Counts, booleans and digests only — the Correction 3 fact shape.
+readonly S2AR3_TENANT_SNAPSHOT_B64="c25hcHNob3RfYXQ9MjAyNi0xMC0xNiAxOTo1NDo0MC4xMjcyOTAKcHJlX2lkX2NvbXBhbnlfbWQ1PTRiNDUwNmM1YzdhNjg1ZTY1MjQ4MDZiZmM2NzA3N2FiCnByZV9pZF9jb21wYW55X3N0YXR1c19tZDU9OTA3MzA3Mjg2MDNjMzU0YjJhYjZiOTIyOTljNzUzZWQKcHJlX2lkX3N1Yl9jb3JlX21kNT02MjJjOTQ5MjVjMjAzZGU3YmYxYzUzNzgzM2NlNmQ0YwpwcmVfaWRfc3ViX3N0YXR1c19tZDU9NTRmZjM2NDAxMDVjNmNlODA2ZjM3ZWNmZmI3OTAzZDIKcHJlX2lkX3VzZXJzX2NvdW50PTEKcHJlX2lkX3VzZXJzX2FjdGl2ZT0xCnByZV9pZF91c2Vyc19tZDU9ZjFiMTVkNzQ5OTY2OTJlNjJiOWMxM2FiMzkwY2UwYTUKcHJlX2lkX3JvbGVzX2NvdW50PTAKcHJlX2lkX3JvbGVzX21kNT1kNDFkOGNkOThmMDBiMjA0ZTk4MDA5OThlY2Y4NDI3ZQpwcmVfaWRfdXNlcl9yb2xlc19jb3VudD0wCnByZV9pZF91c2VyX3JvbGVzX21kNT1kNDFkOGNkOThmMDBiMjA0ZTk4MDA5OThlY2Y4NDI3ZQpwcmVfaWRfYnJhbmRfbG9nb19zZXQ9ZmFsc2UKcHJlX2NvbnRhY3RzX2NvdW50PTEKcHJlX2NvbnRhY3RzX21heF9pZD0yMQpwcmVfbGVhZHNfY291bnQ9MQpwcmVfbGVhZHNfbWF4X2lkPTE0CnByZV9ldmVudHNfY291bnQ9MQpwcmVfZXZlbnRzX21heF9pZD0xNgpwcmVfdGFza3NfY291bnQ9MApwcmVfdGFza3NfbWF4X2lkPTAKcHJlX3RhZ3NfY291bnQ9MApwcmVfdGFnc19tYXhfaWQ9MApwcmVfbGVhZF90YWdzX2NvdW50PTAKcHJlX2xlYWRfdGFnc19tYXhfaWQ9MApwcmVfZG9jdW1lbnRzX2NvdW50PTAKcHJlX2RvY3VtZW50c19tYXhfaWQ9MApwcmVfZG9jdW1lbnRfdmVyc2lvbnNfY291bnQ9MApwcmVfZG9jdW1lbnRfdmVyc2lvbnNfbWF4X2lkPTAKcHJlX2ZvbGxvd191cHNfY291bnQ9MApwcmVfZm9sbG93X3Vwc19tYXhfaWQ9MApwcmVfd29ya2Zsb3dfZGVmaW5pdGlvbnNfY291bnQ9MApwcmVfd29ya2Zsb3dfZGVmaW5pdGlvbnNfbWF4X2lkPTAKcHJlX3dvcmtmbG93X3J1bnNfY291bnQ9MApwcmVfd29ya2Zsb3dfcnVuc19tYXhfaWQ9MApwcmVfYmlsbGluZ19jaGVja291dF9zZXNzaW9uc19jb3VudD0wCnByZV9iaWxsaW5nX2NoZWNrb3V0X3Nlc3Npb25zX21heF9pZD0wCnByZV9zdWJzY3JpcHRpb25fdXNhZ2VfcmVzZXJ2YXRpb25zX2NvdW50PTYKcHJlX3N1YnNjcmlwdGlvbl91c2FnZV9yZXNlcnZhdGlvbnNfbWF4X2lkPTkKcHJlX3NjYW5zX2NvdW50PTcKcHJlX3NjYW5zX21heF9pZD0zMQo="
+s2ar3_kind() { case "$1" in "$S2AR3_UUID_DOC") echo document;; "$S2AR3_UUID_LOGO") echo branding_logo;; *) return 1;; esac; }
+s2ar3_size() { case "$1" in "$S2AR3_UUID_DOC") echo "$S2AR3_DOC_SIZE";; "$S2AR3_UUID_LOGO") echo "$S2AR3_LOGO_SIZE";; *) return 1;; esac; }
+# The Correction 4 constants can never name the Stage 1 exception, nor overlap the Correction 1 / 2 manifests; the
+# recorded snapshot must decode to the Correction 3 fact shape with the recorded instant and the 12 identity digests;
+# the incident window must be ordered.
+s2ar3_constants_ok() {
+  local snap
+  [ "$S2AR3_UUID_DOC" != "$B25PHYS_UUID" ] && [ "$S2AR3_UUID_LOGO" != "$B25PHYS_UUID" ] && [ "$S2AR3_UUID_DOC" != "$S2AR3_UUID_LOGO" ] \
+    && [ "$S2AR3_COMPANY" != "$B25PHYS_COMPANY" ] && [[ ",$S2AR3_COMPANIES," != *",$B25PHYS_COMPANY,"* ]] && [[ ",$S2AR3_COMPANIES," == *",$S2AR3_COMPANY,"* ]] \
+    && [[ ",$S2AR3_COMPANIES," != *",1,"* ]] && [[ ",$S2AR3_USERS," != *",1,"* ]] && [[ ",$S2AR3_USERS," != *",2,"* ]] \
+    && [[ "$S2AR3_UUID_DOC" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] && [[ "$S2AR3_UUID_LOGO" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
+    && [ "$S2AR3_UUID_DOC" != "$S2AR_UUID_DOC" ] && [ "$S2AR3_UUID_LOGO" != "$S2AR_UUID_LOGO" ] && [ "$S2AR3_UUID_DOC" != "$S2AR_UUID_LOGO" ] && [ "$S2AR3_UUID_LOGO" != "$S2AR_UUID_DOC" ] \
+    && [ "$S2AR3_UUID_DOC" != "$S2AR2_UUID_DOC" ] && [ "$S2AR3_UUID_LOGO" != "$S2AR2_UUID_LOGO" ] && [ "$S2AR3_UUID_DOC" != "$S2AR2_UUID_LOGO" ] && [ "$S2AR3_UUID_LOGO" != "$S2AR2_UUID_DOC" ] \
+    && [[ ",$S2AR3_COMPANIES," != *",$S2AR_COMPANY,"* ]] && [[ ",$S2AR3_COMPANIES," != *",$S2AR2_COMPANY,"* ]] && [ "$S2AR3_TAG" != "$S2AR_TAG" ] && [ "$S2AR3_TAG" != "$S2AR2_TAG" ] && [ "$S2AR3_ROWS" = "2" ] \
+    && [[ "$S2AR3_SNAPSHOT_AT" < "$S2AR3_INCIDENT_END" ]] && [[ "$S2AR3_CREATED_FROM" < "$S2AR3_CREATED_TO" ]] && [[ "$S2AR3_DELETED_FROM" < "$S2AR3_DELETED_TO" ]] \
+    && [[ "$S2AR3_TENANT_SNAPSHOT_B64" =~ ^[A-Za-z0-9+/=]{40,20000}$ ]] && snap="$(printf '%s' "$S2AR3_TENANT_SNAPSHOT_B64" | base64 -d 2>/dev/null)" \
+    && s2a_facts_ok "$snap" && [ "$(s2a_fv "$snap" snapshot_at)" = "$S2AR3_SNAPSHOT_AT" ] && [ "$(printf '%s\n' "$snap" | grep -cE '^pre_id_[a-z0-9_]+=')" = "12" ]
+}
+stage2a_residue3_eligibility() { stage2a_residue_eligibility_for S2AR3 RESIDUE3; }
+stage2a_residue3_settled() { stage2a_residue_settled_for S2AR3 RESIDUE3; }
+
+# ---- stage2a_midsmoke_eval (Correction 4): the Stage 2A guard's inventory / physical state in its MID-SMOKE form ----
+# Used ONLY by stage2a-recreate-api, which runs after stage2a-smoke-verify proved the smoke's two rows and before the
+# settle step. key=value facts on stdin (the predicates of the two recorded smoke rows, the Stage 1 exception facts,
+# the fs / mirror proofs re-read for those rows, the census) → 13 numbered conditions with OK / FAIL, then
+#   B25_STAGE2A_MIDSMOKE_CONDITIONS_FAILED=<n>
+#   B25_STAGE2A_MIDSMOKE_GATE=PASS|FAIL
+# The pre-smoke form (guards_stage2a_switched: the exception row ONLY) is untouched and remains the gate of every
+# other phase. A missing or malformed fact fails its condition. Always returns 0 (the caller decides on the marker).
+stage2a_midsmoke_eval() {
+  local -A f=()
+  s2ar_read_facts
+  local failed=0 n=0
+  g() { printf '%s' "${f[$1]:-<missing>}"; }
+  is_true() { [ "$(g "$1")" = "true" ]; }
+  is_zero() { [ "$(g "$1")" = "0" ]; }
+  is_eq() { [ "$(g "$1")" = "$2" ]; }
+  is_num_ge() { [[ "$(g "$1")" =~ ^[0-9]+$ ]] && [ "$(g "$1")" -ge "$2" ]; }
+  cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "mid $n: $1 — OK ($3)"; else echo "mid $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
+  local ok R=2 bytes_expected="?"
+  ok=1; is_true ms_ids_ok && is_eq ms_ids_count "$R" && ok=0
+  cond "exactly $R canonical, distinct smoke row uuids recorded by this run's stage2a-smoke-verify (never an input; never the Stage 1 exception)" $ok "ids_ok=$(g ms_ids_ok) count=$(g ms_ids_count)"
+  ok=1; is_eq inv_total 3 && is_eq ms_rows_named "$R" && is_zero ms_rows_outside && ok=0
+  cond "storage_objects = the Stage 1 exception + exactly the $R recorded smoke rows (total 3; no other row)" $ok "total=$(g inv_total) named=$(g ms_rows_named) outside=$(g ms_rows_outside)"
+  ok=1; is_eq ms_rows_active "$R" && is_eq ms_rows_fs "$R" && is_eq ms_rows_legacy_null "$R" && ok=0
+  cond "both smoke rows are state = active, driver = fs, legacy_key null" $ok "active=$(g ms_rows_active) fs=$(g ms_rows_fs) legacy_null=$(g ms_rows_legacy_null)"
+  ok=1; is_eq ms_rows_mirror_canonical "$R" && is_eq ms_rows_mirror_ok "$R" && ok=0
+  cond "both smoke rows carry the canonical mirror location of their key with mirror_state = ok" $ok "mirror_canonical=$(g ms_rows_mirror_canonical) mirror_ok=$(g ms_rows_mirror_ok)"
+  ok=1; is_eq ms_rows_error_null "$R" && is_eq ms_rows_not_uncertain "$R" && is_eq ms_rows_no_lease "$R" && ok=0
+  cond "no last_error, no publication uncertainty, no lease on either smoke row" $ok "error_null=$(g ms_rows_error_null) not_uncertain=$(g ms_rows_not_uncertain) no_lease=$(g ms_rows_no_lease)"
+  ok=1; is_eq ms_rows_sized "$R" && is_eq ms_rows_digest_ok "$R" && is_eq ms_rows_identity_ok "$R" && is_eq ms_rows_fixture_match "$R" && is_eq ms_rows_document 1 && is_eq ms_rows_logo 1 && ok=0
+  cond "row identity: one document + one branding_logo with the product-shaped reference / key, a populated plaintext size and a 64-hex digest equal to this run's fixture and logo facts" $ok "sized=$(g ms_rows_sized) digest_ok=$(g ms_rows_digest_ok) identity_ok=$(g ms_rows_identity_ok) fixture_match=$(g ms_rows_fixture_match) document=$(g ms_rows_document) logo=$(g ms_rows_logo)"
+  ok=1; is_eq ms_rows_smoke_tenant "$R" && is_eq ms_rows_companies 1 && is_zero ms_rows_company1 && is_zero ms_rows_company53 && is_zero inv_company1 && is_zero inv_company53_outside_exception && ok=0
+  cond "both smoke rows belong to ONE disposable 'B25 SMOKE' tenant; no row of company 1; no company-$B25PHYS_COMPANY row besides the exception; no foreign row" $ok "smoke_tenant=$(g ms_rows_smoke_tenant) companies=$(g ms_rows_companies) company1=$(g ms_rows_company1) company53=$(g ms_rows_company53) inv_company1=$(g inv_company1) inv_company53_outside_exception=$(g inv_company53_outside_exception)"
+  ok=1; is_eq exc_row_count 1 && is_eq exc_state deleted && is_eq exc_last_error LEGACY_RETAINED && is_eq exc_driver gcs && is_eq exc_company "$B25PHYS_COMPANY" && is_eq exc_kind document && is_eq exc_size "$B25PHYS_OBJECT_SIZE" && is_true exc_identity_ok && is_eq exc_uncertain false && is_eq exc_lease false && is_zero exc_live_refs && is_true exc_provider_present && is_true exc_provider_marker_ok && is_true exc_provider_size_matches && is_true exc_generation_canonical && is_true exc_generation_stable && is_eq exc_generation_digest "$B25PHYS_PRE_GEN_DIGEST" && ok=0
+  cond "Stage 1 exception $B25PHYS_UUID intact (deleted / LEGACY_RETAINED / gcs / company $B25PHYS_COMPANY / size $B25PHYS_OBJECT_SIZE / 0 live references; provider object present with its marker at the accepted generation $B25PHYS_PRE_GEN_DIGEST)" $ok "rows=$(g exc_row_count) state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) company=$(g exc_company) size=$(g exc_size) identity_ok=$(g exc_identity_ok) uncertain=$(g exc_uncertain) lease=$(g exc_lease) live_refs=$(g exc_live_refs) provider_present=$(g exc_provider_present) marker_ok=$(g exc_provider_marker_ok) size_matches=$(g exc_provider_size_matches) generation=$(g exc_generation_canonical)/$(g exc_generation_stable)/$(g exc_generation_digest)"
+  ok=1; is_zero inv_uncertain && is_zero inv_unproven && is_zero inv_cleanup_pending && is_zero inv_leases && is_zero inv_inflight && is_eq inv_active "$R" && ok=0
+  cond "inventory hygiene: nothing uncertain / unproven / cleanup-pending / leased / in flight; the active rows are the $R smoke rows" $ok "uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leases=$(g inv_leases) inflight=$(g inv_inflight) active=$(g inv_active)"
+  ok=1; is_eq ms_fs_rows "$R" && is_eq ms_fs_present "$R" && is_eq ms_fs_regular "$R" && is_eq ms_fs_owner_ok "$R" && is_eq ms_fs_mode_ok "$R" && is_eq ms_fs_magic_ok "$R" && is_eq ms_fs_marker_free "$R" && is_eq ms_fs_pdf_free "$R" && is_eq ms_fs_size_differs "$R" && is_eq ms_fs_tenant_files "$R" && is_zero ms_fs_other_files && is_zero ms_fs_symlinks && is_true ms_fs_keys_match && ok=0
+  cond "FS: exactly the $R encrypted files (regular, runtime-owned, 0600, envelope magic, no plaintext marker, no PDF header, ciphertext size differs), the tenant file set = the stored keys, no other / symlinked file" $ok "rows=$(g ms_fs_rows) present=$(g ms_fs_present) regular=$(g ms_fs_regular) owner=$(g ms_fs_owner_ok) mode=$(g ms_fs_mode_ok) magic=$(g ms_fs_magic_ok) marker_free=$(g ms_fs_marker_free) pdf_free=$(g ms_fs_pdf_free) size_differs=$(g ms_fs_size_differs) tenant_files=$(g ms_fs_tenant_files) other=$(g ms_fs_other_files) symlinks=$(g ms_fs_symlinks) keys_match=$(g ms_fs_keys_match)"
+  ok=1; is_eq ms_mirror_rows "$R" && is_eq ms_mirror_present "$R" && is_eq ms_mirror_bucket_ok "$R" && is_eq ms_mirror_canonical_key "$R" && is_eq ms_mirror_marker_ok "$R" && is_eq ms_mirror_generation_ok "$R" && is_eq ms_mirror_size_ok "$R" && is_eq ms_mirror_sha_ok "$R" && is_num_ge ms_mirror_generation_digits_min 10 && ok=0
+  cond "GCS: exactly the $R mirror objects in the configured bucket at the canonical keys, each with the row's marker, a canonical generation, the plaintext size and the row digest" $ok "rows=$(g ms_mirror_rows) present=$(g ms_mirror_present) bucket=$(g ms_mirror_bucket_ok) canonical=$(g ms_mirror_canonical_key) marker=$(g ms_mirror_marker_ok) generation=$(g ms_mirror_generation_ok) size=$(g ms_mirror_size_ok) sha=$(g ms_mirror_sha_ok) generation_digits_min=$(g ms_mirror_generation_digits_min)"
+  if [[ "$(g ms_rows_bytes)" =~ ^[0-9]+$ ]]; then bytes_expected=$((B25PHYS_CENSUS_BYTES + $(g ms_rows_bytes))); fi
+  ok=1; is_eq census_objects "$((B25PHYS_CENSUS_OBJECTS + R))" && is_eq census_bytes "$bytes_expected" && is_eq census_marked "$((B25PHYS_CENSUS_MARKED + R))" && is_eq census_generationless "$B25PHYS_CENSUS_GENERATIONLESS" && is_eq unmarked_objects 4 && is_eq unmarked_md5 "$B25PHYS_ORIGINALS_MD5" && is_eq originals_present 4 && is_zero originals_missing && is_eq originals_size_match 4 && ok=0
+  cond "bucket census = the locked baseline + the $R smoke mirrors (objects $((B25PHYS_CENSUS_OBJECTS + R)), bytes $B25PHYS_CENSUS_BYTES + the verified plaintext sizes = $bytes_expected, marked $((B25PHYS_CENSUS_MARKED + R)), generationless $B25PHYS_CENSUS_GENERATIONLESS); the four originals intact" $ok "objects=$(g census_objects) bytes=$(g census_bytes) marked=$(g census_marked) generationless=$(g census_generationless) unmarked_objects=$(g unmarked_objects) unmarked_md5=$(g unmarked_md5) originals_present=$(g originals_present) missing=$(g originals_missing) size_match=$(g originals_size_match)"
+  ok=1; is_zero dead_jobs && [ "$(g references)" != "<missing>" ] && [ -n "$(g references)" ] && is_eq references "$(g references_expected)" && ok=0
+  cond "no dead-letter job; legacy original references = $(g references_expected)" $ok "dead_jobs=$(g dead_jobs) references=$(g references)"
+  echo "B25_STAGE2A_MIDSMOKE_CONDITIONS_FAILED=$failed"
+  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_MIDSMOKE_GATE=PASS"; else echo "B25_STAGE2A_MIDSMOKE_GATE=FAIL"; fi
+  return 0
 }
 
 # =============================================================================
@@ -896,32 +1016,57 @@ stage2a_tenant_start_eval() {
 }
 
 # ---- stage2a_tenant_post_eval: the post-smoke comparison (pre_* snapshot facts + post_* facts + window attribution on stdin) ----
-stage2a_tenant_post_eval() {
-  local F; F="$(cat)"; local failed=0 concurrent=0 k t spec
+stage2a_tenant_post_eval() {   # [strict (default: the smoke's own post gate) | incident (Correction 4: a retrospective window proof)]
+  local MODE="${1:-strict}" F; F="$(cat)"; local failed=0 concurrent=0 k t spec
+  [[ "$MODE" =~ ^(strict|incident)$ ]] || { echo "post: unknown mode"; echo "B25_STAGE2A_TENANT_POST_GATE=FAIL"; return 1; }
   s2a_facts_ok "$F" || { echo "post: facts have an unexpected shape (nothing printed)"; echo "B25_STAGE2A_TENANT_POST_GATE=FAIL"; return 1; }
   v() { s2a_fv "$F" "$1"; }
   say() { echo "post: $*"; }
   bad() { say "FAIL: $*"; failed=$((failed+1)); }
   [ -n "$(v snapshot_at)" ] || bad "no pre-smoke snapshot instant"
-  for k in $S2A_IDENTITY_KEYS; do
-    [ -n "$(v "pre_$k")" ] || { bad "snapshot lacks $k"; continue; }
-    [ "$(v "pre_$k")" = "$(v "post_$k")" ] && say "identity: $k unchanged" || bad "identity / security state changed during the smoke: $k"
-  done
   local sweep_ok=false
   if [ "$(s2a_num "$(v sweep_audit_rows_window)")" -ge 1 ] && [ "$(v sub_status_post)" = "expired" ] && [ "$(v sub_trial_elapsed)" = "true" ]; then sweep_ok=true; fi
-  for k in $S2A_SWEEP_KEYS; do
-    if [ "$(v "pre_$k")" = "$(v "post_$k")" ]; then say "identity: $k unchanged"
-    elif [ "$sweep_ok" = true ]; then say "identity: $k moved — EXPECTED SWEEP during the smoke (evidence: subscription.trial_expired audit row by the system actor, elapsed trial, status expired): accepted"
-    else bad "status movement during the smoke without sweep evidence: $k"; fi
-  done
-  local tenant_audit; tenant_audit="$(s2a_num "$(v tenant_audit_rows_window)")"
+  if [ "$MODE" = strict ]; then
+    for k in $S2A_IDENTITY_KEYS; do
+      [ -n "$(v "pre_$k")" ] || { bad "snapshot lacks $k"; continue; }
+      [ "$(v "pre_$k")" = "$(v "post_$k")" ] && say "identity: $k unchanged" || bad "identity / security state changed during the smoke: $k"
+    done
+    for k in $S2A_SWEEP_KEYS; do
+      if [ "$(v "pre_$k")" = "$(v "post_$k")" ]; then say "identity: $k unchanged"
+      elif [ "$sweep_ok" = true ]; then say "identity: $k moved — EXPECTED SWEEP during the smoke (evidence: subscription.trial_expired audit row by the system actor, elapsed trial, status expired): accepted"
+      else bad "status movement during the smoke without sweep evidence: $k"; fi
+    done
+  else
+    # Correction 4 — incident form: the identity tier is decided by the WINDOW evidence (the Correction 3 row / audit
+    # rules of the start gate, bounded to the incident window), never by a frozen comparison with the present — the
+    # tenant may have worked normally since the incident. Unknown movement inside the window still FAILS.
+    say "incident form: identity tier decided by the window evidence (snapshot instant → incident end), business movement attributed, isolation proven"
+    for k in $S2A_IDENTITY_KEYS; do [ -n "$(v "pre_$k")" ] || bad "snapshot lacks $k"; done
+    [ "$(v review_utc_ok)" = "true" ] || bad "incident window is not ordered / not in the past"
+    [ "$(s2a_num "$(v users_created_since)")" = "0" ] && [ "$(s2a_num "$(v users_soft_deleted_since)")" = "0" ] && say "identity: user set unchanged in the window" || bad "identity: user set changed in the window (created=$(v users_created_since) removed=$(v users_soft_deleted_since))"
+    local um le; um="$(s2a_num "$(v users_modified_since)")"; le="$(s2a_num "$(v users_modified_login_explained)")"
+    [ "$um" -le "$le" ] && say "identity: $um user row(s) modified in the window, every one explained by its own login" || bad "identity: $((um-le)) user row(s) modified in the window without a login explanation"
+    [ "$(s2a_num "$(v sec_audit_rows_since)")" = "0" ] && say "identity: no identity / permission / security audit action in the window" || bad "identity: $(v sec_audit_rows_since) identity / permission audit action(s) in the window (team / profile / roles / security / user.* other than login)"
+    [ "$(s2a_num "$(v roles_changed_since)")" = "0" ] && [ "$(s2a_num "$(v user_roles_created_since)")" = "0" ] && say "identity: roles / user_roles unmoved in the window" || bad "identity: role movement in the window (roles changed=$(v roles_changed_since) user_roles created=$(v user_roles_created_since))"
+    if [ "$(v sub_modified_since)" = "true" ] || [ "$(v sub_status_changed_since)" = "true" ]; then
+      if [ "$sweep_ok" = true ]; then say "billing: subscription moved in the window — EXPECTED SWEEP (evidence: subscription.trial_expired audit row by the system actor, elapsed trial, status expired): accepted"; else bad "billing: subscription movement in the window without sweep evidence (modified=$(v sub_modified_since) status_changed=$(v sub_status_changed_since) sweep_audit=$(v sweep_audit_rows_window))"; fi
+    else say "billing: subscription unmoved in the window"; fi
+    if [ "$(v company_modified_since)" = "true" ]; then
+      if [ "$sweep_ok" = true ]; then say "company row moved in the window — the sweep's status mirror: accepted"; else bad "company row modified in the window without sweep evidence"; fi
+    else say "company row unmoved in the window"; fi
+  fi
+  local tenant_audit tenant_audit_since; tenant_audit="$(s2a_num "$(v tenant_audit_rows_window)")"; tenant_audit_since="$(s2a_num "$(v tenant_audit_rows_since)")"
   for t in $S2A_BUSINESS_TABLES; do
     spec="$(s2a_tbl_spec "$t")" || { bad "unknown table $t"; continue; }
     local _d _u has_actor _c pre post cw mw dw cbd cbt auto activity
     read -r _d _u has_actor _c <<<"$spec"
     pre="$(v "pre_${t}_count")"; post="$(v "post_${t}_count")"
     [[ "$pre" =~ ^[0-9]+$ ]] && [[ "$post" =~ ^[0-9]+$ ]] || { bad "$t: counts unreadable"; continue; }
-    [ "$post" -ge "$pre" ] || { bad "$t: $((pre-post)) tenant row(s) hard-deleted during the smoke (count $pre → $post)"; continue; }
+    if [ "$post" -lt "$pre" ]; then
+      if [ "$MODE" = strict ]; then bad "$t: $((pre-post)) tenant row(s) hard-deleted during the smoke (count $pre → $post)"; continue
+      elif [ "$tenant_audit_since" -ge 1 ]; then say "$t: $((pre-post)) row(s) fewer than at the snapshot — attributed to the tenant's own audited activity since the snapshot (tenant audit rows since=$tenant_audit_since); not smoke-caused: allowed"; concurrent=$((concurrent+1)); continue
+      else bad "$t: $((pre-post)) tenant row(s) hard-deleted since the snapshot that nothing attributes (count $pre → $post; no tenant audit row since) — fail closed"; continue; fi
+    fi
     cw="$(s2a_num "$(v "${t}_created_window")")"; mw="$(s2a_num "$(v "${t}_modified_window")")"; dw="$(s2a_num "$(v "${t}_soft_deleted_window")")"
     cbd="$(s2a_num "$(v "${t}_created_by_disposable")")"; cbt="$(s2a_num "$(v "${t}_created_by_tenant")")"; auto="$(s2a_num "$(v "${t}_automated_explained")")"
     activity=$((cw+mw+dw))
