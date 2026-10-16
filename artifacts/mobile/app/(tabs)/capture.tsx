@@ -67,6 +67,20 @@ export default function CaptureScreen() {
       run();
       return;
     }
+    if (Platform.OS === "web") {
+      // react-native-web has no Alert implementation: a plain confirm keeps the two choices
+      // ("OK" = Continue with No Event, "Cancel" = Select Event) instead of silently blocking.
+      const proceed = typeof globalThis.confirm === "function"
+        ? globalThis.confirm(`${t("capture.noEventWarnTitle")}\n\n${t("capture.noEventWarnBody")}\n\n${t("capture.noEventContinue")}?`)
+        : false;
+      if (proceed) {
+        acknowledgeNoEvent();
+        run();
+      } else {
+        router.push("/event-picker");
+      }
+      return;
+    }
     Alert.alert(t("capture.noEventWarnTitle"), t("capture.noEventWarnBody"), [
       { text: t("capture.noEventSelect"), onPress: () => router.push("/event-picker") },
       {

@@ -100,6 +100,8 @@ const ContactRow = React.memo(function ContactRow({
       onPress={() => onPress(item.id)}
       onLongPress={() => onLongPress(item.id)}
       delayLongPress={350}
+      accessibilityRole="button"
+      accessibilityHint={selectionMode ? undefined : t("contacts.selectContacts")}
       accessibilityState={selectionMode ? { selected } : undefined}
       style={({ pressed }) => [
         styles.row,
