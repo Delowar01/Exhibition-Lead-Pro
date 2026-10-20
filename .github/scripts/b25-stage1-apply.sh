@@ -66,6 +66,21 @@
 #                     (guards_stage2a_switched_with_smoke_rows: the exception row + exactly the two rows
 #                     recorded by the same run's verification, re-proven with their files, mirrors and the
 #                     census; the uuids travel on the stdin stream only) — run 38958264416 stopped there
+#   (Correction 5)    the PROTECTED LIVE-INVENTORY model: the inspection run 39442358211 proved two healthy
+#                     live fs objects of the existing tenant, so "inventory = the exception row only" is
+#                     gone from every Stage 2A gate. Every row outside the exception and the recorded smoke
+#                     rows must be a healthy live fs row of a real tenant, proven on disk and in the bucket
+#                     (stage2a_protected_gate / stage2a_protected_eval), recorded before the smoke
+#                     (B25_PROTECTED_SET on the stdin stream) and identical mid-smoke, post-settle and in
+#                     the cleanup; the bucket is a partition (originals + exception + protected + smoke
+#                     mirrors); legacy references exclude native keys (references_legacy = 4). Nothing in
+#                     this tooling writes, moves or deletes a protected row, file or object.
+#   stage2a-protected-inventory-inspect
+#                     READ-ONLY (no input, no ARG): proves the CURRENT protected live inventory — every
+#                     row outside the exception independently, its encrypted file, its mirror, the
+#                     product association, the bucket partition, the reference reconciliation, the
+#                     Stage 1 exception, host / runtime / fingerprint / volume — and prints the marker
+#                     B25_STAGE2A_PROTECTED_INVENTORY_READY=TRUE|FALSE after a sanitized summary.
 #   stage2a-residue3-eligibility / stage2a-residue3-settle
 #                     third incident (run 38958264416, tag ec7ceda89a58): the two recorded tombstones of
 #                     deleted company 58 (constants S2AR3_*), the retrospective incident-window proof of
@@ -151,6 +166,24 @@ tenant_md5() {
 scan_rows_md5() { q "select md5(coalesce(string_agg(id||':'||company_id||':'||coalesce(status,'')||':'||coalesce(image_url,'<null>')||':'||created_at::text, ',' order by id),'')) from scans where company_id=1"; }
 LEGACY_HANDLE='^/objects/uploads/[0-9a-f-]{36}$'
 references() { q "select count(*) from (select object_path r from document_versions where object_path ~ '$LEGACY_HANDLE' union all select object_path from export_runs where object_path ~ '$LEGACY_HANDLE' union all select object_path from executive_reports where object_path ~ '$LEGACY_HANDLE' union all select image_url from scans where image_url ~ '^scans/[0-9]+/[0-9]+\.jpg$' union all select brand_logo_key from companies where brand_logo_key ~ '^branding/[0-9]+/[0-9a-f]{32}\.(png|jpg|webp)$') r"; }
+# Correction 5 (batch 6 form): LEGACY vs ACTIVE NATIVE FIRST-PARTY reference. The product's native branding key
+# (storage.service.ts referenceFor: branding/<cid>/<id without dashes>.<ext>) has the SAME SHAPE as the legacy logo key,
+# so one live tenant logo inflated references() to 5 (run 39442358211: 4 originals + 1 native key). A reference leaves
+# the legacy count ONLY when it resolves EXACTLY to one active, ownership-proven (stage2a_live_row_sql) branding_logo
+# row of the SAME company and no other company and no other active row claims the key. An unknown key stays legacy
+# (the count then differs from 4 and the gate fails); a colliding / duplicated key is counted by references_ambiguous
+# (must be 0). references() itself is untouched (Stage 1 history). Only the branding kind can collide: every other
+# legacy handle (/objects/uploads/<uuid>, scans/<cid>/<n>.jpg) differs in shape from the native /objects/<uuid>.
+S2A_LEGACY_LOGO_RE='^branding/[0-9]+/[0-9a-f]{32}\.(png|jpg|webp)$'
+stage2a_native_logo_sql() {   # → SQL boolean over an outer `companies c` row: its brand_logo_key resolves exactly to one own live branding row
+  printf '%s' "((select count(*) from storage_objects o where o.company_id = c.id and o.kind = 'branding_logo' and o.reference = c.brand_logo_key and $(stage2a_live_row_sql 'o.')) = 1 and (select count(*) from storage_objects o2 where o2.reference = c.brand_logo_key and o2.state = 'active') = 1 and (select count(*) from companies c2 where c2.brand_logo_key = c.brand_logo_key) = 1)"
+}
+references_legacy() {   # references() minus the keys that resolve exactly to an active native first-party storage row of the same tenant
+  q "select (select count(*) from (select object_path r from document_versions where object_path ~ '$LEGACY_HANDLE' union all select object_path from export_runs where object_path ~ '$LEGACY_HANDLE' union all select object_path from executive_reports where object_path ~ '$LEGACY_HANDLE' union all select image_url from scans where image_url ~ '^scans/[0-9]+/[0-9]+\.jpg$' union all select brand_logo_key from companies where brand_logo_key ~ '$S2A_LEGACY_LOGO_RE') r) - (select count(*) from companies c where c.brand_logo_key ~ '$S2A_LEGACY_LOGO_RE' and $(stage2a_native_logo_sql))"
+}
+references_ambiguous() {   # legacy-shaped branding keys that some active storage row claims but that do NOT resolve exactly (foreign tenant / duplicate row / duplicate company)
+  q "select count(*) from companies c where c.brand_logo_key ~ '$S2A_LEGACY_LOGO_RE' and exists (select 1 from storage_objects o where o.reference = c.brand_logo_key and o.state = 'active') and not $(stage2a_native_logo_sql)"
+}
 health() { curl -fsS --max-time 5 http://127.0.0.1:18080/healthz >/dev/null && curl -fsS --max-time 5 http://127.0.0.1:18080/api/healthz >/dev/null && curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz | grep -q '"database":"ok","storage":"ok"'; }
 wait_healthy() { local waited=0; until health; do waited=$((waited + 5)); [ "$waited" -ge "${1:-150}" ] && return 1; sleep 5; done; return 0; }
 # capacity <label> <df options…>: ONE non-negative integer from a single-column df query. The header is
@@ -2443,9 +2476,9 @@ stage2a_postswitch_run() {
   section "3. the named volume after the switch"
   rf="$(stage2a_root_facts "$cid")"; facts+="$rf"$'\n'; facts+="root_entries_allowed=$(stage2a_root_entries_allowed "$rf")"$'\n'
   printf '%s\n' "$rf" | sed 's/^/  /'
-  section "4. Stage 1 exception, inventory, census, originals (unchanged by the switch)"
-  facts+="$(stage2a_exception_facts)"$'\n'
-  printf '%s\n' "$facts" | grep -E '^(exc_|inv_|census_|unmarked_|refs_count|originals_)' | sed 's/^/  /'
+  section "4. Stage 1 exception, protected live inventory, census, originals (unchanged by the switch; Correction 5)"
+  facts+="$(stage2a_protected_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(protected_|tenant_keys_md5|pf_|pm_|exc_|inv_|census_|unmarked_|refs_count|refs_legacy_count|originals_)' | sed 's/^/  /'
   section "5. post-switch prerequisites (read-only decision; nothing is changed)"
   local verdict; verdict="$(printf '%s' "$facts" | stage2a_postswitch_eligibility)"; printf '%s\n' "$verdict"
   rm -f "$HOME"/.b25-s1-node.err
@@ -2599,6 +2632,11 @@ stage2a_tenant_business_facts() {   # <prefix pre|post>: counts + highest id per
     echo "${P}_${t}_max_id=$(q "select coalesce(max(id),0) from $t where company_id = $T")"
   done
 }
+stage2a_tenant_storage_facts() {   # <prefix pre|post>: the tenant's storage rows — count + row digest (Correction 5: live rows are protected, never required absent)
+  local P="$1" T="$S2A_TENANT_ID"
+  echo "${P}_storage_rows=$(q "select count(*) from storage_objects where company_id = $T")"
+  echo "${P}_storage_md5=$(q "select md5(coalesce(string_agg(id||'|'||kind||'|'||state||'|'||driver||'|'||coalesce(sha256,'')||'|'||coalesce(size_bytes::text,'')||'|'||coalesce(mirror_key,'')||'|'||coalesce(mirror_state,'')||'|'||coalesce(last_error,'')||'|'||coalesce(lease_token,'')||'|'||storage_key||'|'||updated_at::text, ',' order by id), '')) from storage_objects where company_id = $T")"
+}
 stage2a_tenant_window_facts() {   # <since ts> <disposable company csv or -1> <disposable user csv or -1>: movement + attribution in the window
   local W="$1" C="$2" U="$3" T="$S2A_TENANT_ID" t spec del upd actor cc cw mw dw cbd cbt auto
   for t in $S2A_BUSINESS_TABLES; do
@@ -2647,7 +2685,8 @@ stage2a_tenant_since_facts() {   # <review instant>: the IDENTITY tier evidence 
   echo "sweep_audit_rows_since=$(q "select count(*) from audit_logs where company_id = $T and created_at >= '$R' and action = 'subscription.trial_expired' and user_id is null")"
   echo "sub_trial_elapsed=$(q "select coalesce((trial_expires_at <= now())::text, 'false') from subscriptions where company_id = $T" | sed 's/^t$/true/; s/^f$/false/')"
   echo "tenant_storage_rows=$(q "select count(*) from storage_objects where company_id = $T")"
-  echo "references=$(references)"; echo "references_expected=$REFERENCES"
+  echo "tenant_storage_live_ok=$(q "select count(*) from storage_objects where company_id = $T and $(stage2a_live_row_sql)")"
+  echo "references=$(references_legacy)"; echo "references_expected=$REFERENCES"
   for t in $S2A_BUSINESS_TABLES; do
     spec="$(s2a_tbl_spec "$t")" || fail "unknown business table $t"; read -r del upd actor cc <<<"$spec"
     echo "bz_${t}_created_since=$(q "select count(*) from $t where company_id = $T and $cc >= '$R'")"
@@ -2666,7 +2705,7 @@ stage2a_tenant_start_gate() {
   printf '%s\n' "$verdict"
   section "pre-smoke snapshot of the existing tenant (identity digests + business counts; carried back to the runner as one base64 line)"
   local snap
-  snap="$( { echo "snapshot_at=$(q "select to_char(clock_timestamp(), 'YYYY-MM-DD HH24:MI:SS.US')")"; stage2a_tenant_identity_facts | sed 's/^/pre_/'; stage2a_tenant_business_facts pre; } )" || fail "tenant snapshot unreadable"
+  snap="$( { echo "snapshot_at=$(q "select to_char(clock_timestamp(), 'YYYY-MM-DD HH24:MI:SS.US')")"; stage2a_tenant_identity_facts | sed 's/^/pre_/'; stage2a_tenant_business_facts pre; stage2a_tenant_storage_facts pre; } )" || fail "tenant snapshot unreadable"
   s2a_facts_ok "$snap" || fail "tenant snapshot has an unexpected shape (not printed)"
   printf '%s\n' "$snap" | grep -E '^(snapshot_at|pre_id_users_count|pre_id_users_active|pre_id_roles_count|pre_id_user_roles_count|pre_id_brand_logo_set|pre_[a-z_]+_count)=' | sed 's/^/  /'
   echo "B25_TENANT_SNAPSHOT=$(printf '%s\n' "$snap" | base64 -w0)"
@@ -2680,9 +2719,9 @@ stage2a_tenant_post_gate() {   # <disposable company csv or -1> <disposable user
   s2a_facts_ok "$snap" || fail "pre-smoke tenant snapshot has an unexpected shape"
   since="$(s2a_fv "$snap" snapshot_at)"; [[ "$since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?$ ]] || fail "pre-smoke snapshot instant malformed"
   section "post-smoke comparison of the existing tenant (company $S2A_TENANT_ID) against the pre-smoke snapshot taken at $since (identity strict; business attributed; isolation)"
-  facts="$( { printf '%s\n' "$snap"; stage2a_tenant_identity_facts | sed 's/^/post_/'; stage2a_tenant_business_facts post; stage2a_tenant_window_facts "$since" "$C" "$U"; echo "references_post=$(references)"; echo "references_expected=$REFERENCES"; } )" || fail "tenant post gate: evidence unreadable"
+  facts="$( { printf '%s\n' "$snap"; stage2a_tenant_identity_facts | sed 's/^/post_/'; stage2a_tenant_business_facts post; stage2a_tenant_storage_facts post; stage2a_tenant_window_facts "$since" "$C" "$U"; echo "references_post=$(references_legacy)"; echo "references_expected=$REFERENCES"; } )" || fail "tenant post gate: evidence unreadable"
   s2a_facts_ok "$facts" || fail "tenant post gate: evidence has an unexpected shape (not printed)"
-  printf '%s\n' "$facts" | grep -E '^([a-z_]+_(created|modified|soft_deleted)_window|[a-z_]+_created_by_(disposable|tenant)|[a-z_]+_automated_explained|tenant_audit_rows_window|disposable_audit_on_tenant|tenant_rows_ref_disposables|disposable_rows_ref_tenant|tenant_storage_|sweep_audit_rows_window|sub_status_post|sub_trial_elapsed|references_post)=' | grep -vE '=(0|-)$' | sed 's/^/  /'
+  printf '%s\n' "$facts" | grep -E '^([a-z_]+_(created|modified|soft_deleted)_window|[a-z_]+_created_by_(disposable|tenant)|[a-z_]+_automated_explained|tenant_audit_rows_window|disposable_audit_on_tenant|tenant_rows_ref_disposables|disposable_rows_ref_tenant|tenant_storage_|(pre|post)_storage_|sweep_audit_rows_window|sub_status_post|sub_trial_elapsed|references_post)=' | grep -vE '=(0|-)$' | sed 's/^/  /'
   verdict="$(printf '%s\n' "$facts" | stage2a_tenant_post_eval)" || { printf '%s\n' "$verdict"; fail "tenant post gate FAILED — see the FAIL lines above (identity change, smoke-caused or unattributed movement, cross-tenant association or storage movement of the existing tenant)"; }
   printf '%s\n' "$verdict"
   unset B25_TENANT_SNAPSHOT
@@ -2738,7 +2777,7 @@ stage2a_tenant_incident_facts() {   # <window start> <window end> <disposable co
   echo "tenant_storage_rows_post=$(q "select count(*) from storage_objects where company_id = $T")"
   echo "tenant_storage_created_window=$(q "select count(*) from storage_objects where company_id = $T and created_at >= '$W' and created_at < '$E'")"
   echo "tenant_storage_deleted_window=$(q "select count(*) from storage_objects where company_id = $T and deleted_at >= '$W' and deleted_at < '$E'")"
-  echo "references_post=$(references)"; echo "references_expected=$REFERENCES"
+  echo "references_post=$(references_legacy)"; echo "references_expected=$REFERENCES"
 }
 stage2a_tenant_incident_proof() {   # <pre-smoke snapshot b64 (reviewed constant)> <incident end> <disposable company csv> <disposable user csv>
   local SNAPB="$1" E="$2" C="$3" U="$4" snap since facts verdict
@@ -2756,6 +2795,157 @@ stage2a_tenant_incident_proof() {   # <pre-smoke snapshot b64 (reviewed constant
   printf '%s\n' "$verdict"; return 1
 }
 
+# =============================================================================
+# B25 STAGE 2A — CORRECTION 5: the PROTECTED LIVE-INVENTORY model. The read-only inspection run 39442358211 proved
+# that the existing tenant (company 1) holds two healthy live fs objects (uploaded after the company-58 incident):
+# the "exception row only" baseline is FALSE and cannot be re-proven without removing customer data (the owner's
+# hard stop). The smoke therefore proves ITS OWN effects and the NON-MOVEMENT of everything else:
+#   P = every storage row that is neither the Stage 1 exception nor a recorded smoke row. Every member of P must be
+#   a healthy live fs row of a real tenant (stage2a_live_row_sql: active / fs / no legacy location / canonical ok
+#   mirror / no error / no uncertainty / no lease / digest / size / the product's own key shape; never company 53,
+#   never a 'B25 SMOKE' tenant). P is recorded before the smoke (one base64 line, B25_PROTECTED_SET=…, counts and
+#   digests only) and must be IDENTICAL — rows, row digest, bytes, keys, ciphertexts, mirror generations — in the
+#   middle of the smoke, after the settle and in the cleanup. The bucket is a PARTITION: 4 unmarked originals (locked
+#   digest) + 1 exception (locked generation digest) + |P| protected mirrors (each proven per row) + the smoke mirrors.
+#   Legacy references = references_legacy() = 4 (a native key is never a legacy reference).
+# NOTHING in this tooling writes, moves or deletes a member of P: a changed P stops the phase with the fact lines.
+# The record travels like the tenant snapshot: printed by the smoke setup, kept on the runner, returned as the first
+# line of the stdin stream of the later sessions (a shell variable) — never an SSH argument, never a workflow input.
+# =============================================================================
+S2A_PROTECTED_N=""; S2A_PROTECTED_BYTES=""; S2A_PROTECTED_FACTS=""   # set by stage2a_protected_gate (in-session only)
+stage2a_live_row_sql() {   # [alias.] → SQL predicate: a healthy live fs row of a real tenant in the product's own shape (keys.ts / referenceFor)
+  local a="${1:-}"
+  [[ "$a" =~ ^([a-z]+\.)?$ ]] || { echo "stage2a_live_row_sql: prefix malformed" >&2; return 1; }
+  printf '%s' "(${a}state = 'active' and ${a}driver = 'fs' and ${a}legacy_key is null and ${a}deleted_at is null and ${a}mirror_key is not null and ${a}mirror_key = 'gs://' || split_part(split_part(${a}mirror_key, '://', 2), '/', 1) || '/' || ${a}storage_key and ${a}mirror_state = 'ok' and ${a}last_error is null and ${a}publication_uncertain_at is null and ${a}lease_token is null and ${a}lease_expires_at is null and ${a}sha256 ~ '^[0-9a-f]{64}\$' and ${a}size_bytes > 0 and coalesce(${a}content_type, '') <> '' and ${a}company_id <> $B25PHYS_COMPANY and exists (select 1 from companies lc where lc.id = ${a}company_id and lc.name not like 'B25 SMOKE %') and ((${a}kind in ('document', 'export', 'report', 'scan_image') and ${a}reference = '/objects/' || ${a}id::text and ${a}storage_key = 'tenants/' || ${a}company_id || '/' || case ${a}kind when 'document' then 'documents' when 'export' then 'exports' when 'report' then 'reports' else 'scans' end || '/' || ${a}id::text) or (${a}kind = 'branding_logo' and ${a}reference ~ ('^branding/' || ${a}company_id || '/' || replace(${a}id::text, '-', '') || '\\.(png|jpg|webp)\$') and $(logo_key_rule_sql "$a"))))"
+}
+stage2a_assoc_sql() {   # [alias.] → SQL boolean: the row has the product's live feature association (storage.service.ts liveAssociationInner)
+  local a="${1:-}"
+  [[ "$a" =~ ^([a-z]+\.)?$ ]] || { echo "stage2a_assoc_sql: prefix malformed" >&2; return 1; }
+  printf '%s' "((${a}kind = 'document' and exists (select 1 from document_versions dv join documents d on d.id = dv.document_id where dv.company_id = ${a}company_id and dv.object_path = ${a}reference and d.company_id = ${a}company_id and d.deleted_at is null)) or (${a}kind = 'export' and exists (select 1 from export_runs er where er.company_id = ${a}company_id and er.object_path = ${a}reference and er.status = 'completed')) or (${a}kind = 'report' and exists (select 1 from executive_reports xr where xr.company_id = ${a}company_id and xr.object_path = ${a}reference and xr.status = 'ready')) or (${a}kind = 'scan_image' and exists (select 1 from scans sc where sc.company_id = ${a}company_id and sc.image_url = ${a}reference and sc.deleted_at is null)) or (${a}kind = 'branding_logo' and exists (select 1 from companies bc where bc.id = ${a}company_id and bc.brand_logo_key = ${a}reference)))"
+}
+stage2a_protected_where() {   # [smoke uuid csv] → SQL: every row that is neither the Stage 1 exception nor a recorded smoke row
+  local csv="${1:-}" w="so.id <> '$B25PHYS_UUID'"
+  if [ -n "$csv" ]; then stage2a_smoke_rows_validate "$csv" || return 1; w="$w and so.id not in ('$(printf '%s' "$csv" | sed "s/,/','/g")')"; fi
+  printf '%s' "$w"
+}
+stage2a_protected_facts() {   # [smoke uuid csv] → key=value facts about P (counts, booleans and md5 digests only; includes the exception / census facts)
+  local csv="${1:-}" W live assoc
+  if ! W="$(stage2a_protected_where "$csv")"; then echo "protected_where_ok=false"; return 0; fi
+  echo "protected_where_ok=true"
+  live="$(stage2a_live_row_sql 'so.')"; assoc="$(stage2a_assoc_sql 'so.')"
+  q "select 'protected_rows='||count(*)||E'\n'||'protected_live_ok='||count(*) filter (where $live)||E'\n'||'protected_assoc_ok='||count(*) filter (where $live and $assoc)||E'\n'||'protected_other='||(count(*) - count(*) filter (where $live))||E'\n'||'protected_bytes='||coalesce(sum(so.size_bytes) filter (where $live), 0)||E'\n'||'protected_companies='||count(distinct so.company_id)||E'\n'||'protected_kinds='||count(distinct so.kind)||E'\n'||'protected_md5='||md5(coalesce(string_agg(so.id||'|'||so.company_id||'|'||so.kind||'|'||so.state||'|'||so.driver||'|'||coalesce(so.sha256,'')||'|'||coalesce(so.size_bytes::text,'')||'|'||coalesce(so.mirror_key,'')||'|'||coalesce(so.mirror_state,'')||'|'||coalesce(so.last_error,'')||'|'||coalesce(so.lease_token,'')||'|'||so.storage_key||'|'||so.updated_at::text, ',' order by so.id), ''))||E'\n'||'protected_keys_md5='||md5(coalesce(string_agg(so.storage_key, E'\n' order by so.storage_key collate \"C\"), '')) from storage_objects so where $W"
+  echo "tenant_keys_md5=$(q "select md5(coalesce(string_agg(storage_key, E'\n' order by storage_key collate \"C\"), '')) from storage_objects where id <> '$B25PHYS_UUID'")"
+  stage2a_exception_facts
+  local rows_b64 fj k mrows_b64 mj
+  rows_b64="$(q "select json_build_object('marker', '', 'rows', coalesce(json_agg(json_build_object('id', so.id, 'k', so.storage_key, 's', so.size_bytes)), '[]'::json)) from storage_objects so where $W" | base64 -w0)"
+  fj="$(api_node "$STAGE2A_FS_VERIFY_JS" "$rows_b64")"; echo "  protected fs: $fj" >&2
+  echo "pf_read_ok=$(census_field "$fj" rows count >/dev/null 2>&1 && echo true || echo false)"
+  for k in rows present regular owner_ok mode_ok magic_ok pdf_free size_differs tenant_files other_files symlinks; do echo "pf_$k=$(census_field "$fj" "$k" count 2>/dev/null || echo '?')"; done
+  echo "pf_cipher_md5=$(census_field "$fj" rows_cipher_md5 hex32 2>/dev/null || echo '?')"
+  echo "pf_tenant_keys_md5=$(census_field "$fj" tenant_files_md5 hex32 2>/dev/null || echo '?')"
+  mrows_b64="$(q "select coalesce(json_agg(json_build_object('id', so.id, 'k', so.storage_key, 'm', so.mirror_key, 's', so.size_bytes, 'sha', so.sha256)), '[]'::json) from storage_objects so where $W" | base64 -w0)"
+  mj="$(api_node "$STAGE2A_MIRROR_JS" "$mrows_b64")"; echo "  protected mirror: $mj" >&2
+  echo "pm_read_ok=$(census_field "$mj" rows count >/dev/null 2>&1 && echo true || echo false)"
+  for k in rows present bucket_ok canonical_key marker_ok generation_ok size_ok sha_ok generation_digits_min; do echo "pm_$k=$(census_field "$mj" "$k" count 2>/dev/null || echo '?')"; done
+  echo "pm_generations_md5=$(census_field "$mj" generations_md5 hex32 2>/dev/null || echo '?')"
+  # the partition's expected bytes are DERIVED from verified evidence: the four originals' recorded sizes (size-matched
+  # against the provider by the originals probe above) + the exception's constant size + the protected / smoke plaintext sizes
+  echo "originals_bytes=$(q "select coalesce(sum(file_size), 0) from export_runs where object_path ~ '$LEGACY_HANDLE'")"
+  echo "refs_legacy_count=$(references_legacy)"
+  echo "refs_ambiguous=$(references_ambiguous)"
+}
+S2A_PROTECTED_RECORD_KEYS="protected_rows protected_md5 protected_bytes protected_keys_md5 tenant_keys_md5 pf_cipher_md5 pm_generations_md5 refs_legacy_count"
+stage2a_protected_record_line() {   # <facts> → B25_PROTECTED_SET=<one base64 line> (the database clock, counts and md5 digests only; shape-checked)
+  local F="$1" rec k
+  rec="$( { echo "protected_at=$(q "select to_char(clock_timestamp(), 'YYYY-MM-DD HH24:MI:SS.US')")"; for k in $S2A_PROTECTED_RECORD_KEYS; do echo "rec_$k=$(s2a_fv "$F" "$k")"; done; } )" || fail "protected-set record unreadable"
+  s2a_facts_ok "$rec" || fail "protected-set record has an unexpected shape (not printed)"
+  [ "$(printf '%s\n' "$rec" | grep -cE '^rec_[a-z0-9_]+=([0-9]+|[0-9a-f]{32})$')" = "8" ] || fail "protected-set record incomplete (not printed)"
+  echo "B25_PROTECTED_SET=$(printf '%s\n' "$rec" | base64 -w0)"
+}
+stage2a_protected_recorded_facts() {   # ← the shell variable B25_PROTECTED_SET (first stdin line of this session) → the rec_* facts; fails closed without it
+  s2a_b64_line_ok "${B25_PROTECTED_SET:-}" || fail "pre-smoke protected-set record missing or malformed on the stdin stream — fail closed (no verdict without it)"
+  local rec; rec="$(printf '%s' "$B25_PROTECTED_SET" | base64 -d 2>/dev/null)" || fail "protected-set record does not decode"
+  s2a_facts_ok "$rec" || fail "protected-set record has an unexpected shape"
+  [ "$(printf '%s\n' "$rec" | grep -cE '^rec_(protected_rows|protected_md5|protected_bytes|protected_keys_md5|tenant_keys_md5|pf_cipher_md5|pm_generations_md5|refs_legacy_count)=([0-9]+|[0-9a-f]{32})$')" = "8" ] || fail "protected-set record incomplete"
+  printf '%s\n' "$rec" | grep -E '^(protected_at|rec_[a-z0-9_]+)='
+}
+stage2a_protected_gate() {   # <label> <smoke uuid csv or ''> <smoke bytes> <none|require> [live|tombstone] → facts + verdict (fails closed); exports S2A_PROTECTED_N / _BYTES / _FACTS
+  local label="$1" csv="$2" sb="$3" rec="$4" form="${5:-live}" facts verdict R=0
+  [[ "$sb" =~ ^[0-9]+$ ]] || fail "protected gate: smoke bytes malformed"
+  [[ "$rec" =~ ^(none|require)$ ]] || fail "protected gate: record mode malformed"
+  [[ "$form" =~ ^(live|tombstone)$ ]] || fail "protected gate: smoke-row form malformed"
+  section "protected live inventory ($label): storage_objects = the Stage 1 exception + every live row of the real tenants + the recorded smoke rows; files, mirrors, bucket partition and legacy references re-proven (counts, booleans and digests only)"
+  facts="$(stage2a_protected_facts "$csv")" || fail "protected set unreadable"
+  if [ "$rec" = require ]; then facts+=$'\n'"$(stage2a_protected_recorded_facts)"; fi
+  printf '%s\n' "$facts" | grep -E '^(protected_|tenant_keys_md5|pf_|pm_|rec_|inv_|exc_(row_count|state|last_error|driver|company|size|provider_present|generation_digest)|census_|unmarked_|originals_|refs_)' | sed 's/^/  /'
+  [ -n "$csv" ] && R=$(($(printf '%s' "$csv" | tr -cd ',' | wc -c) + 1))
+  verdict="$(printf '%s\n' "$facts" | stage2a_protected_eval "$R" "$sb" "$rec" "$form")"; printf '%s\n' "$verdict"
+  printf '%s\n' "$verdict" | grep -qx 'B25_STAGE2A_PROTECTED_GATE=PASS' || fail "protected live inventory ($label) FAILED — see the FAIL lines above; nothing is changed and nothing is repaired by this tooling"
+  S2A_PROTECTED_N="$(s2a_fv "$facts" protected_rows)"; S2A_PROTECTED_BYTES="$(s2a_fv "$facts" protected_bytes)"; S2A_PROTECTED_FACTS="$facts"
+}
+
+# ---- stage2a-protected-inventory-inspect (READ-ONLY; no input, no ARG; every confirmation refused by the workflow) ----
+# Proves the CURRENT protected live inventory and its physical locations: host / deployment / readiness / runtime
+# configuration / schema fingerprint / volume, then the protected set (every row outside the Stage 1 exception
+# independently proven: tenant, identity, kind, key, mirror, state, hygiene, digest, size, encrypted file, mirror
+# object, product association), the bucket partition, the reference reconciliation, the Stage 1 exception. Prints
+# counts, booleans, digests and fixed tokens only; never fails before the summary; the marker
+# B25_STAGE2A_PROTECTED_INVENTORY_READY is TRUE only when every condition holds. No record is compared (none exists
+# outside a smoke) and none is produced.
+stage2a_protected_inventory_run() {
+  declare -f stage2a_protected_eval >/dev/null || fail "apply library not loaded (stream b25-stage1-apply-lib.sh before this script)"
+  local facts="" rf cid verdict hv="" hf=0 pf=0 n=0
+  cid="$(compose ps -q api || true)"
+  section "0. read-only guard"; stage2a_readonly_guard
+  section "1. host / deployment / containers / readiness"
+  facts+="$(stage2a_host_facts)"$'\n'; facts+="$(stage2a_container_facts "$cid")"$'\n'; facts+="$(stage2a_readyz_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(head_sha|current_deploy_sha|dirty|worktrees|lock_absent|deploy_settled|api_running|api_health|web_health|pg_health|readyz_status|readyz_database|readyz_storage|readyz_inside|storage_jobs_active|dead_storage_jobs|dead_jobs_total|schema_fingerprint|env_mode|key_line_count|env_core_identity_ok)=' | sed 's/^/  /'
+  section "2. storage runtime configuration (startup record, banner; names and fixed values only)"
+  facts+="$(stage2a_init_facts "$cid")"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(init_record_found|init_driver|init_fallback|init_mirror|init_legacy_delete|init_encryption|banner_driver|banner_fallback|banner_mirror)=' | sed 's/^/  /'
+  section "3. the named volume"
+  rf="$(stage2a_root_facts "$cid")"; facts+="$rf"$'\n'; facts+="root_entries_allowed=$(stage2a_root_entries_allowed "$rf")"$'\n'
+  printf '%s\n' "$rf" | grep -E '^(mount_type|mount_name|mount_rw|root_owner|root_mode|root_is_symlink|root_is_dir|root_tenant_files|root_regular_files|root_symlinks|root_other_entries)=' | sed 's/^/  /'
+  section "4. protected live inventory: every row outside the Stage 1 exception proven independently; files; mirrors; partition; references; the exception"
+  facts+="$(stage2a_protected_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(protected_|tenant_keys_md5|pf_|pm_|inv_|exc_(row_count|state|last_error|driver|company|size|identity_ok|uncertain|lease|live_refs|provider_present|provider_marker_ok|provider_size_matches|generation_canonical|generation_stable|generation_digest)|census_(objects|bytes|marked|generationless)|unmarked_|originals_|refs_)=' | sed 's/^/  /'
+  section "5. decision (read-only; nothing is changed)"
+  local g; g() { printf '%s\n' "$facts" | awk -F= -v k="$1" '$1==k{print substr($0, length(k)+2); exit}'; }
+  hc() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "inventory host $n: $1 — OK ($3)"; else echo "inventory host $n: $1 — FAIL ($3)"; hf=$((hf + 1)); fi; }
+  local ok
+  ok=1; [ "$(g head_sha)" = "$STAGE2A_PRODUCT_SHA" ] && [ "$(g current_deploy_sha)" = "$STAGE2A_PRODUCT_SHA" ] && [ "$(g dirty)" = "0" ] && [ "$(g lock_absent)" = "true" ] && ok=0
+  hc "hosted checkout and current-deploy.sha = the locked product commit, clean, no activation lock" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty) lock_absent=$(g lock_absent)"
+  ok=1; [ "$(g api_running)" = "true" ] && [ "$(g api_health)" = "healthy" ] && [ "$(g readyz_status)" = "ok" ] && [ "$(g readyz_database)" = "ok" ] && [ "$(g readyz_storage)" = "ok" ] && ok=0
+  hc "api running and healthy; readiness ok / database ok / storage ok" $ok "api=$(g api_running)/$(g api_health) status=$(g readyz_status) database=$(g readyz_database) storage=$(g readyz_storage)"
+  ok=1; [ "$(g init_record_found)" = "true" ] && [ "$(g init_driver)" = "fs" ] && [ "$(g init_fallback)" = "true" ] && [ "$(g init_mirror)" = "true" ] && [ "$(g init_legacy_delete)" = "false" ] && ok=0
+  hc "storage runtime = fs primary, legacy fallback on, strict mirror on, legacy delete off (the activated Stage 2A configuration)" $ok "found=$(g init_record_found) driver=$(g init_driver) fallback=$(g init_fallback) mirror=$(g init_mirror) legacy_delete=$(g init_legacy_delete)"
+  ok=1; [ "$(g schema_fingerprint)" = "$FP_AFTER" ] && ok=0
+  hc "schema fingerprint = the accepted post-apply fingerprint" $ok "fingerprint=$(g schema_fingerprint)"
+  ok=1; [ "$(g mount_type)" = "volume" ] && [ "$(g mount_name)" = "$STAGE2A_VOLUME" ] && [ "$(g root_owner)" = "$STAGE2A_ROOT_OWNER" ] && [ "$(g root_mode)" = "$STAGE2A_ROOT_MODE" ] && [ "$(g root_is_symlink)" = "false" ] && [ "$(g root_entries_allowed)" = "true" ] && [ "$(g root_tenant_files)" = "$(g protected_rows)" ] && ok=0
+  hc "the named volume at the root: owner / mode / no symlink / only tenants + health; tenant files = the protected rows" $ok "type=$(g mount_type) owner=$(g root_owner) mode=$(g root_mode) symlink=$(g root_is_symlink) entries_allowed=$(g root_entries_allowed) tenant_files=$(g root_tenant_files) protected_rows=$(g protected_rows)"
+  ok=1; [ "$(g dead_jobs_total)" = "0" ] && [ "$(g pf_read_ok)" = "true" ] && [ "$(g pm_read_ok)" = "true" ] && ok=0
+  hc "no dead-letter job; both in-container probes (files, mirrors) answered" $ok "dead_jobs=$(g dead_jobs_total) fs_probe=$(g pf_read_ok) mirror_probe=$(g pm_read_ok)"
+  verdict="$(printf '%s\n' "$facts" | stage2a_protected_eval 0 0 none live)" || true; printf '%s\n' "$verdict"
+  pf="$(printf '%s\n' "$verdict" | sed -nE 's/^B25_STAGE2A_PROTECTED_CONDITIONS_FAILED=([0-9]+)$/\1/p')"; [[ "$pf" =~ ^[0-9]+$ ]] || pf=99
+  section "6. summary (counts, booleans and digests only)"
+  echo "  protected_rows=$(g protected_rows) ownership_valid=$(g protected_live_ok) association_valid=$(g protected_assoc_ok) encrypted_fs_files=$(g pf_present) verified_mirrors=$(g pm_sha_ok) unrelated_rows=$(g protected_other) tenant_companies=$(g protected_companies)"
+  echo "  uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leased=$(g inv_leases) inflight=$(g inv_inflight) retained_legacy=$(g inv_retained_legacy) inventory_total=$(g inv_total)"
+  echo "  references: legacy=$(g refs_legacy_count) (expected 4) ambiguous=$(g refs_ambiguous) (expected 0)"
+  echo "  provider partition: objects=$(g census_objects) = 4 originals (unmarked=$(g unmarked_objects), locked digest match=$([ "$(g unmarked_md5)" = "$B25PHYS_ORIGINALS_MD5" ] && echo true || echo false)) + 1 exception + $(g protected_rows) protected mirrors; marked=$(g census_marked); generationless=$(g census_generationless); bytes=$(g census_bytes)"
+  echo "  Stage 1 exception: state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) provider=$(g exc_provider_present) generation_digest=$(g exc_generation_digest) (expected $B25PHYS_PRE_GEN_DIGEST)"
+  echo "  runtime: readyz=$(g readyz_status)/$(g readyz_database)/$(g readyz_storage) fingerprint=$(g schema_fingerprint) product=$(g head_sha)"
+  echo "  read errors: fs_probe_ok=$(g pf_read_ok) mirror_probe_ok=$(g pm_read_ok)"
+  echo "  failed predicates: host=$hf protected=$pf"
+  echo "B25_STAGE2A_PROTECTED_INVENTORY_FAILED=$((hf + pf))"
+  rm -f "$HOME"/.b25-s1-node.err
+  if [ "$hf" = "0" ] && [ "$pf" = "0" ]; then echo "B25_STAGE2A_PROTECTED_INVENTORY_READY=TRUE"; return 0; fi
+  echo "B25_STAGE2A_PROTECTED_INVENTORY_READY=FALSE"; return 1
+}
+phase_stage2a_protected_inventory_inspect() {   # no argument is read: nothing is selected by an input (the read-only phases never reference ARG1-3)
+  if stage2a_protected_inventory_run; then log "stage2a-protected-inventory-inspect complete (read-only; nothing changed; B25_STAGE2A_PROTECTED_INVENTORY_READY=TRUE)"
+  else fail "stage2a-protected-inventory-inspect: conditions not met (read-only; nothing changed; B25_STAGE2A_PROTECTED_INVENTORY_READY=FALSE)"; fi
+}
+
 guards_stage2a_switched() {
   section "read-only guard"; stage2a_readonly_guard
   section "switched state"
@@ -2769,8 +2959,7 @@ guards_stage2a_switched() {
   [ "$(fingerprint)" = "$FP_AFTER" ] || fail "schema fingerprint is not $FP_AFTER"
   [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data/objects"}}{{.Type}}:{{.Name}}{{end}}{{end}}' "$API_CID")" = "volume:$STAGE2A_VOLUME" ] || fail "objectdata is not mounted at /data/objects"
   [ "$(compose exec -T api sh -c 'stat -c %u:%g /data/objects')" = "$STAGE2A_ROOT_OWNER" ] && [ "$(compose exec -T api sh -c 'stat -c %a /data/objects')" = "$STAGE2A_ROOT_MODE" ] || fail "objectdata ownership / mode is not $STAGE2A_ROOT_OWNER / $STAGE2A_ROOT_MODE"
-  section "inventory baseline = exactly the Stage 1 exception"
-  [ "$(q "select count(*) from storage_objects")" = "1" ] || fail "storage_objects is not exactly the one exception row"
+  section "inventory baseline = the Stage 1 exception + the protected live set (Correction 5: the exception-only rule is gone)"
   [ "$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID' and state = 'deleted' and last_error = 'LEGACY_RETAINED' and driver = 'gcs' and company_id = $B25PHYS_COMPANY")" = "1" ] || fail "the Stage 1 exception row is not in its documented state"
   [ "$(q "select count(*) from storage_objects where publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING') or lease_token is not null")" = "0" ] || fail "uncertain / unproven / cleanup-pending / leased rows exist"
   [ "$(q "select count(*) from job_queue where status='dead'")" = "0" ] || fail "dead-letter jobs present"
@@ -2778,7 +2967,10 @@ guards_stage2a_switched() {
   # the disposable owner exists, stage2a_tenant_post_gate in the cleanup) instead of a frozen whole-tenant digest and a
   # fixed scan count — ordinary use of the product by the tenant no longer stops the smoke, while identity / security /
   # billing movement, smoke-caused or unattributed movement and cross-tenant association still fail closed.
-  [ "$(references)" = "$REFERENCES" ] || fail "legacy references changed"
+  # Correction 5: every row outside the exception is a healthy live fs row of a real tenant, proven on disk and in the
+  # bucket (the bucket partition replaces the locked census digest); a native key is never a legacy reference.
+  stage2a_protected_gate "pre-smoke" "" 0 none
+  [ "$(references_legacy)" = "$REFERENCES" ] || fail "legacy references changed"
 }
 stage2a_census_expect() {   # <objects> <bytes-or-skip> <marked> <md5-or-skip> <label>
   local cj o b wm im; cj="$(census)"; echo "$cj"
@@ -2793,10 +2985,10 @@ phase_stage2a_smoke_setup() {
   guards_stage2a_switched
   [[ "$ARG1" =~ ^\$2[aby]\$10\$.{53}$ ]] || fail "ARG1 is not a bcrypt hash"
   [[ "$ARG2" =~ ^b25-smoke-[a-z0-9]{6,12}-owner@b25smoke\.invalid$ ]] || fail "ARG2 is not the disposable owner address"
-  section "pre-smoke census must be the locked baseline"
-  stage2a_census_expect "$B25PHYS_CENSUS_OBJECTS" "$B25PHYS_CENSUS_BYTES" "$B25PHYS_CENSUS_MARKED" "$B25PHYS_CENSUS_MD5" "pre-smoke census"
-  [ "$(compose exec -T api sh -c 'find /data/objects/tenants -type f 2>/dev/null | wc -l')" = "0" ] || fail "a tenant object already exists on the volume"
   stage2a_tenant_start_gate
+  section "pre-smoke record of the protected live set (read with the tenant snapshot; carried back to the runner as one base64 line of counts and digests)"
+  stage2a_protected_gate "pre-smoke record" "" 0 none
+  stage2a_protected_record_line "$S2A_PROTECTED_FACTS"
   section "insert ONE disposable platform owner (the smoke creates its tenants and users through the API)"
   local pco uid; pco="$(q "select coalesce(min(company_id)::text,'null') from users where role='platform_owner' and deleted_at is null")"
   uid="$(qw "insert into users (email, name, role, company_id, password_hash, is_active, contact_visibility, company_visibility, permissions, email_verified_at) values ('$ARG2', 'B25 smoke operator (disposable)', 'platform_owner', $pco, '$ARG1', true, 'all', 'own', '{}'::jsonb, now()) returning id")"
@@ -2815,7 +3007,7 @@ const a = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toStri
 const root = "/data/objects";
 const marker = Buffer.from(String(a.marker || ""), "utf8");
 const out = { rows: 0, present: 0, regular: 0, owner_ok: 0, mode_ok: 0, magic_ok: 0, marker_free: 0, pdf_free: 0, size_differs: 0, tenant_files: 0, tenant_files_md5: "", other_files: 0, health_files: 0, symlinks: 0 };
-const rel = [];
+const rel = []; const shas = [];
 function walk(dir, cb) { let ents = []; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; } for (const e of ents) { const p = path.join(dir, e.name); if (e.isSymbolicLink()) { out.symlinks += 1; continue; } if (e.isDirectory()) walk(p, cb); else if (e.isFile()) cb(p); } }
 walk(root, (p) => { const r = path.relative(root, p); if (r.startsWith("tenants/")) { out.tenant_files += 1; rel.push(r); } else if (r.startsWith("health/")) out.health_files += 1; else out.other_files += 1; });
 rel.sort(); out.tenant_files_md5 = createHash("md5").update(rel.join("\n")).digest("hex");
@@ -2834,8 +3026,10 @@ for (const r of a.rows || []) {
     if (buf.subarray(0, 4).toString("ascii") === "LCPO") out.magic_ok += 1;
     if (marker.length === 0 || !buf.includes(marker)) out.marker_free += 1;
     if (!buf.includes(Buffer.from("%PDF", "ascii"))) out.pdf_free += 1;
-  }
+    shas.push(createHash("sha256").update(buf).digest("hex"));
+  } else shas.push("large:" + st.size);
 }
+shas.sort(); out.rows_cipher_md5 = createHash("md5").update(shas.join("\n")).digest("hex");
 console.log(JSON.stringify(out));
 JS
 )
@@ -2849,8 +3043,8 @@ const { createHash } = require("node:crypto");
   const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
   const rows = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "[]");
   const storage = new Storage();
-  const out = { rows: rows.length, present: 0, bucket_ok: 0, canonical_key: 0, marker_ok: 0, generation_ok: 0, size_ok: 0, sha_ok: 0, generation_digits_min: 0 };
-  let minDigits = 0;
+  const out = { rows: rows.length, present: 0, bucket_ok: 0, canonical_key: 0, marker_ok: 0, generation_ok: 0, size_ok: 0, sha_ok: 0, generation_digits_min: 0, generations_md5: "" };
+  let minDigits = 0; const gens = [];
   for (const r of rows) {
     const m = /^gs:\/\/([^/]+)\/(.+)$/.exec(String(r.m || ""));
     if (!m) continue;
@@ -2862,10 +3056,12 @@ const { createHash } = require("node:crypto");
     if (meta.metadata && meta.metadata["lcp-object-id"] === r.id) out.marker_ok += 1;
     const gen = typeof meta.generation === "string" ? meta.generation : "";
     if (/^[1-9]\d*$/.test(gen)) { out.generation_ok += 1; minDigits = minDigits === 0 ? gen.length : Math.min(minDigits, gen.length); }
+    gens.push(String(r.id) + ":" + gen);
     if (String(meta.size) === String(r.s)) out.size_ok += 1;
     if (Number(meta.size) <= 8 * 1024 * 1024) { const [buf] = await f.download(); if (createHash("sha256").update(buf).digest("hex") === r.sha) out.sha_ok += 1; }
   }
   out.generation_digits_min = minDigits;
+  gens.sort(); out.generations_md5 = createHash("md5").update(gens.join("\n")).digest("hex");
   console.log(JSON.stringify(out));
 })().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
 JS
@@ -2922,7 +3118,7 @@ phase_stage2a_smoke_verify() {
   [ "$(q "select count(*) from companies where id in ($C) and id = $B25PHYS_COMPANY")" = "0" ] || fail "the Stage 1 company id can never be a smoke target"
   section "inventory rows of the smoke tenants (fs primary; mirror recorded; no legacy location)"
   q "select 'row '||id||' company='||company_id||' kind='||kind||' state='||state||' driver='||driver||' legacy_key_set='||(legacy_key is not null)||' mirror_key_set='||(mirror_key is not null)||' mirror_state='||coalesce(mirror_state,'<null>')||' lease_cleared='||(lease_token is null)||' size='||coalesce(size_bytes::text,'null')||' sha_set='||(sha256 is not null)||' last_error='||case when coalesce(last_error,'') ~ '^[A-Z_]{0,40}$' then coalesce(last_error,'<null>') else '<non-code text, not printed>' end||' uncertain='||(publication_uncertain_at is not null) from storage_objects where company_id in ($C) order by created_at"
-  [ "$(q "select count(*) from storage_objects where company_id not in ($C)")" = "1" ] && [ "$(q "select count(*) from storage_objects where company_id not in ($C) and id = '$B25PHYS_UUID'")" = "1" ] || fail "storage_objects outside the smoke tenants is not exactly the Stage 1 exception"
+  [ "$(q "select count(*) from storage_objects where company_id not in ($C) and id = '$B25PHYS_UUID'")" = "1" ] || fail "the Stage 1 exception row is missing"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and id = '$B25PHYS_UUID'")" = "0" ] || fail "the Stage 1 exception can never be a smoke row"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and driver <> 'fs'")" = "0" ] || fail "a smoke row is not on the fs driver"
   [ "$(q "select count(*) from storage_objects where company_id in ($C) and state <> 'active'")" = "0" ] || fail "a smoke row is not active"
@@ -2937,10 +3133,10 @@ phase_stage2a_smoke_verify() {
   local rows_b64 fj expect_md5
   rows_b64="$(q "select json_build_object('marker', '$B25_FIXTURE_MARKER', 'rows', coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 's', size_bytes)), '[]'::json)) from storage_objects where company_id in ($C)" | base64 -w0)"
   fj="$(api_node "$STAGE2A_FS_VERIFY_JS" "$rows_b64")"; echo "$fj"
-  stage2a_fields_ok "$fj" "$nrows" rows present regular owner_ok mode_ok magic_ok marker_free pdf_free size_differs tenant_files
+  stage2a_fields_ok "$fj" "$nrows" rows present regular owner_ok mode_ok magic_ok marker_free pdf_free size_differs
   stage2a_fields_ok "$fj" 0 other_files symlinks
-  expect_md5="$(q "select md5(string_agg(storage_key, E'\n' order by storage_key collate \"C\")) from storage_objects where company_id in ($C)")"
-  [ "$(census_field "$fj" tenant_files_md5 hex32)" = "$expect_md5" ] || fail "the tenant files on the volume are not exactly the stored keys"
+  expect_md5="$(q "select md5(string_agg(storage_key, E'\n' order by storage_key collate \"C\")) from storage_objects where id <> '$B25PHYS_UUID'")"
+  [ "$(census_field "$fj" tenant_files_md5 hex32)" = "$expect_md5" ] || fail "the tenant files on the volume are not exactly the stored keys of the smoke rows and the protected rows"
   echo "health namespace files at this instant: $(census_field "$fj" health_files count)"
   section "mirror objects in the bucket (marker = row id, canonical decimal generation, plaintext size, bytes hash to the row digest; names never printed)"
   local mrows_b64 mj
@@ -2969,8 +3165,10 @@ phase_stage2a_smoke_verify() {
   [ "$(printf '%s\n' "$api_body" | grep '"level":50' | grep -vc '"type":"_AppError"' || true)" = "0" ] || fail "unhandled error in the api log"
   [ "$(printf '%s\n' "$api_body" | grep -c 'strict mirror write failed' || true)" = "0" ] || fail "a strict mirror write failed during the smoke"
   unset api_body web_body
-  section "census during the smoke (originals + exception + one mirror object per smoke row; every smoke object marked)"
-  stage2a_census_expect "$((B25PHYS_CENSUS_OBJECTS + nrows))" skip "$((B25PHYS_CENSUS_MARKED + nrows))" skip "census during the smoke"
+  local smoke_ids smoke_bytes
+  smoke_ids="$(q "select string_agg(id::text, ',' order by created_at) from storage_objects where company_id in ($C)")"
+  smoke_bytes="$(q "select coalesce(sum(size_bytes), 0) from storage_objects where company_id in ($C)")"
+  stage2a_protected_gate "during the smoke" "$smoke_ids" "$smoke_bytes" require
   echo "storage driver: $(docker logs "$API_CID" 2>&1 | grep -oE '"driver":"[a-z]+","legacyFallback":(true|false),"mirror":(true|false)' | tail -1)"
   unset B25_LEAK_DETECTOR
   log "stage2a-smoke-verify complete"
@@ -3010,18 +3208,18 @@ stage2a_midsmoke_facts() {   # <csv of the two recorded smoke row uuids> → key
   echo "ms_rows_outside=$(q "select count(*) from storage_objects where id <> '$B25PHYS_UUID' and id not in ($Q)")"
   echo "inv_company1=$(q "select count(*) from storage_objects where company_id = 1")"
   echo "inv_company53_outside_exception=$(q "select count(*) from storage_objects where company_id = $B25PHYS_COMPANY and id <> '$B25PHYS_UUID'")"
-  stage2a_exception_facts
+  stage2a_protected_facts "$csv"
   local rows_b64 fj expect_md5 mrows_b64 mj
   rows_b64="$(q "select json_build_object('marker', '$B25_FIXTURE_MARKER', 'rows', coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 's', size_bytes)), '[]'::json)) from storage_objects where id in ($Q)" | base64 -w0)"
   fj="$(api_node "$STAGE2A_FS_VERIFY_JS" "$rows_b64")"; echo "  fs: $fj" >&2
   for k in rows present regular owner_ok mode_ok magic_ok marker_free pdf_free size_differs tenant_files other_files symlinks; do echo "ms_fs_$k=$(census_field "$fj" "$k" count 2>/dev/null || echo '?')"; done
-  expect_md5="$(q "select md5(string_agg(storage_key, E'\n' order by storage_key collate \"C\")) from storage_objects where id in ($Q)")"
+  expect_md5="$(q "select md5(string_agg(storage_key, E'\n' order by storage_key collate \"C\")) from storage_objects where id <> '$B25PHYS_UUID'")"
   echo "ms_fs_keys_match=$([ "$(census_field "$fj" tenant_files_md5 hex32 2>/dev/null || echo x)" = "$expect_md5" ] && echo true || echo false)"
   mrows_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'm', mirror_key, 's', size_bytes, 'sha', sha256)), '[]'::json) from storage_objects where id in ($Q)" | base64 -w0)"
   mj="$(api_node "$STAGE2A_MIRROR_JS" "$mrows_b64")"; echo "  mirror: $mj" >&2
   for k in rows present bucket_ok canonical_key marker_ok generation_ok size_ok sha_ok generation_digits_min; do echo "ms_mirror_$k=$(census_field "$mj" "$k" count 2>/dev/null || echo '?')"; done
   echo "dead_jobs=$(q "select count(*) from job_queue where status='dead'")"
-  echo "references=$(references)"; echo "references_expected=$REFERENCES"
+  echo "references=$(references_legacy)"; echo "references_expected=$REFERENCES"
 }
 guards_stage2a_switched_with_smoke_rows() {   # <csv of the two smoke row uuids recorded by THIS run's stage2a-smoke-verify>
   local csv="$1" facts verdict head cur
@@ -3040,9 +3238,13 @@ guards_stage2a_switched_with_smoke_rows() {   # <csv of the two smoke row uuids 
   [ "$(compose exec -T api sh -c 'stat -c %u:%g /data/objects')" = "$STAGE2A_ROOT_OWNER" ] && [ "$(compose exec -T api sh -c 'stat -c %a /data/objects')" = "$STAGE2A_ROOT_MODE" ] || fail "objectdata ownership / mode is not $STAGE2A_ROOT_OWNER / $STAGE2A_ROOT_MODE"
   section "inventory = the Stage 1 exception + exactly the two recorded smoke rows; their encrypted files, mirror objects and the census re-proven (mid-smoke form; counts, booleans and digests only)"
   facts="$(stage2a_midsmoke_facts "$csv")" || fail "mid-smoke evidence unreadable"
-  printf '%s\n' "$facts" | grep -E '^(ms_|inv_|exc_(row_count|state|last_error|driver|company|size|provider_present|generation_digest)|census_|unmarked_|originals_|dead_jobs|references)' | sed 's/^/  /'
+  facts+=$'\n'"$(stage2a_protected_recorded_facts)"
+  printf '%s\n' "$facts" | grep -E '^(ms_|protected_|tenant_keys_md5|pf_|pm_|rec_|inv_|exc_(row_count|state|last_error|driver|company|size|provider_present|generation_digest)|census_|unmarked_|originals_|dead_jobs|references|refs_legacy_count)' | sed 's/^/  /'
   verdict="$(printf '%s\n' "$facts" | stage2a_midsmoke_eval)"; printf '%s\n' "$verdict"
   printf '%s\n' "$verdict" | grep -qx 'B25_STAGE2A_MIDSMOKE_GATE=PASS' || fail "mid-smoke guard FAILED — see the FAIL lines above; the api is NOT recreated"
+  verdict="$(printf '%s\n' "$facts" | stage2a_protected_eval 2 "$(s2a_num "$(s2a_fv "$facts" ms_rows_bytes)")" require)"; printf '%s\n' "$verdict"
+  printf '%s\n' "$verdict" | grep -qx 'B25_STAGE2A_PROTECTED_GATE=PASS' || fail "mid-smoke protected live inventory FAILED — see the FAIL lines above; the api is NOT recreated"
+  S2A_PROTECTED_N="$(s2a_fv "$facts" protected_rows)"; S2A_PROTECTED_BYTES="$(s2a_fv "$facts" protected_bytes)"; S2A_PROTECTED_FACTS="$facts"
 }
 # The smoke-row uuids recorded by THIS run's stage2a-smoke-verify step and the fixture / logo facts of the same run
 # arrive on the stdin stream only (B25_SMOKE_ROW_IDS, B25_FIXTURE_*, B25_LOGO_*); an ARG is refused.
@@ -3056,7 +3258,8 @@ phase_stage2a_recreate_api() {
   Q="'$(printf '%s' "$csv" | sed "s/,/','/g")'"
   guards_stage2a_switched_with_smoke_rows "$csv"
   section "recreate ONLY the api container (force-recreate; web and postgres untouched; volumes untouched; the encrypted smoke files, their rows and their mirrors must survive unchanged)"
-  rows_sql="select md5(coalesce(string_agg(id||'|'||state||'|'||driver||'|'||coalesce(sha256,'')||'|'||coalesce(size_bytes::text,'')||'|'||coalesce(mirror_key,'')||'|'||coalesce(mirror_state,'')||'|'||coalesce(last_error,'')||'|'||coalesce(lease_token,'')||'|'||storage_key||'|'||updated_at::text, ',' order by id), '')) from storage_objects where id in ($Q)"
+  rows_sql="select md5(coalesce(string_agg(id||'|'||state||'|'||driver||'|'||coalesce(sha256,'')||'|'||coalesce(size_bytes::text,'')||'|'||coalesce(mirror_key,'')||'|'||coalesce(mirror_state,'')||'|'||coalesce(last_error,'')||'|'||coalesce(lease_token,'')||'|'||storage_key||'|'||updated_at::text, ',' order by id), '')) from storage_objects where id <> '$B25PHYS_UUID'"
+  [[ "$S2A_PROTECTED_N" =~ ^[0-9]+$ ]] || fail "protected row count unknown — the mid-smoke guard did not run"
   files_before="$(compose exec -T api sh -c 'find /data/objects/tenants -type f -exec sha256sum {} + 2>/dev/null | sort | md5sum | cut -c1-32')"
   rows_before="$(q "$rows_sql")"
   vol_before="$(docker volume inspect -f '{{.CreatedAt}}' "$STAGE2A_VOLUME")"
@@ -3066,13 +3269,13 @@ phase_stage2a_recreate_api() {
   head="$(git -C "$APP_DIR" rev-parse HEAD)"; cur="$(cat "$STATE_DIR/current-deploy.sha" 2>/dev/null || echo none)"
   [ "$head" = "$STAGE2A_PRODUCT_SHA" ] && [ "$cur" = "$STAGE2A_PRODUCT_SHA" ] || fail "product commit changed across the recreation"
   [ "$(docker volume inspect -f '{{.CreatedAt}}' "$STAGE2A_VOLUME")" = "$vol_before" ] || fail "objectdata volume identity changed"
-  [ "$(compose exec -T api sh -c 'find /data/objects/tenants -type f -exec sha256sum {} + 2>/dev/null | sort | md5sum | cut -c1-32')" = "$files_before" ] || fail "the encrypted smoke files (set or ciphertext) changed across the recreation"
-  [ "$(q "$rows_sql")" = "$rows_before" ] || fail "the two smoke rows changed across the recreation"
+  [ "$(compose exec -T api sh -c 'find /data/objects/tenants -type f -exec sha256sum {} + 2>/dev/null | sort | md5sum | cut -c1-32')" = "$files_before" ] || fail "the encrypted files (smoke + protected; set or ciphertext) changed across the recreation"
+  [ "$(q "$rows_sql")" = "$rows_before" ] || fail "the smoke rows or the protected rows changed across the recreation"
   docker logs "$API_CID" 2>&1 | grep -F "$STAGE2A_INIT_FS" >/dev/null || fail "storage initialization after recreation is not fs / fallback / mirror / legacy delete off"
-  mrows_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'm', mirror_key, 's', size_bytes, 'sha', sha256)), '[]'::json) from storage_objects where id in ($Q)" | base64 -w0)"
+  mrows_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'm', mirror_key, 's', size_bytes, 'sha', sha256)), '[]'::json) from storage_objects where id <> '$B25PHYS_UUID'" | base64 -w0)"
   mj="$(api_node "$STAGE2A_MIRROR_JS" "$mrows_b64")"; echo "$mj"
-  stage2a_fields_ok "$mj" 2 rows present bucket_ok canonical_key marker_ok generation_ok size_ok sha_ok
-  echo "ciphertext set digest unchanged across the recreation: $files_before; smoke rows digest unchanged: $rows_before"
+  stage2a_fields_ok "$mj" "$((2 + S2A_PROTECTED_N))" rows present bucket_ok canonical_key marker_ok generation_ok size_ok sha_ok
+  echo "ciphertext set digest unchanged across the recreation: $files_before; smoke + protected rows digest unchanged: $rows_before (protected rows: $S2A_PROTECTED_N)"
   log "stage2a-recreate-api complete"
 }
 # ARG1 = csv of disposable company ids (already deleted through the API), ARG2 = csv of the smoke row UUIDs recorded
@@ -3106,6 +3309,10 @@ phase_stage2a_smoke_settle() {
   local loc_b64 pj; loc_b64="$(q "select coalesce(json_agg(json_build_object('id', id, 'k', storage_key, 'l', legacy_key, 'm', mirror_key)), '[]'::json) from storage_objects where id in ($UUIDS_Q)" | base64 -w0)"
   pj="$(api_node "$PROVIDER_RULES_JS"$'\n'"$STAGE2A_PROVIDER_ABSENT_JS" "$loc_b64")"; echo "$pj"
   [ "$(census_field "$pj" checked count)" = "$present_rows" ] && [ "$(census_field "$pj" absent count)" = "$present_rows" ] || fail "a mirror / primary bucket location of a recorded tombstone still exists — its row is NOT removed; investigate"
+  # Correction 5: with the recorded tombstones still present, the protected live set must equal the pre-smoke record
+  # (tombstone form: the recorded rows are settled, without files or mirrors). A recorded uuid that were a protected
+  # row would leave the set one row short of the record — the phase stops here and nothing is removed.
+  if [ "$present_rows" != "0" ]; then stage2a_protected_gate "pre-settlement (the recorded tombstones present; every protected row outside the allow-list)" "$ARG2" 0 require tombstone; fi
   section "remove the EXACT recorded tombstones (Stage 2A allow-list; one row-locked transaction; the Stage 1 exception is denied by constant)"
   if [ "$present_rows" = "0" ]; then echo "already removed by a previous run — nothing to delete"
   else
@@ -3114,12 +3321,10 @@ phase_stage2a_smoke_settle() {
   fi
   [ "$(q "select count(*) from storage_objects where id in ($UUIDS_Q)")" = "0" ] || fail "a recorded tombstone remains"
   [ "$(q "select count(*) from storage_objects where company_id in ($C)")" = "0" ] || fail "a storage row of a smoke company remains"
-  section "inventory, census and volume back to the pre-smoke state; the Stage 1 exception untouched"
-  stage2a_census_expect "$B25PHYS_CENSUS_OBJECTS" "$B25PHYS_CENSUS_BYTES" "$B25PHYS_CENSUS_MARKED" "$B25PHYS_CENSUS_MD5" "post-settle census"
-  [ "$(q "select count(*) from storage_objects")" = "1" ] || fail "storage_objects is not back to the one exception row"
+  section "inventory, census and volume back to the pre-smoke state: the Stage 1 exception untouched; the protected live set identical to the pre-smoke record; no smoke file left"
+  stage2a_protected_gate "post-settle" "" 0 require
   [ "$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID' and state = 'deleted' and last_error = 'LEGACY_RETAINED' and driver = 'gcs' and company_id = $B25PHYS_COMPANY and size_bytes = $B25PHYS_OBJECT_SIZE and publication_uncertain_at is null and mirror_key is null and lease_token is null")" = "1" ] || fail "the Stage 1 exception row changed"
-  [ "$(compose exec -T api sh -c 'find /data/objects/tenants -type f 2>/dev/null | wc -l')" = "0" ] || fail "a tenant file remains on the volume"
-  echo "storage_objects total=1 (the exception) legacy_retained=$(q "select count(*) from storage_objects where last_error='LEGACY_RETAINED'") uncertain=0 unproven=0"
+  echo "storage_objects total=$((1 + S2A_PROTECTED_N)) (the exception + $S2A_PROTECTED_N protected live rows) legacy_retained=$(q "select count(*) from storage_objects where last_error='LEGACY_RETAINED'") uncertain=0 unproven=0"
   log "stage2a-smoke-settle complete"
 }
 # ARG1 = csv of disposable company ids or 'none', ARG2 = csv of disposable user ids, ARG3 = tag
@@ -3161,12 +3366,11 @@ phase_stage2a_cleanup() {
   local after; after="$(q "$kept_sql")"; echo "$after"
   [ "$after" = "$before" ] || fail "existing rows changed during cleanup: before[$before] after[$after]"
   stage2a_tenant_post_gate "$C" "$U"
-  section "final inventory / census / volume = the pre-smoke Stage 2A state (the exception row only)"
+  section "final inventory / census / volume = the pre-smoke Stage 2A state (the exception row + the protected live set, identical to the pre-smoke record)"
   [ "$(q "select count(*) from storage_objects where publication_uncertain_at is not null or last_error in ('OWNERSHIP_UNPROVEN','CLEANUP_PENDING')")" = "0" ] || fail "uncertain / unproven residue in the inventory"
-  [ "$(q "select count(*) from storage_objects")" = "1" ] && [ "$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID' and state = 'deleted' and last_error = 'LEGACY_RETAINED' and driver = 'gcs' and company_id = $B25PHYS_COMPANY")" = "1" ] || fail "storage_objects is not back to the one documented exception row"
-  stage2a_census_expect "$B25PHYS_CENSUS_OBJECTS" "$B25PHYS_CENSUS_BYTES" "$B25PHYS_CENSUS_MARKED" "$B25PHYS_CENSUS_MD5" "final census"
-  echo "tenant files on the volume: $(compose exec -T api sh -c 'find /data/objects/tenants -type f 2>/dev/null | wc -l' 2>/dev/null || echo unavailable)"
-  [ "$(compose exec -T api sh -c 'find /data/objects/tenants -type f 2>/dev/null | wc -l' 2>/dev/null || echo 1)" = "0" ] || fail "a tenant file remains on the volume"
+  [ "$(q "select count(*) from storage_objects where id = '$B25PHYS_UUID' and state = 'deleted' and last_error = 'LEGACY_RETAINED' and driver = 'gcs' and company_id = $B25PHYS_COMPANY")" = "1" ] || fail "the Stage 1 exception row is not in its documented state"
+  stage2a_protected_gate "final" "" 0 require
+  echo "tenant files on the volume: $(compose exec -T api sh -c 'find /data/objects/tenants -type f 2>/dev/null | wc -l' 2>/dev/null || echo unavailable) (= the $S2A_PROTECTED_N protected live files; no smoke file)"
   rm -f "$HOME"/.b25-s1-node.err
   echo "leftover_files=$(ls "$HOME" | grep -c '^b25-' || true) readyz=$(curl -fsS --max-time 5 http://127.0.0.1:18080/api/readyz || echo UNAVAILABLE) schema_fingerprint=$(fingerprint)"
   log "stage2a-cleanup complete"
@@ -3720,6 +3924,7 @@ case "$PHASE" in
   stage2a-residue3-eligibility) phase_stage2a_residue3_eligibility ;;
   stage2a-residue3-settle) phase_stage2a_residue3_settle ;;
   stage2a-tenant-drift) phase_stage2a_tenant_drift ;;
+  stage2a-protected-inventory-inspect) phase_stage2a_protected_inventory_inspect ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0
