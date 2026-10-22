@@ -1052,6 +1052,73 @@ s2a_tbl_spec() {   # <table> → "deleted updated actor created_column"
   esac
 }
 
+# =============================================================================
+# B25 STAGE 2A — CORRECTION 6: evidence-backed attribution of a company-row modification (run 39840120375 stopped
+# at the start gate: "company row modified since the review without sweep evidence"). The company row is written by
+# the product ONLY through: the branding service (branding.update / branding.logo.replace / branding.logo.remove /
+# branding.reset — audit row with entity_type company and entity_id = the company), the tenant organization PATCH
+# (organization.patch), the platform-owner company PATCH (company.patch, entity_id = the company), the security policy
+# (security.*), the subscription mirror (inside the subscription transaction) and registration (company.register).
+# A moved company row is accepted ONLY as BRANDING_CHANGE_PROVEN: exact recognized branding audit rows by tenant
+# actors on the company entity; the row's updated_at bracketed by the LAST branding audit row (the product writes the
+# row and then its audit row inside one request); no organization / platform / security / billing / identity action
+# in the window; the logo state consistent with the latest logo action; no foreign reference; and TODAY's identity,
+# permission and billing digests EQUAL to the historical anchor — the pre-smoke snapshot printed by the setup of run
+# 38958264416 (job 117166522513), whose start gate PASSED with company_modified_since=false: the last proven identity
+# state of the tenant before the branding activity, already locked below as S2AR3_TENANT_SNAPSHOT_B64. The company
+# identity digest is compared with the two logo fields masked (the anchor had no logo). The review instant is NOT
+# advanced, no digest is replaced by today's, nothing historical is overwritten. Every other movement stays surfaced:
+# CORRECTION6_HISTORICAL_CHANGE_UNPROVEN → B25_STAGE2A_TENANT_START_GATE=FAIL.
+# =============================================================================
+readonly S2A_C6_ANCHOR_RUN="38958264416"                # the last hosted start gate that PASSED with company_modified_since=false (job 117166522513)
+readonly S2A_C6_ANCHOR_AT="$S2AR3_SNAPSHOT_AT"          # 2026-10-16 19:54:40.127290 — that run's pre-smoke snapshot instant
+readonly S2A_C6_ANCHOR_B64="$S2AR3_TENANT_SNAPSHOT_B64" # its 12 identity digests, recorded in reviewed code; never replaced by a later digest
+readonly S2A_C6_BRACKET_SECONDS=120                     # the row update and its audit row belong to ONE request (branding.service.ts)
+readonly S2A_C6_BRANDING_ACTIONS="branding.update branding.logo.replace branding.logo.remove branding.reset"
+readonly S2A_C6_ANCHOR_MATCH_KEYS="company_status sub_core sub_status users_count users_active users_md5 roles_count roles_md5 user_roles_count user_roles_md5"
+s2a_c6_constants_ok() {   # the anchor is the reviewed Correction 4 snapshot, later than the review instant, decodable, with its 12 digests and a boolean logo state
+  local snap
+  [ "$S2A_C6_ANCHOR_RUN" = "$S2AR3_RUN" ] && [ "$S2A_C6_ANCHOR_AT" = "$S2AR3_SNAPSHOT_AT" ] && [ "$S2A_C6_ANCHOR_B64" = "$S2AR3_TENANT_SNAPSHOT_B64" ] \
+    && [[ "$S2A_C6_ANCHOR_AT" > "$S2A_TENANT_REVIEW_UTC" ]] && [[ "$S2A_C6_BRACKET_SECONDS" =~ ^[0-9]+$ ]] && [ "$S2A_C6_BRACKET_SECONDS" -ge 1 ] && [ "$S2A_C6_BRACKET_SECONDS" -le 600 ] \
+    && s2a_b64_line_ok "$S2A_C6_ANCHOR_B64" && snap="$(printf '%s' "$S2A_C6_ANCHOR_B64" | base64 -d 2>/dev/null)" && s2a_facts_ok "$snap" \
+    && [ "$(s2a_fv "$snap" snapshot_at)" = "$S2A_C6_ANCHOR_AT" ] && [ "$(printf '%s\n' "$snap" | grep -cE '^pre_id_[a-z0-9_]+=')" = "12" ] \
+    && [[ "$(s2a_fv "$snap" pre_id_brand_logo_set)" =~ ^(true|false)$ ]] && [[ "$(s2a_fv "$snap" pre_id_company_md5)" =~ ^[0-9a-f]{32}$ ]]
+}
+# ---- stage2a_company_change_classify: PURE classification of a moved company row from the c6_* facts (the facts text as $1) ----
+# Prints c6_classification=<TOKEN> and one "c6 reasons: …" line (fixed tokens). TOKENS: NO_COMPANY_CHANGE (the row did not
+# move in the window), BRANDING_CHANGE_PROVEN (every required fact holds), SECURITY_CHANGE, BILLING_CHANGE,
+# PLATFORM_COMPANY_CHANGE_UNREVIEWED, ORGANIZATION_PROFILE_CHANGE_UNREVIEWED, UNKNOWN_CHANGE (no branding audit row),
+# INCOMPLETE_AUDIT_EVIDENCE (branding rows exist but a required fact is missing, false, 'na' or inconsistent).
+stage2a_company_change_classify() {
+  local F="$1" cls="" r=() k b
+  v() { s2a_fv "$F" "$1"; }
+  n() { s2a_num "$(v "$1")"; }
+  if [ "$(v company_modified_since)" != "true" ]; then echo "c6_classification=NO_COMPANY_CHANGE"; echo "c6 reasons: -"; return 0; fi
+  if [ "$(n c6_security_rows)" != "0" ] || [ "$(n c6_identity_rows)" != "0" ]; then cls="${cls:-SECURITY_CHANGE}"; r+=(security_or_identity_audit_rows); fi
+  if [ "$(n c6_billing_rows)" != "0" ] || [ "$(v sub_modified_since)" = "true" ] || [ "$(v sub_status_changed_since)" = "true" ]; then cls="${cls:-BILLING_CHANGE}"; r+=(billing_movement); fi
+  if [ "$(n c6_company_patch_rows)" != "0" ]; then cls="${cls:-PLATFORM_COMPANY_CHANGE_UNREVIEWED}"; r+=(platform_company_rows); fi
+  if [ "$(n c6_organization_rows)" != "0" ]; then cls="${cls:-ORGANIZATION_PROFILE_CHANGE_UNREVIEWED}"; r+=(organization_rows); fi
+  b=$(( $(n c6_branding_update_rows) + $(n c6_logo_replace_rows) + $(n c6_logo_remove_rows) + $(n c6_branding_reset_rows) ))
+  if [ "$b" = "0" ]; then cls="${cls:-UNKNOWN_CHANGE}"; r+=(no_branding_audit_row); fi
+  [ "$(n c6_branding_rows)" = "$b" ] && [ "$b" -ge 1 ] || r+=(branding_rows_inconsistent)
+  [ "$(n c6_branding_actor_other)" = "0" ] && [ "$(n c6_branding_actor_tenant)" = "$b" ] && [ "$b" -ge 1 ] || r+=(branding_actor_not_tenant)
+  [ "$(n c6_branding_entity_ok)" = "$b" ] && [ "$b" -ge 1 ] || r+=(branding_entity_mismatch)
+  [ "$(v c6_anchor_ok)" = "true" ] || r+=(anchor_unavailable)
+  [ "$(v c6_company_updated_after_anchor)" = "true" ] || r+=(update_not_after_anchor)
+  [ "$(v c6_company_update_bracketed)" = "true" ] || r+=(update_not_bracketed_by_last_branding_audit)
+  [ "$(v c6_branding_ordered)" = "true" ] || r+=(branding_rows_not_in_window_order)
+  [ "$(v c6_logo_state_matches)" = "true" ] || r+=(logo_state_mismatch)
+  [ "$(n c6_foreign_logo_refs)" = "0" ] || r+=(foreign_logo_reference)
+  [ "$(v c6_company_id_match_masked)" = "true" ] || r+=(anchor_company_identity_mismatch)
+  for k in $S2A_C6_ANCHOR_MATCH_KEYS; do [ "$(v "c6_${k}_match")" = "true" ] || r+=("anchor_${k}_mismatch"); done
+  if [ -z "$cls" ] && [ "${#r[@]}" -gt 0 ]; then cls=INCOMPLETE_AUDIT_EVIDENCE; fi
+  [ -n "$cls" ] || cls=BRANDING_CHANGE_PROVEN
+  echo "c6_classification=$cls"
+  if [ "${#r[@]}" = "0" ]; then echo "c6 reasons: -"; else echo "c6 reasons: ${r[*]}"; fi
+}
+s2a_c6_class() { stage2a_company_change_classify "$1" | sed -nE 's/^c6_classification=([A-Z_]+)$/\1/p'; }
+s2a_c6_reasons() { stage2a_company_change_classify "$1" | sed -nE 's/^c6 reasons: (.*)$/\1/p'; }
+
 # ---- stage2a_tenant_start_eval: the pre-smoke gate over the "since the review" evidence (facts on stdin) ----
 stage2a_tenant_start_eval() {
   local F; F="$(cat)"; local failed=0 surfaced=0 r
@@ -1073,7 +1140,15 @@ stage2a_tenant_start_eval() {
     if [ "$sweep_ok" = true ]; then say "subscription moved since the review — EXPECTED SWEEP (evidence: subscription.trial_expired audit row by the system actor, elapsed trial, status expired): accepted"; else bad "subscription movement since the review without sweep evidence (modified=$(v sub_modified_since) status_changed=$(v sub_status_changed_since) sweep_audit=$(v sweep_audit_rows_since) status=$(v sub_status) trial_elapsed=$(v sub_trial_elapsed))"; fi
   else say "subscription unmoved since the review: OK"; fi
   if [ "$(v company_modified_since)" = "true" ]; then
-    if [ "$sweep_ok" = true ]; then say "company row moved since the review — the sweep's status mirror: accepted"; else bad "company row modified since the review without sweep evidence"; fi
+    if [ "$sweep_ok" = true ]; then say "company row moved since the review — the sweep's status mirror: accepted"
+    else
+      # Correction 6: a moved company row is accepted ONLY as BRANDING_CHANGE_PROVEN (exact tenant branding audit rows on the company
+      # entity, the update bracketed by the last of them, no conflicting action, logo state consistent, identity / billing digests equal
+      # to the reviewed anchor); every other classification stays surfaced — CORRECTION6_HISTORICAL_CHANGE_UNPROVEN
+      local c6cls c6why; c6cls="$(s2a_c6_class "$F")"; c6why="$(s2a_c6_reasons "$F")"
+      if [ "$c6cls" = "BRANDING_CHANGE_PROVEN" ]; then say "company row moved since the review — BRANDING_CHANGE_PROVEN (Correction 6: branding audit rows $(v c6_branding_rows) [update=$(v c6_branding_update_rows) logo_replace=$(v c6_logo_replace_rows) logo_remove=$(v c6_logo_remove_rows) reset=$(v c6_branding_reset_rows)] by tenant actors on the company entity, the update bracketed by the last of them, no organization / platform / security / billing / identity action, logo state consistent, identity + billing digests equal to the anchor of run $S2A_C6_ANCHOR_RUN): accepted"
+      else bad "company row modified since the review — $c6cls — CORRECTION6_HISTORICAL_CHANGE_UNPROVEN (${c6why:--})"; fi
+    fi
   else say "company row unmoved since the review: OK"; fi
   # Correction 5: the tenant's storage objects are PROTECTED live rows (never required absent); a tombstone, an in-flight,
   # an uncertain or a legacy-located tenant row fails closed (the smoke must not run over an unsettled tenant inventory).
@@ -1127,7 +1202,12 @@ stage2a_tenant_post_eval() {   # [strict (default: the smoke's own post gate) | 
       if [ "$sweep_ok" = true ]; then say "billing: subscription moved in the window — EXPECTED SWEEP (evidence: subscription.trial_expired audit row by the system actor, elapsed trial, status expired): accepted"; else bad "billing: subscription movement in the window without sweep evidence (modified=$(v sub_modified_since) status_changed=$(v sub_status_changed_since) sweep_audit=$(v sweep_audit_rows_window))"; fi
     else say "billing: subscription unmoved in the window"; fi
     if [ "$(v company_modified_since)" = "true" ]; then
-      if [ "$sweep_ok" = true ]; then say "company row moved in the window — the sweep's status mirror: accepted"; else bad "company row modified in the window without sweep evidence"; fi
+      if [ "$sweep_ok" = true ]; then say "company row moved in the window — the sweep's status mirror: accepted"
+      else
+        local c6cls c6why; c6cls="$(s2a_c6_class "$F")"; c6why="$(s2a_c6_reasons "$F")"   # Correction 6, window-bounded facts
+        if [ "$c6cls" = "BRANDING_CHANGE_PROVEN" ]; then say "company row moved in the window — BRANDING_CHANGE_PROVEN (Correction 6: branding audit rows $(v c6_branding_rows) by tenant actors on the company entity, the update bracketed by the last of them, no conflicting action, logo state consistent, identity + billing digests equal to the anchor of run $S2A_C6_ANCHOR_RUN): accepted"
+        else bad "company row modified in the window — $c6cls — CORRECTION6_HISTORICAL_CHANGE_UNPROVEN (${c6why:--})"; fi
+      fi
     else say "company row unmoved in the window"; fi
   fi
   local tenant_audit tenant_audit_since; tenant_audit="$(s2a_num "$(v tenant_audit_rows_window)")"; tenant_audit_since="$(s2a_num "$(v tenant_audit_rows_since)")"

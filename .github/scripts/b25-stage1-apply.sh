@@ -81,6 +81,18 @@
 #                     product association, the bucket partition, the reference reconciliation, the
 #                     Stage 1 exception, host / runtime / fingerprint / volume — and prints the marker
 #                     B25_STAGE2A_PROTECTED_INVENTORY_READY=TRUE|FALSE after a sanitized summary.
+#   (Correction 6)    the start gate attributes a moved company row with EVIDENCE: exact tenant branding audit
+#                     rows on the company entity bracketing the update, no organization / platform / security /
+#                     billing / identity action, a consistent logo state, and today's identity / billing digests
+#                     equal to the reviewed historical anchor (the run-38958264416 snapshot locked in the library)
+#                     → BRANDING_CHANGE_PROVEN; anything else stays surfaced (CORRECTION6_HISTORICAL_CHANGE_UNPROVEN
+#                     → the gate FAILS). The review instant is never advanced; no digest is replaced.
+#   stage2a-company-change-inspect
+#                     READ-ONLY (no input, no ARG): host / runtime / fingerprint / volume, the protected live
+#                     inventory, the anchor, the start-gate evidence and the company-row classification;
+#                     prints B25_STAGE2A_COMPANY_CHANGE_PROVEN=TRUE|FALSE and
+#                     B25_STAGE2A_TENANT_START_READINESS=TRUE|FALSE (TRUE only when every host, protected and
+#                     start-gate condition holds).
 #   stage2a-residue3-eligibility / stage2a-residue3-settle
 #                     third incident (run 38958264416, tag ec7ceda89a58): the two recorded tombstones of
 #                     deleted company 58 (constants S2AR3_*), the retrospective incident-window proof of
@@ -2693,6 +2705,74 @@ stage2a_tenant_since_facts() {   # <review instant>: the IDENTITY tier evidence 
     [ "$upd" = yes ] && echo "bz_${t}_modified_since=$(q "select count(*) from $t where company_id = $T and $cc < '$R' and updated_at >= '$R'")"
     [ "$del" = yes ] && echo "bz_${t}_soft_deleted_since=$(q "select count(*) from $t where company_id = $T and deleted_at >= '$R'")"
   done
+  stage2a_company_change_facts "$R"   # Correction 6: the company-row attribution evidence since the review instant
+}
+# ---- Correction 6: the company-row attribution evidence over a window (counts, booleans, timestamps, digests and fixed tokens only) ----
+# <window start> [<window end>; default: open]. Read by the start gate (since the review instant) and by the incident
+# form (the incident window). The anchor is the reviewed constant S2A_C6_ANCHOR_B64 (the Correction 4 snapshot) — never
+# an input, never today's digest. No customer value is selected into the output: actions are compared with fixed
+# identifiers, actors are classified by membership, timestamps are the tooling's own comparison instants.
+stage2a_company_change_facts() {
+  local W="$1" E="${2:-}" T="$S2A_TENANT_ID" ew acts ent aok=false snap="" alogo fa la last_action last_logo lk lr_at live assoc idf k short act_rows lrow_live lrow_ok lsm=false masked
+  [[ "$W" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?$ ]] || fail "company change facts: window start malformed"
+  if [ -n "$E" ]; then [[ "$E" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?$ ]] || fail "company change facts: window end malformed"; ew="created_at >= '$W' and created_at < '$E'"; else ew="created_at >= '$W'"; fi
+  acts="'branding.update','branding.logo.replace','branding.logo.remove','branding.reset'"
+  ent="entity_type = 'company' and entity_id = '$T'"
+  if s2a_c6_constants_ok; then aok=true; snap="$(printf '%s' "$S2A_C6_ANCHOR_B64" | base64 -d 2>/dev/null)"; fi
+  echo "c6_anchor_ok=$aok"; echo "c6_anchor_at=$S2A_C6_ANCHOR_AT"
+  alogo="$(s2a_fv "$snap" pre_id_brand_logo_set)"; echo "c6_anchor_logo_set=${alogo:--}"
+  echo "c6_company_updated_at=$(q "select coalesce(to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS.US'), '-') from companies where id = $T")"
+  echo "c6_company_updated_after_anchor=$(q "select coalesce((updated_at > '$S2A_C6_ANCHOR_AT'::timestamp)::text, 'false') from companies where id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+  echo "c6_branding_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action in ($acts)")"
+  echo "c6_branding_update_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action = 'branding.update'")"
+  echo "c6_logo_replace_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action = 'branding.logo.replace'")"
+  echo "c6_logo_remove_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action = 'branding.logo.remove'")"
+  echo "c6_branding_reset_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action = 'branding.reset'")"
+  echo "c6_branding_actor_tenant=$(q "select count(*) from audit_logs where company_id = $T and $ew and action in ($acts) and user_id in $s2a_tenant_users_in")"
+  echo "c6_branding_actor_other=$(q "select count(*) from audit_logs where company_id = $T and $ew and action in ($acts) and (user_id is null or user_id not in $s2a_tenant_users_in)")"
+  echo "c6_branding_entity_ok=$(q "select count(*) from audit_logs where company_id = $T and $ew and action in ($acts) and $ent")"
+  echo "c6_organization_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action ~ '^organization\\.'")"
+  echo "c6_company_patch_rows=$(q "select count(*) from audit_logs where $ew and action ~ '^company\\.' and (company_id = $T or ($ent))")"
+  echo "c6_security_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action ~ '^security\\.'")"
+  echo "c6_billing_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and action ~ '^(subscription|billing)\\.'")"
+  echo "c6_identity_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and (action ~ '^(team|profile|roles)\\.' or (action ~ '^user\\.' and action <> 'user.login'))")"
+  echo "c6_other_rows=$(q "select count(*) from audit_logs where company_id = $T and $ew and not (action in ($acts) or action ~ '^(organization|company|security|subscription|billing|team|profile|roles|user)\\.')")"
+  fa="$(q "select coalesce(to_char(min(created_at), 'YYYY-MM-DD HH24:MI:SS.US'), '-') from audit_logs where company_id = $T and $ew and action in ($acts) and $ent")"
+  la="$(q "select coalesce(to_char(max(created_at), 'YYYY-MM-DD HH24:MI:SS.US'), '-') from audit_logs where company_id = $T and $ew and action in ($acts) and $ent")"
+  echo "c6_branding_first_at=$fa"; echo "c6_branding_last_at=$la"
+  last_action="$(q "select coalesce((select action from audit_logs where company_id = $T and $ew and action in ($acts) and $ent order by created_at desc, id desc limit 1), '-')")"
+  last_logo="$(q "select coalesce((select action from audit_logs where company_id = $T and $ew and action in ('branding.logo.replace','branding.logo.remove','branding.reset') and $ent order by created_at desc, id desc limit 1), '-')")"
+  echo "c6_branding_last_action=$last_action"; echo "c6_logo_last_action=$last_logo"
+  if [ "$la" != "-" ]; then
+    echo "c6_company_update_bracketed=$(q "select coalesce((updated_at <= '$la'::timestamp and updated_at >= '$la'::timestamp - interval '$S2A_C6_BRACKET_SECONDS seconds')::text, 'false') from companies where id = $T" | sed 's/^t$/true/; s/^f$/false/')"
+    echo "c6_branding_ordered=$(q "select ('$fa'::timestamp >= '$W'::timestamp and '$la'::timestamp <= now()${E:+ and '$la'::timestamp < '$E'::timestamp})::text" | sed 's/^t$/true/; s/^f$/false/')"
+  else echo "c6_company_update_bracketed=false"; echo "c6_branding_ordered=false"; fi
+  lk="$(q "select coalesce((brand_logo_key is not null)::text, 'false') from companies where id = $T" | sed 's/^t$/true/; s/^f$/false/')"; echo "c6_logo_key_set=$lk"
+  act_rows="$(q "select count(*) from storage_objects where company_id = $T and kind = 'branding_logo' and state = 'active'")"; echo "c6_logo_rows_active=$act_rows"
+  live="$(stage2a_live_row_sql 'so.')"; assoc="$(stage2a_assoc_sql 'so.')"
+  lrow_live="$(q "select (count(*) = 1)::text from storage_objects so join companies c on c.id = so.company_id where so.company_id = $T and so.kind = 'branding_logo' and so.state = 'active' and so.reference = c.brand_logo_key and $live and $assoc" | sed 's/^t$/true/; s/^f$/false/')"
+  lr_at="$(q "select coalesce(to_char(max(created_at), 'YYYY-MM-DD HH24:MI:SS.US'), '-') from audit_logs where company_id = $T and $ew and action = 'branding.logo.replace' and $ent")"
+  if [ "$lr_at" != "-" ]; then
+    lrow_ok="$(q "select (count(*) = 1)::text from storage_objects so join companies c on c.id = so.company_id where so.company_id = $T and so.kind = 'branding_logo' and so.state = 'active' and so.reference = c.brand_logo_key and $live and $assoc and so.created_at > '$S2A_C6_ANCHOR_AT'::timestamp and so.created_at <= c.updated_at and so.created_at <= '$lr_at'::timestamp" | sed 's/^t$/true/; s/^f$/false/')"
+  else lrow_ok=false; fi
+  echo "c6_logo_row_live=$lrow_live"; echo "c6_logo_row_ok=$lrow_ok"
+  echo "c6_foreign_logo_refs=$(q "select count(*) from storage_objects so, companies c where c.id = $T and c.brand_logo_key is not null and so.reference = c.brand_logo_key and so.company_id <> $T")"
+  case "$last_logo" in
+    branding.logo.replace) [ "$lk" = true ] && [ "$lrow_ok" = true ] && lsm=true ;;
+    branding.logo.remove|branding.reset) [ "$lk" = false ] && [ "$act_rows" = "0" ] && lsm=true ;;
+    -) if [ "$aok" = true ] && [ "$lk" = "$alogo" ]; then if [ "$lk" = true ]; then [ "$lrow_live" = true ] && lsm=true; else [ "$act_rows" = "0" ] && lsm=true; fi; fi ;;
+  esac
+  echo "c6_logo_state_matches=$lsm"
+  idf="$(stage2a_tenant_identity_facts)"
+  for k in id_company_status_md5:company_status id_sub_core_md5:sub_core id_sub_status_md5:sub_status id_users_count:users_count id_users_active:users_active id_users_md5:users_md5 id_roles_count:roles_count id_roles_md5:roles_md5 id_user_roles_count:user_roles_count id_user_roles_md5:user_roles_md5; do
+    short="${k#*:}"; k="${k%%:*}"
+    if [ "$aok" = true ] && [ -n "$(s2a_fv "$idf" "$k")" ] && [ "$(s2a_fv "$idf" "$k")" = "$(s2a_fv "$snap" "pre_$k")" ]; then echo "c6_${short}_match=true"; else echo "c6_${short}_match=false"; fi
+  done
+  if [ "$aok" = true ] && [ "$alogo" = false ]; then
+    # today's company identity digest with the two logo fields masked (the anchor had no logo): equal ⇒ name / plan / mfa / creator / trial / legal fields unchanged since the anchor
+    masked="$(q "select md5(coalesce(name,'')||'|'||coalesce(plan,'')||'|'||coalesce(mfa_required::text,'')||'|'||''||'|'||''||'|'||coalesce(created_by_id::text,'')||'|'||coalesce(trial_ends_at::text,'')||'|'||coalesce(legal_name,'')||'|'||coalesce(registration_number,'')||'|'||coalesce(vat_number,'')) from companies where id = $T")"
+    if [ -n "$masked" ] && [ "$masked" = "$(s2a_fv "$snap" pre_id_company_md5)" ]; then echo "c6_company_id_match_masked=true"; else echo "c6_company_id_match_masked=false"; fi
+  else echo "c6_company_id_match_masked=na"; fi
 }
 # The START gate: runs BEFORE the disposable owner exists. Prints the evidence, the verdict and the snapshot line.
 stage2a_tenant_start_gate() {
@@ -2700,7 +2780,7 @@ stage2a_tenant_start_gate() {
   local facts verdict
   facts="$(stage2a_tenant_since_facts "$S2A_TENANT_REVIEW_UTC")" || fail "tenant start gate: evidence unreadable"
   s2a_facts_ok "$facts" || fail "tenant start gate: evidence has an unexpected shape (not printed)"
-  printf '%s\n' "$facts" | grep -E '^(users_|sec_audit|roles_|user_roles|company_modified|sub_|sweep_|tenant_storage|references|review_utc)' | sed 's/^/  /'
+  printf '%s\n' "$facts" | grep -E '^(users_|sec_audit|roles_|user_roles|company_modified|sub_|sweep_|tenant_storage|references|review_utc|c6_)' | sed 's/^/  /'
   verdict="$(printf '%s\n' "$facts" | stage2a_tenant_start_eval)" || { printf '%s\n' "$verdict"; fail "tenant start gate FAILED — the existing tenant's identity / security / billing state moved since the last review; nothing was created (review the surfaced components; never widen the gate)"; }
   printf '%s\n' "$verdict"
   section "pre-smoke snapshot of the existing tenant (identity digests + business counts; carried back to the runner as one base64 line)"
@@ -2778,6 +2858,7 @@ stage2a_tenant_incident_facts() {   # <window start> <window end> <disposable co
   echo "tenant_storage_created_window=$(q "select count(*) from storage_objects where company_id = $T and created_at >= '$W' and created_at < '$E'")"
   echo "tenant_storage_deleted_window=$(q "select count(*) from storage_objects where company_id = $T and deleted_at >= '$W' and deleted_at < '$E'")"
   echo "references_post=$(references_legacy)"; echo "references_expected=$REFERENCES"
+  stage2a_company_change_facts "$W" "$E"   # Correction 6: the company-row attribution evidence bounded to the window
 }
 stage2a_tenant_incident_proof() {   # <pre-smoke snapshot b64 (reviewed constant)> <incident end> <disposable company csv> <disposable user csv>
   local SNAPB="$1" E="$2" C="$3" U="$4" snap since facts verdict
@@ -2790,7 +2871,7 @@ stage2a_tenant_incident_proof() {   # <pre-smoke snapshot b64 (reviewed constant
   section "existing tenant (company $S2A_TENANT_ID) — retrospective Correction 3 comparison over the incident window $since → $E (identity by window evidence; business attributed; isolation; read-only)"
   facts="$( { printf '%s\n' "$snap"; stage2a_tenant_identity_facts | sed 's/^/post_/'; stage2a_tenant_business_facts post; stage2a_tenant_incident_facts "$since" "$E" "$C" "$U"; } )" || fail "incident evidence unreadable"
   s2a_facts_ok "$facts" || fail "incident evidence has an unexpected shape (not printed)"
-  printf '%s\n' "$facts" | grep -E '^(review_utc_ok|users_|sec_audit|roles_|user_roles|company_modified|sub_|sweep_|[a-z_]+_(created|modified|soft_deleted)_window|[a-z_]+_created_by_(disposable|tenant)|[a-z_]+_automated_explained|tenant_audit_rows_(window|since)|disposable_audit_on_tenant|tenant_rows_ref_disposables|disposable_rows_ref_tenant|tenant_storage_|references_)' | sed 's/^/  /'
+  printf '%s\n' "$facts" | grep -E '^(review_utc_ok|users_|sec_audit|roles_|user_roles|company_modified|sub_|sweep_|c6_|[a-z_]+_(created|modified|soft_deleted)_window|[a-z_]+_created_by_(disposable|tenant)|[a-z_]+_automated_explained|tenant_audit_rows_(window|since)|disposable_audit_on_tenant|tenant_rows_ref_disposables|disposable_rows_ref_tenant|tenant_storage_|references_)' | sed 's/^/  /'
   if verdict="$(printf '%s\n' "$facts" | stage2a_tenant_post_eval incident)"; then printf '%s\n' "$verdict"; return 0; fi
   printf '%s\n' "$verdict"; return 1
 }
@@ -2944,6 +3025,82 @@ stage2a_protected_inventory_run() {
 phase_stage2a_protected_inventory_inspect() {   # no argument is read: nothing is selected by an input (the read-only phases never reference ARG1-3)
   if stage2a_protected_inventory_run; then log "stage2a-protected-inventory-inspect complete (read-only; nothing changed; B25_STAGE2A_PROTECTED_INVENTORY_READY=TRUE)"
   else fail "stage2a-protected-inventory-inspect: conditions not met (read-only; nothing changed; B25_STAGE2A_PROTECTED_INVENTORY_READY=FALSE)"; fi
+}
+
+# ---- Correction 6: READ-ONLY company-change inspection (no input, no ARG): host / runtime / fingerprint / volume, the protected
+# live inventory (Correction 5, pre-smoke form), the historical anchor, the start-gate evidence with the company-row
+# classification; prints B25_STAGE2A_COMPANY_CHANGE_PROVEN and B25_STAGE2A_TENANT_START_READINESS; writes nothing ----
+stage2a_company_change_run() {
+  declare -f stage2a_company_change_classify >/dev/null || fail "apply library not loaded (stream b25-stage1-apply-lib.sh before this script)"
+  local facts="" rf cid verdict hf=0 pf=0 n=0 sfacts sverdict c6 cls reasons sg=FAIL proven=FALSE ready=FALSE cok=false
+  cid="$(compose ps -q api || true)"
+  section "0. read-only guard"; stage2a_readonly_guard
+  section "1. host / deployment / containers / readiness"
+  facts+="$(stage2a_host_facts)"$'\n'; facts+="$(stage2a_container_facts "$cid")"$'\n'; facts+="$(stage2a_readyz_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(head_sha|current_deploy_sha|dirty|worktrees|lock_absent|deploy_settled|api_running|api_health|web_health|pg_health|readyz_status|readyz_database|readyz_storage|readyz_inside|schema_fingerprint|storage_jobs_active|dead_storage_jobs|dead_jobs_total|env_mode|key_line_count|env_core_identity_ok)=' | sed 's/^/  /'
+  section "2. storage runtime configuration (startup record, banner; names and fixed values only)"
+  facts+="$(stage2a_init_facts "$cid")"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(init_record_found|init_driver|init_fallback|init_mirror|init_legacy_delete|init_encryption|banner_driver|banner_fallback|banner_mirror)=' | sed 's/^/  /'
+  section "3. the named volume"
+  rf="$(stage2a_root_facts "$cid")"; facts+="$rf"$'\n'; facts+="root_entries_allowed=$(stage2a_root_entries_allowed "$rf")"$'\n'
+  printf '%s\n' "$rf" | grep -E '^(mount_type|mount_name|mount_rw|root_owner|root_mode|root_is_symlink|root_is_dir|root_tenant_files|root_regular_files|root_symlinks|root_other_entries)=' | sed 's/^/  /'
+  section "4. protected live inventory (Correction 5, pre-smoke form): every row outside the Stage 1 exception proven independently; files; mirrors; partition; references; the exception"
+  facts+="$(stage2a_protected_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(protected_|tenant_keys_md5|pf_|pm_|inv_|exc_(row_count|state|last_error|driver|company|size|identity_ok|uncertain|lease|live_refs|provider_present|provider_marker_ok|provider_size_matches|generation_canonical|generation_stable|generation_digest)|census_(objects|bytes|marked|generationless)|originals_|refs_)' | sed 's/^/  /'
+  verdict="$(printf '%s\n' "$facts" | stage2a_protected_eval 0 0 none live)" || true; printf '%s\n' "$verdict"
+  pf="$(printf '%s\n' "$verdict" | sed -nE 's/^B25_STAGE2A_PROTECTED_CONDITIONS_FAILED=([0-9]+)$/\1/p')"; [[ "$pf" =~ ^[0-9]+$ ]] || pf=99
+  section "5. the historical review anchor (reviewed constants; never an input) and the company-row attribution since the review instant $S2A_TENANT_REVIEW_UTC"
+  if s2a_c6_constants_ok; then cok=true; fi
+  echo "  anchor_run=$S2A_C6_ANCHOR_RUN anchor_at=$S2A_C6_ANCHOR_AT review_utc=$S2A_TENANT_REVIEW_UTC bracket_seconds=$S2A_C6_BRACKET_SECONDS anchor_constants_ok=$cok"
+  sfacts="$(stage2a_tenant_since_facts "$S2A_TENANT_REVIEW_UTC")" || fail "company change inspection: tenant evidence unreadable"
+  s2a_facts_ok "$sfacts" || fail "company change inspection: tenant evidence has an unexpected shape (not printed)"
+  printf '%s\n' "$sfacts" | grep -E '^(review_utc_ok|users_|sec_audit|roles_|user_roles|company_modified|sub_|sweep_|tenant_storage|references|c6_)' | sed 's/^/  /'
+  c6="$(stage2a_company_change_classify "$sfacts")"; cls="$(printf '%s\n' "$c6" | sed -nE 's/^c6_classification=([A-Z_]+)$/\1/p')"; reasons="$(printf '%s\n' "$c6" | sed -nE 's/^c6 reasons: (.*)$/\1/p')"
+  [[ "$cls" =~ ^[A-Z_]+$ ]] || cls=UNCLASSIFIED
+  echo "  classification=$cls reasons=${reasons:--}"
+  section "6. the tenant START gate (Correction 3 with the Correction 6 company-row rule; the gate that stopped run 39840120375)"
+  if sverdict="$(printf '%s\n' "$sfacts" | stage2a_tenant_start_eval)"; then sg=PASS; else sg=FAIL; fi; printf '%s\n' "$sverdict"
+  section "7. decision (read-only; nothing is changed)"
+  local g; g() { printf '%s\n' "$facts" | awk -F= -v k="$1" '$1==k{print substr($0, length(k)+2); exit}'; }
+  hc() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "company-change host $n: $1 — OK ($3)"; else echo "company-change host $n: $1 — FAIL ($3)"; hf=$((hf + 1)); fi; }
+  local ok
+  ok=1; [ "$(g head_sha)" = "$STAGE2A_PRODUCT_SHA" ] && [ "$(g current_deploy_sha)" = "$STAGE2A_PRODUCT_SHA" ] && [ "$(g dirty)" = "0" ] && [ "$(g lock_absent)" = "true" ] && ok=0
+  hc "hosted checkout and current-deploy.sha = the locked product commit, clean, no activation lock" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty) lock_absent=$(g lock_absent)"
+  ok=1; [ "$(g api_running)" = "true" ] && [ "$(g api_health)" = "healthy" ] && [ "$(g readyz_status)" = "ok" ] && [ "$(g readyz_database)" = "ok" ] && [ "$(g readyz_storage)" = "ok" ] && ok=0
+  hc "api running and healthy; readiness ok / database ok / storage ok" $ok "api=$(g api_running)/$(g api_health) status=$(g readyz_status) database=$(g readyz_database) storage=$(g readyz_storage)"
+  ok=1; [ "$(g init_record_found)" = "true" ] && [ "$(g init_driver)" = "fs" ] && [ "$(g init_fallback)" = "true" ] && [ "$(g init_mirror)" = "true" ] && [ "$(g init_legacy_delete)" = "false" ] && ok=0
+  hc "storage runtime = fs primary, legacy fallback on, strict mirror on, legacy delete off (the activated Stage 2A configuration)" $ok "found=$(g init_record_found) driver=$(g init_driver) fallback=$(g init_fallback) mirror=$(g init_mirror) legacy_delete=$(g init_legacy_delete)"
+  ok=1; [ "$(g schema_fingerprint)" = "$FP_AFTER" ] && ok=0
+  hc "schema fingerprint = the accepted post-apply fingerprint" $ok "fingerprint=$(g schema_fingerprint)"
+  ok=1; [ "$(g mount_type)" = "volume" ] && [ "$(g mount_name)" = "$STAGE2A_VOLUME" ] && [ "$(g root_owner)" = "$STAGE2A_ROOT_OWNER" ] && [ "$(g root_mode)" = "$STAGE2A_ROOT_MODE" ] && [ "$(g root_is_symlink)" = "false" ] && [ "$(g root_is_dir)" = "true" ] && [ "$(g root_entries_allowed)" = "true" ] && [ "$(g root_tenant_files)" = "$(g protected_rows)" ] && ok=0
+  hc "the named volume at the root: owner / mode / no symlink / only tenants + health; tenant files = the protected rows" $ok "type=$(g mount_type) owner=$(g root_owner) mode=$(g root_mode) symlink=$(g root_is_symlink) entries_allowed=$(g root_entries_allowed) tenant_files=$(g root_tenant_files) protected_rows=$(g protected_rows)"
+  ok=1; [ "$(g dead_jobs_total)" = "0" ] && [ "$(g pf_read_ok)" = "true" ] && [ "$(g pm_read_ok)" = "true" ] && ok=0
+  hc "no dead-letter job; both in-container probes (files, mirrors) answered" $ok "dead_jobs=$(g dead_jobs_total) fs_probe=$(g pf_read_ok) mirror_probe=$(g pm_read_ok)"
+  ok=1; [ "$cok" = true ] && ok=0
+  hc "the historical review anchor is the reviewed Correction 4 snapshot (decodable, 12 digests, later than the review instant); no input supplied a date or a company" $ok "anchor_run=$S2A_C6_ANCHOR_RUN anchor_constants_ok=$cok"
+  section "8. summary (counts, booleans, timestamps, digests and fixed tokens only)"
+  local sv; sv() { printf '%s\n' "$sfacts" | awk -F= -v k="$1" '$1==k{print substr($0, length(k)+2); exit}'; }
+  echo "  company: modified_since_review=$(sv company_modified_since) updated_at=$(sv c6_company_updated_at) updated_after_anchor=$(sv c6_company_updated_after_anchor) bracketed_by_last_branding_audit=$(sv c6_company_update_bracketed)"
+  echo "  branding audit: rows=$(sv c6_branding_rows) update=$(sv c6_branding_update_rows) logo_replace=$(sv c6_logo_replace_rows) logo_remove=$(sv c6_logo_remove_rows) reset=$(sv c6_branding_reset_rows) tenant_actor=$(sv c6_branding_actor_tenant) other_actor=$(sv c6_branding_actor_other) entity_ok=$(sv c6_branding_entity_ok) first_at=$(sv c6_branding_first_at) last_at=$(sv c6_branding_last_at) last_action=$(sv c6_branding_last_action) ordered=$(sv c6_branding_ordered)"
+  echo "  conflicting actions: organization=$(sv c6_organization_rows) platform_company=$(sv c6_company_patch_rows) security=$(sv c6_security_rows) billing=$(sv c6_billing_rows) identity=$(sv c6_identity_rows) other_modules=$(sv c6_other_rows)"
+  echo "  logo: key_set=$(sv c6_logo_key_set) active_rows=$(sv c6_logo_rows_active) row_live=$(sv c6_logo_row_live) row_ok=$(sv c6_logo_row_ok) last_logo_action=$(sv c6_logo_last_action) state_matches=$(sv c6_logo_state_matches) foreign_refs=$(sv c6_foreign_logo_refs)"
+  echo "  anchor continuity: company_identity_masked=$(sv c6_company_id_match_masked) company_status=$(sv c6_company_status_match) sub_core=$(sv c6_sub_core_match) sub_status=$(sv c6_sub_status_match) users=$(sv c6_users_count_match)/$(sv c6_users_active_match)/$(sv c6_users_md5_match) roles=$(sv c6_roles_count_match)/$(sv c6_roles_md5_match) user_roles=$(sv c6_user_roles_count_match)/$(sv c6_user_roles_md5_match)"
+  echo "  identity tier since the review: users_created=$(sv users_created_since) users_removed=$(sv users_soft_deleted_since) users_modified=$(sv users_modified_since) login_explained=$(sv users_modified_login_explained) identity_audit=$(sv sec_audit_rows_since) roles_changed=$(sv roles_changed_since) user_roles_created=$(sv user_roles_created_since) subscription_modified=$(sv sub_modified_since) status_changed=$(sv sub_status_changed_since) storage_rows=$(sv tenant_storage_rows)/$(sv tenant_storage_live_ok) references=$(sv references)"
+  echo "  protected inventory: rows=$(g protected_rows) ownership_valid=$(g protected_live_ok) association_valid=$(g protected_assoc_ok) files=$(g pf_present) mirrors=$(g pm_sha_ok) unrelated=$(g protected_other) uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leased=$(g inv_leases) inflight=$(g inv_inflight)"
+  echo "  Stage 1 exception: state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) provider=$(g exc_provider_present) generation_digest=$(g exc_generation_digest) (expected $B25PHYS_PRE_GEN_DIGEST)"
+  echo "  runtime: readyz=$(g readyz_status)/$(g readyz_database)/$(g readyz_storage) fingerprint=$(g schema_fingerprint) product=$(g head_sha)"
+  echo "  failed predicates: host=$hf protected=$pf start_gate=$sg classification=$cls"
+  if [ "$cls" = "BRANDING_CHANGE_PROVEN" ] || [ "$cls" = "NO_COMPANY_CHANGE" ]; then proven=TRUE; fi
+  echo "B25_STAGE2A_COMPANY_CHANGE_CLASSIFICATION=$cls"
+  echo "B25_STAGE2A_COMPANY_CHANGE_PROVEN=$proven"
+  if [ "$hf" = "0" ] && [ "$pf" = "0" ] && [ "$sg" = "PASS" ] && [ "$proven" = "TRUE" ]; then ready=TRUE; fi
+  rm -f "$HOME"/.b25-s1-node.err
+  echo "B25_STAGE2A_TENANT_START_READINESS=$ready"
+  [ "$ready" = "TRUE" ]
+}
+phase_stage2a_company_change_inspect() {   # no argument is read: nothing is selected by an input (the read-only phases never reference an argument)
+  if stage2a_company_change_run; then log "stage2a-company-change-inspect complete (read-only; nothing changed; B25_STAGE2A_TENANT_START_READINESS=TRUE)"
+  else fail "stage2a-company-change-inspect: conditions not met (read-only; nothing changed; B25_STAGE2A_TENANT_START_READINESS=FALSE)"; fi
 }
 
 guards_stage2a_switched() {
@@ -3925,6 +4082,7 @@ case "$PHASE" in
   stage2a-residue3-settle) phase_stage2a_residue3_settle ;;
   stage2a-tenant-drift) phase_stage2a_tenant_drift ;;
   stage2a-protected-inventory-inspect) phase_stage2a_protected_inventory_inspect ;;
+  stage2a-company-change-inspect) phase_stage2a_company_change_inspect ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0
