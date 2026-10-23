@@ -1,0 +1,322 @@
+# =============================================================================
+# B25 STAGE 2B — legacy bucket → encrypted filesystem migration tooling (ops/b25-stage2b-migration-tooling)
+#
+# This file keeps the REGISTERED workflow name/path of the B25 inspection workflow (id 376505024) so it can be
+# dispatched by id with ref = this branch; the job runs ONLY on this branch. The Stage 2A modes live on the Stage 2A
+# branch (ops/b25-stage2a-fs-activation-tooling) and are NOT offered here; the Stage 2A libraries are streamed
+# unchanged (byte-identical to STAGE2A_OPS_SHA, apply.sh + one dispatch hook) so the protected live-inventory model,
+# the probes and the gates are reused, never redefined.
+#
+# Guard:   the branch content must equal BASE_SHA (the approved mobile R1/R2 head = develop after its authorized
+#          fast-forward; also the Stage 2B product commit) plus exactly: the three Stage 2A scripts, the three Stage 2B
+#          files and this workflow. Nothing else may differ. Every typed confirmation is compared on the runner BEFORE
+#          any SSH session; no input ever reaches a shell as text; the host phases pass NO ARG.
+#
+# MODES
+#   stage2b_preflight           READ-ONLY (every confirmation empty): the two-class inventory partition, the complete
+#                               legacy reference census, capacity, the five locked variables, native + migrated proofs,
+#                               exception, bucket partition → B25_STAGE2B_PREFLIGHT_READY
+#   stage2b_migrate_dry_run     READ-ONLY for product state: preflight → migrate image from exactly the product commit
+#                               → `migrate-storage --dry-run` twice (read-only target; identical sanitized summaries;
+#                               inventory unchanged) → B25_STAGE2B_DRY_RUN_REPORTED
+#   stage2b_migrate_copy_verify GUARDED MUTATION (confirm_product_sha = the Stage 2B product commit, confirm_window,
+#                               confirm_stage2b = COPY_B25_STAGE2B_LEGACY_TO_FS): preflight → dry-run → copy lock →
+#                               `--copy` → `--verify` → per-row proofs → native class + bucket inventory identical to the
+#                               preflight → B25_STAGE2B_COPY_VERIFIED. Implemented for independent review; dispatching it
+#                               is a separate owner authorization. Nothing is deleted; no env line is rendered.
+#   stage2b_postverify          READ-ONLY: `--verify` → L = 0, U = 0 → two-class proofs → bucket unchanged →
+#                               B25_STAGE2B_POSTVERIFY_READY
+# =============================================================================
+name: b25-stage1-apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "STAGE 2B: stage2b_preflight (READ-ONLY) | stage2b_migrate_dry_run (READ-ONLY for product state; the product's --dry-run twice) | stage2b_migrate_copy_verify (GUARDED MUTATION: confirm_product_sha + confirm_window + confirm_stage2b) | stage2b_postverify (READ-ONLY; the product's --verify)"
+        required: true
+        type: choice
+        options: [stage2b_preflight, stage2b_migrate_dry_run, stage2b_migrate_copy_verify, stage2b_postverify]
+      confirm_product_sha:
+        description: "stage2b_migrate_copy_verify only — type the Stage 2B product commit (6a8dad1fe161dc1b31041794e5e3532e9f13327c); must be EMPTY for every read-only mode"
+        required: false
+        default: ""
+      confirm_window:
+        description: "stage2b_migrate_copy_verify only — type exactly: NO-UPLOAD MAINTENANCE WINDOW ACTIVE; must be EMPTY for every read-only mode"
+        required: false
+        default: ""
+      confirm_stage2b:
+        description: "stage2b_migrate_copy_verify only — type exactly: COPY_B25_STAGE2B_LEGACY_TO_FS (MUTATION: the product's migrate-storage --copy then --verify; sources retained; nothing deleted); must be EMPTY for every read-only mode"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+# Serialize with the deployment workflow so no phase ever overlaps a deploy.
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  # The branch base = the Stage 2B product commit (the approved mobile R1/R2 head); the listed ops files are the only difference.
+  BASE_SHA: 6a8dad1fe161dc1b31041794e5e3532e9f13327c
+  STAGE2B_PRODUCT_SHA: 6a8dad1fe161dc1b31041794e5e3532e9f13327c
+  # The Stage 2A ops commit whose libraries this branch streams unchanged (the hosted guard diffs the three files against it).
+  STAGE2A_OPS_SHA: 66807b5b67c4a6471e85b42306730b5a4a80d5c3
+  REQUIRED_STAGE2B: "COPY_B25_STAGE2B_LEGACY_TO_FS"
+  REQUIRED_WINDOW: "NO-UPLOAD MAINTENANCE WINDOW ACTIVE"
+  BACKUP_HEALTH_WORKFLOW_ID: "365534673"
+  BACKUP_HEALTH_MAX_AGE_H: "36"
+
+jobs:
+  stage2b:
+    name: "B25 Stage 2B — ${{ inputs.mode }}"
+    if: github.ref == 'refs/heads/ops/b25-stage2b-migration-tooling' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard — branch content = the product commit + the Stage 2A libraries (unchanged) + the Stage 2B files; scripts parse; rollback boundary
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit not present"; exit 1; }
+          git cat-file -e "$STAGE2A_OPS_SHA^{commit}" || { echo "Stage 2A ops commit not present"; exit 1; }
+          git merge-base --is-ancestor "$BASE_SHA" HEAD || { echo "branch does not descend from the base commit"; exit 1; }
+          DIFF="$(git diff --stat "$BASE_SHA" HEAD -- . ':(exclude).github/scripts/b25-stage1-apply.sh' ':(exclude).github/scripts/b25-stage1-apply-lib.sh' ':(exclude).github/scripts/b25-stage1-purge-lib.sh' ':(exclude).github/scripts/b25-stage2b-lib.sh' ':(exclude).github/scripts/b25-stage2b-apply.sh' ':(exclude).github/scripts/b25-stage2b.test.sh' ':(exclude).github/workflows/b25-stage1-inspection.yml')"
+          [ -z "$DIFF" ] || { echo "branch differs from the base commit outside the allowed ops files:"; echo "$DIFF"; exit 1; }
+          [ "$(git diff --name-only "$BASE_SHA" HEAD -- .github/workflows | wc -l)" = "1" ] || { echo "more than one workflow file differs from the base commit"; exit 1; }
+          # the Stage 2A libraries are byte-identical to the Stage 2A ops commit; apply.sh differs by exactly the one-line dispatch hook
+          for f in .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh; do git diff --quiet "$STAGE2A_OPS_SHA" HEAD -- "$f" || { echo "$f differs from the Stage 2A ops commit"; exit 1; }; done
+          HOOK_DIFF="$(git diff "$STAGE2A_OPS_SHA" HEAD -- .github/scripts/b25-stage1-apply.sh | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)')"
+          [ "$HOOK_DIFF" = '+  stage2b-*) stage2b_dispatch "$PHASE" ;;' ] || { echo "b25-stage1-apply.sh differs from the Stage 2A ops commit by more than the Stage 2B dispatch hook"; exit 1; }
+          bash -n .github/scripts/b25-stage1-purge-lib.sh
+          bash -n .github/scripts/b25-stage1-apply-lib.sh
+          bash -n .github/scripts/b25-stage1-apply.sh
+          bash -n .github/scripts/b25-stage2b-lib.sh
+          bash -n .github/scripts/b25-stage2b-apply.sh
+          bash -n .github/scripts/b25-stage2b.test.sh
+          for blk in STAGE2B_SUMMARY_JS STAGE2B_SOURCE_JS; do awk -v b="$blk" '$0 ~ "^"b"=\\$\\(cat <<.JS.$" {on=1; next} on && /^JS$/ {exit} on {print}' .github/scripts/b25-stage2b-apply.sh > "${RUNNER_TEMP:?}/${blk:?}.js"; node --check "${RUNNER_TEMP:?}/${blk:?}.js"; rm -f "${RUNNER_TEMP:?}/${blk:?}.js"; done
+          grep -q "^readonly STAGE2B_PRODUCT_SHA=\"$STAGE2B_PRODUCT_SHA\"$" .github/scripts/b25-stage2b-lib.sh || { echo "the Stage 2B product pin of the library is not the workflow's"; exit 1; }
+          grep -q "^readonly STAGE2B_STAGE2A_OPS_SHA=\"$STAGE2A_OPS_SHA\"$" .github/scripts/b25-stage2b-lib.sh || { echo "the Stage 2A ops pin of the library is not the workflow's"; exit 1; }
+          grep -q '^stage2b_eligibility()' .github/scripts/b25-stage2b-lib.sh && grep -q '^s2b_native_sql()' .github/scripts/b25-stage2b-lib.sh && grep -q '^s2b_migrated_sql()' .github/scripts/b25-stage2b-lib.sh && grep -q '^s2b_partition_sql()' .github/scripts/b25-stage2b-lib.sh && grep -q '^s2b_census_sql()' .github/scripts/b25-stage2b-lib.sh || { echo "Stage 2B library incomplete"; exit 1; }
+          grep -q '^stage2b_dispatch()' .github/scripts/b25-stage2b-apply.sh && grep -q '^phase_stage2b_preflight()' .github/scripts/b25-stage2b-apply.sh && grep -q '^phase_stage2b_migrate_dry_run()' .github/scripts/b25-stage2b-apply.sh && grep -q '^phase_stage2b_migrate_copy_verify()' .github/scripts/b25-stage2b-apply.sh && grep -q '^phase_stage2b_postverify()' .github/scripts/b25-stage2b-apply.sh && grep -q '^stage2b_cli()' .github/scripts/b25-stage2b-apply.sh || { echo "Stage 2B phases incomplete"; exit 1; }
+          grep -q '^  stage2b-\*) stage2b_dispatch "\$PHASE" ;;$' .github/scripts/b25-stage1-apply.sh || { echo "the Stage 2B dispatch hook is missing"; exit 1; }
+          # the Correction 5 live-row predicate keeps its smoke-tenant exclusion and is never redefined by the Stage 2B files
+          if ! grep -q "lc.name not like 'B25 SMOKE %'" <<<"$(awk '/^stage2a_live_row_sql\(\) \{/{on=1} on{print} on&&/^}$/{on=0}' .github/scripts/b25-stage1-apply.sh)"; then echo "the protected live-row predicate lost its smoke-tenant exclusion"; exit 1; fi
+          if grep -qE '^(stage2a_live_row_sql|stage2a_assoc_sql|stage2a_protected_facts|stage2a_protected_eval|references_legacy|references_ambiguous)\(\)' .github/scripts/b25-stage2b-lib.sh .github/scripts/b25-stage2b-apply.sh; then echo "a Stage 2B file redefines a Stage 2A predicate or reader"; exit 1; fi
+          # rollback boundary: no legacy delete, no bucket delete, no fallback / mirror switch-off, no env rendering, no revert in any Stage 2B file
+          RE="$(grep -E '^readonly S2B_FORBIDDEN_RE=' .github/scripts/b25-stage2b-lib.sh | sed -E "s/^readonly S2B_FORBIDDEN_RE='(.*)'$/\1/")"
+          [ -n "$RE" ] || { echo "the forbidden-operation regex is missing"; exit 1; }
+          if grep -hvE '^readonly S2B_FORBIDDEN_RE=' .github/scripts/b25-stage2b-lib.sh .github/scripts/b25-stage2b-apply.sh | grep -qE "$RE"; then echo "a forbidden operation string is present in a Stage 2B file"; exit 1; fi
+          # the read-only phases never run the copy, never write and read no input; only the copy phase runs `stage2b_cli_run copy`
+          if grep -qE 'stage2b_cli(_run)? copy|(^|[^a-z_])qw |purge_rows_sql|stage2a_recreate_api|compose (up|down|rm|restart|stop|start)|ARG[123]|inputs\.' <<<"$(awk '/^(phase_stage2b_preflight|phase_stage2b_migrate_dry_run|phase_stage2b_postverify|stage2b_facts|stage2b_class_facts|stage2b_dryrun_facts|stage2b_partition_facts|stage2b_census_facts)\(\) \{/{on=1} on{print} on&&/^}$/{on=0}' .github/scripts/b25-stage2b-apply.sh)"; then echo "a read-only Stage 2B phase or reader copies, writes or reads an input"; exit 1; fi
+          [ "$(grep -c 'stage2b_cli_run copy cp' .github/scripts/b25-stage2b-apply.sh)" = "1" ] || { echo "the copy must be invoked exactly once, in the copy phase"; exit 1; }
+          if grep -qE 'ARG[123]|inputs\.' .github/scripts/b25-stage2b-lib.sh .github/scripts/b25-stage2b-apply.sh; then echo "a Stage 2B file reads an argument or an input"; exit 1; fi
+          if grep -qE "awk '[^']*' [^|<]*\| grep -q" .github/workflows/b25-stage1-inspection.yml; then echo "a guard line pipes an awk body into grep -q (Correction 8a)"; exit 1; fi
+          echo "branch = $BASE_SHA + Stage 2A libraries ($STAGE2A_OPS_SHA) + Stage 2B files; workflow served from the registered path"
+
+      - name: Validate inputs (exact comparison; nothing is executed from an input)
+        env:
+          MODE: ${{ inputs.mode }}
+          IN_PRODUCT_SHA: ${{ inputs.confirm_product_sha }}
+          IN_WINDOW: ${{ inputs.confirm_window }}
+          IN_STAGE2B: ${{ inputs.confirm_stage2b }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in stage2b_preflight|stage2b_migrate_dry_run|stage2b_migrate_copy_verify|stage2b_postverify) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          need() { [ "$2" = "$3" ] || { echo "::error::confirmation '$1' does not match the required value"; exit 1; }; }
+          empty() { [ -z "$2" ] || { echo "::error::$1 must be empty for mode $MODE"; exit 1; }; }
+          case "$MODE" in
+            stage2b_preflight|stage2b_migrate_dry_run|stage2b_postverify)
+              empty confirm_product_sha "$IN_PRODUCT_SHA"; empty confirm_window "$IN_WINDOW"; empty confirm_stage2b "$IN_STAGE2B" ;;
+            stage2b_migrate_copy_verify)
+              need confirm_product_sha "$IN_PRODUCT_SHA" "$STAGE2B_PRODUCT_SHA"; need confirm_window "$IN_WINDOW" "$REQUIRED_WINDOW"; need confirm_stage2b "$IN_STAGE2B" "$REQUIRED_STAGE2B" ;;
+          esac
+          echo "mode=$MODE confirmations=ok"
+
+      - name: Validate secrets shape (values never printed)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::VPS_DEPLOY_PATH has an unexpected shape"; exit 1; }
+          [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]] || { echo "::error::VPS_PORT has an unexpected shape"; exit 1; }
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::VPS_HOST has an unexpected shape"; exit 1; }
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "::error::VPS_USER has an unexpected shape"; exit 1; }
+          [ -n "$VPS_SSH_KEY" ] && [ -n "$VPS_KNOWN_HOSTS" ] || { echo "::error::SSH secrets missing"; exit 1; }
+          echo "secrets present and well-formed"
+
+      - name: No other activation or deployment may be queued or running (registered ids, verified path, fail closed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THIS_RUN: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Coordination-relevant workflows = every registered workflow that can deploy, activate or reach
+          # the VPS: registered numeric id -> expected path. Each id is resolved through the registry
+          # (id, path, state=active) BEFORE its runs are read; anything else stops the job.
+          ALLOW=(
+            "338196147=.github/workflows/deploy-dev-vps.yml"
+            "358860432=.github/workflows/b20-hosted-activation.yml"
+            "376505024=.github/workflows/b25-stage1-inspection.yml"
+            "373189055=.github/workflows/b25-hosted-inspection.yml"
+            "348767584=.github/workflows/b14-hosted-activation.yml"
+            "350570859=.github/workflows/b15-schema-activation.yml"
+            "352288831=.github/workflows/b16-hosted-activation.yml"
+            "353075182=.github/workflows/b17-hosted-activation.yml"
+            "353427348=.github/workflows/b18-hosted-activation.yml"
+            "354083606=.github/workflows/b20-hosted-inspection.yml"
+          )
+          # Registered workflows documented as NOT sharing the deployment / activation boundary (their runs
+          # are not counted): backup-health-alert is the scheduled read-only backup check with its own
+          # concurrency group "backup-health-alert"; it never runs compose, docker, deploy or SQL.
+          KNOWN_OTHER=(
+            "365534673=.github/workflows/backup-health-alert.yml"
+          )
+          RELEVANT='deploy|activation|inspection|stage1|stage-1'
+          [[ "$THIS_RUN" =~ ^[0-9]+$ ]] || { echo "::error::current run id is malformed"; exit 1; }
+          [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::repository name is malformed"; exit 1; }
+          # GET only. On ANY failure (non-2xx such as 403 / 404 / 429 / 5xx, network or command error,
+          # empty body, invalid JSON) nothing of the response is printed, the reason goes to stderr (so it
+          # is never swallowed by a command substitution) and the job stops: a failed query is never "idle".
+          api_get() {
+            local body
+            if ! body="$(gh api --method GET "$1" 2>/dev/null)"; then echo "::error::GitHub API query failed ($2)" >&2; return 1; fi
+            [ -n "$body" ] || { echo "::error::empty GitHub API response ($2)" >&2; return 1; }
+            printf '%s' "$body" | jq -e . >/dev/null 2>&1 || { echo "::error::GitHub API response is not valid JSON ($2)" >&2; return 1; }
+            printf '%s' "$body"
+          }
+          num() { [[ "$1" =~ ^[0-9]+$ ]] || { echo "::error::non-numeric value where a count was expected ($2)" >&2; return 1; }; }
+          # 1. Live registry: every ACTIVE registered workflow must be classified (allow-listed with the
+          #    expected path, or documented as non-conflicting). An unclassified one stops the job —
+          #    whether or not its name matches the coordination pattern — it is never ignored.
+          reg="$(api_get "repos/$REPO/actions/workflows?per_page=100" "workflow registry")"
+          total="$(printf '%s' "$reg" | jq -r '.total_count // empty')"; num "$total" "registry total_count"
+          listed="$(printf '%s' "$reg" | jq -r '.workflows | length')"; num "$listed" "registry page length"
+          [ "$total" = "$listed" ] || { echo "::error::workflow registry has $total entries but only $listed were returned"; exit 1; }
+          [ "$listed" -gt 0 ] || { echo "::error::workflow registry is empty"; exit 1; }
+          mapfile -t REG < <(printf '%s' "$reg" | jq -r '.workflows[] | "\(.id)|\(.state)|\(.path)|\(.name)"')
+          for line in "${REG[@]}"; do
+            IFS='|' read -r rid rstate rpath rname <<<"$line"
+            num "$rid" "registry workflow id"
+            [ "$rstate" = "active" ] || continue
+            known=0
+            for e in "${ALLOW[@]}" "${KNOWN_OTHER[@]}"; do [ "${e%%=*}" = "$rid" ] && [ "${e#*=}" = "$rpath" ] && known=1; done
+            if [ "$known" = "0" ]; then
+              if printf '%s %s' "$rpath" "$rname" | grep -qiE "$RELEVANT"; then kind="coordination-relevant"; else kind="unclassified"; fi
+              echo "::error::$kind workflow registered but not classified for Stage 1: id $rid path $rpath"; exit 1
+            fi
+          done
+          # 2. Each allow-listed id must resolve to its expected ACTIVE path; then its queued / in_progress /
+          #    waiting runs are counted, excluding only this run id. Any other run = busy.
+          busy=0
+          for e in "${ALLOW[@]}"; do
+            id="${e%%=*}"; path="${e#*=}"
+            wf="$(api_get "repos/$REPO/actions/workflows/$id" "workflow $id")"
+            rid="$(printf '%s' "$wf" | jq -r '.id // empty')"; rpath="$(printf '%s' "$wf" | jq -r '.path // empty')"; rstate="$(printf '%s' "$wf" | jq -r '.state // empty')"
+            [ "$rid" = "$id" ] && [ "$rpath" = "$path" ] && [ "$rstate" = "active" ] || { echo "::error::workflow $id does not resolve to the expected active path $path"; exit 1; }
+            for st in queued in_progress waiting; do
+              runs="$(api_get "repos/$REPO/actions/workflows/$id/runs?status=$st&per_page=100" "runs of workflow $id in state $st")"
+              n="$(printf '%s' "$runs" | jq -r '.total_count // empty')"; num "$n" "run count of workflow $id in state $st"
+              mine="$(printf '%s' "$runs" | jq -r --arg me "$THIS_RUN" '[.workflow_runs[]? | select((.id|tostring) == $me)] | length')"; num "$mine" "self count"
+              others=$((n - mine))
+              [ "$others" = "0" ] || { echo "::error::$path has $others other run(s) in state $st"; busy=1; }
+            done
+          done
+          [ "$busy" = "0" ] || exit 1
+          echo "no concurrent activation / deployment run (${#ALLOW[@]} registered workflows verified by id, path and state)"
+
+      - name: Backup health (copy mode only — the latest backup-health-alert run must have SUCCEEDED within the allowed age)
+        if: inputs.mode == 'stage2b_migrate_copy_verify'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$BACKUP_HEALTH_WORKFLOW_ID" =~ ^[0-9]+$ ]] && [[ "$BACKUP_HEALTH_MAX_AGE_H" =~ ^[0-9]+$ ]] || { echo "::error::backup health constants malformed"; exit 1; }
+          body="$(gh api --method GET "repos/$REPO/actions/workflows/$BACKUP_HEALTH_WORKFLOW_ID/runs?per_page=1&status=completed" 2>/dev/null)" || { echo "::error::backup health query failed"; exit 1; }
+          concl="$(printf '%s' "$body" | jq -r '.workflow_runs[0].conclusion // empty')"; upd="$(printf '%s' "$body" | jq -r '.workflow_runs[0].updated_at // empty')"
+          [ "$concl" = "success" ] || { echo "::error::the latest backup-health-alert run did not succeed"; exit 1; }
+          age_h=$(( ( $(date -u +%s) - $(date -u -d "$upd" +%s) ) / 3600 ))
+          [ "$age_h" -le "$BACKUP_HEALTH_MAX_AGE_H" ] || { echo "::error::the latest backup-health-alert success is ${age_h} h old (max $BACKUP_HEALTH_MAX_AGE_H)"; exit 1; }
+          echo "backup health: latest run success, ${age_h} h old"
+
+      - name: Install SSH key and pinned host key (strict host verification; no ssh-keyscan)
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+          {
+            echo "Host vps"
+            echo "  HostName $VPS_HOST"
+            echo "  Port $VPS_PORT"
+            echo "  User $VPS_USER"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  StrictHostKeyChecking yes"
+            echo "  ServerAliveInterval 30"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Stage 2B — READ-ONLY preflight (two-class inventory, census, capacity, locked variables, proofs; decides B25_STAGE2B_PREFLIGHT_READY; changes nothing)
+        if: inputs.mode == 'stage2b_preflight'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2b-preflight' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage2b-lib.sh .github/scripts/b25-stage2b-apply.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/stage2b-preflight.log"
+          grep -qx 'B25_STAGE2B_PREFLIGHT_READY=TRUE' "$RUNNER_TEMP/stage2b-preflight.log" || { echo "::error::the host did not report B25_STAGE2B_PREFLIGHT_READY=TRUE"; exit 1; }
+
+      - name: Stage 2B — READ-ONLY dry-run (preflight → migrate image from the product commit → the product's --dry-run twice; decides B25_STAGE2B_DRY_RUN_REPORTED; no product state changes)
+        if: inputs.mode == 'stage2b_migrate_dry_run'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2b-migrate-dry-run' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage2b-lib.sh .github/scripts/b25-stage2b-apply.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/stage2b-dry-run.log"
+          grep -qx 'B25_STAGE2B_DRY_RUN_REPORTED=TRUE' "$RUNNER_TEMP/stage2b-dry-run.log" || { echo "::error::the host did not report B25_STAGE2B_DRY_RUN_REPORTED=TRUE"; exit 1; }
+
+      - name: Stage 2B — COPY + VERIFY (MUTATION; preflight → dry-run → copy lock → the product's --copy → --verify → per-row proofs → native class and bucket identical; decides B25_STAGE2B_COPY_VERIFIED; sources retained; nothing deleted)
+        if: inputs.mode == 'stage2b_migrate_copy_verify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2b-migrate-copy-verify' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage2b-lib.sh .github/scripts/b25-stage2b-apply.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/stage2b-copy.log"
+          grep -qx 'B25_STAGE2B_COPY_VERIFIED=TRUE' "$RUNNER_TEMP/stage2b-copy.log" || { echo "::error::the host did not report B25_STAGE2B_COPY_VERIFIED=TRUE"; exit 1; }
+
+      - name: Stage 2B — READ-ONLY postverify (the product's --verify; L = 0, U = 0; two-class proofs; bucket unchanged; decides B25_STAGE2B_POSTVERIFY_READY; changes nothing)
+        if: inputs.mode == 'stage2b_postverify'
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh vps "DEPLOY_PATH='$VPS_DEPLOY_PATH' PHASE='stage2b-postverify' bash -s" < <(cat .github/scripts/b25-stage1-purge-lib.sh .github/scripts/b25-stage1-apply-lib.sh .github/scripts/b25-stage2b-lib.sh .github/scripts/b25-stage2b-apply.sh .github/scripts/b25-stage1-apply.sh) | tee "$RUNNER_TEMP/stage2b-postverify.log"
+          grep -qx 'B25_STAGE2B_POSTVERIFY_READY=TRUE' "$RUNNER_TEMP/stage2b-postverify.log" || { echo "::error::the host did not report B25_STAGE2B_POSTVERIFY_READY=TRUE"; exit 1; }
+
+      - name: Remove runner-side logs (always)
+        if: always()
+        run: rm -f "${RUNNER_TEMP:?}"/stage2b-preflight.log "${RUNNER_TEMP:?}"/stage2b-dry-run.log "${RUNNER_TEMP:?}"/stage2b-copy.log "${RUNNER_TEMP:?}"/stage2b-postverify.log

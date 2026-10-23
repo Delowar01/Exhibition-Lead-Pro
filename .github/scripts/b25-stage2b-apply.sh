@@ -1,0 +1,289 @@
+#!/bin/bash
+# =============================================================================
+# B25 STAGE 2B — legacy bucket → encrypted filesystem migration tooling: HOST PHASES
+# (ops/b25-stage2b-migration-tooling). Streamed over SSH stdin by .github/workflows/b25-stage1-inspection.yml of THIS
+# branch in the order purge-lib → apply-lib → stage2b-lib → THIS FILE → b25-stage1-apply.sh; the Stage 2A apply script is
+# the unchanged Stage 2A library (STAGE2B_STAGE2A_OPS_SHA) plus one dispatch hook (`stage2b-*) stage2b_dispatch "$PHASE"`)
+# so every Stage 2A reader, probe and gate is reused byte-for-byte and nothing of the Stage 2A model is redefined here.
+#
+# PHASES (every typed confirmation is validated by the workflow BEFORE any SSH session; none passes an ARG):
+#   stage2b-preflight            READ-ONLY: host / runtime / the five locked variables / schema / jobs / the two-class inventory
+#                                partition / the complete legacy reference census / capacity / native + migrated proofs /
+#                                volume / exception / bucket partition / leak gates → B25_STAGE2B_PREFLIGHT_READY
+#   stage2b-migrate-dry-run      READ-ONLY (product state): preflight in the same session → the migrate image built from
+#                                exactly the product commit (docker image cache only) → `migrate-storage --dry-run` TWICE in a
+#                                one-off container (target root opened read-only by the product; the only write is the
+#                                summary file inside the discarded container) → identical sanitized summaries → inventory
+#                                unchanged → B25_STAGE2B_DRY_RUN_REPORTED
+#   stage2b-migrate-copy-verify  GUARDED MUTATION (typed confirmations: product commit, maintenance window,
+#                                COPY_B25_STAGE2B_LEGACY_TO_FS): preflight → dry-run → copy lock → `--copy` (bounded
+#                                concurrency / batch, read-back verified by the product) → `--verify` → every migrated row
+#                                proven (shape, file, retained source) → native class and bucket inventory identical to the
+#                                preflight → B25_STAGE2B_COPY_VERIFIED. Nothing is deleted anywhere; no env line is rendered.
+#   stage2b-postverify           READ-ONLY: `--verify` → inventory L = 0, U = 0 → two-class proofs → bucket unchanged →
+#                                B25_STAGE2B_POSTVERIFY_READY
+# Rollback boundary (design §6.3 rule 9): the retained legacy source IS the rollback copy; this tooling has no revert mode,
+# never deletes a source, never sets legacy delete, never turns the fallback or the mirror off, never edits the env file.
+# =============================================================================
+stage2b_dispatch() {
+  case "$1" in
+    stage2b-preflight) phase_stage2b_preflight ;;
+    stage2b-migrate-dry-run) phase_stage2b_migrate_dry_run ;;
+    stage2b-migrate-copy-verify) phase_stage2b_migrate_copy_verify ;;
+    stage2b-postverify) phase_stage2b_postverify ;;
+    *) fail "stage2b phase '$1' is not implemented" ;;
+  esac
+}
+stage2b_image_tag() { printf '%s:b25-stage2b-%s' "$S2B_IMAGE_REPO" "${STAGE2B_PRODUCT_SHA:0:12}"; }
+stage2b_lock_file() { printf '%s/%s' "$HOME" "$S2B_LOCK_NAME"; }
+# ---- the sanitized summary of migrate-storage → flat counts / booleans (runs inside the api container; stdin = the JSON) ----
+STAGE2B_SUMMARY_JS=$(cat <<'JS'
+const fs = require("node:fs");
+const { createHash } = require("node:crypto");
+const a = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "{}");
+const exc = String(a.exception || "");
+const out = { parse_ok: false, mode: "none", complete: false, read_only: false, target_root: "unknown", source_references: 0, unique_objects: 0, registered: 0, registrations_planned: 0, unattributable: 0, processed: 0,
+  planned: 0, copied: 0, already: 0, verified: 0, not_migrated: 0, unregistered: 0, missing_source: 0, checksum_mismatch: 0, conflict: 0, duplicate: 0, failed: 0, skipped: 0,
+  duplicate_groups: 0, problems: 0, exception_listed: 0, digest: "" };
+let s;
+try { s = JSON.parse(fs.readFileSync(0, "utf8")); } catch (e) { console.log(JSON.stringify(out)); process.exit(0); }
+if (!s || typeof s !== "object" || typeof s.counts !== "object" || s.counts === null) { console.log(JSON.stringify(out)); process.exit(0); }
+const modes = new Set(["dry-run", "copy", "verify"]);
+out.parse_ok = modes.has(s.mode) && typeof s.complete === "boolean" && Array.isArray(s.problems) && Array.isArray(s.duplicateGroups);
+if (!out.parse_ok) { console.log(JSON.stringify(out)); process.exit(0); }
+out.mode = s.mode; out.complete = s.complete === true; out.read_only = s.readOnly === true; out.target_root = typeof s.targetRoot === "string" ? s.targetRoot : "unknown";
+for (const k of ["sourceReferences", "uniqueObjects", "registered", "registrationsPlanned", "unattributable", "processed"]) { const v = Number(s[k]); out[k.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase())] = Number.isInteger(v) && v >= 0 ? v : 0; }
+for (const k of Object.keys(out)) { if (k in s.counts) { const v = Number(s.counts[k]); out[k] = Number.isInteger(v) && v >= 0 ? v : 0; } }
+out.duplicate_groups = s.duplicateGroups.length; out.problems = s.problems.length;
+out.exception_listed = s.problems.filter((p) => p && String(p.objectId || "") === exc).length;
+const stable = { mode: out.mode, complete: out.complete, read_only: out.read_only, target_root: out.target_root, source_references: out.source_references, unique_objects: out.unique_objects, registered: out.registered, registrations_planned: out.registrations_planned, unattributable: out.unattributable, processed: out.processed, counts: s.counts, problems: s.problems.map((p) => [String(p.objectId || ""), Number(p.companyId || 0), String(p.kind || ""), String(p.status || ""), String(p.code || "")]).sort(), groups: s.duplicateGroups.map((g) => [Number(g.companyId || 0), String(g.legacyKeyHash || "")]).sort() };
+out.digest = createHash("md5").update(JSON.stringify(stable)).digest("hex");
+console.log(JSON.stringify(out));
+JS
+)
+# ---- the retained legacy SOURCE of a migrated row: present in the configured bucket, size + plaintext digest = the row, canonical generation, unmarked original ----
+STAGE2B_SOURCE_JS=$(cat <<'JS'
+const { Storage } = require("@google-cloud/storage");
+const { createHash } = require("node:crypto");
+(async () => {
+  const bucket = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const rows = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "[]");
+  const storage = new Storage();
+  const out = { rows: rows.length, present: 0, bucket_ok: 0, size_ok: 0, sha_ok: 0, generation_ok: 0, marked: 0, generations_md5: "" };
+  const gens = [];
+  for (const r of rows) {
+    const m = /^gs:\/\/([^/]+)\/(.+)$/.exec(String(r.l || ""));
+    if (!m) continue;
+    if (m[1] === bucket) out.bucket_ok += 1;
+    const f = storage.bucket(m[1]).file(m[2]);
+    let meta; try { [meta] = await f.getMetadata(); } catch (e) { if (e && e.code === 404) continue; throw e; }
+    out.present += 1;
+    if (meta.metadata && meta.metadata["lcp-object-id"]) out.marked += 1;
+    const gen = typeof meta.generation === "string" ? meta.generation : "";
+    if (/^[1-9]\d*$/.test(gen)) out.generation_ok += 1;
+    gens.push(String(r.id) + ":" + gen);
+    if (String(meta.size) === String(r.s)) out.size_ok += 1;
+    if (Number(meta.size) <= 8 * 1024 * 1024) { const [buf] = await f.download(); if (createHash("sha256").update(buf).digest("hex") === r.sha) out.sha_ok += 1; }
+  }
+  gens.sort(); out.generations_md5 = createHash("md5").update(gens.join("\n")).digest("hex");
+  console.log(JSON.stringify(out));
+})().catch((e) => console.log(JSON.stringify({ error: e.code || e.name || "unknown" })));
+JS
+)
+stage2b_summary_facts() {   # <prefix> <exit code> <summary json text> → <prefix>_* facts (counts, booleans, exit meaning, digest)
+  local p="$1" rc="$2" txt="$3" arg cj k
+  arg="$(printf '{"exception":"%s"}' "$B25PHYS_UUID" | base64 -w0)"
+  cj="$(printf '%s\n' "$txt" | api_node_stdin "$STAGE2B_SUMMARY_JS" "$arg")"
+  echo "${p}_exit=$rc"; echo "${p}_exit_meaning=$(s2b_exit_meaning "$rc")"
+  if ! [[ "$cj" == \{* ]]; then echo "${p}_parse_ok=false"; return 0; fi
+  for k in source_references unique_objects registered registrations_planned unattributable processed planned copied already verified not_migrated unregistered missing_source checksum_mismatch conflict duplicate failed skipped duplicate_groups problems exception_listed; do
+    echo "${p}_$k=$(census_field "$cj" "$k" count 2>/dev/null || echo '?')"
+  done
+  for k in parse_ok complete read_only; do echo "${p}_$k=$(json_flat_field "$cj" "$k" 2>/dev/null | grep -xE 'true|false' || echo '?')"; done
+  # json_flat_field returns a JSON string value WITH its quotes; only the fixed vocabularies below are ever printed
+  echo "${p}_mode=$(json_flat_field "$cj" mode 2>/dev/null | tr -d '"' | grep -xE 'dry-run|copy|verify|none' || echo '?')"
+  echo "${p}_target_root=$(json_flat_field "$cj" target_root 2>/dev/null | tr -d '"' | grep -xE 'present|absent|n/a|unknown' || echo '?')"
+  echo "${p}_digest=$(census_field "$cj" digest hex32 2>/dev/null || echo '?')"
+}
+stage2b_output_leaks() {   # <text> → number of lines carrying a storage path, bucket reference, tenant key, 64-hex digest, key assignment or signature
+  printf '%s\n' "$1" | grep -cE '/data/objects|gs://|tenants/[0-9]+/|OBJECT_STORAGE_ENCRYPTION_KEY=|[0-9a-f]{64}|X-Goog-Signature|Signature=' || true
+}
+# ---- readers (counts, booleans, md5 digests only) ----
+stage2b_lock_facts() { echo "s2b_lock_absent=$([ ! -e "$(stage2b_lock_file)" ] && echo true || echo false)"; }
+stage2b_partition_facts() { q "$(s2b_partition_sql)"; }
+stage2b_census_facts() { q "$(s2b_census_sql)"; q "$(s2b_candidate_bytes_sql)"; }
+stage2b_capacity_facts() {
+  local v; v="$(compose exec -T api sh -c 'df -B1 --output=avail /data/objects 2>/dev/null | tail -1' 2>/dev/null | tr -d ' \r')"
+  echo "vol_free_bytes=$([[ "$v" =~ ^[0-9]+$ ]] && echo "$v" || echo '?')"
+}
+stage2b_image_facts() {
+  local tag label; tag="$(stage2b_image_tag)"
+  if docker image inspect "$tag" >/dev/null 2>&1; then
+    echo "image_present=true"; label="$(docker image inspect "$tag" -f "{{index .Config.Labels \"$S2B_IMAGE_LABEL\"}}" 2>/dev/null || true)"
+    echo "image_commit_ok=$([ "$label" = "$STAGE2B_PRODUCT_SHA" ] && echo true || echo false)"
+  else echo "image_present=false"; echo "image_commit_ok=false"; fi
+}
+stage2b_image_ensure() {   # tooling image built from exactly the product commit of the app checkout (docker image cache only; no product state)
+  local tag; tag="$(stage2b_image_tag)"
+  [ "$(git -C "$APP_DIR" rev-parse HEAD)" = "$STAGE2B_PRODUCT_SHA" ] || fail "app checkout is not the Stage 2B product commit"
+  [ "$(git -C "$APP_DIR" status --porcelain | wc -l)" = "0" ] || fail "app checkout is dirty"
+  if ! docker image inspect "$tag" >/dev/null 2>&1; then
+    export DOCKER_BUILDKIT=1
+    docker build --quiet -f "$APP_DIR/docker/Dockerfile.api" --target migrate --label "$S2B_IMAGE_LABEL=$STAGE2B_PRODUCT_SHA" -t "$tag" "$APP_DIR" >/dev/null || fail "migrate image build failed"
+  fi
+  [ "$(docker image inspect "$tag" -f "{{index .Config.Labels \"$S2B_IMAGE_LABEL\"}}")" = "$STAGE2B_PRODUCT_SHA" ] || fail "migrate image is not labelled with the product commit"
+}
+stage2b_class_facts() {   # <nat|mig> → per-class facts: rows / predicate / association / keys digest / file probe (+ mirror probe for native, source probe for migrated)
+  local cls="$1" p W pred live assoc rows_b64 fj k mrows_b64 mj
+  case "$cls" in nat) p=nat; pred="$(s2b_native_sql 'so.')" ;; mig) p=mig; pred="$(s2b_migrated_sql 'so.')" ;; *) return 1 ;; esac
+  W="so.id <> '$B25PHYS_UUID' and not $(s2b_smoke_row_sql 'so.') and not $(s2b_duplicate_legacy_sql 'so.') and $pred"
+  live="$(stage2a_live_row_sql 'so.')"; assoc="$(stage2a_assoc_sql 'so.')"
+  echo "${p}_rows=$(q "select count(*) from storage_objects so where $W")"
+  if [ "$cls" = nat ]; then echo "${p}_live_ok=$(q "select count(*) from storage_objects so where $W and $live")"; else echo "${p}_shape_ok=$(q "select count(*) from storage_objects so where $W")"; fi
+  echo "${p}_assoc_ok=$(q "select count(*) from storage_objects so where $W and $assoc")"
+  echo "${p}_keys_md5=$(q "select md5(coalesce(string_agg(so.storage_key, E'\n' order by so.storage_key collate \"C\"), '')) from storage_objects so where $W")"
+  rows_b64="$(q "select json_build_object('marker', '', 'rows', coalesce(json_agg(json_build_object('id', so.id, 'k', so.storage_key, 's', so.size_bytes)), '[]'::json)) from storage_objects so where $W" | base64 -w0)"
+  fj="$(api_node "$STAGE2A_FS_VERIFY_JS" "$rows_b64")"
+  echo "${p}_pf_read_ok=$(census_field "$fj" rows count >/dev/null 2>&1 && echo true || echo false)"
+  for k in present regular owner_ok mode_ok magic_ok pdf_free size_differs; do echo "${p}_pf_$k=$(census_field "$fj" "$k" count 2>/dev/null || echo '?')"; done
+  echo "${p}_pf_cipher_md5=$(census_field "$fj" rows_cipher_md5 hex32 2>/dev/null || echo '?')"
+  if [ "$cls" = nat ]; then
+    for k in tenant_files other_files symlinks; do echo "fs_$k=$(census_field "$fj" "$k" count 2>/dev/null || echo '?')"; done
+    mrows_b64="$(q "select coalesce(json_agg(json_build_object('id', so.id, 'k', so.storage_key, 'm', so.mirror_key, 's', so.size_bytes, 'sha', so.sha256)), '[]'::json) from storage_objects so where $W" | base64 -w0)"
+    mj="$(api_node "$STAGE2A_MIRROR_JS" "$mrows_b64")"
+    echo "${p}_pm_read_ok=$(census_field "$mj" rows count >/dev/null 2>&1 && echo true || echo false)"
+    for k in present bucket_ok canonical_key marker_ok generation_ok size_ok sha_ok; do echo "${p}_pm_$k=$(census_field "$mj" "$k" count 2>/dev/null || echo '?')"; done
+    echo "${p}_pm_generations_md5=$(census_field "$mj" generations_md5 hex32 2>/dev/null || echo '?')"
+  else
+    # migrated rows: the file probe names must match the evaluator (mf_*); the retained source probe (ms_*)
+    for k in present regular owner_ok mode_ok magic_ok size_differs; do echo "${p}_mf_$k=$(census_field "$fj" "$k" count 2>/dev/null || echo '?')"; done
+    echo "${p}_mf_read_ok=$(census_field "$fj" rows count >/dev/null 2>&1 && echo true || echo false)"
+    mrows_b64="$(q "select coalesce(json_agg(json_build_object('id', so.id, 'l', so.legacy_key, 's', so.size_bytes, 'sha', so.sha256)), '[]'::json) from storage_objects so where $W" | base64 -w0)"
+    mj="$(api_node "$STAGE2B_SOURCE_JS" "$mrows_b64")"
+    echo "${p}_ms_read_ok=$(census_field "$mj" rows count >/dev/null 2>&1 && echo true || echo false)"
+    for k in present bucket_ok size_ok sha_ok generation_ok marked; do echo "${p}_ms_$k=$(census_field "$mj" "$k" count 2>/dev/null || echo '?')"; done
+    echo "${p}_ms_generations_md5=$(census_field "$mj" generations_md5 hex32 2>/dev/null || echo '?')"
+  fi
+}
+stage2b_facts() {   # the complete read-only fact stream shared by every form
+  local cid rf mg; cid="$(compose ps -q api || true)"
+  stage2a_host_facts; stage2a_container_facts "$cid"; stage2a_readyz_facts
+  stage2a_init_facts "$cid"; stage2a_container_env_facts; stage2a_web_leak_facts
+  mg="$(stage2a_env_managed_of activate < "$ENV_FILE" | sha256sum | cut -c1-64)"
+  echo "env_file_managed_ok=$([ "$mg" = "$(stage2a_env_lines activate | sha256sum | cut -c1-64)" ] && echo true || echo false)"
+  echo "env_file_key_lines=$(stage2a_key_lines)"
+  rf="$(stage2a_root_facts "$cid")"; printf '%s\n' "$rf"; echo "root_entries_allowed=$(stage2a_root_entries_allowed "$rf")"
+  stage2a_exception_facts
+  echo "refs_legacy_count=$(references_legacy "")"; echo "refs_ambiguous=$(references_ambiguous "")"
+  stage2b_lock_facts; stage2b_partition_facts; stage2b_census_facts; stage2b_capacity_facts; stage2b_image_facts
+  stage2b_class_facts nat; stage2b_class_facts mig
+}
+stage2b_print() { printf '%s\n' "$1" | grep -E "$2" | sed 's/^/  /'; }
+stage2b_cli() {   # <dry-run|verify|copy> → stdout: the sanitized summary JSON followed by one line __S2B_EXIT=<rc>; the CLI's own log never leaves the container
+  local mode="$1" args pg_net cred gid out rc
+  case "$mode" in
+    dry-run) args="--dry-run" ;;
+    verify)  args="--verify" ;;
+    copy)    args="--copy --concurrency $S2B_COPY_CONCURRENCY --batch $S2B_COPY_BATCH --recheck" ;;
+    *) fail "stage2b_cli: unknown mode" ;;
+  esac
+  pg_net="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$(compose ps -q postgres)" 2>/dev/null | head -c 200)"
+  [[ "$pg_net" =~ ^[A-Za-z0-9_.-]+$ ]] || fail "stage2b_cli: the compose network could not be resolved"
+  cred="$(compose config 2>/dev/null | grep -oE 'source: /[^ ]*gcs-service-account\.json' | head -1 | cut -d' ' -f2)"
+  [ -n "$cred" ] && [ -e "$cred" ] || fail "stage2b_cli: the api service's bucket credential mount could not be resolved"
+  gid="$(grep -E '^GCS_CREDENTIAL_GID=' "$ENV_FILE" | tail -1 | cut -d= -f2 | tr -d '"')"
+  [[ "$gid" =~ ^[0-9]+$ ]] || fail "stage2b_cli: GCS_CREDENTIAL_GID is not numeric"
+  # the one-off container: the migrate image of exactly the product commit, the api env file (read inside the container only),
+  # the api runtime uid/gid (files it writes are the api's), the credential group, the object volume, the credential read-only
+  out="$(docker run --rm --network "$pg_net" --env-file "$ENV_FILE" -e HOME=/tmp -e NODE_ENV=production --user "$S2B_RUNTIME_UID_GID" --group-add "$gid" -v "${STAGE2A_VOLUME}:/data/objects" -v "$cred:/secrets/gcs-service-account.json:ro" --entrypoint sh "$(stage2b_image_tag)" -c "cd /repo && pnpm --filter @workspace/api-server run migrate-storage -- $args --out /tmp/b25-s2b-summary.json >/tmp/b25-s2b-cli.log 2>&1; rc=\$?; cat /tmp/b25-s2b-summary.json 2>/dev/null; echo; echo __S2B_EXIT=\$rc" </dev/null 2>/dev/null || true)"
+  rc="$(printf '%s\n' "$out" | grep -oE '^__S2B_EXIT=[0-9]+$' | tail -1 | cut -d= -f2)"
+  [[ "$rc" =~ ^[0-9]+$ ]] || rc=255
+  printf '%s\n' "$out" | grep -vE '^__S2B_EXIT='
+  echo "__S2B_EXIT=$rc"
+}
+stage2b_cli_run() {   # <mode> <prefix> → facts of one CLI run (summary parsed inside the api container; the JSON itself is never printed)
+  local mode="$1" p="$2" raw rc js
+  raw="$(stage2b_cli "$mode")"; rc="$(printf '%s\n' "$raw" | grep -oE '^__S2B_EXIT=[0-9]+$' | tail -1 | cut -d= -f2)"; js="$(printf '%s\n' "$raw" | grep -vE '^__S2B_EXIT=')"
+  stage2b_summary_facts "$p" "${rc:-255}" "$js"
+}
+stage2b_evaluate() {   # <form> <facts> → prints the verdict, returns 0 only when the form's marker is TRUE
+  local form="$1" facts="$2" verdict marker
+  case "$form" in preflight) marker=B25_STAGE2B_PREFLIGHT_READY ;; dryrun) marker=B25_STAGE2B_DRY_RUN_REPORTED ;; copy) marker=B25_STAGE2B_COPY_VERIFIED ;; postverify) marker=B25_STAGE2B_POSTVERIFY_READY ;; *) fail "stage2b_evaluate: unknown form" ;; esac
+  facts+=$'\n'"s2b_output_leaks=$(stage2b_output_leaks "$facts")"
+  if verdict="$(printf '%s' "$facts" | stage2b_eligibility "$form")"; then printf '%s\n' "$verdict"; else printf '%s\n' "$verdict"; fail "stage2b evaluator ($form) failed — the lines above are the verdict"; fi
+  rm -f "$HOME"/.b25-s1-node.err
+  printf '%s\n' "$verdict" | grep -qx "$marker=TRUE"
+}
+stage2b_sections() {   # <facts> → the sanitized sections of a read-only report
+  section "1. host / deployment / containers / readiness (product $STAGE2B_PRODUCT_SHA expected)"; stage2b_print "$1" '^(head_sha|current_deploy_sha|dirty|lock_absent|s2b_lock_absent|schema_fingerprint|storage_jobs_active|dead_jobs_total|api_running|api_health|web_health|pg_health|readyz_)'
+  section "2. storage runtime configuration (values never printed) and the api log counters"; stage2b_print "$1" '^(init_|banner_|env_|log_|leak_|web_leak_)'
+  section "3. the named volume"; stage2b_print "$1" '^(mount_|root_|fs_)'
+  section "4. two-class inventory partition, legacy reference census, candidates, capacity, image"; stage2b_print "$1" '^(s2b_|census_(total|unregistered|legacy_source|migrated|native_resolved|unclassified|dup_|exception_refs|smoke_refs)|cand_|vol_free_bytes|image_)'
+  section "5. native class (Correction 5 proofs) and migrated class (Stage 2B proofs)"; stage2b_print "$1" '^(nat_|mig_)'
+  section "6. Stage 1 exception, bucket partition, originals, references"; stage2b_print "$1" '^(exc_|inv_|census_(objects|bytes|marked|generationless|md5)|unmarked_|originals_|refs_)'
+}
+# ---- phases ----
+phase_stage2b_preflight() {   # READ-ONLY; no argument is read
+  section "0. read-only guard"; stage2a_readonly_guard
+  local facts; facts="$(stage2b_facts)"; stage2b_sections "$facts"
+  section "7. preflight verdict (read-only decision; nothing is changed)"
+  if stage2b_evaluate preflight "$facts"; then log "stage2b-preflight complete (read-only; nothing changed; B25_STAGE2B_PREFLIGHT_READY=TRUE)"
+  else fail "stage2b-preflight: prerequisites not met (read-only; nothing changed; B25_STAGE2B_PREFLIGHT_READY=FALSE)"; fi
+}
+stage2b_dryrun_facts() {   # the product's --dry-run twice + inventory unchanged; appended to a fresh fact stream
+  local before after r1 r2 d1 d2 same inv
+  before="$(stage2b_partition_facts; stage2b_census_facts)"
+  r1="$(stage2b_cli_run dry-run dr)"; r2="$(stage2b_cli_run dry-run dr2)"
+  after="$(stage2b_partition_facts; stage2b_census_facts)"
+  d1="$(printf '%s\n' "$r1" | grep -oE '^dr_digest=[0-9a-f]{32}$' | cut -d= -f2)"; d2="$(printf '%s\n' "$r2" | grep -oE '^dr2_digest=[0-9a-f]{32}$' | cut -d= -f2)"
+  same=false; [ -n "$d1" ] && [ "$d1" = "$d2" ] && same=true
+  inv=false; [ "$(printf '%s' "$before" | md5sum)" = "$(printf '%s' "$after" | md5sum)" ] && inv=true
+  printf '%s\n' "$r1"; echo "dr_repeat_identical=$same"; echo "dr_inventory_unchanged=$inv"
+}
+phase_stage2b_migrate_dry_run() {   # READ-ONLY for product state; no argument is read
+  section "0. read-only guard"; stage2a_readonly_guard
+  local facts; facts="$(stage2b_facts)"; stage2b_sections "$facts"
+  section "7. preflight verdict (must be TRUE before the product command runs)"
+  stage2b_evaluate preflight "$facts" || fail "stage2b-migrate-dry-run: preflight not ready — the product command was not run"
+  section "8. migrate image from exactly the product commit (docker image cache only)"; stage2b_image_ensure; stage2b_image_facts | sed 's/^/  /'
+  section "9. migrate-storage --dry-run twice (read-only target; the summary never leaves the container unparsed)"
+  local dr; dr="$(stage2b_dryrun_facts)"; stage2b_print "$dr" '^dr_(exit|exit_meaning|parse_ok|mode|complete|read_only|target_root|source_references|unique_objects|unattributable|planned|already|missing_source|checksum_mismatch|conflict|duplicate|failed|duplicate_groups|problems|exception_listed|repeat_identical|inventory_unchanged)='
+  facts="$(stage2b_facts)"$'\n'"$dr"
+  section "10. dry-run verdict (read-only decision; nothing is changed)"
+  if stage2b_evaluate dryrun "$facts"; then log "stage2b-migrate-dry-run complete (nothing changed; B25_STAGE2B_DRY_RUN_REPORTED=TRUE)"
+  else fail "stage2b-migrate-dry-run: the dry-run is not clean (nothing changed; B25_STAGE2B_DRY_RUN_REPORTED=FALSE)"; fi
+}
+phase_stage2b_migrate_copy_verify() {   # GUARDED MUTATION (confirmed by the workflow BEFORE SSH); no argument is read; nothing is deleted
+  section "0. read-only guard (the copy itself is performed by the product command, never by this shell)"; stage2a_readonly_guard
+  local lock; lock="$(stage2b_lock_file)"; [ ! -e "$lock" ] || fail "a Stage 2B copy lock is present — a previous copy did not finish; review before any retry"
+  local facts pre; facts="$(stage2b_facts)"; stage2b_sections "$facts"
+  section "7. preflight verdict (must be TRUE before anything else)"
+  stage2b_evaluate preflight "$facts" || fail "stage2b-migrate-copy-verify: preflight not ready — nothing copied"
+  pre="pre_candidates=$(printf '%s\n' "$facts" | grep -oE '^census_unregistered=[0-9]+$' | cut -d= -f2)"$'\n'"pre_migrated=$(printf '%s\n' "$facts" | grep -oE '^s2b_migrated=[0-9]+$' | cut -d= -f2)"$'\n'"pre_native=$(printf '%s\n' "$facts" | grep -oE '^s2b_native=[0-9]+$' | cut -d= -f2)"$'\n'"pre_nat_keys_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_keys_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_nat_pf_cipher_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_pf_cipher_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_nat_pm_generations_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_pm_generations_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_census_md5=$(printf '%s\n' "$facts" | grep -oE '^census_md5=[0-9a-f]{32}$' | cut -d= -f2)"
+  section "8. migrate image from exactly the product commit"; stage2b_image_ensure; stage2b_image_facts | sed 's/^/  /'
+  section "9. dry-run twice (must be clean before the copy)"
+  local dr; dr="$(stage2b_dryrun_facts)"; stage2b_print "$dr" '^dr_(exit_meaning|complete|planned|already|missing_source|checksum_mismatch|conflict|duplicate|failed|exception_listed|repeat_identical|inventory_unchanged)='
+  stage2b_evaluate dryrun "$(stage2b_facts)"$'\n'"$dr" || fail "stage2b-migrate-copy-verify: the dry-run is not clean — nothing copied"
+  section "10. copy (the product's --copy: register, copy, read back, flip rows; a conflicting local object is never overwritten; nothing is deleted)"
+  ( umask 077; echo "started_at=$(date -u +%FT%TZ) product=$STAGE2B_PRODUCT_SHA" > "$lock" )
+  local cp vf; cp="$(stage2b_cli_run copy cp)"; stage2b_print "$cp" '^cp_(exit|exit_meaning|parse_ok|mode|complete|registered|processed|planned|copied|already|missing_source|checksum_mismatch|conflict|duplicate|failed|skipped|duplicate_groups|problems|exception_listed)='
+  section "11. verify (the product's --verify: every migrated object read back against the inventory digest)"
+  vf="$(stage2b_cli_run verify vf)"; stage2b_print "$vf" '^vf_(exit|exit_meaning|parse_ok|mode|complete|read_only|verified|not_migrated|unregistered|checksum_mismatch|failed|problems|exception_listed)='
+  section "12. post-copy state (two-class inventory, native class and bucket inventory compared with the preflight)"
+  facts="$(stage2b_facts)"$'\n'"$pre"$'\n'"$cp"$'\n'"$vf"; stage2b_sections "$facts"
+  rm -f "$lock"
+  section "13. copy-verify verdict"
+  if stage2b_evaluate copy "$facts"; then log "stage2b-migrate-copy-verify complete (B25_STAGE2B_COPY_VERIFIED=TRUE; sources retained; nothing deleted)"
+  else fail "stage2b-migrate-copy-verify: the copy is NOT fully verified (B25_STAGE2B_COPY_VERIFIED=FALSE) — nothing deleted; the retained legacy sources remain the rollback copies; review the lines above before any further authorized copy"; fi
+}
+phase_stage2b_postverify() {   # READ-ONLY; no argument is read
+  section "0. read-only guard"; stage2a_readonly_guard
+  local facts; facts="$(stage2b_facts)"; stage2b_sections "$facts"
+  section "7. migrate image from exactly the product commit"; stage2b_image_ensure; stage2b_image_facts | sed 's/^/  /'
+  section "8. migrate-storage --verify (read-only target)"
+  local vf; vf="$(stage2b_cli_run verify vf)"; stage2b_print "$vf" '^vf_(exit|exit_meaning|parse_ok|mode|complete|read_only|target_root|verified|not_migrated|unregistered|checksum_mismatch|failed|problems|exception_listed)='
+  facts="$(stage2b_facts)"$'\n'"$vf"
+  section "9. postverify verdict (read-only decision; nothing is changed)"
+  if stage2b_evaluate postverify "$facts"; then log "stage2b-postverify complete (read-only; nothing changed; B25_STAGE2B_POSTVERIFY_READY=TRUE)"
+  else fail "stage2b-postverify: prerequisites not met (read-only; nothing changed; B25_STAGE2B_POSTVERIFY_READY=FALSE)"; fi
+}
