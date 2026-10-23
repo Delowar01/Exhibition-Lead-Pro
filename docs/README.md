@@ -35,6 +35,8 @@ gotchas now live in [`gotchas.md`](gotchas.md) (with a summary pointer in
 | [Localhost Development](LOCALHOST_DEVELOPMENT.md) | Local workflow and the **single authoritative test baseline** (§7). |
 | [Hostinger VPS Deployment](HOSTINGER_VPS_DEPLOYMENT.md) | The hosted dev stack: deploy flow, environment, backups, audit-retention operator contract. |
 | [Backup and Recovery](BACKUP_AND_RECOVERY.md) | Scheduled PostgreSQL backups, external health alert, restore procedures, off-host status (code complete, activation deferred by owner). |
+| [Master Roadmap](MASTER_ROADMAP.md) | Status of record for every track (B1–B24, B25 Stages 1 / 2A–2E, mobile R1 / R2, Gemini configuration, physical acceptance, Plan Builder, Platform Owner surface, open defects, B26) with one explicit state per row and the release criteria. |
+| [Plan Builder Requirements](PLAN_BUILDER_REQUIREMENTS.md) | Subscription & Plan Builder requirements PB-1 … PB-5 (pending core roadmap feature): approved baseline vs proposed detail, invariants, data-model proposal, owner decisions with recommended defaults. No schema, no production change. |
 | [B23 Final Reconciliation](B23_FINAL_RECONCILIATION.md) | Gap register G-1…G-10, release gates and the ordered completion plan, with the B24 status addendum. |
 | [B19 Billing Audit](B19_BILLING_AUDIT.md), [B20 Subscription Lifecycle](B20_SUBSCRIPTION_LIFECYCLE.md), [B21 Platform Owner Admin](B21_PLATFORM_OWNER_ADMIN.md) | Batch design records (B19 superseded by B20). |
 | [Local & Staging Runbook](LOCAL_AND_STAGING_RUNBOOK.md), [Portable Environment Setup](PORTABLE_ENVIRONMENT_SETUP.md), [Secret & Portability Audit](SECRET_AND_PORTABILITY_AUDIT.md) | Export-era (August 2026) references; current topology and baselines live in the documents above. |
