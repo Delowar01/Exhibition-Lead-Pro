@@ -235,7 +235,7 @@ stage2b_cli() {   # <dry-run|verify|copy> → stdout: the sanitized summary JSON
   # the one-off container: the migrate image of exactly the product commit, the api env file (read inside the container only),
   # the api runtime uid/gid (files it writes are the api's), the credential group, the object volume (ro / rw per mode), the
   # credential read-only
-  out="$(docker run --rm --network "$pg_net" --env-file "$ENV_FILE" -e HOME=/tmp -e NODE_ENV=production --user "$S2B_RUNTIME_UID_GID" --group-add "$gid" -v "${STAGE2A_VOLUME}:/data/objects:$vmode" -v "$cred:/secrets/gcs-service-account.json:ro" --entrypoint sh "$(stage2b_image_tag)" -c "cd /repo && pnpm --filter @workspace/api-server run migrate-storage -- $args --out /tmp/b25-s2b-summary.json >/tmp/b25-s2b-cli.log 2>&1; rc=\$?; cat /tmp/b25-s2b-summary.json 2>/dev/null; echo; echo __S2B_EXIT=\$rc" </dev/null 2>/dev/null || true)"
+  out="$(docker run --rm --network "$pg_net" --env-file "$ENV_FILE" -e HOME=/tmp -e NODE_ENV=production --user "$S2B_RUNTIME_UID_GID" --group-add "$gid" -v "${STAGE2A_VOLUME}:/data/objects:$vmode" -v "$cred:/secrets/gcs-service-account.json:ro" --entrypoint sh "$(stage2b_image_tag)" -c "cd /repo && pnpm --filter @workspace/api-server run migrate-storage $args --out /tmp/b25-s2b-summary.json >/tmp/b25-s2b-cli.log 2>&1; rc=\$?; cat /tmp/b25-s2b-summary.json 2>/dev/null; echo; echo __S2B_EXIT=\$rc" </dev/null 2>/dev/null || true)"
   rc="$(printf '%s\n' "$out" | grep -oE '^__S2B_EXIT=[0-9]+$' | tail -1 | cut -d= -f2)"
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=255
   printf '%s\n' "$out" | grep -vE '^__S2B_EXIT='
