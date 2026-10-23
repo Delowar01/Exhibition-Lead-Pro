@@ -250,7 +250,7 @@ stage2b_evaluate() {   # <form> <facts> → prints the verdict, returns 0 only w
   local form="$1" facts="$2" verdict marker
   case "$form" in preflight) marker=B25_STAGE2B_PREFLIGHT_READY ;; dryrun) marker=B25_STAGE2B_DRY_RUN_REPORTED ;; copy) marker=B25_STAGE2B_COPY_VERIFIED ;; postverify) marker=B25_STAGE2B_POSTVERIFY_READY ;; *) fail "stage2b_evaluate: unknown form" ;; esac
   facts+=$'\n'"s2b_output_leaks=$(stage2b_output_leaks "$facts")"
-  if verdict="$(printf '%s' "$facts" | stage2b_eligibility "$form")"; then printf '%s\n' "$verdict"; else printf '%s\n' "$verdict"; fail "stage2b evaluator ($form) failed — the lines above are the verdict"; fi
+  if verdict="$(printf '%s\n' "$facts" | stage2b_eligibility "$form")"; then printf '%s\n' "$verdict"; else printf '%s\n' "$verdict"; fail "stage2b evaluator ($form) failed — the lines above are the verdict"; fi
   rm -f "$HOME"/.b25-s1-node.err
   printf '%s\n' "$verdict" | grep -qx "$marker=TRUE"
 }
