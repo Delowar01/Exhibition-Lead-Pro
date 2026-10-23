@@ -865,6 +865,221 @@ s2ar3_constants_ok() {
 stage2a_residue3_eligibility() { stage2a_residue_eligibility_for S2AR3 RESIDUE3; }
 stage2a_residue3_settled() { stage2a_residue_settled_for S2AR3 RESIDUE3; }
 
+# =============================================================================
+# B25 STAGE 2A — CORRECTION 7: EXACT RESIDUE OF THE CORRECTION-6 FINAL SMOKE RUN
+# 39880703889 (job 120177129536, tag 2c4bfb197fd4). That run passed its setup
+# (switched state, Correction 3 start gate with BRANDING_CHANGE_PROVEN, the
+# Correction 5 pre-smoke protected inventory 8 / 8 and its record), STEP=run
+# (62 / 62: first-party contract, encrypted fs rows, mirrors, logo) and the
+# VPS-side proofs of the two smoke rows (files 2 / 2, mirrors 2 / 2, leak gates
+# 0), then stopped in the RECORDED protected inventory of that same step: the
+# smoke tenant's own first-party logo key could not resolve through the strict
+# real-tenant predicate (refs_legacy_count=5 / refs_ambiguous=1 — the ops
+# classification defect corrected in b25-stage1-apply.sh by the same-run smoke
+# allowance), and the record comparison carried the smoke keys inside
+# tenant_keys_md5 (the second form defect, corrected in stage2a_protected_eval
+# below). No container was recreated. The always-cleanup deleted the two
+# disposable tenants through the product API (both 200), removed the disposable
+# owner 113 and the explicit disposable rows, then stopped closed on the two
+# tombstones that only the settle step may remove (never broadened). The residue:
+# two `deleted` fs tombstones of deleted company 60 (document 04769ee1…, 21546
+# bytes; branding_logo 6f2594d8…, 181 bytes; mirror keys set; last_error NULL;
+# both uuids read unmasked from the run log). Whether the product's own purge
+# has since removed their file and mirror object is UNKNOWN: the read-only
+# inspection proves the CURRENT physical state at the rows' own locations or,
+# when the rows are already gone, at the manifest's canonical locations (every
+# logo extension the product can write). The protected set P of the real
+# tenant is compared with the pre-smoke record that run's setup printed
+# (rec_* constants below). Denies the Stage 1 exception (f048b5d4…, company 53)
+# and every earlier manifest.
+# =============================================================================
+readonly S2AR4_RUN="39880703889"
+readonly S2AR4_JOB="120177129536"
+readonly S2AR4_TAG="2c4bfb197fd4"
+readonly S2AR4_COMPANY=60
+readonly S2AR4_COMPANIES="60,61"
+readonly S2AR4_USERS="113"
+readonly S2AR4_UUID_DOC="04769ee1-1739-4a06-9702-4a11d3682b23"
+readonly S2AR4_UUID_LOGO="6f2594d8-5e52-4fe2-9905-a53862f98108"
+readonly S2AR4_DOC_SIZE=21546
+readonly S2AR4_LOGO_SIZE=181          # the normalized served-object size observed by the run (authenticated and public logo GET: 181 bytes, image/png)
+readonly S2AR4_ROWS=2
+readonly S2AR4_UUIDS_Q="'$S2AR4_UUID_DOC','$S2AR4_UUID_LOGO'"
+readonly S2AR4_CSV="$S2AR4_UUID_DOC,$S2AR4_UUID_LOGO"
+readonly S2AR4_MANIFEST="$S2AR4_UUID_DOC,$S2AR4_UUID_LOGO|$S2AR4_COMPANIES|$S2AR4_USERS|$S2AR4_TAG"
+# Canonical locations derived from the product's own key scheme (storage.service.ts storeBuffer / keys.ts tenantKey):
+# a document at tenants/<cid>/documents/<uuid>; a branding logo at tenants/<cid>/branding/<uuid without dashes>.<ext>
+# where the product chooses the extension from the normalized image — every candidate the product can write is listed.
+readonly S2AR4_KEY_DOC="tenants/$S2AR4_COMPANY/documents/$S2AR4_UUID_DOC"
+readonly S2AR4_LOGO_HEX="6f2594d85e524fe29905a53862f98108"
+readonly S2AR4_KEY_LOGO_PNG="tenants/$S2AR4_COMPANY/branding/$S2AR4_LOGO_HEX.png"
+readonly S2AR4_KEY_LOGO_JPG="tenants/$S2AR4_COMPANY/branding/$S2AR4_LOGO_HEX.jpg"
+readonly S2AR4_KEY_LOGO_WEBP="tenants/$S2AR4_COMPANY/branding/$S2AR4_LOGO_HEX.webp"
+readonly S2AR4_LOGO_KEYS_Q="'$S2AR4_KEY_LOGO_PNG','$S2AR4_KEY_LOGO_JPG','$S2AR4_KEY_LOGO_WEBP'"
+readonly S2AR4_LOC_COUNT=4            # document key + the three logo candidates = the locations proven in the rows-absent form
+# Both rows were created during STEP=run (step 39: 00:54:14Z–00:54:30Z) and tombstoned by the API deletion of tenant 60 in
+# the always-cleanup (step 45: 00:54:57Z–00:55:08Z; both rows read `deleted` before 00:55:08Z) — run 39880703889 log.
+readonly S2AR4_CREATED_FROM="2026-10-23 00:54:10"
+readonly S2AR4_CREATED_TO="2026-10-23 00:54:35"
+readonly S2AR4_DELETED_FROM="2026-10-23 00:54:55"
+readonly S2AR4_DELETED_TO="2026-10-23 00:55:20"
+# The pre-smoke record of the protected live set exactly as the setup of run 39880703889 printed it (B25_PROTECTED_SET,
+# decoded: the database clock + the eight sanitized record keys). P must still be identity-for-identity this set.
+readonly S2AR4_REC_AT="2026-10-23 00:54:14.280258"
+readonly S2AR4_REC_PROTECTED_ROWS=2
+readonly S2AR4_REC_PROTECTED_MD5="ad76fa3df829680c6670469f3fe009e1"
+readonly S2AR4_REC_PROTECTED_BYTES=21299
+readonly S2AR4_REC_PROTECTED_KEYS_MD5="5c4f378ee12117ad6d40d02457d8cf1a"
+readonly S2AR4_REC_TENANT_KEYS_MD5="5c4f378ee12117ad6d40d02457d8cf1a"
+readonly S2AR4_REC_PF_CIPHER_MD5="c5f0796fffede47b7900def36ca59bd3"
+readonly S2AR4_REC_PM_GENERATIONS_MD5="2e554409f57e27a4874a840175146407"
+readonly S2AR4_REC_REFS_LEGACY_COUNT=4
+s2ar4_kind() { case "$1" in "$S2AR4_UUID_DOC") echo document;; "$S2AR4_UUID_LOGO") echo branding_logo;; *) return 1;; esac; }
+s2ar4_size() { case "$1" in "$S2AR4_UUID_DOC") echo "$S2AR4_DOC_SIZE";; "$S2AR4_UUID_LOGO") echo "$S2AR4_LOGO_SIZE";; *) return 1;; esac; }
+s2ar4_record_facts() {   # → the rec_* facts of the pre-smoke record of run 39880703889 (constants; the same shape stage2a_protected_recorded_facts yields from the stdin record)
+  echo "protected_at=$S2AR4_REC_AT"
+  echo "rec_protected_rows=$S2AR4_REC_PROTECTED_ROWS"; echo "rec_protected_md5=$S2AR4_REC_PROTECTED_MD5"; echo "rec_protected_bytes=$S2AR4_REC_PROTECTED_BYTES"
+  echo "rec_protected_keys_md5=$S2AR4_REC_PROTECTED_KEYS_MD5"; echo "rec_tenant_keys_md5=$S2AR4_REC_TENANT_KEYS_MD5"; echo "rec_pf_cipher_md5=$S2AR4_REC_PF_CIPHER_MD5"
+  echo "rec_pm_generations_md5=$S2AR4_REC_PM_GENERATIONS_MD5"; echo "rec_refs_legacy_count=$S2AR4_REC_REFS_LEGACY_COUNT"
+}
+s2ar4_manifest_rows_json() {   # → the fs-probe rows of the rows-absent form: the document key + every logo candidate (ids + keys only)
+  printf '{"id":"%s","k":"%s"},{"id":"%s","k":"%s"},{"id":"%s","k":"%s"},{"id":"%s","k":"%s"}' "$S2AR4_UUID_DOC" "$S2AR4_KEY_DOC" "$S2AR4_UUID_LOGO" "$S2AR4_KEY_LOGO_PNG" "$S2AR4_UUID_LOGO" "$S2AR4_KEY_LOGO_JPG" "$S2AR4_UUID_LOGO" "$S2AR4_KEY_LOGO_WEBP"
+}
+s2ar4_manifest_loc_json() {   # → the provider-probe rows of the rows-absent form (the canonical key in the configured bucket is the mirror location; no legacy location ever existed)
+  printf '{"id":"%s","k":"%s","l":null,"m":null},{"id":"%s","k":"%s","l":null,"m":null},{"id":"%s","k":"%s","l":null,"m":null},{"id":"%s","k":"%s","l":null,"m":null}' "$S2AR4_UUID_DOC" "$S2AR4_KEY_DOC" "$S2AR4_UUID_LOGO" "$S2AR4_KEY_LOGO_PNG" "$S2AR4_UUID_LOGO" "$S2AR4_KEY_LOGO_JPG" "$S2AR4_UUID_LOGO" "$S2AR4_KEY_LOGO_WEBP"
+}
+# The Correction 7 constants can never name the Stage 1 exception, nor overlap the three earlier manifests; the record
+# digests must be md5 hex; the windows must be ordered; the derived keys must be the product's shapes.
+s2ar4_constants_ok() {
+  [ "$S2AR4_UUID_DOC" != "$B25PHYS_UUID" ] && [ "$S2AR4_UUID_LOGO" != "$B25PHYS_UUID" ] && [ "$S2AR4_UUID_DOC" != "$S2AR4_UUID_LOGO" ] \
+    && [ "$S2AR4_COMPANY" != "$B25PHYS_COMPANY" ] && [[ ",$S2AR4_COMPANIES," != *",$B25PHYS_COMPANY,"* ]] && [[ ",$S2AR4_COMPANIES," == *",$S2AR4_COMPANY,"* ]] \
+    && [[ ",$S2AR4_COMPANIES," != *",1,"* ]] && [[ ",$S2AR4_USERS," != *",1,"* ]] && [[ ",$S2AR4_USERS," != *",2,"* ]] \
+    && [[ "$S2AR4_UUID_DOC" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] && [[ "$S2AR4_UUID_LOGO" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
+    && [ "$S2AR4_LOGO_HEX" = "${S2AR4_UUID_LOGO//-/}" ] && [ "$S2AR4_KEY_DOC" = "tenants/$S2AR4_COMPANY/documents/$S2AR4_UUID_DOC" ] && [ "$S2AR4_LOC_COUNT" = "4" ] \
+    && [ "$S2AR4_UUID_DOC" != "$S2AR_UUID_DOC" ] && [ "$S2AR4_UUID_LOGO" != "$S2AR_UUID_LOGO" ] && [ "$S2AR4_UUID_DOC" != "$S2AR2_UUID_DOC" ] && [ "$S2AR4_UUID_LOGO" != "$S2AR2_UUID_LOGO" ] && [ "$S2AR4_UUID_DOC" != "$S2AR3_UUID_DOC" ] && [ "$S2AR4_UUID_LOGO" != "$S2AR3_UUID_LOGO" ] \
+    && [[ ",$S2AR4_COMPANIES," != *",$S2AR_COMPANY,"* ]] && [[ ",$S2AR4_COMPANIES," != *",$S2AR2_COMPANY,"* ]] && [[ ",$S2AR4_COMPANIES," != *",$S2AR3_COMPANY,"* ]] \
+    && [ "$S2AR4_TAG" != "$S2AR_TAG" ] && [ "$S2AR4_TAG" != "$S2AR2_TAG" ] && [ "$S2AR4_TAG" != "$S2AR3_TAG" ] && [ "$S2AR4_ROWS" = "2" ] \
+    && [[ "$S2AR4_CREATED_FROM" < "$S2AR4_CREATED_TO" ]] && [[ "$S2AR4_DELETED_FROM" < "$S2AR4_DELETED_TO" ]] && [[ "$S2AR4_CREATED_TO" < "$S2AR4_DELETED_TO" ]] \
+    && [[ "$S2AR4_REC_PROTECTED_MD5" =~ ^[0-9a-f]{32}$ ]] && [[ "$S2AR4_REC_PROTECTED_KEYS_MD5" =~ ^[0-9a-f]{32}$ ]] && [[ "$S2AR4_REC_TENANT_KEYS_MD5" =~ ^[0-9a-f]{32}$ ]] && [[ "$S2AR4_REC_PF_CIPHER_MD5" =~ ^[0-9a-f]{32}$ ]] && [[ "$S2AR4_REC_PM_GENERATIONS_MD5" =~ ^[0-9a-f]{32}$ ]] \
+    && [ "$S2AR4_REC_PROTECTED_ROWS" = "2" ] && [ "$S2AR4_REC_REFS_LEGACY_COUNT" = "4" ]
+}
+
+# ---- stage2a_residue4_eligibility ----
+# key=value facts on stdin → the 16 residue-4 prerequisites with OK / FAIL under the PROTECTED model (Correction 5: the
+# inventory is the exception + P + the residue rows, the bucket a partition, never "the exception only"), then
+#   B25_STAGE2A_RESIDUE4_CONDITIONS_FAILED=<n>
+#   B25_STAGE2A_RESIDUE4_FORM=ROWS_PRESENT|ROWS_ABSENT|UNEXPECTED
+#   B25_STAGE2A_RESIDUE4_ELIGIBLE=TRUE|FALSE        (TRUE only: every condition OK AND the two tombstones present)
+#   B25_STAGE2A_RESIDUE4_ALREADY_ABSENT=TRUE|FALSE  (TRUE only: every condition OK AND both rows absent — nothing to settle)
+# A missing or malformed fact fails its condition (never defaults to a pass). Always returns 0.
+stage2a_residue4_eligibility() {
+  local -A f=()
+  s2ar_read_facts
+  local failed=0 n=0
+  g() { printf '%s' "${f[$1]:-<missing>}"; }
+  is_true() { [ "$(g "$1")" = "true" ]; }
+  is_false() { [ "$(g "$1")" = "false" ]; }
+  is_zero() { [ "$(g "$1")" = "0" ]; }
+  is_eq() { [ "$(g "$1")" = "$2" ]; }
+  cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "res4 $n: $1 — OK ($3)"; else echo "res4 $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
+  local ok R="$S2AR4_ROWS" FORM N PX
+  FORM="$(g res_form)"; case "$FORM" in ROWS_PRESENT|ROWS_ABSENT) ;; *) FORM=UNEXPECTED ;; esac
+  N="$(g protected_rows)"; [[ "$N" =~ ^[0-9]+$ ]] || N=-1
+  PX="$(g res_phys_expected)"; [[ "$PX" =~ ^[0-9]+$ ]] || PX=-1
+  ok=1; is_eq head_sha "$STAGE2A_PRODUCT_SHA" && is_eq current_deploy_sha "$STAGE2A_PRODUCT_SHA" && is_zero dirty && ok=0
+  cond "hosted product commit is still $STAGE2A_PRODUCT_SHA (checkout and current-deploy.sha; clean)" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty)"
+  ok=1; is_true init_record_found && is_eq init_driver fs && is_eq init_fallback true && is_eq init_mirror true && is_eq init_legacy_delete false && is_true env_driver_is_fs && is_true env_root_is_locked && is_true env_fallback_is_true && is_true env_mirror_is_gcs && is_true env_legacy_delete_off && is_true env_key_set && ok=0
+  cond "storage configuration is still DRIVER=fs / FS_ROOT=$STAGE2A_FS_ROOT / LEGACY_FALLBACK=true / MIRROR=gcs / LEGACY_DELETE=false; encryption key present, never read" $ok "record=$(g init_record_found) driver=$(g init_driver) fallback=$(g init_fallback) mirror=$(g init_mirror) legacy_delete=$(g init_legacy_delete) env_fs=$(g env_driver_is_fs) env_root=$(g env_root_is_locked) env_fallback=$(g env_fallback_is_true) env_mirror=$(g env_mirror_is_gcs) env_legacy_delete_off=$(g env_legacy_delete_off) key_set=$(g env_key_set)"
+  ok=1; is_true lock_absent && is_true env_record_present && is_true env_core_identity_ok && is_eq env_mode 600 && is_eq key_line_count 1 && is_true env_file_managed_ok && ok=0
+  cond "no activation lock; the activation env record still matches the env file (core identity, mode 600, exactly one key line, managed lines = the fixed activation set)" $ok "lock_absent=$(g lock_absent) record_present=$(g env_record_present) core_identity_ok=$(g env_core_identity_ok) mode=$(g env_mode) key_line_count=$(g key_line_count) managed_ok=$(g env_file_managed_ok)"
+  ok=1; is_zero res_companies_present && ok=0
+  cond "company $S2AR4_COMPANY and company ${S2AR4_COMPANIES##*,} are absent (and every 'B25 SMOKE $S2AR4_TAG' tenant)" $ok "companies_present=$(g res_companies_present)"
+  ok=1; is_zero res_users_present && is_zero res_sessions && is_zero res_feature_rows && ok=0
+  cond "the disposable identities of run $S2AR4_RUN are absent (owner $S2AR4_USERS, every b25-smoke-$S2AR4_TAG address, sessions, feature / audit / activity / login rows of companies $S2AR4_COMPANIES)" $ok "users_present=$(g res_users_present) sessions=$(g res_sessions) feature_rows=$(g res_feature_rows)"
+  ok=1; is_true res_constants_ok && { { [ "$FORM" = ROWS_PRESENT ] && is_eq res_rows_named "$R"; } || { [ "$FORM" = ROWS_ABSENT ] && is_zero res_rows_named; }; } && is_zero res_rows_other && is_zero res_rows_wrong_company && is_zero res_rows_exception && is_zero res_rows_company53 && ok=0
+  cond "residue form: exactly the two named company-$S2AR4_COMPANY rows ($S2AR4_UUID_DOC, $S2AR4_UUID_LOGO) are present (ROWS_PRESENT) or both are absent (ROWS_ABSENT); no third row of companies $S2AR4_COMPANIES, no named row of another company, never the exception, never company $B25PHYS_COMPANY; constants ok" $ok "form=$FORM rows_named=$(g res_rows_named) rows_other=$(g res_rows_other) wrong_company=$(g res_rows_wrong_company) exception=$(g res_rows_exception) company53=$(g res_rows_company53) constants_ok=$(g res_constants_ok)"
+  if [ "$FORM" = ROWS_PRESENT ]; then
+    ok=1; is_eq res_rows_deleted "$R" && is_eq res_rows_fs "$R" && is_eq res_rows_legacy_null "$R" && is_eq res_rows_mirror_canonical "$R" && is_eq res_rows_mirror_ok "$R" && is_eq res_rows_error_null "$R" && is_eq res_rows_not_uncertain "$R" && is_eq res_rows_no_lease "$R" && is_eq res_rows_deleted_at_set "$R" && is_eq res_rows_deleted_in_window "$R" && is_eq res_rows_created_in_window "$R" && is_eq res_rows_identity_ok "$R" && is_eq res_rows_key_canonical "$R" && is_eq res_rows_reference_canonical "$R" && is_eq res_doc_size "$S2AR4_DOC_SIZE" && is_eq res_logo_size "$S2AR4_LOGO_SIZE" && ok=0
+    cond "both tombstones: state deleted, driver fs, no legacy key, the canonical mirror location with mirror_state ok, no last_error, no uncertainty, no lease, deleted_at set inside the tenant-deletion window and created inside the smoke window of run $S2AR4_RUN; identity = document $S2AR4_DOC_SIZE bytes + branding_logo $S2AR4_LOGO_SIZE bytes at the product's canonical key and reference (the manifest's derived locations)" $ok "deleted=$(g res_rows_deleted) fs=$(g res_rows_fs) legacy_null=$(g res_rows_legacy_null) mirror_canonical=$(g res_rows_mirror_canonical) mirror_ok=$(g res_rows_mirror_ok) error_null=$(g res_rows_error_null) not_uncertain=$(g res_rows_not_uncertain) no_lease=$(g res_rows_no_lease) deleted_at_set=$(g res_rows_deleted_at_set) deleted_in_window=$(g res_rows_deleted_in_window) created_in_window=$(g res_rows_created_in_window) identity_ok=$(g res_rows_identity_ok) key_canonical=$(g res_rows_key_canonical) reference_canonical=$(g res_rows_reference_canonical) doc_size=$(g res_doc_size) logo_size=$(g res_logo_size)"
+  else
+    ok=1; [ "$FORM" = ROWS_ABSENT ] && is_zero res_rows_named && ok=0
+    cond "both tombstones already absent (the product's own purge removed the rows): the tombstone-shape proof is not applicable; the physical proof below runs against the manifest's canonical locations" $ok "form=$FORM rows_named=$(g res_rows_named)"
+  fi
+  ok=1; is_zero res_live_refs && is_zero res_docs_company && is_zero res_brand_refs && is_zero res_foreign_mentions && is_zero res_jobs_pending && is_zero res_inflight_sessions && ok=0
+  cond "no live or foreign association: no document version / export / report / scan / brand_logo_key references either object, no document of company $S2AR4_COMPANY, no other company's brand_logo_key inside the disposable branding prefix, no other storage row mentions a residue id, no pending or running job references the residue, no in-flight database session on storage_objects" $ok "live_refs=$(g res_live_refs) docs_company=$(g res_docs_company) brand_refs=$(g res_brand_refs) foreign_mentions=$(g res_foreign_mentions) jobs_pending=$(g res_jobs_pending) inflight_sessions=$(g res_inflight_sessions)"
+  ok=1; is_eq exc_row_count 1 && is_eq exc_state deleted && is_eq exc_last_error LEGACY_RETAINED && is_eq exc_driver gcs && is_eq exc_company "$B25PHYS_COMPANY" && is_eq exc_kind document && is_eq exc_size "$B25PHYS_OBJECT_SIZE" && is_true exc_identity_ok && is_false exc_uncertain && is_false exc_lease && is_false exc_mirror && is_zero exc_live_refs && is_true exc_company_absent && is_true exc_provider_present && is_true exc_provider_marker_ok && is_true exc_provider_size_matches && is_true exc_generation_canonical && is_true exc_generation_stable && is_eq exc_generation_digest "$B25PHYS_PRE_GEN_DIGEST" && ok=0
+  cond "Stage 1 exception still exactly intact (row $B25PHYS_UUID deleted / LEGACY_RETAINED / gcs / company $B25PHYS_COMPANY absent / 0 live references; provider object present, marker, size $B25PHYS_OBJECT_SIZE, canonical stable generation with the proven digest)" $ok "rows=$(g exc_row_count) state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) company=$(g exc_company) kind=$(g exc_kind) size=$(g exc_size) identity=$(g exc_identity_ok) uncertain=$(g exc_uncertain) lease=$(g exc_lease) mirror=$(g exc_mirror) live_refs=$(g exc_live_refs) company_absent=$(g exc_company_absent) present=$(g exc_provider_present) marker=$(g exc_provider_marker_ok) size_matches=$(g exc_provider_size_matches) canonical=$(g exc_generation_canonical) stable=$(g exc_generation_stable) digest=$(g exc_generation_digest)"
+  local RN; RN="$(g res_rows_named)"; [[ "$RN" =~ ^[0-9]+$ ]] || RN=-1
+  ok=1; [ "$N" -ge 0 ] && [ "$RN" -ge 0 ] && is_eq inv_total "$((N + RN + 1))" && is_eq inv_active "$N" && is_eq inv_retained_legacy 1 && is_zero inv_uncertain && is_zero inv_unproven && is_zero inv_cleanup_pending && is_zero inv_leases && is_zero inv_inflight && ok=0
+  cond "inventory = 1 exception + $N protected live rows + the present residue rows (nothing else; active rows = the protected rows; retained 1; nothing uncertain / unproven / cleanup-pending / leased / in flight)" $ok "total=$(g inv_total) active=$(g inv_active) retained=$(g inv_retained_legacy) protected=$N rows_named=$(g res_rows_named) uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leases=$(g inv_leases) inflight=$(g inv_inflight)"
+  ok=1; [ "$PX" -ge 2 ] && is_eq res_fs_checked "$PX" && is_eq res_fs_absent "$PX" && is_zero res_fs_tenant_files && ok=0
+  cond "FS PRIMARY ABSENT: every checked location ($PX: the rows' stored keys, or the manifest's canonical document key + every logo extension candidate when the rows are gone) is absent on the volume and no file remains under the tenant directories of companies $S2AR4_COMPANIES (nothing is deleted to make this true)" $ok "expected=$PX fs_checked=$(g res_fs_checked) fs_absent=$(g res_fs_absent) tenant_files=$(g res_fs_tenant_files) tenant_dirs=$(g res_fs_tenant_dirs)"
+  ok=1; [ "$PX" -ge 2 ] && is_true res_prov_read_ok && is_eq res_prov_checked "$PX" && is_eq res_prov_absent "$PX" && ok=0
+  cond "GCS MIRROR ABSENT: every persisted provider location of the checked set ($PX) answers 404 — provider read succeeded (a read failure or an inconclusive probe is NOT absence)" $ok "expected=$PX provider_read_ok=$(g res_prov_read_ok) provider_checked=$(g res_prov_checked) provider_absent=$(g res_prov_absent)"
+  ok=1; is_eq res_protected_gate PASS && is_zero res_protected_failed && is_true protected_where_ok && [ "$N" -ge 1 ] && is_eq protected_live_ok "$N" && is_eq protected_assoc_ok "$N" && is_zero protected_other && is_eq protected_rows "$S2AR4_REC_PROTECTED_ROWS" && is_eq protected_md5 "$S2AR4_REC_PROTECTED_MD5" && is_eq protected_bytes "$S2AR4_REC_PROTECTED_BYTES" && is_eq protected_keys_md5 "$S2AR4_REC_PROTECTED_KEYS_MD5" && is_eq pf_cipher_md5 "$S2AR4_REC_PF_CIPHER_MD5" && is_eq pm_generations_md5 "$S2AR4_REC_PM_GENERATIONS_MD5" && ok=0
+  cond "PROTECTED CUSTOMER OBJECTS UNCHANGED: the Correction 5 gate PASSED in the form of the residue and P is identity-for-identity the pre-smoke record of run $S2AR4_RUN (rows $S2AR4_REC_PROTECTED_ROWS, row digest, bytes $S2AR4_REC_PROTECTED_BYTES, keys, ciphertexts, mirror generations); every member live, associated, proven on disk and in the bucket; no unrelated row" $ok "gate=$(g res_protected_gate) failed=$(g res_protected_failed) where_ok=$(g protected_where_ok) rows=$(g protected_rows) live_ok=$(g protected_live_ok) assoc_ok=$(g protected_assoc_ok) other=$(g protected_other) row_md5_equal=$([ "$(g protected_md5)" = "$S2AR4_REC_PROTECTED_MD5" ] && echo true || echo false) bytes=$(g protected_bytes) keys_equal=$([ "$(g protected_keys_md5)" = "$S2AR4_REC_PROTECTED_KEYS_MD5" ] && echo true || echo false) cipher_equal=$([ "$(g pf_cipher_md5)" = "$S2AR4_REC_PF_CIPHER_MD5" ] && echo true || echo false) generations_equal=$([ "$(g pm_generations_md5)" = "$S2AR4_REC_PM_GENERATIONS_MD5" ] && echo true || echo false)"
+  ok=1; [ "$N" -ge 0 ] && is_eq census_objects "$((4 + 1 + N))" && is_eq census_marked "$((1 + N))" && is_zero census_generationless && is_eq unmarked_objects 4 && is_eq unmarked_md5 "$B25PHYS_ORIGINALS_MD5" && is_eq originals_referenced 4 && is_eq originals_present 4 && is_zero originals_missing && is_eq originals_size_match 4 && is_eq refs_legacy_count 4 && is_zero refs_ambiguous && ok=0
+  cond "provider partition and references: the bucket holds exactly the 4 originals (locked digest; 4/4 referenced, present, size-matched) + the exception + the $N protected mirrors and NO residue mirror ($((4 + 1 + N)) objects, marked $((1 + N)), none generationless); legacy references 4, ambiguous 0" $ok "objects=$(g census_objects) marked=$(g census_marked) generationless=$(g census_generationless) unmarked=$(g unmarked_objects) unmarked_md5=$(g unmarked_md5) originals=$(g originals_referenced)/$(g originals_present)/$(g originals_missing)/$(g originals_size_match) refs_legacy=$(g refs_legacy_count) ambiguous=$(g refs_ambiguous)"
+  ok=1; is_true api_running && is_eq api_health healthy && is_eq readyz_status ok && is_eq readyz_database ok && is_eq readyz_storage ok && is_zero dead_jobs_total && is_zero storage_jobs_active && is_eq schema_fingerprint "30c4ecbd867cd2cd59abcb58581ecb04" && ok=0
+  cond "api running and healthy, readiness ok / ok / ok, no dead job, no active storage job, schema fingerprint = the accepted post-Stage-1 fingerprint" $ok "api=$(g api_running)/$(g api_health) readyz=$(g readyz_status)/$(g readyz_database)/$(g readyz_storage) dead_jobs=$(g dead_jobs_total) storage_jobs_active=$(g storage_jobs_active) fingerprint=$(g schema_fingerprint)"
+  ok=1; is_zero leak_root_path && is_zero leak_key_shaped && is_zero leak_key_assignment && is_zero leak_bucket_ref && is_zero leak_signature && is_zero web_leak_root_path && is_zero web_leak_signature && ok=0
+  cond "no secret leaked: no plaintext storage path, key-shaped token, key assignment, bucket reference or signed-URL text in the api / web logs" $ok "root_path=$(g leak_root_path) key_shaped=$(g leak_key_shaped) key_assignment=$(g leak_key_assignment) bucket_ref=$(g leak_bucket_ref) signature=$(g leak_signature) web_root_path=$(g web_leak_root_path) web_signature=$(g web_leak_signature)"
+  echo "B25_STAGE2A_RESIDUE4_CONDITIONS_FAILED=$failed"
+  echo "B25_STAGE2A_RESIDUE4_FORM=$FORM"
+  if [ "$failed" = "0" ] && [ "$FORM" = ROWS_PRESENT ]; then echo "B25_STAGE2A_RESIDUE4_ELIGIBLE=TRUE"; else echo "B25_STAGE2A_RESIDUE4_ELIGIBLE=FALSE"; fi
+  if [ "$failed" = "0" ] && [ "$FORM" = ROWS_ABSENT ]; then echo "B25_STAGE2A_RESIDUE4_ALREADY_ABSENT=TRUE"; else echo "B25_STAGE2A_RESIDUE4_ALREADY_ABSENT=FALSE"; fi
+  return 0
+}
+
+# ---- stage2a_residue4_settled ----
+# key=value facts (read AFTER the row removal; the fs / provider absence facts re-read with the key blobs captured BEFORE
+# it; the protected facts in the pre-smoke form with the record) on stdin → the 13 post-settlement proofs, then
+#   B25_STAGE2A_RESIDUE4_SETTLED_CONDITIONS_FAILED=<n>
+#   B25_STAGE2A_RESIDUE4_SETTLED=TRUE|FALSE
+# A missing or malformed fact fails its proof. Always returns 0.
+stage2a_residue4_settled() {
+  local -A f=()
+  s2ar_read_facts
+  local failed=0 n=0
+  g() { printf '%s' "${f[$1]:-<missing>}"; }
+  is_true() { [ "$(g "$1")" = "true" ]; }
+  is_false() { [ "$(g "$1")" = "false" ]; }
+  is_zero() { [ "$(g "$1")" = "0" ]; }
+  is_eq() { [ "$(g "$1")" = "$2" ]; }
+  cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "post4 $n: $1 — OK ($3)"; else echo "post4 $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
+  local ok R="$S2AR4_ROWS" N
+  N="$(g protected_rows)"; [[ "$N" =~ ^[0-9]+$ ]] || N=-1
+  ok=1; is_zero res_rows_named && ok=0
+  cond "the two tombstones $S2AR4_UUID_DOC and $S2AR4_UUID_LOGO are absent" $ok "rows_named=$(g res_rows_named)"
+  ok=1; is_zero res_companies_present && is_zero res_rows_other && ok=0
+  cond "companies $S2AR4_COMPANIES absent; no storage row of either remains" $ok "companies_present=$(g res_companies_present) rows_other=$(g res_rows_other)"
+  ok=1; is_zero res_users_present && is_zero res_sessions && is_zero res_feature_rows && ok=0
+  cond "no disposable identity of run $S2AR4_RUN remains" $ok "users_present=$(g res_users_present) sessions=$(g res_sessions) feature_rows=$(g res_feature_rows)"
+  ok=1; [ "$N" -ge 0 ] && is_eq res_fs_checked "$R" && is_eq res_fs_absent "$R" && is_zero res_fs_tenant_files && is_eq root_tenant_files "$N" && ok=0
+  cond "no tenant-$S2AR4_COMPANY file on the volume: both stored keys (captured before the removal) absent, no file under the tenant directories; the tenant files under the root are exactly the $N protected files" $ok "fs_checked=$(g res_fs_checked) fs_absent=$(g res_fs_absent) tenant_files=$(g res_fs_tenant_files) root_tenant_files=$(g root_tenant_files)"
+  ok=1; is_true res_prov_read_ok && is_eq res_prov_checked "$R" && is_eq res_prov_absent "$R" && ok=0
+  cond "no corresponding mirror object: every persisted provider location (captured before the removal) answers 404; provider read succeeded" $ok "provider_read_ok=$(g res_prov_read_ok) provider_checked=$(g res_prov_checked) provider_absent=$(g res_prov_absent)"
+  ok=1; is_eq exc_row_count 1 && is_eq exc_state deleted && is_eq exc_last_error LEGACY_RETAINED && is_eq exc_driver gcs && is_eq exc_company "$B25PHYS_COMPANY" && is_eq exc_kind document && is_eq exc_size "$B25PHYS_OBJECT_SIZE" && is_true exc_identity_ok && is_false exc_uncertain && is_false exc_lease && is_false exc_mirror && is_zero exc_live_refs && is_true exc_company_absent && is_true exc_provider_present && is_true exc_provider_marker_ok && is_true exc_provider_size_matches && is_true exc_generation_canonical && is_true exc_generation_stable && is_eq exc_generation_digest "$B25PHYS_PRE_GEN_DIGEST" && ok=0
+  cond "Stage 1 exception $B25PHYS_UUID still intact and its provider object still at the accepted generation (digest $B25PHYS_PRE_GEN_DIGEST)" $ok "rows=$(g exc_row_count) state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) company=$(g exc_company) size=$(g exc_size) identity=$(g exc_identity_ok) uncertain=$(g exc_uncertain) lease=$(g exc_lease) mirror=$(g exc_mirror) live_refs=$(g exc_live_refs) company_absent=$(g exc_company_absent) present=$(g exc_provider_present) marker=$(g exc_provider_marker_ok) size_matches=$(g exc_provider_size_matches) canonical=$(g exc_generation_canonical) stable=$(g exc_generation_stable) digest=$(g exc_generation_digest)"
+  ok=1; [ "$N" -ge 0 ] && is_eq inv_total "$((N + 1))" && is_eq res_inv_outside_exception "$N" && is_eq inv_active "$N" && is_zero inv_uncertain && is_zero inv_unproven && is_zero inv_cleanup_pending && is_zero inv_leases && is_zero inv_inflight && ok=0
+  cond "storage_objects = the exception + the $N protected live rows (total $((N + 1)); nothing uncertain / unproven / cleanup-pending / leased / in flight)" $ok "total=$(g inv_total) outside_exception=$(g res_inv_outside_exception) active=$(g inv_active) uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leases=$(g inv_leases) inflight=$(g inv_inflight)"
+  ok=1; is_eq res_protected_gate PASS && is_zero res_protected_failed && [ "$N" -ge 1 ] && is_eq protected_rows "$S2AR4_REC_PROTECTED_ROWS" && is_eq protected_md5 "$S2AR4_REC_PROTECTED_MD5" && is_eq protected_bytes "$S2AR4_REC_PROTECTED_BYTES" && is_eq protected_keys_md5 "$S2AR4_REC_PROTECTED_KEYS_MD5" && is_eq pf_cipher_md5 "$S2AR4_REC_PF_CIPHER_MD5" && is_eq pm_generations_md5 "$S2AR4_REC_PM_GENERATIONS_MD5" && is_eq refs_legacy_count 4 && is_zero refs_ambiguous && ok=0
+  cond "protected customer objects unchanged after the settlement: the Correction 5 gate PASSED in the pre-smoke form and P is still the pre-smoke record of run $S2AR4_RUN; legacy references 4, ambiguous 0" $ok "gate=$(g res_protected_gate) failed=$(g res_protected_failed) rows=$(g protected_rows) row_md5_equal=$([ "$(g protected_md5)" = "$S2AR4_REC_PROTECTED_MD5" ] && echo true || echo false) bytes=$(g protected_bytes) keys_equal=$([ "$(g protected_keys_md5)" = "$S2AR4_REC_PROTECTED_KEYS_MD5" ] && echo true || echo false) cipher_equal=$([ "$(g pf_cipher_md5)" = "$S2AR4_REC_PF_CIPHER_MD5" ] && echo true || echo false) generations_equal=$([ "$(g pm_generations_md5)" = "$S2AR4_REC_PM_GENERATIONS_MD5" ] && echo true || echo false) refs=$(g refs_legacy_count)/$(g refs_ambiguous)"
+  ok=1; [ "$N" -ge 0 ] && is_eq census_objects "$((4 + 1 + N))" && is_eq census_marked "$((1 + N))" && is_zero census_generationless && is_eq unmarked_objects 4 && is_eq unmarked_md5 "$B25PHYS_ORIGINALS_MD5" && is_eq originals_present 4 && is_zero originals_missing && is_eq originals_size_match 4 && ok=0
+  cond "bucket partition RE-READ = 4 originals + the exception + the $N protected mirrors ($((4 + 1 + N)) objects, marked $((1 + N))); originals 4/4 unchanged; no residue mirror" $ok "objects=$(g census_objects) marked=$(g census_marked) generationless=$(g census_generationless) unmarked=$(g unmarked_objects) unmarked_md5=$(g unmarked_md5) originals_present=$(g originals_present) missing=$(g originals_missing) size_match=$(g originals_size_match)"
+  ok=1; is_true init_record_found && is_eq init_driver fs && is_eq init_fallback true && is_eq init_mirror true && is_eq init_legacy_delete false && is_true env_driver_is_fs && is_true env_root_is_locked && is_true env_fallback_is_true && is_true env_mirror_is_gcs && is_true env_legacy_delete_off && is_true env_key_set && is_true env_record_present && is_eq env_mode 600 && is_eq key_line_count 1 && is_true env_file_managed_ok && ok=0
+  cond "storage configuration unchanged (fs / $STAGE2A_FS_ROOT / fallback true / mirror gcs / legacy delete false; env record, mode 600, one key line, managed lines fixed)" $ok "record=$(g init_record_found) driver=$(g init_driver) fallback=$(g init_fallback) mirror=$(g init_mirror) legacy_delete=$(g init_legacy_delete) env_fs=$(g env_driver_is_fs) env_root=$(g env_root_is_locked) env_fallback=$(g env_fallback_is_true) env_mirror=$(g env_mirror_is_gcs) env_legacy_delete_off=$(g env_legacy_delete_off) key_set=$(g env_key_set) record_present=$(g env_record_present) mode=$(g env_mode) key_lines=$(g key_line_count) managed_ok=$(g env_file_managed_ok)"
+  ok=1; is_true api_running && is_eq api_health healthy && is_eq readyz_status ok && is_eq readyz_database ok && is_eq readyz_storage ok && is_zero dead_jobs_total && ok=0
+  cond "api still running and healthy, readiness ok / ok / ok, no dead job" $ok "api=$(g api_running)/$(g api_health) readyz=$(g readyz_status)/$(g readyz_database)/$(g readyz_storage) dead_jobs=$(g dead_jobs_total)"
+  ok=1; is_zero leak_root_path && is_zero leak_key_shaped && is_zero leak_key_assignment && is_zero leak_bucket_ref && is_zero leak_signature && is_zero web_leak_root_path && is_zero web_leak_signature && ok=0
+  cond "no secret leaked: no plaintext storage path, key-shaped token, key assignment, bucket reference or signed-URL text in the api / web logs" $ok "root_path=$(g leak_root_path) key_shaped=$(g leak_key_shaped) key_assignment=$(g leak_key_assignment) bucket_ref=$(g leak_bucket_ref) signature=$(g leak_signature) web_root_path=$(g web_leak_root_path) web_signature=$(g web_leak_signature)"
+  ok=1; is_eq head_sha "$STAGE2A_PRODUCT_SHA" && is_eq current_deploy_sha "$STAGE2A_PRODUCT_SHA" && is_zero dirty && is_true lock_absent && ok=0
+  cond "hosted product commit still $STAGE2A_PRODUCT_SHA, checkout clean, no foreign lock" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty) lock_absent=$(g lock_absent)"
+  echo "B25_STAGE2A_RESIDUE4_SETTLED_CONDITIONS_FAILED=$failed"
+  if [ "$failed" = "0" ]; then echo "B25_STAGE2A_RESIDUE4_SETTLED=TRUE"; else echo "B25_STAGE2A_RESIDUE4_SETTLED=FALSE"; fi
+  return 0
+}
+
 # ---- stage2a_midsmoke_eval (Correction 4): the Stage 2A guard's inventory / physical state in its MID-SMOKE form ----
 # Used ONLY by stage2a-recreate-api, which runs after stage2a-smoke-verify proved the smoke's two rows and before the
 # settle step. key=value facts on stdin (the predicates of the two recorded smoke rows, the Stage 1 exception facts,
@@ -911,8 +1126,8 @@ stage2a_protected_eval() {   # <R> <smoke bytes> <none|require> [live|tombstone]
   cond "inventory = 1 exception + $N protected + $R smoke rows ($FORM form; total $((N + R + 1)), active $((N + RL)), retained 1; nothing uncertain / unproven / cleanup-pending / leased / in flight)" $ok "total=$(g inv_total) active=$(g inv_active) retained=$(g inv_retained_legacy) uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leases=$(g inv_leases) inflight=$(g inv_inflight)"
   ok=1; is_eq exc_row_count 1 && is_eq exc_state deleted && is_eq exc_last_error LEGACY_RETAINED && is_eq exc_driver gcs && is_eq exc_company "$B25PHYS_COMPANY" && is_eq exc_kind document && is_eq exc_size "$B25PHYS_OBJECT_SIZE" && is_true exc_identity_ok && is_eq exc_uncertain false && is_eq exc_lease false && is_zero exc_live_refs && is_true exc_provider_present && is_true exc_provider_marker_ok && is_true exc_provider_size_matches && is_true exc_generation_canonical && is_true exc_generation_stable && is_eq exc_generation_digest "$B25PHYS_PRE_GEN_DIGEST" && ok=0
   cond "Stage 1 exception $B25PHYS_UUID intact (deleted / LEGACY_RETAINED / gcs / company $B25PHYS_COMPANY / size $B25PHYS_OBJECT_SIZE / 0 live references; provider object present with its marker at the accepted generation $B25PHYS_PRE_GEN_DIGEST)" $ok "rows=$(g exc_row_count) state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) company=$(g exc_company) size=$(g exc_size) identity=$(g exc_identity_ok) uncertain=$(g exc_uncertain) lease=$(g exc_lease) live_refs=$(g exc_live_refs) provider=$(g exc_provider_present) marker=$(g exc_provider_marker_ok) size_matches=$(g exc_provider_size_matches) canonical=$(g exc_generation_canonical) stable=$(g exc_generation_stable) digest=$(g exc_generation_digest)"
-  ok=1; [ "$N" -ge 0 ] && is_true pf_read_ok && is_eq pf_rows "$N" && is_eq pf_present "$N" && is_eq pf_regular "$N" && is_eq pf_owner_ok "$N" && is_eq pf_mode_ok "$N" && is_eq pf_magic_ok "$N" && is_eq pf_pdf_free "$N" && is_eq pf_size_differs "$N" && is_zero pf_other_files && is_zero pf_symlinks && is_eq pf_tenant_files "$((N + RL))" && is_md5 pf_tenant_keys_md5 && is_eq pf_tenant_keys_md5 "$(g tenant_keys_md5)" && is_md5 pf_cipher_md5 && ok=0
-  cond "FS (probe answered): the $N protected files present (regular, runtime-owned, 0600, envelope magic, no PDF header, ciphertext size differs); the tenant file set = the stored keys of every non-exception row ($((N + RL)) files); no other / symlinked file" $ok "probe=$(g pf_read_ok) rows=$(g pf_rows) present=$(g pf_present) regular=$(g pf_regular) owner=$(g pf_owner_ok) mode=$(g pf_mode_ok) magic=$(g pf_magic_ok) pdf_free=$(g pf_pdf_free) size_differs=$(g pf_size_differs) tenant_files=$(g pf_tenant_files) other=$(g pf_other_files) symlinks=$(g pf_symlinks) keys_match=$([ "$(g pf_tenant_keys_md5)" = "$(g tenant_keys_md5)" ] && echo true || echo false)"
+  ok=1; [ "$N" -ge 0 ] && is_true pf_read_ok && is_eq pf_rows "$N" && is_eq pf_present "$N" && is_eq pf_regular "$N" && is_eq pf_owner_ok "$N" && is_eq pf_mode_ok "$N" && is_eq pf_magic_ok "$N" && is_eq pf_pdf_free "$N" && is_eq pf_size_differs "$N" && is_zero pf_other_files && is_zero pf_symlinks && is_eq pf_tenant_files "$((N + RL))" && is_md5 pf_tenant_keys_md5 && is_md5 tenant_live_keys_md5 && is_eq pf_tenant_keys_md5 "$(g tenant_live_keys_md5)" && is_md5 pf_cipher_md5 && ok=0
+  cond "FS (probe answered): the $N protected files present (regular, runtime-owned, 0600, envelope magic, no PDF header, ciphertext size differs); the tenant file set = the stored keys of P + the live recorded smoke rows ($((N + RL)) files; Correction 7: tenant_live_keys_md5); no other / symlinked file" $ok "probe=$(g pf_read_ok) rows=$(g pf_rows) present=$(g pf_present) regular=$(g pf_regular) owner=$(g pf_owner_ok) mode=$(g pf_mode_ok) magic=$(g pf_magic_ok) pdf_free=$(g pf_pdf_free) size_differs=$(g pf_size_differs) tenant_files=$(g pf_tenant_files) other=$(g pf_other_files) symlinks=$(g pf_symlinks) keys_match=$([ "$(g pf_tenant_keys_md5)" = "$(g tenant_live_keys_md5)" ] && echo true || echo false)"
   ok=1; [ "$N" -ge 0 ] && is_true pm_read_ok && is_eq pm_rows "$N" && is_eq pm_present "$N" && is_eq pm_bucket_ok "$N" && is_eq pm_canonical_key "$N" && is_eq pm_marker_ok "$N" && is_eq pm_generation_ok "$N" && is_eq pm_size_ok "$N" && is_eq pm_sha_ok "$N" && is_md5 pm_generations_md5 && { [ "$N" = "0" ] || is_num_ge pm_generation_digits_min 10; } && ok=0
   cond "GCS (probe answered): the $N protected mirrors present in the configured bucket at the canonical keys, each with the row's marker, a canonical generation, the plaintext size and the row digest" $ok "probe=$(g pm_read_ok) rows=$(g pm_rows) present=$(g pm_present) bucket=$(g pm_bucket_ok) canonical=$(g pm_canonical_key) marker=$(g pm_marker_ok) generation=$(g pm_generation_ok) size=$(g pm_size_ok) sha=$(g pm_sha_ok) generation_digits_min=$(g pm_generation_digits_min)"
   # exact membership: the unmarked set IS the four originals (locked digest, 4/4 referenced / present / size-matched);
