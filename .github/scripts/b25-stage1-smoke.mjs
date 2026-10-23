@@ -387,6 +387,9 @@ async function recheck() {
   for (const cid of s.companies) {
     const d = await platform("DELETE", `/api/companies/${cid}`, { token: po });
     check(`delete disposable tenant ${cid} through the API`, d.status === 200, `status ${d.status}`);
+    // Correction 8: a successful deletion is recorded in the run's own state so the always-cleanup never has to
+    // probe the id again (a GET on a deleted company answers 404, which the product logs at error level)
+    if (d.status === 200) { s.deleted = Array.from(new Set([...(s.deleted || []), cid])); save(s); }
   }
 }
 
@@ -404,7 +407,12 @@ async function teardown() {
   const s = state();
   let po = null;
   try { po = await loginOwner(); } catch { console.log("teardown: owner login unavailable (already removed?)"); return; }
+  const deleted = Array.isArray(s.deleted) ? s.deleted : [];
   for (const cid of s.companies) {
+    // Correction 8: the recorded DELETE 200 of THIS run (exact disposable id) is the existence evidence — no GET probe,
+    // so a clean run leaves no 404 error record; the VPS-side cleanup phase still proves the company's absence in the
+    // database and the tenant / protected post gates still run. Tenants not recorded as deleted keep the API path.
+    if (deleted.includes(cid)) { console.log(`tenant ${cid}: deleted earlier in this run (recorded DELETE 200); not probed again`); continue; }
     const g = await platform("GET", `/api/companies/${cid}`, { token: po });
     if (g.status === 404) { console.log(`tenant ${cid}: already absent`); continue; }
     const d = await platform("DELETE", `/api/companies/${cid}`, { token: po });

@@ -270,6 +270,18 @@ api_node() {
   fi
   rm -f "$errf"
 }
+# Same as api_node, but the probe's INPUT arrives on stdin (used by Correction 8 for the api process log: the records
+# are parsed inside the container and only sanitized counts come back; no record text is ever printed).
+api_node_stdin() {
+  local js="$1" arg="${2:-}" errf="$HOME/.b25-s1-node.err" out b64
+  b64="$(printf '%s' "$js" | base64 -w0)"
+  if out="$(timeout 240 docker compose -f docker-compose.yml -f compose.vps.yml exec -T -e B25_JS_B64="$b64" -e B25_ARG_B64="$arg" api sh -c 'exec node -e "$(printf "%s" "$B25_JS_B64" | base64 -d)"' 2>"$errf")"; then
+    printf '%s\n' "$out"
+  else
+    echo "unavailable (reason: $(head -1 "$errf" | sed -E 's#gs://[^[:space:]]*#<gs>#g; s#https?://[^[:space:]]*#<url>#g; s#/[^[:space:]]+#<path>#g' | cut -c1-160))"
+  fi
+  rm -f "$errf"
+}
 # Bucket census + per-object digest (names never leave the container): prints JSON {objects, bytes, inventory_md5, generationless, with_marker}.
 CENSUS_JS=$(cat <<'JS'
 const { Storage } = require("@google-cloud/storage");
@@ -2344,6 +2356,90 @@ stage2a_container_facts() {
   echo "pg_health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$PG_CID" 2>/dev/null || echo unavailable)"
 }
 # The LAST "Object storage initialized" record of the container's log (one per process start) and the entrypoint banner.
+# ---- B25 STAGE 2A — CORRECTION 8: exact attribution of the api process' error-level log records ----------------
+# Runs INSIDE the api container (api_node_stdin): the docker log text of the current process arrives on stdin, every
+# line is parsed as structured JSON, and ONLY counts / booleans come back. The only records that may be classified as
+# expected are the cleanup 404 probes of the constant smoke run (arg: companies, window, expected): msg "Unhandled
+# request error", err.type AppError (or esbuild's renamed _AppError of the same class), err.statusCode 404, err.message
+# "Company not found", req.method GET, req.url exactly /api/companies/<constant id>, time inside the constant window,
+# a request id, and exactly ONE request-completion record (same request id, same method and url, res.statusCode 404,
+# level below 50) inside the window — each company at most once. Everything else at level 50 is unclassified (reported
+# by sanitized class), every level-60 record is fatal, every unparsable line that looks like a record is malformed,
+# every duplicated record is a duplicate; nothing is subtracted; no record text is printed.
+STAGE2A_LOG_CLASSIFY_JS=$(cat <<'JS'
+const fs = require("node:fs");
+const a = JSON.parse(Buffer.from(process.env.B25_ARG_B64 || "", "base64").toString("utf8") || "{}");
+const txt = fs.readFileSync(0, "utf8");
+const from = Date.parse(String(a.from || "")), to = Date.parse(String(a.to || ""));
+const prefix = String(a.route_prefix || "/api/companies/");
+const want = new Map(); for (const c of (a.companies || [])) { const id = String(c); if (/^[1-9][0-9]*$/.test(id)) want.set(id, { url: prefix + id, hits: 0 }); }
+const out = { read_ok: false, records_total: 0, json_records: 0, nonjson_lines: 0, malformed_records: 0, level50_total: 0, level60: 0, status5xx: 0,
+  expected_smoke_cleanup_404: 0, unclassified_level50: 0, unclassified_storage: 0, unclassified_auth: 0, unclassified_client: 0, unclassified_server: 0, unclassified_other: 0,
+  duplicate_records: 0, completion_records: 0, window_ok: Number.isFinite(from) && Number.isFinite(to) && from < to, c8_both_attributed: false };
+for (const id of want.keys()) out["c8_company_" + id] = false;
+const recs = [];
+for (const raw of txt.split(/\r?\n/)) {
+  const line = raw.trim(); if (line === "") continue; out.records_total += 1;
+  let rec = null;
+  if (line.startsWith("{")) { try { rec = JSON.parse(line); } catch { rec = null; } }
+  if (rec === null) { if (line.startsWith("{") || line.includes('"level":')) out.malformed_records += 1; else out.nonjson_lines += 1; continue; }
+  if (typeof rec !== "object" || Array.isArray(rec) || typeof rec.level !== "number" || typeof rec.time !== "number") { out.malformed_records += 1; continue; }
+  out.json_records += 1; recs.push(rec);
+}
+out.read_ok = out.json_records > 0;
+const sc = (x) => (x && typeof x === "object" && typeof x.statusCode === "number") ? x.statusCode : null;
+const completions = new Map();   // request id → completion records (level < 50, a res.statusCode, a request id)
+for (const r of recs) {
+  const rs = sc(r.res), es = sc(r.err);
+  if ((rs !== null && rs >= 500) || (es !== null && es >= 500)) out.status5xx += 1;
+  if (r.level < 50 && r.req && typeof r.req === "object" && r.req.id !== undefined && r.req.id !== null && rs !== null) {
+    const k = String(r.req.id); if (!completions.has(k)) completions.set(k, []); completions.get(k).push(r); out.completion_records += 1;
+  }
+}
+const seenErr = new Set();
+const inWindow = (t) => out.window_ok && t >= from && t <= to;
+for (const r of recs) {
+  if (r.level >= 60) { out.level60 += 1; continue; }
+  if (r.level < 50) continue;
+  out.level50_total += 1;
+  const es = sc(r.err); const req = (r.req && typeof r.req === "object") ? r.req : null;
+  const rid = req && req.id !== undefined && req.id !== null ? String(req.id) : null;
+  let expected = false;
+  if (r.msg === "Unhandled request error" && r.err && typeof r.err === "object" && (r.err.type === "AppError" || r.err.type === "_AppError") && es === 404
+      && r.err.message === "Company not found" && req && req.method === "GET" && typeof req.url === "string" && rid !== null && inWindow(r.time)) {
+    for (const [id, w] of want) {
+      if (req.url !== w.url) continue;
+      const sig = rid + "|" + req.url;
+      if (seenErr.has(sig)) { out.duplicate_records += 1; break; }
+      const cs = (completions.get(rid) || []).filter((c) => c.req && c.req.method === "GET" && c.req.url === w.url && sc(c.res) === 404 && inWindow(c.time));
+      if (cs.length === 1 && w.hits === 0) { w.hits = 1; seenErr.add(sig); expected = true; out["c8_company_" + id] = true; }
+      break;
+    }
+  }
+  if (expected) { out.expected_smoke_cleanup_404 += 1; continue; }
+  out.unclassified_level50 += 1;
+  if (r.msg === "Unhandled storage error") out.unclassified_storage += 1;
+  else if (es === 401 || es === 403) out.unclassified_auth += 1;
+  else if (es !== null && es >= 400 && es < 500) out.unclassified_client += 1;
+  else if (es !== null && es >= 500) out.unclassified_server += 1;
+  else out.unclassified_other += 1;
+}
+out.c8_both_attributed = want.size > 0 && [...want.values()].every((w) => w.hits === 1);
+console.log(JSON.stringify(out));
+JS
+)
+stage2a_log_classify_facts() {   # <api log text> → Correction 8 facts (classified inside the api container; counts and booleans only)
+  local arg cj k
+  arg="$(printf '{"companies":[%s],"from":"%s","to":"%s","expected":%s,"route_prefix":"%s"}' "$S2A_C8_COMPANIES" "$S2A_C8_WINDOW_FROM" "$S2A_C8_WINDOW_TO" "$S2A_C8_EXPECTED" "$S2A_C8_ROUTE_PREFIX" | base64 -w0)"
+  cj="$(printf '%s\n' "$1" | api_node_stdin "$STAGE2A_LOG_CLASSIFY_JS" "$arg")"
+  if ! [[ "$cj" == \{* ]]; then echo "log_read_ok=false"; echo "log_classifier=unavailable"; return 0; fi
+  for k in records_total json_records nonjson_lines malformed_records level50_total level60 status5xx expected_smoke_cleanup_404 unclassified_level50 unclassified_storage unclassified_auth unclassified_client unclassified_server unclassified_other duplicate_records completion_records; do
+    echo "log_$k=$(census_field "$cj" "$k" count 2>/dev/null || echo '?')"
+  done
+  for k in read_ok window_ok c8_both_attributed "c8_company_${S2A_C8_COMPANIES%%,*}" "c8_company_${S2A_C8_COMPANIES##*,}"; do
+    echo "log_$k=$(json_flat_field "$cj" "$k" 2>/dev/null | grep -xE 'true|false' || echo '?')"
+  done
+}
 stage2a_init_facts() {
   local body rec n
   body="$(docker logs "$1" 2>&1 || true)"
@@ -2360,7 +2456,8 @@ stage2a_init_facts() {
   echo "log_mirror_failures=$(printf '%s\n' "$body" | grep -c 'strict mirror write failed' || true)"
   echo "log_integrity_failures=$(printf '%s\n' "$body" | grep -c 'copy failed integrity verification' || true)"
   echo "log_level50=$(printf '%s\n' "$body" | grep -c '"level":50' || true)"
-  echo "log_status5xx=$(printf '%s\n' "$body" | grep -cE '"statusCode":5[0-9]{2}' || true)"
+  # Correction 8: parsed classification of the error-level records (the raw count above must equal the parsed total)
+  stage2a_log_classify_facts "$body"
   echo "banner_driver=$(printf '%s\n' "$body" | grep -oE '^\[entrypoint\]\s+OBJECT_STORAGE_DRIVER=[^ ]+' | tail -1 | sed -E 's/.*=//')"
   echo "banner_root_set=$(printf '%s\n' "$body" | grep -E '^\[entrypoint\]\s+OBJECT_STORAGE_FS_ROOT=' | tail -1 | grep -q '=(set)' && echo true || echo false)"
   echo "banner_root_not_set=$(printf '%s\n' "$body" | grep -E '^\[entrypoint\]\s+OBJECT_STORAGE_FS_ROOT=' | tail -1 | grep -q '=(not set)' && echo true || echo false)"
@@ -2555,7 +2652,7 @@ phase_stage2a_state() {
   stage2a_host_facts | grep -E '^(head_sha|current_deploy_sha|dirty|lock_absent|env_mode|key_line_count|env_core_identity_ok)=' | sed 's/^/  /' || true
   stage2a_container_facts "$cid" | sed 's/^/  /' || true
   stage2a_readyz_facts | sed 's/^/  /' || true
-  stage2a_init_facts "$cid" | grep -E '^(init_|banner_|log_level50|log_status5xx|log_mirror_failures|log_refusals)' | sed 's/^/  /' || true
+  stage2a_init_facts "$cid" | grep -E '^(init_|banner_|log_)' | sed 's/^/  /' || true
   stage2a_root_facts "$cid" | sed 's/^/  /' || true
   echo "  inventory: $(q "select 'storage_objects_total='||count(*)||' active='||count(*) filter (where state='active')||' deleted='||count(*) filter (where state='deleted')||' uncertain='||count(*) filter (where publication_uncertain_at is not null)||' unproven='||count(*) filter (where last_error='OWNERSHIP_UNPROVEN')||' cleanup_pending='||count(*) filter (where last_error='CLEANUP_PENDING')||' legacy_retained='||count(*) filter (where last_error='LEGACY_RETAINED') from storage_objects" 2>/dev/null || echo unavailable)"
   echo "  census: $(census 2>/dev/null || echo unavailable)"

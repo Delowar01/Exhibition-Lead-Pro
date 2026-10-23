@@ -495,6 +495,29 @@ stage2a_precheck_eligibility() {
 # mirror / legacyDelete / encryption), the entrypoint banner and the container environment (fixed values
 # compared inside the container, never printed), and the failure counters from the database and from the
 # counted log records that increment them; the disposable smoke reads /metrics through its own owner.
+# ---- B25 STAGE 2A — CORRECTION 8: exact attribution of the error-level api log records of the current process ----
+# The product's global error handler logs EVERY error that reaches it at pino level 50 — including handled 4xx
+# AppErrors. The ONE Correction-7 smoke (run 39905712331) deleted its disposable companies 62 and 63 through the
+# API and its always-cleanup then probed GET /api/companies/<id> for each (404 → "already absent"), leaving exactly
+# two handled-404 error records in the api process that the smoke recreated. These constants bind the ONLY accepted
+# classification: the two probes of THAT run, THOSE companies, inside THAT teardown window, each correlated to its own
+# 404 request-completion record. Nothing else is ever classified; no future smoke tenant inherits this exception.
+readonly S2A_C8_SMOKE_RUN=39905712331
+readonly S2A_C8_SMOKE_JOB=120257085488
+readonly S2A_C8_SMOKE_TAG=3fb046db8966
+readonly S2A_C8_COMPANIES="62,63"
+readonly S2A_C8_ROUTE_PREFIX="/api/companies/"
+# the teardown of job 120257085488 ran 05:29:15.866Z → 05:29:17.170Z (runner clock; the host clock agreed within a
+# second in every hosted record of that day); ±10 s margin, never widened by an input
+readonly S2A_C8_WINDOW_FROM="2026-10-23T05:29:05Z"
+readonly S2A_C8_WINDOW_TO="2026-10-23T05:29:27Z"
+readonly S2A_C8_EXPECTED=2
+s2a_c8_constants_ok() {
+  [[ "$S2A_C8_SMOKE_RUN" =~ ^[0-9]{11}$ ]] && [[ "$S2A_C8_SMOKE_JOB" =~ ^[0-9]{12}$ ]] && [[ "$S2A_C8_SMOKE_TAG" =~ ^[a-z0-9]{12}$ ]] \
+    && [[ "$S2A_C8_COMPANIES" =~ ^[0-9]+,[0-9]+$ ]] && [ "${S2A_C8_COMPANIES%%,*}" != "${S2A_C8_COMPANIES##*,}" ] \
+    && [[ "$S2A_C8_WINDOW_FROM" =~ ^2026-10-23T05:29:0[0-9]Z$ ]] && [[ "$S2A_C8_WINDOW_TO" =~ ^2026-10-23T05:29:[23][0-9]Z$ ]] \
+    && [ "$S2A_C8_EXPECTED" = "2" ] && [ "$S2A_C8_ROUTE_PREFIX" = "/api/companies/" ]
+}
 stage2a_postswitch_eligibility() {
   local -A f=()
   local line k v
@@ -534,8 +557,20 @@ stage2a_postswitch_eligibility() {
   cond "VPS env file: managed lines = the fixed activation set, exactly one key line, mode 600, every other line = the accepted Stage 1 content" $ok "managed_ok=$(g env_file_managed_ok) key_lines=$(g env_file_key_lines) mode=$(g env_mode) core_identity_ok=$(g env_core_identity_ok)"
   ok=1; is_zero log_mirror_failures && is_zero log_integrity_failures && is_zero log_init_failures && ok=0
   cond "mirror failures = 0, integrity failures = 0, initialization failures = 0 (counted log records of the current process)" $ok "mirror_failures=$(g log_mirror_failures) integrity_failures=$(g log_integrity_failures) init_failures=$(g log_init_failures)"
-  ok=1; is_zero log_level50 && is_zero log_status5xx && ok=0
-  cond "no error-level record and no 5xx response since the switch" $ok "level50=$(g log_level50) status5xx=$(g log_status5xx)"
+  # Correction 8: the error-level records of the current process are parsed as structured JSON inside the api
+  # container; the only records that may leave the fail-closed count are the two fully attributed cleanup 404s of
+  # smoke run $S2A_C8_SMOKE_RUN (companies $S2A_C8_COMPANIES): GET /api/companies/<id>, AppError 404 "Company not
+  # found", inside the teardown window, each correlated to its own 404 request-completion record, each company at
+  # most once — present BOTH or NEITHER (after a container recreation they are legitimately gone). Every other
+  # error-level record, a fatal record, a malformed / unparsable record, a 5xx response, a raw count that differs
+  # from the parsed count, or an unavailable classifier FAILS the condition. Nothing is subtracted.
+  ok=1; is_true log_read_ok && is_zero log_malformed_records && is_zero log_level60 && is_zero log_status5xx \
+    && is_zero log_unclassified_level50 && is_zero log_duplicate_records \
+    && [[ "$(g log_level50_total)" =~ ^[0-9]+$ ]] && [[ "$(g log_expected_smoke_cleanup_404)" =~ ^[0-9]+$ ]] \
+    && is_eq log_level50 "$(g log_level50_total)" && is_eq log_level50_total "$(g log_expected_smoke_cleanup_404)" \
+    && { { is_zero log_expected_smoke_cleanup_404 && is_false log_c8_both_attributed; } || { is_eq log_expected_smoke_cleanup_404 "$S2A_C8_EXPECTED" && is_true log_c8_both_attributed && is_true "log_c8_company_${S2A_C8_COMPANIES%%,*}" && is_true "log_c8_company_${S2A_C8_COMPANIES##*,}"; }; } \
+    && ok=0
+  cond "no error-level record since the switch except the fully attributed cleanup 404s of smoke run $S2A_C8_SMOKE_RUN (companies $S2A_C8_COMPANIES: GET ${S2A_C8_ROUTE_PREFIX}<id>, AppError 404 'Company not found', inside the teardown window $S2A_C8_WINDOW_FROM–$S2A_C8_WINDOW_TO, correlated to a 404 request-completion record; 0 or exactly $S2A_C8_EXPECTED, never one), no unclassified / fatal / malformed / duplicate record, no 5xx response (Correction 8: parsed JSON records, counts only)" $ok "read_ok=$(g log_read_ok) level50_raw=$(g log_level50) level50_total=$(g log_level50_total) expected_404=$(g log_expected_smoke_cleanup_404) unclassified=$(g log_unclassified_level50) duplicates=$(g log_duplicate_records) level60=$(g log_level60) malformed=$(g log_malformed_records) status5xx=$(g log_status5xx) both=$(g log_c8_both_attributed) company_${S2A_C8_COMPANIES%%,*}=$(g "log_c8_company_${S2A_C8_COMPANIES%%,*}") company_${S2A_C8_COMPANIES##*,}=$(g "log_c8_company_${S2A_C8_COMPANIES##*,}") unclassified_storage=$(g log_unclassified_storage) unclassified_auth=$(g log_unclassified_auth) unclassified_client=$(g log_unclassified_client) unclassified_server=$(g log_unclassified_server) unclassified_other=$(g log_unclassified_other)"
   ok=1; is_zero inv_uncertain && is_zero inv_unproven && is_zero inv_cleanup_pending && ok=0
   cond "publication uncertainty = 0, ownership unproven = 0, cleanup pending = 0" $ok "uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending)"
   local N PB; N="$(g protected_rows)"; [[ "$N" =~ ^[0-9]+$ ]] || N=-1; PB="$(g protected_bytes)"; [[ "$PB" =~ ^[0-9]+$ ]] || PB=-1
