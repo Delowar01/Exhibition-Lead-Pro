@@ -20,9 +20,14 @@ readonly STAGE2B_PRODUCT_SHA="6a8dad1fe161dc1b31041794e5e3532e9f13327c"
 # the Stage 2A ops commit whose libraries this branch streams unchanged (guard + tests); compared verbatim as well
 readonly STAGE2B_STAGE2A_OPS_SHA="66807b5b67c4a6471e85b42306730b5a4a80d5c3"
 readonly S2B_BASE_SCHEMA_FINGERPRINT="30c4ecbd867cd2cd59abcb58581ecb04"
-readonly S2B_BASE_NATIVE_ROWS=2             # protected native rows recorded unchanged by every hosted read-only run since 2026-10-22
-readonly S2B_BASE_CANDIDATES=4              # the four export originals (LEGACY_UNREGISTERED before the first copy)
-readonly S2B_BASE_CENSUS_MD5="b7c8dd371c7d7e076f05ae8f69fc44e2"   # bucket inventory digest: the copy writes NO bucket object, so it must not move
+# 2026-10-23 RECORD — immutable historical evidence of the hosted state verified by the Stage 2A deploy verifiers (2 native
+# rows; bucket inventory digest of the 4 export originals + 1 exception + 2 native mirrors). The record is REPORTED by every
+# mode (census_md5_record_match, native_delta_vs_record) and is NEVER an acceptance gate: legitimate customer uploads and
+# deletions after the maintenance release change the native inventory and therefore the digest without touching the
+# partition. Acceptance rests on the object-level proofs (conditions 5, 8, 11, 12) and on the SAME-SESSION digests of the
+# dry-run and copy forms (14). Never update the record to match a newly observed hosted state.
+readonly S2B_RECORD_NATIVE_ROWS_20261023=2
+readonly S2B_RECORD_CENSUS_MD5_20261023="b7c8dd371c7d7e076f05ae8f69fc44e2"
 readonly S2B_HEADROOM_BYTES=268435456       # 256 MiB
 readonly S2B_CAPACITY_FACTOR=2
 readonly S2B_IMAGE_REPO="cardscanner/migrate"
@@ -37,7 +42,7 @@ readonly S2B_FORBIDDEN_RE='OBJECT_STORAGE_LEGACY_DELETE=true|--legacy-delete|gsu
 s2b_constants_ok() {
   [[ "$STAGE2B_PRODUCT_SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$STAGE2B_STAGE2A_OPS_SHA" =~ ^[0-9a-f]{40}$ ]] \
     && [ "$STAGE2B_PRODUCT_SHA" != "${STAGE2A_PRODUCT_SHA:-}" ] && [[ "$S2B_BASE_SCHEMA_FINGERPRINT" =~ ^[0-9a-f]{32}$ ]] \
-    && [[ "$S2B_BASE_CENSUS_MD5" =~ ^[0-9a-f]{32}$ ]] && [[ "$S2B_BASE_NATIVE_ROWS$S2B_BASE_CANDIDATES" =~ ^[0-9]+$ ]] \
+    && [[ "$S2B_RECORD_CENSUS_MD5_20261023" =~ ^[0-9a-f]{32}$ ]] && [[ "$S2B_RECORD_NATIVE_ROWS_20261023" =~ ^[0-9]+$ ]] \
     && [[ "$S2B_HEADROOM_BYTES" =~ ^[1-9][0-9]*$ ]] && [[ "$S2B_COPY_CONCURRENCY" =~ ^([1-9]|1[0-6])$ ]] && [[ "$S2B_COPY_BATCH" =~ ^[1-9][0-9]{0,3}$ ]]
 }
 : "${B25PHYS_UUID:=f048b5d4-b366-4227-857f-42b2589e54b7}"
@@ -163,14 +168,24 @@ stage2b_eligibility() {
   is_zero() { [ "$(g "$1")" = "0" ]; }
   is_eq() { [ "$(g "$1")" = "$2" ]; }
   is_num() { [[ "$(g "$1")" =~ ^[0-9]+$ ]]; }
+  is_hex32() { [[ "$(g "$1")" =~ ^[0-9a-f]{32}$ ]]; }
   cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "stage2b $n: $1 — OK ($3)"; else echo "stage2b $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
   local ok N M L U D F
   case "$FORM" in preflight|dryrun|copy|postverify) ;; *) echo "B25_STAGE2B_CONDITIONS_FAILED=1"; echo "B25_STAGE2B_FORM=UNKNOWN"; echo "B25_STAGE2B_PREFLIGHT_READY=FALSE"; echo "B25_STAGE2B_DRY_RUN_REPORTED=FALSE"; echo "B25_STAGE2B_COPY_VERIFIED=FALSE"; echo "B25_STAGE2B_POSTVERIFY_READY=FALSE"; return 0 ;; esac
   N="$(g s2b_native)"; M="$(g s2b_migrated)"; L="$(g s2b_legacy_source)"; U="$(g census_unregistered)"; D="$(g s2b_duplicates)"; F="$(g s2b_failed)"
   for x in N M L U D F; do [[ "${!x}" =~ ^[0-9]+$ ]] || eval "$x=-1"; done
-  # 1 product / host
-  ok=1; s2b_constants_ok && is_eq head_sha "$STAGE2B_PRODUCT_SHA" && is_eq current_deploy_sha "$STAGE2B_PRODUCT_SHA" && is_zero dirty && is_true lock_absent && is_true s2b_lock_absent && ok=0
-  cond "product commit = $STAGE2B_PRODUCT_SHA (checkout and current-deploy.sha; clean; no Stage 2A activation lock, no Stage 2B copy lock; constants coherent)" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty) lock_absent=$(g lock_absent) s2b_lock_absent=$(g s2b_lock_absent) constants_ok=$(s2b_constants_ok && echo true || echo false)"
+  # 1 product / host — the Stage 2B copy-lock rule depends on the form: every read-only form, and the copy phase's own
+  # preflight / dry-run gates (evaluated before its lock exists), require NO copy lock (an unexplained lock = a previous copy
+  # did not finish: review before any retry); the copy form is evaluated WHILE this operation's lock is held, so it requires
+  # the lock PRESENT and OWNED (a regular 0600 own file whose content is exactly this run's record) — a foreign, replaced or
+  # vanished lock fails closed; the lock is released only after a TRUE copy verdict and never when it is not owned
+  local lock_rule=1 lock_rule_text
+  case "$FORM" in
+    copy) lock_rule_text="present and owned by this operation"; is_false s2b_lock_absent && is_true s2b_lock_owned && lock_rule=0 ;;
+    *)    lock_rule_text="absent"; is_true s2b_lock_absent && is_false s2b_lock_owned && lock_rule=0 ;;
+  esac
+  ok=1; s2b_constants_ok && is_eq head_sha "$STAGE2B_PRODUCT_SHA" && is_eq current_deploy_sha "$STAGE2B_PRODUCT_SHA" && is_zero dirty && is_true lock_absent && [ "$lock_rule" = 0 ] && ok=0
+  cond "product commit = $STAGE2B_PRODUCT_SHA (checkout and current-deploy.sha; clean; no Stage 2A activation lock; Stage 2B copy lock $lock_rule_text; constants coherent)" $ok "head=$(g head_sha) current=$(g current_deploy_sha) dirty=$(g dirty) lock_absent=$(g lock_absent) s2b_lock_absent=$(g s2b_lock_absent) s2b_lock_owned=$(g s2b_lock_owned) constants_ok=$(s2b_constants_ok && echo true || echo false)"
   # 2 runtime health
   ok=1; is_true api_running && is_eq api_health healthy && is_eq web_health healthy && is_eq pg_health healthy && is_eq readyz_status ok && is_eq readyz_database ok && is_eq readyz_storage ok && is_eq readyz_inside ok && ok=0
   cond "api / web / postgres healthy; readiness ok / database ok / storage ok (proxy and inside the container)" $ok "api=$(g api_running)/$(g api_health) web=$(g web_health) postgres=$(g pg_health) readyz=$(g readyz_status)/$(g readyz_database)/$(g readyz_storage)/$(g readyz_inside)"
@@ -181,7 +196,10 @@ stage2b_eligibility() {
   # 4 schema + jobs + counters
   ok=1; is_eq schema_fingerprint "$S2B_BASE_SCHEMA_FINGERPRINT" && is_zero storage_jobs_active && is_zero dead_jobs_total && is_zero log_mirror_failures && is_zero log_integrity_failures && is_zero log_init_failures && is_eq init_records_current 1 && is_zero log_refusals && ok=0
   cond "schema fingerprint $S2B_BASE_SCHEMA_FINGERPRINT; no active storage job, no dead job; mirror / integrity / initialization failures 0; storage initialized once; no start refusal" $ok "fingerprint=$(g schema_fingerprint) storage_jobs=$(g storage_jobs_active) dead_jobs=$(g dead_jobs_total) mirror_failures=$(g log_mirror_failures) integrity_failures=$(g log_integrity_failures) init_failures=$(g log_init_failures) init_records=$(g init_records_current) refusals=$(g log_refusals)"
-  # 5 inventory partition: every row outside the exception is exactly one class; nothing failed, no smoke row, no duplicate
+  # 5 inventory partition: every row outside the exception is exactly one class; nothing failed, no smoke row, no duplicate.
+  # N >= 1 is DELIBERATE: from the inventory alone N = 0 is indistinguishable from a silent loss of the protected rows; an
+  # N = 0 acceptance would need per-identity deletion evidence (tenant audit row, purge record, file + mirror absence) and
+  # its own reviewed denial tests — not part of this library (see the batch 17 assessment); the gate is never relaxed here
   ok=1; [ "$F" = 0 ] && [ "$D" = 0 ] && is_zero s2b_smoke_rows && is_eq s2b_exception 1 && is_eq s2b_total "$((1 + N + M + L))" && [ "$N" -ge 1 ] && is_zero inv_uncertain && is_zero inv_unproven && is_zero inv_cleanup_pending && is_zero inv_leases && is_zero inv_inflight && is_eq inv_retained_legacy 1 && ok=0
   cond "inventory partition: total = 1 exception + native N + migrated M + legacy source L; FAILED_OR_UNPROVEN 0, duplicates 0, smoke rows 0; nothing uncertain / unproven / cleanup-pending / leased / in flight" $ok "total=$(g s2b_total) exception=$(g s2b_exception) native=$N migrated=$M legacy_source=$L failed=$F duplicates=$D smoke_rows=$(g s2b_smoke_rows) uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leases=$(g inv_leases) inflight=$(g inv_inflight) retained=$(g inv_retained_legacy)"
   # 6 census complete + ownership
@@ -202,9 +220,18 @@ stage2b_eligibility() {
   # 11 Stage 1 exception intact + never a candidate
   ok=1; is_eq exc_row_count 1 && is_eq exc_state deleted && is_eq exc_last_error LEGACY_RETAINED && is_eq exc_driver gcs && is_eq exc_company "$B25PHYS_COMPANY" && is_true exc_identity_ok && is_false exc_uncertain && is_false exc_lease && is_zero exc_live_refs && is_true exc_provider_present && is_true exc_provider_marker_ok && is_true exc_provider_size_matches && is_true exc_generation_canonical && is_true exc_generation_stable && is_eq exc_generation_digest "${B25PHYS_PRE_GEN_DIGEST:-3545c17e5f3aa940}" && ok=0
   cond "Stage 1 exception intact (deleted / LEGACY_RETAINED / gcs / company $B25PHYS_COMPANY; provider object present, marker, size, canonical stable generation with the proven digest) and never a candidate" $ok "rows=$(g exc_row_count) state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) company=$(g exc_company) identity=$(g exc_identity_ok) uncertain=$(g exc_uncertain) lease=$(g exc_lease) live_refs=$(g exc_live_refs) provider=$(g exc_provider_present)/$(g exc_provider_marker_ok)/$(g exc_provider_size_matches)/$(g exc_generation_canonical)/$(g exc_generation_stable)/$(g exc_generation_digest)"
-  # 12 bucket partition unchanged: the copy writes no bucket object and deletes none
-  ok=1; is_eq census_objects "$((4 + 1 + N))" && is_eq census_marked "$((1 + N))" && is_eq census_generationless "${B25PHYS_CENSUS_GENERATIONLESS:-0}" && is_eq census_md5 "$S2B_BASE_CENSUS_MD5" && is_eq unmarked_objects 4 && is_eq unmarked_md5 "${B25PHYS_ORIGINALS_MD5:-c1b900fd509bafa1f980d863dc0d195b}" && is_eq originals_referenced 4 && is_eq originals_present 4 && is_zero originals_missing && is_eq originals_size_match 4 && is_eq refs_legacy_count 4 && is_zero refs_ambiguous && ok=0
-  cond "bucket partition unchanged by Stage 2B: 4 unmarked originals (locked digest; referenced, present, size-matched) + 1 exception + N native mirrors, no object added or removed (locked inventory digest), legacy references 4 / ambiguous 0 (the feature references are never rewritten here)" $ok "objects=$(g census_objects) marked=$(g census_marked) generationless=$(g census_generationless) inventory_md5_equal=$([ "$(g census_md5)" = "$S2B_BASE_CENSUS_MD5" ] && echo true || echo false) unmarked=$(g unmarked_objects) originals_md5_equal=$([ "$(g unmarked_md5)" = "${B25PHYS_ORIGINALS_MD5:-c1b900fd509bafa1f980d863dc0d195b}" ] && echo true || echo false) originals=$(g originals_referenced)/$(g originals_present)/$(g originals_missing)/$(g originals_size_match) refs=$(g refs_legacy_count)/$(g refs_ambiguous)"
+  # 12 bucket partition CLOSED by object-level proofs (no historical digest gate): every bucket object is exactly one of
+  # the 4 locked originals (unmarked; locked originals digest; referenced, present, size-matched), the 1 exception object
+  # (proven in 11) or one of the N native mirrors (N = the proven native rows of 5 / 8, each mirror proven in 8) — so
+  # objects = 4 + 1 + N and marked = 1 + N leave no unexplained object; the 2026-10-23 inventory digest is REPORTED
+  # (census_md5_record_match / native_delta_vs_record), never compared: a legitimate upload or deletion after the
+  # maintenance release moves N and the digest together, while any object outside the partition still fails closed;
+  # the SAME-SESSION digests (dry-run / copy, condition 14) remain mandatory
+  local record_match native_delta
+  record_match="$([ "$(g census_md5)" = "$S2B_RECORD_CENSUS_MD5_20261023" ] && echo true || echo false)"
+  native_delta="$(printf '%+d' "$((N - S2B_RECORD_NATIVE_ROWS_20261023))")"
+  ok=1; is_eq census_objects "$((4 + 1 + N))" && is_eq census_marked "$((1 + N))" && is_eq census_generationless "${B25PHYS_CENSUS_GENERATIONLESS:-0}" && is_hex32 census_md5 && is_eq unmarked_objects 4 && is_eq unmarked_md5 "${B25PHYS_ORIGINALS_MD5:-c1b900fd509bafa1f980d863dc0d195b}" && is_eq originals_referenced 4 && is_eq originals_present 4 && is_zero originals_missing && is_eq originals_size_match 4 && is_eq refs_legacy_count 4 && is_zero refs_ambiguous && ok=0
+  cond "bucket partition closed: 4 unmarked originals (locked digest; referenced, present, size-matched) + 1 exception + N native mirrors (each proven object-by-object in 8 and 11), no unexplained object, legacy references 4 / ambiguous 0 (the feature references are never rewritten here); the 2026-10-23 inventory digest is reported, never gated" $ok "objects=$(g census_objects) marked=$(g census_marked) generationless=$(g census_generationless) census_md5_record_match=$record_match native_delta_vs_record=$native_delta unmarked=$(g unmarked_objects) originals_md5_equal=$([ "$(g unmarked_md5)" = "${B25PHYS_ORIGINALS_MD5:-c1b900fd509bafa1f980d863dc0d195b}" ] && echo true || echo false) originals=$(g originals_referenced)/$(g originals_present)/$(g originals_missing)/$(g originals_size_match) refs=$(g refs_legacy_count)/$(g refs_ambiguous)"
   # 13 no leak
   ok=1; is_zero leak_root_path && is_zero leak_key_shaped && is_zero leak_key_assignment && is_zero leak_bucket_ref && is_zero leak_signature && is_zero web_leak_root_path && is_zero web_leak_signature && is_zero s2b_output_leaks && ok=0
   cond "no plaintext storage path, key-shaped token, key assignment, bucket reference or signed-URL text in the api / web logs or in this mode's own output" $ok "api=$(g leak_root_path)/$(g leak_key_shaped)/$(g leak_key_assignment)/$(g leak_bucket_ref)/$(g leak_signature) web=$(g web_leak_root_path)/$(g web_leak_signature) mode_output=$(g s2b_output_leaks)"
@@ -214,12 +241,12 @@ stage2b_eligibility() {
       ok=1; [ "$L" = 0 ] && is_eq census_unregistered "$U" && [ "$U" -ge 0 ] && ok=0
       cond "preflight form: no transient legacy-source row (L = 0); candidates = the unregistered legacy references (reported, never selected by value)" $ok "legacy_source=$L candidates=$U migrated=$M native=$N image_present=$(g image_present) image_commit_ok=$(g image_commit_ok)" ;;
     dryrun)
-      ok=1; is_true image_present && is_true image_commit_ok && is_true dr_parse_ok && is_eq dr_mode dry-run && is_eq dr_exit_meaning COMPLETE && is_true dr_complete && is_true dr_read_only && is_eq dr_target_root present && is_eq dr_planned "$((U + L))" && is_eq dr_already "$M" && is_zero dr_missing_source && is_zero dr_checksum_mismatch && is_zero dr_conflict && is_zero dr_duplicate && is_zero dr_failed && is_zero dr_duplicate_groups && is_zero dr_unattributable && is_zero dr_exception_listed && is_eq dr_source_references "$(g census_total)" && is_true dr_repeat_identical && is_true dr_inventory_unchanged && ok=0
-      cond "dry-run form: the migrate image was built from this product commit; the product's --dry-run (read-only target, nothing written) ran twice with identical sanitized summaries: COMPLETE, planned = unregistered + legacy source, already = migrated, no missing source / mismatch / conflict / duplicate / failure / unattributable reference, the exception never listed, source references = the census; the inventory unchanged across the runs" $ok "image=$(g image_present)/$(g image_commit_ok) parse=$(g dr_parse_ok) mode=$(g dr_mode) exit=$(g dr_exit_meaning) complete=$(g dr_complete) read_only=$(g dr_read_only) target_root=$(g dr_target_root) planned=$(g dr_planned) already=$(g dr_already) missing=$(g dr_missing_source) mismatch=$(g dr_checksum_mismatch) conflict=$(g dr_conflict) duplicate=$(g dr_duplicate) failed=$(g dr_failed) dup_groups=$(g dr_duplicate_groups) unattributable=$(g dr_unattributable) exception_listed=$(g dr_exception_listed) source_refs=$(g dr_source_references) repeat_identical=$(g dr_repeat_identical) inventory_unchanged=$(g dr_inventory_unchanged)" ;;
+      ok=1; is_true image_present && is_true image_commit_ok && is_true dr_parse_ok && is_eq dr_mode dry-run && is_eq dr_exit_meaning COMPLETE && is_true dr_complete && is_true dr_read_only && is_eq dr_target_root present && is_eq dr_planned "$((U + L))" && is_eq dr_already "$M" && is_zero dr_missing_source && is_zero dr_checksum_mismatch && is_zero dr_conflict && is_zero dr_duplicate && is_zero dr_failed && is_zero dr_duplicate_groups && is_zero dr_unattributable && is_zero dr_exception_listed && is_eq dr_source_references "$(g census_total)" && is_true dr_repeat_identical && is_true dr_inventory_unchanged && is_hex32 census_md5 && is_eq census_md5 "$(g pre_census_md5)" && ok=0
+      cond "dry-run form: the migrate image was built from this product commit; the product's --dry-run (read-only target, nothing written) ran twice with identical sanitized summaries: COMPLETE, planned = unregistered + legacy source, already = migrated, no missing source / mismatch / conflict / duplicate / failure / unattributable reference, the exception never listed, source references = the census; the inventory unchanged across the runs; the bucket inventory digest identical to this session's preflight (same-session proof)" $ok "image=$(g image_present)/$(g image_commit_ok) parse=$(g dr_parse_ok) mode=$(g dr_mode) exit=$(g dr_exit_meaning) complete=$(g dr_complete) read_only=$(g dr_read_only) target_root=$(g dr_target_root) planned=$(g dr_planned) already=$(g dr_already) missing=$(g dr_missing_source) mismatch=$(g dr_checksum_mismatch) conflict=$(g dr_conflict) duplicate=$(g dr_duplicate) failed=$(g dr_failed) dup_groups=$(g dr_duplicate_groups) unattributable=$(g dr_unattributable) exception_listed=$(g dr_exception_listed) source_refs=$(g dr_source_references) repeat_identical=$(g dr_repeat_identical) inventory_unchanged=$(g dr_inventory_unchanged) bucket_unchanged=$([ "$(g census_md5)" = "$(g pre_census_md5)" ] && echo true || echo false)" ;;
     copy)
       ok=1; is_true image_present && is_true image_commit_ok && is_true cp_parse_ok && is_eq cp_mode copy && is_eq cp_exit_meaning COMPLETE && is_true cp_complete && is_eq cp_copied "$(g pre_candidates)" && is_eq cp_already "$(g pre_migrated)" && is_zero cp_missing_source && is_zero cp_checksum_mismatch && is_zero cp_conflict && is_zero cp_duplicate && is_zero cp_failed && is_zero cp_exception_listed \
         && is_true vf_parse_ok && is_eq vf_mode verify && is_eq vf_exit_meaning COMPLETE && is_true vf_complete && is_eq vf_verified "$M" && is_zero vf_unregistered && is_zero vf_not_migrated && is_zero vf_checksum_mismatch && is_zero vf_failed \
-        && [ "$L" = 0 ] && [ "$U" = 0 ] && is_eq s2b_migrated "$(( $(g pre_migrated | grep -E '^[0-9]+$' || echo 0) + $(g pre_candidates | grep -E '^[0-9]+$' || echo 0) ))" && is_eq s2b_native "$(g pre_native)" && is_eq nat_keys_md5 "$(g pre_nat_keys_md5)" && is_eq nat_pf_cipher_md5 "$(g pre_nat_pf_cipher_md5)" && is_eq nat_pm_generations_md5 "$(g pre_nat_pm_generations_md5)" && is_eq census_md5 "$(g pre_census_md5)" && ok=0
+        && [ "$L" = 0 ] && [ "$U" = 0 ] && is_eq s2b_migrated "$(( $(g pre_migrated | grep -E '^[0-9]+$' || echo 0) + $(g pre_candidates | grep -E '^[0-9]+$' || echo 0) ))" && is_eq s2b_native "$(g pre_native)" && is_eq nat_keys_md5 "$(g pre_nat_keys_md5)" && is_eq nat_pf_cipher_md5 "$(g pre_nat_pf_cipher_md5)" && is_eq nat_pm_generations_md5 "$(g pre_nat_pm_generations_md5)" && is_hex32 census_md5 && is_eq census_md5 "$(g pre_census_md5)" && ok=0
       cond "copy form: --copy COMPLETE (copied = the preflight candidates, already = the previously migrated rows, nothing missing / mismatched / conflicting / duplicated / failed, the exception never listed) then --verify COMPLETE (verified = every migrated row, nothing unregistered / unmigrated / mismatched); afterwards L = 0, U = 0, migrated = before + candidates; the native class (keys, ciphertexts, mirror generations) and the bucket inventory digest identical to the preflight" $ok "image=$(g image_present)/$(g image_commit_ok) copy=$(g cp_parse_ok)/$(g cp_mode)/$(g cp_exit_meaning)/$(g cp_complete) copied=$(g cp_copied) already=$(g cp_already) missing=$(g cp_missing_source) mismatch=$(g cp_checksum_mismatch) conflict=$(g cp_conflict) duplicate=$(g cp_duplicate) failed=$(g cp_failed) exception_listed=$(g cp_exception_listed) verify=$(g vf_parse_ok)/$(g vf_mode)/$(g vf_exit_meaning)/$(g vf_complete) verified=$(g vf_verified) unregistered=$(g vf_unregistered) not_migrated=$(g vf_not_migrated) vf_mismatch=$(g vf_checksum_mismatch) vf_failed=$(g vf_failed) after: L=$L U=$U migrated=$M native=$N pre: candidates=$(g pre_candidates) migrated=$(g pre_migrated) native=$(g pre_native) native_unchanged=$([ "$(g nat_keys_md5)" = "$(g pre_nat_keys_md5)" ] && [ "$(g nat_pf_cipher_md5)" = "$(g pre_nat_pf_cipher_md5)" ] && [ "$(g nat_pm_generations_md5)" = "$(g pre_nat_pm_generations_md5)" ] && echo true || echo false) census_unchanged=$([ "$(g census_md5)" = "$(g pre_census_md5)" ] && echo true || echo false)" ;;
     postverify)
       ok=1; is_true image_present && is_true image_commit_ok && is_true vf_parse_ok && is_eq vf_mode verify && is_eq vf_exit_meaning COMPLETE && is_true vf_complete && is_true vf_read_only && is_eq vf_verified "$M" && is_zero vf_unregistered && is_zero vf_not_migrated && is_zero vf_checksum_mismatch && is_zero vf_failed && is_zero vf_exception_listed && [ "$L" = 0 ] && [ "$U" = 0 ] && [ "$M" -ge 1 ] && ok=0
@@ -227,6 +254,9 @@ stage2b_eligibility() {
   esac
   echo "B25_STAGE2B_CONDITIONS_FAILED=$failed"; echo "B25_STAGE2B_FORM=$(printf '%s' "$FORM" | tr '[:lower:]' '[:upper:]')"
   echo "B25_STAGE2B_INVENTORY=native:$N migrated:$M legacy_source:$L unregistered:$U failed:$F duplicates:$D"
+  # informational only (never gated): the 2026-10-23 record compared with the observed inventory
+  echo "census_md5_record_match=$([ "$(g census_md5)" = "$S2B_RECORD_CENSUS_MD5_20261023" ] && echo true || echo false)"
+  echo "native_delta_vs_record=$(printf '%+d' "$((N - S2B_RECORD_NATIVE_ROWS_20261023))")"
   local T; T="$([ "$failed" = 0 ] && echo TRUE || echo FALSE)"
   echo "B25_STAGE2B_PREFLIGHT_READY=$([ "$FORM" = preflight ] && echo "$T" || echo FALSE)"
   echo "B25_STAGE2B_DRY_RUN_REPORTED=$([ "$FORM" = dryrun ] && echo "$T" || echo FALSE)"

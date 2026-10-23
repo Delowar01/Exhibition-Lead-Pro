@@ -20,6 +20,13 @@
 #                                concurrency / batch, read-back verified by the product) → `--verify` → every migrated row
 #                                proven (shape, file, retained source) → native class and bucket inventory identical to the
 #                                preflight → B25_STAGE2B_COPY_VERIFIED. Nothing is deleted anywhere; no env line is rendered.
+#                                Maintenance dependency: the typed window confirmation attests an ACTIVE coordinated no-upload
+#                                window; the application does not enforce one, so if the current window is released before a
+#                                copy, a NEW coordinated window must be established (operationally) before the copy is run.
+#                                Copy lock: created exclusively by this operation (a pre-existing lock fails closed), held
+#                                during --copy / --verify / the post-copy facts, released ONLY after a TRUE copy verdict and
+#                                ONLY when still owned (content = this run's record); a FALSE verdict, a failed step or a
+#                                foreign lock leaves it in place as the review marker — every later mode fails closed on it.
 #   stage2b-postverify           READ-ONLY: `--verify` → inventory L = 0, U = 0 → two-class proofs → bucket unchanged →
 #                                B25_STAGE2B_POSTVERIFY_READY
 # Rollback boundary (design §6.3 rule 9): the retained legacy source IS the rollback copy; this tooling has no revert mode,
@@ -36,6 +43,32 @@ stage2b_dispatch() {
 }
 stage2b_image_tag() { printf '%s:b25-stage2b-%s' "$S2B_IMAGE_REPO" "${STAGE2B_PRODUCT_SHA:0:12}"; }
 stage2b_lock_file() { printf '%s/%s' "$HOME" "$S2B_LOCK_NAME"; }
+# ---- the Stage 2B copy lock: owned by exactly one operation ---------------------------------------------------------------
+# S2B_LOCK_EXPECT holds, in memory only, the record this operation wrote (start instant, product commit, a random token);
+# it is empty in every read-only phase, so no lock can ever be "owned" there. Ownership = a regular, non-symlink, 0600 file of
+# the current user whose content is exactly the record. A pre-existing lock is never adopted, never overwritten (exclusive
+# creation) and never removed; the own lock is released only by stage2b_lock_release after a TRUE copy verdict.
+S2B_LOCK_EXPECT=""
+stage2b_lock_owned() {   # <lock path> → 0 only for this operation's own lock
+  local l="$1"
+  [ -n "${S2B_LOCK_EXPECT:-}" ] && [ -f "$l" ] && [ ! -L "$l" ] && [ "$(stat -c '%a:%u' "$l" 2>/dev/null)" = "600:$(id -u)" ] && [ "$(cat "$l" 2>/dev/null)" = "$S2B_LOCK_EXPECT" ]
+}
+stage2b_lock_write() {   # <lock path> → creates THIS operation's lock exclusively (fails closed on any existing entry)
+  local l="$1" tok
+  [ ! -e "$l" ] && [ ! -L "$l" ] || fail "a Stage 2B copy lock is present — a previous copy did not finish; review before any retry"
+  tok="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  [[ "$tok" =~ ^[0-9a-f]{32}$ ]] || fail "the copy lock token could not be generated"
+  S2B_LOCK_EXPECT="started_at=$(date -u +%FT%TZ) product=$STAGE2B_PRODUCT_SHA token=$tok"
+  ( umask 077; set -C; printf '%s\n' "$S2B_LOCK_EXPECT" > "$l" ) 2>/dev/null || { S2B_LOCK_EXPECT=""; fail "the Stage 2B copy lock could not be created exclusively — review before any retry"; }
+  stage2b_lock_owned "$l" || fail "the copy lock just written is not this operation's — review before any retry"
+}
+stage2b_lock_release() {   # <lock path> → removes ONLY this operation's own lock (called only after a TRUE copy verdict)
+  local l="$1"
+  stage2b_lock_owned "$l" || fail "the copy lock is not this operation's (replaced or vanished) — NOT removed; review before any retry"
+  rm -f "$l"
+  [ ! -e "$l" ] && [ ! -L "$l" ] || fail "the copy lock could not be released — review before any retry"
+  S2B_LOCK_EXPECT=""
+}
 # ---- the sanitized summary of migrate-storage → flat counts / booleans (runs inside the api container; stdin = the JSON) ----
 STAGE2B_SUMMARY_JS=$(cat <<'JS'
 const fs = require("node:fs");
@@ -109,7 +142,11 @@ stage2b_output_leaks() {   # <text> → number of lines carrying a storage path,
   printf '%s\n' "$1" | grep -cE '/data/objects|gs://|tenants/[0-9]+/|OBJECT_STORAGE_ENCRYPTION_KEY=|[0-9a-f]{64}|X-Goog-Signature|Signature=' || true
 }
 # ---- readers (counts, booleans, md5 digests only) ----
-stage2b_lock_facts() { echo "s2b_lock_absent=$([ ! -e "$(stage2b_lock_file)" ] && echo true || echo false)"; }
+stage2b_lock_facts() {   # absent = no entry of any kind at the lock path; owned = this operation's own lock (never true in a read-only phase)
+  local l; l="$(stage2b_lock_file)"
+  echo "s2b_lock_absent=$([ ! -e "$l" ] && [ ! -L "$l" ] && echo true || echo false)"
+  echo "s2b_lock_owned=$(stage2b_lock_owned "$l" && echo true || echo false)"
+}
 stage2b_partition_facts() { q "$(s2b_partition_sql)"; }
 stage2b_census_facts() { q "$(s2b_census_sql)"; q "$(s2b_candidate_bytes_sql)"; }
 stage2b_capacity_facts() {
@@ -180,11 +217,13 @@ stage2b_facts() {   # the complete read-only fact stream shared by every form
 }
 stage2b_print() { printf '%s\n' "$1" | grep -E "$2" | sed 's/^/  /'; }
 stage2b_cli() {   # <dry-run|verify|copy> → stdout: the sanitized summary JSON followed by one line __S2B_EXIT=<rc>; the CLI's own log never leaves the container
-  local mode="$1" args pg_net cred gid out rc
+  local mode="$1" args vmode pg_net cred gid out rc
+  # the object volume is mounted READ-ONLY for the product's read-only modes (--dry-run / --verify open the target read-only
+  # and never create the root; the summary and the CLI log are written to the container's own /tmp) and READ-WRITE for --copy only
   case "$mode" in
-    dry-run) args="--dry-run" ;;
-    verify)  args="--verify" ;;
-    copy)    args="--copy --concurrency $S2B_COPY_CONCURRENCY --batch $S2B_COPY_BATCH --recheck" ;;
+    dry-run) args="--dry-run"; vmode=ro ;;
+    verify)  args="--verify"; vmode=ro ;;
+    copy)    args="--copy --concurrency $S2B_COPY_CONCURRENCY --batch $S2B_COPY_BATCH --recheck"; vmode=rw ;;
     *) fail "stage2b_cli: unknown mode" ;;
   esac
   pg_net="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$(compose ps -q postgres)" 2>/dev/null | head -c 200)"
@@ -194,8 +233,9 @@ stage2b_cli() {   # <dry-run|verify|copy> → stdout: the sanitized summary JSON
   gid="$(grep -E '^GCS_CREDENTIAL_GID=' "$ENV_FILE" | tail -1 | cut -d= -f2 | tr -d '"')"
   [[ "$gid" =~ ^[0-9]+$ ]] || fail "stage2b_cli: GCS_CREDENTIAL_GID is not numeric"
   # the one-off container: the migrate image of exactly the product commit, the api env file (read inside the container only),
-  # the api runtime uid/gid (files it writes are the api's), the credential group, the object volume, the credential read-only
-  out="$(docker run --rm --network "$pg_net" --env-file "$ENV_FILE" -e HOME=/tmp -e NODE_ENV=production --user "$S2B_RUNTIME_UID_GID" --group-add "$gid" -v "${STAGE2A_VOLUME}:/data/objects" -v "$cred:/secrets/gcs-service-account.json:ro" --entrypoint sh "$(stage2b_image_tag)" -c "cd /repo && pnpm --filter @workspace/api-server run migrate-storage -- $args --out /tmp/b25-s2b-summary.json >/tmp/b25-s2b-cli.log 2>&1; rc=\$?; cat /tmp/b25-s2b-summary.json 2>/dev/null; echo; echo __S2B_EXIT=\$rc" </dev/null 2>/dev/null || true)"
+  # the api runtime uid/gid (files it writes are the api's), the credential group, the object volume (ro / rw per mode), the
+  # credential read-only
+  out="$(docker run --rm --network "$pg_net" --env-file "$ENV_FILE" -e HOME=/tmp -e NODE_ENV=production --user "$S2B_RUNTIME_UID_GID" --group-add "$gid" -v "${STAGE2A_VOLUME}:/data/objects:$vmode" -v "$cred:/secrets/gcs-service-account.json:ro" --entrypoint sh "$(stage2b_image_tag)" -c "cd /repo && pnpm --filter @workspace/api-server run migrate-storage -- $args --out /tmp/b25-s2b-summary.json >/tmp/b25-s2b-cli.log 2>&1; rc=\$?; cat /tmp/b25-s2b-summary.json 2>/dev/null; echo; echo __S2B_EXIT=\$rc" </dev/null 2>/dev/null || true)"
   rc="$(printf '%s\n' "$out" | grep -oE '^__S2B_EXIT=[0-9]+$' | tail -1 | cut -d= -f2)"
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=255
   printf '%s\n' "$out" | grep -vE '^__S2B_EXIT='
@@ -215,7 +255,7 @@ stage2b_evaluate() {   # <form> <facts> → prints the verdict, returns 0 only w
   printf '%s\n' "$verdict" | grep -qx "$marker=TRUE"
 }
 stage2b_sections() {   # <facts> → the sanitized sections of a read-only report
-  section "1. host / deployment / containers / readiness (product $STAGE2B_PRODUCT_SHA expected)"; stage2b_print "$1" '^(head_sha|current_deploy_sha|dirty|lock_absent|s2b_lock_absent|schema_fingerprint|storage_jobs_active|dead_jobs_total|api_running|api_health|web_health|pg_health|readyz_)'
+  section "1. host / deployment / containers / readiness (product $STAGE2B_PRODUCT_SHA expected)"; stage2b_print "$1" '^(head_sha|current_deploy_sha|dirty|lock_absent|s2b_lock_absent|s2b_lock_owned|schema_fingerprint|storage_jobs_active|dead_jobs_total|api_running|api_health|web_health|pg_health|readyz_)'
   section "2. storage runtime configuration (values never printed) and the api log counters"; stage2b_print "$1" '^(init_|banner_|env_|log_|leak_|web_leak_)'
   section "3. the named volume"; stage2b_print "$1" '^(mount_|root_|fs_)'
   section "4. two-class inventory partition, legacy reference census, candidates, capacity, image"; stage2b_print "$1" '^(s2b_|census_(total|unregistered|legacy_source|migrated|native_resolved|unclassified|dup_|exception_refs|smoke_refs)|cand_|vol_free_bytes|image_)'
@@ -245,36 +285,42 @@ phase_stage2b_migrate_dry_run() {   # READ-ONLY for product state; no argument i
   local facts; facts="$(stage2b_facts)"; stage2b_sections "$facts"
   section "7. preflight verdict (must be TRUE before the product command runs)"
   stage2b_evaluate preflight "$facts" || fail "stage2b-migrate-dry-run: preflight not ready — the product command was not run"
+  local pre; pre="pre_census_md5=$(printf '%s\n' "$facts" | grep -oE '^census_md5=[0-9a-f]{32}$' | cut -d= -f2)"
   section "8. migrate image from exactly the product commit (docker image cache only)"; stage2b_image_ensure; stage2b_image_facts | sed 's/^/  /'
-  section "9. migrate-storage --dry-run twice (read-only target; the summary never leaves the container unparsed)"
+  section "9. migrate-storage --dry-run twice (read-only target on a read-only mount; the summary never leaves the container unparsed)"
   local dr; dr="$(stage2b_dryrun_facts)"; stage2b_print "$dr" '^dr_(exit|exit_meaning|parse_ok|mode|complete|read_only|target_root|source_references|unique_objects|unattributable|planned|already|missing_source|checksum_mismatch|conflict|duplicate|failed|duplicate_groups|problems|exception_listed|repeat_identical|inventory_unchanged)='
-  facts="$(stage2b_facts)"$'\n'"$dr"
+  facts="$(stage2b_facts)"$'\n'"$pre"$'\n'"$dr"
   section "10. dry-run verdict (read-only decision; nothing is changed)"
   if stage2b_evaluate dryrun "$facts"; then log "stage2b-migrate-dry-run complete (nothing changed; B25_STAGE2B_DRY_RUN_REPORTED=TRUE)"
   else fail "stage2b-migrate-dry-run: the dry-run is not clean (nothing changed; B25_STAGE2B_DRY_RUN_REPORTED=FALSE)"; fi
 }
 phase_stage2b_migrate_copy_verify() {   # GUARDED MUTATION (confirmed by the workflow BEFORE SSH); no argument is read; nothing is deleted
   section "0. read-only guard (the copy itself is performed by the product command, never by this shell)"; stage2a_readonly_guard
-  local lock; lock="$(stage2b_lock_file)"; [ ! -e "$lock" ] || fail "a Stage 2B copy lock is present — a previous copy did not finish; review before any retry"
+  local lock; lock="$(stage2b_lock_file)"; [ ! -e "$lock" ] && [ ! -L "$lock" ] || fail "a Stage 2B copy lock is present — a previous copy did not finish; review before any retry"
   local facts pre; facts="$(stage2b_facts)"; stage2b_sections "$facts"
   section "7. preflight verdict (must be TRUE before anything else)"
   stage2b_evaluate preflight "$facts" || fail "stage2b-migrate-copy-verify: preflight not ready — nothing copied"
   pre="pre_candidates=$(printf '%s\n' "$facts" | grep -oE '^census_unregistered=[0-9]+$' | cut -d= -f2)"$'\n'"pre_migrated=$(printf '%s\n' "$facts" | grep -oE '^s2b_migrated=[0-9]+$' | cut -d= -f2)"$'\n'"pre_native=$(printf '%s\n' "$facts" | grep -oE '^s2b_native=[0-9]+$' | cut -d= -f2)"$'\n'"pre_nat_keys_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_keys_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_nat_pf_cipher_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_pf_cipher_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_nat_pm_generations_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_pm_generations_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_census_md5=$(printf '%s\n' "$facts" | grep -oE '^census_md5=[0-9a-f]{32}$' | cut -d= -f2)"
   section "8. migrate image from exactly the product commit"; stage2b_image_ensure; stage2b_image_facts | sed 's/^/  /'
-  section "9. dry-run twice (must be clean before the copy)"
+  section "9. dry-run twice (must be clean before the copy; bucket inventory identical to the preflight)"
   local dr; dr="$(stage2b_dryrun_facts)"; stage2b_print "$dr" '^dr_(exit_meaning|complete|planned|already|missing_source|checksum_mismatch|conflict|duplicate|failed|exception_listed|repeat_identical|inventory_unchanged)='
-  stage2b_evaluate dryrun "$(stage2b_facts)"$'\n'"$dr" || fail "stage2b-migrate-copy-verify: the dry-run is not clean — nothing copied"
+  stage2b_evaluate dryrun "$(stage2b_facts)"$'\n'"$pre"$'\n'"$dr" || fail "stage2b-migrate-copy-verify: the dry-run is not clean — nothing copied"
   section "10. copy (the product's --copy: register, copy, read back, flip rows; a conflicting local object is never overwritten; nothing is deleted)"
-  ( umask 077; echo "started_at=$(date -u +%FT%TZ) product=$STAGE2B_PRODUCT_SHA" > "$lock" )
+  # the copy lock: created exclusively by this operation (any existing entry fails closed), held through the copy, the verify
+  # and the post-copy facts; the copy verdict is evaluated WHILE it is held (condition 1, copy form: present and owned)
+  stage2b_lock_write "$lock"
   local cp vf; cp="$(stage2b_cli_run copy cp)"; stage2b_print "$cp" '^cp_(exit|exit_meaning|parse_ok|mode|complete|registered|processed|planned|copied|already|missing_source|checksum_mismatch|conflict|duplicate|failed|skipped|duplicate_groups|problems|exception_listed)='
   section "11. verify (the product's --verify: every migrated object read back against the inventory digest)"
   vf="$(stage2b_cli_run verify vf)"; stage2b_print "$vf" '^vf_(exit|exit_meaning|parse_ok|mode|complete|read_only|verified|not_migrated|unregistered|checksum_mismatch|failed|problems|exception_listed)='
-  section "12. post-copy state (two-class inventory, native class and bucket inventory compared with the preflight)"
+  section "12. post-copy state (two-class inventory, native class and bucket inventory compared with the preflight; the copy lock still held)"
   facts="$(stage2b_facts)"$'\n'"$pre"$'\n'"$cp"$'\n'"$vf"; stage2b_sections "$facts"
-  rm -f "$lock"
-  section "13. copy-verify verdict"
-  if stage2b_evaluate copy "$facts"; then log "stage2b-migrate-copy-verify complete (B25_STAGE2B_COPY_VERIFIED=TRUE; sources retained; nothing deleted)"
-  else fail "stage2b-migrate-copy-verify: the copy is NOT fully verified (B25_STAGE2B_COPY_VERIFIED=FALSE) — nothing deleted; the retained legacy sources remain the rollback copies; review the lines above before any further authorized copy"; fi
+  section "13. copy-verify verdict (evaluated while this operation's lock is held; the lock is released only on TRUE)"
+  if stage2b_evaluate copy "$facts"; then
+    stage2b_lock_release "$lock"
+    log "stage2b-migrate-copy-verify complete (B25_STAGE2B_COPY_VERIFIED=TRUE; sources retained; nothing deleted; copy lock released)"
+  else
+    fail "stage2b-migrate-copy-verify: the copy is NOT fully verified (B25_STAGE2B_COPY_VERIFIED=FALSE) — nothing deleted; the retained legacy sources remain the rollback copies; the copy lock is RETAINED as the review marker (every later Stage 2B mode fails closed until it is removed after independent review); review the lines above before any further authorized copy"
+  fi
 }
 phase_stage2b_postverify() {   # READ-ONLY; no argument is read
   section "0. read-only guard"; stage2a_readonly_guard
