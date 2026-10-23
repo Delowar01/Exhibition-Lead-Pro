@@ -4372,6 +4372,52 @@ phase_stage2a_tenant_drift() {
   log "stage2a-tenant-drift complete (read-only; nothing changed; B25_STAGE2A_TENANT_DIGEST=$verdict)"
 }
 
+# =============================================================================================================
+# B25 MOBILE R1/R2 DEPLOYMENT — read-only storage regression across the product deployment (library evaluator
+# stage2a_deploy_eligibility; constants S2A_DEPLOY_*). Two READ-ONLY phases, no argument, nothing written:
+#   stage2a-predeploy-snapshot  (product must still be the previous commit; the live state must equal the locked baseline)
+#   stage2a-postdeploy-verify   (product must be the next commit; the same baseline; a fresh api process; no error record)
+# =============================================================================================================
+stage2a_deploy_residue_facts() {   # disposable smoke residue counters (names never printed)
+  echo "smoke_companies=$(q "select count(*) from companies where name like 'B25 SMOKE %'")"
+  echo "smoke_storage_rows=$(q "select count(*) from storage_objects o where exists (select 1 from companies c where c.id = o.company_id and c.name like 'B25 SMOKE %')")"
+  echo "smoke_users=$(q "select count(*) from users where email like 'b25-smoke-%'")"
+}
+stage2a_deploy_run() {   # <pre|post>
+  local FORM="$1"
+  declare -f stage2a_deploy_eligibility >/dev/null || fail "apply library not loaded (stream b25-stage1-apply-lib.sh before this script)"
+  case "$FORM" in pre|post) ;; *) fail "deploy verifier: unknown form" ;; esac
+  local facts="" rf cid; cid="$(compose ps -q api || true)"
+  section "0. read-only guard"; stage2a_readonly_guard
+  section "1. host / deployment / containers / readiness (the $FORM form expects product $([ "$FORM" = pre ] && echo "$S2A_DEPLOY_PREV_SHA" || echo "$S2A_DEPLOY_NEXT_SHA"))"
+  facts+="$(stage2a_host_facts)"$'\n'; facts+="$(stage2a_container_facts "$cid")"$'\n'; facts+="$(stage2a_readyz_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(head_sha|current_deploy_sha|previous_deploy_sha|dirty|lock_absent|schema_fingerprint|storage_jobs_active|dead_jobs_total|api_running|api_health|web_health|pg_health|readyz_status|readyz_database|readyz_storage|readyz_inside|env_mode|key_line_count|env_core_identity_ok)=' | sed 's/^/  /'
+  section "2. storage runtime configuration (startup record, banner, container environment, the api log classification; values never printed)"
+  facts+="$(stage2a_init_facts "$cid")"$'\n'; facts+="$(stage2a_container_env_facts)"$'\n'; facts+="$(stage2a_web_leak_facts)"$'\n'
+  local mg; mg="$(stage2a_env_managed_of activate < "$ENV_FILE" | sha256sum | cut -c1-64)"
+  facts+="env_file_managed_ok=$([ "$mg" = "$(stage2a_env_lines activate | sha256sum | cut -c1-64)" ] && echo true || echo false)"$'\n'
+  facts+="env_file_key_lines=$(stage2a_key_lines)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(init_|banner_|env_|log_|leak_|web_leak_)' | sed 's/^/  /'
+  section "3. the named volume"
+  rf="$(stage2a_root_facts "$cid")"; facts+="$rf"$'\n'; facts+="root_entries_allowed=$(stage2a_root_entries_allowed "$rf")"$'\n'
+  printf '%s\n' "$rf" | sed 's/^/  /'
+  section "4. Stage 1 exception, protected live inventory, census, originals, smoke residue (Correction 5 model; compared with the locked pre-deploy baseline)"
+  facts+="$(stage2a_protected_facts)"$'\n'; facts+="$(stage2a_deploy_residue_facts)"$'\n'
+  printf '%s\n' "$facts" | grep -E '^(protected_|tenant_keys_md5|pf_|pm_|exc_|inv_|census_|unmarked_|refs_count|refs_legacy_count|refs_ambiguous|originals_|smoke_)' | sed 's/^/  /'
+  section "5. $FORM-deploy prerequisites (read-only decision; nothing is changed)"
+  local verdict; if verdict="$(printf '%s' "$facts" | stage2a_deploy_eligibility "$FORM")"; then printf '%s\n' "$verdict"; else printf '%s\n' "$verdict"; fail "deploy verifier ($FORM form) failed — the lines above are the verdict (read-only; nothing changed)"; fi
+  rm -f "$HOME"/.b25-s1-node.err
+  if [ "$FORM" = pre ]; then printf '%s\n' "$verdict" | grep -qx 'B25_DEPLOY_PREDEPLOY_BASELINE=TRUE'; else printf '%s\n' "$verdict" | grep -qx 'B25_DEPLOY_POSTDEPLOY_STORAGE_READY=TRUE'; fi
+}
+phase_stage2a_predeploy_snapshot() {   # no argument is read
+  if stage2a_deploy_run pre; then log "stage2a-predeploy-snapshot complete (read-only; nothing changed; B25_DEPLOY_PREDEPLOY_BASELINE=TRUE)"
+  else fail "stage2a-predeploy-snapshot: the live state does not equal the locked baseline (read-only; nothing changed; B25_DEPLOY_PREDEPLOY_BASELINE=FALSE)"; fi
+}
+phase_stage2a_postdeploy_verify() {   # no argument is read
+  if stage2a_deploy_run post; then log "stage2a-postdeploy-verify complete (read-only; nothing changed; B25_DEPLOY_POSTDEPLOY_STORAGE_READY=TRUE)"
+  else fail "stage2a-postdeploy-verify: prerequisites not met (read-only; nothing changed; B25_DEPLOY_POSTDEPLOY_STORAGE_READY=FALSE)"; fi
+}
+
 case "$PHASE" in
   preflight) phase_preflight ;;
   schema-apply) phase_schema_apply ;;
@@ -4412,6 +4458,8 @@ case "$PHASE" in
   stage2a-residue4-settle) phase_stage2a_residue4_settle ;;
   stage2a-protected-inventory-inspect) phase_stage2a_protected_inventory_inspect ;;
   stage2a-company-change-inspect) phase_stage2a_company_change_inspect ;;
+  stage2a-predeploy-snapshot) phase_stage2a_predeploy_snapshot ;;
+  stage2a-postdeploy-verify) phase_stage2a_postdeploy_verify ;;
   *) fail "phase '$PHASE' is not implemented" ;;
 esac
 exit 0

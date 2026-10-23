@@ -1499,3 +1499,105 @@ stage2a_tenant_post_eval() {   # [strict (default: the smoke's own post gate) | 
   if [ "$failed" = "0" ]; then echo "B25_STAGE2A_TENANT_POST_GATE=PASS"; return 0; fi
   echo "B25_STAGE2A_TENANT_POST_GATE=FAIL"; return 1
 }
+
+# ---- B25 MOBILE R1/R2 DEPLOYMENT — read-only storage regression across the product deployment ---------------------
+# The Stage 2A verifiers stay pinned to the Stage 2A product commit (STAGE2A_PRODUCT_SHA); this separate, read-only pair
+# proves that the ordinary product deployment of the approved mobile head leaves the protected storage inventory
+# untouched: a FRESH pre-deploy snapshot (the live state must equal the locked baseline below, product = the previous
+# commit) and the post-deploy verification (the live state must still equal the same baseline, product = the next commit,
+# runtime healthy, a fresh api process with no error-level record). Constants only — never an input, never a record
+# handed across runs; a baseline that has legitimately moved makes the snapshot FAIL and is reviewed, never adopted.
+readonly S2A_DEPLOY_PREV_SHA="e559b0024b28d4a77becdcb10c4168004dddea75"
+readonly S2A_DEPLOY_NEXT_SHA="6a8dad1fe161dc1b31041794e5e3532e9f13327c"
+readonly S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT="30c4ecbd867cd2cd59abcb58581ecb04"
+# the protected live inventory of the real tenant as recorded unchanged by every hosted read-only inspection since
+# 2026-10-22 and re-proven on 2026-10-23 by the settlement 39905207903, the readiness 39905481382, the smoke 39905712331
+# (before / during / after) and the post-switch verification 39906211918
+readonly S2A_DEPLOY_BASE_PROTECTED_ROWS=2
+readonly S2A_DEPLOY_BASE_PROTECTED_MD5="ad76fa3df829680c6670469f3fe009e1"
+readonly S2A_DEPLOY_BASE_PROTECTED_BYTES=21299
+readonly S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5="5c4f378ee12117ad6d40d02457d8cf1a"
+readonly S2A_DEPLOY_BASE_PF_CIPHER_MD5="c5f0796fffede47b7900def36ca59bd3"
+readonly S2A_DEPLOY_BASE_PM_GENERATIONS_MD5="2e554409f57e27a4874a840175146407"
+readonly S2A_DEPLOY_BASE_CENSUS_MD5="b7c8dd371c7d7e076f05ae8f69fc44e2"
+s2a_deploy_constants_ok() {
+  [[ "$S2A_DEPLOY_PREV_SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$S2A_DEPLOY_NEXT_SHA" =~ ^[0-9a-f]{40}$ ]] && [ "$S2A_DEPLOY_PREV_SHA" != "$S2A_DEPLOY_NEXT_SHA" ] \
+    && [ "$S2A_DEPLOY_PREV_SHA" = "$STAGE2A_PRODUCT_SHA" ] && [[ "$S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT" =~ ^[0-9a-f]{32}$ ]] \
+    && [[ "$S2A_DEPLOY_BASE_PROTECTED_ROWS" =~ ^[1-9][0-9]*$ ]] && [[ "$S2A_DEPLOY_BASE_PROTECTED_BYTES" =~ ^[1-9][0-9]*$ ]] \
+    && [[ "$S2A_DEPLOY_BASE_PROTECTED_MD5$S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5$S2A_DEPLOY_BASE_PF_CIPHER_MD5$S2A_DEPLOY_BASE_PM_GENERATIONS_MD5$S2A_DEPLOY_BASE_CENSUS_MD5" =~ ^[0-9a-f]{160}$ ]]
+}
+# stage2a_deploy_eligibility <pre|post> — reads the fact stream of stage2a_deploy_run; prints "deploy N: … — OK|FAIL" per
+# condition and the markers B25_DEPLOY_<FORM>_CONDITIONS_FAILED and B25_DEPLOY_PREDEPLOY_BASELINE (pre) /
+# B25_DEPLOY_POSTDEPLOY_STORAGE_READY (post); exits nonzero unless every condition holds.
+stage2a_deploy_eligibility() {
+  local FORM="${1:-}"
+  local -A f=()
+  local line k v
+  while IFS= read -r line; do
+    [[ "$line" =~ ^([a-z0-9_]+)=(.*)$ ]] || continue
+    k="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"; f[$k]="$v"
+  done
+  local failed=0 n=0
+  g() { printf '%s' "${f[$1]:-<missing>}"; }
+  is_true() { [ "$(g "$1")" = "true" ]; }
+  is_false() { [ "$(g "$1")" = "false" ]; }
+  is_zero() { [ "$(g "$1")" = "0" ]; }
+  is_eq() { [ "$(g "$1")" = "$2" ]; }
+  cond() { n=$((n + 1)); if [ "$2" = "0" ]; then echo "deploy $n: $1 — OK ($3)"; else echo "deploy $n: $1 — FAIL ($3)"; failed=$((failed + 1)); fi; }
+  local ok want N="$S2A_DEPLOY_BASE_PROTECTED_ROWS" PB="$S2A_DEPLOY_BASE_PROTECTED_BYTES" OB
+  case "$FORM" in pre) want="$S2A_DEPLOY_PREV_SHA" ;; post) want="$S2A_DEPLOY_NEXT_SHA" ;; *) want="" ;; esac
+  OB="$(g originals_bytes)"; [[ "$OB" =~ ^[0-9]+$ ]] || OB=-1
+  ok=1; [ -n "$want" ] && s2a_deploy_constants_ok && is_eq head_sha "$want" && is_eq current_deploy_sha "$want" && is_zero dirty && is_true lock_absent \
+    && { [ "$FORM" = pre ] || is_eq previous_deploy_sha "$S2A_DEPLOY_PREV_SHA"; } && ok=0
+  cond "product commit for the $FORM form = ${want:-<unknown form>} (checkout and current-deploy.sha; clean; no activation lock$([ "$FORM" = post ] && echo "; previous-deploy.sha = $S2A_DEPLOY_PREV_SHA"))" $ok "form=$FORM head=$(g head_sha) current=$(g current_deploy_sha) previous=$(g previous_deploy_sha) dirty=$(g dirty) lock_absent=$(g lock_absent) constants_ok=$(s2a_deploy_constants_ok && echo true || echo false)"
+  ok=1; is_true api_running && is_eq api_health healthy && is_eq web_health healthy && is_eq pg_health healthy && ok=0
+  cond "api running and healthy; web and postgres healthy" $ok "api=$(g api_running)/$(g api_health) web=$(g web_health) postgres=$(g pg_health)"
+  ok=1; is_eq readyz_status ok && is_eq readyz_database ok && is_eq readyz_storage ok && is_eq readyz_inside ok && ok=0
+  cond "readiness ok / database ok / storage ok (through the proxy and inside the api container)" $ok "status=$(g readyz_status) database=$(g readyz_database) storage=$(g readyz_storage) inside=$(g readyz_inside)"
+  ok=1; is_eq banner_driver fs && is_true banner_root_set && is_true banner_key_set && is_eq banner_fallback true && is_eq banner_mirror gcs && ok=0
+  cond "entrypoint banner: driver fs, fs root (set), encryption key (set), fallback true, mirror gcs" $ok "driver=$(g banner_driver) root_set=$(g banner_root_set) key_set=$(g banner_key_set) fallback=$(g banner_fallback) mirror=$(g banner_mirror)"
+  ok=1; is_true init_record_found && is_eq init_driver fs && is_eq init_fallback true && is_eq init_mirror true && is_eq init_legacy_delete false && is_eq init_encryption configured && ok=0
+  cond "storage initialization record of the current process: fs primary, legacy fallback true, strict mirror true, legacy delete false, encryption configured" $ok "record=$(g init_record_found) driver=$(g init_driver) fallback=$(g init_fallback) mirror=$(g init_mirror) legacy_delete=$(g init_legacy_delete) encryption=$(g init_encryption)"
+  ok=1; is_true env_driver_is_fs && is_true env_root_is_locked && is_true env_fallback_is_true && is_true env_mirror_is_gcs && is_true env_legacy_delete_off && is_true env_key_set && ok=0
+  cond "api container environment = exactly the locked activation set (compared inside the container; values never printed); key present" $ok "driver_fs=$(g env_driver_is_fs) root_locked=$(g env_root_is_locked) fallback_true=$(g env_fallback_is_true) mirror_gcs=$(g env_mirror_is_gcs) legacy_delete_off=$(g env_legacy_delete_off) key_set=$(g env_key_set)"
+  ok=1; is_true env_file_managed_ok && is_eq env_file_key_lines 1 && is_eq env_mode 600 && is_true env_core_identity_ok && ok=0
+  cond "VPS env file: managed lines = the fixed activation set, exactly one key line, mode 600, core identity unchanged" $ok "managed_ok=$(g env_file_managed_ok) key_lines=$(g env_file_key_lines) mode=$(g env_mode) core_identity_ok=$(g env_core_identity_ok)"
+  ok=1; is_eq schema_fingerprint "$S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT" && ok=0
+  cond "schema fingerprint unchanged by the deployment ($S2A_DEPLOY_BASE_SCHEMA_FINGERPRINT: the mobile release carries no schema change)" $ok "fingerprint=$(g schema_fingerprint)"
+  ok=1; is_zero log_mirror_failures && is_zero log_integrity_failures && is_zero log_init_failures && is_eq init_records_current 1 && is_zero log_refusals && ok=0
+  cond "mirror failures = 0, integrity failures = 0, initialization failures = 0; the current process initialized storage exactly once and never refused to start" $ok "mirror_failures=$(g log_mirror_failures) integrity_failures=$(g log_integrity_failures) init_failures=$(g log_init_failures) init_records=$(g init_records_current) refusals=$(g log_refusals)"
+  ok=1; is_true log_read_ok && is_zero log_malformed_records && is_zero log_level60 && is_zero log_status5xx && is_zero log_unclassified_level50 && is_zero log_duplicate_records \
+    && [[ "$(g log_level50_total)" =~ ^[0-9]+$ ]] && is_eq log_level50 "$(g log_level50_total)" && is_eq log_level50_total "$(g log_expected_smoke_cleanup_404)" \
+    && { if [ "$FORM" = post ]; then is_zero log_level50_total; else { is_zero log_expected_smoke_cleanup_404 && is_false log_c8_both_attributed; } || { is_eq log_expected_smoke_cleanup_404 "$S2A_C8_EXPECTED" && is_true log_c8_both_attributed; }; fi; } && ok=0
+  cond "error-level records of the current process (parsed JSON): $([ "$FORM" = post ] && echo "NONE in the freshly deployed process" || echo "none except the fully attributed cleanup 404s of smoke run $S2A_C8_SMOKE_RUN (0 or exactly $S2A_C8_EXPECTED)"); no unclassified / fatal / malformed / duplicate record; no 5xx response" $ok "read_ok=$(g log_read_ok) level50_raw=$(g log_level50) level50_total=$(g log_level50_total) expected_404=$(g log_expected_smoke_cleanup_404) unclassified=$(g log_unclassified_level50) duplicates=$(g log_duplicate_records) level60=$(g log_level60) malformed=$(g log_malformed_records) status5xx=$(g log_status5xx) both=$(g log_c8_both_attributed)"
+  ok=1; is_zero inv_uncertain && is_zero inv_unproven && is_zero inv_cleanup_pending && is_zero inv_leases && is_zero inv_inflight && is_eq inv_retained_legacy 1 && is_eq inv_total "$((N + 1))" && is_eq inv_active "$N" \
+    && is_true protected_where_ok && is_eq protected_rows "$N" && is_eq protected_live_ok "$N" && is_eq protected_assoc_ok "$N" && is_zero protected_other && ok=0
+  cond "inventory = the Stage 1 exception + exactly the $N protected live rows of the real tenants (ownership + product association proven), nothing uncertain / unproven / cleanup-pending / leased / in flight" $ok "total=$(g inv_total) active=$(g inv_active) retained=$(g inv_retained_legacy) uncertain=$(g inv_uncertain) unproven=$(g inv_unproven) cleanup_pending=$(g inv_cleanup_pending) leases=$(g inv_leases) inflight=$(g inv_inflight) protected=$(g protected_rows) live_ok=$(g protected_live_ok) assoc_ok=$(g protected_assoc_ok) other=$(g protected_other)"
+  ok=1; is_eq protected_md5 "$S2A_DEPLOY_BASE_PROTECTED_MD5" && is_eq protected_bytes "$PB" && is_eq protected_keys_md5 "$S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5" && is_eq tenant_keys_md5 "$S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5" \
+    && is_eq pf_cipher_md5 "$S2A_DEPLOY_BASE_PF_CIPHER_MD5" && is_eq pm_generations_md5 "$S2A_DEPLOY_BASE_PM_GENERATIONS_MD5" && ok=0
+  cond "the protected set is IDENTICAL to the locked pre-deploy baseline (row digest, bytes $PB, stored keys, encrypted-file ciphertext digests, mirror generations)" $ok "row_md5_equal=$([ "$(g protected_md5)" = "$S2A_DEPLOY_BASE_PROTECTED_MD5" ] && echo true || echo false) bytes=$(g protected_bytes) keys_equal=$([ "$(g protected_keys_md5)" = "$S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5" ] && echo true || echo false) tenant_keys_equal=$([ "$(g tenant_keys_md5)" = "$S2A_DEPLOY_BASE_PROTECTED_KEYS_MD5" ] && echo true || echo false) cipher_equal=$([ "$(g pf_cipher_md5)" = "$S2A_DEPLOY_BASE_PF_CIPHER_MD5" ] && echo true || echo false) generations_equal=$([ "$(g pm_generations_md5)" = "$S2A_DEPLOY_BASE_PM_GENERATIONS_MD5" ] && echo true || echo false)"
+  ok=1; is_true pf_read_ok && is_eq pf_rows "$N" && is_eq pf_present "$N" && is_eq pf_regular "$N" && is_eq pf_owner_ok "$N" && is_eq pf_mode_ok "$N" && is_eq pf_magic_ok "$N" && is_eq pf_pdf_free "$N" && is_eq pf_size_differs "$N" && is_zero pf_other_files && is_zero pf_symlinks && is_eq pf_tenant_files "$N" && is_eq pf_tenant_keys_md5 "$(g protected_keys_md5)" && ok=0
+  cond "the $N protected encrypted files present at their stored keys (regular, runtime-owned, 0600, envelope magic, no PDF header, ciphertext size differs); the tenant file set = exactly the stored keys" $ok "probe=$(g pf_read_ok) rows=$(g pf_rows) present=$(g pf_present) regular=$(g pf_regular) owner=$(g pf_owner_ok) mode=$(g pf_mode_ok) magic=$(g pf_magic_ok) pdf_free=$(g pf_pdf_free) size_differs=$(g pf_size_differs) tenant_files=$(g pf_tenant_files) other=$(g pf_other_files) symlinks=$(g pf_symlinks) keys_match=$([ "$(g pf_tenant_keys_md5)" = "$(g protected_keys_md5)" ] && echo true || echo false)"
+  ok=1; is_true pm_read_ok && is_eq pm_rows "$N" && is_eq pm_present "$N" && is_eq pm_bucket_ok "$N" && is_eq pm_canonical_key "$N" && is_eq pm_marker_ok "$N" && is_eq pm_generation_ok "$N" && is_eq pm_size_ok "$N" && is_eq pm_sha_ok "$N" && [[ "$(g pm_generation_digits_min)" =~ ^[0-9]+$ ]] && [ "$(g pm_generation_digits_min)" -ge 10 ] && ok=0
+  cond "the $N protected mirrors present in the configured bucket at the canonical keys (marker, canonical generation, plaintext size, row digest)" $ok "probe=$(g pm_read_ok) rows=$(g pm_rows) present=$(g pm_present) bucket=$(g pm_bucket_ok) canonical=$(g pm_canonical_key) marker=$(g pm_marker_ok) generation=$(g pm_generation_ok) size=$(g pm_size_ok) sha=$(g pm_sha_ok) generation_digits_min=$(g pm_generation_digits_min)"
+  ok=1; is_eq exc_row_count 1 && is_eq exc_state deleted && is_eq exc_last_error LEGACY_RETAINED && is_eq exc_driver gcs && is_eq exc_company "$B25PHYS_COMPANY" && is_eq exc_size "$B25PHYS_OBJECT_SIZE" && is_true exc_identity_ok && is_false exc_uncertain && is_false exc_lease && is_zero exc_live_refs && ok=0
+  cond "Stage 1 exception row still deleted / LEGACY_RETAINED / gcs / company $B25PHYS_COMPANY / size $B25PHYS_OBJECT_SIZE with its identity and 0 live references" $ok "rows=$(g exc_row_count) state=$(g exc_state) last_error=$(g exc_last_error) driver=$(g exc_driver) company=$(g exc_company) size=$(g exc_size) identity=$(g exc_identity_ok) uncertain=$(g exc_uncertain) lease=$(g exc_lease) live_refs=$(g exc_live_refs)"
+  ok=1; is_true exc_provider_present && is_true exc_provider_marker_ok && is_true exc_provider_size_matches && is_true exc_generation_canonical && is_true exc_generation_stable && is_eq exc_generation_digest "$B25PHYS_PRE_GEN_DIGEST" && ok=0
+  cond "Stage 1 provider object still present and unchanged (marker, size, canonical stable generation, proven digest $B25PHYS_PRE_GEN_DIGEST)" $ok "present=$(g exc_provider_present) marker=$(g exc_provider_marker_ok) size_matches=$(g exc_provider_size_matches) canonical=$(g exc_generation_canonical) stable=$(g exc_generation_stable) digest=$(g exc_generation_digest)"
+  ok=1; [ "$OB" -ge 0 ] && [ "$((OB + B25PHYS_OBJECT_SIZE))" = "$B25PHYS_CENSUS_BYTES" ] && is_eq census_objects "$((4 + 1 + N))" && is_eq census_bytes "$((OB + B25PHYS_OBJECT_SIZE + PB))" && is_eq census_marked "$((1 + N))" && is_eq census_generationless "$B25PHYS_CENSUS_GENERATIONLESS" && is_eq census_md5 "$S2A_DEPLOY_BASE_CENSUS_MD5" && ok=0
+  cond "bucket partition = 4 originals + 1 exception + $N protected mirrors (objects $((4 + 1 + N)), bytes derived from the originals' recorded sizes + $B25PHYS_OBJECT_SIZE + $PB, marked $((1 + N)), generationless $B25PHYS_CENSUS_GENERATIONLESS) with the locked inventory digest" $ok "objects=$(g census_objects) bytes=$(g census_bytes) originals_bytes=$(g originals_bytes) marked=$(g census_marked) generationless=$(g census_generationless) inventory_md5_equal=$([ "$(g census_md5)" = "$S2A_DEPLOY_BASE_CENSUS_MD5" ] && echo true || echo false)"
+  ok=1; is_eq unmarked_objects 4 && is_eq unmarked_md5 "$B25PHYS_ORIGINALS_MD5" && is_eq refs_legacy_count 4 && is_zero refs_ambiguous && is_eq originals_referenced 4 && is_eq originals_present 4 && is_zero originals_missing && is_eq originals_size_match 4 && ok=0
+  cond "original legacy objects unchanged (4 unmarked, locked digest) and the legacy references 4/4 referenced, present, size-matched, none ambiguous" $ok "unmarked_objects=$(g unmarked_objects) unmarked_md5=$(g unmarked_md5) references_legacy=$(g refs_legacy_count) ambiguous=$(g refs_ambiguous) referenced=$(g originals_referenced) present=$(g originals_present) missing=$(g originals_missing) size_match=$(g originals_size_match)"
+  ok=1; is_zero smoke_companies && is_zero smoke_storage_rows && is_zero smoke_users && ok=0
+  cond "no disposable smoke residue (no B25 SMOKE company, no storage row of one, no b25-smoke user)" $ok "smoke_companies=$(g smoke_companies) smoke_storage_rows=$(g smoke_storage_rows) smoke_users=$(g smoke_users)"
+  ok=1; is_eq mount_type volume && is_eq mount_name "$STAGE2A_VOLUME" && is_true mount_rw && is_eq root_owner "$STAGE2A_ROOT_OWNER" && is_eq root_mode "$STAGE2A_ROOT_MODE" && is_false root_is_symlink && is_true root_is_dir && is_true root_writable && is_eq root_tenant_files "$N" && is_true root_entries_allowed && ok=0
+  cond "filesystem root: the named volume $STAGE2A_VOLUME, $STAGE2A_ROOT_OWNER / $STAGE2A_ROOT_MODE, directory, writable by the runtime, exactly the $N protected files, otherwise only the health namespace" $ok "type=$(g mount_type) name=$(g mount_name) rw=$(g mount_rw) owner=$(g root_owner) mode=$(g root_mode) symlink=$(g root_is_symlink) dir=$(g root_is_dir) writable=$(g root_writable) tenant_files=$(g root_tenant_files) entries_allowed=$(g root_entries_allowed)"
+  ok=1; is_zero leak_root_path && is_zero leak_key_shaped && is_zero leak_key_assignment && is_zero leak_bucket_ref && is_zero leak_signature && is_zero web_leak_root_path && is_zero web_leak_signature && ok=0
+  cond "no plaintext storage path, key-shaped token, key assignment, bucket reference or signed-URL text in the api / web logs" $ok "root_path=$(g leak_root_path) key_shaped=$(g leak_key_shaped) key_assignment=$(g leak_key_assignment) bucket_ref=$(g leak_bucket_ref) signature=$(g leak_signature) web_root_path=$(g web_leak_root_path) web_signature=$(g web_leak_signature)"
+  local F; F="$(printf '%s' "$FORM" | tr '[:lower:]' '[:upper:]')"; [ -n "$F" ] || F=UNKNOWN
+  echo "B25_DEPLOY_${F}_CONDITIONS_FAILED=$failed"
+  if [ "$FORM" = pre ]; then echo "B25_DEPLOY_PREDEPLOY_BASELINE=$([ "$failed" = "0" ] && echo TRUE || echo FALSE)"
+  elif [ "$FORM" = post ]; then echo "B25_DEPLOY_POSTDEPLOY_STORAGE_READY=$([ "$failed" = "0" ] && echo TRUE || echo FALSE)"
+  else echo "B25_DEPLOY_PREDEPLOY_BASELINE=FALSE"; echo "B25_DEPLOY_POSTDEPLOY_STORAGE_READY=FALSE"; fi
+  return 0   # like every Stage 2A evaluator the markers carry the verdict; stage2a_deploy_run gates on the TRUE marker
+}
