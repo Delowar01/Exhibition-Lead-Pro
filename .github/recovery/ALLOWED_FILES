@@ -1,0 +1,14 @@
+# Files that may differ from the locked product commit on ops/b30-recovery-runner (verified by the workflow guard).
+.github/recovery/ALLOWED_FILES
+.github/recovery/README.md
+.github/recovery/b30-host-bootstrap.sh
+.github/recovery/b30-runner-lib.sh
+.github/recovery/test/b30-runner.test.sh
+.github/recovery/test/stub/docker
+.github/recovery/toolkit/README.md
+.github/recovery/toolkit/SHA256SUMS
+.github/recovery/toolkit/b30-backup-set.sh
+.github/recovery/toolkit/b30-keyid-owner.sh
+.github/recovery/toolkit/b30-readback.ts
+.github/recovery/toolkit/b30-restore-rehearsal.sh
+.github/workflows/b30-recovery-runner.yml

@@ -1,0 +1,69 @@
+#!/bin/bash
+# B30 recovery-runner TEST STUB for `docker` — control-flow tests WITHOUT a docker daemon (never used on a host).
+# Records every invocation to $B31_STUB_LOG, maps the live volume to $B31_FAKE_VOLUME (read-only use only),
+# the throwaway object volume to $B31_FAKE_RESTORE_VOL, answers SQL with canned facts, runs the REAL
+# read-back helper locally, and returns a canned verify summary (vf_source=canned). It never touches
+# anything outside the test directories.
+set -u
+printf '%s\n' "${*//$'\n'/ }" >> "$B31_STUB_LOG"   # one line per invocation (embedded newlines folded)
+FAKEVOL="${B31_FAKE_VOLUME:-}"; RESTVOL="${B31_FAKE_RESTORE_VOL:-}"
+stub_sql() {   # <sql> → canned answer
+  case "$1" in
+    *"md5(string_agg"*) echo "$B31_FP" ;;
+    *"inventory_total="*) echo "${B31_INV_ANSWER:-$B31_INV}" ;;
+    *"information_schema.tables"*) echo "72" ;;
+    *) : ;;
+  esac
+}
+argval() {   # <flag> → the argument following the first occurrence of <flag> among the recorded args
+  local prev=""; for a in "${ARGS[@]}"; do [ "$prev" = "$1" ] && { printf '%s' "$a"; return; }; prev="$a"; done
+}
+envval() {   # <NAME> → value of "-e NAME=..." among the args
+  local prev=""; for a in "${ARGS[@]}"; do if [ "$prev" = "-e" ] && [[ "$a" == "$1="* ]]; then printf '%s' "${a#*=}"; return; fi; prev="$a"; done
+}
+mountsrc() {   # <:target suffix> → host side of the -v spec ending with the suffix
+  for a in "${ARGS[@]}"; do [[ "$a" == *"$1" ]] && { printf '%s' "${a%%:*}"; return; }; done
+}
+ARGS=("$@")
+case "$1" in
+  compose)
+    shift; while [ "${1:-}" = "-f" ]; do shift 2; done
+    case "${1:-}" in
+      ps) if printf '%s ' "$@" | grep -q -- ' -q postgres'; then echo "pgcid"; else echo "svc"; fi; exit 0 ;;
+      exec) shift; [ "${1:-}" = "-T" ] && shift; shift   # postgres
+            script="${3:-}"; sql="${5:-}"
+            if printf '%s' "$script" | grep -q pg_dump; then cat "$B31_FAKE_DUMP_SQL"; exit 0; fi
+            if printf '%s' "$script" | grep -q psql; then stub_sql "$sql"; exit 0; fi
+            exit 0 ;;
+    esac; exit 0 ;;
+  volume) case "$2" in inspect) exit 0 ;; create) echo "$3"; exit 0 ;; rm) exit 0 ;; ls) exit 0 ;; esac ;;
+  image) echo "$B31_PRODUCT_SHA"; exit 0 ;;
+  ps) if [ "${2:-}" = "-a" ] && [ -n "${B31_PS_A_ANSWER:-}" ]; then echo "$B31_PS_A_ANSWER"; fi
+      if [ "${2:-}" = "--format" ] && [ "${3:-}" = "{{.Image}}" ] && [ -n "${B31_PS_IMAGES:-}" ]; then printf '%s\n' "$B31_PS_IMAGES"; fi; exit 0 ;;
+  network) case "$2" in create) echo "netid"; exit 0 ;; rm) exit 0 ;; ls) exit 0 ;; esac ;;
+  inspect) echo "sha256:fakepgimage"; exit 0 ;;
+  rm) exit 0 ;;
+  exec) shift; [ "${1:-}" = "-i" ] && shift; shift   # container
+        case "${1:-}" in
+          pg_isready) exit 0 ;;
+          psql) if printf '%s ' "$@" | grep -q -- ' -f - '; then cat >/dev/null; exit "${B31_RESTORE_RC:-0}"; fi
+                stub_sql "${@: -1}"; exit 0 ;;
+        esac; exit 0 ;;
+  run)
+    all="$*"
+    case "$all" in
+      *"--entrypoint tar"*"--version"*) echo "tar (GNU tar) 1.35"; exit 0 ;;
+      *"--entrypoint node"*) js="${@: -1}"; node -e "$(printf '%s' "$js" | sed "s#\"/src\"#\"$FAKEVOL\"#")"; exit $? ;;
+      *"tar --numeric-owner -C /src -cf"*) name="$(envval NAME)"; out="$(mountsrc ':/out')"; tar --numeric-owner -C "$FAKEVOL" -cf "$out/$name" . && chmod 600 "$out/$name"; exit $? ;;
+      *"tar --numeric-owner -C /dst -xpf"*) name="$(envval NAME)"; in="$(mountsrc ':/in:ro')"; mkdir -p "$RESTVOL"; tar --numeric-owner -C "$RESTVOL" -xpf "$in/$name"; exit $? ;;
+      *"find /dst -type f"*) echo "regular=$(find "$RESTVOL" -type f | wc -l | tr -d ' ') not_999=0 files_not_600=$(find "$RESTVOL" -type f ! -perm 600 | wc -l | tr -d ' ') dirs_not_700=$(find "$RESTVOL" -mindepth 1 -type d ! -perm 700 | wc -l | tr -d ' ') symlinks=$(find "$RESTVOL" -type l | wc -l | tr -d ' ')"; exit 0 ;;
+      *"b30-readback.ts"*) envf="$(argval --env-file)"; key="$(grep -E '^OBJECT_STORAGE_ENCRYPTION_KEY=' "$envf" | cut -d= -f2-)"
+            hsrc="$(mountsrc ':/repo/artifacts/api-server/scripts/b30-readback.ts:ro')"   # the SET's helper copy is what runs
+            cp "$hsrc" "$B31_PKG/scripts/b30-readback.ts"
+            ( cd "$B31_PKG" && env -i PATH="$PATH" HOME="$HOME" DATABASE_URL="$B31_LOCAL_DB" OBJECT_STORAGE_FS_ROOT="$RESTVOL" OBJECT_STORAGE_ENCRYPTION_KEY="$key" B30_EXPECT_ROWS="$(envval B30_EXPECT_ROWS)" B30_EXPECT_KEY_ID="$(envval B30_EXPECT_KEY_ID)" B30_EXPECT_UID="$(id -u)" B30_EXPECT_GID="$(id -g)" node_modules/.bin/tsx scripts/b30-readback.ts ); rc=$?; rm -f "$B31_PKG/scripts/b30-readback.ts"; exit $rc ;;
+      *"migrate-storage"*"--verify"*) echo "vf_parse_ok=true vf_mode=verify vf_read_only=true vf_target_root=present vf_complete=${B31_VF_COMPLETE:-false} vf_source_references=5 vf_unique_objects=5 vf_verified=${B31_VF_VERIFIED:-0} vf_not_migrated=0 vf_unregistered=${B31_VF_UNREG:-4} vf_checksum_mismatch=0 vf_failed=0 vf_duplicate=0 vf_missing_source=0 vf_source=canned"; echo "vf_exit=${B31_VF_EXIT:-2}"; exit 0 ;;
+      *" -d --name "*) echo "containerid"; exit 0 ;;
+    esac
+    echo "stub: unhandled docker run: $all" >&2; exit 97 ;;
+esac
+echo "stub: unhandled docker call: $*" >&2; exit 97

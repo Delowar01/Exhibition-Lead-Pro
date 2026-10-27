@@ -1,0 +1,274 @@
+# =============================================================================
+# B30 RECOVERY RUNNER (ops/b30-recovery-runner) — hosted execution of the REVIEWED recovery toolkit (v1.1)
+#
+# Registered by pushing this file to its own isolated ops branch; dispatched by id with ref = this branch; the job
+# runs ONLY on this branch and only for workflow_dispatch. The branch content must equal the locked product commit
+# plus exactly the recovery files listed in .github/recovery/ALLOWED_FILES. The runner library, the host bootstrap and
+# the toolkit's SHA256SUMS are pinned below and verified before anything else runs. Typed confirmations are compared
+# on the runner BEFORE any SSH session; no input ever reaches a shell as text (values are regex-validated and passed
+# as printf %q assignments inside the streamed script). The host writes the toolkit's output to a 600 file under the
+# backup tree and returns ONLY an allow-listed B30_<KEY>=<token> summary; the runner filters it again.
+#
+# MODES
+#   b30_recovery_check  READ-ONLY (every confirmation and both timestamps EMPTY): the toolkit's B30_CHECK_ONLY=1 exactly
+#                       once → B30_RUNNER_RESULT=CHECK_OK. Nothing created; no backup, no pruning, no product write.
+#   b30_recovery_set    ONE PRE-COPY recovery set (confirm_product_sha = the product commit, confirm_recovery =
+#                       CREATE_B30_PRE_COPY_RECOVERY_SET, confirm_quiet_period = B30 QUIET PERIOD ACTIVE, confirm_paused =
+#                       UPLOADS BRANDING EXPORTS DELETIONS PAUSED, quiet_start/quiet_end = the owner-approved UTC window,
+#                       active now, ≤ 240 min, outside 03:00-04:00 and 04:15-10:45 UTC): CHECK_ONLY once, then
+#                       b30-backup-set.sh once with KEEP=1000 and B30_EXPECTED_UNREGISTERED=4 → B30_RUNNER_RESULT=SET_VERIFIED.
+#                       One set per approved window; no retry; an incomplete set is preserved, never deleted.
+#   The application does NOT enforce the quiet period; the typed confirmations are the owner's attestation.
+# =============================================================================
+name: b30-recovery-runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "b30_recovery_check (READ-ONLY; every other input EMPTY) | b30_recovery_set (ONE pre-copy recovery set; needs every confirmation + the approved UTC window)"
+        required: true
+        type: choice
+        options: [b30_recovery_check, b30_recovery_set]
+      confirm_product_sha:
+        description: "b30_recovery_set only — type the locked product commit (6a8dad1fe161dc1b31041794e5e3532e9f13327c); EMPTY for the check mode"
+        required: false
+        default: ""
+      confirm_recovery:
+        description: "b30_recovery_set only — type exactly: CREATE_B30_PRE_COPY_RECOVERY_SET; EMPTY for the check mode"
+        required: false
+        default: ""
+      confirm_quiet_period:
+        description: "b30_recovery_set only — type exactly: B30 QUIET PERIOD ACTIVE; EMPTY for the check mode"
+        required: false
+        default: ""
+      confirm_paused:
+        description: "b30_recovery_set only — owner assertion, type exactly: UPLOADS BRANDING EXPORTS DELETIONS PAUSED; EMPTY for the check mode"
+        required: false
+        default: ""
+      quiet_start:
+        description: "b30_recovery_set only — approved quiet-period start, UTC, exactly YYYY-MM-DDTHH:MMZ; EMPTY for the check mode"
+        required: false
+        default: ""
+      quiet_end:
+        description: "b30_recovery_set only — approved quiet-period end, UTC, exactly YYYY-MM-DDTHH:MMZ (same day, ≤ 240 min); EMPTY for the check mode"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+# Serialize with the deployment and Stage 2B workflows (same group) so no session ever overlaps a deploy or a copy.
+concurrency:
+  group: deploy-dev-vps
+  cancel-in-progress: false
+
+env:
+  B30_PRODUCT_SHA: 6a8dad1fe161dc1b31041794e5e3532e9f13327c
+  B30_EXPECTED_REF: refs/heads/ops/b30-recovery-runner
+  B30_WORKFLOW_PATH: .github/workflows/b30-recovery-runner.yml
+  # pins: the runner library, the host bootstrap and the toolkit's SHA256SUMS (which in turn pins the five toolkit files)
+  B30_LIB_SHA256: a7a8aa97be1afbc4cf6e4dae2e4a2aa869133cbf05f273d39214e769d742923d
+  B30_BOOTSTRAP_SHA256: fec1c0a7b6cb7b26a264307d87bcc7da2a3f140ff34f62d2c44f41d6db509be9
+  B30_SUMS_SHA256: 99bbb9453e55967022e85f7c59e720d07c3eec4660105d9862645a14f45d2818
+
+jobs:
+  recovery:
+    name: "B30 recovery — ${{ inputs.mode }}"
+    if: github.ref == 'refs/heads/ops/b30-recovery-runner' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard — pins, identity and scope (product commit + the listed recovery files only)
+        env:
+          GH_REF: ${{ github.ref }}
+          GH_SHA: ${{ github.sha }}
+          GH_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' "$B30_LIB_SHA256" ".github/recovery/b30-runner-lib.sh" "$B30_BOOTSTRAP_SHA256" ".github/recovery/b30-host-bootstrap.sh" "$B30_SUMS_SHA256" ".github/recovery/toolkit/SHA256SUMS" > "$RUNNER_TEMP/b30-pins.txt"
+          LC_ALL=C sha256sum -c --quiet --strict "$RUNNER_TEMP/b30-pins.txt" || { echo "::error::a pinned recovery file does not match its pin"; exit 1; }
+          ( cd .github/recovery/toolkit && LC_ALL=C sha256sum -c --quiet --strict SHA256SUMS ) || { echo "::error::toolkit SHA256SUMS does not verify"; exit 1; }
+          # shellcheck source=/dev/null
+          . .github/recovery/b30-runner-lib.sh
+          EXPECTED_REF="$B30_EXPECTED_REF" EXPECTED_WORKFLOW_PATH="$B30_WORKFLOW_PATH" b30_guard_identity || { echo "::error::workflow identity guard refused"; exit 1; }
+          b30_guard_scope "$B30_PRODUCT_SHA" .github/recovery/ALLOWED_FILES || { echo "::error::branch scope guard refused"; exit 1; }
+          b30_guard_pins "$RUNNER_TEMP/b30-pins.txt" || { echo "::error::pin guard refused"; exit 1; }
+          echo "guard OK: branch = the product commit + the recovery files; pins verified"
+
+      - name: Validate inputs (exact comparison; nothing is executed from an input)
+        env:
+          MODE: ${{ inputs.mode }}
+          IN_PRODUCT_SHA: ${{ inputs.confirm_product_sha }}
+          IN_RECOVERY: ${{ inputs.confirm_recovery }}
+          IN_QUIET: ${{ inputs.confirm_quiet_period }}
+          IN_PAUSED: ${{ inputs.confirm_paused }}
+          IN_START: ${{ inputs.quiet_start }}
+          IN_END: ${{ inputs.quiet_end }}
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          . .github/recovery/b30-runner-lib.sh
+          b30_validate_inputs || { echo "::error::input validation refused"; exit 1; }
+
+      - name: Validate secrets shape (values never printed)
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::VPS_DEPLOY_PATH has an unexpected shape"; exit 1; }
+          [[ "$VPS_PORT" =~ ^[0-9]{1,5}$ ]] || { echo "::error::VPS_PORT has an unexpected shape"; exit 1; }
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::VPS_HOST has an unexpected shape"; exit 1; }
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "::error::VPS_USER has an unexpected shape"; exit 1; }
+          [ -n "$VPS_SSH_KEY" ] && [ -n "$VPS_KNOWN_HOSTS" ] || { echo "::error::SSH secrets missing"; exit 1; }
+          echo "secrets present and well-formed"
+
+      - name: No other coordination run may be queued or running (registered ids, verified paths, fail closed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THIS_RUN: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Allow-listed coordination workflows (id -> expected path): their queued / in_progress / waiting runs block
+          # this session. This workflow is recognised by its PATH (its id is assigned at registration).
+          ALLOW=(
+            "338196147=.github/workflows/deploy-dev-vps.yml"
+            "358860432=.github/workflows/b20-hosted-activation.yml"
+            "376505024=.github/workflows/b25-stage1-inspection.yml"
+            "373189055=.github/workflows/b25-hosted-inspection.yml"
+            "348767584=.github/workflows/b14-hosted-activation.yml"
+            "350570859=.github/workflows/b15-schema-activation.yml"
+            "352288831=.github/workflows/b16-hosted-activation.yml"
+            "353075182=.github/workflows/b17-hosted-activation.yml"
+            "353427348=.github/workflows/b18-hosted-activation.yml"
+            "354083606=.github/workflows/b20-hosted-inspection.yml"
+          )
+          KNOWN_OTHER=( "365534673=.github/workflows/backup-health-alert.yml" )
+          SELF_PATH=".github/workflows/b30-recovery-runner.yml"
+          [[ "$THIS_RUN" =~ ^[0-9]+$ ]] || { echo "::error::current run id is malformed"; exit 1; }
+          [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::repository name is malformed"; exit 1; }
+          api_get() {
+            local body
+            if ! body="$(gh api --method GET "$1" 2>/dev/null)"; then echo "::error::GitHub API query failed ($2)" >&2; return 1; fi
+            [ -n "$body" ] || { echo "::error::empty GitHub API response ($2)" >&2; return 1; }
+            printf '%s' "$body" | jq -e . >/dev/null 2>&1 || { echo "::error::GitHub API response is not valid JSON ($2)" >&2; return 1; }
+            printf '%s' "$body"
+          }
+          num() { [[ "$1" =~ ^[0-9]+$ ]] || { echo "::error::non-numeric value where a count was expected ($2)" >&2; return 1; }; }
+          reg="$(api_get "repos/$REPO/actions/workflows?per_page=100" "workflow registry")"
+          total="$(printf '%s' "$reg" | jq -r '.total_count // empty')"; num "$total" "registry total_count"
+          listed="$(printf '%s' "$reg" | jq -r '.workflows | length')"; num "$listed" "registry page length"
+          [ "$total" = "$listed" ] || { echo "::error::workflow registry has $total entries but only $listed were returned"; exit 1; }
+          [ "$listed" -gt 0 ] || { echo "::error::workflow registry is empty"; exit 1; }
+          SELF_ID=""
+          mapfile -t REG < <(printf '%s' "$reg" | jq -r '.workflows[] | "\(.id)|\(.state)|\(.path)|\(.name)"')
+          for line in "${REG[@]}"; do
+            IFS='|' read -r rid rstate rpath rname <<<"$line"
+            num "$rid" "registry workflow id"
+            [ "$rstate" = "active" ] || continue
+            known=0
+            for e in "${ALLOW[@]}" "${KNOWN_OTHER[@]}"; do [ "${e%%=*}" = "$rid" ] && [ "${e#*=}" = "$rpath" ] && known=1; done
+            if [ "$rpath" = "$SELF_PATH" ]; then [ -z "$SELF_ID" ] || { echo "::error::two active workflows claim the recovery runner path"; exit 1; }; SELF_ID="$rid"; known=1; fi
+            [ "$known" = "1" ] || { echo "::error::active workflow registered but not classified for the recovery runner: id $rid path $rpath"; exit 1; }
+          done
+          [ -n "$SELF_ID" ] || { echo "::error::the recovery runner is not registered at its expected path"; exit 1; }
+          busy=0
+          for e in "${ALLOW[@]}" "$SELF_ID=$SELF_PATH"; do
+            id="${e%%=*}"; path="${e#*=}"
+            wf="$(api_get "repos/$REPO/actions/workflows/$id" "workflow $id")"
+            rid="$(printf '%s' "$wf" | jq -r '.id // empty')"; rpath="$(printf '%s' "$wf" | jq -r '.path // empty')"; rstate="$(printf '%s' "$wf" | jq -r '.state // empty')"
+            [ "$rid" = "$id" ] && [ "$rpath" = "$path" ] && [ "$rstate" = "active" ] || { echo "::error::workflow $id does not resolve to the expected active path $path"; exit 1; }
+            for st in queued in_progress waiting; do
+              runs="$(api_get "repos/$REPO/actions/workflows/$id/runs?status=$st&per_page=100" "runs of workflow $id in state $st")"
+              n="$(printf '%s' "$runs" | jq -r '.total_count // empty')"; num "$n" "run count of workflow $id in state $st"
+              mine="$(printf '%s' "$runs" | jq -r --arg me "$THIS_RUN" '[.workflow_runs[]? | select((.id|tostring) == $me)] | length')"; num "$mine" "self count"
+              others=$((n - mine))
+              [ "$others" = "0" ] || { echo "::error::$path has $others other run(s) in state $st"; busy=1; }
+            done
+          done
+          [ "$busy" = "0" ] || exit 1
+          echo "no concurrent coordination run (${#ALLOW[@]} registered workflows + this runner verified by id, path and state)"
+
+      - name: Install SSH key and pinned host key (strict host verification; no ssh-keyscan)
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+          {
+            echo "Host vps"
+            echo "  HostName $VPS_HOST"
+            echo "  Port $VPS_PORT"
+            echo "  User $VPS_USER"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  StrictHostKeyChecking yes"
+            echo "  ServerAliveInterval 30"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Recovery runner — host session (pinned toolkit streamed; raw output stays on the host; allow-listed summary only)
+        env:
+          MODE: ${{ inputs.mode }}
+          IN_START: ${{ inputs.quiet_start }}
+          IN_END: ${{ inputs.quiet_end }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          # shellcheck source=/dev/null
+          . .github/recovery/b30-runner-lib.sh
+          case "$MODE" in b30_recovery_check|b30_recovery_set) ;; *) echo "::error::unknown mode"; exit 1;; esac
+          if [ "$MODE" = b30_recovery_set ]; then
+            [[ "$IN_START" =~ $B30_TS_RE ]] && [[ "$IN_END" =~ $B30_TS_RE ]] || { echo "::error::window values malformed"; exit 1; }
+          else
+            [ -z "$IN_START$IN_END" ] || { echo "::error::window values must be empty in check mode"; exit 1; }
+          fi
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::deploy path has an unexpected shape"; exit 1; }
+          tar -cf "$RUNNER_TEMP/b30-toolkit.tar" --owner=0 --group=0 --numeric-owner -C .github/recovery/toolkit .
+          {
+            printf 'MODE=%q\n' "$MODE"
+            printf 'B30_PRODUCT_SHA=%q\n' "$B30_PRODUCT_SHA"
+            printf 'B30_SUMS_SHA256=%q\n' "$B30_SUMS_SHA256"
+            printf 'QUIET_START=%q\n' "$IN_START"
+            printf 'QUIET_END=%q\n' "$IN_END"
+            printf 'DEPLOY_PATH=%q\n' "$VPS_DEPLOY_PATH"
+            printf 'B30_PAYLOAD_B64=%q\n' "$(base64 -w0 "$RUNNER_TEMP/b30-toolkit.tar")"
+            cat .github/recovery/b30-host-bootstrap.sh
+          } > "$RUNNER_TEMP/b30-stream.sh"
+          rc=0
+          ssh vps 'bash -s' < "$RUNNER_TEMP/b30-stream.sh" > "$RUNNER_TEMP/b30-summary.raw" 2>/dev/null || rc=$?
+          if ! b30_filter_summary < "$RUNNER_TEMP/b30-summary.raw" > "$RUNNER_TEMP/b30-summary.txt"; then
+            echo "::error::the host returned a line outside the allow-list; nothing of it is printed"; exit 1
+          fi
+          cat "$RUNNER_TEMP/b30-summary.txt"
+          want=SET_VERIFIED; [ "$MODE" = b30_recovery_check ] && want=CHECK_OK
+          grep -qx "B30_RUNNER_RESULT=$want" "$RUNNER_TEMP/b30-summary.txt" || { echo "::error::the host did not report B30_RUNNER_RESULT=$want (ssh exit $rc)"; exit 1; }
+          [ "$rc" = 0 ] || { echo "::error::host session exit $rc"; exit 1; }
+
+      - name: Remove runner-side files (always)
+        if: always()
+        run: rm -f "${RUNNER_TEMP:?}"/b30-stream.sh "${RUNNER_TEMP:?}"/b30-toolkit.tar "${RUNNER_TEMP:?}"/b30-summary.raw "${RUNNER_TEMP:?}"/b30-summary.txt "${RUNNER_TEMP:?}"/b30-pins.txt
