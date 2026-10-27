@@ -33,7 +33,11 @@
 #                                is written; any difference fails closed with nothing copied and no lock. These values are
 #                                copy-authorization constraints, not inventory predicates: the library's 14 conditions never
 #                                gate them, no historical census digest is gated; a different approved scope needs a new
-#                                owner authorization and a new commit of the three values. The read-only dry-run mode reports
+#                                owner authorization and a new commit of the three values. Batch 27: the scope is checked TWICE —
+#                                an EARLY checkpoint on the preflight facts (before the image build) and a FINAL checkpoint on a
+#                                FRESH read plus this session's dry-run plan immediately before the lock; every source fact must
+#                                be present exactly once with an integer value (missing / duplicated / malformed facts are named
+#                                and fail closed, never resolved first- or last-wins). The read-only dry-run mode reports
 #                                the same comparison informationally (never gates on it).
 #   stage2b-postverify           READ-ONLY: `--verify` → inventory L = 0, U = 0 → two-class proofs → bucket unchanged →
 #                                B25_STAGE2B_POSTVERIFY_READY
@@ -57,9 +61,14 @@ readonly S2B_COPY_SCOPE_CANDIDATES=4          # legacy candidates: unregistered 
 readonly S2B_COPY_SCOPE_BYTES=1299            # candidate bytes: the sum of every candidate's recorded size
 readonly S2B_COPY_SCOPE_UNKNOWN_ROWS=0        # candidates of unknown size: an approved scope never contains one
 stage2b_copy_scope_constants_ok() { [[ "$S2B_COPY_SCOPE_CANDIDATES" =~ ^[1-9][0-9]*$ ]] && [[ "$S2B_COPY_SCOPE_BYTES" =~ ^[1-9][0-9]*$ ]] && [ "$S2B_COPY_SCOPE_UNKNOWN_ROWS" = "0" ]; }
-stage2b_scope_pick() { printf '%s\n' "$1" | grep -oE "^$2=[0-9]+$" | head -1 | cut -d= -f2; }   # <facts> <key> → the integer value, or nothing
-stage2b_copy_scope_facts() {   # <preflight facts> <dry-run facts> → scope_* facts: the approved scope and the fresh observations (integers only; a missing fact prints empty)
-  local pf="$1" dr="$2"
+stage2b_scope_pick() {   # <facts> <key> → the integer value when the key occurs EXACTLY ONCE with an integer value; otherwise the marker missing | dup | malformed (never first- or last-wins)
+  local n v; n="$(printf '%s\n' "$1" | grep -cE "^$2=" || true)"
+  case "$n" in 0) echo missing; return 0 ;; 1) ;; *) echo dup; return 0 ;; esac
+  v="$(printf '%s\n' "$1" | grep -E "^$2=" | cut -d= -f2-)"
+  if [[ "$v" =~ ^[0-9]+$ ]]; then echo "$v"; else echo malformed; fi
+}
+stage2b_copy_scope_facts() {   # <preflight facts> [dry-run facts] → scope_* facts: the approved scope and the observations (an integer, or the marker missing | dup | malformed); scope_dr_planned only when a dry-run stream is given (final checkpoint)
+  local pf="$1"
   echo "scope_expected_candidates=$S2B_COPY_SCOPE_CANDIDATES"
   echo "scope_expected_bytes=$S2B_COPY_SCOPE_BYTES"
   echo "scope_expected_unknown_rows=$S2B_COPY_SCOPE_UNKNOWN_ROWS"
@@ -68,12 +77,13 @@ stage2b_copy_scope_facts() {   # <preflight facts> <dry-run facts> → scope_* f
   echo "scope_cand_rows=$(stage2b_scope_pick "$pf" cand_rows)"
   echo "scope_cand_bytes_known=$(stage2b_scope_pick "$pf" cand_bytes_known)"
   echo "scope_cand_bytes_unknown_rows=$(stage2b_scope_pick "$pf" cand_bytes_unknown_rows)"
-  echo "scope_dr_planned=$(stage2b_scope_pick "$dr" dr_planned)"
+  if [ $# -ge 2 ]; then echo "scope_dr_planned=$(stage2b_scope_pick "$2" dr_planned)"; fi
 }
-stage2b_copy_scope_eligible() {   # reads the scope_* facts on stdin → one line per rule + B25_STAGE2B_COPY_SCOPE_FAILED / B25_STAGE2B_COPY_SCOPE=MATCH|MISMATCH; returns 0 only on MATCH (pure; fails closed on anything missing or malformed)
-  local -A f=()
-  local line failed=0 n=0 ok
-  while IFS= read -r line; do [[ "$line" =~ ^([a-z0-9_]+)=(.*)$ ]] || continue; f[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]}"; done
+stage2b_copy_scope_eligible() {   # [early|final] (default final); reads the scope_* facts on stdin → one line per rule + B25_STAGE2B_COPY_SCOPE_CHECKPOINT / _FAILED / B25_STAGE2B_COPY_SCOPE=MATCH|MISMATCH; returns 0 only on MATCH (pure; fails closed on anything missing, duplicated or malformed)
+  local form="${1:-final}"; case "$form" in early|final) ;; *) echo "B25_STAGE2B_COPY_SCOPE_CHECKPOINT=UNKNOWN"; echo "B25_STAGE2B_COPY_SCOPE_FAILED=1"; echo "B25_STAGE2B_COPY_SCOPE=MISMATCH"; return 1 ;; esac
+  local -A f=() cnt=()
+  local line failed=0 n=0 ok k
+  while IFS= read -r line; do [[ "$line" =~ ^([a-z0-9_]+)=(.*)$ ]] || continue; k="${BASH_REMATCH[1]}"; f[$k]="${BASH_REMATCH[2]}"; cnt[$k]=$(( ${cnt[$k]:-0} + 1 )); done
   sg() { printf '%s' "${f[$1]:-<missing>}"; }
   snum() { [[ "$(sg "$1")" =~ ^[0-9]+$ ]]; }
   seq_() { snum "$1" && snum "$2" && [ "$(sg "$1")" = "$(sg "$2")" ]; }
@@ -86,8 +96,26 @@ stage2b_copy_scope_eligible() {   # reads the scope_* facts on stdin → one lin
   rule "fresh candidate bytes = the approved bytes" $ok "bytes=$(sg scope_cand_bytes_known) expected=$(sg scope_expected_bytes)"
   ok=1; seq_ scope_cand_bytes_unknown_rows scope_expected_unknown_rows && ok=0
   rule "no candidate of unknown size (= the approved 0)" $ok "unknown_rows=$(sg scope_cand_bytes_unknown_rows) expected=$(sg scope_expected_unknown_rows)"
-  ok=1; seq_ scope_dr_planned scope_expected_candidates && snum scope_census_legacy_source && [ "$(sg scope_census_legacy_source)" = "0" ] && ok=0
-  rule "this session's dry-run plans exactly the approved candidates and no transient legacy-source row exists" $ok "planned=$(sg scope_dr_planned) legacy_source=$(sg scope_census_legacy_source) expected=$(sg scope_expected_candidates)"
+  if [ "$form" = early ]; then
+    ok=1; snum scope_census_legacy_source && [ "$(sg scope_census_legacy_source)" = "0" ] && ok=0
+    rule "no transient legacy-source row exists (the dry-run plan is checked at the final checkpoint)" $ok "planned=<deferred> legacy_source=$(sg scope_census_legacy_source) expected=$(sg scope_expected_candidates)"
+  else
+    ok=1; seq_ scope_dr_planned scope_expected_candidates && snum scope_census_legacy_source && [ "$(sg scope_census_legacy_source)" = "0" ] && ok=0
+    rule "this session's dry-run plans exactly the approved candidates and no transient legacy-source row exists" $ok "planned=$(sg scope_dr_planned) legacy_source=$(sg scope_census_legacy_source) expected=$(sg scope_expected_candidates)"
+  fi
+  # rule 6: every scope fact exactly once with an integer value — a missing, duplicated or malformed source fact is named here
+  # (stage2b_scope_pick prints the marker instead of guessing) and a duplicated scope_* line in this stream is counted as dup
+  local req="scope_expected_candidates scope_expected_bytes scope_expected_unknown_rows scope_census_unregistered scope_census_legacy_source scope_cand_rows scope_cand_bytes_known scope_cand_bytes_unknown_rows" flagged=""
+  [ "$form" = final ] && req="$req scope_dr_planned"
+  for k in $req; do
+    if [ "${cnt[$k]:-0}" = 0 ]; then flagged="$flagged $k=missing"
+    elif [ "${cnt[$k]}" != 1 ]; then flagged="$flagged $k=dup"
+    elif ! [[ "${f[$k]}" =~ ^[0-9]+$ ]]; then case "${f[$k]}" in missing|dup|malformed) flagged="$flagged $k=${f[$k]}" ;; *) flagged="$flagged $k=malformed" ;; esac
+    fi
+  done
+  ok=1; [ -z "$flagged" ] && ok=0
+  rule "every scope fact is present exactly once with an integer value (none missing, duplicated or malformed)" $ok "$([ -n "$flagged" ] && printf '%s' "${flagged# }" || printf none)"
+  echo "B25_STAGE2B_COPY_SCOPE_CHECKPOINT=$(printf '%s' "$form" | tr '[:lower:]' '[:upper:]')"
   echo "B25_STAGE2B_COPY_SCOPE_FAILED=$failed"
   if [ "$failed" = 0 ]; then echo "B25_STAGE2B_COPY_SCOPE=MATCH"; return 0; fi
   echo "B25_STAGE2B_COPY_SCOPE=MISMATCH"; return 1
@@ -340,7 +368,7 @@ phase_stage2b_migrate_dry_run() {   # READ-ONLY for product state; no argument i
   local dr; dr="$(stage2b_dryrun_facts)"; stage2b_print "$dr" '^dr_(exit|exit_meaning|parse_ok|mode|complete|read_only|target_root|source_references|unique_objects|unattributable|planned|already|missing_source|checksum_mismatch|conflict|duplicate|failed|duplicate_groups|problems|exception_listed|repeat_identical|inventory_unchanged)='
   facts="$(stage2b_facts)"$'\n'"$pre"$'\n'"$dr"
   section "9b. owner-approved copy scope (reported only in this read-only mode; the copy mode fails closed on it before its lock)"
-  local scope; if scope="$(stage2b_copy_scope_facts "$facts" "$dr" | stage2b_copy_scope_eligible)"; then printf '%s\n' "$scope"; else printf '%s\n' "$scope"; log "the fresh candidate scope differs from the owner-approved copy scope — reported only (read-only mode; nothing changed); the copy mode would fail closed before its lock"; fi
+  local scope; if scope="$(stage2b_copy_scope_facts "$facts" "$dr" | stage2b_copy_scope_eligible final)"; then printf '%s\n' "$scope"; else printf '%s\n' "$scope"; log "the fresh candidate scope differs from the owner-approved copy scope — reported only (read-only mode; nothing changed); the copy mode would fail closed before its lock"; fi
   section "10. dry-run verdict (read-only decision; nothing is changed)"
   if stage2b_evaluate dryrun "$facts"; then log "stage2b-migrate-dry-run complete (nothing changed; B25_STAGE2B_DRY_RUN_REPORTED=TRUE)"
   else fail "stage2b-migrate-dry-run: the dry-run is not clean (nothing changed; B25_STAGE2B_DRY_RUN_REPORTED=FALSE)"; fi
@@ -351,14 +379,18 @@ phase_stage2b_migrate_copy_verify() {   # GUARDED MUTATION (confirmed by the wor
   local facts pre; facts="$(stage2b_facts)"; stage2b_sections "$facts"
   section "7. preflight verdict (must be TRUE before anything else)"
   stage2b_evaluate preflight "$facts" || fail "stage2b-migrate-copy-verify: preflight not ready — nothing copied"
+  section "7b. owner-approved copy scope — EARLY checkpoint (the preflight facts; fail-closed before the image build; re-checked in full on a fresh read immediately before the lock)"
+  stage2b_copy_scope_constants_ok || fail "stage2b-migrate-copy-verify: the owner-approved copy scope constants are malformed — nothing copied; no image built; no lock written"
+  local scope_early; if scope_early="$(stage2b_copy_scope_facts "$facts" | stage2b_copy_scope_eligible early)"; then printf '%s\n' "$scope_early"; else printf '%s\n' "$scope_early"; fail "stage2b-migrate-copy-verify: the fresh candidate scope is NOT the owner-approved scope at the early checkpoint (B25_STAGE2B_COPY_SCOPE=MISMATCH) — nothing copied; no image built; no lock written; a different scope needs a new owner authorization"; fi
   pre="pre_candidates=$(printf '%s\n' "$facts" | grep -oE '^census_unregistered=[0-9]+$' | cut -d= -f2)"$'\n'"pre_migrated=$(printf '%s\n' "$facts" | grep -oE '^s2b_migrated=[0-9]+$' | cut -d= -f2)"$'\n'"pre_native=$(printf '%s\n' "$facts" | grep -oE '^s2b_native=[0-9]+$' | cut -d= -f2)"$'\n'"pre_nat_keys_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_keys_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_nat_pf_cipher_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_pf_cipher_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_nat_pm_generations_md5=$(printf '%s\n' "$facts" | grep -oE '^nat_pm_generations_md5=[0-9a-f]{32}$' | cut -d= -f2)"$'\n'"pre_census_md5=$(printf '%s\n' "$facts" | grep -oE '^census_md5=[0-9a-f]{32}$' | cut -d= -f2)"
   section "8. migrate image from exactly the product commit"; stage2b_image_ensure; stage2b_image_facts | sed 's/^/  /'
   section "9. dry-run twice (must be clean before the copy; bucket inventory identical to the preflight)"
   local dr; dr="$(stage2b_dryrun_facts)"; stage2b_print "$dr" '^dr_(exit_meaning|complete|planned|already|missing_source|checksum_mismatch|conflict|duplicate|failed|exception_listed|repeat_identical|inventory_unchanged)='
-  stage2b_evaluate dryrun "$(stage2b_facts)"$'\n'"$pre"$'\n'"$dr" || fail "stage2b-migrate-copy-verify: the dry-run is not clean — nothing copied"
-  section "9b. owner-approved copy scope (fail-closed; evaluated BEFORE the copy lock; the 14 conditions above are unchanged)"
+  local facts2; facts2="$(stage2b_facts)"   # a FRESH read after the dry-run: the dry-run verdict and the FINAL scope checkpoint both consume it
+  stage2b_evaluate dryrun "$facts2"$'\n'"$pre"$'\n'"$dr" || fail "stage2b-migrate-copy-verify: the dry-run is not clean — nothing copied"
+  section "9b. owner-approved copy scope — FINAL checkpoint (the fresh read + this session's dry-run plan; fail-closed immediately BEFORE the copy lock; the 14 conditions above are unchanged)"
   stage2b_copy_scope_constants_ok || fail "stage2b-migrate-copy-verify: the owner-approved copy scope constants are malformed — nothing copied; no lock written"
-  local scope; if scope="$(stage2b_copy_scope_facts "$facts" "$dr" | stage2b_copy_scope_eligible)"; then printf '%s\n' "$scope"; else printf '%s\n' "$scope"; fail "stage2b-migrate-copy-verify: the fresh candidate scope is NOT the owner-approved scope (B25_STAGE2B_COPY_SCOPE=MISMATCH) — nothing copied; no lock written; a different scope needs a new owner authorization"; fi
+  local scope; if scope="$(stage2b_copy_scope_facts "$facts2" "$dr" | stage2b_copy_scope_eligible final)"; then printf '%s\n' "$scope"; else printf '%s\n' "$scope"; fail "stage2b-migrate-copy-verify: the fresh candidate scope is NOT the owner-approved scope (B25_STAGE2B_COPY_SCOPE=MISMATCH) — nothing copied; no lock written; a different scope needs a new owner authorization"; fi
   section "10. copy (the product's --copy: register, copy, read back, flip rows; a conflicting local object is never overwritten; nothing is deleted)"
   # the copy lock: created exclusively by this operation (any existing entry fails closed), held through the copy, the verify
   # and the post-copy facts; the copy verdict is evaluated WHILE it is held (condition 1, copy form: present and owned)
