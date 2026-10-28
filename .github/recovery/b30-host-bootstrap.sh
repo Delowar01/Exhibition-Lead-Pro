@@ -6,7 +6,9 @@
 # SHA256SUMS must hash to the pin streamed from the workflow constants (never from an input). Everything the toolkit
 # prints is written to a 600 file under the backup tree (host-side evidence, kept on success and on failure). The
 # ONLY stdout of this bootstrap is the allow-listed B30_<KEY>=<token> summary; stderr goes to a private temp file.
-# Modes: b30_recovery_check = the toolkit's B30_CHECK_ONLY=1 exactly once (nothing created);
+# Modes: b30_recovery_check = the toolkit's B30_CHECK_ONLY=1 exactly once (product-data read-only: no backup, no
+#                             pruning, no product / database / object write; the host gets only this 700 temp dir,
+#                             removed at exit, and the 600 evidence log);
 #        b30_recovery_set   = CHECK_ONLY once, then b30-backup-set.sh exactly once (KEEP=1000,
 #                             B30_EXPECTED_UNREGISTERED=4), one set per approved window, no retry.
 # =============================================================================

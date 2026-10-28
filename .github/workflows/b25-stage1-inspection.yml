@@ -1,24 +1,35 @@
 # =============================================================================
 # B30 RECOVERY RUNNER (ops/b30-recovery-runner) — hosted execution of the REVIEWED recovery toolkit (v1.1)
 #
-# Registered by pushing this file to its own isolated ops branch; dispatched by id with ref = this branch; the job
-# runs ONLY on this branch and only for workflow_dispatch. The branch content must equal the locked product commit
-# plus exactly the recovery files listed in .github/recovery/ALLOWED_FILES. The runner library, the host bootstrap and
-# the toolkit's SHA256SUMS are pinned below and verified before anything else runs. Typed confirmations are compared
-# on the runner BEFORE any SSH session; no input ever reaches a shell as text (values are regex-validated and passed
-# as printf %q assignments inside the streamed script). The host writes the toolkit's output to a 600 file under the
-# backup tree and returns ONLY an allow-listed B30_<KEY>=<token> summary; the runner filters it again.
+# REGISTRATION (verified repository behaviour): GitHub registers a workflow only when its file exists on the default
+# branch or has produced a run. Merely pushing a workflow_dispatch-only file to a new non-default branch does NOT
+# register it, and such a file cannot be dispatched. This branch therefore serves its workflow at the repository's
+# already-registered path .github/workflows/b25-stage1-inspection.yml (workflow id 376505024) — a branch-specific
+# version of that path, the same mechanism the Stage 2A / Stage 2B ops branches use. Dispatch = workflow 376505024
+# with ref = this branch; the job runs ONLY on this branch and only for workflow_dispatch. The Stage 2B branch keeps
+# its own, unchanged file at the same path; this branch contains no Stage 2B mode, streams no Stage 2B script and can
+# dispatch nothing (GET-only API use, actions: read).
+# The branch content must equal the locked product commit plus exactly the recovery files listed in
+# .github/recovery/ALLOWED_FILES. The runner library, the host bootstrap and the toolkit's SHA256SUMS are pinned below
+# and verified before anything else runs. Typed confirmations are compared on the runner BEFORE any SSH session; no
+# input ever reaches a shell as text (values are regex-validated and passed as printf %q assignments inside the
+# streamed script). The host writes the toolkit's output to a 600 file under the backup tree and returns ONLY an
+# allow-listed B30_<KEY>=<token> summary; the runner filters it again.
 #
 # MODES
-#   b30_recovery_check  READ-ONLY (every confirmation and both timestamps EMPTY): the toolkit's B30_CHECK_ONLY=1 exactly
-#                       once → B30_RUNNER_RESULT=CHECK_OK. Nothing created; no backup, no pruning, no product write.
+#   b30_recovery_check  PRODUCT-DATA READ-ONLY (every confirmation and both timestamps EMPTY): the toolkit's
+#                       B30_CHECK_ONLY=1 exactly once → B30_RUNNER_RESULT=CHECK_OK. No backup, no pruning, no product,
+#                       database or object write. It does write TOOLING artifacts on the host: a 700 temporary directory
+#                       holding the pinned toolkit (removed when the session ends) and a 600 host-side log under
+#                       <backup dir>/recovery-sets/runner-logs/ (retained as evidence).
 #   b30_recovery_set    ONE PRE-COPY recovery set (confirm_product_sha = the product commit, confirm_recovery =
 #                       CREATE_B30_PRE_COPY_RECOVERY_SET, confirm_quiet_period = B30 QUIET PERIOD ACTIVE, confirm_paused =
 #                       UPLOADS BRANDING EXPORTS DELETIONS PAUSED, quiet_start/quiet_end = the owner-approved UTC window,
 #                       active now, ≤ 240 min, outside 03:00-04:00 and 04:15-10:45 UTC): CHECK_ONLY once, then
 #                       b30-backup-set.sh once with KEEP=1000 and B30_EXPECTED_UNREGISTERED=4 → B30_RUNNER_RESULT=SET_VERIFIED.
 #                       One set per approved window; no retry; an incomplete set is preserved, never deleted.
-#   The application does NOT enforce the quiet period; the typed confirmations are the owner's attestation.
+#   The application does NOT enforce the quiet period and the typed confirmations are NOT a technical upload
+#   prevention; they are the owner's attestation that uploads, branding changes, exports and deletions are paused.
 # =============================================================================
 name: b30-recovery-runner
 
@@ -67,10 +78,12 @@ concurrency:
 env:
   B30_PRODUCT_SHA: 6a8dad1fe161dc1b31041794e5e3532e9f13327c
   B30_EXPECTED_REF: refs/heads/ops/b30-recovery-runner
-  B30_WORKFLOW_PATH: .github/workflows/b30-recovery-runner.yml
+  # the registered workflow this branch serves (the id GitHub assigned to this path; shared with the Stage 2A / 2B branches)
+  B30_REGISTERED_WORKFLOW_ID: "376505024"
+  B30_WORKFLOW_PATH: .github/workflows/b25-stage1-inspection.yml
   # pins: the runner library, the host bootstrap and the toolkit's SHA256SUMS (which in turn pins the five toolkit files)
-  B30_LIB_SHA256: a7a8aa97be1afbc4cf6e4dae2e4a2aa869133cbf05f273d39214e769d742923d
-  B30_BOOTSTRAP_SHA256: fec1c0a7b6cb7b26a264307d87bcc7da2a3f140ff34f62d2c44f41d6db509be9
+  B30_LIB_SHA256: d8a2cfeb4c78bec09266ae1005f5813b4446fefb013d35f925de8d1ad4a00127
+  B30_BOOTSTRAP_SHA256: df984b456e20da5bcea6bdb153856c3f8acfe99c1985d99e2d4abc0abe29fbd9
   B30_SUMS_SHA256: 99bbb9453e55967022e85f7c59e720d07c3eec4660105d9862645a14f45d2818
 
 jobs:
@@ -135,19 +148,22 @@ jobs:
           [ -n "$VPS_SSH_KEY" ] && [ -n "$VPS_KNOWN_HOSTS" ] || { echo "::error::SSH secrets missing"; exit 1; }
           echo "secrets present and well-formed"
 
-      - name: No other coordination run may be queued or running (registered ids, verified paths, fail closed)
+      - name: No other coordination run may be queued or running (registered ids, verified paths; shared id 376505024 = self; backup-health counted; fail closed)
         env:
           GH_TOKEN: ${{ github.token }}
           THIS_RUN: ${{ github.run_id }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # Allow-listed coordination workflows (id -> expected path): their queued / in_progress / waiting runs block
-          # this session. This workflow is recognised by its PATH (its id is assigned at registration).
+          # Coordination-relevant workflows: registered numeric id -> expected path. Every id is resolved through the
+          # registry (id, path, state=active) BEFORE its runs are read; anything else stops the job. This runner shares
+          # workflow id 376505024 with the Stage 2A / 2B ops branches (same registered path, different ref): that id is
+          # SELF below — never an allow-list entry — and every OTHER run of it (a Stage 2A / 2B dispatch, a second
+          # recovery dispatch) blocks this session. backup-health-alert is counted as blocking too: its scheduled
+          # read-only SSH probe must never overlap a recovery session. GET only; nothing here can dispatch a run.
           ALLOW=(
             "338196147=.github/workflows/deploy-dev-vps.yml"
             "358860432=.github/workflows/b20-hosted-activation.yml"
-            "376505024=.github/workflows/b25-stage1-inspection.yml"
             "373189055=.github/workflows/b25-hosted-inspection.yml"
             "348767584=.github/workflows/b14-hosted-activation.yml"
             "350570859=.github/workflows/b15-schema-activation.yml"
@@ -157,9 +173,18 @@ jobs:
             "354083606=.github/workflows/b20-hosted-inspection.yml"
           )
           KNOWN_OTHER=( "365534673=.github/workflows/backup-health-alert.yml" )
-          SELF_PATH=".github/workflows/b30-recovery-runner.yml"
+          SELF_ID="$B30_REGISTERED_WORKFLOW_ID"; SELF_PATH="$B30_WORKFLOW_PATH"
           [[ "$THIS_RUN" =~ ^[0-9]+$ ]] || { echo "::error::current run id is malformed"; exit 1; }
           [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::repository name is malformed"; exit 1; }
+          [[ "$SELF_ID" =~ ^[0-9]+$ ]] && [[ "$SELF_PATH" =~ ^\.github/workflows/[A-Za-z0-9._-]+\.yml$ ]] || { echo "::error::registered workflow constants malformed"; exit 1; }
+          seen=" "
+          for e in "${ALLOW[@]}" "${KNOWN_OTHER[@]}"; do
+            id="${e%%=*}"
+            [[ "$id" =~ ^[0-9]+$ ]] || { echo "::error::malformed allow-list id"; exit 1; }
+            [ "$id" != "$SELF_ID" ] || { echo "::error::the registered recovery workflow id appears in an allow-list (duplicate self entry)"; exit 1; }
+            case "$seen" in *" $id "*) echo "::error::duplicate allow-list id $id"; exit 1;; esac
+            seen="$seen$id "
+          done
           api_get() {
             local body
             if ! body="$(gh api --method GET "$1" 2>/dev/null)"; then echo "::error::GitHub API query failed ($2)" >&2; return 1; fi
@@ -173,7 +198,7 @@ jobs:
           listed="$(printf '%s' "$reg" | jq -r '.workflows | length')"; num "$listed" "registry page length"
           [ "$total" = "$listed" ] || { echo "::error::workflow registry has $total entries but only $listed were returned"; exit 1; }
           [ "$listed" -gt 0 ] || { echo "::error::workflow registry is empty"; exit 1; }
-          SELF_ID=""
+          SELF_SEEN=0
           mapfile -t REG < <(printf '%s' "$reg" | jq -r '.workflows[] | "\(.id)|\(.state)|\(.path)|\(.name)"')
           for line in "${REG[@]}"; do
             IFS='|' read -r rid rstate rpath rname <<<"$line"
@@ -181,12 +206,15 @@ jobs:
             [ "$rstate" = "active" ] || continue
             known=0
             for e in "${ALLOW[@]}" "${KNOWN_OTHER[@]}"; do [ "${e%%=*}" = "$rid" ] && [ "${e#*=}" = "$rpath" ] && known=1; done
-            if [ "$rpath" = "$SELF_PATH" ]; then [ -z "$SELF_ID" ] || { echo "::error::two active workflows claim the recovery runner path"; exit 1; }; SELF_ID="$rid"; known=1; fi
+            if [ "$rid" = "$SELF_ID" ] || [ "$rpath" = "$SELF_PATH" ]; then
+              [ "$rid" = "$SELF_ID" ] && [ "$rpath" = "$SELF_PATH" ] || { echo "::error::the registered recovery workflow id and path do not agree in the registry: id $rid path $rpath"; exit 1; }
+              SELF_SEEN=$((SELF_SEEN + 1)); known=1
+            fi
             [ "$known" = "1" ] || { echo "::error::active workflow registered but not classified for the recovery runner: id $rid path $rpath"; exit 1; }
           done
-          [ -n "$SELF_ID" ] || { echo "::error::the recovery runner is not registered at its expected path"; exit 1; }
-          busy=0
-          for e in "${ALLOW[@]}" "$SELF_ID=$SELF_PATH"; do
+          [ "$SELF_SEEN" = "1" ] || { echo "::error::the registered recovery workflow ($SELF_ID at $SELF_PATH) is not active exactly once in the registry (seen $SELF_SEEN)"; exit 1; }
+          busy=0; self_excluded=0
+          for e in "${ALLOW[@]}" "${KNOWN_OTHER[@]}" "$SELF_ID=$SELF_PATH"; do
             id="${e%%=*}"; path="${e#*=}"
             wf="$(api_get "repos/$REPO/actions/workflows/$id" "workflow $id")"
             rid="$(printf '%s' "$wf" | jq -r '.id // empty')"; rpath="$(printf '%s' "$wf" | jq -r '.path // empty')"; rstate="$(printf '%s' "$wf" | jq -r '.state // empty')"
@@ -195,12 +223,19 @@ jobs:
               runs="$(api_get "repos/$REPO/actions/workflows/$id/runs?status=$st&per_page=100" "runs of workflow $id in state $st")"
               n="$(printf '%s' "$runs" | jq -r '.total_count // empty')"; num "$n" "run count of workflow $id in state $st"
               mine="$(printf '%s' "$runs" | jq -r --arg me "$THIS_RUN" '[.workflow_runs[]? | select((.id|tostring) == $me)] | length')"; num "$mine" "self count"
+              if [ "$id" = "$SELF_ID" ]; then
+                [ "$mine" -le 1 ] || { echo "::error::this run id is listed more than once under state $st"; exit 1; }
+                self_excluded=$((self_excluded + mine))
+              else
+                [ "$mine" = "0" ] || { echo "::error::this run id is attributed to a different workflow ($path); refusing"; exit 1; }
+              fi
               others=$((n - mine))
               [ "$others" = "0" ] || { echo "::error::$path has $others other run(s) in state $st"; busy=1; }
             done
           done
+          [ "$self_excluded" -le 1 ] || { echo "::error::this run was excluded $self_excluded times (must be at most once)"; exit 1; }
           [ "$busy" = "0" ] || exit 1
-          echo "no concurrent coordination run (${#ALLOW[@]} registered workflows + this runner verified by id, path and state)"
+          echo "no concurrent coordination run (self=$SELF_ID at $SELF_PATH, own run excluded ${self_excluded}x; ${#ALLOW[@]} allow-listed + ${#KNOWN_OTHER[@]} other registered workflows verified by id, path and state)"
 
       - name: Install SSH key and pinned host key (strict host verification; no ssh-keyscan)
         env:

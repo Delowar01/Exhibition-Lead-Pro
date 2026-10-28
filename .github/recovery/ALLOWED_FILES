@@ -11,4 +11,4 @@
 .github/recovery/toolkit/b30-keyid-owner.sh
 .github/recovery/toolkit/b30-readback.ts
 .github/recovery/toolkit/b30-restore-rehearsal.sh
-.github/workflows/b30-recovery-runner.yml
+.github/workflows/b25-stage1-inspection.yml

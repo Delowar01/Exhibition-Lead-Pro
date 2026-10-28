@@ -4,7 +4,8 @@
 # Exercises the REAL runner library, the REAL host bootstrap, the REAL toolkit v1.1 backup script and the repository's
 # REAL dump script (docker/scripts/backup-postgres.sh at the product commit) under a recording `docker` stub, against a
 # synthetic encrypted-object volume (envelope headers only), a fake pg_dump stream, a throwaway backup tree and a
-# detached worktree of the product commit as the "app directory". Docker integration itself is NOT verified here.
+# detached worktree of the product commit as the "app directory", and the REAL registry / shared-id step of the workflow
+# under a recording `gh` stub (GET only, synthetic registry JSON). Docker integration and hosted dispatch are NOT verified here.
 # Usage: bash .github/recovery/test/b30-runner.test.sh   (from any directory inside the repository checkout)
 # =============================================================================
 set -uo pipefail
@@ -21,16 +22,29 @@ umask 077
 
 echo "== A. statics"
 for f in "$REC/b30-runner-lib.sh" "$REC/b30-host-bootstrap.sh" "$KIT/b30-backup-set.sh" "$KIT/b30-restore-rehearsal.sh" "$KIT/b30-keyid-owner.sh" "$STUB/docker" "$0"; do t "bash -n $(basename "$f")" bash -n "$f"; done
-W="$ROOT/.github/workflows/b30-recovery-runner.yml"
+W="$ROOT/.github/workflows/b25-stage1-inspection.yml"   # the REGISTERED path (workflow id 376505024), served by this branch
+WOLD="$ROOT/.github/workflows/b30-recovery-runner.yml"   # the first, unregistered path — must be absent
+REGP=".github/workflows/b25-stage1-inspection.yml"; OLDP=".github/workflows/b30-recovery-runner.yml"
 t "workflow file present" test -f "$W"
 if python3 -c 'import yaml' 2>/dev/null; then
-  t "workflow YAML parses with 8 steps" python3 -c "import yaml,sys; d=yaml.safe_load(open('$W')); j=d['jobs']['recovery']; assert len(j['steps'])==8; assert j['if']==\"github.ref == 'refs/heads/ops/b30-recovery-runner' && github.event_name == 'workflow_dispatch'\"; on=d.get('on', d.get(True)); assert list(on['workflow_dispatch']['inputs'])==['mode','confirm_product_sha','confirm_recovery','confirm_quiet_period','confirm_paused','quiet_start','quiet_end']; assert d['concurrency']=={'group':'deploy-dev-vps','cancel-in-progress':False}; assert d['permissions']=={'contents':'read','actions':'read'}"
+  t "workflow YAML parses with 8 steps" python3 -c "import yaml,sys; d=yaml.safe_load(open('$W')); j=d['jobs']['recovery']; assert len(j['steps'])==8; assert j['if']==\"github.ref == 'refs/heads/ops/b30-recovery-runner' && github.event_name == 'workflow_dispatch'\"; on=d.get('on', d.get(True)); assert list(on['workflow_dispatch']['inputs'])==['mode','confirm_product_sha','confirm_recovery','confirm_quiet_period','confirm_paused','quiet_start','quiet_end']; assert d['concurrency']=={'group':'deploy-dev-vps','cancel-in-progress':False}; assert d['permissions']=={'contents':'read','actions':'read'}; assert on['workflow_dispatch']['inputs']['mode']['options']==['b30_recovery_check','b30_recovery_set']; n=[x.get('name','') for x in j['steps']]; assert n[1].startswith('Guard') and n[2].startswith('Validate inputs') and n[3].startswith('Validate secrets') and n[4].startswith('No other coordination run') and n[5].startswith('Install SSH key') and n[6].startswith('Recovery runner') and n[7].startswith('Remove runner-side files'), n"
 else echo "note - PyYAML unavailable: YAML structure check skipped"; fi
 pin() { grep -E "^  $1: " "$W" | awk '{print $2}'; }
 tv "workflow pin = lib sha256" "$(sha256sum "$REC/b30-runner-lib.sh" | cut -c1-64)" "$(pin B30_LIB_SHA256)"
 tv "workflow pin = bootstrap sha256" "$(sha256sum "$REC/b30-host-bootstrap.sh" | cut -c1-64)" "$(pin B30_BOOTSTRAP_SHA256)"
 tv "workflow pin = toolkit SHA256SUMS sha256" "$(sha256sum "$KIT/SHA256SUMS" | cut -c1-64)" "$(pin B30_SUMS_SHA256)"
 tv "workflow product pin" "$PRODUCT_SHA" "$(pin B30_PRODUCT_SHA)"
+tv "registered workflow id constant" "376505024" "$(pin B30_REGISTERED_WORKFLOW_ID | tr -d '"')"
+tv "workflow path constant = the registered path" "$REGP" "$(pin B30_WORKFLOW_PATH)"
+t "old (unregistered) workflow path absent from the tree and the index" bash -c "! test -e '$WOLD' && cd '$ROOT' && [ -z \"\$(git ls-files '$OLDP')\" ]"
+tv "ALLOWED_FILES lists the registered path and not the old one" "1 0" "$(grep -c '^\.github/workflows/b25-stage1-inspection\.yml$' "$REC/ALLOWED_FILES") $(grep -c 'b30-recovery-runner\.yml' "$REC/ALLOWED_FILES")"
+t "scope guard regex names the registered path only" bash -c "grep -qF 'workflows/b25-stage1-inspection\\.yml' '$REC/b30-runner-lib.sh' && ! grep -q 'b30-recovery-runner' '$REC/b30-runner-lib.sh'"
+t "no Stage 2B / migration / deployment mode or command reachable from the runner files" bash -c "! grep -qE 'stage2b_|migrate-storage|--copy|--verify|postverify|deploy-vps|compose up|compose down|drizzle' '$W' '$REC/b30-host-bootstrap.sh' '$REC/b30-runner-lib.sh'"
+t "workflow never dispatches: GET-only API use, no POST / dispatches / gh workflow run, actions permission read" bash -c "! grep -qE 'method POST|/dispatches|gh workflow run|gh run (rerun|cancel)|actions: write|contents: write' '$W' && grep -q 'gh api --method GET' '$W' && grep -q '^  actions: read$' '$W'"
+t "shared id 376505024 is SELF, never an allow-list entry (no duplicate)" bash -c "! grep -qE '^\s*\"376505024=' '$W' && grep -q 'SELF_ID=\"\$B30_REGISTERED_WORKFLOW_ID\"' '$W' && grep -q 'duplicate self entry' '$W'"
+t "backup-health-alert is in the blocking (busy) loop" bash -c "grep -qF 'for e in \"\${ALLOW[@]}\" \"\${KNOWN_OTHER[@]}\" \"\$SELF_ID=\$SELF_PATH\"' '$W'"
+t "no claim that pushing registers a dispatch-only workflow; check mode = product-data read-only; confirmations = attestation, not technical upload prevention (step order: guard, inputs, secrets, registry, SSH, host, cleanup asserted in the YAML check)" bash -c "! grep -qi 'Registered by pushing' '$W' '$REC/README.md' && grep -q 'PRODUCT-DATA READ-ONLY' '$W' && grep -q 'PRODUCT-DATA READ-ONLY' '$REC/README.md' && grep -qi 'NOT a technical upload' '$W' && grep -qi 'not.* a technical upload prevention' '$REC/README.md'"
+t "bootstrap runs only the toolkit backup script (CHECK_ONLY + set), never the restore or key-id script" bash -c "[ \"\$(grep -cE 'bash \./b30-backup-set\.sh' '$REC/b30-host-bootstrap.sh')\" = 2 ] && ! grep -qE 'bash \./b30-(restore|keyid)' '$REC/b30-host-bootstrap.sh'"
 t "toolkit SHA256SUMS verifies" bash -c "cd '$KIT' && LC_ALL=C sha256sum -c --quiet --strict SHA256SUMS"
 tv "toolkit = 5 listed files + SHA256SUMS" "6" "$(ls -1 "$KIT" | wc -l | tr -d ' ')"
 tv "no \${{ inputs }} inside run blocks (inputs reach shells via env only)" "0" "$(awk '/^        run: \|/{r=1;next} /^      - name:/{r=0} r && /\$\{\{ *inputs\./' "$W" | wc -l | tr -d ' ')"
@@ -86,22 +100,27 @@ tv "window written as ending at 00:00Z of the same day is refused (same-day rule
 
 echo "== C. runner library — identity, scope, pins, filter"
 export GH_REPOSITORY="owner/repo"
-gi() { GH_REF="$1" GH_SHA="$2" GH_WORKFLOW_REF="$3" EXPECTED_REF="refs/heads/ops/b30-recovery-runner" EXPECTED_WORKFLOW_PATH=".github/workflows/b30-recovery-runner.yml" b30_guard_identity 2>&1 | grep -oE '(b30_identity=ok|b30_input_error=[a-z_]+)' | head -1; }
+gi() { GH_REF="$1" GH_SHA="$2" GH_WORKFLOW_REF="$3" EXPECTED_REF="refs/heads/ops/b30-recovery-runner" EXPECTED_WORKFLOW_PATH="$REGP" b30_guard_identity 2>&1 | grep -oE '(b30_identity=ok|b30_input_error=[a-z_]+)' | head -1; }
 HEADSHA="$(git -C "$ROOT" rev-parse HEAD)"
-( cd "$ROOT" && tv "identity ok" "b30_identity=ok" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/.github/workflows/b30-recovery-runner.yml@refs/heads/ops/b30-recovery-runner")" )
-( cd "$ROOT" && tv "identity wrong branch" "b30_input_error=wrong_branch" "$(gi refs/heads/develop "$HEADSHA" "owner/repo/.github/workflows/b30-recovery-runner.yml@refs/heads/ops/b30-recovery-runner")" )
-( cd "$ROOT" && tv "identity head mismatch" "b30_input_error=head_mismatch" "$(gi refs/heads/ops/b30-recovery-runner 1111111111111111111111111111111111111111 "owner/repo/.github/workflows/b30-recovery-runner.yml@refs/heads/ops/b30-recovery-runner")" )
+( cd "$ROOT" && tv "identity ok (registered path on this branch at HEAD)" "b30_identity=ok" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")" )
+( cd "$ROOT" && tv "identity refuses the OLD unregistered path" "b30_input_error=workflow_ref_mismatch" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$OLDP@refs/heads/ops/b30-recovery-runner")" )
+( cd "$ROOT" && tv "identity refuses the registered path on the Stage 2B branch ref" "b30_input_error=wrong_branch" "$(gi refs/heads/ops/b25-stage2b-migration-tooling "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b25-stage2b-migration-tooling")" )
+( cd "$ROOT" && tv "identity refuses a workflow_ref that names the registered path at another ref" "b30_input_error=workflow_ref_mismatch" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b25-stage2b-migration-tooling")" )
+( cd "$ROOT" && tv "identity wrong branch" "b30_input_error=wrong_branch" "$(gi refs/heads/develop "$HEADSHA" "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")" )
+( cd "$ROOT" && tv "identity head mismatch" "b30_input_error=head_mismatch" "$(gi refs/heads/ops/b30-recovery-runner 1111111111111111111111111111111111111111 "owner/repo/$REGP@refs/heads/ops/b30-recovery-runner")" )
 ( cd "$ROOT" && tv "identity workflow ref mismatch" "b30_input_error=workflow_ref_mismatch" "$(gi refs/heads/ops/b30-recovery-runner "$HEADSHA" "owner/repo/.github/workflows/other.yml@refs/heads/ops/b30-recovery-runner")" )
 # scope: throwaway repository with a base commit and recovery files
 G="$T/g"; mkdir -p "$G"; ( cd "$G" && git init -q && git config user.email t@example.invalid && git config user.name t && mkdir -p src .github/recovery/toolkit .github/workflows && echo p > src/product.ts && git add -A && git commit -qm base )
 BASE="$(git -C "$G" rev-parse HEAD)"
-( cd "$G" && printf '.github/recovery/ALLOWED_FILES\n.github/recovery/b30-runner-lib.sh\n.github/workflows/b30-recovery-runner.yml\n' > .github/recovery/ALLOWED_FILES && echo l > .github/recovery/b30-runner-lib.sh && echo w > .github/workflows/b30-recovery-runner.yml && git add -A && git commit -qm recovery )
+( cd "$G" && printf '.github/recovery/ALLOWED_FILES\n.github/recovery/b30-runner-lib.sh\n.github/workflows/b25-stage1-inspection.yml\n' > .github/recovery/ALLOWED_FILES && echo l > .github/recovery/b30-runner-lib.sh && echo w > .github/workflows/b25-stage1-inspection.yml && git add -A && git commit -qm recovery )
 gs() { ( cd "$G" && b30_guard_scope "$1" .github/recovery/ALLOWED_FILES 2>&1 | grep -oE '(b30_scope=ok|b30_input_error=[a-z_]+)' | head -1 ); }
 tv "scope ok" "b30_scope=ok" "$(gs "$BASE")"
 tv "scope base not ancestor" "b30_input_error=base_not_ancestor" "$(gs 0000000000000000000000000000000000000001)"
 ( cd "$G" && echo x > .github/recovery/extra.sh && git add -A && git commit -qm extra ); tv "scope extra file" "b30_input_error=scope_mismatch" "$(gs "$BASE")"
 ( cd "$G" && git reset -q --hard HEAD~1 && echo changed > src/product.ts && git add -A && git commit -qm prod ); tv "scope product file modified" "b30_input_error=scope_mismatch" "$(gs "$BASE")"
 ( cd "$G" && git reset -q --hard HEAD~1 && echo dirty > .github/recovery/b30-runner-lib.sh ); tv "scope dirty worktree" "b30_input_error=worktree_dirty" "$(gs "$BASE")"; ( cd "$G" && git checkout -q -- . )
+( cd "$G" && printf '.github/recovery/ALLOWED_FILES\n.github/recovery/b30-runner-lib.sh\n.github/workflows/b25-stage1-inspection.yml\n.github/workflows/b30-recovery-runner.yml\n' > .github/recovery/ALLOWED_FILES && echo o > .github/workflows/b30-recovery-runner.yml && git add -A && git commit -qm oldpath )
+tv "scope refuses the old workflow path even when it is listed (only the registered path may differ)" "b30_input_error=scope_outside_recovery" "$(gs "$BASE")"; ( cd "$G" && git reset -q --hard HEAD~1 )
 P="$T/pins.txt"; printf '%s  %s\n' "$(sha256sum "$REC/b30-runner-lib.sh" | cut -c1-64)" "$REC/b30-runner-lib.sh" > "$P"
 tv "pins ok" "b30_pins=ok b30_pinned_files=1" "$(b30_guard_pins "$P")"
 printf '%s  %s\n' "0000000000000000000000000000000000000000000000000000000000000000" "$REC/b30-runner-lib.sh" > "$P"; tv "pins mismatch" "b30_input_error=pin_mismatch" "$(b30_guard_pins "$P")"
@@ -239,5 +258,96 @@ echo "-- D18 no mutation of the fixture volume across all scenarios"
 tv "D18 volume digest unchanged" "$VOL0" "$(voldigest)"
 tv "D18 stub docker never asked to write the live volume (no rw mount)" 0 "$(grep -c -- '-v card-scanner-pro_objectdata:/src ' "$T/stub.log")"
 
-echo "== RESULT pass=$pass fail=$fail (docker integration NOT verified: stub only)"
+echo "== E. registry / shared-id guard — the REAL workflow step under a recording gh stub (GET only; no network)"
+RS="$T/registry.sh"
+awk '/name: No other coordination run/{p=1} p&&/^        run: \|/{r=1;next} r&&/^      - name:/{exit} r{sub(/^          /,""); print}' "$W" > "$RS"
+t "registry step extracted from the workflow (set -euo pipefail first line)" bash -c "head -1 '$RS' | grep -q 'set -euo pipefail' && grep -q 'SELF_ID=' '$RS'"
+GHS="$T/ghstub"; mkdir -p "$GHS"
+cat > "$GHS/gh" <<'EOS'
+#!/bin/bash
+# recording gh stub: `gh api --method GET <path>` -> fixture $GH_FIX/<path with / ? & = replaced by _>.json ; missing -> exit 1 (API failure)
+printf '%s\n' "$*" >> "$GH_LOG"
+[ "${1:-}" = api ] && [ "${2:-}" = --method ] && [ "${3:-}" = GET ] && [ -n "${4:-}" ] || exit 2
+f="$GH_FIX/$(printf '%s' "$4" | tr '/?&=' '____').json"
+[ -f "$f" ] || exit 1
+cat "$f"
+EOS
+chmod 755 "$GHS/gh"
+RUN_ID=987654321; REPO_T="owner/repo"; SELF=376505024; SELFP="$REGP"
+REGS=( "338196147=.github/workflows/deploy-dev-vps.yml" "358860432=.github/workflows/b20-hosted-activation.yml" "373189055=.github/workflows/b25-hosted-inspection.yml" "348767584=.github/workflows/b14-hosted-activation.yml" "350570859=.github/workflows/b15-schema-activation.yml" "352288831=.github/workflows/b16-hosted-activation.yml" "353075182=.github/workflows/b17-hosted-activation.yml" "353427348=.github/workflows/b18-hosted-activation.yml" "354083606=.github/workflows/b20-hosted-inspection.yml" "365534673=.github/workflows/backup-health-alert.yml" "$SELF=$SELFP" )
+fixfile() { printf '%s/%s.json' "$FIX" "$(printf '%s' "$1" | tr '/?&=' '____')"; }
+runs_json() { local n="$1"; shift; local arr="" i; for i in "$@"; do arr="$arr{\"id\":$i},"; done; printf '{"total_count":%s,"workflow_runs":[%s]}' "$n" "${arr%,}"; }
+reg_json() { # prints a registry listing from REGS, with the self entry replaced by "$1|$2" when given, plus extra "id|state|path" entries from $3..
+  local wfs="" e id p st n=0 selfid="${1:-}" selfp="${2:-}"; [ $# -ge 2 ] && shift 2 || set --
+  for e in "${REGS[@]}"; do id="${e%%=*}"; p="${e#*=}"; if [ "$id" = "$SELF" ] && [ -n "$selfid" ]; then [ "$selfid" = none ] && continue; id="$selfid"; p="$selfp"; fi; wfs="$wfs{\"id\":$id,\"state\":\"active\",\"path\":\"$p\",\"name\":\"n$id\"},"; n=$((n+1)); done
+  for e in "$@"; do IFS='|' read -r id st p <<<"$e"; wfs="$wfs{\"id\":$id,\"state\":\"$st\",\"path\":\"$p\",\"name\":\"x\"},"; n=$((n+1)); done
+  printf '{"total_count":%s,"workflows":[%s]}' "$n" "${wfs%,}"
+}
+mkfix() { # fresh fixture: every registered workflow active, no runs anywhere except THIS run in_progress under SELF
+  FIX="$T/fix"; rm -rf "$FIX"; mkdir -p "$FIX"; local e id p st
+  reg_json > "$(fixfile "repos/$REPO_T/actions/workflows?per_page=100")"
+  for e in "${REGS[@]}"; do id="${e%%=*}"; p="${e#*=}"
+    printf '{"id":%s,"state":"active","path":"%s"}' "$id" "$p" > "$(fixfile "repos/$REPO_T/actions/workflows/$id")"
+    for st in queued in_progress waiting; do runs_json 0 > "$(fixfile "repos/$REPO_T/actions/workflows/$id/runs?status=$st&per_page=100")"; done
+  done
+  runs_json 1 "$RUN_ID" > "$(fixfile "repos/$REPO_T/actions/workflows/$SELF/runs?status=in_progress&per_page=100")"
+}
+set_runs() { local id="$1" st="$2"; shift 2; runs_json "$@" > "$(fixfile "repos/$REPO_T/actions/workflows/$id/runs?status=$st&per_page=100")"; }
+set_registry() { printf '%s' "$1" > "$(fixfile "repos/$REPO_T/actions/workflows?per_page=100")"; }
+run_reg() { : > "$T/gh.log"; ROUT="$(cd "$T" && env -i PATH="$GHS:/usr/bin:/bin" HOME="$T" GH_FIX="$FIX" GH_LOG="$T/gh.log" GH_TOKEN=x THIS_RUN="$RUN_ID" REPO="$REPO_T" B30_REGISTERED_WORKFLOW_ID="$SELF" B30_WORKFLOW_PATH="$SELFP" bash "$RS" 2>&1)"; RRC=$?; }
+mkfix; run_reg
+tv "E1 baseline: no conflicting run → step passes" 0 "$RRC"
+t "E1 self recognised as the registered id at the registered path; own run excluded exactly once" bash -c "grep -q 'self=$SELF at $SELFP, own run excluded 1x' <<<\"\$1\"" _ "$ROUT"
+t "E1 every stub call was a GET (no dispatch, no POST)" bash -c "[ -s '$T/gh.log' ] && [ \"\$(grep -vc '^api --method GET ' '$T/gh.log')\" = 0 ]"
+tv "E1 self workflow resolved by id exactly once; registry listed once" "1 1" "$(grep -c "^api --method GET repos/$REPO_T/actions/workflows/$SELF\$" "$T/gh.log") $(grep -c "^api --method GET repos/$REPO_T/actions/workflows?per_page=100\$" "$T/gh.log")"
+tv "E1 runs of all 11 registered workflows queried in the three states" "33" "$(grep -c '/runs?status=' "$T/gh.log")"
+mkfix; set_runs "$SELF" queued 1 111; run_reg
+tv "E2 another QUEUED run of the shared id (a Stage 2A / 2B dispatch) blocks" 1 "$RRC"; t "E2 reason names the shared path, 1 other run" bash -c "grep -q \"$SELFP has 1 other run(s) in state queued\" <<<\"\$1\"" _ "$ROUT"
+mkfix; set_runs "$SELF" in_progress 2 "$RUN_ID" 222; run_reg
+tv "E3 another IN-PROGRESS run of the shared id besides this one blocks (this run excluded, the other counted)" 1 "$RRC"; t "E3 exactly one other counted" bash -c "grep -q 'has 1 other run(s) in state in_progress' <<<\"\$1\"" _ "$ROUT"
+mkfix; set_runs "$SELF" in_progress 1 "$RUN_ID"; set_runs "$SELF" queued 1 "$RUN_ID"; run_reg
+tv "E4 this run listed under two states (inconsistent API) → fail closed, never excluded twice" 1 "$RRC"; t "E4 reason" bash -c "grep -q 'excluded 2 times' <<<\"\$1\"" _ "$ROUT"
+mkfix; set_runs "$SELF" in_progress 2 "$RUN_ID" "$RUN_ID"; run_reg
+tv "E5 this run id listed twice under one state → fail closed" 1 "$RRC"
+mkfix; set_runs 338196147 in_progress 1 "$RUN_ID"; run_reg
+tv "E6 this run id attributed to another workflow → fail closed" 1 "$RRC"; t "E6 reason" bash -c "grep -q 'attributed to a different workflow' <<<\"\$1\"" _ "$ROUT"
+mkfix; set_runs "$SELF" waiting 1 333; run_reg
+tv "E7 a WAITING run of the shared id (Stage 2A / 2B on its own ref) blocks" 1 "$RRC"
+mkfix; set_runs 365534673 in_progress 1 444; run_reg
+tv "E8 backup-health-alert IN PROGRESS blocks (its SSH probe must not overlap)" 1 "$RRC"; t "E8 reason" bash -c "grep -q 'backup-health-alert.yml has 1 other run(s) in state in_progress' <<<\"\$1\"" _ "$ROUT"
+mkfix; set_runs 365534673 queued 1 445; run_reg
+tv "E9 backup-health-alert QUEUED blocks" 1 "$RRC"
+mkfix; set_runs 338196147 in_progress 1 555; run_reg
+tv "E10 deploy-dev-vps in progress blocks" 1 "$RRC"
+mkfix; set_runs 373189055 queued 1 556; run_reg
+tv "E11 an allow-listed inspection workflow queued blocks" 1 "$RRC"
+mkfix; set_registry "$(reg_json "" "" '999000111|active|.github/workflows/new-thing.yml')"; run_reg
+tv "E12 unknown ACTIVE registered workflow → fail closed" 1 "$RRC"; t "E12 reason" bash -c "grep -q 'registered but not classified' <<<\"\$1\"" _ "$ROUT"
+mkfix; set_registry "$(reg_json "" "" '999000112|disabled_manually|.github/workflows/old-thing.yml')"; run_reg
+tv "E13 a DISABLED unknown workflow cannot run and is ignored (same rule as the Stage 2B guard)" 0 "$RRC"
+mkfix; rm -f "$(fixfile "repos/$REPO_T/actions/workflows?per_page=100")"; run_reg
+tv "E14 registry query fails (API error) → STOP" 1 "$RRC"; t "E14 reason" bash -c "grep -q 'GitHub API query failed' <<<\"\$1\"" _ "$ROUT"
+mkfix; rm -f "$(fixfile "repos/$REPO_T/actions/workflows/365534673/runs?status=queued&per_page=100")"; run_reg
+tv "E15 a runs query fails (API error) → STOP (never treated as idle)" 1 "$RRC"
+mkfix; printf 'not json' > "$(fixfile "repos/$REPO_T/actions/workflows/$SELF/runs?status=queued&per_page=100")"; run_reg
+tv "E16 invalid JSON from the API → STOP" 1 "$RRC"
+mkfix; : > "$(fixfile "repos/$REPO_T/actions/workflows/$SELF")"; run_reg
+tv "E17 empty API body → STOP" 1 "$RRC"
+mkfix; set_registry "$(reg_json 111222333 "$SELFP")"; run_reg
+tv "E18 the registered path resolving to a different id → fail closed" 1 "$RRC"; t "E18 reason" bash -c "grep -q 'do not agree' <<<\"\$1\"" _ "$ROUT"
+mkfix; set_registry "$(reg_json "$SELF" .github/workflows/elsewhere.yml)"; run_reg
+tv "E19 the registered id at a different path → fail closed" 1 "$RRC"
+mkfix; set_registry "$(reg_json none "")"; run_reg
+tv "E20 the recovery workflow absent from the registry (unregistered) → fail closed" 1 "$RRC"; t "E20 reason" bash -c "grep -q 'not active exactly once' <<<\"\$1\"" _ "$ROUT"
+mkfix; set_registry "$(reg_json "" "" "$SELF|active|$SELFP")"; run_reg
+tv "E21 the self entry duplicated in the registry → fail closed" 1 "$RRC"
+mkfix; printf '{"id":%s,"state":"disabled_manually","path":"%s"}' "$SELF" "$SELFP" > "$(fixfile "repos/$REPO_T/actions/workflows/$SELF")"; run_reg
+tv "E22 self resolved by id must be active → a disabled self fails closed" 1 "$RRC"
+mkfix; set_registry "$(printf '{"total_count":12,"workflows":%s}' "$(jq -c '.workflows' "$(fixfile "repos/$REPO_T/actions/workflows?per_page=100")")")"; run_reg
+tv "E23 registry total_count ≠ returned entries (pagination) → STOP" 1 "$RRC"
+mkfix; set_runs "$SELF" in_progress 0; run_reg
+tv "E24 own run not (yet) listed by the API → nothing excluded, still passes with 0 others" 0 "$RRC"; t "E24 excluded 0x" bash -c "grep -q 'own run excluded 0x' <<<\"\$1\"" _ "$ROUT"
+mkfix; run_reg; t "E25 no self-dispatch and no Stage 2B mode in the extracted step" bash -c "! grep -qE 'dispatches|POST|stage2b|workflow run' '$RS'"
+
+echo "== RESULT pass=$pass fail=$fail (docker integration NOT verified: stub only; hosted dispatch NOT verified)"
 [ "$fail" = 0 ]

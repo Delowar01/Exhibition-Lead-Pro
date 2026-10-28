@@ -1,9 +1,10 @@
 #!/bin/bash
 # =============================================================================
 # B30 RECOVERY RUNNER — RUNNER-SIDE LIBRARY (pure functions; no network, no secrets, no host access).
-# Sourced by .github/workflows/b30-recovery-runner.yml (after its own hash was verified against the pin in the
-# workflow) and by .github/recovery/test/b30-runner.test.sh. Every function prints fixed tokens / integers only and
-# returns 0 (accept) or 1 (refuse, with b30_input_error=<token>). Nothing here executes text taken from an input.
+# Sourced by the recovery branch's workflow at the REGISTERED path .github/workflows/b25-stage1-inspection.yml (workflow
+# id 376505024; after its own hash was verified against the pin in the workflow) and by
+# .github/recovery/test/b30-runner.test.sh. Every function prints fixed tokens / integers only and returns 0 (accept) or
+# 1 (refuse, with b30_input_error=<token>). Nothing here executes text taken from an input.
 # =============================================================================
 B30_MODE_CHECK="b30_recovery_check"
 B30_MODE_SET="b30_recovery_set"
@@ -45,7 +46,8 @@ b30_window_check() {
 }
 
 # b30_validate_inputs: env MODE IN_PRODUCT_SHA IN_RECOVERY IN_QUIET IN_PAUSED IN_START IN_END B30_PRODUCT_SHA [NOW_EPOCH]
-#   check mode: every confirmation and both timestamps must be EMPTY (read-only session, nothing created)
+#   check mode: every confirmation and both timestamps must be EMPTY (product-data read-only session; the host writes only
+#               its own 700 temp dir and the 600 host-side log)
 #   set mode:   exact typed confirmations + an ACTIVE approved quiet-period window
 b30_validate_inputs() {
   local v
@@ -85,7 +87,7 @@ b30_guard_scope() {
   diffl="$(git diff --name-only "$base" HEAD | LC_ALL=C sort)"
   [ -n "$diffl" ] || { b30_refuse scope_empty; return 1; }
   [ "$diffl" = "$(grep -v '^#' "$list" | grep . | LC_ALL=C sort)" ] || { b30_refuse scope_mismatch; return 1; }
-  printf '%s\n' "$diffl" | grep -qvE '^\.github/(recovery/|workflows/b30-recovery-runner\.yml$)' && { b30_refuse scope_outside_recovery; return 1; }
+  printf '%s\n' "$diffl" | grep -qvE '^\.github/(recovery/|workflows/b25-stage1-inspection\.yml$)' && { b30_refuse scope_outside_recovery; return 1; }
   [ -z "$(git status --porcelain)" ] || { b30_refuse worktree_dirty; return 1; }
   printf 'b30_scope=ok b30_changed_files=%s\n' "$(printf '%s\n' "$diffl" | grep -c .)"
 }
